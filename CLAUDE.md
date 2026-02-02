@@ -1,0 +1,464 @@
+# CLAUDE.md - AI Agent Development Guide
+
+> **Purpose**: This file provides AI agents (especially Claude) with comprehensive context about the unitAI project architecture, development environment, and coding conventions.
+
+## Project Overview
+
+**unitAI** is a unified Model Context Protocol (MCP) server that orchestrates multiple AI backends (Gemini, Cursor, Droid) with intelligent workflows, circuit breaker resilience, and specialized agent roles.
+
+**Core Philosophy**: "One MCP Server. Multiple AI Backends. Intelligent Orchestration."
+
+**Target Users**: This tool is designed primarily for **AI agents (like Claude) to use autonomously** for offloading heavy tasks to specialized backends.
+
+## Architecture
+
+### System Components
+
+```
+unitAI MCP Server
+├── AI Backends (Multi-Model Orchestration)
+│   ├── Gemini (Architect) - gemini-3-pro-preview, gemini-3-flash-preview
+│   ├── Cursor (Tester) - sonnet-4.5, gpt-5, haiku-5, deepseek-v3
+│   └── Droid (Implementer) - glm-4.6
+├── Agent Roles (Specialized Functions)
+│   ├── ArchitectAgent - High-level design and reasoning
+│   ├── ImplementerAgent - Production code generation
+│   └── TesterAgent - Test generation and validation
+├── Smart Workflows (Multi-Step Processes)
+│   ├── Overthinker - 4-phase deep reasoning
+│   ├── Init-Session - Context gathering and analysis
+│   ├── Triangulated Review - 3-way code review
+│   ├── Parallel Review - Concurrent analysis
+│   ├── Bug Hunt - Autonomous debugging
+│   ├── Feature Design - End-to-end feature planning
+│   └── Auto Remediation - Self-healing workflows
+├── Tool Registry (MCP Tools)
+│   ├── Meta tools - Git operations, file management
+│   └── AI Client tools - Backend invocation wrappers
+└── Resilience Layer
+    ├── Circuit Breaker - Auto-fallback on failures
+    ├── Permission Manager - 4-tier autonomy control
+    └── Activity Analytics - Token savings tracking
+```
+
+### Key Design Patterns
+
+1. **Backend Specialization**: Each backend has a defined role (Architect/Implementer/Tester)
+2. **Circuit Breaker**: Automatic fallback when primary backend fails
+3. **Workflow Composition**: Multi-phase agentic processes for complex tasks
+4. **Permission Tiers**: READ_ONLY → LOW → MEDIUM → HIGH
+5. **Tool Registry**: Zod schema validation for all tool invocations
+
+## Directory Structure
+
+```
+unitAI/
+├── src/                      # Source code (TypeScript)
+│   ├── agents/              # Agent role definitions
+│   ├── cli/                 # CLI commands and dashboards
+│   ├── repositories/        # Data persistence (SQLite)
+│   ├── services/            # Core services (permission, analytics)
+│   ├── tools/               # MCP tool implementations
+│   │   ├── meta/           # Git, file operations
+│   │   └── registry.ts     # Tool registration
+│   ├── utils/              # Utilities
+│   │   ├── aiExecutor.ts   # Backend execution engine
+│   │   └── permissionManager.ts
+│   ├── workflows/          # Smart workflow implementations
+│   │   ├── overthinker.workflow.ts
+│   │   ├── init-session.workflow.ts
+│   │   └── types.ts
+│   ├── constants.ts        # AI_MODELS, BACKENDS, CLI flags
+│   ├── dependencies.ts     # Tool dependencies
+│   ├── server.ts           # MCP server setup
+│   └── index.ts            # Entry point
+├── dist/                    # Compiled JavaScript
+├── tests/                   # Vitest test suites
+│   ├── unit/
+│   └── integration/
+├── .serena/                 # Serena SSOT documentation
+│   └── memories/           # Single Source of Truth files
+│       ├── ssot_architecture_backends_2026-02.md
+│       ├── ssot_workflow_overthinker_status.md
+│       └── ssot_workflows_init_session_2026-01-22.md
+├── .unitai/                 # Workflow outputs
+│   └── overthinking.md     # Overthinker workflow results
+├── docs/                    # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── WORKFLOWS.md
+│   └── plans/              # Design documents
+├── .claude/                 # Claude CLI extensions (optional)
+│   ├── commands/           # Slash commands
+│   ├── skills/             # Reusable skills
+│   └── hooks/              # Event hooks
+├── package.json            # NPM metadata (version, dependencies)
+├── tsconfig.json           # TypeScript configuration
+├── vitest.config.ts        # Test configuration
+├── README.md               # User-facing documentation
+├── CHANGELOG.md            # Version history
+└── CLAUDE.md               # This file (AI agent guide)
+```
+
+## Key Files Reference
+
+### Core Configuration
+
+| File | Purpose | When to Modify |
+|------|---------|----------------|
+| `src/constants.ts` | AI models, backends, CLI flags | Adding new backends or models |
+| `src/dependencies.ts` | Tool dependency requirements | Defining tool prerequisites |
+| `src/server.ts` | MCP server setup and tool registration | Adding new MCP tools |
+| `package.json` | Version, dependencies, scripts | Updating version or adding deps |
+
+### Backend Execution
+
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| `src/utils/aiExecutor.ts` | Core backend execution logic | Invoking AI backends programmatically |
+| `src/tools/registry.ts` | Tool registration and validation | Understanding available tools |
+| `src/utils/permissionManager.ts` | Autonomy level enforcement | Checking permission requirements |
+
+### Workflows
+
+| File | Purpose | Current Status |
+|------|---------|----------------|
+| `src/workflows/overthinker.workflow.ts` | Deep reasoning workflow | **v1.0 - Active** |
+| `src/workflows/init-session.workflow.ts` | Session initialization | **Active** |
+| `docs/plans/2026-01-21-overthinker-enhancements-design.md` | Overthinker v2.0 plan | **NOT Implemented** |
+
+### Documentation
+
+| File | Purpose | Audience |
+|------|---------|----------|
+| `README.md` | User guide, installation, features | End users |
+| `CLAUDE.md` | AI agent development context | AI agents |
+| `CHANGELOG.md` | Version history and changes | Developers |
+| `.serena/memories/*.md` | SSOT technical documentation | Developers and AI agents |
+
+## Development Environment
+
+### Prerequisites
+
+- **Node.js**: 18.x or higher
+- **TypeScript**: 5.0+
+- **Package Manager**: npm or pnpm
+- **CLI Tools**:
+  - `gemini` - Google Gemini CLI
+  - `cursor-agent` - Cursor Agent CLI
+  - `droid` - Factory Droid CLI (GLM-4.6)
+
+### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/jaggerxtrm/unitai.git
+cd unitai
+
+# Install dependencies
+npm install
+
+# Build TypeScript
+npm run build
+
+# Run tests
+npm test
+
+# Start development server
+npm run dev
+```
+
+### Testing
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+```
+
+### Scripts
+
+| Command | Purpose |
+|---------|---------|
+| `npm run build` | Compile TypeScript to dist/ |
+| `npm run dev` | Build and run MCP server |
+| `npm run lint` | TypeScript type checking |
+| `npm test` | Run Vitest tests |
+| `npm run view-metrics` | Display token savings analytics |
+| `npm run activity-dashboard` | Show activity dashboard |
+
+## Coding Conventions
+
+### TypeScript Standards
+
+- **Strict mode enabled**: All files use TypeScript strict checks
+- **Zod schemas**: All tool parameters validated with Zod
+- **Error handling**: Use try-catch with descriptive error messages
+- **Async/await**: Prefer async/await over promises
+- **Type exports**: Export types from definition files
+
+### File Organization
+
+- **Tool files**: `src/tools/<category>/<tool-name>.tool.ts`
+- **Workflow files**: `src/workflows/<workflow-name>.workflow.ts`
+- **Utility files**: `src/utils/<utility-name>.ts`
+- **Test files**: `tests/<unit|integration>/<file-name>.test.ts`
+
+### Naming Conventions
+
+- **Constants**: UPPER_SNAKE_CASE (e.g., `AI_MODELS`, `BACKENDS`)
+- **Functions**: camelCase (e.g., `executeOverthinker`, `formatWorkflowOutput`)
+- **Types/Interfaces**: PascalCase (e.g., `WorkflowDefinition`, `OverthinkerParams`)
+- **Files**: kebab-case (e.g., `overthinker.workflow.ts`, `ai-executor.ts`)
+
+### Code Style
+
+```typescript
+// Good: Use constants from constants.ts
+import { AI_MODELS, BACKENDS } from './constants.js';
+const model = AI_MODELS.GEMINI.FLASH;
+
+// Bad: Hardcode model strings
+const model = "gemini-3-flash-preview";
+
+// Good: Zod schema validation
+const schema = z.object({
+  prompt: z.string(),
+  model: z.string().optional()
+});
+
+// Good: Descriptive error messages
+throw new Error(`Failed to execute ${backend}: ${e.message}`);
+
+// Good: Async/await with try-catch
+try {
+  const result = await executeAIClient({ backend, prompt });
+} catch (e: any) {
+  onProgress?.(`Error: ${e.message}`);
+}
+```
+
+## Working with Backends
+
+### Backend Selection Logic
+
+```typescript
+// Use constants for backend selection
+import { BACKENDS } from './constants.js';
+
+// Architect role (design, reasoning)
+const backend = BACKENDS.GEMINI;
+
+// Implementer role (code generation)
+const backend = BACKENDS.DROID;
+
+// Tester role (test generation)
+const backend = BACKENDS.CURSOR;
+```
+
+### Model Selection
+
+```typescript
+import { AI_MODELS } from './constants.js';
+
+// Fast tasks, context gathering
+const model = AI_MODELS.GEMINI.FLASH;  // gemini-3-flash-preview
+
+// Deep reasoning, architecture
+const model = AI_MODELS.GEMINI.PRIMARY; // gemini-3-pro-preview
+
+// Budget-conscious testing
+const model = AI_MODELS.CURSOR_AGENT.HAIKU_5;
+```
+
+### Executing AI Clients
+
+```typescript
+import { executeAIClient, BACKENDS } from './utils/aiExecutor.js';
+
+const result = await executeAIClient({
+  backend: BACKENDS.GEMINI,
+  prompt: "Analyze this architecture",
+  outputFormat: "text",  // or "json"
+  model: AI_MODELS.GEMINI.FLASH  // optional override
+});
+```
+
+## Workflow Development
+
+### Creating a New Workflow
+
+1. **Define schema** (Zod validation):
+```typescript
+const myWorkflowSchema = z.object({
+  inputPrompt: z.string(),
+  iterations: z.number().default(3).optional()
+});
+
+export type MyWorkflowParams = z.infer<typeof myWorkflowSchema> & BaseWorkflowParams;
+```
+
+2. **Implement workflow function**:
+```typescript
+export async function executeMyWorkflow(
+  params: MyWorkflowParams,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const { inputPrompt, iterations } = params;
+
+  onProgress?.("Starting workflow...");
+
+  // Phase 1: Initial processing
+  const phase1 = await executeAIClient({
+    backend: BACKENDS.GEMINI,
+    prompt: inputPrompt
+  });
+
+  // Return formatted result
+  return formatWorkflowOutput(phase1);
+}
+```
+
+3. **Register workflow** in `src/workflows/types.ts` or tool registry
+
+4. **Add tests** in `tests/integration/workflows.test.ts`
+
+### Workflow Best Practices
+
+- **Progress callbacks**: Use `onProgress?.()` for user feedback
+- **Error handling**: Wrap AI calls in try-catch with fallbacks
+- **Context gathering**: Read project files when needed
+- **Output persistence**: Save results to `.unitai/` directory
+- **Iterative refinement**: Allow multiple review cycles
+
+## SSOT Documentation System
+
+### Serena Memories (`.serena/memories/`)
+
+Single Source of Truth files for project knowledge:
+
+- **Naming**: `ssot_<domain>_<subdomain>_YYYY-MM-DD.md`
+- **Metadata**: YAML frontmatter with version, changelog, scope
+- **Categories**: ssot, pattern, plan, reference
+- **Purpose**: Permanent technical knowledge, not temporary analysis
+
+### When to Create SSOT
+
+**Do create SSOT for**:
+- New workflow implementations
+- Backend architecture changes
+- Design patterns and conventions
+- Component behaviors and quirks
+
+**Don't create SSOT for**:
+- Temporary investigation results (use git commits)
+- One-off analysis (use Serena memory)
+- Bug fix summaries (use changelog)
+
+### SSOT Template
+
+```markdown
+---
+title: <Descriptive Title>
+version: 1.0.0
+updated: YYYY-MM-DD
+scope: <workflow|architecture|pattern>
+category: ssot
+subcategory: <specific area>
+domain: [<domain>, <subdomain>]
+applicability: all
+changelog:
+  - 1.0.0 (YYYY-MM-DD): Initial creation. <Brief description>
+---
+
+## Purpose
+<What this SSOT documents>
+
+## <Content sections>
+...
+```
+
+## Common Development Tasks
+
+### Adding a New AI Backend
+
+1. Update `src/constants.ts`:
+```typescript
+export const AI_MODELS = {
+  NEW_BACKEND: {
+    PRIMARY: "model-id-here"
+  }
+};
+
+export const BACKENDS = {
+  NEW_BACKEND: "ask-new-backend"
+};
+```
+
+2. Create CLI wrapper in `src/utils/aiExecutor.ts`
+
+3. Add to agent roles if applicable
+
+4. Update SSOT: `ssot_architecture_backends_YYYY-MM-DD.md`
+
+### Updating Model Versions
+
+1. Update `src/constants.ts` → `AI_MODELS`
+2. Update workflow defaults if affected
+3. Update SSOT files referencing old versions
+4. Add migration note to `CHANGELOG.md`
+5. Test workflows with new model
+
+### Releasing a New Version
+
+1. Update `package.json` version
+2. Add entry to `CHANGELOG.md` under `[X.Y.Z]`
+3. Move `[Unreleased]` items to new version section
+4. Commit: `git commit -m "chore: release vX.Y.Z"`
+5. Tag: `git tag -a vX.Y.Z -m "Release X.Y.Z"`
+6. Push: `git push && git push --tags`
+7. Publish: `npm publish` (if applicable)
+
+## Troubleshooting
+
+### Common Issues
+
+**Backend not responding**:
+- Check CLI tool availability: `which gemini`, `which cursor-agent`, `which droid`
+- Verify API keys/authentication for backend
+- Check circuit breaker status in logs
+
+**Workflow fails mid-execution**:
+- Review `onProgress` logs for specific phase failure
+- Check permission level requirements
+- Verify context files exist and are readable
+
+**Tests failing**:
+- Run `npm run lint` for TypeScript errors
+- Check for hardcoded model versions (should use constants)
+- Verify test mocks match current backend signatures
+
+## Related Documentation
+
+- **README.md** - User guide and installation
+- **CHANGELOG.md** - Version history
+- **docs/ARCHITECTURE.md** - System architecture details
+- **docs/WORKFLOWS.md** - Workflow specifications
+- **.serena/memories/** - SSOT technical documentation
+
+## Questions?
+
+For development questions or contributions:
+- GitHub Issues: https://github.com/jaggerxtrm/unitai/issues
+- Beta Testing Guide: `beta-testing.md`
+- Discord Community: (see `gsd:join-discord` if available)
+
+---
+
+**Last Updated**: 2026-02-02
+**Version**: 0.4.0
+**Target AI Agents**: Claude, Gemini, Cursor, Droid

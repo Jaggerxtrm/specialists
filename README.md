@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-UnitAI is a unified **Model Context Protocol** server designed primarily **for AI agents (like Claude) to use autonomously**. It abstracts the complexity of managing distinct AI connections behind a single interface, allowing Claude to offload heavy tasks to specialized backends (Gemini, Droid, Qwen) without user intervention.
+UnitAI is a unified **Model Context Protocol** server designed primarily **for AI agents (like Claude) to use autonomously**. It abstracts the complexity of managing distinct AI connections behind a single interface, allowing Claude to offload heavy tasks to specialized backends (Gemini, Cursor, Droid) without user intervention.
 
 **This tool is for Claude, not just for you.** Unlike traditional CLI tools, UnitAI allows you to say *"Claude, refactor this entire module"* and have Claude autonomously orchestrate the compilation, error checking, and implementation using its specialized sub-agents. Think of it as automatically using sub-agents, offloading token usage for repetitive tasks, reading long files or folders... while Claude is still the BOSS.
 
@@ -21,23 +21,22 @@ The core philosophy of UnitAI is resilience and specialization. Usage is not lim
 To function correctly, UnitAI requires specific CLI tools to be available in your environment.
 
 > [!IMPORTANT]
-> **Mandatory Requirements**
-> The following three backends are **essential** for the core operation of UnitAI:
-> 1. **Google Gemini**: Acts as the primary Architect. Used for high-level reasoning, system design, and complex documentation analysis.
-> 2. **Qwen**: utilized for deep logic analysis and as a robust fallback for architectural tasks.
-> 3. **Factory Droid (GLM-4.6)**: The sophisticated "Implementer". Responsible for generating production-ready code, operational checklists, and executing remediation plans.
+> **Core Backend Stack (v0.4.0+)**
+> The following three backends form the foundation of UnitAI:
+> 1. **Google Gemini** (Architect Role): Primary reasoning engine using `gemini-3-pro-preview` for deep architectural analysis and `gemini-3-flash-preview` for fast context gathering. Handles system design, strategic planning, and security analysis.
+> 2. **Cursor Agent** (Tester Role): Handles test generation, validation, and surgical refactoring using `sonnet-4.5` (default), `gpt-5`, `haiku-5`, or `deepseek-v3`. Replaced Qwen as the primary testing backend.
+> 3. **Factory Droid / GLM-4.6** (Implementer Role): Sophisticated autonomous code generator. Produces production-ready implementations with operational checklists and remediation plans.
 
 > [!NOTE]
-> **Optional Enhancements**
-> The following backends extend the system's capabilities but are not strictly required:
-> 4. **Cursor Agent**: Specialized in "surgical" refactoring and existing code modification.
-> 5. **Atlassian Rovo Dev**: Defines a "Shadow Mode" for safe experimentation and code generation without immediate side effects.
+> **Deprecated Backends**
+> - **Qwen**: Replaced by Cursor Agent in v0.4.0 (CLI flags retained for backward compatibility)
+> - **Atlassian Rovo Dev**: Replaced by Cursor Agent (CLI flags retained for backward compatibility)
 
 ### Resilience and Fallback Mechanisms
 
 UnitAI is built for reliability. It implements a **Circuit Breaker** pattern combined with an automatic fallback system.
 
-If a primary backend (e.g., Gemini) becomes unresponsive or fails during a workflow, the system does not simply error out. Instead, it instantly triggers a fallback mechanism, retrying the operation with the next most capable available backend (e.g., Qwen or Cursor) based on the task type. This ensures that your coding sessions remain uninterrupted even when external API conditions are unstable.
+If a primary backend (e.g., Gemini) becomes unresponsive or fails during a workflow, the system does not simply error out. Instead, it instantly triggers a fallback mechanism, retrying the operation with the next most capable available backend (e.g., Cursor or Droid) based on the task type. This ensures that your coding sessions remain uninterrupted even when external API conditions are unstable.
 
 
 ### Autonomy Levels & Permissions
@@ -88,8 +87,16 @@ Transforms a high-level feature request into a concrete implementation plan. It 
 ### Auto Remediation
 A self-healing workflow that takes an error condition and autonomously generates and applies a fix, complete with verification steps.
 
-### Overthinker
-A deep reasoning loop using multiple AI personas (Refiner, Architect, Reviewers, Synthesizer) to iteratively critique and perfect a concept. It saves a comprehensive analysis to `.unitai/overthinking.md`, ensuring complex decisions are thoroughly vetted before implementation.
+### Overthinker (v1.0)
+A 4-phase deep reasoning workflow using multiple AI personas to iteratively critique and refine complex problems:
+1. **Prompt Refiner** - Transforms user request into structured "Master Prompt"
+2. **Lead Architect** - Develops initial solution/plan
+3. **Reviewer Agents** - Multiple critique and improvement iterations (default: 3)
+4. **Synthesizer** - Produces polished final document
+
+Saves outputs to `.unitai/overthinking.md`. Master prompts saved to project root as `master_prompt_<timestamp>.md`. Uses Gemini backend by default for deep reasoning capabilities.
+
+> **Note**: v2.0 enhancements (approval checkpoints, YAML frontmatter, `/overthink` command) are planned but not yet implemented. See `docs/plans/2026-01-21-overthinker-enhancements-design.md` for details.
 
 ## Installation and Setup
 
@@ -216,6 +223,26 @@ git clone https://github.com/jaggerxtrm/unitai.git
 cd unitai
 npm install
 npm run build
+npm test  # Ensure tests pass
 ```
 
-This project uses **TypeScript** and **Vitest** for testing. Ensure `npm test` passes before submitting changes.
+This project uses **TypeScript** and **Vitest** for testing.
+
+### Documentation for Developers
+
+- **[CLAUDE.md](CLAUDE.md)** - Comprehensive AI agent development guide (architecture, conventions, workflows)
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and migration guides
+- **`.serena/memories/`** - Single Source of Truth (SSOT) technical documentation
+  - `ssot_architecture_backends_2026-02.md` - Backend stack and model mappings
+  - `ssot_workflow_overthinker_status.md` - Overthinker v1.0 vs v2.0 status
+  - `ssot_workflows_init_session_2026-01-22.md` - Init-session workflow documentation
+- **`docs/ARCHITECTURE.md`** - System architecture details
+- **`docs/WORKFLOWS.md`** - Workflow specifications
+
+### Contributing
+
+See [CHANGELOG.md](CHANGELOG.md) for versioning conventions. When adding features:
+1. Update relevant SSOT files in `.serena/memories/`
+2. Add entry to `[Unreleased]` section in CHANGELOG.md
+3. Update CLAUDE.md if adding new patterns or conventions
+4. Ensure tests pass (`npm test`)

@@ -1,13 +1,14 @@
 ---
 title: Init Session Workflow SSOT
-version: 0.1.0
-updated: 2026-01-22
+version: 0.2.0
+updated: 2026-02-02
 scope: workflow
 category: ssot
 subcategory: workflows
 domain: [workflows, dev-experience]
 applicability: all
 changelog:
+  - 0.2.0 (2026-02-02): Updated model version references from gemini-2.5-flash to gemini-3-flash-preview per v0.4.0 backend consolidation.
   - 0.1.0 (2026-01-22): Initial creation. Documenting refactored logic designated as SSOT.
 ---
 
@@ -28,7 +29,7 @@ This workflow runs automatically or manually at the start of a session. It:
 -   Summarizes the last 10 commits (configurable) to understand recent context.
 
 ### 2. AI Commit Analysis
--   **Model**: Defaults to `gemini-2.5-flash` for speed and cost-efficiency.
+-   **Model**: Defaults to `gemini-3-flash-preview` (via `AI_MODELS.GEMINI.FLASH`) for speed and cost-efficiency.
 -   **Backend**: Uses the `ask-gemini` backend via `executeAIClient`.
 -   **Prompt**: Generates a summary of features, bug fixes, and architectural changes based on diffs.
 
@@ -40,7 +41,7 @@ This workflow runs automatically or manually at the start of a session. It:
 ## Configuration
 
 -   **Constants**: Defined in `src/constants.ts` and `src/workflows/init-session.workflow.ts`.
--   **Default Model**: `gemini-2.5-flash` (hardcoded in workflow execution).
+-   **Default Model**: `gemini-3-flash-preview` (via `AI_MODELS.GEMINI.FLASH` constant).
 
 ## Current State
 
@@ -58,7 +59,8 @@ This workflow runs automatically or manually at the start of a session. It:
 -   (None yet explicitly linked, future: `ssot_workflows_architecture.md`)
 
 ## Next Steps
--   [ ] Monitor performance of `gemini-2.5-flash` for this task.
+-   [x] Updated to `gemini-3-flash-preview` (completed in v0.4.0)
+-   [ ] Monitor performance of `gemini-3-flash-preview` for this task.
 -   [ ] Consider adding semantic search integration if keyword matching proves insufficient.
 
 ## References
