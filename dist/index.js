@@ -24964,10 +24964,6 @@ function getProviderArgs(model) {
   if (m === "qwen") {
     return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
   }
-  if (m === "gemini" || m === "google") {
-    const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-    return key ? ["--api-key", key] : [];
-  }
   return [];
 }
 
@@ -24994,13 +24990,13 @@ class PiAgentSession {
     return new PiAgentSession(options, meta);
   }
   async start() {
-    const provider = mapSpecialistBackend(this.options.model);
-    const extraArgs = getProviderArgs(this.options.model);
+    const model = this.options.model;
+    const extraArgs = getProviderArgs(model);
+    const providerArgs = model.includes("/") ? ["--model", model] : ["--provider", mapSpecialistBackend(model)];
     const args = [
       "--mode",
       "rpc",
-      "--provider",
-      provider,
+      ...providerArgs,
       "--no-session",
       "--print",
       ...extraArgs

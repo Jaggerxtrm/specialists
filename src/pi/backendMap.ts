@@ -24,12 +24,10 @@ export function mapSpecialistBackend(model: string): string {
 export function getProviderArgs(model: string): string[] {
   const m = model.toLowerCase();
   if (m === 'qwen') {
-    // DashScope: OpenAI-compatible Qwen endpoint
+    // DashScope: OpenAI-compatible Qwen endpoint requires explicit API key
     return ['--api-key', process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ''];
   }
-  if (m === 'gemini' || m === 'google') {
-    const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
-    return key ? ['--api-key', key] : [];
-  }
+  // All other providers: pi inherits env vars (GEMINI_API_KEY, ANTHROPIC_OAUTH_TOKEN, etc.)
+  // and handles auth natively. No --api-key needed.
   return [];
 }

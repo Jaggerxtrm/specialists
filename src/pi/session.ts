@@ -71,12 +71,20 @@ export class PiAgentSession {
   }
 
   async start(): Promise<void> {
-    const provider = mapSpecialistBackend(this.options.model);
-    const extraArgs = getProviderArgs(this.options.model);
+    const model = this.options.model;
+    const extraArgs = getProviderArgs(model);
+
+    // Full model IDs (e.g. "google/gemini-2.0-flash", "anthropic/claude-sonnet-4-6")
+    // are passed directly as --model; pi infers the provider from the prefix.
+    // Short aliases (e.g. "gemini", "anthropic") use --provider so pi picks its
+    // configured default model for that provider.
+    const providerArgs: string[] = model.includes('/')
+      ? ['--model', model]
+      : ['--provider', mapSpecialistBackend(model)];
 
     const args = [
       '--mode', 'rpc',
-      '--provider', provider,
+      ...providerArgs,
       '--no-session',
       '--print',
       ...extraArgs,
