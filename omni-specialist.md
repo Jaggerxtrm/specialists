@@ -72,7 +72,7 @@ Bun/TypeScript within the unitAI npm package. Developed in Bun for consistency w
 - **Transport Layer:** stdio MCP server (unchanged)
 - **Permission Manager:** 4-tier system (READ_ONLY, LOW, MEDIUM, HIGH). Maps to Agent Forge `capabilities.file_scope` and `capabilities.blocked_tools` when a specialist defines them.
 - **Circuit Breaker:** Three-state (CLOSED / HALF_OPEN / OPEN) per backend, consistent with Agent Forge v0.6.0 circuit breaker pattern. Tracks consecutive failures, not just binary up/down.
-- **Backend Connectors:** Implementations of the `AgentSession` interface (see §4.4). **Execution substrate: `@mariozechner/pi` RpcClient.** Pi provides native support for the following providers (pi's naming): `anthropic` (Claude), `google-gemini-cli` (Gemini), `openai` (native OpenAI + DashScope for Qwen via `--baseURL`). GLM/Droid support via pi is deferred pending pi provider verification. Connectors are swappable without touching the specialist loader or tool surface.
+- **Backend Connectors:** Implementations of the `AgentSession` interface (see §4.4) for each CLI backend — Gemini, Qwen, Droid, Cursor, Rovo. Recommended backing: `@mariozechner/pi` RpcClient thin wrapper. Swappable without touching the specialist loader or tool surface.
 - **Tool Registry:** Zod-validated MCP tool definitions (4 tools).
 #### Layer 2: Specialist Loader (Bridge)
 Runtime component for discovery, validation, caching, and rendering. This component is architecturally identical to Agent Forge's `core/specialist-loader.ts`. Both implement the same Zod schema, same discovery order, same template engine. The goal is eventual extraction into a shared npm package (`@jaggerxtrm/specialist-loader`) once both systems stabilize.
@@ -180,6 +180,7 @@ sequenceDiagram
     CB-->>L: Return healthy backend
     L->>T: 5. Prompt Rendering
     T->>T: Substitute $variables
+    T->>T: Append AF_STATUS instructions
     T->>B: 6. Execution
     B->>B: Invoke CLI tool
     B-->>T: Raw response
@@ -194,7 +195,7 @@ sequenceDiagram
 2. **Permission Check:** MCP Core validates against current autonomy level. If specialist defines `capabilities.permission_required`, that overrides.
 3. **Specialist Load:** Loader fetches from cache. Validates full Zod schema (superset including Agent Forge fields).
 4. **Backend Resolution:** `execution.model` -> circuit breaker health check -> `execution.fallback_model` -> global fallback chain. If `backend_override` parameter provided, skip YAML default.
-5. **Prompt Rendering:** Template engine substitutes `$variables`. If specialist has `prompt.system`, write it to `agents.md` in a temp dir (pi loads automatically).
+5. **Prompt Rendering:** Template engine substitutes `$variables`. If specialist has `prompt.system`, prepend it. Append AF_STATUS format instructions.
 6. **Execution:** Backend connector invokes CLI tool with rendered prompt and execution config.
 7. **Output Validation:** Response validated against `prompt.output_schema` if defined.
 8. **Response:** Result returned with metadata (backend used, tokens, execution time, specialist version).
@@ -268,6 +269,8 @@ specialist:
     mode: string               # 'tool' (MCP/CLI call) | 'skill' (context injection) | 'auto'
     model: string              # Primary backend: gemini|qwen|droid|cursor|rovo
     fallback_model: string     # Fallback if primary unavailable
+    temperature: number        # 0.0-2.0 (default: 0.3)
+    max_tokens: number         # Response token limit
     timeout_ms: number         # Per-invocation timeout
     response_format: string    # 'text'|'json'|'markdown'
     permission_required: string # Minimum autonomy level
@@ -324,7 +327,7 @@ Each field is used by one or more systems. No system rejects unknown fields.
 |---|---|---|---|
 |metadata.*|Used|Used|Used|
 |execution.mode|Used (tool/skill/auto)|Used (tool/skill/auto)|Ignored (always tool)|
-|execution.model/fallback|Used|Used|Used|
+|execution.model/fallback/temp/tokens|Used|Used|Used|
 |execution.preferred_profile|Ignored|Used (spawn profile)|Ignored|
 |execution.approval_mode|Ignored|Used (agent mode)|Ignored|
 |prompt.system/task_template/output_schema|Used|Used|Used|
@@ -359,7 +362,7 @@ interface AgentSession {
   waitForIdle(timeoutMs?: number): Promise<void>;
 
   /** Return the last assistant text block from this session. */
-  getLastAssistantText(): Promise<string>;
+  getLastOutput(): string;
 
   /** Terminate the session and clean up resources. */
   kill(): void;
@@ -378,9 +381,7 @@ interface AgentSessionMeta {
 
 **Recommended implementation — pi thin wrapper:**
 
-`@mariozechner/pi` (RpcClient) is the recommended backing implementation for Bun/TS systems. It handles process lifecycle, JSON event streaming, idle detection via `agent_end` event, and provider-specific protocol differences (Claude Code `--output-format stream-json`, Gemini CLI, Qwen DashScope, etc.) for all CLI backends.
-
-**Context injection via `agents.md`:** System prompts are delivered to the spawned CLI agent by writing an `agents.md` file to a temporary `cwd` directory before starting the RpcClient. Pi loads this file automatically as context. This replaces direct system prompt injection and is the canonical mechanism for specialist system prompts in unitAI v2.
+`@mariozechner/pi` (RpcClient) is the recommended backing implementation for Bun/TS systems. It handles process lifecycle, JSON event streaming, idle detection, and provider-specific protocol differences (Claude Code `--output-format stream-json`, Gemini CLI, Qwen DashScope, etc.) for all CLI backends.
 
 The wrapper is thin — unitAI defines the `AgentSession` interface above, pi does the work:
 
@@ -396,10 +397,7 @@ class PiAgentSession implements AgentSession {
 
   async prompt(task: string)           { await this.client.prompt(task); }
   async waitForIdle(ms?: number)       { await this.client.waitForIdle(ms); }
-  async getLastAssistantText(): Promise<string> {
-    const resp = await this.client.send({ type: 'get_last_assistant_text' });
-    return (resp as any).data?.text ?? '';
-  }
+  getLastOutput(): string              { return this.client.get_last_assistant_text(); }
   kill(): void                         { this.client.kill(); }
 
   readonly meta: AgentSessionMeta = { /* ... */ };
@@ -508,11 +506,7 @@ flowchart LR
 ```
 
 ### 5.4 AF_STATUS Block Protocol
-
-> **unitAI v2 status: RECLASSIFIED.** unitAI v2 uses the `agent_end` event emitted by `@mariozechner/pi` for completion detection. unitAI no longer appends AF_STATUS format instructions to specialist prompts and does not parse AF_STATUS blocks from responses.
-
-AF_STATUS remains a **specialist output convention** for cross-system compatibility with Agent Forge and Mercury/darth_feedor. A specialist YAML may include AF_STATUS in its `task_template` as a structured output signal for those systems. unitAI ignores it.
-
+Agent Forge defines a structured completion signal (AF_STATUS) that specialists emit at task completion. unitAI implements full AF_STATUS parsing, identical to Agent Forge. This ensures a specialist behaves consistently regardless of which system executes it. When `use_specialist` renders a prompt, it appends AF_STATUS format instructions to `prompt.system` automatically.
 ```
 ---AF_STATUS---
 STATUS: COMPLETE | IN_PROGRESS | BLOCKED
@@ -522,8 +516,7 @@ ARTIFACTS: <comma-separated outputs, or 'none'>
 BLOCKED_REASON: <if BLOCKED, reason>
 ---AF_STATUS_END---
 ```
-
-**Agent Forge** reads this from the session log file and uses it for completion detection and state transitions. **Mercury/darth_feedor** uses it for worker completion signaling. **unitAI** detects completion via the `agent_end` event from pi's RpcClient event stream — no terminal output parsing required.
+Both unitAI and Agent Forge parse the full block. unitAI reads it from the backend CLI response. Agent Forge reads it from the session log file (avoids scrollback truncation). The parsing logic is identical and will be part of the shared `@jaggerxtrm/specialist-loader` package.
 ---
 
 ## 6. Specialist Lifecycle Hooks
@@ -535,8 +528,8 @@ The 4 hooks fire in strict sequence during every specialist invocation. Each emi
 |Hook|Fires When|Key Payload Fields|Use Cases|
 |---|---|---|---|
 |`pre_render`|Specialist loaded from cache, template variables resolved|specialist_name, version, variables (keys only), backend_resolved|Audit which specialist was selected, verify variable availability|
-|`post_render`|Prompt fully rendered, ready for execution|prompt_hash, prompt_length_chars, system_prompt_present|Debug prompt construction, detect oversized prompts, token estimation|
-|`pre_execute`|Prompt about to be sent to backend CLI|backend, model, timeout_ms, permission_level|Track backend selection, circuit breaker state at invocation time|
+|`post_render`|Prompt fully rendered, ready for execution|prompt_hash, prompt_length_chars, system_prompt_present, af_status_appended|Debug prompt construction, detect oversized prompts, token estimation|
+|`pre_execute`|Prompt about to be sent to backend CLI|backend, model, temperature, max_tokens, timeout_ms, approval_mode|Track backend selection, circuit breaker state at invocation time|
 |`post_execute`|Response received and validated|status (from AF_STATUS), duration_ms, tokens_in, tokens_out, output_valid, error?|Cost tracking, latency monitoring, success/failure rates, debugging|
 ### 6.2 Event Schema
 Every hook event follows the same base schema. Hook-specific fields extend the base. The schema is identical in unitAI (JSONL) and Agent Forge (SQLite row).
@@ -565,11 +558,14 @@ Every hook event follows the same base schema. Hook-specific fields extend the b
   prompt_length_chars: number,
   estimated_tokens: number,  // Rough estimate for cost projection
   system_prompt_present: boolean,
+  af_status_appended: boolean,
 }
 // pre_execute extends base with:
 {
   backend: string,           // 'gemini', 'qwen', 'droid', etc.
   model: string,             // Specific model string
+  temperature: number,
+  max_tokens: number,
   timeout_ms: number,
   permission_level: string,  // Active permission level
   capabilities_enforced: {   // Active constraints
@@ -584,6 +580,12 @@ Every hook event follows the same base schema. Hook-specific fields extend the b
   tokens_in: number,         // Input tokens (from backend response)
   tokens_out: number,        // Output tokens
   output_valid: boolean,     // Passed output_schema validation?
+  af_status_parsed: boolean, // AF_STATUS block found and parsed?
+  af_status_fields?: {       // Parsed AF_STATUS content
+    progress_summary: string,
+    artifacts: string,
+    blocked_reason?: string,
+  },
   error?: {                  // Only on failure
     type: 'timeout' | 'backend_error' | 'validation_failed' | 'circuit_open',
     message: string,
@@ -912,13 +914,12 @@ Every technology choice has been aligned across the ecosystem.
 |Technology|unitAI|Agent Forge|Mercury Terminal|Status|
 |---|---|---|---|---|
 |Runtime|Bun/TS|Bun/TS|Bun/TS (+ Python microservices)|ALIGNED|
-|Execution Substrate|`@mariozechner/pi` RpcClient|tmux sessions (pi: planned)|N/A (Python subprocess)|unitAI: pi native; Forge: pending migration|
 |Distribution|npm (`bun build --target=node`)|npm (`bun build --target=node`)|Private / Docker|ALIGNED|
 |Schema Validation|Zod|Zod|Pydantic (Python) + Zod (TS)|ALIGNED (manual conformance)|
 |YAML Format|`.specialist.yaml` (superset)|`.specialist.yaml` (superset)|`.specialist.yaml` (superset)|ALIGNED|
 |SQLite|`bun:sqlite` (analytics only)|`bun:sqlite` (sessions + messages)|`bun:sqlite` (mercury.db) + pg|ALIGNED (bun:sqlite native)|
 |Circuit Breaker|3-state per-backend|3-state + git-diff progress|3-state (worker level)|ALIGNED (same interface)|
-|Completion Detection|`agent_end` event (pi RpcClient)|AF_STATUS from log file|AF_STATUS (worker signal)|unitAI: pi event; Forge/Mercury: AF_STATUS|
+|AF_STATUS Parsing|Full (identical to Forge)|Full (from log files)|Full (worker completion)|ALIGNED|
 |Template Engine|`$variable` substitution|`$variable` substitution|`$variable` (Python Template)|ALIGNED (same syntax)|
 |Discovery Order|project > user > system|project > user > system|Docker volume > system|ALIGNED (same precedence)|
 |Permission Model|4-tier (READ_ONLY..HIGH)|4-tier + capabilities|4-tier + capabilities|ALIGNED (superset)|
@@ -943,9 +944,9 @@ If a divergence is discovered in production, the Zod implementation is authorita
 |---|---|---|---|
 |Specialist Loader|Bun/TS, in-process, MCP lifecycle|Bun/TS, `core/specialist-loader.ts`|Same Zod schema, same discovery order|
 |Circuit Breaker|3-state, per-backend|3-state, per-backend + git-diff progress|Same state machine interface|
-|Completion Detection|`agent_end` event (pi RpcClient)|AF_STATUS from log file|Mechanism differs; both detect clean completion|
-|Template Engine|`$variable` substitution|`$variable` substitution|Same Template syntax|
-|Output Validation|JSON Schema check|JSON Schema check|Same schema format|
+|AF_STATUS Parser|Full parse from CLI response|Full parse from log file|Same parsing logic, same block format|
+|Template Engine|`$variable` substitution|`$variable` substitution + AF_STATUS append|Same Template syntax|
+|Output Validation|JSON Schema check|JSON Schema + AF_STATUS check|Same schema format|
 |Staleness Detection|`files_to_watch` + threshold|`files_to_watch` + threshold + CLI|Same algorithm|
 ### 12.5 unitAI as Agent Forge Subcomponent
 When Agent Forge spawns an agent with `--specialist`, it uses the same specialist loader as unitAI. The key differences:
@@ -989,6 +990,8 @@ specialist:
     mode: auto
     model: gemini
     fallback_model: qwen
+    temperature: 0.2
+    max_tokens: 8000
     timeout_ms: 120000
     response_format: json
     permission_required: READ_ONLY
