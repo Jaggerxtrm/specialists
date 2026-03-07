@@ -1,9 +1,10 @@
 /**
  * UnitAI MCP Server — v2 Specialist System
  *
- * 4-tool orchestration layer: list_specialists, use_specialist,
- * run_parallel, specialist_status. All workflow logic lives in
- * .specialist.yaml files discovered across 3 scopes.
+ * 7-tool orchestration layer: list_specialists, use_specialist,
+ * run_parallel, specialist_status, start_specialist, poll_specialist,
+ * stop_specialist. All workflow logic lives in .specialist.yaml files
+ * discovered across 3 scopes.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -26,6 +27,7 @@ import { createSpecialistStatusTool } from "./tools/specialist/specialist_status
 import { JobRegistry } from "./specialist/jobRegistry.js";
 import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specialist/start_specialist.tool.js";
 import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/specialist/poll_specialist.tool.js";
+import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { z } from "zod";
 
 type AnyTool = {
@@ -55,6 +57,7 @@ export class UnitAIServer {
       createSpecialistStatusTool(loader, circuitBreaker),
       createStartSpecialistTool(runner, registry),
       createPollSpecialistTool(registry),
+      createStopSpecialistTool(registry),
     ];
 
     this.server = new Server(
@@ -75,6 +78,7 @@ export class UnitAIServer {
       specialist_status: z.object({}),
       start_specialist: startSpecialistSchema,
       poll_specialist: pollSpecialistSchema,
+      stop_specialist: stopSpecialistSchema,
     };
     this.toolSchemas = schemaMap;
 

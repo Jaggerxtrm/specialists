@@ -10,7 +10,7 @@ function makeMockSession(overrides: Partial<{
   return {
     start: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn().mockResolvedValue(undefined),
-    waitForIdle: vi.fn().mockResolvedValue(undefined),
+    waitForDone: vi.fn().mockResolvedValue(undefined),
     getLastOutput: vi.fn().mockResolvedValue('final output'),
     executeBash: vi.fn().mockResolvedValue('script output'),
     kill: vi.fn(),

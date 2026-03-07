@@ -7,14 +7,14 @@ import type { RunResult } from './runner.js';
 
 export interface JobSnapshot {
   job_id: string;
-  status: 'running' | 'done' | 'error';
-  /** Full output — populated only when status === 'done' or 'error'. Empty string while running. */
+  status: 'running' | 'done' | 'error' | 'cancelled';
+  /** Full output — populated only when status === 'done'. Empty string while running or on error/cancel. */
   output: string;
   /** New content since the provided cursor (for incremental mid-run polling). */
   delta: string;
   /** Pass as cursor on next poll to receive only new content. */
   next_cursor: number;
-  /** Last pi event type seen: starting | thinking | toolcall | tool_execution | text | done | error */
+  /** Last pi event type seen: starting | thinking | toolcall | tool_execution | text | done | error | cancelled */
   current_event: string;
   backend: string;
   model: string;
@@ -25,7 +25,7 @@ export interface JobSnapshot {
 
 interface JobState {
   id: string;
-  status: 'running' | 'done' | 'error';
+  status: 'running' | 'done' | 'error' | 'cancelled';
   outputBuffer: string;
   currentEvent: string;
   backend: string;
@@ -34,6 +34,7 @@ interface JobState {
   startedAtMs: number;
   endedAtMs?: number;
   error?: string;
+  killFn?: () => void;
 }
 
 export class JobRegistry {
@@ -54,12 +55,12 @@ export class JobRegistry {
 
   appendOutput(id: string, text: string): void {
     const job = this.jobs.get(id);
-    if (job) job.outputBuffer += text;
+    if (job && job.status === 'running') job.outputBuffer += text;
   }
 
   setCurrentEvent(id: string, eventType: string): void {
     const job = this.jobs.get(id);
-    if (job) job.currentEvent = eventType;
+    if (job && job.status === 'running') job.currentEvent = eventType;
   }
 
   /** Update backend/model from the first assistant message_start event. */
@@ -70,11 +71,22 @@ export class JobRegistry {
     if (meta.model) job.model = meta.model;
   }
 
-  complete(id: string, result: RunResult): void {
+  /** Register the kill function for this job. If job was already cancelled, invokes immediately. */
+  setKillFn(id: string, killFn: () => void): void {
     const job = this.jobs.get(id);
     if (!job) return;
+    if (job.status === 'cancelled') {
+      killFn(); // race: cancel was called before session was ready
+      return;
+    }
+    job.killFn = killFn;
+  }
+
+  complete(id: string, result: RunResult): void {
+    const job = this.jobs.get(id);
+    if (!job || job.status !== 'running') return; // no-op if cancelled
     job.status = 'done';
-    job.outputBuffer = result.output;  // authoritative final text
+    job.outputBuffer = result.output;
     job.currentEvent = 'done';
     job.backend = result.backend;
     job.model = result.model;
@@ -84,17 +96,28 @@ export class JobRegistry {
 
   fail(id: string, err: Error): void {
     const job = this.jobs.get(id);
-    if (!job) return;
+    if (!job || job.status !== 'running') return; // no-op if cancelled
     job.status = 'error';
     job.error = err.message;
     job.currentEvent = 'error';
     job.endedAtMs = Date.now();
   }
 
+  /** Kill the pi process and mark the job as cancelled. */
+  cancel(id: string): { status: 'cancelled'; duration_ms: number } | undefined {
+    const job = this.jobs.get(id);
+    if (!job) return undefined;
+    job.killFn?.();
+    job.status = 'cancelled';
+    job.currentEvent = 'cancelled';
+    job.endedAtMs = Date.now();
+    return { status: 'cancelled', duration_ms: job.endedAtMs - job.startedAtMs };
+  }
+
   snapshot(id: string, cursor = 0): JobSnapshot | undefined {
     const job = this.jobs.get(id);
     if (!job) return undefined;
-    const isDone = job.status === 'done' || job.status === 'error';
+    const isDone = job.status === 'done';
     return {
       job_id: job.id,
       status: job.status,

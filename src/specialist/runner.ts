@@ -23,7 +23,7 @@ export interface RunResult {
   specialistVersion: string;
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForIdle' | 'getLastOutput' | 'executeBash' | 'kill' | 'meta'>>;
+export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'executeBash' | 'kill' | 'meta'>>;
 
 interface RunnerDeps {
   loader: SpecialistLoader;
@@ -40,7 +40,13 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
-  async run(options: RunOptions, onProgress?: (msg: string) => void, onEvent?: (type: string) => void, onMeta?: (meta: { backend: string; model: string }) => void): Promise<RunResult> {
+  async run(
+    options: RunOptions,
+    onProgress?: (msg: string) => void,
+    onEvent?: (type: string) => void,
+    onMeta?: (meta: { backend: string; model: string }) => void,
+    onKillRegistered?: (killFn: () => void) => void,
+  ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -111,6 +117,9 @@ export class SpecialistRunner {
       });
       await session.start();
 
+      // Register kill function with the caller (e.g. JobRegistry for stop_specialist)
+      onKillRegistered?.(session.kill.bind(session));
+
       // Pre-phase scripts
       const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
       let preScriptOutput = '';
@@ -124,7 +133,7 @@ export class SpecialistRunner {
         : renderedTask;
 
       await session.prompt(finalTask);
-      await session.waitForIdle(execution.timeout_ms);
+      await session.waitForDone();
       output = await session.getLastOutput();
 
       // Post-phase scripts
@@ -171,6 +180,7 @@ export class SpecialistRunner {
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
+  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
   async startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): Promise<string> {
     const jobId = crypto.randomUUID();
     // Pre-load spec to capture version before the async run begins
@@ -189,6 +199,7 @@ export class SpecialistRunner {
       (text)      => registry.appendOutput(jobId, text),
       (eventType) => registry.setCurrentEvent(jobId, eventType),
       (meta)      => registry.setMeta(jobId, meta),
+      (killFn)    => registry.setKillFn(jobId, killFn),
     )
       .then(result => registry.complete(jobId, result))
       .catch(err   => registry.fail(jobId, err));

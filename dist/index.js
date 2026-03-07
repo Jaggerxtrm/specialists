@@ -24972,8 +24972,10 @@ class PiAgentSession {
   options;
   proc;
   _lastOutput = "";
-  idleResolve;
-  idleReject;
+  _doneResolve;
+  _doneReject;
+  _agentEndReceived = false;
+  _killed = false;
   meta;
   constructor(options, meta) {
     this.options = options;
@@ -25007,14 +25009,25 @@ class PiAgentSession {
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "inherit"]
     });
+    const donePromise = new Promise((resolve, reject) => {
+      this._doneResolve = resolve;
+      this._doneReject = reject;
+    });
+    this._donePromise = donePromise;
     this.proc.stdout?.on("data", (chunk) => {
       for (const line of chunk.toString().split(`
 `).filter(Boolean)) {
         this._handleEvent(line);
       }
     });
-    this.proc.on("close", () => {
-      this.idleResolve?.();
+    this.proc.on("close", (code) => {
+      if (this._agentEndReceived || this._killed) {
+        this._doneResolve?.();
+      } else if (code === 0 || code === null) {
+        this._doneResolve?.();
+      } else {
+        this._doneReject?.(new Error(`pi process exited with code ${code}`));
+      }
     });
   }
   _handleEvent(line) {
@@ -25038,10 +25051,9 @@ class PiAgentSession {
       if (last) {
         this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
       }
+      this._agentEndReceived = true;
       this.options.onEvent?.("done");
-      this.idleResolve?.();
-      this.idleResolve = undefined;
-      this.idleReject = undefined;
+      this._doneResolve?.();
       return;
     }
     if (type === "thinking_start") {
@@ -25095,15 +25107,8 @@ class PiAgentSession {
 `;
     this.proc?.stdin?.write(msg);
   }
-  async waitForIdle(timeoutMs = 120000) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Agent idle timeout after ${timeoutMs}ms`)), timeoutMs);
-      this.idleResolve = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      this.idleReject = reject;
-    });
+  async waitForDone() {
+    return this._donePromise;
   }
   async getLastOutput() {
     return this._lastOutput;
@@ -25129,8 +25134,10 @@ class PiAgentSession {
     });
   }
   kill() {
+    this._killed = true;
     this.proc?.kill();
     this.proc = undefined;
+    this._doneResolve?.();
   }
 }
 
@@ -25142,7 +25149,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  async run(options, onProgress, onEvent, onMeta) {
+  async run(options, onProgress, onEvent, onMeta, onKillRegistered) {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -25213,6 +25220,7 @@ You have access via Bash:
         onMeta: (meta) => onMeta?.(meta)
       });
       await session.start();
+      onKillRegistered?.(session.kill.bind(session));
       const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
       let preScriptOutput = "";
       for (const script of preScripts) {
@@ -25223,7 +25231,7 @@ You have access via Bash:
       }
       const finalTask = preScriptOutput ? renderTemplate(renderedTask, { pre_script_output: preScriptOutput.trim() }) : renderedTask;
       await session.prompt(finalTask);
-      await session.waitForIdle(execution.timeout_ms);
+      await session.waitForDone();
       output = await session.getLastOutput();
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
       for (const script of postScripts) {
@@ -25271,7 +25279,7 @@ You have access via Bash:
       model: "?",
       specialistVersion
     });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
     return jobId;
   }
 }
@@ -25514,12 +25522,12 @@ class JobRegistry {
   }
   appendOutput(id, text) {
     const job = this.jobs.get(id);
-    if (job)
+    if (job && job.status === "running")
       job.outputBuffer += text;
   }
   setCurrentEvent(id, eventType) {
     const job = this.jobs.get(id);
-    if (job)
+    if (job && job.status === "running")
       job.currentEvent = eventType;
   }
   setMeta(id, meta) {
@@ -25531,9 +25539,19 @@ class JobRegistry {
     if (meta.model)
       job.model = meta.model;
   }
-  complete(id, result) {
+  setKillFn(id, killFn) {
     const job = this.jobs.get(id);
     if (!job)
+      return;
+    if (job.status === "cancelled") {
+      killFn();
+      return;
+    }
+    job.killFn = killFn;
+  }
+  complete(id, result) {
+    const job = this.jobs.get(id);
+    if (!job || job.status !== "running")
       return;
     job.status = "done";
     job.outputBuffer = result.output;
@@ -25545,18 +25563,28 @@ class JobRegistry {
   }
   fail(id, err) {
     const job = this.jobs.get(id);
-    if (!job)
+    if (!job || job.status !== "running")
       return;
     job.status = "error";
     job.error = err.message;
     job.currentEvent = "error";
     job.endedAtMs = Date.now();
   }
+  cancel(id) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    job.killFn?.();
+    job.status = "cancelled";
+    job.currentEvent = "cancelled";
+    job.endedAtMs = Date.now();
+    return { status: "cancelled", duration_ms: job.endedAtMs - job.startedAtMs };
+  }
   snapshot(id, cursor = 0) {
     const job = this.jobs.get(id);
     if (!job)
       return;
-    const isDone = job.status === "done" || job.status === "error";
+    const isDone = job.status === "done";
     return {
       job_id: job.id,
       status: job.status,
@@ -25620,6 +25648,25 @@ function createPollSpecialistTool(registry2) {
   };
 }
 
+// src/tools/specialist/stop_specialist.tool.ts
+var stopSpecialistSchema = exports_external.object({
+  job_id: exports_external.string().describe("Job ID returned by start_specialist")
+});
+function createStopSpecialistTool(registry2) {
+  return {
+    name: "stop_specialist",
+    description: "Cancel a running specialist job. Kills the pi process immediately and sets status to cancelled. Subsequent poll_specialist calls return status: cancelled with output buffered up to that point.",
+    inputSchema: stopSpecialistSchema,
+    async execute(input) {
+      const result = registry2.cancel(input.job_id);
+      if (!result) {
+        return { status: "error", error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+      }
+      return { ...result, job_id: input.job_id };
+    }
+  };
+}
+
 // src/server.ts
 class UnitAIServer {
   server;
@@ -25638,7 +25685,8 @@ class UnitAIServer {
       createRunParallelTool(runner),
       createSpecialistStatusTool(loader, circuitBreaker),
       createStartSpecialistTool(runner, registry2),
-      createPollSpecialistTool(registry2)
+      createPollSpecialistTool(registry2),
+      createStopSpecialistTool(registry2)
     ];
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
@@ -25651,7 +25699,8 @@ class UnitAIServer {
       run_parallel: runParallelSchema,
       specialist_status: exports_external.object({}),
       start_specialist: startSpecialistSchema,
-      poll_specialist: pollSpecialistSchema
+      poll_specialist: pollSpecialistSchema,
+      stop_specialist: stopSpecialistSchema
     };
     this.toolSchemas = schemaMap;
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {

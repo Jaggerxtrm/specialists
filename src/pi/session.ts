@@ -48,8 +48,10 @@ export interface PiSessionOptions {
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
-  private idleResolve?: () => void;
-  private idleReject?: (e: Error) => void;
+  private _doneResolve?: () => void;
+  private _doneReject?: (e: Error) => void;
+  private _agentEndReceived = false;
+  private _killed = false;
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -74,10 +76,8 @@ export class PiAgentSession {
     const model = this.options.model;
     const extraArgs = getProviderArgs(model);
 
-    // Full model IDs (e.g. "google/gemini-2.0-flash", "anthropic/claude-sonnet-4-6")
-    // are passed directly as --model; pi infers the provider from the prefix.
-    // Short aliases (e.g. "gemini", "anthropic") use --provider so pi picks its
-    // configured default model for that provider.
+    // Full model IDs (e.g. "google-gemini-cli/gemini-2.5-flash") are passed as --model;
+    // pi infers the provider. Short aliases (e.g. "gemini") use --provider.
     const providerArgs: string[] = model.includes('/')
       ? ['--model', model]
       : ['--provider', mapSpecialistBackend(model)];
@@ -98,14 +98,31 @@ export class PiAgentSession {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
 
+    // Create the completion promise before attaching listeners
+    const donePromise = new Promise<void>((resolve, reject) => {
+      this._doneResolve = resolve;
+      this._doneReject = reject;
+    });
+    // Store for waitForDone()
+    (this as any)._donePromise = donePromise;
+
     this.proc.stdout?.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split('\n').filter(Boolean)) {
         this._handleEvent(line);
       }
     });
 
-    this.proc.on('close', () => {
-      this.idleResolve?.();
+    this.proc.on('close', (code) => {
+      if (this._agentEndReceived || this._killed) {
+        // Normal completion or explicit kill — resolve cleanly
+        this._doneResolve?.();
+      } else if (code === 0 || code === null) {
+        // Process exited cleanly without agent_end — treat as done with buffered output
+        this._doneResolve?.();
+      } else {
+        // Genuine crash
+        this._doneReject?.(new Error(`pi process exited with code ${code}`));
+      }
     });
   }
 
@@ -134,10 +151,9 @@ export class PiAgentSession {
           .map((c: any) => c.text)
           .join('');
       }
+      this._agentEndReceived = true;
       this.options.onEvent?.('done');
-      this.idleResolve?.();
-      this.idleResolve = undefined;
-      this.idleReject = undefined;
+      this._doneResolve?.();
       return;
     }
 
@@ -187,15 +203,10 @@ export class PiAgentSession {
     this.proc?.stdin?.write(msg);
   }
 
-  async waitForIdle(timeoutMs = 120_000): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`Agent idle timeout after ${timeoutMs}ms`)),
-        timeoutMs,
-      );
-      this.idleResolve = () => { clearTimeout(timer); resolve(); };
-      this.idleReject = reject;
-    });
+  /** Resolves when agent_end is received, process exits cleanly, or kill() is called.
+   *  Rejects only on genuine process crash (non-zero exit without agent_end). */
+  async waitForDone(): Promise<void> {
+    return (this as any)._donePromise;
   }
 
   async getLastOutput(): Promise<string> {
@@ -222,7 +233,10 @@ export class PiAgentSession {
   }
 
   kill(): void {
+    this._killed = true;
     this.proc?.kill();
     this.proc = undefined;
+    // Resolve the done promise immediately so run() can clean up
+    this._doneResolve?.();
   }
 }

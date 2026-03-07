@@ -8,8 +8,9 @@ function makeMockSession() {
   return {
     start: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn().mockResolvedValue(undefined),
-    waitForIdle: vi.fn().mockResolvedValue(undefined),
+    waitForDone: vi.fn().mockResolvedValue(undefined),
     getLastOutput: vi.fn().mockResolvedValue('{"result": "ok"}'),
+    executeBash: vi.fn().mockResolvedValue(''),
     kill: vi.fn(),
     meta: { backend: 'google-gemini-cli', model: 'gemini', sessionId: 'test-id', startedAt: new Date() },
   };
@@ -62,7 +63,7 @@ describe('SpecialistRunner', () => {
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
     expect(mockSession.start).toHaveBeenCalledOnce();
     expect(mockSession.prompt).toHaveBeenCalledWith('Do do thing');
-    expect(mockSession.waitForIdle).toHaveBeenCalledWith(5000);
+    expect(mockSession.waitForDone).toHaveBeenCalledOnce();
     expect(mockSession.getLastOutput).toHaveBeenCalledOnce();
     expect(mockSession.kill).toHaveBeenCalledOnce();
   });
