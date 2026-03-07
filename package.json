@@ -1,11 +1,11 @@
 {
-  "name": "@jaggerxtrm/unitai",
+  "name": "@jaggerxtrm/omnispecialist",
   "version": "2.0.0",
-  "description": "UnitAI \u2014 4-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
+  "description": "OmniSpecialist \u2014 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "unitai": "dist/index.js"
+    "omnispecialist": "dist/index.js"
   },
   "scripts": {
     "build": "bun build src/index.ts --target=node --outfile=dist/index.js",
@@ -17,7 +17,7 @@
     "test:coverage": "bun --bun vitest run --coverage"
   },
   "keywords": [
-    "unitai",
+    "omnispecialist",
     "mcp",
     "model-context-protocol",
     "ai-orchestration",

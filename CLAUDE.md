@@ -1,10 +1,10 @@
 # CLAUDE.md - AI Agent Development Guide
 
-> **Purpose**: This file provides AI agents (especially Claude) with comprehensive context about the unitAI project architecture, development environment, and coding conventions.
+> **Purpose**: This file provides AI agents (especially Claude) with comprehensive context about the OmniSpecialist project architecture, development environment, and coding conventions.
 
 ## Project Overview
 
-**unitAI** is a unified Model Context Protocol (MCP) server that orchestrates multiple AI backends (Gemini, Cursor, Droid) with intelligent workflows, circuit breaker resilience, and specialized agent roles.
+**OmniSpecialist** is a unified Model Context Protocol (MCP) server that orchestrates multiple AI backends (Gemini, Cursor, Droid) with intelligent workflows, circuit breaker resilience, and specialized agent roles.
 
 **Core Philosophy**: "One MCP Server. Multiple AI Backends. Intelligent Orchestration."
 
@@ -15,7 +15,7 @@
 ### System Components (v2 — Specialist System)
 
 ```
-unitAI MCP Server v2
+OmniSpecialist MCP Server v2
 ├── MCP Surface (4 tools only)
 │   ├── list_specialists   — discover .specialist.yaml across 3 scopes
 │   ├── use_specialist     — full lifecycle: load → agents.md → pi → output
@@ -46,7 +46,7 @@ unitAI MCP Server v2
 ## Directory Structure
 
 ```
-unitAI/
+OmniSpecialist/
 ├── src/                      # Source code (TypeScript)
 │   ├── agents/              # Agent role definitions
 │   ├── cli/                 # CLI commands and dashboards
@@ -145,8 +145,8 @@ unitAI/
 
 ```bash
 # Clone repository
-git clone https://github.com/jaggerxtrm/unitai.git
-cd unitai
+git clone https://github.com/Jaggerxtrm/omnispecialist.git
+cd omnispecialist
 
 # Install dependencies
 npm install
@@ -447,7 +447,7 @@ export const BACKENDS = {
 ## Questions?
 
 For development questions or contributions:
-- GitHub Issues: https://github.com/jaggerxtrm/unitai/issues
+- GitHub Issues: https://github.com/Jaggerxtrm/omnispecialist/issues
 - Beta Testing Guide: `beta-testing.md`
 - Discord Community: (see `gsd:join-discord` if available)
 
@@ -460,7 +460,7 @@ For development questions or contributions:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **unitAI** (793 symbols, 1754 relationships, 56 execution flows).
+This project is indexed by GitNexus as **OmniSpecialist** (793 symbols, 1754 relationships, 56 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
