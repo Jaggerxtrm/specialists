@@ -22,9 +22,14 @@ export function mapSpecialistBackend(model: string): string {
 }
 
 export function getProviderArgs(model: string): string[] {
-  if (model.toLowerCase() === 'qwen') {
+  const m = model.toLowerCase();
+  if (m === 'qwen') {
     // DashScope: OpenAI-compatible Qwen endpoint
     return ['--api-key', process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ''];
+  }
+  if (m === 'gemini' || m === 'google') {
+    const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+    return key ? ['--api-key', key] : [];
   }
   return [];
 }

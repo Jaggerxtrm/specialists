@@ -39,7 +39,7 @@ interface JobState {
 export class JobRegistry {
   private jobs = new Map<string, JobState>();
 
-  register(id: string, meta: { backend: string; model: string }): void {
+  register(id: string, meta: { backend: string; model: string; specialistVersion?: string }): void {
     this.jobs.set(id, {
       id,
       status: 'running',
@@ -47,7 +47,7 @@ export class JobRegistry {
       currentEvent: 'starting',
       backend: meta.backend,
       model: meta.model,
-      specialistVersion: '?',
+      specialistVersion: meta.specialistVersion ?? '?',
       startedAtMs: Date.now(),
     });
   }

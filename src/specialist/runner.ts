@@ -170,9 +170,20 @@ export class SpecialistRunner {
 
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
-  startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): string {
+  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
+  async startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): Promise<string> {
     const jobId = crypto.randomUUID();
-    registry.register(jobId, { backend: options.backendOverride ?? 'starting', model: options.backendOverride ?? '?' });
+    // Pre-load spec to capture version before the async run begins
+    let specialistVersion = '?';
+    try {
+      const spec = await this.deps.loader.get(options.name);
+      specialistVersion = spec.specialist.metadata.version;
+    } catch { /* will fail properly inside run() */ }
+    registry.register(jobId, {
+      backend: options.backendOverride ?? 'starting',
+      model: '?',
+      specialistVersion,
+    });
     this.run(
       options,
       (text)      => registry.appendOutput(jobId, text),

@@ -16,7 +16,7 @@ export function createStartSpecialistTool(runner: SpecialistRunner, registry: Jo
     description: 'Start a specialist asynchronously. Returns job_id immediately — use poll_specialist to track progress and get output. Enables true parallel execution of multiple specialists.',
     inputSchema: startSpecialistSchema,
     async execute(input: z.infer<typeof startSpecialistSchema>) {
-      const jobId = runner.startAsync({
+      const jobId = await runner.startAsync({
         name: input.name,
         prompt: input.prompt,
         variables: input.variables,

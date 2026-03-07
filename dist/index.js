@@ -24960,8 +24960,13 @@ function mapSpecialistBackend(model) {
   return provider;
 }
 function getProviderArgs(model) {
-  if (model.toLowerCase() === "qwen") {
+  const m = model.toLowerCase();
+  if (m === "qwen") {
     return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
+  }
+  if (m === "gemini" || m === "google") {
+    const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+    return key ? ["--api-key", key] : [];
   }
   return [];
 }
@@ -25258,9 +25263,18 @@ You have access via Bash:
       specialistVersion: metadata.version
     };
   }
-  startAsync(options, registry2) {
+  async startAsync(options, registry2) {
     const jobId = crypto.randomUUID();
-    registry2.register(jobId, { backend: options.backendOverride ?? "starting", model: options.backendOverride ?? "?" });
+    let specialistVersion = "?";
+    try {
+      const spec = await this.deps.loader.get(options.name);
+      specialistVersion = spec.specialist.metadata.version;
+    } catch {}
+    registry2.register(jobId, {
+      backend: options.backendOverride ?? "starting",
+      model: "?",
+      specialistVersion
+    });
     this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
     return jobId;
   }
@@ -25498,7 +25512,7 @@ class JobRegistry {
       currentEvent: "starting",
       backend: meta.backend,
       model: meta.model,
-      specialistVersion: "?",
+      specialistVersion: meta.specialistVersion ?? "?",
       startedAtMs: Date.now()
     });
   }
@@ -25579,7 +25593,7 @@ function createStartSpecialistTool(runner, registry2) {
     description: "Start a specialist asynchronously. Returns job_id immediately — use poll_specialist to track progress and get output. Enables true parallel execution of multiple specialists.",
     inputSchema: startSpecialistSchema,
     async execute(input) {
-      const jobId = runner.startAsync({
+      const jobId = await runner.startAsync({
         name: input.name,
         prompt: input.prompt,
         variables: input.variables,
