@@ -29,7 +29,7 @@ type AnyTool = {
   name: string;
   description: string;
   inputSchema: z.ZodTypeAny;
-  execute(input: unknown): Promise<unknown>;
+  execute(input: unknown, onProgress?: (msg: string) => void): Promise<unknown>;
 };
 
 export class UnitAIServer {
@@ -96,8 +96,16 @@ export class UnitAIServer {
       const schema = this.toolSchemas[toolName];
       const parsed = schema ? schema.parse(args) : args;
 
+      // Stream pi tokens → MCP logging notifications (shown live in client)
+      const onProgress = (msg: string) => {
+        this.server.notification({
+          method: 'notifications/message',
+          params: { level: 'info', logger: 'unitai', data: msg },
+        }).catch(() => {});
+      };
+
       try {
-        const result = await tool.execute(parsed);
+        const result = await tool.execute(parsed, onProgress);
         return {
           content: [
             {

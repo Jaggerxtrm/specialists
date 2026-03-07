@@ -40,7 +40,7 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
-  async run(options: RunOptions): Promise<RunResult> {
+  async run(options: RunOptions, onProgress?: (msg: string) => void): Promise<RunResult> {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -99,7 +99,13 @@ export class SpecialistRunner {
     let output: string;
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     try {
-      session = await this.sessionFactory({ model, systemPrompt: agentsMd || undefined });
+      session = await this.sessionFactory({
+        model,
+        systemPrompt: agentsMd || undefined,
+        onToken: (delta) => onProgress?.(delta),
+        onToolStart: (tool) => onProgress?.(`\n⚙ ${tool}…`),
+        onToolEnd: (tool) => onProgress?.(`✓\n`),
+      });
       await session.start();
 
       // Pre-phase scripts: run and inject output as $pre_script_output

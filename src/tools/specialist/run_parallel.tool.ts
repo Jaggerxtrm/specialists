@@ -21,7 +21,7 @@ export function createRunParallelTool(runner: SpecialistRunner) {
     name: 'run_parallel' as const,
     description: 'Execute multiple specialists concurrently. Returns aggregated results.',
     inputSchema: runParallelSchema,
-    async execute(input: z.infer<typeof runParallelSchema>) {
+    async execute(input: z.infer<typeof runParallelSchema>, onProgress?: (msg: string) => void) {
       if (input.merge_strategy === 'pipeline') {
         return runPipeline(
           input.specialists.map(s => ({
@@ -31,6 +31,7 @@ export function createRunParallelTool(runner: SpecialistRunner) {
             backend_override: s.backend_override,
           })),
           runner,
+          onProgress,
         );
       }
       if (input.merge_strategy !== 'collect') {
@@ -40,7 +41,7 @@ export function createRunParallelTool(runner: SpecialistRunner) {
         input.specialists.map(s => runner.run({
           name: s.name, prompt: s.prompt,
           variables: s.variables, backendOverride: s.backend_override,
-        }))
+        }, onProgress))
       );
       return results.map((r, i) => ({
         specialist: input.specialists[i].name,

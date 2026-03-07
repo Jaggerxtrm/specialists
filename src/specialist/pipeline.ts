@@ -31,6 +31,7 @@ export interface PipelineResult {
 export async function runPipeline(
   steps: PipelineStep[],
   runner: SpecialistRunner,
+  onProgress?: (msg: string) => void,
 ): Promise<PipelineResult> {
   const results: PipelineResult['steps'] = [];
   let previousResult = '';
@@ -44,7 +45,7 @@ export async function runPipeline(
     };
 
     try {
-      const result = await runner.run(options);
+      const result = await runner.run(options, onProgress);
       previousResult = result.output;
       results.push({
         specialist: step.name,

@@ -15,14 +15,14 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
     name: 'use_specialist' as const,
     description: 'Execute a specialist. Full lifecycle: load → agents.md → pi → validate → output.',
     inputSchema: useSpecialistSchema,
-    async execute(input: z.infer<typeof useSpecialistSchema>) {
+    async execute(input: z.infer<typeof useSpecialistSchema>, onProgress?: (msg: string) => void) {
       return runner.run({
         name: input.name,
         prompt: input.prompt,
         variables: input.variables,
         backendOverride: input.backend_override,
         autonomyLevel: input.autonomy_level,
-      });
+      }, onProgress);
     },
   };
 }
