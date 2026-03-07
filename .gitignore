@@ -31,3 +31,5 @@ venv/
 .github/
 .mcp.json
 .cursor/mcp.json
+.gitnexus
+.worktrees/
