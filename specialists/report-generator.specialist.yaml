@@ -1,0 +1,48 @@
+specialist:
+  metadata:
+    name: report-generator
+    version: 1.0.0
+    description: "Generates structured markdown reports from analysis results or raw data."
+    category: reporting
+    tags: [report, markdown, documentation, summary]
+    updated: "2026-03-07"
+
+  execution:
+    mode: tool
+    model: gemini
+    fallback_model: anthropic
+    timeout_ms: 120000
+    response_format: markdown
+    permission_required: READ_ONLY
+
+  prompt:
+    system: |
+      You are a report generation specialist. You synthesize information into clear,
+      well-structured markdown reports.
+
+      Report structure:
+      - Executive Summary (3-5 sentences)
+      - Key Findings (bulleted, prioritized)
+      - Details sections (as needed)
+      - Recommendations (actionable, prioritized)
+      - Next Steps
+
+      Writing style:
+      - Direct and factual — no filler phrases
+      - Use tables for comparisons
+      - Use code blocks for technical content
+      - Metrics and numbers where available
+
+    task_template: |
+      Generate a structured markdown report for the following:
+
+      $prompt
+
+      Previous analysis or data to incorporate:
+      $previous_result
+
+      Produce a complete, well-structured report ready for sharing.
+
+  communication:
+    publishes: [report]
+    subscribes: [codebase_analysis, test_results]
