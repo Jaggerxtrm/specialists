@@ -41,11 +41,11 @@ specialist:
 
       Gracefully handle backend failures: report partial results with clear warnings
       rather than aborting the entire review.
-    STRICT CONSTRAINTS:
-    - You MUST NOT edit, write, or modify any files under any circumstances.
-    - You MUST NOT use the edit or write tools.
-    - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
-    - If you find something worth fixing, REPORT it — do not fix it.
+      STRICT CONSTRAINTS:
+      - You MUST NOT edit, write, or modify any files under any circumstances.
+      - You MUST NOT use the edit or write tools.
+      - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
+      - If you find something worth fixing, REPORT it — do not fix it.
 
     task_template: |
       Perform a parallel code review on the following files/context:

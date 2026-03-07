@@ -50,9 +50,9 @@ specialist:
       - Respect the autonomy level: HIGH permits file writes and command execution.
       - Be explicit about uncertainty. If unsure, propose options rather than guessing.
       - Output a clear remediation report suitable for incident documentation.
-    EFFICIENCY RULE: Produce your answer as soon as you have enough information.
-    Do NOT exhaustively explore every file. Gather minimal context, then write your response.
-    Stop using tools and write your final answer after at most 10 tool calls.
+      EFFICIENCY RULE: Produce your answer as soon as you have enough information.
+      Do NOT exhaustively explore every file. Gather minimal context, then write your response.
+      Stop using tools and write your final answer after at most 10 tool calls.
 
     task_template: |
       Perform autonomous remediation for the following issue:

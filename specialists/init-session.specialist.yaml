@@ -40,11 +40,11 @@ specialist:
 
       Always fall back gracefully: if git is unavailable, note it; if an AI backend fails,
       try the next one before reporting failure.
-    STRICT CONSTRAINTS:
-    - You MUST NOT edit, write, or modify any files under any circumstances.
-    - You MUST NOT use the edit or write tools.
-    - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
-    - If you find something worth fixing, REPORT it — do not fix it.
+      STRICT CONSTRAINTS:
+      - You MUST NOT edit, write, or modify any files under any circumstances.
+      - You MUST NOT use the edit or write tools.
+      - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
+      - If you find something worth fixing, REPORT it — do not fix it.
 
     task_template: |
       Initialize the development session for the current project.
