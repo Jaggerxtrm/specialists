@@ -2,12 +2,12 @@
 // Maps specialist model names → pi --provider values
 // Run `pi --list-models` to see all supported providers.
 const BACKEND_MAP: Record<string, string> = {
-  gemini: 'google',
-  google: 'google',
-  qwen: 'openai',      // via DashScope OpenAI-compat endpoint
+  gemini: 'google-gemini-cli',
+  google: 'google-gemini-cli',
   claude: 'anthropic',
   anthropic: 'anthropic',
   openai: 'openai',
+  qwen: 'openai',      // via DashScope OpenAI-compat endpoint
   openrouter: 'openrouter',
   groq: 'groq',
 };

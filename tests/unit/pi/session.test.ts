@@ -3,8 +3,9 @@ import { describe, it, expect } from 'vitest';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 describe('backendMap', () => {
-  it('maps gemini to google', () => {
-    expect(mapSpecialistBackend('gemini')).toBe('google');
+  it('maps gemini to google-gemini-cli', () => {
+    expect(mapSpecialistBackend('gemini')).toBe('google-gemini-cli');
+    expect(mapSpecialistBackend('google')).toBe('google-gemini-cli');
   });
   it('maps qwen to openai', () => {
     expect(mapSpecialistBackend('qwen')).toBe('openai');

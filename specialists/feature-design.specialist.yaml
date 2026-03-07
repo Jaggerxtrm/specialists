@@ -9,8 +9,8 @@ specialist:
 
   execution:
     mode: tool
-    model: gemini
-    fallback_model: qwen
+    model: google-gemini-cli/gemini-2.5-pro
+    fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 240000
     response_format: markdown
     permission_required: READ_ONLY

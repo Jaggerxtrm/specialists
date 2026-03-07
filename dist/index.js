@@ -24943,12 +24943,12 @@ import { spawn } from "node:child_process";
 
 // src/pi/backendMap.ts
 var BACKEND_MAP = {
-  gemini: "google",
-  google: "google",
-  qwen: "openai",
+  gemini: "google-gemini-cli",
+  google: "google-gemini-cli",
   claude: "anthropic",
   anthropic: "anthropic",
   openai: "openai",
+  qwen: "openai",
   openrouter: "openrouter",
   groq: "groq"
 };

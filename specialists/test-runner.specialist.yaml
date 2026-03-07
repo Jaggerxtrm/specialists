@@ -9,8 +9,8 @@ specialist:
 
   execution:
     mode: tool
-    model: gemini
-    fallback_model: qwen
+    model: google-gemini-cli/gemini-2.5-flash
+    fallback_model: anthropic/claude-haiku-4-5
     timeout_ms: 300000
     response_format: markdown
     permission_required: LOW
