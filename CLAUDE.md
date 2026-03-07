@@ -12,33 +12,27 @@
 
 ## Architecture
 
-### System Components
+### System Components (v2 — Specialist System)
 
 ```
-unitAI MCP Server
-├── AI Backends (Multi-Model Orchestration)
-│   ├── Gemini (Architect) - gemini-3-pro-preview, gemini-3-flash-preview
-│   ├── Cursor (Tester) - sonnet-4.5, gpt-5, haiku-5, deepseek-v3
-│   └── Droid (Implementer) - glm-4.6
-├── Agent Roles (Specialized Functions)
-│   ├── ArchitectAgent - High-level design and reasoning
-│   ├── ImplementerAgent - Production code generation
-│   └── TesterAgent - Test generation and validation
-├── Smart Workflows (Multi-Step Processes)
-│   ├── Overthinker - 4-phase deep reasoning
-│   ├── Init-Session - Context gathering and analysis
-│   ├── Triangulated Review - 3-way code review
-│   ├── Parallel Review - Concurrent analysis
-│   ├── Bug Hunt - Autonomous debugging
-│   ├── Feature Design - End-to-end feature planning
-│   └── Auto Remediation - Self-healing workflows
-├── Tool Registry (MCP Tools)
-│   ├── Meta tools - Git operations, file management
-│   └── AI Client tools - Backend invocation wrappers
-└── Resilience Layer
-    ├── Circuit Breaker - Auto-fallback on failures
-    ├── Permission Manager - 4-tier autonomy control
-    └── Activity Analytics - Token savings tracking
+unitAI MCP Server v2
+├── MCP Surface (4 tools only)
+│   ├── list_specialists   — discover .specialist.yaml across 3 scopes
+│   ├── use_specialist     — full lifecycle: load → agents.md → pi → output
+│   ├── run_parallel       — concurrent or pipeline execution
+│   └── specialist_status  — circuit breaker health + staleness detection
+├── Specialist System
+│   ├── SpecialistLoader   — 3-scope discovery (project/user/system), caching
+│   ├── SpecialistRunner   — agents.md injection, pre/post scripts, circuit breaker
+│   ├── HookEmitter        — 4-point lifecycle hooks, JSONL sink at .unitai/trace.jsonl
+│   └── pipeline.ts        — sequential $previous_result chaining
+├── Execution Substrate
+│   └── PiAgentSession     — spawns coding-agent CLI, handles agent_end event
+├── Resilience
+│   └── CircuitBreaker     — 3-state CLOSED/HALF_OPEN/OPEN per backend
+└── Analytics (kept)
+    ├── ActivityRepository
+    └── ActivityAnalytics
 ```
 
 ### Key Design Patterns
@@ -459,6 +453,6 @@ For development questions or contributions:
 
 ---
 
-**Last Updated**: 2026-02-02
-**Version**: 0.4.0
+**Last Updated**: 2026-03-07
+**Version**: 2.0.0
 **Target AI Agents**: Claude, Gemini, Cursor, Droid
