@@ -23,7 +23,7 @@ export interface RunResult {
   specialistVersion: string;
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForIdle' | 'getLastOutput' | 'kill' | 'meta'>>;
+export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForIdle' | 'getLastOutput' | 'executeBash' | 'kill' | 'meta'>>;
 
 interface RunnerDeps {
   loader: SpecialistLoader;
@@ -101,9 +101,30 @@ export class SpecialistRunner {
     try {
       session = await this.sessionFactory({ model, systemPrompt: agentsMd || undefined });
       await session.start();
-      await session.prompt(renderedTask);
+
+      // Pre-phase scripts: run and inject output as $pre_script_output
+      const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
+      let preScriptOutput = '';
+      for (const script of preScripts) {
+        const out = await session.executeBash(script.path);
+        if (script.inject_output) preScriptOutput += out + '\n';
+      }
+
+      // Re-render with pre_script_output if needed
+      const finalTask = preScriptOutput
+        ? renderTemplate(renderedTask, { pre_script_output: preScriptOutput.trim() })
+        : renderedTask;
+
+      await session.prompt(finalTask);
       await session.waitForIdle(execution.timeout_ms);
       output = await session.getLastOutput();
+
+      // Post-phase scripts
+      const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
+      for (const script of postScripts) {
+        await session.executeBash(script.path);
+      }
+
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {
       circuitBreaker.recordFailure(model);
