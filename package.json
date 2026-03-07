@@ -8,16 +8,13 @@
     "unitai": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc && node dist/index.js",
-    "lint": "tsc --noEmit",
+    "build": "bun build src/index.ts --target=node --outfile=dist/index.js",
+    "dev": "bun run src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "view-metrics": "tsc && node dist/scripts/view-token-metrics.js",
-    "monitor-agents": "tsx scripts/monitor-agent-performance.ts",
-    "activity-dashboard": "tsc && node dist/cli/activityDashboard.js"
+    "lint": "tsc --noEmit",
+    "test": "bun --bun vitest run",
+    "test:watch": "bun --bun vitest",
+    "test:coverage": "bun --bun vitest run --coverage"
   },
   "keywords": [
     "unitai",
@@ -41,6 +38,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/bun": "1.3.10",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^2.1.8",
     "tsx": "^4.20.6",

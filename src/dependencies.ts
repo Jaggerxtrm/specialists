@@ -3,14 +3,14 @@
  * 
  * Manages the lifecycle and injection of services, repositories, and databases.
  */
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './utils/logger.js';
 
 // Define the shape of our dependencies
 export interface AppDependencies {
-    activityDb: Database.Database;
+    activityDb: Database;
     // Add other shared DBs or services here as we migrate them
 }
 

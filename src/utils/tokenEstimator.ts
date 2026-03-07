@@ -10,7 +10,7 @@ import { promisify } from "util";
 import { stat, access } from "fs/promises";
 import { constants } from "fs";
 import { logger } from "./logger.js";
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -369,7 +369,7 @@ export function formatToolSuggestion(suggestion: ToolSuggestion): string {
  * Stores metrics in SQLite database for analysis and reporting.
  */
 export class TokenSavingsMetrics {
-  private db: Database.Database;
+  private db: Database;
   private dbPath: string;
 
   constructor(dbPath?: string) {
@@ -427,7 +427,7 @@ export class TokenSavingsMetrics {
     const timestamp = Date.now();
 
     try {
-      const stmt = this.db.prepare(`
+      const stmt = this.db.query(`
         INSERT INTO token_savings_metrics (
           id, timestamp, source, blocked_tool, recommended_tool,
           target, estimated_savings, actual_tokens_avoided, suggestion_followed, metadata
@@ -501,7 +501,7 @@ export class TokenSavingsMetrics {
     }
 
     try {
-      const rows = this.db.prepare(sql).all(...params);
+      const rows = this.db.query(sql).all(...params);
       return rows.map((row: any) => this.rowToMetric(row));
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -578,7 +578,7 @@ export class TokenSavingsMetrics {
    */
   updateActualSavings(metricId: string, actualTokensAvoided: number): void {
     try {
-      const stmt = this.db.prepare(`
+      const stmt = this.db.query(`
         UPDATE token_savings_metrics
         SET actual_tokens_avoided = ?
         WHERE id = ?
