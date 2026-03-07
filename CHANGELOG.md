@@ -7,151 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
+  to `anthropic/claude-haiku-4-5` — Gemini CLI ~50s/tool round-trip makes it unsuitable for
+  text synthesis tasks; fallback remains Gemini Flash
+- `report-generator` system prompt rewritten with `STRICT PRIORITY` block: write immediately
+  if prompt context is sufficient, max 3 tool calls before producing output
+
 ### Added
-- Comprehensive SSOT documentation system in `.serena/memories/`
-  - `ssot_architecture_backends_2026-02.md` - Backend architecture and model mappings
-  - `ssot_workflow_overthinker_status.md` - Overthinker v1.0 vs v2.0 status
-- CHANGELOG.md for version tracking
-- CLAUDE.md for AI agent development context
+- `ROADMAP.md` — post-v2 product roadmap covering rename, installer, Beads integration,
+  `omni-init` tool, specialist authoring skill, new specialists, and future UI
 
 ### Changed
-- Updated documentation to reflect Gemini 3.x model versions
-- Clarified Overthinker v1.0 actual implementation vs v2.0 planned features
+- Repo renamed from `unitAI` → `omnispecialist` (GitHub + package.json + CLAUDE.md)
+- `package.json`: name `@jaggerxtrm/omnispecialist`, bin `omnispecialist`
 
-### Fixed
-- Corrected model version references in SSOT files (gemini-2.5 → gemini-3)
+---
+
+## [2.0.0] - 2026-03-07
+
+Complete rewrite. The v1 workflow/agent system is replaced by the **Specialist System**.
+
+### Added
+- **7-tool MCP surface**: `list_specialists`, `use_specialist`, `start_specialist`,
+  `poll_specialist`, `stop_specialist`, `run_parallel`, `specialist_status`
+- **Specialist System**: `.specialist.yaml` discovery across project/user/system scopes
+  via `SpecialistLoader` with 3-scope resolution and caching
+- **`SpecialistRunner`**: full lifecycle — agents.md injection, pre/post scripts,
+  circuit breaker integration, `onMeta`/`onKillRegistered` callbacks
+- **`PiAgentSession`**: spawns `pi --mode rpc` subprocess, NDJSON event stream,
+  `waitForDone()` (no timeout), `kill()` method
+- **`JobRegistry`**: job state management with `cancelled` status, cursor-based
+  delta output via `snapshot(id, cursor)`, `setMeta()`, `setKillFn()` with
+  race condition guard
+- **`stop_specialist` tool**: cancel running specialist jobs cleanly
+- **Cursor-based polling**: `poll_specialist(job_id, cursor?)` returns only new
+  content since last cursor — avoids sending full output on every poll
+- **Permission enforcement**: `READ_ONLY` maps to `pi --tools read,bash,grep,find,ls`
+  at spawn time — edit/write physically unavailable, not just prompt-instructed
+- **9 built-in specialists**: `init-session`, `codebase-explorer`, `overthinker`,
+  `parallel-review`, `bug-hunt`, `feature-design`, `auto-remediation`,
+  `report-generator`, `test-runner`
+- **Tiered model assignment**: Sonnet for deep reasoning, Haiku for fast/simple,
+  Gemini Flash for context-heavy exploration
+- **Full provider/model ID support**: `anthropic/claude-sonnet-4-6`,
+  `google-gemini-cli/gemini-3-flash-preview` passed as `pi --model provider/id`
+- **STRICT CONSTRAINTS** in READ_ONLY specialist system prompts: belt-and-suspenders
+  alongside `--tools` enforcement
+- **`HookEmitter`**: 4-point lifecycle hooks, JSONL trace sink at `.unitai/trace.jsonl`
+- **`pipeline.ts`**: sequential `$previous_result` chaining for `run_parallel`
+- **40 unit tests**: specialist loader, runner, job registry, pi session, circuit breaker
+
+### Removed
+- All v1 workflow files (`src/workflows/`)
+- All v1 agent role files (`src/agents/`)
+- All v1 MCP tools except analytics (replaced by 7-tool specialist surface)
+- `waitForIdle()` timeout — replaced by `waitForDone()` with no timeout
+
+### Changed
+- `backendMap.ts`: Gemini provider corrected to `google-gemini-cli` (was `google`)
+- Gemini OAuth: removed erroneous `--api-key` passthrough; pi inherits env vars natively
+- Build system: migrated to `bun build` (`bun:sqlite`, `bun --bun vitest`)
+
+---
 
 ## [0.4.0] - 2026-01-22
 
 ### Added
-- **Overthinker Workflow** - Multi-agent reasoning workflow with 4-phase process
-  - Phase 1: Prompt Refiner - Creates structured Master Prompt
-  - Phase 2: Initial Reasoning - Lead Architect develops solution
-  - Phase 3: Iterative Review - Multiple review cycles (default: 3)
-  - Phase 4: Final Consolidation - Polished output synthesis
-  - Outputs saved to `.unitai/` directory
-  - Context gathering from files and project standards
-- **Init-Session Workflow Refactor**
-  - Enhanced documentation search across `.serena/memories/` and `docs/`
-  - Improved context gathering with keyword matching
-  - Integration with Serena memories for SSOT awareness
-- SSOT for init-session workflow (`ssot_workflows_init_session_2026-01-22.md`)
+- **Overthinker Workflow** — 4-phase reasoning: Prompt Refiner → Initial Reasoning
+  → Iterative Review → Final Consolidation. Outputs to `.unitai/overthinking.md`
+- **Init-Session Workflow** — git history analysis, Serena memory search,
+  structured session report
+- SSOT for init-session workflow (`.serena/memories/`)
 
 ### Changed
-- **Infrastructure Refactor to MCP Standards**
-  - Aligned with Model Context Protocol 2.0 best practices
-  - Updated tool registration and validation
-  - Improved MCP server compliance
-- **Model Upgrades**
-  - Gemini: Upgraded to `gemini-3-pro-preview` (PRIMARY) and `gemini-3-flash-preview` (FLASH)
-  - Deprecated `gemini-2.5-flash` and `gemini-2.5-pro` as primary models
-- **Backend Consolidation**
-  - Cursor Agent now handles surgical refactoring and testing (replaces Qwen)
-  - Droid (GLM-4.6) established as Implementer backend
-  - Deprecated Rovodev and Qwen as primary backends (CLI flags retained for compatibility)
-- Init-session now defaults to `gemini-3-flash-preview` for commit analysis
+- Infrastructure aligned with MCP 2.0 best practices
+- Model upgrades: `gemini-3-pro-preview` (PRIMARY), `gemini-3-flash-preview` (FLASH)
+- Cursor Agent replaces Qwen as testing/review backend
+- Droid (GLM-4.6) established as Implementer backend
 
-### Fixed
-- Overthinker persistence: Now saves outputs to `.unitai/` directory instead of project root
-- Master prompt files now properly timestamped
+---
 
-### Deprecated
-- `gemini-2.5-flash` and `gemini-2.5-pro` (use `gemini-3-flash-preview` and `gemini-3-pro-preview`)
-- Qwen and Rovodev backends (use Cursor Agent instead)
-
-## [0.3.x] - Earlier Releases
+## [0.3.0] - 2025-12-01
 
 ### Added
-- Core MCP server infrastructure
-- Multi-backend orchestration (Gemini, Qwen, Rovodev, Cursor, Droid)
-- Smart Workflows:
-  - Triangulated Review
-  - Parallel Review
-  - Bug Hunt
-  - Feature Design
-  - Auto Remediation
-- Circuit Breaker pattern for backend resilience
-- Permission system (4-tier: READ_ONLY, LOW, MEDIUM, HIGH)
-- Agent specialization system:
-  - ArchitectAgent (Gemini) - Design and architecture
-  - ImplementerAgent (Droid) - Code generation
-- Activity Analytics and audit trail
-- Robust tool registry with Zod validation
-- Token savings tracking
-
-### Changed
-- Established backend roles and specializations
-- Implemented fallback mechanisms for API failures
+- Circuit Breaker pattern with automatic backend fallback
+- 4-tier permission system (READ_ONLY / LOW / MEDIUM / HIGH)
+- Activity analytics with SQLite persistence
 
 ---
 
-## Version History Summary
+## [0.2.0] - 2025-11-01
 
-| Version | Date | Key Features |
-|---------|------|--------------|
-| **0.4.0** | 2026-01-22 | Overthinker workflow, MCP 2.0, Gemini 3.x upgrade, backend consolidation |
-| **0.3.x** | Earlier | Core infrastructure, multi-backend orchestration, smart workflows |
-
----
-
-## Migration Guides
-
-### Migrating from 0.3.x to 0.4.0
-
-#### Model References
-Update any hardcoded model references:
-```diff
-- gemini-2.5-flash
-+ gemini-3-flash-preview
-
-- gemini-2.5-pro
-+ gemini-3-pro-preview
-```
-
-Or use constants:
-```typescript
-import { AI_MODELS } from './constants.js';
-
-// Use
-AI_MODELS.GEMINI.FLASH       // gemini-3-flash-preview
-AI_MODELS.GEMINI.PRIMARY     // gemini-3-pro-preview
-```
-
-#### Backend References
-Update backend calls:
-```diff
-- ask-qwen
-+ ask-cursor
-
-- ask-rovodev
-+ ask-cursor
-```
-
-#### Overthinker Workflow
-New workflow available via MCP:
-```typescript
-await executeOverthinker({
-  initialPrompt: "Your complex problem",
-  iterations: 3,
-  outputFile: "analysis.md"
-});
-```
+### Added
+- Multi-backend support: Gemini, Cursor, Droid
+- Agent role specialization (Architect / Implementer / Tester)
+- Zod schema validation for all tool invocations
 
 ---
 
-## Contributing
+## [0.1.0] - 2025-10-01
 
-When adding entries to this changelog:
-1. Place new changes under `[Unreleased]`
-2. Use categories: Added, Changed, Deprecated, Removed, Fixed, Security
-3. Link to issues/PRs where applicable
-4. Follow [Keep a Changelog](https://keepachangelog.com/) format
-
----
-
-## Links
-
-- [GitHub Repository](https://github.com/jaggerxtrm/unitai)
-- [NPM Package](https://www.npmjs.com/package/@jaggerxtrm/unitai)
-- [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [Beta Testing Guide](beta-testing.md)
+### Added
+- Initial MCP server with basic tool registry
+- Gemini backend integration
