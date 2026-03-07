@@ -1,15 +1,22 @@
 // src/pi/session.ts
 //
-// PiAgentSession wraps the coding-agent CLI as a subprocess in --mode rpc.
-// The @mariozechner/pi package on npm (v0.56.3) is the vLLM pods tool — not
-// what we need. The actual RpcClient API is from pi-mono/packages/coding-agent
-// which is published as @mariozechner/coding-agent. Until a proper RPC SDK is
-// published, we model the interface locally and spawn the CLI directly.
+// PiAgentSession wraps the `pi` CLI (global binary) in --mode rpc.
+// Events are emitted per the pi RPC protocol over stdout (NDJSON).
+//
+// Pi lifecycle (per stdout in rpc mode):
+//   response      — ack that prompt command was received
+//   agent_start   — agent begins processing
+//   turn_start    — conversation turn opens
+//   message_start — a message begins (user or assistant)
+//   message_update — incremental content:
+//     .assistantMessageEvent.type === 'text_delta'  → token stream
+//     .assistantMessageEvent.type === 'tool_use_start' → tool starting
+//     .assistantMessageEvent.type === 'tool_result_start' → tool result
+//   message_end   — message complete
+//   turn_end      — turn complete (includes toolResults)
+//   agent_end     — DONE, contains all messages
 //
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { EventEmitter } from 'node:events';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
@@ -21,60 +28,109 @@ export interface AgentSessionMeta {
 }
 
 export interface PiSessionOptions {
-  model: string;          // specialist execution.model ('gemini', 'qwen', etc.)
-  systemPrompt?: string;  // written to agents.md in temp dir
+  model: string;
+  systemPrompt?: string;
   timeoutMs?: number;
+  /** Called with each text token as it arrives (for progress streaming) */
+  onToken?: (delta: string) => void;
+  /** Called with tool name when a tool starts executing */
+  onToolStart?: (tool: string) => void;
+  /** Called with tool name when a tool result arrives */
+  onToolEnd?: (tool: string) => void;
 }
 
-/**
- * Minimal RpcClient interface — models the pi RPC protocol.
- * Implementation spawns coding-agent CLI via child_process.
- * TODO: replace with official @mariozechner/pi RpcClient once published.
- */
-class RpcClient extends EventEmitter {
+export class PiAgentSession {
   private proc?: ChildProcess;
-  private pendingResolvers = new Map<string, (data: unknown) => void>();
-  private idlePromise?: { resolve: () => void; reject: (e: Error) => void };
+  private _lastOutput = '';
+  private idleResolve?: () => void;
+  private idleReject?: (e: Error) => void;
+  readonly meta: AgentSessionMeta;
 
-  constructor(
-    private options: { provider: string; cwd: string; args?: string[] }
+  private constructor(
+    private options: PiSessionOptions,
+    meta: AgentSessionMeta,
   ) {
-    super();
+    this.meta = meta;
+  }
+
+  static async create(options: PiSessionOptions): Promise<PiAgentSession> {
+    const provider = mapSpecialistBackend(options.model);
+    const meta: AgentSessionMeta = {
+      backend: provider,
+      model: options.model,
+      sessionId: crypto.randomUUID(),
+      startedAt: new Date(),
+    };
+    return new PiAgentSession(options, meta);
   }
 
   async start(): Promise<void> {
-    const cliPath = require.resolve('@mariozechner/coding-agent/dist/cli.js').catch
-      ? '@mariozechner/coding-agent/dist/cli.js'
-      : '@mariozechner/coding-agent/dist/cli.js';
+    const provider = mapSpecialistBackend(this.options.model);
+    const extraArgs = getProviderArgs(this.options.model);
 
     const args = [
       '--mode', 'rpc',
-      '--provider', this.options.provider,
-      ...(this.options.args ?? []),
+      '--provider', provider,
+      '--no-session',
+      '--print',
+      ...extraArgs,
     ];
 
-    this.proc = spawn('node', [cliPath, ...args], {
-      cwd: this.options.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
+    if (this.options.systemPrompt) {
+      args.push('--append-system-prompt', this.options.systemPrompt);
+    }
+
+    this.proc = spawn('pi', args, {
+      stdio: ['pipe', 'pipe', 'inherit'],
     });
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
-      const lines = chunk.toString().split('\n').filter(Boolean);
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          this.emit('event', event);
-          if (event.type === 'agent_end') {
-            this.idlePromise?.resolve();
-            this.idlePromise = undefined;
-          }
-          if (event.id && this.pendingResolvers.has(event.id)) {
-            this.pendingResolvers.get(event.id)!(event);
-            this.pendingResolvers.delete(event.id);
-          }
-        } catch { /* ignore non-JSON */ }
+      for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        this._handleEvent(line);
       }
     });
+
+    this.proc.on('close', () => {
+      this.idleResolve?.();
+    });
+  }
+
+  private _handleEvent(line: string): void {
+    let event: Record<string, any>;
+    try { event = JSON.parse(line); } catch { return; }
+
+    const { type } = event;
+
+    if (type === 'agent_end') {
+      // Extract final assistant text
+      const messages: any[] = event.messages ?? [];
+      const last = [...messages].reverse().find((m: any) => m.role === 'assistant');
+      if (last) {
+        this._lastOutput = last.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('');
+      }
+      this.idleResolve?.();
+      this.idleResolve = undefined;
+      this.idleReject = undefined;
+      return;
+    }
+
+    if (type === 'message_update') {
+      const ae = event.assistantMessageEvent;
+      if (!ae) return;
+
+      if (ae.type === 'text_delta' && ae.delta) {
+        this.options.onToken?.(ae.delta);
+      }
+      if (ae.type === 'tool_use_start') {
+        this.options.onToolStart?.(ae.toolName ?? ae.name ?? 'tool');
+      }
+      if (ae.type === 'tool_result_start') {
+        this.options.onToolEnd?.(ae.toolName ?? ae.name ?? 'tool');
+      }
+    }
   }
 
   async prompt(task: string): Promise<void> {
@@ -84,87 +140,40 @@ class RpcClient extends EventEmitter {
 
   async waitForIdle(timeoutMs = 120_000): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Agent idle timeout after ${timeoutMs}ms`)), timeoutMs);
-      this.idlePromise = {
-        resolve: () => { clearTimeout(timer); resolve(); },
-        reject,
-      };
+      const timer = setTimeout(
+        () => reject(new Error(`Agent idle timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      this.idleResolve = () => { clearTimeout(timer); resolve(); };
+      this.idleReject = reject;
     });
-  }
-
-  async send(command: Record<string, unknown>): Promise<unknown> {
-    const id = crypto.randomUUID();
-    return new Promise((resolve) => {
-      this.pendingResolvers.set(id, resolve);
-      const msg = JSON.stringify({ ...command, id }) + '\n';
-      this.proc?.stdin?.write(msg);
-    });
-  }
-
-  stop(): void {
-    this.proc?.kill();
-    this.proc = undefined;
-  }
-}
-
-export class PiAgentSession {
-  private client: RpcClient;
-  private tempDir?: string;
-  readonly meta: AgentSessionMeta;
-
-  private constructor(client: RpcClient, meta: AgentSessionMeta, tempDir?: string) {
-    this.client = client;
-    this.meta = meta;
-    this.tempDir = tempDir;
-  }
-
-  static async create(options: PiSessionOptions): Promise<PiAgentSession> {
-    const provider = mapSpecialistBackend(options.model);
-    const args = getProviderArgs(options.model);
-
-    const tempDir = await mkdtemp(join(tmpdir(), 'unitai-'));
-
-    if (options.systemPrompt) {
-      await writeFile(join(tempDir, 'agents.md'), options.systemPrompt, 'utf-8');
-    }
-
-    const client = new RpcClient({ provider, cwd: tempDir, args });
-    const meta: AgentSessionMeta = {
-      backend: provider,
-      model: options.model,
-      sessionId: crypto.randomUUID(),
-      startedAt: new Date(),
-    };
-
-    return new PiAgentSession(client, meta, tempDir);
-  }
-
-  async start(): Promise<void> {
-    await this.client.start();
-  }
-
-  async prompt(task: string): Promise<void> {
-    await this.client.prompt(task);
-  }
-
-  async waitForIdle(timeoutMs = 120_000): Promise<void> {
-    await this.client.waitForIdle(timeoutMs);
   }
 
   async getLastOutput(): Promise<string> {
-    const resp = await this.client.send({ type: 'get_last_assistant_text' }) as any;
-    return resp?.data?.text ?? '';
+    return this._lastOutput;
   }
 
   async executeBash(command: string): Promise<string> {
-    const resp = await this.client.send({ type: 'bash', command }) as any;
-    return resp?.data?.output ?? resp?.output ?? '';
+    return new Promise((resolve) => {
+      const id = crypto.randomUUID();
+      const handler = (chunk: Buffer) => {
+        for (const line of chunk.toString().split('\n').filter(Boolean)) {
+          try {
+            const ev = JSON.parse(line);
+            if (ev.id === id) {
+              this.proc?.stdout?.off('data', handler);
+              resolve(ev.output ?? ev.data?.output ?? '');
+            }
+          } catch { /* ignore */ }
+        }
+      };
+      this.proc?.stdout?.on('data', handler);
+      this.proc?.stdin?.write(JSON.stringify({ type: 'bash', command, id }) + '\n');
+    });
   }
 
   kill(): void {
-    this.client.stop();
-    if (this.tempDir) {
-      rm(this.tempDir, { recursive: true, force: true }).catch(() => {});
-    }
+    this.proc?.kill();
+    this.proc = undefined;
   }
 }

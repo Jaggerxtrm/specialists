@@ -1,26 +1,30 @@
 // src/pi/backendMap.ts
+// Maps specialist model names → pi --provider values
+// Run `pi --list-models` to see all supported providers.
 const BACKEND_MAP: Record<string, string> = {
-  gemini: 'google-gemini-cli',
-  qwen: 'openai',
+  gemini: 'google',
+  google: 'google',
+  qwen: 'openai',      // via DashScope OpenAI-compat endpoint
   claude: 'anthropic',
   anthropic: 'anthropic',
   openai: 'openai',
+  openrouter: 'openrouter',
+  groq: 'groq',
 };
 
 export function mapSpecialistBackend(model: string): string {
   const provider = BACKEND_MAP[model.toLowerCase()];
   if (!provider) {
-    throw new Error(
-      `Unsupported backend: ${model}. Supported: ${Object.keys(BACKEND_MAP).join(', ')}`
-    );
+    // Pass through unknown values as-is (pi accepts arbitrary provider names)
+    return model.toLowerCase();
   }
   return provider;
 }
 
-// Qwen requires pointing the openai provider at DashScope
 export function getProviderArgs(model: string): string[] {
   if (model.toLowerCase() === 'qwen') {
-    return ['--baseURL', 'https://dashscope.aliyuncs.com/compatible-mode/v1'];
+    // DashScope: OpenAI-compatible Qwen endpoint
+    return ['--api-key', process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ''];
   }
   return [];
 }

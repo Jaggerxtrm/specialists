@@ -3,8 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 describe('backendMap', () => {
-  it('maps gemini to google-gemini-cli', () => {
-    expect(mapSpecialistBackend('gemini')).toBe('google-gemini-cli');
+  it('maps gemini to google', () => {
+    expect(mapSpecialistBackend('gemini')).toBe('google');
   });
   it('maps qwen to openai', () => {
     expect(mapSpecialistBackend('qwen')).toBe('openai');
@@ -13,12 +13,13 @@ describe('backendMap', () => {
     expect(mapSpecialistBackend('claude')).toBe('anthropic');
     expect(mapSpecialistBackend('anthropic')).toBe('anthropic');
   });
-  it('throws for unsupported backend', () => {
-    expect(() => mapSpecialistBackend('droid')).toThrow('Unsupported backend');
+  it('passes through unknown backends', () => {
+    expect(mapSpecialistBackend('groq')).toBe('groq');
+    expect(mapSpecialistBackend('openrouter')).toBe('openrouter');
   });
-  it('returns DashScope args for qwen', () => {
+  it('returns --api-key args for qwen', () => {
     const args = getProviderArgs('qwen');
-    expect(args).toContain('--baseURL');
+    expect(args).toContain('--api-key');
   });
   it('returns empty args for gemini', () => {
     expect(getProviderArgs('gemini')).toHaveLength(0);
