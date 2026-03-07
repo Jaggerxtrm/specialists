@@ -9,8 +9,8 @@ specialist:
 
   execution:
     mode: tool
-    model: google-gemini-cli/gemini-2.5-flash
-    fallback_model: anthropic/claude-haiku-4-5
+    model: google-gemini-cli/gemini-3-flash-preview
+    fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 600000
     response_format: markdown
     permission_required: HIGH
