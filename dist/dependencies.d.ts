@@ -3,9 +3,9 @@
  *
  * Manages the lifecycle and injection of services, repositories, and databases.
  */
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 export interface AppDependencies {
-    activityDb: Database.Database;
+    activityDb: Database;
 }
 /**
  * Initialize all system dependencies

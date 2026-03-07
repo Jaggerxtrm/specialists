@@ -31,8 +31,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@mariozechner/coding-agent": "0.5.48",
+    "@mariozechner/pi": "0.56.3",
     "@modelcontextprotocol/sdk": "^1.21.0",
     "better-sqlite3": "^11.8.1",
+    "yaml": "2.8.2",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.24.6"
   },

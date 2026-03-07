@@ -3,7 +3,7 @@
  *
  * Manages the lifecycle and injection of services, repositories, and databases.
  */
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './utils/logger.js';

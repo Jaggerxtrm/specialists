@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'node',
     server: {
       deps: {
-        external: [/^bun:/],
+        external: [/^bun:/, /^@mariozechner\/pi/],
       },
     },
     coverage: {
