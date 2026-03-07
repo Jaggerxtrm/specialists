@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "unitAI",
+  "project_id": "8ee0c958-2ec7-46d3-b842-f87669a746d0"
+}

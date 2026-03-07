@@ -33,3 +33,7 @@ venv/
 .cursor/mcp.json
 .gitnexus
 .worktrees/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
