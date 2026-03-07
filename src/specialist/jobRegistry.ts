@@ -8,8 +8,12 @@ import type { RunResult } from './runner.js';
 export interface JobSnapshot {
   job_id: string;
   status: 'running' | 'done' | 'error';
-  /** Accumulated text output (streaming). Replaced by final output on completion. */
+  /** Full output — populated only when status === 'done' or 'error'. Empty string while running. */
   output: string;
+  /** New content since the provided cursor (for incremental mid-run polling). */
+  delta: string;
+  /** Pass as cursor on next poll to receive only new content. */
+  next_cursor: number;
   /** Last pi event type seen: starting | thinking | toolcall | tool_execution | text | done | error */
   current_event: string;
   backend: string;
@@ -58,6 +62,14 @@ export class JobRegistry {
     if (job) job.currentEvent = eventType;
   }
 
+  /** Update backend/model from the first assistant message_start event. */
+  setMeta(id: string, meta: { backend: string; model: string }): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    if (meta.backend) job.backend = meta.backend;
+    if (meta.model) job.model = meta.model;
+  }
+
   complete(id: string, result: RunResult): void {
     const job = this.jobs.get(id);
     if (!job) return;
@@ -79,13 +91,16 @@ export class JobRegistry {
     job.endedAtMs = Date.now();
   }
 
-  snapshot(id: string): JobSnapshot | undefined {
+  snapshot(id: string, cursor = 0): JobSnapshot | undefined {
     const job = this.jobs.get(id);
     if (!job) return undefined;
+    const isDone = job.status === 'done' || job.status === 'error';
     return {
       job_id: job.id,
       status: job.status,
-      output: job.outputBuffer,
+      output: isDone ? job.outputBuffer : '',
+      delta: job.outputBuffer.slice(cursor),
+      next_cursor: job.outputBuffer.length,
       current_event: job.currentEvent,
       backend: job.backend,
       model: job.model,

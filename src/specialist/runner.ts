@@ -40,7 +40,7 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
-  async run(options: RunOptions, onProgress?: (msg: string) => void, onEvent?: (type: string) => void): Promise<RunResult> {
+  async run(options: RunOptions, onProgress?: (msg: string) => void, onEvent?: (type: string) => void, onMeta?: (meta: { backend: string; model: string }) => void): Promise<RunResult> {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -107,6 +107,7 @@ export class SpecialistRunner {
         onToolStart: (tool)  => onProgress?.(`\n⚙ ${tool}…`),
         onToolEnd:   (_tool) => onProgress?.(`✓\n`),
         onEvent:     (type)  => onEvent?.(type),
+        onMeta:      (meta)  => onMeta?.(meta),
       });
       await session.start();
 
@@ -168,6 +169,7 @@ export class SpecialistRunner {
   }
 
   /** Fire-and-forget: registers job in registry, returns job_id immediately. */
+  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
   startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): string {
     const jobId = crypto.randomUUID();
     registry.register(jobId, { backend: options.backendOverride ?? 'starting', model: options.backendOverride ?? '?' });
@@ -175,6 +177,7 @@ export class SpecialistRunner {
       options,
       (text)      => registry.appendOutput(jobId, text),
       (eventType) => registry.setCurrentEvent(jobId, eventType),
+      (meta)      => registry.setMeta(jobId, meta),
     )
       .then(result => registry.complete(jobId, result))
       .catch(err   => registry.fail(jobId, err));

@@ -24645,7 +24645,7 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join3 } from "node:path";
+import { join as join2 } from "node:path";
 
 // src/constants.ts
 var LOG_PREFIX = "[UAI-MCP]";
@@ -24861,7 +24861,7 @@ class SpecialistLoader {
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
     this.userDir = options.userDir ?? join(homedir(), ".claude", "specialists");
-    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, "..", "..", "..", "specialists");
+    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, "..", "..", "specialists");
   }
   getScanDirs() {
     return [
@@ -24929,7 +24929,7 @@ class SpecialistLoader {
 
 // src/specialist/runner.ts
 import { createHash } from "node:crypto";
-import { writeFile as writeFile2 } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 
 // src/specialist/templateEngine.ts
 function renderTemplate(template, variables) {
@@ -24940,74 +24940,154 @@ function renderTemplate(template, variables) {
 
 // src/pi/session.ts
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { join as join2 } from "node:path";
-import { tmpdir } from "node:os";
-import { EventEmitter } from "node:events";
 
 // src/pi/backendMap.ts
 var BACKEND_MAP = {
-  gemini: "google-gemini-cli",
+  gemini: "google",
+  google: "google",
   qwen: "openai",
   claude: "anthropic",
   anthropic: "anthropic",
-  openai: "openai"
+  openai: "openai",
+  openrouter: "openrouter",
+  groq: "groq"
 };
 function mapSpecialistBackend(model) {
   const provider = BACKEND_MAP[model.toLowerCase()];
   if (!provider) {
-    throw new Error(`Unsupported backend: ${model}. Supported: ${Object.keys(BACKEND_MAP).join(", ")}`);
+    return model.toLowerCase();
   }
   return provider;
 }
 function getProviderArgs(model) {
   if (model.toLowerCase() === "qwen") {
-    return ["--baseURL", "https://dashscope.aliyuncs.com/compatible-mode/v1"];
+    return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
   }
   return [];
 }
 
 // src/pi/session.ts
-class RpcClient extends EventEmitter {
+class PiAgentSession {
   options;
   proc;
-  pendingResolvers = new Map;
-  idlePromise;
-  constructor(options) {
-    super();
+  _lastOutput = "";
+  idleResolve;
+  idleReject;
+  meta;
+  constructor(options, meta) {
     this.options = options;
+    this.meta = meta;
+  }
+  static async create(options) {
+    const provider = mapSpecialistBackend(options.model);
+    const meta = {
+      backend: provider,
+      model: options.model,
+      sessionId: crypto.randomUUID(),
+      startedAt: new Date
+    };
+    return new PiAgentSession(options, meta);
   }
   async start() {
-    const cliPath = __require.resolve("/home/dawid/projects/unitAI/.worktrees/v2-specialist-system/node_modules/@mariozechner/coding-agent/dist/cli.js").catch ? "@mariozechner/coding-agent/dist/cli.js" : "@mariozechner/coding-agent/dist/cli.js";
+    const provider = mapSpecialistBackend(this.options.model);
+    const extraArgs = getProviderArgs(this.options.model);
     const args = [
       "--mode",
       "rpc",
       "--provider",
-      this.options.provider,
-      ...this.options.args ?? []
+      provider,
+      "--no-session",
+      "--print",
+      ...extraArgs
     ];
-    this.proc = spawn("node", [cliPath, ...args], {
-      cwd: this.options.cwd,
-      stdio: ["pipe", "pipe", "pipe"]
+    if (this.options.systemPrompt) {
+      args.push("--append-system-prompt", this.options.systemPrompt);
+    }
+    this.proc = spawn("pi", args, {
+      stdio: ["pipe", "pipe", "inherit"]
     });
     this.proc.stdout?.on("data", (chunk) => {
-      const lines = chunk.toString().split(`
-`).filter(Boolean);
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          this.emit("event", event);
-          if (event.type === "agent_end") {
-            this.idlePromise?.resolve();
-            this.idlePromise = undefined;
-          }
-          if (event.id && this.pendingResolvers.has(event.id)) {
-            this.pendingResolvers.get(event.id)(event);
-            this.pendingResolvers.delete(event.id);
-          }
-        } catch {}
+      for (const line of chunk.toString().split(`
+`).filter(Boolean)) {
+        this._handleEvent(line);
       }
     });
+    this.proc.on("close", () => {
+      this.idleResolve?.();
+    });
+  }
+  _handleEvent(line) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    const { type } = event;
+    if (type === "message_start" && event.message?.role === "assistant") {
+      const { provider, model } = event.message ?? {};
+      if (provider || model) {
+        this.options.onMeta?.({ backend: provider ?? "", model: model ?? "" });
+      }
+      return;
+    }
+    if (type === "agent_end") {
+      const messages = event.messages ?? [];
+      const last = [...messages].reverse().find((m) => m.role === "assistant");
+      if (last) {
+        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+      }
+      this.options.onEvent?.("done");
+      this.idleResolve?.();
+      this.idleResolve = undefined;
+      this.idleReject = undefined;
+      return;
+    }
+    if (type === "thinking_start") {
+      this.options.onEvent?.("thinking");
+      return;
+    }
+    if (type === "thinking_delta") {
+      if (event.delta)
+        this.options.onThinking?.(event.delta);
+      this.options.onEvent?.("thinking");
+      return;
+    }
+    if (type === "thinking_end") {
+      return;
+    }
+    if (type === "toolcall_start") {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("toolcall");
+      return;
+    }
+    if (type === "toolcall_end") {
+      this.options.onEvent?.("toolcall");
+      return;
+    }
+    if (type === "tool_execution_start") {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("tool_execution");
+      return;
+    }
+    if (type === "tool_execution_update") {
+      this.options.onEvent?.("tool_execution");
+      return;
+    }
+    if (type === "tool_execution_end") {
+      this.options.onToolEnd?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("tool_execution_end");
+      return;
+    }
+    if (type === "message_update") {
+      const ae = event.assistantMessageEvent;
+      if (!ae)
+        return;
+      if (ae.type === "text_delta" && ae.delta) {
+        this.options.onToken?.(ae.delta);
+        this.options.onEvent?.("text");
+      }
+    }
   }
   async prompt(task) {
     const msg = JSON.stringify({ type: "prompt", message: task }) + `
@@ -25017,77 +25097,39 @@ class RpcClient extends EventEmitter {
   async waitForIdle(timeoutMs = 120000) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`Agent idle timeout after ${timeoutMs}ms`)), timeoutMs);
-      this.idlePromise = {
-        resolve: () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        reject
+      this.idleResolve = () => {
+        clearTimeout(timer);
+        resolve();
       };
+      this.idleReject = reject;
     });
-  }
-  async send(command) {
-    const id = crypto.randomUUID();
-    return new Promise((resolve) => {
-      this.pendingResolvers.set(id, resolve);
-      const msg = JSON.stringify({ ...command, id }) + `
-`;
-      this.proc?.stdin?.write(msg);
-    });
-  }
-  stop() {
-    this.proc?.kill();
-    this.proc = undefined;
-  }
-}
-
-class PiAgentSession {
-  client;
-  tempDir;
-  meta;
-  constructor(client, meta, tempDir) {
-    this.client = client;
-    this.meta = meta;
-    this.tempDir = tempDir;
-  }
-  static async create(options) {
-    const provider = mapSpecialistBackend(options.model);
-    const args = getProviderArgs(options.model);
-    const tempDir = await mkdtemp(join2(tmpdir(), "unitai-"));
-    if (options.systemPrompt) {
-      await writeFile(join2(tempDir, "agents.md"), options.systemPrompt, "utf-8");
-    }
-    const client = new RpcClient({ provider, cwd: tempDir, args });
-    const meta = {
-      backend: provider,
-      model: options.model,
-      sessionId: crypto.randomUUID(),
-      startedAt: new Date
-    };
-    return new PiAgentSession(client, meta, tempDir);
-  }
-  async start() {
-    await this.client.start();
-  }
-  async prompt(task) {
-    await this.client.prompt(task);
-  }
-  async waitForIdle(timeoutMs = 120000) {
-    await this.client.waitForIdle(timeoutMs);
   }
   async getLastOutput() {
-    const resp = await this.client.send({ type: "get_last_assistant_text" });
-    return resp?.data?.text ?? "";
+    return this._lastOutput;
   }
   async executeBash(command) {
-    const resp = await this.client.send({ type: "bash", command });
-    return resp?.data?.output ?? resp?.output ?? "";
+    return new Promise((resolve) => {
+      const id = crypto.randomUUID();
+      const handler = (chunk) => {
+        for (const line of chunk.toString().split(`
+`).filter(Boolean)) {
+          try {
+            const ev = JSON.parse(line);
+            if (ev.id === id) {
+              this.proc?.stdout?.off("data", handler);
+              resolve(ev.output ?? ev.data?.output ?? "");
+            }
+          } catch {}
+        }
+      };
+      this.proc?.stdout?.on("data", handler);
+      this.proc?.stdin?.write(JSON.stringify({ type: "bash", command, id }) + `
+`);
+    });
   }
   kill() {
-    this.client.stop();
-    if (this.tempDir) {
-      rm(this.tempDir, { recursive: true, force: true }).catch(() => {});
-    }
+    this.proc?.kill();
+    this.proc = undefined;
   }
 }
 
@@ -25099,7 +25141,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  async run(options) {
+  async run(options, onProgress, onEvent, onMeta) {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -25157,7 +25199,18 @@ You have access via Bash:
     let output;
     let session;
     try {
-      session = await this.sessionFactory({ model, systemPrompt: agentsMd || undefined });
+      session = await this.sessionFactory({
+        model,
+        systemPrompt: agentsMd || undefined,
+        onToken: (delta) => onProgress?.(delta),
+        onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
+        onToolStart: (tool) => onProgress?.(`
+⚙ ${tool}…`),
+        onToolEnd: (_tool) => onProgress?.(`✓
+`),
+        onEvent: (type) => onEvent?.(type),
+        onMeta: (meta) => onMeta?.(meta)
+      });
       await session.start();
       const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
       let preScriptOutput = "";
@@ -25190,7 +25243,7 @@ You have access via Bash:
     }
     const durationMs = Date.now() - start;
     if (communication?.output_to) {
-      await writeFile2(communication.output_to, output, "utf-8").catch(() => {});
+      await writeFile(communication.output_to, output, "utf-8").catch(() => {});
     }
     await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
       status: "COMPLETE",
@@ -25204,6 +25257,12 @@ You have access via Bash:
       durationMs,
       specialistVersion: metadata.version
     };
+  }
+  startAsync(options, registry2) {
+    const jobId = crypto.randomUUID();
+    registry2.register(jobId, { backend: options.backendOverride ?? "starting", model: options.backendOverride ?? "?" });
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    return jobId;
   }
 }
 
@@ -25307,20 +25366,20 @@ function createUseSpecialistTool(runner) {
     name: "use_specialist",
     description: "Execute a specialist. Full lifecycle: load → agents.md → pi → validate → output.",
     inputSchema: useSpecialistSchema,
-    async execute(input) {
+    async execute(input, onProgress) {
       return runner.run({
         name: input.name,
         prompt: input.prompt,
         variables: input.variables,
         backendOverride: input.backend_override,
         autonomyLevel: input.autonomy_level
-      });
+      }, onProgress);
     }
   };
 }
 
 // src/specialist/pipeline.ts
-async function runPipeline(steps, runner) {
+async function runPipeline(steps, runner, onProgress) {
   const results = [];
   let previousResult = "";
   for (const step of steps) {
@@ -25331,7 +25390,7 @@ async function runPipeline(steps, runner) {
       backendOverride: step.backend_override
     };
     try {
-      const result = await runner.run(options);
+      const result = await runner.run(options, onProgress);
       previousResult = result.output;
       results.push({
         specialist: step.name,
@@ -25374,14 +25433,14 @@ function createRunParallelTool(runner) {
     name: "run_parallel",
     description: "Execute multiple specialists concurrently. Returns aggregated results.",
     inputSchema: runParallelSchema,
-    async execute(input) {
+    async execute(input, onProgress) {
       if (input.merge_strategy === "pipeline") {
         return runPipeline(input.specialists.map((s) => ({
           name: s.name,
           prompt: s.prompt,
           variables: s.variables,
           backend_override: s.backend_override
-        })), runner);
+        })), runner, onProgress);
       }
       if (input.merge_strategy !== "collect") {
         throw new Error(`Merge strategy '${input.merge_strategy}' not yet implemented (v2.1)`);
@@ -25391,7 +25450,7 @@ function createRunParallelTool(runner) {
         prompt: s.prompt,
         variables: s.variables,
         backendOverride: s.backend_override
-      })));
+      }, onProgress)));
       return results.map((r, i) => ({
         specialist: input.specialists[i].name,
         status: r.status,
@@ -25428,6 +25487,129 @@ function createSpecialistStatusTool(loader, circuitBreaker) {
   };
 }
 
+// src/specialist/jobRegistry.ts
+class JobRegistry {
+  jobs = new Map;
+  register(id, meta) {
+    this.jobs.set(id, {
+      id,
+      status: "running",
+      outputBuffer: "",
+      currentEvent: "starting",
+      backend: meta.backend,
+      model: meta.model,
+      specialistVersion: "?",
+      startedAtMs: Date.now()
+    });
+  }
+  appendOutput(id, text) {
+    const job = this.jobs.get(id);
+    if (job)
+      job.outputBuffer += text;
+  }
+  setCurrentEvent(id, eventType) {
+    const job = this.jobs.get(id);
+    if (job)
+      job.currentEvent = eventType;
+  }
+  setMeta(id, meta) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    if (meta.backend)
+      job.backend = meta.backend;
+    if (meta.model)
+      job.model = meta.model;
+  }
+  complete(id, result) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    job.status = "done";
+    job.outputBuffer = result.output;
+    job.currentEvent = "done";
+    job.backend = result.backend;
+    job.model = result.model;
+    job.specialistVersion = result.specialistVersion;
+    job.endedAtMs = Date.now();
+  }
+  fail(id, err) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    job.status = "error";
+    job.error = err.message;
+    job.currentEvent = "error";
+    job.endedAtMs = Date.now();
+  }
+  snapshot(id, cursor = 0) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    const isDone = job.status === "done" || job.status === "error";
+    return {
+      job_id: job.id,
+      status: job.status,
+      output: isDone ? job.outputBuffer : "",
+      delta: job.outputBuffer.slice(cursor),
+      next_cursor: job.outputBuffer.length,
+      current_event: job.currentEvent,
+      backend: job.backend,
+      model: job.model,
+      specialist_version: job.specialistVersion,
+      duration_ms: (job.endedAtMs ?? Date.now()) - job.startedAtMs,
+      error: job.error
+    };
+  }
+  delete(id) {
+    this.jobs.delete(id);
+  }
+}
+
+// src/tools/specialist/start_specialist.tool.ts
+var startSpecialistSchema = exports_external.object({
+  name: exports_external.string().describe("Specialist identifier (e.g. codebase-explorer)"),
+  prompt: exports_external.string().describe("The task or question for the specialist"),
+  variables: exports_external.record(exports_external.string()).optional().describe("Additional $variable substitutions"),
+  backend_override: exports_external.string().optional().describe("Force a specific backend (gemini, qwen, anthropic)")
+});
+function createStartSpecialistTool(runner, registry2) {
+  return {
+    name: "start_specialist",
+    description: "Start a specialist asynchronously. Returns job_id immediately — use poll_specialist to track progress and get output. Enables true parallel execution of multiple specialists.",
+    inputSchema: startSpecialistSchema,
+    async execute(input) {
+      const jobId = runner.startAsync({
+        name: input.name,
+        prompt: input.prompt,
+        variables: input.variables,
+        backendOverride: input.backend_override
+      }, registry2);
+      return { job_id: jobId };
+    }
+  };
+}
+
+// src/tools/specialist/poll_specialist.tool.ts
+var pollSpecialistSchema = exports_external.object({
+  job_id: exports_external.string().describe("Job ID returned by start_specialist"),
+  cursor: exports_external.number().int().min(0).optional().default(0).describe("Character offset from previous poll. Pass next_cursor from the last response to receive only new content. Omit (or pass 0) for the first poll.")
+});
+function createPollSpecialistTool(registry2) {
+  return {
+    name: "poll_specialist",
+    description: "Poll a running specialist job. Returns status (running|done|error), delta (new content since cursor), next_cursor, and full output only when done. Pass next_cursor from each response as cursor on the next poll to receive only new tokens.",
+    inputSchema: pollSpecialistSchema,
+    async execute(input) {
+      const snapshot = registry2.snapshot(input.job_id, input.cursor ?? 0);
+      if (!snapshot) {
+        return { status: "error", error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+      }
+      return snapshot;
+    }
+  };
+}
+
 // src/server.ts
 class UnitAIServer {
   server;
@@ -25436,14 +25618,17 @@ class UnitAIServer {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
     const hooks = new HookEmitter({
-      tracePath: join3(process.cwd(), ".unitai", "trace.jsonl")
+      tracePath: join2(process.cwd(), ".unitai", "trace.jsonl")
     });
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
+    const registry2 = new JobRegistry;
     this.tools = [
       createListSpecialistsTool(loader),
       createUseSpecialistTool(runner),
       createRunParallelTool(runner),
-      createSpecialistStatusTool(loader, circuitBreaker)
+      createSpecialistStatusTool(loader, circuitBreaker),
+      createStartSpecialistTool(runner, registry2),
+      createPollSpecialistTool(registry2)
     ];
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
@@ -25454,7 +25639,9 @@ class UnitAIServer {
       list_specialists: listSpecialistsSchema,
       use_specialist: useSpecialistSchema,
       run_parallel: runParallelSchema,
-      specialist_status: exports_external.object({})
+      specialist_status: exports_external.object({}),
+      start_specialist: startSpecialistSchema,
+      poll_specialist: pollSpecialistSchema
     };
     this.toolSchemas = schemaMap;
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -25477,8 +25664,14 @@ class UnitAIServer {
       }
       const schema = this.toolSchemas[toolName];
       const parsed = schema ? schema.parse(args) : args;
+      const onProgress = (msg) => {
+        this.server.notification({
+          method: "notifications/message",
+          params: { level: "info", logger: "unitai", data: msg }
+        }).catch(() => {});
+      };
       try {
-        const result = await tool.execute(parsed);
+        const result = await tool.execute(parsed, onProgress);
         return {
           content: [
             {

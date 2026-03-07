@@ -41,6 +41,8 @@ export interface PiSessionOptions {
   onToolEnd?: (tool: string) => void;
   /** Called with the raw pi event type (for job status tracking) */
   onEvent?: (type: string) => void;
+  /** Called once with actual backend/model from the first assistant message_start */
+  onMeta?: (meta: { backend: string; model: string }) => void;
 }
 
 export class PiAgentSession {
@@ -104,6 +106,15 @@ export class PiAgentSession {
     try { event = JSON.parse(line); } catch { return; }
 
     const { type } = event;
+
+    // ── Backend/model metadata (first assistant message) ───────────────────
+    if (type === 'message_start' && event.message?.role === 'assistant') {
+      const { provider, model } = event.message ?? {};
+      if (provider || model) {
+        this.options.onMeta?.({ backend: provider ?? '', model: model ?? '' });
+      }
+      return;
+    }
 
     // ── Completion ─────────────────────────────────────────────────────────
     if (type === 'agent_end') {
