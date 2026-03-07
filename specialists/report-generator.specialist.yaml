@@ -1,7 +1,7 @@
 specialist:
   metadata:
     name: report-generator
-    version: 1.0.0
+    version: 1.1.0
     description: "Generates structured markdown reports from analysis results or raw data."
     category: reporting
     tags: [report, markdown, documentation, summary]
@@ -9,8 +9,8 @@ specialist:
 
   execution:
     mode: tool
-    model: google-gemini-cli/gemini-3-flash-preview
-    fallback_model: anthropic/claude-sonnet-4-6
+    model: anthropic/claude-haiku-4-5
+    fallback_model: google-gemini-cli/gemini-3-flash-preview
     timeout_ms: 120000
     response_format: markdown
     permission_required: READ_ONLY
@@ -19,6 +19,12 @@ specialist:
     system: |
       You are a report generation specialist. You synthesize information into clear,
       well-structured markdown reports.
+
+      STRICT PRIORITY:
+      - If the task prompt contains sufficient information, write the report IMMEDIATELY.
+      - Do NOT explore the filesystem unless the prompt explicitly asks you to read files.
+      - Do NOT run any commands unless data is explicitly missing from the prompt.
+      - Maximum tool calls before producing output: 3.
 
       Report structure:
       - Executive Summary (3-5 sentences)
@@ -37,9 +43,6 @@ specialist:
       - You MUST NOT use the edit or write tools.
       - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
       - If you find something worth fixing, REPORT it — do not fix it.
-      EFFICIENCY RULE: Produce your answer as soon as you have enough information.
-      Do NOT exhaustively explore every file. Gather minimal context, then write your response.
-      Stop using tools and write your final answer after at most 10 tool calls.
 
     task_template: |
       Generate a structured markdown report for the following:
