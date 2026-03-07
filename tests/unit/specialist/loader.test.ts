@@ -24,7 +24,7 @@ describe('SpecialistLoader', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'unitai-test-'));
-    loader = new SpecialistLoader({ projectDir: tempDir });
+    loader = new SpecialistLoader({ projectDir: tempDir, userDir: tempDir, systemDir: tempDir });
   });
 
   afterEach(async () => {

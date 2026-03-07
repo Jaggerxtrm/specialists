@@ -1,5 +1,5 @@
 // src/specialist/loader.ts
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -13,11 +13,37 @@ export interface SpecialistSummary {
   model: string;
   scope: 'project' | 'user' | 'system';
   filePath: string;
+  updated?: string;
+  filestoWatch?: string[];
+  staleThresholdDays?: number;
+}
+
+/** Returns STALE, AGED, or OK based on file mtimes vs metadata.updated */
+export async function checkStaleness(
+  summary: SpecialistSummary,
+): Promise<'OK' | 'STALE' | 'AGED'> {
+  if (!summary.filestoWatch?.length || !summary.updated) return 'OK';
+  const updatedMs = new Date(summary.updated).getTime();
+  if (isNaN(updatedMs)) return 'OK';
+
+  for (const file of summary.filestoWatch) {
+    const fileStat = await stat(file).catch(() => null);
+    if (fileStat && fileStat.mtimeMs > updatedMs) {
+      // File changed after last specialist update — check if AGED
+      const daysSinceUpdate = (Date.now() - updatedMs) / 86_400_000;
+      if (summary.staleThresholdDays && daysSinceUpdate > summary.staleThresholdDays) {
+        return 'AGED';
+      }
+      return 'STALE';
+    }
+  }
+  return 'OK';
 }
 
 interface LoaderOptions {
   projectDir?: string;
-  userDir?: string;   // override for testing
+  userDir?: string;    // override for testing
+  systemDir?: string;  // override for testing
 }
 
 export class SpecialistLoader {
@@ -30,7 +56,7 @@ export class SpecialistLoader {
     this.projectDir = options.projectDir ?? process.cwd();
     this.userDir = options.userDir ?? join(homedir(), '.claude', 'specialists');
     // System specialists: bundled in package next to compiled output
-    this.systemDir = join(new URL(import.meta.url).pathname, '..', '..', '..', 'specialists');
+    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, '..', '..', '..', 'specialists');
   }
 
   private getScanDirs(): Array<{ path: string; scope: 'project' | 'user' | 'system' }> {
@@ -54,7 +80,7 @@ export class SpecialistLoader {
         try {
           const content = await readFile(filePath, 'utf-8');
           const spec = await parseSpecialist(content);
-          const { name, description, category: cat, version } = spec.specialist.metadata;
+          const { name, description, category: cat, version, updated } = spec.specialist.metadata;
           if (seen.has(name)) continue; // project overrides user/system (first wins)
           if (category && cat !== category) continue;
           seen.add(name);
@@ -63,6 +89,9 @@ export class SpecialistLoader {
             model: spec.specialist.execution.model,
             scope: dir.scope,
             filePath,
+            updated,
+            filestoWatch: spec.specialist.validation?.files_to_watch,
+            staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
           });
         } catch {
           // Skip invalid YAML files silently
