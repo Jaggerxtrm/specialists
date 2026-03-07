@@ -40,7 +40,7 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
-  async run(options: RunOptions, onProgress?: (msg: string) => void): Promise<RunResult> {
+  async run(options: RunOptions, onProgress?: (msg: string) => void, onEvent?: (type: string) => void): Promise<RunResult> {
     const { loader, hooks, circuitBreaker } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -75,7 +75,7 @@ export class SpecialistRunner {
       system_prompt_present: !!prompt.system,
     });
 
-    // Build agents.md content: system + skill_inherit + diagnostic_scripts
+    // Build system prompt: system + skill_inherit + diagnostic_scripts
     let agentsMd = prompt.system ?? '';
     if (prompt.skill_inherit) {
       const { readFile } = await import('node:fs/promises');
@@ -102,13 +102,15 @@ export class SpecialistRunner {
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
-        onToken: (delta) => onProgress?.(delta),
-        onToolStart: (tool) => onProgress?.(`\n⚙ ${tool}…`),
-        onToolEnd: (tool) => onProgress?.(`✓\n`),
+        onToken:     (delta) => onProgress?.(delta),
+        onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
+        onToolStart: (tool)  => onProgress?.(`\n⚙ ${tool}…`),
+        onToolEnd:   (_tool) => onProgress?.(`✓\n`),
+        onEvent:     (type)  => onEvent?.(type),
       });
       await session.start();
 
-      // Pre-phase scripts: run and inject output as $pre_script_output
+      // Pre-phase scripts
       const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
       let preScriptOutput = '';
       for (const script of preScripts) {
@@ -116,7 +118,6 @@ export class SpecialistRunner {
         if (script.inject_output) preScriptOutput += out + '\n';
       }
 
-      // Re-render with pre_script_output if needed
       const finalTask = preScriptOutput
         ? renderTemplate(renderedTask, { pre_script_output: preScriptOutput.trim() })
         : renderedTask;
@@ -147,7 +148,6 @@ export class SpecialistRunner {
 
     const durationMs = Date.now() - start;
 
-    // Write to communication.output_to if defined
     if (communication?.output_to) {
       await writeFile(communication.output_to, output, 'utf-8').catch(() => {});
     }
@@ -165,5 +165,19 @@ export class SpecialistRunner {
       durationMs,
       specialistVersion: metadata.version,
     };
+  }
+
+  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
+  startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): string {
+    const jobId = crypto.randomUUID();
+    registry.register(jobId, { backend: options.backendOverride ?? 'starting', model: options.backendOverride ?? '?' });
+    this.run(
+      options,
+      (text)      => registry.appendOutput(jobId, text),
+      (eventType) => registry.setCurrentEvent(jobId, eventType),
+    )
+      .then(result => registry.complete(jobId, result))
+      .catch(err   => registry.fail(jobId, err));
+    return jobId;
   }
 }

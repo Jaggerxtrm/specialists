@@ -23,6 +23,9 @@ import { createListSpecialistsTool, listSpecialistsSchema } from "./tools/specia
 import { createUseSpecialistTool, useSpecialistSchema } from "./tools/specialist/use_specialist.tool.js";
 import { createRunParallelTool, runParallelSchema } from "./tools/specialist/run_parallel.tool.js";
 import { createSpecialistStatusTool } from "./tools/specialist/specialist_status.tool.js";
+import { JobRegistry } from "./specialist/jobRegistry.js";
+import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specialist/start_specialist.tool.js";
+import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/specialist/poll_specialist.tool.js";
 import { z } from "zod";
 
 type AnyTool = {
@@ -43,12 +46,15 @@ export class UnitAIServer {
       tracePath: join(process.cwd(), ".unitai", "trace.jsonl"),
     });
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
+    const registry = new JobRegistry();
 
     this.tools = [
       createListSpecialistsTool(loader),
       createUseSpecialistTool(runner),
       createRunParallelTool(runner),
       createSpecialistStatusTool(loader, circuitBreaker),
+      createStartSpecialistTool(runner, registry),
+      createPollSpecialistTool(registry),
     ];
 
     this.server = new Server(
@@ -62,12 +68,13 @@ export class UnitAIServer {
   private toolSchemas: Record<string, z.ZodTypeAny> = {};
 
   private setupHandlers(): void {
-    // Build schema map for validation
     const schemaMap: Record<string, z.ZodTypeAny> = {
       list_specialists: listSpecialistsSchema,
       use_specialist: useSpecialistSchema,
       run_parallel: runParallelSchema,
       specialist_status: z.object({}),
+      start_specialist: startSpecialistSchema,
+      poll_specialist: pollSpecialistSchema,
     };
     this.toolSchemas = schemaMap;
 
@@ -92,11 +99,10 @@ export class UnitAIServer {
         throw new Error(`Tool '${toolName}' not found`);
       }
 
-      // Validate input
       const schema = this.toolSchemas[toolName];
       const parsed = schema ? schema.parse(args) : args;
 
-      // Stream pi tokens → MCP logging notifications (shown live in client)
+      // Stream pi tokens → MCP logging notifications
       const onProgress = (msg: string) => {
         this.server.notification({
           method: 'notifications/message',

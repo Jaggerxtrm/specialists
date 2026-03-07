@@ -31,12 +31,16 @@ export interface PiSessionOptions {
   model: string;
   systemPrompt?: string;
   timeoutMs?: number;
-  /** Called with each text token as it arrives (for progress streaming) */
+  /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
+  /** Called with each thinking token */
+  onThinking?: (delta: string) => void;
   /** Called with tool name when a tool starts executing */
   onToolStart?: (tool: string) => void;
   /** Called with tool name when a tool result arrives */
   onToolEnd?: (tool: string) => void;
+  /** Called with the raw pi event type (for job status tracking) */
+  onEvent?: (type: string) => void;
 }
 
 export class PiAgentSession {
@@ -101,8 +105,8 @@ export class PiAgentSession {
 
     const { type } = event;
 
+    // ── Completion ─────────────────────────────────────────────────────────
     if (type === 'agent_end') {
-      // Extract final assistant text
       const messages: any[] = event.messages ?? [];
       const last = [...messages].reverse().find((m: any) => m.role === 'assistant');
       if (last) {
@@ -111,24 +115,50 @@ export class PiAgentSession {
           .map((c: any) => c.text)
           .join('');
       }
+      this.options.onEvent?.('done');
       this.idleResolve?.();
       this.idleResolve = undefined;
       this.idleReject = undefined;
       return;
     }
 
+    // ── Thinking ───────────────────────────────────────────────────────────
+    if (type === 'thinking_start') { this.options.onEvent?.('thinking'); return; }
+    if (type === 'thinking_delta') {
+      if (event.delta) this.options.onThinking?.(event.delta);
+      this.options.onEvent?.('thinking');
+      return;
+    }
+    if (type === 'thinking_end') { return; }
+
+    // ── Tool call construction ─────────────────────────────────────────────
+    if (type === 'toolcall_start') {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? 'tool');
+      this.options.onEvent?.('toolcall');
+      return;
+    }
+    if (type === 'toolcall_end') { this.options.onEvent?.('toolcall'); return; }
+
+    // ── Tool execution ─────────────────────────────────────────────────────
+    if (type === 'tool_execution_start') {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? 'tool');
+      this.options.onEvent?.('tool_execution');
+      return;
+    }
+    if (type === 'tool_execution_update') { this.options.onEvent?.('tool_execution'); return; }
+    if (type === 'tool_execution_end') {
+      this.options.onToolEnd?.(event.name ?? event.toolName ?? 'tool');
+      this.options.onEvent?.('tool_execution_end');
+      return;
+    }
+
+    // ── Text streaming (inside message_update) ─────────────────────────────
     if (type === 'message_update') {
       const ae = event.assistantMessageEvent;
       if (!ae) return;
-
       if (ae.type === 'text_delta' && ae.delta) {
         this.options.onToken?.(ae.delta);
-      }
-      if (ae.type === 'tool_use_start') {
-        this.options.onToolStart?.(ae.toolName ?? ae.name ?? 'tool');
-      }
-      if (ae.type === 'tool_result_start') {
-        this.options.onToolEnd?.(ae.toolName ?? ae.name ?? 'tool');
+        this.options.onEvent?.('text');
       }
     }
   }
