@@ -24968,6 +24968,17 @@ function getProviderArgs(model) {
 }
 
 // src/pi/session.ts
+function mapPermissionToTools(level) {
+  switch (level?.toUpperCase()) {
+    case "READ_ONLY":
+      return "read,bash,grep,find,ls";
+    case "BASH_ONLY":
+      return "bash";
+    default:
+      return;
+  }
+}
+
 class PiAgentSession {
   options;
   proc;
@@ -25003,6 +25014,9 @@ class PiAgentSession {
       "--print",
       ...extraArgs
     ];
+    const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
+    if (toolsFlag)
+      args.push("--tools", toolsFlag);
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }
@@ -25198,11 +25212,12 @@ You have access via Bash:
 `;
       }
     }
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
     await hooks.emit("pre_execute", invocationId, metadata.name, metadata.version, {
       backend: model,
       model,
       timeout_ms: execution.timeout_ms,
-      permission_level: options.autonomyLevel ?? execution.permission_required
+      permission_level: permissionLevel
     });
     let output;
     let session;
@@ -25210,6 +25225,7 @@ You have access via Bash:
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
+        permissionLevel,
         onToken: (delta) => onProgress?.(delta),
         onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
         onToolStart: (tool) => onProgress?.(`

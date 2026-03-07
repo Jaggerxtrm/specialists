@@ -43,6 +43,11 @@ specialist:
       - Use clear markdown sections for each phase.
       - Flag if any phase could not be completed and explain why.
       - Output must be actionable: developers should be able to implement from this plan.
+    STRICT CONSTRAINTS:
+    - You MUST NOT edit, write, or modify any files under any circumstances.
+    - You MUST NOT use the edit or write tools.
+    - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
+    - If you find something worth fixing, REPORT it — do not fix it.
 
     task_template: |
       Design an end-to-end implementation plan for the following feature:

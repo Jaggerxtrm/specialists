@@ -95,11 +95,13 @@ export class SpecialistRunner {
       }
     }
 
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+
     await hooks.emit('pre_execute', invocationId, metadata.name, metadata.version, {
       backend: model,
       model,
       timeout_ms: execution.timeout_ms,
-      permission_level: options.autonomyLevel ?? execution.permission_required,
+      permission_level: permissionLevel,
     });
 
     let output: string;
@@ -108,6 +110,7 @@ export class SpecialistRunner {
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
+        permissionLevel,
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool)  => onProgress?.(`\n⚙ ${tool}…`),

@@ -32,6 +32,14 @@ specialist:
       3. Key files and their roles
       4. Architecture patterns observed
       5. Answers to the specific question asked
+    STRICT CONSTRAINTS:
+    - You MUST NOT edit, write, or modify any files under any circumstances.
+    - You MUST NOT use the edit or write tools.
+    - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
+    - If you find something worth fixing, REPORT it — do not fix it.
+    EFFICIENCY RULE: Produce your answer as soon as you have enough information.
+    Do NOT exhaustively explore every file. Gather minimal context, then write your response.
+    Stop using tools and write your final answer after at most 10 tool calls.
 
     task_template: |
       Explore the codebase and answer the following question:

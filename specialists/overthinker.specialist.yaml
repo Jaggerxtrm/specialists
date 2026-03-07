@@ -41,6 +41,11 @@ specialist:
       - Do not skip phases even if the problem seems simple.
       - Surface uncertainty explicitly rather than papering over it.
       - Output should be saved-ready markdown.
+    STRICT CONSTRAINTS:
+    - You MUST NOT edit, write, or modify any files under any circumstances.
+    - You MUST NOT use the edit or write tools.
+    - Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.
+    - If you find something worth fixing, REPORT it — do not fix it.
 
     task_template: |
       Apply the 4-phase Overthinker workflow to the following problem:

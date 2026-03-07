@@ -30,7 +30,8 @@ export interface AgentSessionMeta {
 export interface PiSessionOptions {
   model: string;
   systemPrompt?: string;
-  timeoutMs?: number;
+  /** Permission level from specialist YAML — controls which pi tools are enabled */
+  permissionLevel?: string;
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -43,6 +44,16 @@ export interface PiSessionOptions {
   onEvent?: (type: string) => void;
   /** Called once with actual backend/model from the first assistant message_start */
   onMeta?: (meta: { backend: string; model: string }) => void;
+}
+
+/** Maps specialist permission_required to pi --tools argument.
+ *  Returns undefined for full-access levels (pi defaults to read,bash,edit,write). */
+function mapPermissionToTools(level?: string): string | undefined {
+  switch (level?.toUpperCase()) {
+    case 'READ_ONLY': return 'read,bash,grep,find,ls';
+    case 'BASH_ONLY': return 'bash';
+    default: return undefined; // LOW / MEDIUM / HIGH — full tool access
+  }
 }
 
 export class PiAgentSession {
@@ -76,8 +87,6 @@ export class PiAgentSession {
     const model = this.options.model;
     const extraArgs = getProviderArgs(model);
 
-    // Full model IDs (e.g. "google-gemini-cli/gemini-2.5-flash") are passed as --model;
-    // pi infers the provider. Short aliases (e.g. "gemini") use --provider.
     const providerArgs: string[] = model.includes('/')
       ? ['--model', model]
       : ['--provider', mapSpecialistBackend(model)];
@@ -90,6 +99,10 @@ export class PiAgentSession {
       ...extraArgs,
     ];
 
+    // Enforce permission level via --tools flag
+    const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
+    if (toolsFlag) args.push('--tools', toolsFlag);
+
     if (this.options.systemPrompt) {
       args.push('--append-system-prompt', this.options.systemPrompt);
     }
@@ -98,12 +111,10 @@ export class PiAgentSession {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
 
-    // Create the completion promise before attaching listeners
     const donePromise = new Promise<void>((resolve, reject) => {
       this._doneResolve = resolve;
       this._doneReject = reject;
     });
-    // Store for waitForDone()
     (this as any)._donePromise = donePromise;
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
@@ -114,13 +125,10 @@ export class PiAgentSession {
 
     this.proc.on('close', (code) => {
       if (this._agentEndReceived || this._killed) {
-        // Normal completion or explicit kill — resolve cleanly
         this._doneResolve?.();
       } else if (code === 0 || code === null) {
-        // Process exited cleanly without agent_end — treat as done with buffered output
         this._doneResolve?.();
       } else {
-        // Genuine crash
         this._doneReject?.(new Error(`pi process exited with code ${code}`));
       }
     });
