@@ -16,11 +16,14 @@
 
 ```
 OmniSpecialist MCP Server v2
-├── MCP Surface (4 tools only)
+├── MCP Surface (7 tools)
 │   ├── list_specialists   — discover .specialist.yaml across 3 scopes
 │   ├── use_specialist     — full lifecycle: load → agents.md → pi → output
 │   ├── run_parallel       — concurrent or pipeline execution
-│   └── specialist_status  — circuit breaker health + staleness detection
+│   ├── specialist_status  — circuit breaker health + staleness detection
+│   ├── start_specialist   — async job start, returns job ID
+│   ├── poll_specialist    — poll job status/output by ID
+│   └── stop_specialist    — cancel a running job by ID
 ├── Specialist System
 │   ├── SpecialistLoader   — 3-scope discovery (project/user/system), caching
 │   ├── SpecialistRunner   — agents.md injection, pre/post scripts, circuit breaker
@@ -182,8 +185,6 @@ npm run test:coverage
 | `npm run dev` | Build and run MCP server |
 | `npm run lint` | TypeScript type checking |
 | `npm test` | Run Vitest tests |
-| `npm run view-metrics` | Display token savings analytics |
-| `npm run activity-dashboard` | Show activity dashboard |
 
 ## Coding Conventions
 
@@ -460,7 +461,7 @@ For development questions or contributions:
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **OmniSpecialist** (793 symbols, 1754 relationships, 56 execution flows).
+This project is indexed by GitNexus as **unitAI** (626 symbols, 1239 relationships, 41 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
