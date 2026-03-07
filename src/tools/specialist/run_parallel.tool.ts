@@ -1,6 +1,7 @@
 // src/tools/specialist/run_parallel.tool.ts
 import { z } from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
+import { runPipeline } from '../../specialist/pipeline.js';
 
 const InvocationSchema = z.object({
   name: z.string(),
@@ -11,7 +12,7 @@ const InvocationSchema = z.object({
 
 export const runParallelSchema = z.object({
   specialists: z.array(InvocationSchema).min(1),
-  merge_strategy: z.enum(['collect', 'synthesize', 'vote']).default('collect'),
+  merge_strategy: z.enum(['collect', 'synthesize', 'vote', 'pipeline']).default('collect'),
   timeout_ms: z.number().default(120_000),
 });
 
@@ -21,6 +22,17 @@ export function createRunParallelTool(runner: SpecialistRunner) {
     description: 'Execute multiple specialists concurrently. Returns aggregated results.',
     inputSchema: runParallelSchema,
     async execute(input: z.infer<typeof runParallelSchema>) {
+      if (input.merge_strategy === 'pipeline') {
+        return runPipeline(
+          input.specialists.map(s => ({
+            name: s.name,
+            prompt: s.prompt,
+            variables: s.variables,
+            backend_override: s.backend_override,
+          })),
+          runner,
+        );
+      }
       if (input.merge_strategy !== 'collect') {
         throw new Error(`Merge strategy '${input.merge_strategy}' not yet implemented (v2.1)`);
       }
