@@ -28,13 +28,12 @@ export class ActivityRepository extends BaseRepository {
     `);
     }
     create(activity) {
-        const stmt = this.db.prepare(`
+        this.db.query(`
         INSERT INTO mcp_activities (
           id, timestamp, activity_type, tool_name, workflow_name,
           agent_name, duration, success, error_message, metadata
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-        stmt.run(activity.id, activity.timestamp, activity.activityType, activity.toolName || null, activity.workflowName || null, activity.agentName || null, activity.duration || null, activity.success ? 1 : 0, activity.errorMessage || null, JSON.stringify(activity.metadata || {}));
+      `).run(activity.id, activity.timestamp, activity.activityType, activity.toolName || null, activity.workflowName || null, activity.agentName || null, activity.duration || null, activity.success ? 1 : 0, activity.errorMessage || null, JSON.stringify(activity.metadata || {}));
     }
     query(filters) {
         let sql = 'SELECT * FROM mcp_activities WHERE 1=1';
@@ -68,12 +67,11 @@ export class ActivityRepository extends BaseRepository {
             sql += ' LIMIT ?';
             params.push(filters.limit);
         }
-        const rows = this.db.prepare(sql).all(...params);
+        const rows = this.db.query(sql).all(...params);
         return rows.map((row) => this.rowToActivity(row));
     }
     cleanup(cutoffTimestamp) {
-        const stmt = this.db.prepare('DELETE FROM mcp_activities WHERE timestamp < ?');
-        const result = stmt.run(cutoffTimestamp);
+        const result = this.db.query('DELETE FROM mcp_activities WHERE timestamp < ?').run(cutoffTimestamp);
         return result.changes;
     }
     rowToActivity(row) {

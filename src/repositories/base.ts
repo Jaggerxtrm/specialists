@@ -1,14 +1,14 @@
 /**
  * Base Repository Pattern
- * 
- * Abstract class for data access layers using better-sqlite3.
+ *
+ * Abstract class for data access layers using bun:sqlite.
  */
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 
 export abstract class BaseRepository {
-    protected db: Database.Database;
+    protected db: Database;
 
-    constructor(db: Database.Database) {
+    constructor(db: Database) {
         this.db = db;
     }
 

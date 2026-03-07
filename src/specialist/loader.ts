@@ -1,0 +1,123 @@
+// src/specialist/loader.ts
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
+import { parseSpecialist, type Specialist } from './schema.js';
+
+export interface SpecialistSummary {
+  name: string;
+  description: string;
+  category: string;
+  version: string;
+  model: string;
+  scope: 'project' | 'user' | 'system';
+  filePath: string;
+  updated?: string;
+  filestoWatch?: string[];
+  staleThresholdDays?: number;
+}
+
+/** Returns STALE, AGED, or OK based on file mtimes vs metadata.updated */
+export async function checkStaleness(
+  summary: SpecialistSummary,
+): Promise<'OK' | 'STALE' | 'AGED'> {
+  if (!summary.filestoWatch?.length || !summary.updated) return 'OK';
+  const updatedMs = new Date(summary.updated).getTime();
+  if (isNaN(updatedMs)) return 'OK';
+
+  for (const file of summary.filestoWatch) {
+    const fileStat = await stat(file).catch(() => null);
+    if (fileStat && fileStat.mtimeMs > updatedMs) {
+      // File changed after last specialist update — check if AGED
+      const daysSinceUpdate = (Date.now() - updatedMs) / 86_400_000;
+      if (summary.staleThresholdDays && daysSinceUpdate > summary.staleThresholdDays) {
+        return 'AGED';
+      }
+      return 'STALE';
+    }
+  }
+  return 'OK';
+}
+
+interface LoaderOptions {
+  projectDir?: string;
+  userDir?: string;    // override for testing
+  systemDir?: string;  // override for testing
+}
+
+export class SpecialistLoader {
+  private cache = new Map<string, Specialist>();
+  private projectDir: string;
+  private userDir: string;
+  private systemDir: string;
+
+  constructor(options: LoaderOptions = {}) {
+    this.projectDir = options.projectDir ?? process.cwd();
+    this.userDir = options.userDir ?? join(homedir(), '.claude', 'specialists');
+    // System specialists: bundled in package next to compiled output
+    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, '..', '..', 'specialists');
+  }
+
+  private getScanDirs(): Array<{ path: string; scope: 'project' | 'user' | 'system' }> {
+    return [
+      { path: join(this.projectDir, 'specialists'), scope: 'project' },
+      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'project' },
+      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'project' }, // cross-scan
+      { path: this.userDir, scope: 'user' },
+      { path: this.systemDir, scope: 'system' },
+    ].filter(d => existsSync(d.path));
+  }
+
+  async list(category?: string): Promise<SpecialistSummary[]> {
+    const results: SpecialistSummary[] = [];
+    const seen = new Set<string>();
+
+    for (const dir of this.getScanDirs()) {
+      const files = await readdir(dir.path).catch(() => []);
+      for (const file of files.filter(f => f.endsWith('.specialist.yaml'))) {
+        const filePath = join(dir.path, file);
+        try {
+          const content = await readFile(filePath, 'utf-8');
+          const spec = await parseSpecialist(content);
+          const { name, description, category: cat, version, updated } = spec.specialist.metadata;
+          if (seen.has(name)) continue; // project overrides user/system (first wins)
+          if (category && cat !== category) continue;
+          seen.add(name);
+          results.push({
+            name, description, category: cat, version,
+            model: spec.specialist.execution.model,
+            scope: dir.scope,
+            filePath,
+            updated,
+            filestoWatch: spec.specialist.validation?.files_to_watch,
+            staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
+          });
+        } catch {
+          // Skip invalid YAML files silently
+        }
+      }
+    }
+    return results;
+  }
+
+  async get(name: string): Promise<Specialist> {
+    if (this.cache.has(name)) return this.cache.get(name)!;
+
+    for (const dir of this.getScanDirs()) {
+      const filePath = join(dir.path, `${name}.specialist.yaml`);
+      if (existsSync(filePath)) {
+        const content = await readFile(filePath, 'utf-8');
+        const spec = await parseSpecialist(content);
+        this.cache.set(name, spec);
+        return spec;
+      }
+    }
+    throw new Error(`Specialist not found: ${name}`);
+  }
+
+  invalidateCache(name?: string): void {
+    if (name) this.cache.delete(name);
+    else this.cache.clear();
+  }
+}

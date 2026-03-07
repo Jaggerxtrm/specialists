@@ -33,14 +33,12 @@ export class ActivityRepository extends BaseRepository {
     }
 
     create(activity: Omit<MCPActivity, 'id' | 'timestamp'> & { id: string, timestamp: number }): void {
-        const stmt = this.db.prepare(`
+        this.db.query(`
         INSERT INTO mcp_activities (
           id, timestamp, activity_type, tool_name, workflow_name,
           agent_name, duration, success, error_message, metadata
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-        stmt.run(
+      `).run(
             activity.id,
             activity.timestamp,
             activity.activityType,
@@ -103,14 +101,13 @@ export class ActivityRepository extends BaseRepository {
             params.push(filters.limit);
         }
 
-        const rows = this.db.prepare(sql).all(...params);
+        const rows = this.db.query(sql).all(...params);
         return rows.map((row: any) => this.rowToActivity(row));
     }
 
     cleanup(cutoffTimestamp: number): number {
-        const stmt = this.db.prepare('DELETE FROM mcp_activities WHERE timestamp < ?');
-        const result = stmt.run(cutoffTimestamp);
-        return result.changes;
+        const result = this.db.query('DELETE FROM mcp_activities WHERE timestamp < ?').run(cutoffTimestamp);
+        return (result as any).changes;
     }
 
     private rowToActivity(row: any): MCPActivity {

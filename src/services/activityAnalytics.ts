@@ -8,7 +8,7 @@
  * - Agent performance
  */
 
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import * as path from 'path';
 import * as fs from 'fs';
 import { AuditTrail, AuditEntry, AuditStats } from '../utils/auditTrail.js';

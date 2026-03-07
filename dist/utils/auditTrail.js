@@ -3,7 +3,7 @@
  *
  * Tracks all autonomous decisions and operations for accountability and debugging.
  */
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import * as path from 'path';
 import * as fs from 'fs';
 /**
@@ -57,7 +57,7 @@ export class AuditTrail {
     record(entry) {
         const id = this.generateId();
         const timestamp = Date.now();
-        const stmt = this.db.prepare(`
+        const stmt = this.db.query(`
       INSERT INTO audit_entries (
         id, timestamp, workflow_name, workflow_id, autonomy_level, operation,
         target, approved, executed_by, outcome, error_message, metadata
@@ -108,7 +108,7 @@ export class AuditTrail {
             sql += ' LIMIT ?';
             params.push(filters.limit);
         }
-        const rows = this.db.prepare(sql).all(...params);
+        const rows = this.db.query(sql).all(...params);
         return rows.map((row) => this.rowToEntry(row));
     }
     /**
@@ -130,20 +130,20 @@ export class AuditTrail {
             params.push(filters.endTime.getTime());
         }
         // Get counts
-        const totalEntries = this.db.prepare(`SELECT COUNT(*) as count FROM audit_entries ${whereClause}`).get(...params);
-        const approvedOperations = this.db.prepare(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND approved = 1`).get(...params);
-        const deniedOperations = this.db.prepare(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND approved = 0`).get(...params);
-        const successfulOperations = this.db.prepare(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND outcome = 'success'`).get(...params);
-        const failedOperations = this.db.prepare(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND outcome = 'failure'`).get(...params);
+        const totalEntries = this.db.query(`SELECT COUNT(*) as count FROM audit_entries ${whereClause}`).get(...params);
+        const approvedOperations = this.db.query(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND approved = 1`).get(...params);
+        const deniedOperations = this.db.query(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND approved = 0`).get(...params);
+        const successfulOperations = this.db.query(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND outcome = 'success'`).get(...params);
+        const failedOperations = this.db.query(`SELECT COUNT(*) as count FROM audit_entries ${whereClause} AND outcome = 'failure'`).get(...params);
         // Get distribution by autonomy level
         const byAutonomyLevel = {};
-        const autonomyLevelRows = this.db.prepare(`SELECT autonomy_level, COUNT(*) as count FROM audit_entries ${whereClause} GROUP BY autonomy_level`).all(...params);
+        const autonomyLevelRows = this.db.query(`SELECT autonomy_level, COUNT(*) as count FROM audit_entries ${whereClause} GROUP BY autonomy_level`).all(...params);
         for (const row of autonomyLevelRows) {
             byAutonomyLevel[row.autonomy_level] = row.count;
         }
         // Get distribution by operation
         const byOperation = {};
-        const operationRows = this.db.prepare(`SELECT operation, COUNT(*) as count FROM audit_entries ${whereClause} GROUP BY operation`).all(...params);
+        const operationRows = this.db.query(`SELECT operation, COUNT(*) as count FROM audit_entries ${whereClause} GROUP BY operation`).all(...params);
         for (const row of operationRows) {
             byOperation[row.operation] = row.count;
         }
@@ -287,7 +287,7 @@ export class AuditTrail {
      */
     cleanup(daysToKeep) {
         const cutoffTimestamp = Date.now() - (daysToKeep * 24 * 60 * 60 * 1000);
-        const stmt = this.db.prepare('DELETE FROM audit_entries WHERE timestamp < ?');
+        const stmt = this.db.query('DELETE FROM audit_entries WHERE timestamp < ?');
         const result = stmt.run(cutoffTimestamp);
         return result.changes;
     }

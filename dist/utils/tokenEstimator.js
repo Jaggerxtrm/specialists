@@ -9,7 +9,7 @@ import { promisify } from "util";
 import { stat, access } from "fs/promises";
 import { constants } from "fs";
 import { logger } from "./logger.js";
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import * as path from 'path';
 import * as fs from 'fs';
 const execAsync = promisify(exec);
@@ -305,7 +305,7 @@ export class TokenSavingsMetrics {
         const id = this.generateId();
         const timestamp = Date.now();
         try {
-            const stmt = this.db.prepare(`
+            const stmt = this.db.query(`
         INSERT INTO token_savings_metrics (
           id, timestamp, source, blocked_tool, recommended_tool,
           target, estimated_savings, actual_tokens_avoided, suggestion_followed, metadata
@@ -357,7 +357,7 @@ export class TokenSavingsMetrics {
             params.push(filters.limit);
         }
         try {
-            const rows = this.db.prepare(sql).all(...params);
+            const rows = this.db.query(sql).all(...params);
             return rows.map((row) => this.rowToMetric(row));
         }
         catch (error) {
@@ -427,7 +427,7 @@ export class TokenSavingsMetrics {
      */
     updateActualSavings(metricId, actualTokensAvoided) {
         try {
-            const stmt = this.db.prepare(`
+            const stmt = this.db.query(`
         UPDATE token_savings_metrics
         SET actual_tokens_avoided = ?
         WHERE id = ?
