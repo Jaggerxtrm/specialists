@@ -71,17 +71,42 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 
 ## Installation
 
-### Prerequisites
+### One-line installer (recommended)
 
-- **Node.js** 18+
-- **pi** — the underlying coding agent CLI:
-  ```bash
-  npm install -g @mariozechner/pi-coding-agent
-  ```
-  After installing, run `pi` once and use `pi config` to enable your model providers.
+Installs all dependencies and registers the MCP automatically:
 
-### Add to Claude (MCP)
+```bash
+npx --package=github:Jaggerxtrm/specialists install
+```
 
+This installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), prints dolt instructions, installs `specialists` globally, registers the MCP at user scope, and scaffolds `~/.agents/specialists/`.
+
+After running, **restart Claude Code** to load the MCP.
+
+---
+
+### Manual installation
+
+**1. pi** — coding agent runtime:
+```bash
+npm install -g @mariozechner/pi-coding-agent
+```
+Run `pi` once, then `pi config` to enable your model providers (Anthropic, Google, etc.).
+
+**2. beads** — issue tracker:
+```bash
+npm install -g @beads/bd
+```
+
+**3. dolt** — beads sync backend:
+```bash
+# Linux
+sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
+# macOS
+brew install dolt
+```
+
+**4. specialists + MCP:**
 ```bash
 npm install -g github:Jaggerxtrm/specialists
 claude mcp add --scope user specialists -- specialists
