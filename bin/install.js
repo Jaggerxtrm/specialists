@@ -27,6 +27,7 @@ function section(label) {
 function ok(label)   { console.log(`  ${green('✓')} ${label}`); }
 function skip(label) { console.log(`  ${yellow('○')} ${label}`); }
 function info(label) { console.log(`  ${dim(label)}`); }
+function fail(label) { console.log(`  ${red('✗')} ${label}`); }
 
 function isInstalled(cmd) {
   const r = spawnSync('which', [cmd], { encoding: 'utf8' });
@@ -42,6 +43,30 @@ function npmInstallGlobal(pkg) {
 function piListModels() {
   const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
   return r.status === 0;
+}
+
+function installDolt() {
+  if (process.platform === 'darwin') {
+    info('Installing dolt via brew...');
+    const r = spawnSync('brew', ['install', 'dolt'], { stdio: 'inherit', encoding: 'utf8' });
+    if (r.status === 0) {
+      ok('dolt installed');
+    } else {
+      fail('brew install dolt failed — install manually: brew install dolt');
+    }
+  } else {
+    info('Installing dolt (requires sudo)...');
+    const r = spawnSync(
+      'sudo', ['bash', '-c', 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'],
+      { stdio: 'inherit', encoding: 'utf8' }
+    );
+    if (r.status === 0) {
+      ok('dolt installed');
+    } else {
+      fail("dolt install failed — install manually:");
+      info("  sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'");
+    }
+  }
 }
 
 // ── MCP registration ──────────────────────────────────────────────────────────
@@ -96,9 +121,7 @@ section('dolt  (beads sync backend)');
 if (isInstalled('dolt')) {
   skip('dolt already installed');
 } else {
-  skip('dolt not found — install manually:');
-  info("  Linux:  sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'");
-  info('  macOS:  brew install dolt');
+  installDolt();
 }
 
 // 4. Specialists MCP
