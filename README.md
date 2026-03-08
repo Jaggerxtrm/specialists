@@ -71,11 +71,44 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 
 ## Installation
 
+### One-line installer (recommended)
+
 ```bash
-node <(curl -fsSL https://raw.githubusercontent.com/Jaggerxtrm/unit.ai-specialists/master/bin/install.js)
+npx --package=@jaggerxtrm/specialists install
 ```
 
-Clones the repo to `~/.agents/omnispecialist/`, installs dependencies (bun if available, else npm), registers the MCP as a direct `node` call — no npx overhead on every startup. Also installs **pi** and **beads** if missing.
+Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`.
+
+After running, **restart Claude Code** to load the MCP.
+
+---
+
+### Manual installation
+
+**1. pi** — coding agent runtime:
+```bash
+npm install -g @mariozechner/pi-coding-agent
+```
+Run `pi` once, then `pi config` to enable your model providers (Anthropic, Google, etc.).
+
+**2. beads** — issue tracker:
+```bash
+npm install -g @beads/bd
+```
+
+**3. dolt** — beads sync backend:
+```bash
+# Linux
+sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
+# macOS
+brew install dolt
+```
+
+**4. specialists + MCP:**
+```bash
+npm install -g @jaggerxtrm/specialists
+claude mcp add --scope user specialists -- specialists
+```
 
 Then **restart Claude Code**.
 

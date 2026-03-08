@@ -1,11 +1,12 @@
 ---
 title: OmniSpecialist Roadmap
-version: 1.1.0
+version: 1.2.0
 updated: 2026-03-08
 scope: product
 category: roadmap
 domain: [planning, features]
 changelog:
+  - 1.2.0 (2026-03-08): Mark M1 fully complete — installer, npm publish, MCP working.
   - 1.1.0 (2026-03-08): Mark M1.1 complete; add dead code cleanup; update status.
   - 1.0.0 (2026-03-07): Initial roadmap — post v2 specialist system launch.
 ---
@@ -33,9 +34,12 @@ changelog:
 | Item | Done |
 |------|------|
 | v2 Specialist System — 7-tool MCP orchestration layer | 2026-03-07 |
-| Repo rename `unitAI` → `omnispecialist` (GitHub + package.json) | 2026-03-07 |
+| Repo rename `unitAI` → `omnispecialist` → **`specialists`** (GitHub + package.json) | 2026-03-07 |
 | Dead v1 code removal — analytics, logging, permissions, orphaned utils (18k lines) | 2026-03-08 |
 | CLAUDE.md accuracy fix — tool count 4→7, add start/poll/stop_specialist | 2026-03-08 |
+| **M1 Installer** — `npx --package=@jaggerxtrm/specialists install` installs pi, beads, dolt, registers MCP | 2026-03-08 |
+| **npm publish** — `@jaggerxtrm/specialists@2.0.1` public on npm registry | 2026-03-08 |
+| MCP connection fix — shebang deduplication, `specialists` command works end-to-end | 2026-03-08 |
 
 ---
 
@@ -46,19 +50,13 @@ changelog:
 - ~~Update `package.json` name, README, all internal references~~
 - ~~Update MCP server `name` field in `server.ts`~~
 
-### 1.2 Installer
-A first-class install experience that sets up the full stack end-to-end.
+### ~~1.2 Installer~~ ✓ Done
 
-**Must do:**
-- Install `omnispecialist` MCP at user level (not project-level) — existing automatic MCP installation system can be reused
-- Install `pi` global binary as part of the install flow
-- After pi is installed, print clear instructions: _"Run `pi` once and use the config TUI (`pi config`) to enable and map your model providers"_
-  - Note: pi has no CLI flag for provider setup — TUI is the only path (`pi config`)
-- Scaffold `~/.agents/specialists/` (user-scope specialist directory)
+```bash
+npx --package=@jaggerxtrm/specialists install
+```
 
-**Nice to have:**
-- Detect if `pi` is already installed and skip reinstall
-- Post-install health check: `pi --list-models` to confirm at least one provider is active
+Installa: `@mariozechner/pi-coding-agent`, `@beads/bd`, dolt (sudo interattivo su Linux / brew su macOS), `@jaggerxtrm/specialists` globalmente, registra MCP come `specialists` a scope user, scaffolda `~/.agents/specialists/`.
 
 ---
 
