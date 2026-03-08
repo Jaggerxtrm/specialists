@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 // OmniSpecialist Installer
-// Usage: npx --package=github:Jaggerxtrm/specialists install
+// Usage: node <(curl -fsSL https://raw.githubusercontent.com/Jaggerxtrm/unit.ai-specialists/master/bin/install.js)
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const HOME = homedir();
+const HOME           = homedir();
+const INSTALL_DIR    = join(HOME, '.agents', 'omnispecialist');
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
-const MCP_NAME = 'specialists';
-const GITHUB_PKG = 'github:Jaggerxtrm/specialists';
+const MCP_NAME       = 'omnispecialist';
+const REPO_URL       = 'https://github.com/Jaggerxtrm/unit.ai-specialists.git';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 const dim    = (s) => `\x1b[2m${s}\x1b[0m`;
 const green  = (s) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 const bold   = (s) => `\x1b[1m${s}\x1b[0m`;
-const red    = (s) => `\x1b[31m${s}\x1b[0m`;
 
 function section(label) {
   const line = '─'.repeat(Math.max(0, 40 - label.length));
@@ -27,70 +27,15 @@ function section(label) {
 function ok(label)   { console.log(`  ${green('✓')} ${label}`); }
 function skip(label) { console.log(`  ${yellow('○')} ${label}`); }
 function info(label) { console.log(`  ${dim(label)}`); }
-function fail(label) { console.log(`  ${red('✗')} ${label}`); }
 
 function isInstalled(cmd) {
   const r = spawnSync('which', [cmd], { encoding: 'utf8' });
   return r.status === 0 && r.stdout.trim().length > 0;
 }
 
-// Safe spawn: never passes user input — all args are hardcoded constants
-function npmInstallGlobal(pkg) {
-  const r = spawnSync('npm', ['install', '-g', pkg], { stdio: 'inherit', encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`npm install -g ${pkg} failed`);
-}
-
-function piListModels() {
-  const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
-  return r.status === 0;
-}
-
-function installDolt() {
-  if (process.platform === 'darwin') {
-    info('Installing dolt via brew...');
-    const r = spawnSync('brew', ['install', 'dolt'], { stdio: 'inherit', encoding: 'utf8' });
-    if (r.status === 0) {
-      ok('dolt installed');
-    } else {
-      fail('brew install dolt failed — install manually: brew install dolt');
-    }
-  } else {
-    info('Installing dolt (requires sudo)...');
-    const r = spawnSync(
-      'sudo', ['bash', '-c', 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'],
-      { stdio: 'inherit', encoding: 'utf8' }
-    );
-    if (r.status === 0) {
-      ok('dolt installed');
-    } else {
-      fail("dolt install failed — install manually:");
-      info("  sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'");
-    }
-  }
-}
-
-// ── MCP registration ──────────────────────────────────────────────────────────
-function registerMCP() {
-  // Check if already registered
-  const check = spawnSync('claude', ['mcp', 'get', MCP_NAME], { encoding: 'utf8' });
-  if (check.status === 0) {
-    return false; // already present
-  }
-
-  // Install globally
-  npmInstallGlobal(GITHUB_PKG);
-
-  // Register with Claude
-  const r = spawnSync('claude', [
-    'mcp', 'add',
-    '--scope', 'user',
-    MCP_NAME,
-    '--',
-    MCP_NAME,
-  ], { stdio: 'inherit', encoding: 'utf8' });
-
-  if (r.status !== 0) throw new Error('claude mcp add failed');
-  return true;
+function run(cmd, args) {
+  const r = spawnSync(cmd, args, { stdio: 'inherit', encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed`);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -101,8 +46,8 @@ section('pi  (coding agent runtime)');
 if (isInstalled('pi')) {
   skip('pi already installed');
 } else {
-  info('Installing @mariozechner/pi-coding-agent...');
-  npmInstallGlobal('@mariozechner/pi-coding-agent');
+  info('Installing @mariozechner/pi...');
+  run('npm', ['install', '-g', '@mariozechner/pi']);
   ok('pi installed');
 }
 
@@ -112,7 +57,7 @@ if (isInstalled('bd')) {
   skip('bd already installed');
 } else {
   info('Installing @beads/bd...');
-  npmInstallGlobal('@beads/bd');
+  run('npm', ['install', '-g', '@beads/bd']);
   ok('bd installed');
 }
 
@@ -121,18 +66,46 @@ section('dolt  (beads sync backend)');
 if (isInstalled('dolt')) {
   skip('dolt already installed');
 } else {
-  installDolt();
+  skip('dolt not found — install manually:');
+  info('  Linux:  sudo bash -c "$(curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh)"');
+  info('  macOS:  brew install dolt');
 }
 
-// 4. Specialists MCP
-section('Specialists MCP');
+// 4. Clone / update OmniSpecialist
+section('OmniSpecialist');
+if (existsSync(join(INSTALL_DIR, '.git'))) {
+  info(`Updating ${INSTALL_DIR}...`);
+  run('git', ['-C', INSTALL_DIR, 'pull', '--ff-only']);
+  ok('repo updated');
+} else {
+  info(`Cloning into ${INSTALL_DIR}...`);
+  mkdirSync(join(HOME, '.agents'), { recursive: true });
+  run('git', ['clone', REPO_URL, INSTALL_DIR]);
+  ok('repo cloned');
+}
 
-const registered = registerMCP();
-registered
-  ? ok(`MCP '${MCP_NAME}' registered at user scope`)
-  : skip(`MCP '${MCP_NAME}' already registered`);
+// 5. Install dependencies — use bun if available (10x faster), else npm
+section('Dependencies');
+const pm = isInstalled('bun') ? 'bun' : 'npm';
+info(`Running ${pm} install...`);
+if (pm === 'bun') {
+  run('bun', ['install', '--cwd', INSTALL_DIR]);
+} else {
+  run('npm', ['install', '--prefix', INSTALL_DIR]);
+}
+ok(`dependencies ready (${pm})`);
 
-// 5. Scaffold specialists directory
+// 6. Register MCP — direct node call, no npx overhead on every startup
+section('MCP registration');
+const serverPath = join(INSTALL_DIR, 'dist', 'index.js');
+const existing = spawnSync('claude', ['mcp', 'get', MCP_NAME], { encoding: 'utf8' });
+if (existing.status === 0) {
+  spawnSync('claude', ['mcp', 'remove', '-s', 'user', MCP_NAME], { encoding: 'utf8' });
+}
+run('claude', ['mcp', 'add', '--scope', 'user', MCP_NAME, '--', 'node', serverPath]);
+ok(`registered → node ${serverPath}`);
+
+// 7. Scaffold specialists directory
 section('Scaffold');
 if (!existsSync(SPECIALISTS_DIR)) {
   mkdirSync(SPECIALISTS_DIR, { recursive: true });
@@ -141,20 +114,9 @@ if (!existsSync(SPECIALISTS_DIR)) {
   skip('~/.agents/specialists/ already exists');
 }
 
-// 6. Health check (pi)
-section('Health check');
-if (isInstalled('pi')) {
-  piListModels()
-    ? ok('pi has at least one active provider')
-    : skip('No active provider detected — run pi config to set one up');
-}
-
-// 7. Done
+// 8. Done
 console.log('\n' + bold(green('  Done!')));
 console.log('\n' + bold('  Next steps:'));
-console.log(`  1. ${bold('Configure pi providers:')}`);
-console.log(`       ${yellow('pi')}         — launch pi once`);
-console.log(`       ${yellow('pi config')} — open TUI to enable + map model providers`);
-console.log(`     ${dim('(no CLI flags for provider setup — TUI only)')}`);
-console.log(`  2. ${bold('Restart Claude Code')} to load the Specialists MCP`);
-console.log(`  3. Verify with ${yellow('pi --list-models')} — at least one provider should be active\n`);
+console.log(`  1. ${bold('Configure pi:')} run ${yellow('pi')} then ${yellow('pi config')} to enable model providers`);
+console.log(`  2. ${bold('Restart Claude Code')} to load the MCP`);
+console.log(`  3. ${bold('Update later:')} re-run this script\n`);
