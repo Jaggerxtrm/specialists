@@ -71,9 +71,28 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 
 ## Installation
 
-> **Note**: A first-class installer is on the roadmap. For now, install manually.
+### One-line installer (recommended)
 
-### Prerequisites
+No npm account or 2FA needed — installs directly from GitHub:
+
+```bash
+npx github:Jaggerxtrm/unit.ai-specialists omnispecialist-install
+```
+
+This will:
+- Install **pi** (`@mariozechner/pi`) globally if not present
+- Install **beads** (`@beads/bd`) globally if not present
+- Print dolt install instructions if missing
+- Install OmniSpecialist globally and register it in `~/.claude.json`
+- Scaffold `~/.omnispecialist/specialists/`
+
+After running, **restart Claude Code** to load the MCP.
+
+---
+
+### Manual installation
+
+#### Prerequisites
 
 1. **pi** — the underlying coding agent CLI:
    ```bash
@@ -81,17 +100,12 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
    ```
    After installing, run `pi` once and use `pi config` to enable your model providers (Anthropic, Google, etc.).
 
-2. **Node.js** 18+ or **Bun**
+2. **Node.js** 18+
 
-### Add to Claude (MCP)
+#### Add to Claude (MCP)
 
 ```bash
-claude mcp add --scope user --transport stdio omnispecialist -- npx -y @jaggerxtrm/omnispecialist
-```
-
-Or with global install:
-```bash
-npm install -g @jaggerxtrm/omnispecialist
+npm install -g github:Jaggerxtrm/unit.ai-specialists
 claude mcp add --scope user --transport stdio omnispecialist -- omnispecialist
 ```
 
