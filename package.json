@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "omnispecialist": "dist/index.js"
+    "omnispecialist": "dist/index.js",
+    "omnispecialist-install": "bin/install.js"
   },
   "scripts": {
     "build": "bun build src/index.ts --target=node --outfile=dist/index.js",
