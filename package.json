@@ -4,6 +4,11 @@
   "description": "OmniSpecialist \u2014 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
   "main": "dist/index.js",
   "type": "module",
+  "files": [
+    "dist/index.js",
+    "bin/install.js",
+    "specialists/"
+  ],
   "bin": {
     "specialists": "dist/index.js",
     "install": "bin/install.js"
