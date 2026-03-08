@@ -3,12 +3,11 @@
 // Usage: npx --package=github:Jaggerxtrm/unit.ai-specialists install
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const HOME = homedir();
-const CLAUDE_CONFIG = join(HOME, '.claude.json');
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
 const MCP_NAME = 'omnispecialist';
 
@@ -39,8 +38,6 @@ function npmInstallGlobal(pkg) {
   if (r.status !== 0) throw new Error(`npm install -g ${pkg} failed`);
 }
 
-
-
 function piListModels() {
   const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
   return r.status === 0;
@@ -53,21 +50,23 @@ function readConfig() {
 }
 
 function registerMCP() {
-  const config = readConfig();
-  config.mcpServers ??= {};
-
-  if (config.mcpServers[MCP_NAME]) {
+  // Check if already registered
+  const check = spawnSync('claude', ['mcp', 'get', MCP_NAME], { encoding: 'utf8' });
+  if (check.status === 0) {
     return false; // already present
   }
 
-  config.mcpServers[MCP_NAME] = {
-    type: 'stdio',
-    command: 'npx',
-    args: ['--yes', '--prefer-offline', '--package=github:Jaggerxtrm/unit.ai-specialists', 'omnispecialist'],
-    env: {},
-  };
+  const r = spawnSync('claude', [
+    'mcp', 'add',
+    '--scope', 'user',
+    MCP_NAME,
+    '--',
+    'npx', '--yes', '--prefer-offline',
+    '--package=github:Jaggerxtrm/unit.ai-specialists',
+    'omnispecialist',
+  ], { stdio: 'inherit', encoding: 'utf8' });
 
-  writeFileSync(CLAUDE_CONFIG, JSON.stringify(config, null, 2) + '\n');
+  if (r.status !== 0) throw new Error('claude mcp add failed');
   return true;
 }
 
