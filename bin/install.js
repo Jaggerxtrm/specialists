@@ -61,20 +61,14 @@ function installDolt() {
 
 function registerMCP() {
   const check = spawnSync('claude', ['mcp', 'get', MCP_NAME], { encoding: 'utf8' });
-  if (check.status === 0) {
-    // Re-register anyway to ensure path is up to date
-    spawnSync('claude', ['mcp', 'remove', '-s', 'user', MCP_NAME], { encoding: 'utf8' });
-  }
-
-  npmInstallGlobal(GITHUB_PKG);
-
-  // Resolve absolute paths — avoids PATH issues when Claude starts the MCP
-  const globalLib = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' }).stdout.trim();
-  const serverPath = join(globalLib, '@jaggerxtrm', 'specialists', 'dist', 'index.js');
-  const nodeBin = process.execPath;
+  if (check.status === 0) return false;
 
   const r = spawnSync('claude', [
-    'mcp', 'add', '--scope', 'user', MCP_NAME, '--', nodeBin, serverPath,
+    'mcp', 'add', '--scope', 'user', MCP_NAME,
+    '--',
+    'npx', '--yes', '--prefer-offline',
+    `--package=${GITHUB_PKG}`,
+    MCP_NAME,
   ], { stdio: 'inherit', encoding: 'utf8' });
   if (r.status !== 0) throw new Error('claude mcp add failed');
   return true;
