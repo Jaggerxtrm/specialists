@@ -19,7 +19,7 @@ Specialists are `.specialist.yaml` files that define an autonomous agent: its mo
 | Scope | Location | Purpose |
 |-------|----------|---------|
 | **project** | `./specialists/` | Per-project specialists |
-| **user** | `~/.omnispecialist/specialists/` | Personal specialists |
+| **user** | `~/.agents/specialists/` | Personal specialists |
 | **system** | bundled with OmniSpecialist | Built-in defaults |
 
 When a specialist runs, OmniSpecialist spawns a `pi` subprocess with the right model, tools, and system prompt injected. Output streams back in real time via cursor-based polling.
@@ -84,7 +84,7 @@ This will:
 - Install **beads** (`@beads/bd`) globally if not present
 - Print dolt install instructions if missing
 - Install OmniSpecialist globally and register it in `~/.claude.json`
-- Scaffold `~/.omnispecialist/specialists/`
+- Scaffold `~/.agents/specialists/`
 
 After running, **restart Claude Code** to load the MCP.
 
@@ -113,7 +113,7 @@ claude mcp add --scope user --transport stdio omnispecialist -- omnispecialist
 
 ## Writing a Specialist
 
-Create a `.yaml` file in `./specialists/` (project scope) or `~/.omnispecialist/specialists/` (user scope):
+Create a `.yaml` file in `./specialists/` (project scope) or `~/.agents/specialists/` (user scope):
 
 ```yaml
 specialist:

@@ -54,7 +54,7 @@ export class SpecialistLoader {
 
   constructor(options: LoaderOptions = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
-    this.userDir = options.userDir ?? join(homedir(), '.claude', 'specialists');
+    this.userDir = options.userDir ?? join(homedir(), '.agents', 'specialists');
     // System specialists: bundled in package next to compiled output
     this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, '..', '..', 'specialists');
   }

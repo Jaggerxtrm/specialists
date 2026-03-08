@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 const HOME = homedir();
 const CLAUDE_CONFIG = join(HOME, '.claude.json');
-const SPECIALISTS_DIR = join(HOME, '.omnispecialist', 'specialists');
+const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
 const GLOBAL_PKG_NAME = '@jaggerxtrm/omnispecialist';
 const MCP_NAME = 'omnispecialist';
 

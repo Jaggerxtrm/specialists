@@ -54,7 +54,7 @@ A first-class install experience that sets up the full stack end-to-end.
 - Install `pi` global binary as part of the install flow
 - After pi is installed, print clear instructions: _"Run `pi` once and use the config TUI (`pi config`) to enable and map your model providers"_
   - Note: pi has no CLI flag for provider setup — TUI is the only path (`pi config`)
-- Scaffold `~/.omnispecialist/specialists/` (user-scope specialist directory)
+- Scaffold `~/.agents/specialists/` (user-scope specialist directory)
 
 **Nice to have:**
 - Detect if `pi` is already installed and skip reinstall
@@ -107,7 +107,7 @@ Guided specialist creation workflow. Implemented as a **skill** (not auto-loaded
 **Core requirements:**
 - Inherit the original Mercury specialist design spec and enforce schema validation — this is non-negotiable
 - Guide creation interactively via `AskUserQuestion`:
-  1. **Scope**: project-level (scaffold `./specialists/`) or user-level (`~/.omnispecialist/specialists/`)?
+  1. **Scope**: project-level (scaffold `./specialists/`) or user-level (`~/.agents/specialists/`)?
   2. **Model assignment**: agent suggests a model based on task type; user can override from a presented list of main models
   3. **Permission tier**: READ_ONLY / LOW / MEDIUM / HIGH
   4. **Skill-as-base?**: offer to create from an installed SKILL.md (see below)

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **npx GitHub installer** (`bin/install.js`) — one-line setup via
   `npx github:Jaggerxtrm/unit.ai-specialists omnispecialist-install`;
   installs pi, beads, dolt (instructions), registers MCP in `~/.claude.json`,
-  scaffolds `~/.omnispecialist/specialists/`. No npm publish or 2FA required.
+  scaffolds `~/.agents/specialists/`. No npm publish or 2FA required.
 
 ### Changed
 - `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
