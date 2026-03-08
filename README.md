@@ -76,14 +76,15 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 - **Node.js** 18+
 - **pi** — the underlying coding agent CLI:
   ```bash
-  npm install -g @mariozechner/pi
+  npm install -g @mariozechner/pi-coding-agent
   ```
   After installing, run `pi` once and use `pi config` to enable your model providers.
 
 ### Add to Claude (MCP)
 
 ```bash
-claude mcp add --scope user omnispecialist -- npx --yes --prefer-offline --package=github:Jaggerxtrm/unit.ai-specialists omnispecialist
+npm install -g github:Jaggerxtrm/specialists
+claude mcp add --scope user specialists -- specialists
 ```
 
 Then **restart Claude Code**.
