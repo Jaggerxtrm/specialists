@@ -10,7 +10,7 @@ import { join } from 'node:path';
 const HOME            = homedir();
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
 const MCP_NAME        = 'specialists';
-const GITHUB_PKG      = 'github:Jaggerxtrm/specialists';
+const GITHUB_PKG      = '@jaggerxtrm/specialists';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 const dim    = (s) => `\x1b[2m${s}\x1b[0m`;
