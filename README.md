@@ -76,7 +76,7 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 No npm account or 2FA needed — installs directly from GitHub:
 
 ```bash
-npx --package=github:Jaggerxtrm/unit.ai-specialists omnispecialist-install
+npx --package=github:Jaggerxtrm/unit.ai-specialists install
 ```
 
 This will:
