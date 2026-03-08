@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "bun build src/index.ts --target=node --outfile=dist/index.js && printf '#!/usr/bin/env node\\n' | cat - dist/index.js > dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && chmod +x dist/index.js",
-    "prepare": "node -e \"require('esbuild').buildSync({entryPoints:['src/index.ts'],bundle:true,platform:'node',outfile:'dist/index.js',banner:{js:'#!/usr/bin/env node'},format:'esm'})\" && chmod +x dist/index.js",
+    "prepare": "node_modules/.bin/esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --format=esm && chmod +x dist/index.js",
     "dev": "bun run src/index.ts",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
