@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 // OmniSpecialist Installer
-// Usage: node <(curl -fsSL https://raw.githubusercontent.com/Jaggerxtrm/unit.ai-specialists/master/bin/install.js)
+// Usage: npx --package=github:Jaggerxtrm/specialists install
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const HOME           = homedir();
-const INSTALL_DIR    = join(HOME, '.agents', 'omnispecialist');
-const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
-const MCP_NAME       = 'omnispecialist';
-const REPO_URL       = 'https://github.com/Jaggerxtrm/unit.ai-specialists.git';
+const HOME            = homedir();
+const INSTALL_DIR     = join(HOME, '.agents', 'omnispecialist');   // repo lives here
+const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');       // user .specialist.yaml files
+const MCP_NAME        = 'specialists';
+const REPO_URL        = 'https://github.com/Jaggerxtrm/specialists.git';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 const dim    = (s) => `\x1b[2m${s}\x1b[0m`;
 const green  = (s) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 const bold   = (s) => `\x1b[1m${s}\x1b[0m`;
+const red    = (s) => `\x1b[31m${s}\x1b[0m`;
 
 function section(label) {
   const line = '─'.repeat(Math.max(0, 40 - label.length));
@@ -27,6 +28,7 @@ function section(label) {
 function ok(label)   { console.log(`  ${green('✓')} ${label}`); }
 function skip(label) { console.log(`  ${yellow('○')} ${label}`); }
 function info(label) { console.log(`  ${dim(label)}`); }
+function fail(label) { console.log(`  ${red('✗')} ${label}`); }
 
 function isInstalled(cmd) {
   const r = spawnSync('which', [cmd], { encoding: 'utf8' });
@@ -38,6 +40,30 @@ function run(cmd, args) {
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed`);
 }
 
+function installDolt() {
+  if (process.platform === 'darwin') {
+    info('Installing dolt via brew...');
+    const r = spawnSync('brew', ['install', 'dolt'], { stdio: 'inherit', encoding: 'utf8' });
+    if (r.status === 0) {
+      ok('dolt installed');
+    } else {
+      fail('brew install dolt failed — install manually: brew install dolt');
+    }
+  } else {
+    info('Installing dolt (requires sudo)...');
+    const r = spawnSync(
+      'sudo', ['bash', '-c', 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'],
+      { stdio: 'inherit', encoding: 'utf8' }
+    );
+    if (r.status === 0) {
+      ok('dolt installed');
+    } else {
+      fail('dolt install failed — install manually:');
+      info("  sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'");
+    }
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 console.log('\n' + bold('  OmniSpecialist — full-stack installer'));
 
@@ -46,8 +72,8 @@ section('pi  (coding agent runtime)');
 if (isInstalled('pi')) {
   skip('pi already installed');
 } else {
-  info('Installing @mariozechner/pi...');
-  run('npm', ['install', '-g', '@mariozechner/pi']);
+  info('Installing @mariozechner/pi-coding-agent...');
+  run('npm', ['install', '-g', '@mariozechner/pi-coding-agent']);
   ok('pi installed');
 }
 
@@ -66,9 +92,7 @@ section('dolt  (beads sync backend)');
 if (isInstalled('dolt')) {
   skip('dolt already installed');
 } else {
-  skip('dolt not found — install manually:');
-  info('  Linux:  sudo bash -c "$(curl -fsSL https://github.com/dolthub/dolt/releases/latest/download/install.sh)"');
-  info('  macOS:  brew install dolt');
+  installDolt();
 }
 
 // 4. Clone / update OmniSpecialist
@@ -105,7 +129,7 @@ if (existing.status === 0) {
 run('claude', ['mcp', 'add', '--scope', 'user', MCP_NAME, '--', 'node', serverPath]);
 ok(`registered → node ${serverPath}`);
 
-// 7. Scaffold specialists directory
+// 7. Scaffold user specialists directory
 section('Scaffold');
 if (!existsSync(SPECIALISTS_DIR)) {
   mkdirSync(SPECIALISTS_DIR, { recursive: true });
@@ -119,4 +143,4 @@ console.log('\n' + bold(green('  Done!')));
 console.log('\n' + bold('  Next steps:'));
 console.log(`  1. ${bold('Configure pi:')} run ${yellow('pi')} then ${yellow('pi config')} to enable model providers`);
 console.log(`  2. ${bold('Restart Claude Code')} to load the MCP`);
-console.log(`  3. ${bold('Update later:')} re-run this script\n`);
+console.log(`  3. ${bold('Update later:')} re-run this installer\n`);
