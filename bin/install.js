@@ -10,7 +10,6 @@ import { join } from 'node:path';
 const HOME = homedir();
 const CLAUDE_CONFIG = join(HOME, '.claude.json');
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
-const GLOBAL_PKG_NAME = '@jaggerxtrm/omnispecialist';
 const MCP_NAME = 'omnispecialist';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -40,11 +39,7 @@ function npmInstallGlobal(pkg) {
   if (r.status !== 0) throw new Error(`npm install -g ${pkg} failed`);
 }
 
-function npmRootGlobal() {
-  const r = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error('npm root -g failed');
-  return r.stdout.trim();
-}
+
 
 function piListModels() {
   const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
@@ -57,7 +52,7 @@ function readConfig() {
   catch { return {}; }
 }
 
-function registerMCP(serverPath) {
+function registerMCP() {
   const config = readConfig();
   config.mcpServers ??= {};
 
@@ -67,8 +62,8 @@ function registerMCP(serverPath) {
 
   config.mcpServers[MCP_NAME] = {
     type: 'stdio',
-    command: 'node',
-    args: [serverPath],
+    command: 'npx',
+    args: ['--yes', '--prefer-offline', '--package=github:Jaggerxtrm/unit.ai-specialists', 'omnispecialist'],
     env: {},
   };
 
@@ -109,20 +104,10 @@ if (isInstalled('dolt')) {
   info('  macOS:  brew install dolt');
 }
 
-// 4. OmniSpecialist MCP (global install from GitHub)
+// 4. OmniSpecialist MCP
 section('OmniSpecialist MCP');
-info('Installing from github:Jaggerxtrm/unit.ai-specialists...');
-npmInstallGlobal('github:Jaggerxtrm/unit.ai-specialists');
 
-const globalRoot = npmRootGlobal();
-const serverPath = join(globalRoot, GLOBAL_PKG_NAME, 'dist', 'index.js');
-
-if (!existsSync(serverPath)) {
-  console.error(red(`\n  ✗ Install failed: expected ${serverPath}\n`));
-  process.exit(1);
-}
-
-const registered = registerMCP(serverPath);
+const registered = registerMCP();
 registered
   ? ok(`MCP registered in ~/.claude.json`)
   : skip('MCP already registered');
@@ -131,9 +116,9 @@ registered
 section('Scaffold');
 if (!existsSync(SPECIALISTS_DIR)) {
   mkdirSync(SPECIALISTS_DIR, { recursive: true });
-  ok('~/.omnispecialist/specialists/ created');
+  ok('~/.agents/specialists/ created');
 } else {
-  skip('~/.omnispecialist/specialists/ already exists');
+  skip('~/.agents/specialists/ already exists');
 }
 
 // 6. Health check (pi)
