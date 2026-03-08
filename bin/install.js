@@ -63,12 +63,10 @@ function registerMCP() {
   const check = spawnSync('claude', ['mcp', 'get', MCP_NAME], { encoding: 'utf8' });
   if (check.status === 0) return false;
 
+  npmInstallGlobal(GITHUB_PKG);
+
   const r = spawnSync('claude', [
-    'mcp', 'add', '--scope', 'user', MCP_NAME,
-    '--',
-    'npx', '--yes', '--prefer-offline',
-    `--package=${GITHUB_PKG}`,
-    MCP_NAME,
+    'mcp', 'add', '--scope', 'user', MCP_NAME, '--', MCP_NAME,
   ], { stdio: 'inherit', encoding: 'utf8' });
   if (r.status !== 0) throw new Error('claude mcp add failed');
   return true;
