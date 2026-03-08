@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // OmniSpecialist Installer
-// Usage: npx github:Jaggerxtrm/unit.ai-specialists omnispecialist-install
+// Usage: npx --package=github:Jaggerxtrm/unit.ai-specialists omnispecialist-install
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
