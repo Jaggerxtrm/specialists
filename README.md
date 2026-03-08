@@ -2,7 +2,7 @@
 
 **One MCP Server. Many Specialists. Real AI Agents.**
 
-[![npm version](https://img.shields.io/npm/v/@jaggerxtrm/omnispecialist.svg)](https://www.npmjs.com/package/@jaggerxtrm/omnispecialist)
+[![npm version](https://img.shields.io/npm/v/@jaggerxtrm/specialists.svg)](https://www.npmjs.com/package/@jaggerxtrm/specialists)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
@@ -154,8 +154,8 @@ specialist:
 ## Development
 
 ```bash
-git clone https://github.com/Jaggerxtrm/omnispecialist.git
-cd omnispecialist
+git clone https://github.com/Jaggerxtrm/specialists.git
+cd specialists
 bun install
 bun run build
 bun test

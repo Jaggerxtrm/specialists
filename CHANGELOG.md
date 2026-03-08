@@ -8,25 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **npx GitHub installer** (`bin/install.js`) — one-line setup via
-  `npx --package=github:Jaggerxtrm/unit.ai-specialists install`;
-  installs pi, beads, dolt (instructions), registers MCP in `~/.claude.json`,
+- **GitHub installer** (`bin/install.js`) — one-line setup via
+  `npx --package=github:Jaggerxtrm/specialists install`;
+  installs `@mariozechner/pi-coding-agent`, `@beads/bd`, prints dolt sudo instructions,
+  installs OmniSpecialist globally and registers MCP as `specialists` at user scope,
   scaffolds `~/.agents/specialists/`. No npm publish or 2FA required.
-
-### Changed
-- `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
-  to `anthropic/claude-haiku-4-5` — Gemini CLI ~50s/tool round-trip makes it unsuitable for
-  text synthesis tasks; fallback remains Gemini Flash
-- `report-generator` system prompt rewritten with `STRICT PRIORITY` block: write immediately
-  if prompt context is sufficient, max 3 tool calls before producing output
-
-### Added
-- `ROADMAP.md` — post-v2 product roadmap covering rename, installer, Beads integration,
+- `ROADMAP.md` — post-v2 product roadmap covering installer, Beads integration,
   `omni-init` tool, specialist authoring skill, new specialists, and future UI
 
 ### Changed
-- Repo renamed from `unitAI` → `omnispecialist` (GitHub + package.json + CLAUDE.md)
-- `package.json`: name `@jaggerxtrm/omnispecialist`, bin `omnispecialist`
+- Repo renamed `unitAI` → `omnispecialist` → **`specialists`** (GitHub + package.json)
+- `package.json`: name `@jaggerxtrm/specialists`, bin `specialists`
+- MCP server name: `omnispecialist` → `specialists`
+- Installer: pi package corrected to `@mariozechner/pi-coding-agent`
+- Installer: dolt Linux command updated to `sudo bash -c 'curl -L ... | bash'`
+- Installer: MCP registration via `npm install -g` (global) instead of npx on-demand
+- `dist/`: removed 259 v1 tsc-compiled files; only bun-bundled `dist/index.js` retained
+- `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
+  to `anthropic/claude-haiku-4-5` — Gemini CLI ~50s/tool round-trip unsuitable for
+  text synthesis; fallback remains Gemini Flash
+- `report-generator` system prompt: added `STRICT PRIORITY` block — write immediately
+  if context sufficient, max 3 tool calls before output
 
 ---
 
