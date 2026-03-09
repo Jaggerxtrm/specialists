@@ -41,14 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.2] - 2026-03-09
 
-### Added
-- **`main-guard` PreToolUse hook** (`scripts/main-guard.sh`) — blocks
-  Edit/Write/MultiEdit/NotebookEdit and `git commit`/`git push` when the current
-  branch is `main` or `master`; prevents accidental direct commits to protected branches
+### Fixed
+- **`specialists install` hanging** — `specialists` bin points to `dist/index.js`
+  (the MCP server), which blocks on stdio waiting for JSON-RPC input; the `install`
+  arg was silently ignored. Fix: added early-exit guard in `src/index.ts` —
+  `process.argv[2] === 'install'` delegates to `bin/install.js` via `execFileSync`
+  so `specialists install` and `npx --package=@jaggerxtrm/specialists install` are
+  now equivalent
 
 ### Changed
-- Tool descriptions updated to document beads lifecycle (when beads are created, what
-  `beadId` is returned from `poll_specialist`, and how to use it for follow-up)
+- **README**: `npm install -g @jaggerxtrm/specialists` + `specialists install` is now
+  the recommended installation path; `npx` demoted to "one-time / no global install"
 
 ---
 
