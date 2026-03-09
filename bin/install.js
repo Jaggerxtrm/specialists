@@ -3,7 +3,7 @@
 // Usage: npx --package=@jaggerxtrm/specialists install
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, readdirSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +15,9 @@ const SETTINGS_FILE   = join(CLAUDE_DIR, 'settings.json');
 const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.mjs');
 const MCP_NAME        = 'specialists';
 const GITHUB_PKG      = '@jaggerxtrm/specialists';
+
+// Bundled specialists dir — resolved relative to this file (bin/../specialists/)
+const BUNDLED_SPECIALISTS_DIR = new URL('../specialists', import.meta.url).pathname;
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 const dim    = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -136,15 +139,13 @@ const HOOK_ENTRY = {
 };
 
 function installHook() {
-  // 1. Write hook script
   mkdirSync(HOOKS_DIR, { recursive: true });
   writeFileSync(HOOK_FILE, HOOK_SCRIPT, 'utf8');
   chmodSync(HOOK_FILE, 0o755);
 
-  // 2. Merge into ~/.claude/settings.json
   let settings = {};
   if (existsSync(SETTINGS_FILE)) {
-    try { settings = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8')); } catch { /* malformed, overwrite */ }
+    try { settings = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8')); } catch {}
   }
 
   if (!Array.isArray(settings.hooks?.PreToolUse)) {
@@ -152,7 +153,6 @@ function installHook() {
     settings.hooks.PreToolUse = [];
   }
 
-  // Idempotent: remove any previous specialists-main-guard entry, re-add
   settings.hooks.PreToolUse = settings.hooks.PreToolUse
     .filter(e => !e.hooks?.some(h => h.command?.includes('specialists-main-guard')));
   settings.hooks.PreToolUse.push(HOOK_ENTRY);
@@ -199,14 +199,30 @@ registered
   ? ok(`MCP '${MCP_NAME}' registered at user scope`)
   : skip(`MCP '${MCP_NAME}' already registered`);
 
-// 5. Scaffold user specialists directory
-section('Scaffold');
-if (!existsSync(SPECIALISTS_DIR)) {
-  mkdirSync(SPECIALISTS_DIR, { recursive: true });
-  ok('~/.agents/specialists/ created');
-} else {
-  skip('~/.agents/specialists/ already exists');
+// 5. Scaffold + copy built-in specialists
+section('Specialists');
+mkdirSync(SPECIALISTS_DIR, { recursive: true });
+
+const yamlFiles = existsSync(BUNDLED_SPECIALISTS_DIR)
+  ? readdirSync(BUNDLED_SPECIALISTS_DIR).filter(f => f.endsWith('.specialist.yaml'))
+  : [];
+
+let installed = 0;
+let skipped = 0;
+for (const file of yamlFiles) {
+  const dest = join(SPECIALISTS_DIR, file);
+  if (existsSync(dest)) {
+    skipped++;
+  } else {
+    copyFileSync(join(BUNDLED_SPECIALISTS_DIR, file), dest);
+    installed++;
+  }
 }
+
+if (installed > 0) ok(`${installed} specialist(s) installed → ~/.agents/specialists/`);
+if (skipped  > 0) skip(`${skipped} specialist(s) already exist (user-modified, keeping)`);
+if (installed === 0 && skipped === 0) skip('No built-in specialists found');
+info('Edit any .specialist.yaml in ~/.agents/specialists/ to customise models, prompts, permissions');
 
 // 6. Claude Code hooks
 section('Claude Code hooks');
@@ -214,8 +230,8 @@ const hookExisted = existsSync(HOOK_FILE);
 installHook();
 hookExisted
   ? ok('main-guard hook updated')
-  : ok('main-guard hook installed → ~/.claude/hooks/specialists-main-guard.sh');
-info('Blocks Edit/Write/git commit/push on main or master branch (JS, no jq needed)');
+  : ok('main-guard hook installed → ~/.claude/hooks/specialists-main-guard.mjs');
+info('Blocks Edit/Write/git commit/push on main or master branch');
 
 // 7. Health check
 section('Health check');
@@ -231,4 +247,5 @@ console.log('\n' + bold(green('  Done!')));
 console.log('\n' + bold('  Next steps:'));
 console.log(`  1. ${bold('Configure pi:')} run ${yellow('pi')} then ${yellow('pi config')} to enable model providers`);
 console.log(`  2. ${bold('Restart Claude Code')} to load the MCP and hooks`);
-console.log(`  3. ${bold('Update later:')} re-run this installer\n`);
+console.log(`  3. ${bold('Customise specialists:')} edit files in ${yellow('~/.agents/specialists/')}`);
+console.log(`  4. ${bold('Update later:')} re-run this installer (existing specialists preserved)\n`);

@@ -19,8 +19,8 @@ Specialists are `.specialist.yaml` files that define an autonomous agent: its mo
 | Scope | Location | Purpose |
 |-------|----------|---------|
 | **project** | `./specialists/` | Per-project specialists |
-| **user** | `~/.agents/specialists/` | Personal specialists |
-| **system** | bundled with the package | Built-in defaults |
+| **user** | `~/.agents/specialists/` | Built-in defaults (copied on install) + your own |
+| **system** | bundled with the package | Fallback if user scope is empty |
 
 When a specialist runs, the server spawns a `pi` subprocess with the right model, tools, and system prompt injected. Output streams back in real time via cursor-based polling.
 
