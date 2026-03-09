@@ -136,6 +136,7 @@ describe('SpecialistRunner', () => {
       });
       await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toThrow('crash');
       expect(beadsClient.closeBead).toHaveBeenCalledWith('specialists-test-1', 'ERROR', expect.any(Number), expect.any(String));
+      expect(beadsClient.auditBead).toHaveBeenCalledWith('specialists-test-1', 'test-spec', expect.any(String), 1);
     });
 
     it('skips bead when never', async () => {
