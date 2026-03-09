@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
+import type { BeadsClient } from '../../../src/specialist/beads.js';
 
 function makeMockSession() {
   return {
@@ -16,7 +17,7 @@ function makeMockSession() {
   };
 }
 
-function makeLoader(overrides: Record<string, unknown> = {}) {
+function makeLoader(overrides: Record<string, unknown> = {}, beadsIntegration = 'auto') {
   return {
     get: vi.fn().mockResolvedValue({
       specialist: {
@@ -25,9 +26,20 @@ function makeLoader(overrides: Record<string, unknown> = {}) {
         prompt: { task_template: 'Do $prompt', system: 'You are helpful.' },
         communication: undefined,
         capabilities: undefined,
+        beads_integration: beadsIntegration,
       },
     }),
   } as any;
+}
+
+function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): BeadsClient {
+  return {
+    isAvailable: vi.fn().mockReturnValue(true),
+    createBead: vi.fn().mockReturnValue('unitAI-test-1'),
+    closeBead: vi.fn(),
+    auditBead: vi.fn(),
+    ...overrides,
+  } as unknown as BeadsClient;
 }
 
 describe('SpecialistRunner', () => {
@@ -82,7 +94,7 @@ describe('SpecialistRunner', () => {
 
   it('uses fallback backend when primary circuit is OPEN', async () => {
     const cb = new CircuitBreaker({ failureThreshold: 1 });
-    cb.recordFailure('gemini'); // open gemini circuit
+    cb.recordFailure('gemini');
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
       loader: makeLoader({ fallback_model: 'qwen' }),
@@ -92,5 +104,105 @@ describe('SpecialistRunner', () => {
     });
     const result = await runner.run({ name: 'test-spec', prompt: 'test' });
     expect(result.model).toBe('qwen');
+  });
+
+  describe('beads integration', () => {
+    it('creates and closes bead on success when always', async () => {
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'always'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
+      expect(beadsClient.closeBead).toHaveBeenCalledWith('unitAI-test-1', 'COMPLETE', expect.any(Number), expect.any(String));
+      expect(beadsClient.auditBead).toHaveBeenCalledWith('unitAI-test-1', 'test-spec', expect.any(String), 0);
+      expect(result.beadId).toBe('unitAI-test-1');
+    });
+
+    it('closes bead with ERROR status on run failure', async () => {
+      mockSession.prompt.mockRejectedValueOnce(new Error('crash'));
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'always'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toThrow('crash');
+      expect(beadsClient.closeBead).toHaveBeenCalledWith('unitAI-test-1', 'ERROR', expect.any(Number), expect.any(String));
+    });
+
+    it('skips bead when never', async () => {
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(beadsClient.createBead).not.toHaveBeenCalled();
+      expect(result.beadId).toBeUndefined();
+    });
+
+    it('skips bead when auto and READ_ONLY', async () => {
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({ permission_required: 'READ_ONLY' }, 'auto'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(beadsClient.createBead).not.toHaveBeenCalled();
+      expect(result.beadId).toBeUndefined();
+    });
+
+    it('creates bead when auto and MEDIUM permission', async () => {
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({ permission_required: 'MEDIUM' }, 'auto'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
+      expect(result.beadId).toBe('unitAI-test-1');
+    });
+
+    it('does not crash when createBead returns null', async () => {
+      const beadsClient = makeBeadsClient({ createBead: vi.fn().mockReturnValue(null) });
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'always'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(result.output).toBe('{"result": "ok"}');
+      expect(result.beadId).toBeUndefined();
+    });
+
+    it('runs normally without beadsClient provided', async () => {
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'always'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go' });
+      expect(result.output).toBe('{"result": "ok"}');
+      expect(result.beadId).toBeUndefined();
+    });
   });
 });
