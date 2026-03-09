@@ -160,6 +160,7 @@ export class SpecialistRunner {
 
     let output: string;
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
+    let sessionBackend: string = model;
     try {
       session = await this.sessionFactory({
         model,
@@ -179,6 +180,7 @@ export class SpecialistRunner {
 
       await session.prompt(renderedTask);
       await session.waitForDone();
+      sessionBackend = session.meta.backend;
       output = await session.getLastOutput();
 
       // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
@@ -192,9 +194,12 @@ export class SpecialistRunner {
         // Only record a circuit-breaker failure for real backend errors
         circuitBreaker.recordFailure(model);
       }
-      // Beads: close with CANCELLED for kill, ERROR for real failures
+      // Beads: close with CANCELLED for kill, ERROR for real failures; always audit
       const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
-      if (beadId) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+      if (beadId) {
+        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+      }
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
         status: isCancelled ? 'CANCELLED' : 'ERROR',
         duration_ms: Date.now() - start,
@@ -226,7 +231,7 @@ export class SpecialistRunner {
 
     return {
       output,
-      backend: session!.meta.backend,
+      backend: sessionBackend,
       model,
       durationMs,
       specialistVersion: metadata.version,
