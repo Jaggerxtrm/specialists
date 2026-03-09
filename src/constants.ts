@@ -1,8 +1,8 @@
 /**
- * Constants and configuration for Unified AI MCP Tool
+ * Constants and configuration for Specialists MCP server
  */
 
-export const LOG_PREFIX = "[UAI-MCP]";
+export const LOG_PREFIX = "[specialists]";
 
 export const AI_MODELS = {
   GEMINI: {
@@ -90,7 +90,7 @@ export const STATUS_MESSAGES = {
 } as const;
 
 export const MCP_CONFIG = {
-  SERVER_NAME: "unitAI",
+  SERVER_NAME: "specialists",
   VERSION: "1.0.0",
   CAPABILITIES: {
     tools: {},
