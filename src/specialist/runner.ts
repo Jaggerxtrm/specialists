@@ -161,7 +161,6 @@ export class SpecialistRunner {
     let output: string;
     let sessionBackend: string = model; // captured before kill() can destroy meta
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
-    let sessionBackend: string = model;
     try {
       session = await this.sessionFactory({
         model,

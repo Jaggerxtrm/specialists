@@ -24894,6 +24894,12 @@ function getProviderArgs(model) {
 }
 
 // src/pi/session.ts
+class SessionKilledError extends Error {
+  constructor() {
+    super("Session was killed");
+    this.name = "SessionKilledError";
+  }
+}
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
     case "READ_ONLY":
@@ -24952,6 +24958,7 @@ class PiAgentSession {
       this._doneResolve = resolve;
       this._doneReject = reject;
     });
+    donePromise.catch(() => {});
     this._donePromise = donePromise;
     this.proc.stdout?.on("data", (chunk) => {
       this._lineBuffer += chunk.toString();
@@ -25064,10 +25071,12 @@ class PiAgentSession {
     return this._lastOutput;
   }
   kill() {
+    if (this._killed)
+      return;
     this._killed = true;
     this.proc?.kill();
     this.proc = undefined;
-    this._doneResolve?.();
+    this._doneReject?.(new SessionKilledError);
   }
 }
 
@@ -25232,6 +25241,7 @@ You have access via Bash:
         onBeadCreated?.(beadId);
     }
     let output;
+    let sessionBackend = model;
     let session;
     try {
       session = await this.sessionFactory({
@@ -25251,20 +25261,28 @@ You have access via Bash:
       onKillRegistered?.(session.kill.bind(session));
       await session.prompt(renderedTask);
       await session.waitForDone();
+      sessionBackend = session.meta.backend;
       output = await session.getLastOutput();
+      sessionBackend = session.meta.backend;
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
       for (const script of postScripts)
         runScript(script.path);
       circuitBreaker.recordSuccess(model);
     } catch (err) {
-      circuitBreaker.recordFailure(model);
-      if (beadId)
-        beadsClient?.closeBead(beadId, "ERROR", Date.now() - start, model);
+      const isCancelled = err instanceof SessionKilledError;
+      if (!isCancelled) {
+        circuitBreaker.recordFailure(model);
+      }
+      const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
+      if (beadId) {
+        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+      }
       await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
-        status: "ERROR",
+        status: isCancelled ? "CANCELLED" : "ERROR",
         duration_ms: Date.now() - start,
         output_valid: false,
-        error: { type: "backend_error", message: err.message }
+        error: { type: isCancelled ? "cancelled" : "backend_error", message: err.message }
       });
       throw err;
     } finally {
@@ -25285,7 +25303,7 @@ You have access via Bash:
     }
     return {
       output,
-      backend: session.meta.backend,
+      backend: sessionBackend,
       model,
       durationMs,
       specialistVersion: metadata.version,
@@ -25460,16 +25478,16 @@ async function runPipeline(steps, runner, onProgress) {
 }
 
 // src/tools/specialist/run_parallel.tool.ts
-var InvocationSchema = exports_external.object({
-  name: exports_external.string(),
-  prompt: exports_external.string(),
-  variables: exports_external.record(exports_external.string()).optional(),
-  backend_override: exports_external.string().optional()
+var InvocationSchema = objectType({
+  name: stringType(),
+  prompt: stringType(),
+  variables: recordType(stringType()).optional(),
+  backend_override: stringType().optional()
 });
-var runParallelSchema = exports_external.object({
-  specialists: exports_external.array(InvocationSchema).min(1),
-  merge_strategy: exports_external.enum(["collect", "synthesize", "vote", "pipeline"]).default("collect"),
-  timeout_ms: exports_external.number().default(120000)
+var runParallelSchema = objectType({
+  specialists: arrayType(InvocationSchema).min(1),
+  merge_strategy: enumType(["collect", "synthesize", "vote", "pipeline"]).default("collect"),
+  timeout_ms: numberType().default(120000)
 });
 function createRunParallelTool(runner) {
   return {
@@ -25499,6 +25517,7 @@ function createRunParallelTool(runner) {
         status: r.status,
         output: r.status === "fulfilled" ? r.value.output : null,
         durationMs: r.status === "fulfilled" ? r.value.durationMs : null,
+        beadId: r.status === "fulfilled" ? r.value.beadId : undefined,
         error: r.status === "rejected" ? String(r.reason?.message) : null
       }));
     }

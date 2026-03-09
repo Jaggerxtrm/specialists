@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.8] - 2026-03-09
+
+### Added
+- **Beads enforcement hooks** — three Claude Code hooks installed by the specialists
+  installer (`npx --package=@jaggerxtrm/specialists install`) that make beads issue
+  tracking mandatory:
+  - `beads-edit-gate.mjs` (`PreToolUse`): blocks any file edit when no beads issue is
+    `in_progress`. Forces `bd create` + `bd update --status=in_progress` before touching
+    files. No-op in projects without `.beads/`
+  - `beads-commit-gate.mjs` (`PreToolUse`): blocks `git commit` while `in_progress`
+    issues exist. Enforces close-issues-then-commit order
+  - `beads-stop-gate.mjs` (`Stop`): blocks the agent from stopping with unresolved
+    `in_progress` issues. Forces the full session close protocol
+- Hook sources embedded in `bin/install.js`; `installHook()` writes and wires all four
+  hooks (including `specialists-main-guard`) into `~/.claude/settings.json` on install
+
+### Fixed
+- Duplicate `sessionBackend` declaration in `src/specialist/runner.ts` that caused build
+  failure
+
+---
+
 ## [2.1.7] - 2026-03-09
 
 ### Changed
