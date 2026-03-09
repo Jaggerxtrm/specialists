@@ -69,4 +69,28 @@ specialist:
     const bad = VALID_YAML.replace('task_template: "Analyze $project_name. Request: $prompt"', '');
     await expect(parseSpecialist(bad)).rejects.toThrow();
   });
+
+  describe('beads_integration field', () => {
+    it('defaults to auto when not specified', async () => {
+      const result = await parseSpecialist(VALID_YAML);
+      expect(result.specialist.beads_integration).toBe('auto');
+    });
+
+    it('accepts always', async () => {
+      const yaml = VALID_YAML + '\n  beads_integration: always';
+      const result = await parseSpecialist(yaml);
+      expect(result.specialist.beads_integration).toBe('always');
+    });
+
+    it('accepts never', async () => {
+      const yaml = VALID_YAML + '\n  beads_integration: never';
+      const result = await parseSpecialist(yaml);
+      expect(result.specialist.beads_integration).toBe('never');
+    });
+
+    it('rejects invalid value', async () => {
+      const yaml = VALID_YAML + '\n  beads_integration: maybe';
+      await expect(parseSpecialist(yaml)).rejects.toThrow();
+    });
+  });
 });

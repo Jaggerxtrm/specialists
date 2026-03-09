@@ -76,6 +76,7 @@ export const SpecialistSchema = z.object({
     capabilities: CapabilitiesSchema,
     communication: CommunicationSchema,
     validation: ValidationSchema,
+    beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
     heartbeat: z.unknown().optional(), // future — accepted, ignored
   }),
 });
