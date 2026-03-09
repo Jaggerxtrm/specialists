@@ -23,7 +23,7 @@ const ExecutionSchema = z.object({
   timeout_ms: z.number().default(120_000),
   response_format: z.enum(['text', 'json', 'markdown']).default('text'),
   permission_required: z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']).default('READ_ONLY'),
-  // Agent Forge fields — accepted but ignored by unitAI
+  // Agent Forge fields — accepted but ignored by specialists
   preferred_profile: z.string().optional(),
   approval_mode: z.string().optional(),
 });
@@ -31,7 +31,7 @@ const ExecutionSchema = z.object({
 const PromptSchema = z.object({
   system: z.string().optional(),
   task_template: z.string(),
-  normalize_template: z.string().optional(),  // Mercury — ignored by unitAI
+  normalize_template: z.string().optional(),  // Mercury — ignored by specialists
   output_schema: z.record(z.unknown()).optional(),
   examples: z.array(z.unknown()).optional(),
   skill_inherit: z.string().optional(),        // Agent Forge — appended to agents.md

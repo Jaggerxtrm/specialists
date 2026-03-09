@@ -35,7 +35,7 @@ function makeLoader(overrides: Record<string, unknown> = {}, beadsIntegration = 
 function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): BeadsClient {
   return {
     isAvailable: vi.fn().mockReturnValue(true),
-    createBead: vi.fn().mockReturnValue('unitAI-test-1'),
+    createBead: vi.fn().mockReturnValue('specialists-test-1'),
     closeBead: vi.fn(),
     auditBead: vi.fn(),
     ...overrides,
@@ -118,9 +118,9 @@ describe('SpecialistRunner', () => {
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
       expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
-      expect(beadsClient.closeBead).toHaveBeenCalledWith('unitAI-test-1', 'COMPLETE', expect.any(Number), expect.any(String));
-      expect(beadsClient.auditBead).toHaveBeenCalledWith('unitAI-test-1', 'test-spec', expect.any(String), 0);
-      expect(result.beadId).toBe('unitAI-test-1');
+      expect(beadsClient.closeBead).toHaveBeenCalledWith('specialists-test-1', 'COMPLETE', expect.any(Number), expect.any(String));
+      expect(beadsClient.auditBead).toHaveBeenCalledWith('specialists-test-1', 'test-spec', expect.any(String), 0);
+      expect(result.beadId).toBe('specialists-test-1');
     });
 
     it('closes bead with ERROR status on run failure', async () => {
@@ -134,7 +134,7 @@ describe('SpecialistRunner', () => {
         beadsClient,
       });
       await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toThrow('crash');
-      expect(beadsClient.closeBead).toHaveBeenCalledWith('unitAI-test-1', 'ERROR', expect.any(Number), expect.any(String));
+      expect(beadsClient.closeBead).toHaveBeenCalledWith('specialists-test-1', 'ERROR', expect.any(Number), expect.any(String));
     });
 
     it('skips bead when never', async () => {
@@ -176,7 +176,7 @@ describe('SpecialistRunner', () => {
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
       expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
-      expect(result.beadId).toBe('unitAI-test-1');
+      expect(result.beadId).toBe('specialists-test-1');
     });
 
     it('does not crash when createBead returns null', async () => {

@@ -2,7 +2,7 @@
 //
 // Sequential pipeline: each specialist in the chain receives the previous
 // specialist's output as the $previous_result template variable.
-// Implements §5.3 Pattern 1: Message Queue from omni-specialist.md.
+// Implements §5.3 Pattern 1: Message Queue from specialist.md.
 //
 import type { SpecialistRunner, RunOptions } from './runner.js';
 

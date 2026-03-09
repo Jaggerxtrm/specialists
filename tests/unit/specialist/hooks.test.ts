@@ -10,7 +10,7 @@ describe('HookEmitter', () => {
   let emitter: HookEmitter;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'unitai-hooks-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'specialists-hooks-'));
     emitter = new HookEmitter({ tracePath: join(tempDir, 'trace.jsonl') });
   });
 

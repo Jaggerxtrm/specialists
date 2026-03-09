@@ -26,18 +26,18 @@ describe('JobRegistry', () => {
   it('snapshot includes beadId when set via setBeadId', () => {
     const reg = new JobRegistry();
     reg.register('job-1', { backend: 'anthropic', model: 'haiku' });
-    reg.setBeadId('job-1', 'unitAI-42');
+    reg.setBeadId('job-1', 'specialists-42');
     const snap = reg.snapshot('job-1');
-    expect(snap?.beadId).toBe('unitAI-42');
+    expect(snap?.beadId).toBe('specialists-42');
   });
 
   it('complete propagates beadId from RunResult', () => {
     const reg = new JobRegistry();
     reg.register('job-1', { backend: 'anthropic', model: 'haiku' });
-    reg.complete('job-1', makeResult({ beadId: 'unitAI-99' }));
+    reg.complete('job-1', makeResult({ beadId: 'specialists-99' }));
     const snap = reg.snapshot('job-1');
     expect(snap?.status).toBe('done');
-    expect(snap?.beadId).toBe('unitAI-99');
+    expect(snap?.beadId).toBe('specialists-99');
   });
 
   it('complete without beadId leaves beadId undefined', () => {
@@ -50,6 +50,6 @@ describe('JobRegistry', () => {
 
   it('setBeadId is no-op on unknown job', () => {
     const reg = new JobRegistry();
-    expect(() => reg.setBeadId('no-such', 'unitAI-1')).not.toThrow();
+    expect(() => reg.setBeadId('no-such', 'specialists-1')).not.toThrow();
   });
 });
