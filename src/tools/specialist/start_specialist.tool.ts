@@ -13,7 +13,11 @@ export const startSpecialistSchema = z.object({
 export function createStartSpecialistTool(runner: SpecialistRunner, registry: JobRegistry) {
   return {
     name: 'start_specialist' as const,
-    description: 'Start a specialist asynchronously. Returns job_id immediately — use poll_specialist to track progress and get output. Enables true parallel execution of multiple specialists.',
+    description:
+      'Start a specialist asynchronously. Returns job_id immediately. ' +
+      'Use poll_specialist to track progress, receive output delta, and retrieve beadId ' +
+      '(the beads issue auto-created for this run, if beads_integration policy applies). ' +
+      'Use stop_specialist to cancel. Enables true parallel execution of multiple specialists.',
     inputSchema: startSpecialistSchema,
     async execute(input: z.infer<typeof startSpecialistSchema>) {
       const jobId = await runner.startAsync({

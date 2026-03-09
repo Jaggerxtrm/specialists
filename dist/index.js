@@ -25396,7 +25396,7 @@ var useSpecialistSchema = exports_external.object({
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Execute a specialist. Full lifecycle: load → agents.md → pi → validate → output.",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load → agents.md → pi session → output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions.",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
       return runner.run({
@@ -25637,7 +25637,7 @@ var startSpecialistSchema = exports_external.object({
 function createStartSpecialistTool(runner, registry2) {
   return {
     name: "start_specialist",
-    description: "Start a specialist asynchronously. Returns job_id immediately — use poll_specialist to track progress and get output. Enables true parallel execution of multiple specialists.",
+    description: "Start a specialist asynchronously. Returns job_id immediately. " + "Use poll_specialist to track progress, receive output delta, and retrieve beadId " + "(the beads issue auto-created for this run, if beads_integration policy applies). " + "Use stop_specialist to cancel. Enables true parallel execution of multiple specialists.",
     inputSchema: startSpecialistSchema,
     async execute(input) {
       const jobId = await runner.startAsync({
@@ -25659,7 +25659,7 @@ var pollSpecialistSchema = exports_external.object({
 function createPollSpecialistTool(registry2) {
   return {
     name: "poll_specialist",
-    description: "Poll a running specialist job. Returns status (running|done|error), delta (new content since cursor), next_cursor, and full output only when done. Pass next_cursor from each response as cursor on the next poll to receive only new tokens.",
+    description: "Poll a running specialist job. Returns status (running|done|error|cancelled), " + "delta (new tokens since cursor), next_cursor, and full output when done. " + "Pass next_cursor back as cursor on each subsequent poll to receive only new content. " + "Response also includes beadId (string | undefined) once the specialist has started — " + "this is the beads issue tracking this run. If present after status=done, consider: " + '`bd update <beadId> --notes "<key finding>"` to attach results, or ' + '`bd remember "<insight>"` to persist discoveries across sessions.',
     inputSchema: pollSpecialistSchema,
     async execute(input) {
       const snapshot = registry2.snapshot(input.job_id, input.cursor ?? 0);
@@ -25703,7 +25703,7 @@ function createSpecialistInitTool(loader, deps) {
   };
   return {
     name: "specialist_init",
-    description: "Session bootstrap: initializes beads in the project if not already set up, " + "then returns available specialists. Call at session start for orientation.",
+    description: "Call this first at session start. Returns available specialists and initializes beads " + "tracking (runs `bd init` if not already set up). " + "Response includes: specialists[] (use with use_specialist/start_specialist), " + "beads.available (bool), beads.initialized (bool). " + "If beads.available is true, specialists with permission LOW/MEDIUM/HIGH will auto-create " + "a beads issue when they run — no action needed from you.",
     inputSchema: specialistInitSchema,
     async execute(_input) {
       const available = resolved.bdAvailable();

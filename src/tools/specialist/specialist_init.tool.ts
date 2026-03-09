@@ -31,8 +31,12 @@ export function createSpecialistInitTool(loader: SpecialistLoader, deps?: Specia
   return {
     name: 'specialist_init' as const,
     description:
-      'Session bootstrap: initializes beads in the project if not already set up, ' +
-      'then returns available specialists. Call at session start for orientation.',
+      'Call this first at session start. Returns available specialists and initializes beads ' +
+      'tracking (runs `bd init` if not already set up). ' +
+      'Response includes: specialists[] (use with use_specialist/start_specialist), ' +
+      'beads.available (bool), beads.initialized (bool). ' +
+      'If beads.available is true, specialists with permission LOW/MEDIUM/HIGH will auto-create ' +
+      'a beads issue when they run — no action needed from you.',
     inputSchema: specialistInitSchema,
 
     async execute(_input: z.infer<typeof specialistInitSchema>) {
