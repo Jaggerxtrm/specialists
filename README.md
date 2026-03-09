@@ -1,4 +1,4 @@
-# OmniSpecialist
+# Specialists
 
 **One MCP Server. Many Specialists. Real AI Agents.**
 
@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-OmniSpecialist is a **Model Context Protocol (MCP) server** that lets Claude (and other AI agents) discover and run specialist agents — each a full autonomous coding agent powered by [pi](https://github.com/mariozechner/pi), scoped to a specific task.
+**Specialists** is a **Model Context Protocol (MCP) server** that lets Claude (and other AI agents) discover and run specialist agents — each a full autonomous coding agent powered by [pi](https://github.com/mariozechner/pi), scoped to a specific task.
 
 **Designed for agents, not just users.** Claude can autonomously route heavy tasks (code review, bug hunting, deep reasoning, session init) to the right specialist without user intervention. Specialists run in the background while Claude continues working.
 
@@ -14,26 +14,27 @@ OmniSpecialist is a **Model Context Protocol (MCP) server** that lets Claude (an
 
 ## How it works
 
-Specialists are `.specialist.yaml` files that define an autonomous agent: its model, system prompt, task template, and permission tier. OmniSpecialist discovers them across three scopes:
+Specialists are `.specialist.yaml` files that define an autonomous agent: its model, system prompt, task template, and permission tier. The server discovers them across three scopes:
 
 | Scope | Location | Purpose |
 |-------|----------|---------|
 | **project** | `./specialists/` | Per-project specialists |
 | **user** | `~/.agents/specialists/` | Personal specialists |
-| **system** | bundled with OmniSpecialist | Built-in defaults |
+| **system** | bundled with the package | Built-in defaults |
 
-When a specialist runs, OmniSpecialist spawns a `pi` subprocess with the right model, tools, and system prompt injected. Output streams back in real time via cursor-based polling.
+When a specialist runs, the server spawns a `pi` subprocess with the right model, tools, and system prompt injected. Output streams back in real time via cursor-based polling.
 
 ---
 
-## MCP Tools (7)
+## MCP Tools (8)
 
 | Tool | Description |
 |------|-------------|
+| `specialist_init` | Session bootstrap: init beads if needed, return available specialists |
 | `list_specialists` | Discover all available specialists across scopes |
 | `use_specialist` | Run a specialist synchronously and return the result |
 | `start_specialist` | Fire-and-forget: start a specialist job, returns `job_id` |
-| `poll_specialist` | Poll a running job; returns delta since last cursor |
+| `poll_specialist` | Poll a running job; returns delta since last cursor + `beadId` |
 | `stop_specialist` | Cancel a running job |
 | `run_parallel` | Run multiple specialists concurrently or as a pipeline |
 | `specialist_status` | Circuit breaker health + job status |
@@ -58,7 +59,7 @@ When a specialist runs, OmniSpecialist spawns a `pi` subprocess with the right m
 
 ## Permission Tiers
 
-Specialists declare their required permission level. OmniSpecialist enforces this at spawn time via `pi --tools`:
+Specialists declare their required permission level, enforced at spawn time via `pi --tools`:
 
 | Tier | Allowed tools | Use case |
 |------|--------------|----------|
@@ -66,6 +67,20 @@ Specialists declare their required permission level. OmniSpecialist enforces thi
 | `LOW` | + edit, write | Code modifications |
 | `MEDIUM` | + git operations | Commits, branching |
 | `HIGH` | Full autonomy | External API calls, push |
+
+---
+
+## Beads Integration
+
+Specialists with write permissions (`LOW`/`MEDIUM`/`HIGH`) automatically create a [beads](https://github.com/beads/bd) issue when they run and close it on completion. Control this per-specialist with `beads_integration`:
+
+```yaml
+beads_integration: auto    # default — create for LOW/MEDIUM/HIGH, skip for READ_ONLY
+beads_integration: always  # always create, regardless of permission tier
+beads_integration: never   # never create
+```
+
+The orchestrating agent can retrieve the `beadId` from `poll_specialist` output to link the issue for follow-up (`bd remember`, `bd update --notes`, etc.).
 
 ---
 
@@ -126,7 +141,7 @@ specialist:
     description: "What this specialist does."
     category: analysis
     tags: [analysis, example]
-    updated: "2026-03-07"
+    updated: "2026-03-09"
 
   execution:
     mode: tool
@@ -165,7 +180,7 @@ bun test
 ```
 
 - **Build**: `bun build src/index.ts --target=node --outfile=dist/index.js`
-- **Test**: `bun --bun vitest run` (40 unit tests)
+- **Test**: `bun --bun vitest run` (67 unit tests)
 - **Lint**: `tsc --noEmit`
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture guide and [ROADMAP.md](ROADMAP.md) for planned features.
