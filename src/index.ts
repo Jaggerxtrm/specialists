@@ -1,26 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Unified AI MCP Tool - Model Context Protocol server for multiple AI clients
- *
- * This server enables AI assistants like Claude to interact with multiple 
- * AI coding assistants (Gemini, Cursor Agent, Droid) through the Model Context Protocol.
+ * Specialists MCP Server — entry point
  */
 
-import { UnitAIServer } from "./server.js";
+import { SpecialistsServer } from "./server.js";
 import { logger } from "./utils/logger.js";
 
-/**
- * Start the server
- */
 async function main() {
-  logger.info("Starting Unified AI MCP Tool server...");
-
-  const server = new UnitAIServer();
+  logger.info("Starting Specialists MCP Server...");
+  const server = new SpecialistsServer();
   await server.start();
 }
 
-// Run the server
 main().catch((error) => {
   logger.error(`Fatal error: ${error}`);
   process.exit(1);

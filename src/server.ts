@@ -1,10 +1,10 @@
 /**
  * Specialists MCP Server — v2 Specialist System
  *
- * 7-tool orchestration layer: list_specialists, use_specialist,
+ * 8-tool orchestration layer: list_specialists, use_specialist,
  * run_parallel, specialist_status, start_specialist, poll_specialist,
- * stop_specialist. All workflow logic lives in .specialist.yaml files
- * discovered across 3 scopes.
+ * stop_specialist, specialist_init. All workflow logic lives in .specialist.yaml
+ * files discovered across 3 scopes.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -30,7 +30,7 @@ import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/speciali
 import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { z } from "zod";
 
-import { createOmniInitTool, omniInitSchema } from "./tools/specialist/omni_init.tool.js";
+import { createSpecialistInitTool, specialistInitSchema } from "./tools/specialist/specialist_init.tool.js";
 type AnyTool = {
   name: string;
   description: string;
@@ -38,7 +38,7 @@ type AnyTool = {
   execute(input: unknown, onProgress?: (msg: string) => void): Promise<unknown>;
 };
 
-export class UnitAIServer {
+export class SpecialistsServer {
   private server: Server;
   private tools: AnyTool[];
 
@@ -46,7 +46,7 @@ export class UnitAIServer {
     const circuitBreaker = new CircuitBreaker();
     const loader = new SpecialistLoader();
     const hooks = new HookEmitter({
-      tracePath: join(process.cwd(), ".unitai", "trace.jsonl"),
+      tracePath: join(process.cwd(), ".specialists", "trace.jsonl"),
     });
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
     const registry = new JobRegistry();
@@ -59,7 +59,7 @@ export class UnitAIServer {
       createStartSpecialistTool(runner, registry),
       createPollSpecialistTool(registry),
       createStopSpecialistTool(registry),
-      createOmniInitTool(loader),
+      createSpecialistInitTool(loader),
     ];
 
     this.server = new Server(
@@ -81,7 +81,7 @@ export class UnitAIServer {
       start_specialist: startSpecialistSchema,
       poll_specialist: pollSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
-      omni_init: omniInitSchema,
+      specialist_init: specialistInitSchema,
     };
     this.toolSchemas = schemaMap;
 
@@ -113,7 +113,7 @@ export class UnitAIServer {
       const onProgress = (msg: string) => {
         this.server.notification({
           method: 'notifications/message',
-          params: { level: 'info', logger: 'unitai', data: msg },
+          params: { level: 'info', logger: 'specialists', data: msg },
         }).catch(() => {});
       };
 
