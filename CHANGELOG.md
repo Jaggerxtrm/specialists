@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.6] - 2026-03-09
+
+### Changed
+- **Built-in specialists copied to `~/.agents/specialists/` on install** — previously
+  specialists were only accessible as read-only files bundled inside the npm package;
+  users had no way to edit models, prompts, or permissions. `specialists install` now
+  copies all 9 built-in `.specialist.yaml` files to `~/.agents/specialists/` so users
+  own them directly. Skip-if-exists: re-running install never overwrites user-modified
+  files. Bundled system scope remains as a silent fallback if user scope is empty
+- **Installer "Next steps"** updated: step 3 now points to `~/.agents/specialists/`
+  for customisation
+- **README** scope table updated: user scope described as "Built-in defaults (copied
+  on install) + your own"
+
+---
+
 ## [2.1.5] - 2026-03-09
 
 ### Fixed
