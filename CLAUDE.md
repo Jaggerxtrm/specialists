@@ -16,18 +16,22 @@
 
 ```
 OmniSpecialist MCP Server v2
-├── MCP Surface (7 tools)
+├── MCP Surface (8 tools)
+│   ├── specialist_init    — session bootstrap: bd init + list specialists
 │   ├── list_specialists   — discover .specialist.yaml across 3 scopes
 │   ├── use_specialist     — full lifecycle: load → agents.md → pi → output
 │   ├── run_parallel       — concurrent or pipeline execution
 │   ├── specialist_status  — circuit breaker health + staleness detection
 │   ├── start_specialist   — async job start, returns job ID
-│   ├── poll_specialist    — poll job status/output by ID
+│   ├── poll_specialist    — poll job status/output by ID + beadId
 │   └── stop_specialist    — cancel a running job by ID
 ├── Specialist System
 │   ├── SpecialistLoader   — 3-scope discovery (project/user/system), caching
 │   ├── SpecialistRunner   — agents.md injection, pre/post scripts, circuit breaker
-│   ├── HookEmitter        — 4-point lifecycle hooks, JSONL sink at .unitai/trace.jsonl
+│   │                        BeadsClient injected via RunnerDeps — MUST be passed
+│   │                        from server.ts constructor or beads lifecycle is a no-op
+│   ├── BeadsClient        — spawnSync bd q/close/audit; wired in server.ts constructor
+│   ├── HookEmitter        — 4-point lifecycle hooks, JSONL sink at .specialists/trace.jsonl
 │   └── pipeline.ts        — sequential $previous_result chaining
 ├── Execution Substrate
 │   └── PiAgentSession     — spawns coding-agent CLI, handles agent_end event
