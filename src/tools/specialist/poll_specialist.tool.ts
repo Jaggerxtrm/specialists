@@ -12,7 +12,14 @@ export const pollSpecialistSchema = z.object({
 export function createPollSpecialistTool(registry: JobRegistry) {
   return {
     name: 'poll_specialist' as const,
-    description: 'Poll a running specialist job. Returns status (running|done|error), delta (new content since cursor), next_cursor, and full output only when done. Pass next_cursor from each response as cursor on the next poll to receive only new tokens.',
+    description:
+      'Poll a running specialist job. Returns status (running|done|error|cancelled), ' +
+      'delta (new tokens since cursor), next_cursor, and full output when done. ' +
+      'Pass next_cursor back as cursor on each subsequent poll to receive only new content. ' +
+      'Response also includes beadId (string | undefined) once the specialist has started — ' +
+      'this is the beads issue tracking this run. If present after status=done, consider: ' +
+      '`bd update <beadId> --notes "<key finding>"` to attach results, or ' +
+      '`bd remember "<insight>"` to persist discoveries across sessions.',
     inputSchema: pollSpecialistSchema,
     async execute(input: z.infer<typeof pollSpecialistSchema>) {
       const snapshot = registry.snapshot(input.job_id, input.cursor ?? 0);

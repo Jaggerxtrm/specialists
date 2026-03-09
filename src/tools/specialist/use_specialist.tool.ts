@@ -13,7 +13,14 @@ export const useSpecialistSchema = z.object({
 export function createUseSpecialistTool(runner: SpecialistRunner) {
   return {
     name: 'use_specialist' as const,
-    description: 'Execute a specialist. Full lifecycle: load → agents.md → pi → validate → output.',
+    description:
+      'Run a specialist synchronously and wait for the result. ' +
+      'Full lifecycle: load → agents.md → pi session → output. ' +
+      'Response includes output, model, durationMs, and beadId (string | undefined). ' +
+      'beadId is set when the specialist\'s beads_integration policy triggered bead creation ' +
+      '(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). ' +
+      'If beadId is present, use `bd update <beadId> --notes` to attach findings or ' +
+      '`bd remember` to persist key discoveries for future sessions.',
     inputSchema: useSpecialistSchema,
     async execute(input: z.infer<typeof useSpecialistSchema>, onProgress?: (msg: string) => void) {
       return runner.run({
