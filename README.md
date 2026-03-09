@@ -93,7 +93,7 @@ npm install -g @jaggerxtrm/specialists
 specialists install
 ```
 
-Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`.
+Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, and installs the `main-guard` PreToolUse hook (`~/.claude/hooks/main-guard.mjs`) to protect `main`/`master` branches from direct edits.
 
 After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair the installation.
 

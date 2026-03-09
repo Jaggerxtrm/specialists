@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`agent_end` split-chunk hang** — `agent_end` is a single NDJSON line containing the
+  full conversation history; for long-running specialists (20+ tool calls) this line can
+  exceed 64 KB (Node.js stdout chunk size). The old handler split each raw chunk on `\n`,
+  so `JSON.parse` failed silently on both halves, `_agentEndReceived` never flipped, and
+  `waitForDone()` hung indefinitely. Fix: accumulate chunks in `_lineBuffer`, emit only on
+  confirmed `\n`, flush remaining content on stdout `end` (`79ac2cb`)
+- **`agent_end` never received on short prompts** — `pi --mode rpc` does not close its
+  own stdin; the subprocess kept waiting for more input so the agent loop never started.
+  Fix: call `proc.stdin?.end()` immediately after writing the prompt (`c305396`)
+
+---
+
+## [2.1.4] - 2026-03-09
+
+### Changed
+- **`main-guard` hook rewritten in JS** — replaces `main-guard.sh` with `main-guard.mjs`
+  for consistent cross-platform behaviour; installed at `~/.claude/hooks/main-guard.mjs`
+  by `specialists install`
+
+---
+
+## [2.1.3] - 2026-03-09
+
+### Added
+- **`specialists install` subcommand** — idempotent one-shot setup: installs `pi`,
+  `bd`, `dolt`, registers the `specialists` MCP at user scope, scaffolds
+  `~/.agents/specialists/`, and installs the `main-guard` PreToolUse hook into
+  `~/.claude/hooks/`; re-runnable at any time to update or repair
+
+---
+
+## [2.1.2] - 2026-03-09
+
+### Added
+- **`main-guard` PreToolUse hook** (`scripts/main-guard.sh`) — blocks
+  Edit/Write/MultiEdit/NotebookEdit and `git commit`/`git push` when the current
+  branch is `main` or `master`; prevents accidental direct commits to protected branches
+
+### Changed
+- Tool descriptions updated to document beads lifecycle (when beads are created, what
+  `beadId` is returned from `poll_specialist`, and how to use it for follow-up)
+
 ---
 
 ## [2.1.1] - 2026-03-09
