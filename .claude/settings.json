@@ -28,6 +28,15 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/main-guard.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Read|Edit|Write",
         "hooks": [
           {
