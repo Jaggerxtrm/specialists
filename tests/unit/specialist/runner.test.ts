@@ -81,6 +81,22 @@ describe('SpecialistRunner', () => {
     expect(mockSession.kill).toHaveBeenCalledOnce();
   });
 
+  it('returns correct backend even when kill() destroys meta', async () => {
+    // Simulate kill() nullifying the meta property (the bug scenario)
+    mockSession.kill = vi.fn().mockImplementation(() => {
+      (mockSession as any).meta = null;
+    });
+    const runner = new SpecialistRunner({
+      loader: makeLoader(),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+    const result = await runner.run({ name: 'test-spec', prompt: 'analyze this' });
+    // backend must be the value captured BEFORE kill(), not undefined
+    expect(result.backend).toBe('google-gemini-cli');
+  });
+
   it('kills session even on error', async () => {
     mockSession.prompt.mockRejectedValueOnce(new Error('backend down'));
     const runner = new SpecialistRunner({

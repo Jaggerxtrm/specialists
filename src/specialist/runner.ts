@@ -159,6 +159,7 @@ export class SpecialistRunner {
     }
 
     let output: string;
+    let sessionBackend: string = model; // captured before kill() can destroy meta
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     try {
       session = await this.sessionFactory({
@@ -180,6 +181,7 @@ export class SpecialistRunner {
       await session.prompt(renderedTask);
       await session.waitForDone();
       output = await session.getLastOutput();
+      sessionBackend = session.meta.backend; // capture before finally calls kill()
 
       // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
@@ -226,7 +228,7 @@ export class SpecialistRunner {
 
     return {
       output,
-      backend: session!.meta.backend,
+      backend: sessionBackend,
       model,
       durationMs,
       specialistVersion: metadata.version,
