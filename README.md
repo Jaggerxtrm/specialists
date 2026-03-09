@@ -170,7 +170,18 @@ specialist:
 
   communication:
     publishes: [result]
+
+  # Optional: run scripts before/after the specialist
+  skills:
+    scripts:
+      - path: ./scripts/health-check.sh
+        phase: pre            # runs before the task prompt
+        inject_output: true   # output injected as $pre_script_output
+      - path: ./scripts/cleanup.sh
+        phase: post           # runs after the specialist completes
 ```
+
+Pre-script output is formatted as `<pre_flight_context>` XML and available in `task_template` via `$pre_script_output`. Scripts run locally via the host shell — not inside the pi agent. Failed scripts include their exit code so the specialist can reason about failures.
 
 **Model IDs** use the full provider/model format: `anthropic/claude-sonnet-4-6`, `google-gemini-cli/gemini-3-flash-preview`, `anthropic/claude-haiku-4-5`.
 
@@ -187,7 +198,7 @@ bun test
 ```
 
 - **Build**: `bun build src/index.ts --target=node --outfile=dist/index.js`
-- **Test**: `bun --bun vitest run` (67 unit tests)
+- **Test**: `bun --bun vitest run` (68 unit tests)
 - **Lint**: `tsc --noEmit`
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture guide and [ROADMAP.md](ROADMAP.md) for planned features.
