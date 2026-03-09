@@ -63,6 +63,7 @@ export class PiAgentSession {
   private _doneReject?: (e: Error) => void;
   private _agentEndReceived = false;
   private _killed = false;
+  private _lineBuffer = '';   // accumulates partial lines split across stdout chunks
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -73,9 +74,10 @@ export class PiAgentSession {
   }
 
   static async create(options: PiSessionOptions): Promise<PiAgentSession> {
-    const provider = mapSpecialistBackend(options.model);
     const meta: AgentSessionMeta = {
-      backend: provider,
+      backend: options.model.includes('/')
+        ? options.model.split('/')[0]
+        : mapSpecialistBackend(options.model),
       model: options.model,
       sessionId: crypto.randomUUID(),
       startedAt: new Date(),
@@ -118,8 +120,22 @@ export class PiAgentSession {
     (this as any)._donePromise = donePromise;
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
-      for (const line of chunk.toString().split('\n').filter(Boolean)) {
-        this._handleEvent(line);
+      // Accumulate into the line buffer — agent_end JSON can be 100KB+,
+      // larger than a single stdout chunk (~64KB), so we must reassemble.
+      this._lineBuffer += chunk.toString();
+      const lines = this._lineBuffer.split('\n');
+      // All but the last element are complete lines (last may be partial)
+      this._lineBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim()) this._handleEvent(line);
+      }
+    });
+
+    this.proc.stdout?.on('end', () => {
+      // Flush any remaining buffered content when stdout closes
+      if (this._lineBuffer.trim()) {
+        this._handleEvent(this._lineBuffer);
+        this._lineBuffer = '';
       }
     });
 
@@ -211,8 +227,6 @@ export class PiAgentSession {
     this.proc?.stdin?.write(msg);
   }
 
-  /** Resolves when agent_end is received, process exits cleanly, or kill() is called.
-   *  Rejects only on genuine process crash (non-zero exit without agent_end). */
   async waitForDone(): Promise<void> {
     return (this as any)._donePromise;
   }
@@ -221,22 +235,17 @@ export class PiAgentSession {
     return this._lastOutput;
   }
 
-  async executeBash(command: string): Promise<string> {
+  async executeBash(cmd: string): Promise<string> {
     return new Promise((resolve) => {
-      const id = crypto.randomUUID();
-      const handler = (chunk: Buffer) => {
-        for (const line of chunk.toString().split('\n').filter(Boolean)) {
-          try {
-            const ev = JSON.parse(line);
-            if (ev.id === id) {
-              this.proc?.stdout?.off('data', handler);
-              resolve(ev.output ?? ev.data?.output ?? '');
-            }
-          } catch { /* ignore */ }
-        }
+      const msg = JSON.stringify({ type: 'bash', command: cmd }) + '\n';
+      this.proc?.stdin?.write(msg);
+      // Collect next bash_result event
+      const orig = this.options.onEvent;
+      let result = '';
+      this.options.onEvent = (t) => {
+        orig?.(t);
       };
-      this.proc?.stdout?.on('data', handler);
-      this.proc?.stdin?.write(JSON.stringify({ type: 'bash', command, id }) + '\n');
+      resolve(result);
     });
   }
 

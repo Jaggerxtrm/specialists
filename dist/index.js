@@ -24916,15 +24916,15 @@ class PiAgentSession {
   _doneReject;
   _agentEndReceived = false;
   _killed = false;
+  _lineBuffer = "";
   meta;
   constructor(options, meta) {
     this.options = options;
     this.meta = meta;
   }
   static async create(options) {
-    const provider = mapSpecialistBackend(options.model);
     const meta = {
-      backend: provider,
+      backend: options.model.includes("/") ? options.model.split("/")[0] : mapSpecialistBackend(options.model),
       model: options.model,
       sessionId: crypto.randomUUID(),
       startedAt: new Date
@@ -24958,9 +24958,19 @@ class PiAgentSession {
     });
     this._donePromise = donePromise;
     this.proc.stdout?.on("data", (chunk) => {
-      for (const line of chunk.toString().split(`
-`).filter(Boolean)) {
-        this._handleEvent(line);
+      this._lineBuffer += chunk.toString();
+      const lines = this._lineBuffer.split(`
+`);
+      this._lineBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim())
+          this._handleEvent(line);
+      }
+    });
+    this.proc.stdout?.on("end", () => {
+      if (this._lineBuffer.trim()) {
+        this._handleEvent(this._lineBuffer);
+        this._lineBuffer = "";
       }
     });
     this.proc.on("close", (code) => {
@@ -25056,24 +25066,17 @@ class PiAgentSession {
   async getLastOutput() {
     return this._lastOutput;
   }
-  async executeBash(command) {
+  async executeBash(cmd) {
     return new Promise((resolve) => {
-      const id = crypto.randomUUID();
-      const handler = (chunk) => {
-        for (const line of chunk.toString().split(`
-`).filter(Boolean)) {
-          try {
-            const ev = JSON.parse(line);
-            if (ev.id === id) {
-              this.proc?.stdout?.off("data", handler);
-              resolve(ev.output ?? ev.data?.output ?? "");
-            }
-          } catch {}
-        }
+      const msg = JSON.stringify({ type: "bash", command: cmd }) + `
+`;
+      this.proc?.stdin?.write(msg);
+      const orig = this.options.onEvent;
+      let result = "";
+      this.options.onEvent = (t) => {
+        orig?.(t);
       };
-      this.proc?.stdout?.on("data", handler);
-      this.proc?.stdin?.write(JSON.stringify({ type: "bash", command, id }) + `
-`);
+      resolve(result);
     });
   }
   kill() {
