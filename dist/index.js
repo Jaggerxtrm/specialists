@@ -24568,12 +24568,12 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 
 // src/constants.ts
-var LOG_PREFIX = "[UAI-MCP]";
+var LOG_PREFIX = "[specialists]";
 var MCP_CONFIG = {
-  SERVER_NAME: "unitAI",
+  SERVER_NAME: "specialists",
   VERSION: "1.0.0",
   CAPABILITIES: {
     tools: {},
@@ -24748,6 +24748,7 @@ var SpecialistSchema = objectType({
     capabilities: CapabilitiesSchema,
     communication: CommunicationSchema,
     validation: ValidationSchema,
+    beads_integration: enumType(["auto", "always", "never"]).default("auto"),
     heartbeat: unknownType().optional()
   })
 });
@@ -25078,6 +25079,15 @@ class PiAgentSession {
   }
 }
 
+// src/specialist/beads.ts
+function shouldCreateBead(beadsIntegration, permissionRequired) {
+  if (beadsIntegration === "never")
+    return false;
+  if (beadsIntegration === "always")
+    return true;
+  return permissionRequired !== "READ_ONLY";
+}
+
 // src/specialist/runner.ts
 class SpecialistRunner {
   deps;
@@ -25087,7 +25097,7 @@ class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
   async run(options, onProgress, onEvent, onMeta, onKillRegistered) {
-    const { loader, hooks, circuitBreaker } = this.deps;
+    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
     const spec = await loader.get(options.name);
@@ -25142,6 +25152,11 @@ You have access via Bash:
       timeout_ms: execution.timeout_ms,
       permission_level: permissionLevel
     });
+    const beadsIntegration = spec.specialist.beads_integration ?? "auto";
+    let beadId;
+    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+    }
     let output;
     let session;
     try {
@@ -25179,6 +25194,8 @@ You have access via Bash:
       circuitBreaker.recordSuccess(model);
     } catch (err) {
       circuitBreaker.recordFailure(model);
+      if (beadId)
+        beadsClient?.closeBead(beadId, "ERROR", Date.now() - start, model);
       await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
         status: "ERROR",
         duration_ms: Date.now() - start,
@@ -25198,12 +25215,17 @@ You have access via Bash:
       duration_ms: durationMs,
       output_valid: true
     });
+    if (beadId) {
+      beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+    }
     return {
       output,
       backend: session.meta.backend,
       model,
       durationMs,
-      specialistVersion: metadata.version
+      specialistVersion: metadata.version,
+      beadId
     };
   }
   async startAsync(options, registry2) {
@@ -25478,6 +25500,12 @@ class JobRegistry {
     if (meta.model)
       job.model = meta.model;
   }
+  setBeadId(id, beadId) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    job.beadId = beadId;
+  }
   setKillFn(id, killFn) {
     const job = this.jobs.get(id);
     if (!job)
@@ -25499,6 +25527,8 @@ class JobRegistry {
     job.model = result.model;
     job.specialistVersion = result.specialistVersion;
     job.endedAtMs = Date.now();
+    if (result.beadId)
+      job.beadId = result.beadId;
   }
   fail(id, err) {
     const job = this.jobs.get(id);
@@ -25535,7 +25565,8 @@ class JobRegistry {
       model: job.model,
       specialist_version: job.specialistVersion,
       duration_ms: (job.endedAtMs ?? Date.now()) - job.startedAtMs,
-      error: job.error
+      error: job.error,
+      beadId: job.beadId
     };
   }
   delete(id) {
@@ -25606,15 +25637,50 @@ function createStopSpecialistTool(registry2) {
   };
 }
 
+// src/tools/specialist/specialist_init.tool.ts
+import { spawnSync } from "node:child_process";
+import { existsSync as existsSync2 } from "node:fs";
+import { join as join2 } from "node:path";
+var specialistInitSchema = exports_external.object({});
+function createSpecialistInitTool(loader, deps) {
+  const resolved = deps ?? {
+    bdAvailable: () => spawnSync("bd", ["--version"], { stdio: "ignore" }).status === 0,
+    beadsExists: () => existsSync2(join2(process.cwd(), ".beads")),
+    bdInit: () => spawnSync("bd", ["init"], { stdio: "ignore" })
+  };
+  return {
+    name: "specialist_init",
+    description: "Session bootstrap: initializes beads in the project if not already set up, " + "then returns available specialists. Call at session start for orientation.",
+    inputSchema: specialistInitSchema,
+    async execute(_input) {
+      const available = resolved.bdAvailable();
+      let initialized = false;
+      if (available) {
+        if (resolved.beadsExists()) {
+          initialized = true;
+        } else {
+          const result = resolved.bdInit();
+          initialized = result.status === 0;
+        }
+      }
+      const specialists = await loader.list();
+      return {
+        specialists,
+        beads: { available, initialized }
+      };
+    }
+  };
+}
+
 // src/server.ts
-class UnitAIServer {
+class SpecialistsServer {
   server;
   tools;
   constructor() {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
     const hooks = new HookEmitter({
-      tracePath: join2(process.cwd(), ".unitai", "trace.jsonl")
+      tracePath: join3(process.cwd(), ".specialists", "trace.jsonl")
     });
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
     const registry2 = new JobRegistry;
@@ -25625,7 +25691,8 @@ class UnitAIServer {
       createSpecialistStatusTool(loader, circuitBreaker),
       createStartSpecialistTool(runner, registry2),
       createPollSpecialistTool(registry2),
-      createStopSpecialistTool(registry2)
+      createStopSpecialistTool(registry2),
+      createSpecialistInitTool(loader)
     ];
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
@@ -25639,7 +25706,8 @@ class UnitAIServer {
       specialist_status: exports_external.object({}),
       start_specialist: startSpecialistSchema,
       poll_specialist: pollSpecialistSchema,
-      stop_specialist: stopSpecialistSchema
+      stop_specialist: stopSpecialistSchema,
+      specialist_init: specialistInitSchema
     };
     this.toolSchemas = schemaMap;
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -25665,7 +25733,7 @@ class UnitAIServer {
       const onProgress = (msg) => {
         this.server.notification({
           method: "notifications/message",
-          params: { level: "info", logger: "unitai", data: msg }
+          params: { level: "info", logger: "specialists", data: msg }
         }).catch(() => {});
       };
       try {
@@ -25689,7 +25757,7 @@ class UnitAIServer {
     try {
       const transport = new StdioServerTransport;
       await this.server.connect(transport);
-      logger.info(`UnitAI MCP Server v2 started — ${this.tools.length} tools registered`);
+      logger.info(`Specialists MCP Server v2 started — ${this.tools.length} tools registered`);
     } catch (error2) {
       logger.error("Failed to start server", error2);
       process.exit(1);
@@ -25702,8 +25770,8 @@ class UnitAIServer {
 
 // src/index.ts
 async function main() {
-  logger.info("Starting Unified AI MCP Tool server...");
-  const server = new UnitAIServer;
+  logger.info("Starting Specialists MCP Server...");
+  const server = new SpecialistsServer;
   await server.start();
 }
 main().catch((error2) => {
