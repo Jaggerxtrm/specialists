@@ -1,11 +1,12 @@
 ---
 title: Specialists Roadmap
-version: 1.3.0
+version: 1.4.0
 updated: 2026-03-09
 scope: product
 category: roadmap
 domain: [planning, features]
 changelog:
+  - 1.4.0 (2026-03-09): Add beads enforcement hooks to Completed; update More beads hooks backlog; fix 2.4 scope mention.
   - 1.3.0 (2026-03-09): Mark M2.1, M4 complete; move script execution to Completed; clean up rename artifacts; add 2.1.5 fixes.
   - 1.2.0 (2026-03-08): Mark M1 fully complete — installer, npm publish, MCP working.
   - 1.1.0 (2026-03-08): Mark M1.1 complete; add dead code cleanup; update status.
@@ -44,6 +45,8 @@ changelog:
 | **M4 Beads Integration** — `beads_integration: auto\|always\|never`; full bead lifecycle in runner | 2026-03-09 |
 | **`agent_end` / done event** — `proc.stdin.end()` fix; pi RPC protocol investigation | 2026-03-09 |
 | **Pre/post script execution** — `execSync` local runner; XML `<pre_flight_context>` injection | 2026-03-09 |
+| **Beads enforcement hooks** — `beads-edit-gate`, `beads-commit-gate`, `beads-stop-gate` installed by `specialists install`; block edits/commits/stop when no in_progress bead | 2026-03-09 |
+| **System scope removed** — `SpecialistLoader` now resolves project → user only; user deletions are respected | 2026-03-09 |
 
 ---
 
@@ -73,8 +76,8 @@ detail: z.enum(['summary', 'full']).optional().default('summary')
 ### 2.4 Scope distinction in `list_specialists` output
 Currently project/user/system scopes may blend in output.
 
-- Clearly label each specialist with its scope: `[project]`, `[user]`, `[system]`
-- List order: project → user → system (most specific first)
+- Clearly label each specialist with its scope: `[project]`, `[user]`
+- List order: project → user (most specific first)
 
 ---
 
@@ -143,8 +146,9 @@ A management UI for running specialists and system health.
 - TUI or lightweight web UI (command: `specialists`)
 - Show: running specialists, event stream (type only — not full messages), pi lifecycle events (`agent_start`, `agent_end`, tool calls), beads issue linked to job
 - Quick model switcher per specialist
-- Specialist list ordered: project → user → system
+- Specialist list ordered: project → user
 - Integrate into forge dashboard as a new tab alongside `gitboard` view
+- programmatic cli usable to modify specialists directly, using args, and using the orchestrating agent itself
 
 **Implementation notes:**
 - Inspired by `bd` configuration UX
@@ -162,8 +166,9 @@ Context-aware hooks that trigger specialist use automatically.
 - Appending specific workflow instructions (e.g. beads usage) to the specialist system prompt
 - System prompt appends have greater authority than CLAUDE.md or AGENTS.md
 
-### More beads hooks
-- `bd init`, `bd ready` must be enforced in specialist workflows
+### Beads init enforcement
+- `bd init` should be enforced automatically when entering a project without `.beads/` configured
+- `bd ready` surface in `specialist_init` output — show open issues alongside available specialists
 
 ### Specialists project init
 - `specialists init` in a project installs the set of hooks/skills necessary for correct usage, similar to how `bd` hooks work

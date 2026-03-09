@@ -92,7 +92,14 @@ npm install -g @jaggerxtrm/specialists
 specialists install
 ```
 
-Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, and installs the `main-guard` PreToolUse hook (`~/.claude/hooks/main-guard.mjs`) to protect `main`/`master` branches from direct edits.
+Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, copies built-in specialists, and installs four Claude Code hooks into `~/.claude/hooks/`:
+
+| Hook | Event | Enforces |
+|------|-------|---------|
+| `specialists-main-guard.mjs` | `PreToolUse` | No direct edits/commits on `main`/`master` — use a feature branch |
+| `beads-edit-gate.mjs` | `PreToolUse` | No file edits without an `in_progress` beads issue (beads projects only) |
+| `beads-commit-gate.mjs` | `PreToolUse` | No `git commit` while issues are still `in_progress` — close them first |
+| `beads-stop-gate.mjs` | `Stop` | Agent cannot declare done while `in_progress` issues remain |
 
 After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair the installation.
 
