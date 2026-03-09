@@ -17490,11 +17490,6 @@ var init_schema = __esm(() => {
 });
 
 // src/specialist/loader.ts
-var exports_loader = {};
-__export(exports_loader, {
-  checkStaleness: () => checkStaleness,
-  SpecialistLoader: () => SpecialistLoader
-});
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -17592,11 +17587,140 @@ var init_loader = __esm(() => {
   init_schema();
 });
 
-// src/index.ts
+// src/cli/install.ts
+var exports_install = {};
+__export(exports_install, {
+  run: () => run
+});
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as dirname2, join as join4 } from "node:path";
+async function run() {
+  const installerPath = join4(dirname2(fileURLToPath(import.meta.url)), "..", "..", "bin", "install.js");
+  execFileSync(process.execPath, [installerPath], { stdio: "inherit" });
+}
+var init_install = () => {};
+
+// src/cli/version.ts
+var exports_version = {};
+__export(exports_version, {
+  run: () => run2
+});
 import { createRequire as createRequire2 } from "node:module";
+async function run2() {
+  const req = createRequire2(import.meta.url);
+  const pkg = req("../package.json");
+  console.log(`${pkg.name} v${pkg.version}`);
+}
+var init_version = () => {};
+
+// src/cli/list.ts
+var exports_list = {};
+__export(exports_list, {
+  run: () => run3,
+  parseArgs: () => parseArgs,
+  ArgParseError: () => ArgParseError
+});
+function parseArgs(argv) {
+  const result = {};
+  for (let i = 0;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--category") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) {
+        throw new ArgParseError("--category requires a value");
+      }
+      result.category = value;
+      continue;
+    }
+    if (token === "--scope") {
+      const value = argv[++i];
+      if (value !== "project" && value !== "user") {
+        throw new ArgParseError(`--scope must be "project" or "user", got: "${value ?? ""}"`);
+      }
+      result.scope = value;
+      continue;
+    }
+  }
+  return result;
+}
+async function run3() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(3));
+  } catch (err) {
+    if (err instanceof ArgParseError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const loader = new SpecialistLoader;
+  let specialists = await loader.list(args.category);
+  if (args.scope) {
+    specialists = specialists.filter((s) => s.scope === args.scope);
+  }
+  if (specialists.length === 0) {
+    console.log("No specialists found.");
+    return;
+  }
+  const nameWidth = Math.max(...specialists.map((s) => s.name.length), 4);
+  const modelWidth = Math.max(...specialists.map((s) => s.model.length), 5);
+  console.log(`
+${bold(`Specialists (${specialists.length})`)}
+`);
+  for (const s of specialists) {
+    const name = cyan(s.name.padEnd(nameWidth));
+    const model = dim(s.model.padEnd(modelWidth));
+    const scopeTag = yellow(`[${s.scope}]`);
+    console.log(`  ${name}  ${model}  ${s.description}  ${scopeTag}`);
+  }
+  console.log();
+}
+var dim = (s) => `\x1B[2m${s}\x1B[0m`, bold = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError;
+var init_list = __esm(() => {
+  init_loader();
+  ArgParseError = class ArgParseError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "ArgParseError";
+    }
+  };
+});
+
+// src/cli/help.ts
+var exports_help = {};
+__export(exports_help, {
+  run: () => run4
+});
+async function run4() {
+  const lines = [
+    "",
+    bold2("specialists <command>"),
+    "",
+    "Commands:",
+    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim2(desc)}`),
+    "",
+    dim2("Run 'specialists <command> --help' for command-specific options."),
+    ""
+  ];
+  console.log(lines.join(`
+`));
+}
+var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var init_help = __esm(() => {
+  COMMANDS = [
+    ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
+    ["list", "List available specialists with model and description"],
+    ["version", "Print installed version"],
+    ["init", "Initialize specialists in the current project"],
+    ["edit", "Edit a specialist field  (e.g. --model, --description)"],
+    ["run", "Run a specialist with a prompt"],
+    ["status", "Show system health (pi, beads, MCP)"],
+    ["help", "Show this help message"]
+  ];
+  COL_WIDTH = Math.max(...COMMANDS.map(([cmd]) => cmd.length));
+});
 
 // node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
@@ -25880,51 +26004,29 @@ class SpecialistsServer {
 }
 
 // src/index.ts
-var __dirname2 = dirname2(fileURLToPath(import.meta.url));
 var sub = process.argv[2];
-var dim = (s) => `\x1B[2m${s}\x1B[0m`;
-var bold = (s) => `\x1B[1m${s}\x1B[0m`;
-var cyan = (s) => `\x1B[36m${s}\x1B[0m`;
-var yellow = (s) => `\x1B[33m${s}\x1B[0m`;
-async function run() {
+async function run5() {
   if (sub === "install") {
-    const installerPath = join4(__dirname2, "..", "bin", "install.js");
-    execFileSync(process.execPath, [installerPath], { stdio: "inherit" });
-    return;
+    const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
+    return handler();
   }
   if (sub === "version") {
-    const req = createRequire2(import.meta.url);
-    const pkg = req("../package.json");
-    console.log(`${pkg.name} v${pkg.version}`);
-    return;
+    const { run: handler } = await Promise.resolve().then(() => (init_version(), exports_version));
+    return handler();
   }
   if (sub === "list") {
-    const { SpecialistLoader: SpecialistLoader2 } = await Promise.resolve().then(() => (init_loader(), exports_loader));
-    const loader = new SpecialistLoader2;
-    const specialists = await loader.list();
-    if (specialists.length === 0) {
-      console.log("No specialists found.");
-      return;
-    }
-    const nameWidth = Math.max(...specialists.map((s) => s.name.length), 4);
-    const modelWidth = Math.max(...specialists.map((s) => s.model.length), 5);
-    console.log(`
-${bold(`Specialists (${specialists.length})`)}
-`);
-    for (const s of specialists) {
-      const name = cyan(s.name.padEnd(nameWidth));
-      const model = dim(s.model.padEnd(modelWidth));
-      const scope = yellow(`[${s.scope}]`);
-      console.log(`  ${name}  ${model}  ${s.description}  ${scope}`);
-    }
-    console.log();
-    return;
+    const { run: handler } = await Promise.resolve().then(() => (init_list(), exports_list));
+    return handler();
+  }
+  if (sub === "help" || sub === "--help" || sub === "-h") {
+    const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
+    return handler();
   }
   logger.info("Starting Specialists MCP Server...");
   const server = new SpecialistsServer;
   await server.start();
 }
-run().catch((error2) => {
+run5().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
