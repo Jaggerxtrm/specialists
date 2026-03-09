@@ -1,4 +1,11 @@
 // src/pi/session.ts
+export class SessionKilledError extends Error {
+  constructor() {
+    super('Session was killed');
+    this.name = 'SessionKilledError';
+  }
+}
+
 //
 // PiAgentSession wraps the `pi` CLI (global binary) in --mode rpc.
 // Events are emitted per the pi RPC protocol over stdout (NDJSON).
@@ -119,6 +126,8 @@ export class PiAgentSession {
       this._doneResolve = resolve;
       this._doneReject = reject;
     });
+    // Prevent unhandled rejection warnings when kill() is called before waitForDone() is awaited
+    donePromise.catch(() => {});
     (this as any)._donePromise = donePromise;
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
@@ -245,10 +254,11 @@ export class PiAgentSession {
   // not via pi RPC (pi has no bash command in its protocol).
 
   kill(): void {
+    if (this._killed) return; // idempotent – second call (e.g. from finally) is a no-op
     this._killed = true;
     this.proc?.kill();
     this.proc = undefined;
-    // Resolve the done promise immediately so run() can clean up
-    this._doneResolve?.();
+    // Reject so waitForDone() throws SessionKilledError, distinguishable from real failures
+    this._doneReject?.(new SessionKilledError());
   }
 }
