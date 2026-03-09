@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { renderTemplate } from './templateEngine.js';
-import { PiAgentSession, type PiSessionOptions } from '../pi/session.js';
+import { PiAgentSession, SessionKilledError, type PiSessionOptions } from '../pi/session.js';
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import type { CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -187,14 +187,19 @@ export class SpecialistRunner {
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {
-      circuitBreaker.recordFailure(model);
-      // Beads: close with ERROR before re-throwing
-      if (beadId) beadsClient?.closeBead(beadId, 'ERROR', Date.now() - start, model);
+      const isCancelled = err instanceof SessionKilledError;
+      if (!isCancelled) {
+        // Only record a circuit-breaker failure for real backend errors
+        circuitBreaker.recordFailure(model);
+      }
+      // Beads: close with CANCELLED for kill, ERROR for real failures
+      const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
+      if (beadId) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
-        status: 'ERROR',
+        status: isCancelled ? 'CANCELLED' : 'ERROR',
         duration_ms: Date.now() - start,
         output_valid: false,
-        error: { type: 'backend_error', message: err.message },
+        error: { type: isCancelled ? 'cancelled' : 'backend_error', message: err.message },
       });
       throw err;
     } finally {

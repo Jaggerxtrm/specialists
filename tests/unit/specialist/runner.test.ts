@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
+import { SessionKilledError } from '../../../src/pi/session.js';
 import type { BeadsClient } from '../../../src/specialist/beads.js';
 
 function makeMockSession() {
@@ -203,6 +204,53 @@ describe('SpecialistRunner', () => {
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
       expect(result.output).toBe('{"result": "ok"}');
       expect(result.beadId).toBeUndefined();
+    });
+  });
+
+  describe('cancellation via SessionKilledError', () => {
+    it('does not record circuit-breaker failure when session is killed', async () => {
+      mockSession.waitForDone.mockRejectedValueOnce(new SessionKilledError());
+      const cb = new CircuitBreaker({ failureThreshold: 1 });
+      const recordFailure = vi.spyOn(cb, 'recordFailure');
+      const runner = new SpecialistRunner({
+        loader: makeLoader(),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: cb,
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+      await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toBeInstanceOf(SessionKilledError);
+      expect(recordFailure).not.toHaveBeenCalled();
+      // Model should remain available (circuit NOT tripped)
+      expect(cb.isAvailable('gemini')).toBe(true);
+    });
+
+    it('closes bead with CANCELLED status when session is killed', async () => {
+      mockSession.waitForDone.mockRejectedValueOnce(new SessionKilledError());
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'always'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toBeInstanceOf(SessionKilledError);
+      expect(beadsClient.closeBead).toHaveBeenCalledWith('specialists-test-1', 'CANCELLED', expect.any(Number), expect.any(String));
+    });
+
+    it('records circuit-breaker failure for real backend errors (not kills)', async () => {
+      mockSession.waitForDone.mockRejectedValueOnce(new Error('backend crash'));
+      const cb = new CircuitBreaker({ failureThreshold: 1 });
+      const recordFailure = vi.spyOn(cb, 'recordFailure');
+      const runner = new SpecialistRunner({
+        loader: makeLoader(),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: cb,
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+      await expect(runner.run({ name: 'test-spec', prompt: 'go' })).rejects.toThrow('backend crash');
+      expect(recordFailure).toHaveBeenCalledOnce();
+      expect(cb.isAvailable('gemini')).toBe(false);
     });
   });
 });
