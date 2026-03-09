@@ -17688,26 +17688,217 @@ var init_list = __esm(() => {
   };
 });
 
+// src/cli/init.ts
+var exports_init = {};
+__export(exports_init, {
+  run: () => run4
+});
+import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join as join5 } from "node:path";
+function ok(msg) {
+  console.log(`  ${green("✓")} ${msg}`);
+}
+function skip(msg) {
+  console.log(`  ${yellow2("○")} ${msg}`);
+}
+async function run4() {
+  const cwd = process.cwd();
+  console.log(`
+${bold2("specialists init")}
+`);
+  const specialistsDir = join5(cwd, "specialists");
+  if (existsSync3(specialistsDir)) {
+    skip("specialists/ already exists");
+  } else {
+    mkdirSync(specialistsDir, { recursive: true });
+    ok("created specialists/");
+  }
+  const agentsPath = join5(cwd, "AGENTS.md");
+  if (existsSync3(agentsPath)) {
+    const existing = readFileSync(agentsPath, "utf-8");
+    if (existing.includes(AGENTS_MARKER)) {
+      skip("AGENTS.md already has Specialists section");
+    } else {
+      writeFileSync(agentsPath, existing.trimEnd() + `
+
+` + AGENTS_BLOCK, "utf-8");
+      ok("appended Specialists section to AGENTS.md");
+    }
+  } else {
+    writeFileSync(agentsPath, AGENTS_BLOCK, "utf-8");
+    ok("created AGENTS.md with Specialists section");
+  }
+  console.log(`
+${bold2("Done!")}
+`);
+  console.log(`  ${dim2("Next steps:")}`);
+  console.log(`  1. Add your specialists to ${yellow2("specialists/")}`);
+  console.log(`  2. Run ${yellow2("specialists list")} to verify they are discovered`);
+  console.log(`  3. Restart Claude Code to pick up AGENTS.md changes
+`);
+}
+var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists";
+var init_init = __esm(() => {
+  AGENTS_BLOCK = `
+## Specialists
+
+Call \`specialist_init\` at the start of every session to bootstrap context and
+see available specialists. Use \`use_specialist\` or \`start_specialist\` to
+delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
+specialist without user intervention.
+`.trimStart();
+});
+
+// src/cli/edit.ts
+var exports_edit = {};
+__export(exports_edit, {
+  run: () => run5
+});
+import { readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
+function parseArgs2(argv) {
+  const name = argv[0];
+  if (!name || name.startsWith("--")) {
+    console.error("Usage: specialists edit <name> --<field> <value> [--dry-run]");
+    console.error(`  Fields: ${Object.keys(FIELD_MAP).join(", ")}`);
+    process.exit(1);
+  }
+  let field;
+  let value;
+  let dryRun = false;
+  let scope;
+  for (let i = 1;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (token === "--scope") {
+      const v = argv[++i];
+      if (v !== "project" && v !== "user") {
+        console.error(`Error: --scope must be "project" or "user", got: "${v ?? ""}"`);
+        process.exit(1);
+      }
+      scope = v;
+      continue;
+    }
+    if (token.startsWith("--") && !field) {
+      field = token.slice(2);
+      value = argv[++i];
+      continue;
+    }
+  }
+  if (!field || !FIELD_MAP[field]) {
+    console.error(`Error: unknown or missing field. Valid fields: ${Object.keys(FIELD_MAP).join(", ")}`);
+    process.exit(1);
+  }
+  if (value === undefined || value === "") {
+    console.error(`Error: --${field} requires a value`);
+    process.exit(1);
+  }
+  if (field === "permission" && !VALID_PERMISSIONS.includes(value)) {
+    console.error(`Error: --permission must be one of: ${VALID_PERMISSIONS.join(", ")}`);
+    process.exit(1);
+  }
+  if (field === "timeout" && !/^\d+$/.test(value)) {
+    console.error("Error: --timeout must be a number (milliseconds)");
+    process.exit(1);
+  }
+  return { name, field, value, dryRun, scope };
+}
+function setIn(doc2, path, value) {
+  let node = doc2;
+  for (let i = 0;i < path.length - 1; i++) {
+    node = node.get(path[i], true);
+  }
+  const leaf = path[path.length - 1];
+  if (Array.isArray(value)) {
+    node.set(leaf, value);
+  } else {
+    node.set(leaf, value);
+  }
+}
+async function run5() {
+  const args = parseArgs2(process.argv.slice(3));
+  const { name, field, value, dryRun, scope } = args;
+  const loader = new SpecialistLoader;
+  const all = await loader.list();
+  const match = all.find((s) => s.name === name && (scope === undefined || s.scope === scope));
+  if (!match) {
+    const hint = scope ? ` (scope: ${scope})` : "";
+    console.error(`Error: specialist "${name}" not found${hint}`);
+    console.error(`  Run ${yellow3("specialists list")} to see available specialists`);
+    process.exit(1);
+  }
+  const raw = readFileSync2(match.filePath, "utf-8");
+  const doc2 = $parseDocument(raw);
+  const yamlPath = FIELD_MAP[field];
+  let typedValue = value;
+  if (field === "timeout") {
+    typedValue = parseInt(value, 10);
+  } else if (field === "tags") {
+    typedValue = value.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+  setIn(doc2, yamlPath, typedValue);
+  const updated = doc2.toString();
+  if (dryRun) {
+    console.log(`
+${bold3(`[dry-run] ${match.filePath}`)}
+`);
+    console.log(dim3("--- current"));
+    console.log(dim3(`+++ updated`));
+    const oldLines = raw.split(`
+`);
+    const newLines = updated.split(`
+`);
+    newLines.forEach((line, i) => {
+      if (line !== oldLines[i]) {
+        if (oldLines[i] !== undefined)
+          console.log(dim3(`- ${oldLines[i]}`));
+        console.log(green2(`+ ${line}`));
+      }
+    });
+    console.log();
+    return;
+  }
+  writeFileSync2(match.filePath, updated, "utf-8");
+  const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
+  console.log(`${green2("✓")} ${bold3(name)}: ${yellow3(field)} = ${displayValue}` + dim3(` (${match.filePath})`));
+}
+var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
+var init_edit = __esm(() => {
+  init_dist();
+  init_loader();
+  FIELD_MAP = {
+    model: ["specialist", "execution", "model"],
+    "fallback-model": ["specialist", "execution", "fallback_model"],
+    description: ["specialist", "metadata", "description"],
+    permission: ["specialist", "execution", "permission_required"],
+    timeout: ["specialist", "execution", "timeout_ms"],
+    tags: ["specialist", "metadata", "tags"]
+  };
+  VALID_PERMISSIONS = ["READ_ONLY", "LOW", "MEDIUM", "HIGH"];
+});
+
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run4
+  run: () => run6
 });
-async function run4() {
+async function run6() {
   const lines = [
     "",
-    bold2("specialists <command>"),
+    bold4("specialists <command>"),
     "",
     "Commands:",
-    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim2(desc)}`),
+    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim4(desc)}`),
     "",
-    dim2("Run 'specialists <command> --help' for command-specific options."),
+    dim4("Run 'specialists <command> --help' for command-specific options."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
 var init_help = __esm(() => {
   COMMANDS = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
@@ -26005,7 +26196,7 @@ class SpecialistsServer {
 
 // src/index.ts
 var sub = process.argv[2];
-async function run5() {
+async function run7() {
   if (sub === "install") {
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
@@ -26018,6 +26209,14 @@ async function run5() {
     const { run: handler } = await Promise.resolve().then(() => (init_list(), exports_list));
     return handler();
   }
+  if (sub === "init") {
+    const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
+    return handler();
+  }
+  if (sub === "edit") {
+    const { run: handler } = await Promise.resolve().then(() => (init_edit(), exports_edit));
+    return handler();
+  }
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
@@ -26026,7 +26225,7 @@ async function run5() {
   const server = new SpecialistsServer;
   await server.start();
 }
-run5().catch((error2) => {
+run7().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
