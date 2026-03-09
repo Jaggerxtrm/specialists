@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.1.5] - 2026-03-09
+
 ### Fixed
 - **`agent_end` split-chunk hang** — `agent_end` is a single NDJSON line containing the
   full conversation history; for long-running specialists (20+ tool calls) this line can
@@ -14,9 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so `JSON.parse` failed silently on both halves, `_agentEndReceived` never flipped, and
   `waitForDone()` hung indefinitely. Fix: accumulate chunks in `_lineBuffer`, emit only on
   confirmed `\n`, flush remaining content on stdout `end` (`79ac2cb`)
-- **`agent_end` never received on short prompts** — `pi --mode rpc` does not close its
-  own stdin; the subprocess kept waiting for more input so the agent loop never started.
-  Fix: call `proc.stdin?.end()` immediately after writing the prompt (`c305396`)
+- **`agent_end` never fires — stdin never closed** — `pi --mode rpc` reads stdin
+  indefinitely; the subprocess waited forever for more commands so `agent_end` was never
+  emitted and `waitForDone()` hung. Fix: `proc.stdin.end()` after writing the prompt.
+  Also removed `--print` from spawn args (no-op in RPC mode per pi docs) (`c305396`)
+- **Pre/post script execution silently broken** — `executeBash()` sent
+  `{"type":"bash",...}` over pi's stdin, which is not a pi RPC command; pi ignored it and
+  script output injection was always a no-op. Fix: removed `executeBash()` from
+  `PiAgentSession`; scripts now run locally via `execSync` before the pi session starts.
+  Output formatted as `<pre_flight_context><script name="...">` XML and injected via
+  `$pre_script_output` template variable; failed scripts include `exit_code` attribute
+  (`bf837b4`)
 
 ---
 
