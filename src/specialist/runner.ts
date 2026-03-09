@@ -21,9 +21,12 @@ export interface RunResult {
   model: string;
   durationMs: number;
   specialistVersion: string;
+  beadId?: string;
 }
 
 export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'executeBash' | 'kill' | 'meta'>>;
+
+import { type BeadsClient, shouldCreateBead } from './beads.js';
 
 interface RunnerDeps {
   loader: SpecialistLoader;
@@ -31,6 +34,8 @@ interface RunnerDeps {
   circuitBreaker: CircuitBreaker;
   /** Overridable for testing; defaults to PiAgentSession.create */
   sessionFactory?: SessionFactory;
+  /** Optional beads client for specialist run tracking */
+  beadsClient?: BeadsClient;
 }
 
 export class SpecialistRunner {
@@ -47,7 +52,7 @@ export class SpecialistRunner {
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
   ): Promise<RunResult> {
-    const { loader, hooks, circuitBreaker } = this.deps;
+    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
 
@@ -104,6 +109,13 @@ export class SpecialistRunner {
       permission_level: permissionLevel,
     });
 
+    // Beads: create bead if policy allows
+    const beadsIntegration = spec.specialist.beads_integration ?? 'auto';
+    let beadId: string | undefined;
+    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+    }
+
     let output: string;
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     try {
@@ -148,6 +160,8 @@ export class SpecialistRunner {
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {
       circuitBreaker.recordFailure(model);
+      // Beads: close with ERROR before re-throwing
+      if (beadId) beadsClient?.closeBead(beadId, 'ERROR', Date.now() - start, model);
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
         status: 'ERROR',
         duration_ms: Date.now() - start,
@@ -171,12 +185,19 @@ export class SpecialistRunner {
       output_valid: true,
     });
 
+    // Beads: close with COMPLETE and emit audit record
+    if (beadId) {
+      beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+    }
+
     return {
       output,
       backend: session!.meta.backend,
       model,
       durationMs,
       specialistVersion: metadata.version,
+      beadId,
     };
   }
 
