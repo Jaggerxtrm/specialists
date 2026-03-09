@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [2.1.1] - 2026-03-09
+
+### Fixed
+- **`BeadsClient` not wired in production** — `server.ts` was never instantiating or passing `BeadsClient` to `SpecialistRunner`; beads lifecycle silently no-op'd in production while unit tests (which inject the client) passed green
+- **`specialist_init` zod import** — `import { z }` → `import * as z` for Bun+Vitest compatibility
+- **`startAsync` missing `onBeadCreated`** — async specialist jobs now forward `beadId` to `JobRegistry.setBeadId()` immediately on creation so `poll_specialist` snapshots include it
+
+---
+
+## [2.1.0] - 2026-03-09
+
 ### Added
 - **M4 Beads Integration** — `beads_integration: auto|always|never` field in `.specialist.yaml`; `shouldCreateBead()` policy function
 - **`SpecialistRunner` beads lifecycle** — auto-creates bead after `pre_execute`, closes with `COMPLETE`/`ERROR` status, duration, model, and audit entry
@@ -19,14 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `UnitAIServer` → `SpecialistsServer`; MCP logger string `unitai` → `specialists`
 - Trace path `.unitai/trace.jsonl` → `.specialists/trace.jsonl`
 - 67 unit tests (was 40 after v2; now 67 after M4 additions)
+
+---
+
+## [2.0.1] - 2026-03-08
+
+### Added
 - **GitHub installer** (`bin/install.js`) — one-line setup via
-- ROADMAP, README, CHANGELOG updated for M4 completion and specialists rename
   `npx --package=github:Jaggerxtrm/specialists install`;
   installs `@mariozechner/pi-coding-agent`, `@beads/bd`, prints dolt sudo instructions,
   installs `@jaggerxtrm/specialists` globally and registers MCP as `specialists` at user scope,
-  scaffolds `~/.agents/specialists/`. No npm publish or 2FA required.
-- `ROADMAP.md` — post-v2 product roadmap covering installer, Beads integration,
-  `omni-init` tool, specialist authoring skill, new specialists, and future UI
+  scaffolds `~/.agents/specialists/`
+- `ROADMAP.md` — post-v2 product roadmap
 
 ### Changed
 - Repo renamed `unitAI` → `omnispecialist` → **`specialists`** (GitHub + package.json)
@@ -37,10 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installer: MCP registration via `npm install -g` (global) instead of npx on-demand
 - `dist/`: removed 259 v1 tsc-compiled files; only bun-bundled `dist/index.js` retained
 - `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
-  to `anthropic/claude-haiku-4-5` — Gemini CLI ~50s/tool round-trip unsuitable for
-  text synthesis; fallback remains Gemini Flash
-- `report-generator` system prompt: added `STRICT PRIORITY` block — write immediately
-  if context sufficient, max 3 tool calls before output
+  to `anthropic/claude-haiku-4-5`
+- `report-generator` system prompt: added `STRICT PRIORITY` block
 
 ---
 
