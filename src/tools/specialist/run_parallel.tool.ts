@@ -1,5 +1,5 @@
 // src/tools/specialist/run_parallel.tool.ts
-import { z } from 'zod';
+import * as z from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
 import { runPipeline } from '../../specialist/pipeline.js';
 
@@ -48,6 +48,7 @@ export function createRunParallelTool(runner: SpecialistRunner) {
         status: r.status,
         output: r.status === 'fulfilled' ? r.value.output : null,
         durationMs: r.status === 'fulfilled' ? r.value.durationMs : null,
+        beadId: r.status === 'fulfilled' ? r.value.beadId : undefined,
         error: r.status === 'rejected' ? String((r.reason as any)?.message) : null,
       }));
     },
