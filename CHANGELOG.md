@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.7] - 2026-03-09
+
+### Changed
+- **System scope removed from `SpecialistLoader`** — the bundled system scope was a
+  silent fallback that would resurrect deleted specialists against user intent. Since
+  built-in specialists are now copied to `~/.agents/specialists/` on install, system
+  scope serves no purpose. Two scopes remain: project → user (first wins)
+
+---
+
 ## [2.1.6] - 2026-03-09
 
 ### Changed

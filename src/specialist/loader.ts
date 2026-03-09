@@ -43,29 +43,25 @@ export async function checkStaleness(
 interface LoaderOptions {
   projectDir?: string;
   userDir?: string;    // override for testing
-  systemDir?: string;  // override for testing
 }
 
 export class SpecialistLoader {
   private cache = new Map<string, Specialist>();
   private projectDir: string;
   private userDir: string;
-  private systemDir: string;
+  // system scope removed — specialists are copied to ~/.agents/specialists/ on install
 
   constructor(options: LoaderOptions = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
     this.userDir = options.userDir ?? join(homedir(), '.agents', 'specialists');
-    // System specialists: bundled in package next to compiled output
-    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, '..', '..', 'specialists');
   }
 
   private getScanDirs(): Array<{ path: string; scope: 'project' | 'user' | 'system' }> {
     return [
       { path: join(this.projectDir, 'specialists'), scope: 'project' },
       { path: join(this.projectDir, '.claude', 'specialists'), scope: 'project' },
-      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'project' }, // cross-scan
+      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'project' },
       { path: this.userDir, scope: 'user' },
-      { path: this.systemDir, scope: 'system' },
     ].filter(d => existsSync(d.path));
   }
 

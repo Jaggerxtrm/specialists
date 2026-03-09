@@ -24786,19 +24786,16 @@ class SpecialistLoader {
   cache = new Map;
   projectDir;
   userDir;
-  systemDir;
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
     this.userDir = options.userDir ?? join(homedir(), ".agents", "specialists");
-    this.systemDir = options.systemDir ?? join(new URL(import.meta.url).pathname, "..", "..", "specialists");
   }
   getScanDirs() {
     return [
       { path: join(this.projectDir, "specialists"), scope: "project" },
       { path: join(this.projectDir, ".claude", "specialists"), scope: "project" },
       { path: join(this.projectDir, ".agent-forge", "specialists"), scope: "project" },
-      { path: this.userDir, scope: "user" },
-      { path: this.systemDir, scope: "system" }
+      { path: this.userDir, scope: "user" }
     ].filter((d) => existsSync(d.path));
   }
   async list(category) {
