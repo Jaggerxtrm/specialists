@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.9] - 2026-03-09
+
+### Added
+- **`specialists version`** — prints `@jaggerxtrm/specialists v<version>` and exits
+- **`specialists list`** — discovers all `.specialist.yaml` files across project and
+  user scopes, prints name, model, description, and scope tag; mirrors the
+  `list_specialists` MCP tool output in the terminal
+
 ---
 
 ## [2.1.8] - 2026-03-09
