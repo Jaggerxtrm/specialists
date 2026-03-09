@@ -18539,26 +18539,127 @@ var init_run = __esm(() => {
   init_beads();
 });
 
+// src/cli/status.ts
+var exports_status = {};
+__export(exports_status, {
+  run: () => run7
+});
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { existsSync as existsSync4 } from "node:fs";
+import { join as join7 } from "node:path";
+function ok2(msg) {
+  console.log(`  ${green4("✓")} ${msg}`);
+}
+function warn(msg) {
+  console.log(`  ${yellow4("○")} ${msg}`);
+}
+function fail(msg) {
+  console.log(`  ${red("✗")} ${msg}`);
+}
+function info(msg) {
+  console.log(`  ${dim5(msg)}`);
+}
+function section(label) {
+  const line = "─".repeat(Math.max(0, 38 - label.length));
+  console.log(`
+${bold5(`── ${label} ${line}`)}`);
+}
+function cmd(bin, args) {
+  const r = spawnSync3(bin, args, {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 5000
+  });
+  return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
+}
+function isInstalled(bin) {
+  return spawnSync3("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+}
+async function run7() {
+  console.log(`
+${bold5("specialists status")}
+`);
+  section("Specialists");
+  const loader = new SpecialistLoader;
+  const all = await loader.list();
+  if (all.length === 0) {
+    warn(`no specialists found — run ${yellow4("specialists init")} to scaffold`);
+  } else {
+    const byScope = all.reduce((acc, s) => {
+      acc[s.scope] = (acc[s.scope] ?? 0) + 1;
+      return acc;
+    }, {});
+    const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
+    ok2(`${all.length} found  ${dim5(`(${scopeSummary})`)}`);
+    for (const s of all) {
+      const staleness = await checkStaleness(s);
+      if (staleness === "AGED") {
+        warn(`${s.name}  ${red("AGED")}  ${dim5(s.scope)}`);
+      } else if (staleness === "STALE") {
+        warn(`${s.name}  ${yellow4("STALE")}  ${dim5(s.scope)}`);
+      }
+    }
+  }
+  section("pi  (coding agent runtime)");
+  if (!isInstalled("pi")) {
+    fail(`pi not installed — run ${yellow4("specialists install")}`);
+  } else {
+    const version2 = cmd("pi", ["--version"]);
+    const models = cmd("pi", ["--list-models"]);
+    const providers = new Set(models.stdout.split(`
+`).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean));
+    const vStr = version2.ok ? `v${version2.stdout}` : "unknown version";
+    const pStr = providers.size > 0 ? `${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim5(`(${[...providers].join(", ")})`)} ` : yellow4("no providers configured — run pi config");
+    ok2(`${vStr}  —  ${pStr}`);
+  }
+  section("beads  (issue tracker)");
+  if (!isInstalled("bd")) {
+    fail(`bd not installed — run ${yellow4("specialists install")}`);
+  } else {
+    const bdVersion = cmd("bd", ["--version"]);
+    ok2(`bd installed${bdVersion.ok ? `  ${dim5(bdVersion.stdout)}` : ""}`);
+    if (existsSync4(join7(process.cwd(), ".beads"))) {
+      ok2(".beads/ present in project");
+    } else {
+      warn(`.beads/ not found — run ${yellow4("bd init")} to enable issue tracking`);
+    }
+  }
+  section("MCP");
+  const specialistsBin = cmd("which", ["specialists"]);
+  if (!specialistsBin.ok) {
+    fail(`specialists not installed globally — run ${yellow4("npm install -g @jaggerxtrm/specialists")}`);
+  } else {
+    ok2(`specialists binary installed  ${dim5(specialistsBin.stdout)}`);
+    info(`verify registration: claude mcp get specialists`);
+    info(`re-register:         specialists install`);
+  }
+  console.log();
+}
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`;
+var init_status = __esm(() => {
+  init_loader();
+});
+
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run7
+  run: () => run8
 });
-async function run7() {
+async function run8() {
   const lines = [
     "",
-    bold5("specialists <command>"),
+    bold6("specialists <command>"),
     "",
     "Commands:",
-    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim5(desc)}`),
+    ...COMMANDS.map(([cmd2, desc]) => `  ${cmd2.padEnd(COL_WIDTH)}    ${dim6(desc)}`),
     "",
-    dim5("Run 'specialists <command> --help' for command-specific options."),
+    dim6("Run 'specialists <command> --help' for command-specific options."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
 var init_help = __esm(() => {
   COMMANDS = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
@@ -18570,7 +18671,7 @@ var init_help = __esm(() => {
     ["status", "Show system health (pi, beads, MCP)"],
     ["help", "Show this help message"]
   ];
-  COL_WIDTH = Math.max(...COMMANDS.map(([cmd]) => cmd.length));
+  COL_WIDTH = Math.max(...COMMANDS.map(([cmd2]) => cmd2.length));
 });
 
 // node_modules/zod/v4/core/core.js
@@ -26315,7 +26416,7 @@ class SpecialistsServer {
 
 // src/index.ts
 var sub = process.argv[2];
-async function run8() {
+async function run9() {
   if (sub === "install") {
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
@@ -26340,6 +26441,10 @@ async function run8() {
     const { run: handler } = await Promise.resolve().then(() => (init_run(), exports_run));
     return handler();
   }
+  if (sub === "status") {
+    const { run: handler } = await Promise.resolve().then(() => (init_status(), exports_status));
+    return handler();
+  }
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
@@ -26348,7 +26453,7 @@ async function run8() {
   const server = new SpecialistsServer;
   await server.start();
 }
-run8().catch((error2) => {
+run9().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
