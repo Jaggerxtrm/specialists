@@ -21,6 +21,8 @@ export interface JobSnapshot {
   specialist_version: string;
   duration_ms: number;
   error?: string;
+  /** Beads issue ID linked to this job, if beads tracking is enabled. */
+  beadId?: string;
 }
 
 interface JobState {
@@ -35,6 +37,7 @@ interface JobState {
   endedAtMs?: number;
   error?: string;
   killFn?: () => void;
+  beadId?: string;
 }
 
 export class JobRegistry {
@@ -71,6 +74,13 @@ export class JobRegistry {
     if (meta.model) job.model = meta.model;
   }
 
+  /** Store the beads issue ID for this job. */
+  setBeadId(id: string, beadId: string): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.beadId = beadId;
+  }
+
   /** Register the kill function for this job. If job was already cancelled, invokes immediately. */
   setKillFn(id: string, killFn: () => void): void {
     const job = this.jobs.get(id);
@@ -92,6 +102,7 @@ export class JobRegistry {
     job.model = result.model;
     job.specialistVersion = result.specialistVersion;
     job.endedAtMs = Date.now();
+    if (result.beadId) job.beadId = result.beadId;
   }
 
   fail(id: string, err: Error): void {
@@ -130,6 +141,7 @@ export class JobRegistry {
       specialist_version: job.specialistVersion,
       duration_ms: (job.endedAtMs ?? Date.now()) - job.startedAtMs,
       error: job.error,
+      beadId: job.beadId,
     };
   }
 
