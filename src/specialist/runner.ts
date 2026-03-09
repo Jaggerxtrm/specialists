@@ -51,6 +51,7 @@ export class SpecialistRunner {
     onEvent?: (type: string) => void,
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
+    onBeadCreated?: (beadId: string) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -114,6 +115,7 @@ export class SpecialistRunner {
     let beadId: string | undefined;
     if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
       beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId) onBeadCreated?.(beadId);
     }
 
     let output: string;
@@ -224,6 +226,7 @@ export class SpecialistRunner {
       (eventType) => registry.setCurrentEvent(jobId, eventType),
       (meta)      => registry.setMeta(jobId, meta),
       (killFn)    => registry.setKillFn(jobId, killFn),
+      (beadId)    => registry.setBeadId(jobId, beadId),
     )
       .then(result => registry.complete(jobId, result))
       .catch(err   => registry.fail(jobId, err));

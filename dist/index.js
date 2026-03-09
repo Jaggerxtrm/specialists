@@ -25080,6 +25080,57 @@ class PiAgentSession {
 }
 
 // src/specialist/beads.ts
+import { spawnSync } from "node:child_process";
+
+class BeadsClient {
+  available;
+  constructor() {
+    this.available = BeadsClient.checkAvailable();
+    if (!this.available) {
+      console.warn("[specialists] bd CLI not found — beads tracking disabled");
+    }
+  }
+  static checkAvailable() {
+    const result = spawnSync("bd", ["--version"], { stdio: "ignore" });
+    return result.status === 0;
+  }
+  isAvailable() {
+    return this.available;
+  }
+  createBead(specialistName) {
+    if (!this.available)
+      return null;
+    const result = spawnSync("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    if (result.status !== 0)
+      return null;
+    const id = result.stdout?.trim();
+    return id || null;
+  }
+  closeBead(id, status, durationMs, model) {
+    if (!this.available || !id)
+      return;
+    const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
+    spawnSync("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+  }
+  auditBead(id, toolName, model, exitCode) {
+    if (!this.available || !id)
+      return;
+    spawnSync("bd", [
+      "audit",
+      "record",
+      "--kind",
+      "tool_call",
+      "--tool-name",
+      toolName,
+      "--model",
+      model,
+      "--issue-id",
+      id,
+      "--exit-code",
+      String(exitCode)
+    ], { stdio: "ignore" });
+  }
+}
 function shouldCreateBead(beadsIntegration, permissionRequired) {
   if (beadsIntegration === "never")
     return false;
@@ -25096,7 +25147,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  async run(options, onProgress, onEvent, onMeta, onKillRegistered) {
+  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated) {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -25156,6 +25207,8 @@ You have access via Bash:
     let beadId;
     if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
       beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId)
+        onBeadCreated?.(beadId);
     }
     let output;
     let session;
@@ -25240,7 +25293,7 @@ You have access via Bash:
       model: "?",
       specialistVersion
     });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
     return jobId;
   }
 }
@@ -25638,15 +25691,15 @@ function createStopSpecialistTool(registry2) {
 }
 
 // src/tools/specialist/specialist_init.tool.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
 import { join as join2 } from "node:path";
-var specialistInitSchema = exports_external.object({});
+var specialistInitSchema = objectType({});
 function createSpecialistInitTool(loader, deps) {
   const resolved = deps ?? {
-    bdAvailable: () => spawnSync("bd", ["--version"], { stdio: "ignore" }).status === 0,
+    bdAvailable: () => spawnSync2("bd", ["--version"], { stdio: "ignore" }).status === 0,
     beadsExists: () => existsSync2(join2(process.cwd(), ".beads")),
-    bdInit: () => spawnSync("bd", ["init"], { stdio: "ignore" })
+    bdInit: () => spawnSync2("bd", ["init"], { stdio: "ignore" })
   };
   return {
     name: "specialist_init",
@@ -25682,7 +25735,8 @@ class SpecialistsServer {
     const hooks = new HookEmitter({
       tracePath: join3(process.cwd(), ".specialists", "trace.jsonl")
     });
-    const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
+    const beadsClient = new BeadsClient;
+    const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     const registry2 = new JobRegistry;
     this.tools = [
       createListSpecialistsTool(loader),

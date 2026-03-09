@@ -20,6 +20,7 @@ import { SpecialistLoader } from "./specialist/loader.js";
 import { SpecialistRunner } from "./specialist/runner.js";
 import { HookEmitter } from "./specialist/hooks.js";
 import { CircuitBreaker } from "./utils/circuitBreaker.js";
+import { BeadsClient } from "./specialist/beads.js";
 import { createListSpecialistsTool, listSpecialistsSchema } from "./tools/specialist/list_specialists.tool.js";
 import { createUseSpecialistTool, useSpecialistSchema } from "./tools/specialist/use_specialist.tool.js";
 import { createRunParallelTool, runParallelSchema } from "./tools/specialist/run_parallel.tool.js";
@@ -48,7 +49,8 @@ export class SpecialistsServer {
     const hooks = new HookEmitter({
       tracePath: join(process.cwd(), ".specialists", "trace.jsonl"),
     });
-    const runner = new SpecialistRunner({ loader, hooks, circuitBreaker });
+    const beadsClient = new BeadsClient();
+    const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     const registry = new JobRegistry();
 
     this.tools = [

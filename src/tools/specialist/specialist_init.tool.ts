@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { z } from 'zod';
+import * as z from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 
 export interface SpecialistInitDeps {
