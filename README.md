@@ -193,6 +193,33 @@ Pre-script output is formatted as `<pre_flight_context>` XML and available in `t
 
 ---
 
+## CLI
+
+Once installed globally, the `specialists` command provides:
+
+| Command | Description |
+|---------|-------------|
+| `specialists install` | Full-stack installer: pi, beads, dolt, MCP registration, hooks, scaffold |
+| `specialists list` | List all discovered specialists with model, description, and scope |
+| `specialists version` | Print the installed package version |
+| `specialists` | Start the MCP server (called by Claude Code — not for direct use) |
+
+### specialists list
+
+```
+Specialists (9)
+
+  auto-remediation   google-gemini-cli/gemini-3-flash-preview  Autonomous self-healing workflow...  [project]
+  bug-hunt           anthropic/claude-sonnet-4-6               Autonomously investigates bugs...    [project]
+  codebase-explorer  google-gemini-cli/gemini-3-flash-preview  Explores codebase structure...       [project]
+  init-session       anthropic/claude-haiku-4-5                Gathers git/commit context...        [project]
+  overthinker        anthropic/claude-sonnet-4-6               Multi-phase deep reasoning...        [project]
+```
+
+Scopes: `[project]` = `./specialists/` (or `.claude/specialists/`), `[user]` = `~/.agents/specialists/`
+
+---
+
 ## Development
 
 ```bash
