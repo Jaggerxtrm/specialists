@@ -8,10 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M4 Beads Integration** — `beads_integration: auto|always|never` field in `.specialist.yaml`; `shouldCreateBead()` policy function
+- **`SpecialistRunner` beads lifecycle** — auto-creates bead after `pre_execute`, closes with `COMPLETE`/`ERROR` status, duration, model, and audit entry
+- **`JobRegistry.setBeadId()`** — `beadId` propagated to `poll_specialist` snapshots so orchestrator can link bead to job
+- **`specialist_init` MCP tool** (8th tool) — session bootstrap: runs `bd init` if `.beads/` missing, returns specialist list + beads availability
+- **`main-guard.sh`** Claude Code PreToolUse hook — blocks Edit/Write/MultiEdit/NotebookEdit and `git commit`/`git push` on main/master branch
+
+### Changed
+- All `omni_init`/`OmniInitDeps`/`createOmniInitTool` → `specialist_init`/`SpecialistInitDeps`/`createSpecialistInitTool`
+- `UnitAIServer` → `SpecialistsServer`; MCP logger string `unitai` → `specialists`
+- Trace path `.unitai/trace.jsonl` → `.specialists/trace.jsonl`
+- 67 unit tests (was 40 after v2; now 67 after M4 additions)
 - **GitHub installer** (`bin/install.js`) — one-line setup via
+- ROADMAP, README, CHANGELOG updated for M4 completion and specialists rename
   `npx --package=github:Jaggerxtrm/specialists install`;
   installs `@mariozechner/pi-coding-agent`, `@beads/bd`, prints dolt sudo instructions,
-  installs OmniSpecialist globally and registers MCP as `specialists` at user scope,
+  installs `@jaggerxtrm/specialists` globally and registers MCP as `specialists` at user scope,
   scaffolds `~/.agents/specialists/`. No npm publish or 2FA required.
 - `ROADMAP.md` — post-v2 product roadmap covering installer, Beads integration,
   `omni-init` tool, specialist authoring skill, new specialists, and future UI
