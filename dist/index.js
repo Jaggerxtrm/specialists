@@ -13393,6 +13393,11 @@ var require_public_api = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
+// src/index.ts
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname as dirname2, join as join4 } from "node:path";
+
 // node_modules/zod/v3/external.js
 var exports_external = {};
 __export(exports_external, {
@@ -25823,6 +25828,12 @@ class SpecialistsServer {
 }
 
 // src/index.ts
+if (process.argv[2] === "install") {
+  const __dirname2 = dirname2(fileURLToPath(import.meta.url));
+  const installerPath = join4(__dirname2, "..", "bin", "install.js");
+  execFileSync(process.execPath, [installerPath], { stdio: "inherit" });
+  process.exit(0);
+}
 async function main() {
   logger.info("Starting Specialists MCP Server...");
   const server = new SpecialistsServer;

@@ -86,15 +86,22 @@ The orchestrating agent can retrieve the `beadId` from `poll_specialist` output 
 
 ## Installation
 
-### One-line installer (recommended)
+### Recommended
 
 ```bash
-npx --package=@jaggerxtrm/specialists install
+npm install -g @jaggerxtrm/specialists
+specialists install
 ```
 
 Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`.
 
-After running, **restart Claude Code** to load the MCP.
+After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair the installation.
+
+### One-time (no global install)
+
+```bash
+npx --package=@jaggerxtrm/specialists install
+```
 
 ---
 
