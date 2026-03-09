@@ -1,0 +1,127 @@
+# Agent Forge — Discovery Notes
+*Research session: Claude Code / Pi / Beads / The Claude Protocol + PRD review*
+*Updated: 2026-03-09*
+
+---
+
+## Architettura — Chiarimenti post-PRD
+
+**Posizione nel sistema:** Agent Forge è layer 2-3. Non sostituisce l'orchestratore umano, lo amplifica. L'orchestratore (Claude, boss) fa lavoro reale, interagisce con l'umano direttamente, e usa gli specialists come strumenti cognitivi — non come sostituti. Human still in the loop, sempre.
+
+**Specialists come repo standalone open-source.** Non è blocking per lo sviluppo di Agent Forge. Il formato `.specialist.yaml` è il contratto condiviso. La repo pubblica diventa il registry della community, analogamente a come beads ha `AGENTS.md` e le sue skill community. Il `@jaggerxtrm/specialist-loader` è il pacchetto npm che unifica il parsing tra Agent Forge, unitAI, e Mercury.
+
+---
+
+## Orchestratore — Worktrees e Branch Model
+
+**Il modello corretto** (nuovo punto di questo pomeriggio):
+
+L'orchestratore (Claude boss) lavora sempre su feature branch, mai su main. Non è blocking per il suo lavoro diretto — può editare, committare, pushare — ma su un branch. Questo è il default, non un'eccezione.
+
+Il worktree diventa rilevante quando l'orchestratore lancia **più specialists che toccano aree sovrapposte**. In quel caso un hook gli ricorda di isolare ciascuno su un worktree separato per evitare conflitti. Non è enforcement automatico (troppo rigido) — è un prompt informativo che lascia decidere all'orchestratore.
+
+```
+Orchestratore su feature/branch-X
+  → lavora direttamente (edit, commit sul suo branch)
+  → hook: "lanci specialist A su src/api/ e specialist B su src/api/ — vuoi worktrees separati?"
+  → se sì: crea .agent-forge/worktrees/specialist-a/ e /specialist-b/
+  → se no: entrambi lavorano sul branch corrente, conflitti gestiti manualmente
+```
+
+Questo è diverso dal Claude Protocol (enforcement totale, ogni task in worktree) e da Overstory (3-tier rigido). L'orchestratore mantiene agency e interazione diretta con l'umano. Il worktree è un tool disponibile, non una prigione.
+
+---
+
+## Beads — Integrazione Agent Forge
+
+**Livello corretto di integrazione:** beads è infrastruttura opzionale, non obbligatoria. Agent Forge ha già il suo SQLite per session state e il message bus. Beads aggiunge il tracking del lavoro cross-session, non lo stato degli agenti.
+
+**Pattern confermato:**
+
+```
+SpecialistRunner (meccanico)
+  pre_execute:  bd q → bead_id, bd update --status=in_progress
+  post_execute: bd close --reason "DONE, Xs, model"
+                bd audit record (telemetria separata)
+
+Orchestratore Claude (giudizio — la parola finale)
+  Dopo poll done, decide:
+    bd remember "insight"          → memoria cross-session persistente
+    bd update <id> --notes "..."   → contestuale, muore con compaction
+    bd create ... discovered-from  → nuovo lavoro scoperto
+    nulla                          → run di routine
+```
+
+**Campo `beads_integration` in specialist YAML:**
+```yaml
+beads_integration: auto    # default: write-perm → sempre | READ_ONLY → mai
+                   always  # discovery specialists
+                   never   # utility one-offs <1s
+```
+
+**`bd remember` vs `bd update --notes`:** la distinzione è critica. Un modello minore non sa quale usare — solo l'orchestratore con contesto globale Mercury può farlo. Questo è il motivo per cui il livello 3 (orchestratore) non è opzionale nella catena di gestione beads.
+
+---
+
+## Pi — Perché è il runtime giusto per gli specialists
+
+Rispetto a Task() di Claude Code:
+
+- **Lifecycle hooks per-turn** (non solo per sessione): `before_agent_start` modifica system prompt dinamicamente, `context` filtra messaggi prima di ogni call. Utile per iniettare contesto variabile senza ricreare la sessione.
+- **SDK embeddabile** con `session.agent.state.systemPrompt` accessibile da Node.js → SpecialistRunner può iniettare domain knowledge a runtime prima dell'esecuzione.
+- **Quattro modalità**: interactive, print/JSON, RPC, SDK. Agent Forge usa JSON RPC — output strutturato, nessun parsing di terminale.
+- **Skills on-demand** con progressive disclosure — la skill carica nel contesto solo quando il trigger semantico nel frontmatter viene matchato. Non gonfia il prompt all'avvio.
+- **Sistema prompt minimale di default** — il modello parte leggero. La domain knowledge viene iniettata da Agent Forge, non è hardcoded nel runtime.
+
+La differenza filosofica: Pi dice "adatta il tool al tuo workflow". Task() dice "adattati a Claude Code". Per un sistema custom come Mercury/Agent Forge, Pi vince.
+
+---
+
+## The Claude Protocol — Cosa vale, cosa no
+
+**Vale:**
+
+1. **Separazione ruoli via PreToolUse hook.** L'orchestratore non può scrivere codice su main — il hook blocca fisicamente. Per Agent Forge: orchestratore lavora su feature branch, workers lavorano su worktrees. Il hook implementa questo senza dipendere dalla buona volontà del modello.
+
+2. **Knowledge base come `knowledge.jsonl` + `recall.sh`.** Alternativa/complemento a `bd remember` per discovery tecniche specifiche al progetto. Searchable via bash senza invocare il modello, sopravvive alla compaction, ogni agente può appendere in append-only senza stato condiviso. Candidato per il `expertise-store.ts` di Agent Forge v1.4.0.
+
+3. **Quick-fix exception con approvazione umana.** Per modifiche triviali (<10 linee) su feature branch, l'orchestratore può editare direttamente con prompt di approvazione. Zero eccezioni create friction inutile — un'eccezione esplicita con gate umano è meglio. Allineato con il principio "human in the loop".
+
+**Non vale:**
+
+- Worktree per ogni singolo task (overhead con 50+ microservizi Mercury)
+- Task() come runtime (Pi è superiore per tutti i motivi sopra)
+- Bootstrap Python (inutile con Agent Forge CLI)
+- 3-tier rigido orchestrator/supervisor/worker (boss/worker con specialist roles è sufficiente e più flessibile)
+- Enforcement totale senza eccezioni (rompe il modello "orchestratore fa lavoro reale")
+
+---
+
+## System Prompt Engineering — `claudio` alias e workflow files
+
+**Alias `claudio`** con `--append-system-prompt-file ~/.claude/prompts/beads-enforce.md` come base di ogni sessione. Più robusto di CLAUDE.md che decade nel corso di sessioni lunghe per degradazione dell'attenzione.
+
+**Cartella `~/.claude/prompts/` versionata in git:**
+```
+~/.claude/prompts/
+  beads-enforce.md       # regole beads obbligatorie, session protocol
+  deepwiki-mode.md       # workflow ricerca con DeepWiki come fonte primaria
+  websearch-structured.md # output strutturato per web research
+  fixed-income-ctx.md    # contesto mercati pre-iniettato (EF spread, SOFR, etc.)
+```
+
+Agent Forge seleziona il file corretto al lancio in base al task type o all'alias usato. Questo è il meccanismo che permette di caricare "workflow predefiniti" senza modificare il runtime — è configurazione, non codice.
+
+---
+
+## Nice to Have — Backlog
+
+- [ ] `claudio` alias + beads enforce append — testare degradazione vs CLAUDE.md in sessioni di 2+ ore
+- [ ] Hook "worktree reminder" quando orchestratore lancia 2+ specialists su path sovrapposti
+- [ ] `knowledge.jsonl` per Mercury come layer di memoria tecnica separato da `bd remember`
+- [ ] `beads_integration: never` per specialists utility veloci (evitare overhead su run <1s)
+- [ ] Workflow append files versionati: deepwiki mode, fixed income context, web research
+- [ ] `bd audit record` come telemetria per ogni specialist run — foundation per evals SFT futuri
+- [ ] `bd agent` + `bd slot` per omnis dashboard v1.5.0+ (stato persistente per TYPE di specialist)
+- [ ] Quick-fix hook con approvazione umana per l'orchestratore su feature branch (dal Claude Protocol)
+- [ ] Specialists repo standalone open-source — `/specialists` community registry analogamente a pi packages su npm
