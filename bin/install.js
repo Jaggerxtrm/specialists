@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-// OmniSpecialist Installer
-// Usage: npx --package=github:Jaggerxtrm/specialists install
+// Specialists Installer
+// Usage: npx --package=@jaggerxtrm/specialists install
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const HOME            = homedir();
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
+const CLAUDE_DIR      = join(HOME, '.claude');
+const HOOKS_DIR       = join(CLAUDE_DIR, 'hooks');
+const SETTINGS_FILE   = join(CLAUDE_DIR, 'settings.json');
+const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.sh');
 const MCP_NAME        = 'specialists';
 const GITHUB_PKG      = '@jaggerxtrm/specialists';
 
@@ -72,8 +76,80 @@ function registerMCP() {
   return true;
 }
 
+// ── Hook installation ─────────────────────────────────────────────────────────
+
+const HOOK_SCRIPT = `#!/usr/bin/env bash
+# specialists — Claude Code PreToolUse hook
+# Blocks writes and git commit/push on main/master branch.
+# Exit 0: allow  |  Exit 2: block (message shown to user)
+#
+# Installed by: npx --package=@jaggerxtrm/specialists install
+
+BRANCH=$(git branch --show-current 2>/dev/null)
+
+# Not in a git repo or not on a protected branch — allow
+if [ -z "$BRANCH" ] || { [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; }; then
+  exit 0
+fi
+
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | jq -r '.tool_name' 2>/dev/null)
+
+BLOCK_MSG="⛔ Direct edits on '$BRANCH' are not allowed.
+Create a feature branch first: git checkout -b feature/<name>"
+
+case "$TOOL" in
+  Edit|Write|MultiEdit|NotebookEdit)
+    echo "$BLOCK_MSG" >&2
+    exit 2
+    ;;
+  Bash)
+    CMD=$(echo "$INPUT" | jq -r '.tool_input.command' 2>/dev/null)
+    if echo "$CMD" | grep -qE '^git (commit|push)'; then
+      echo "$BLOCK_MSG" >&2
+      exit 2
+    fi
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`;
+
+const HOOK_ENTRY = {
+  matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash',
+  hooks: [{ type: 'command', command: HOOK_FILE }],
+};
+
+function installHook() {
+  // 1. Write hook script
+  mkdirSync(HOOKS_DIR, { recursive: true });
+  writeFileSync(HOOK_FILE, HOOK_SCRIPT, 'utf8');
+  chmodSync(HOOK_FILE, 0o755);
+
+  // 2. Merge into ~/.claude/settings.json
+  let settings = {};
+  if (existsSync(SETTINGS_FILE)) {
+    try { settings = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8')); } catch { /* malformed, overwrite */ }
+  }
+
+  if (!Array.isArray(settings.hooks?.PreToolUse)) {
+    settings.hooks = settings.hooks ?? {};
+    settings.hooks.PreToolUse = [];
+  }
+
+  // Idempotent: remove any previous specialists-main-guard entry, re-add
+  settings.hooks.PreToolUse = settings.hooks.PreToolUse
+    .filter(e => !e.hooks?.some(h => h.command?.includes('specialists-main-guard')));
+  settings.hooks.PreToolUse.push(HOOK_ENTRY);
+
+  mkdirSync(CLAUDE_DIR, { recursive: true });
+  writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
-console.log('\n' + bold('  OmniSpecialist — full-stack installer'));
+console.log('\n' + bold('  Specialists — full-stack installer'));
 
 // 1. pi
 section('pi  (coding agent runtime)');
@@ -119,7 +195,16 @@ if (!existsSync(SPECIALISTS_DIR)) {
   skip('~/.agents/specialists/ already exists');
 }
 
-// 6. Health check
+// 6. Claude Code hooks
+section('Claude Code hooks');
+const hookExisted = existsSync(HOOK_FILE);
+installHook();
+hookExisted
+  ? ok('main-guard hook updated')
+  : ok('main-guard hook installed → ~/.claude/hooks/specialists-main-guard.sh');
+info('Blocks Edit/Write/git commit/push on main or master branch');
+
+// 7. Health check
 section('Health check');
 if (isInstalled('pi')) {
   const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
@@ -128,9 +213,9 @@ if (isInstalled('pi')) {
     : skip('No active provider — run pi config to set one up');
 }
 
-// 7. Done
+// 8. Done
 console.log('\n' + bold(green('  Done!')));
 console.log('\n' + bold('  Next steps:'));
 console.log(`  1. ${bold('Configure pi:')} run ${yellow('pi')} then ${yellow('pi config')} to enable model providers`);
-console.log(`  2. ${bold('Restart Claude Code')} to load the MCP`);
+console.log(`  2. ${bold('Restart Claude Code')} to load the MCP and hooks`);
 console.log(`  3. ${bold('Update later:')} re-run this installer\n`);
