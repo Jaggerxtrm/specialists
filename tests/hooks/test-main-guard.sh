@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Test harness for .claude/hooks/main-guard.sh
-# PreToolUse hook that blocks edits/commits on main/master branch
+# Test harness for .claude/hooks/main-guard.mjs
+# PreToolUse hook (JS) that blocks edits/commits on main/master branch
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HOOK_SCRIPT="$REPO_ROOT/.claude/hooks/main-guard.sh"
+HOOK_SCRIPT="$REPO_ROOT/.claude/hooks/main-guard.mjs"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -53,7 +53,7 @@ run_hook() {
   local repo
   repo=$(setup_repo "$branch")
   local exit_code=0
-  (cd "$repo" && echo "$json" | bash "$HOOK_SCRIPT" 2>/dev/null) || exit_code=$?
+  (cd "$repo" && echo "$json" | node "$HOOK_SCRIPT" 2>/dev/null) || exit_code=$?
   return $exit_code
 }
 
