@@ -12,7 +12,7 @@ const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
 const CLAUDE_DIR      = join(HOME, '.claude');
 const HOOKS_DIR       = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE   = join(CLAUDE_DIR, 'settings.json');
-const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.sh');
+const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.mjs');
 const MCP_NAME        = 'specialists';
 const GITHUB_PKG      = '@jaggerxtrm/specialists';
 
@@ -78,43 +78,56 @@ function registerMCP() {
 
 // ── Hook installation ─────────────────────────────────────────────────────────
 
-const HOOK_SCRIPT = `#!/usr/bin/env bash
-# specialists — Claude Code PreToolUse hook
-# Blocks writes and git commit/push on main/master branch.
-# Exit 0: allow  |  Exit 2: block (message shown to user)
-#
-# Installed by: npx --package=@jaggerxtrm/specialists install
+const HOOK_SCRIPT = `#!/usr/bin/env node
+// specialists — Claude Code PreToolUse hook
+// Blocks writes and git commit/push on main/master branch.
+// Exit 0: allow  |  Exit 2: block (message shown to user)
+//
+// Installed by: npx --package=@jaggerxtrm/specialists install
 
-BRANCH=$(git branch --show-current 2>/dev/null)
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
-# Not in a git repo or not on a protected branch — allow
-if [ -z "$BRANCH" ] || { [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; }; then
-  exit 0
-fi
+let branch = '';
+try {
+  branch = execSync('git branch --show-current', {
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+} catch {}
 
-INPUT=$(cat)
-TOOL=$(echo "$INPUT" | jq -r '.tool_name' 2>/dev/null)
+if (!branch || (branch !== 'main' && branch !== 'master')) {
+  process.exit(0);
+}
 
-BLOCK_MSG="⛔ Direct edits on '$BRANCH' are not allowed.
-Create a feature branch first: git checkout -b feature/<name>"
+let input;
+try {
+  input = JSON.parse(readFileSync(0, 'utf8'));
+} catch {
+  process.exit(0);
+}
 
-case "$TOOL" in
-  Edit|Write|MultiEdit|NotebookEdit)
-    echo "$BLOCK_MSG" >&2
-    exit 2
-    ;;
-  Bash)
-    CMD=$(echo "$INPUT" | jq -r '.tool_input.command' 2>/dev/null)
-    if echo "$CMD" | grep -qE '^git (commit|push)'; then
-      echo "$BLOCK_MSG" >&2
-      exit 2
-    fi
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
+const tool = input.tool_name ?? '';
+const blockMsg =
+  \`⛔ Direct edits on '\${branch}' are not allowed.\\n\` +
+  \`Create a feature branch first: git checkout -b feature/<name>\`;
+
+const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+if (WRITE_TOOLS.has(tool)) {
+  process.stderr.write(blockMsg + '\\n');
+  process.exit(2);
+}
+
+if (tool === 'Bash') {
+  const cmd = input.tool_input?.command ?? '';
+  if (/^git (commit|push)/.test(cmd)) {
+    process.stderr.write(blockMsg + '\\n');
+    process.exit(2);
+  }
+}
+
+process.exit(0);
 `;
 
 const HOOK_ENTRY = {
@@ -202,7 +215,7 @@ installHook();
 hookExisted
   ? ok('main-guard hook updated')
   : ok('main-guard hook installed → ~/.claude/hooks/specialists-main-guard.sh');
-info('Blocks Edit/Write/git commit/push on main or master branch');
+info('Blocks Edit/Write/git commit/push on main or master branch (JS, no jq needed)');
 
 // 7. Health check
 section('Health check');
