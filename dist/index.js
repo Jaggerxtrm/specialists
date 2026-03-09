@@ -17587,6 +17587,559 @@ var init_loader = __esm(() => {
   init_schema();
 });
 
+// src/specialist/templateEngine.ts
+function renderTemplate(template, variables) {
+  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
+    return variables[key] !== undefined ? variables[key] : match;
+  });
+}
+
+// src/pi/backendMap.ts
+function mapSpecialistBackend(model) {
+  const provider = BACKEND_MAP[model.toLowerCase()];
+  if (!provider) {
+    return model.toLowerCase();
+  }
+  return provider;
+}
+function getProviderArgs(model) {
+  const m = model.toLowerCase();
+  if (m === "qwen") {
+    return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
+  }
+  return [];
+}
+var BACKEND_MAP;
+var init_backendMap = __esm(() => {
+  BACKEND_MAP = {
+    gemini: "google-gemini-cli",
+    google: "google-gemini-cli",
+    claude: "anthropic",
+    anthropic: "anthropic",
+    openai: "openai",
+    qwen: "openai",
+    openrouter: "openrouter",
+    groq: "groq"
+  };
+});
+
+// src/pi/session.ts
+import { spawn } from "node:child_process";
+function mapPermissionToTools(level) {
+  switch (level?.toUpperCase()) {
+    case "READ_ONLY":
+      return "read,bash,grep,find,ls";
+    case "BASH_ONLY":
+      return "bash";
+    default:
+      return;
+  }
+}
+
+class PiAgentSession {
+  options;
+  proc;
+  _lastOutput = "";
+  _doneResolve;
+  _doneReject;
+  _agentEndReceived = false;
+  _killed = false;
+  _lineBuffer = "";
+  meta;
+  constructor(options, meta) {
+    this.options = options;
+    this.meta = meta;
+  }
+  static async create(options) {
+    const meta = {
+      backend: options.model.includes("/") ? options.model.split("/")[0] : mapSpecialistBackend(options.model),
+      model: options.model,
+      sessionId: crypto.randomUUID(),
+      startedAt: new Date
+    };
+    return new PiAgentSession(options, meta);
+  }
+  async start() {
+    const model = this.options.model;
+    const extraArgs = getProviderArgs(model);
+    const providerArgs = model.includes("/") ? ["--model", model] : ["--provider", mapSpecialistBackend(model)];
+    const args = [
+      "--mode",
+      "rpc",
+      ...providerArgs,
+      "--no-session",
+      ...extraArgs
+    ];
+    const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
+    if (toolsFlag)
+      args.push("--tools", toolsFlag);
+    if (this.options.systemPrompt) {
+      args.push("--append-system-prompt", this.options.systemPrompt);
+    }
+    this.proc = spawn("pi", args, {
+      stdio: ["pipe", "pipe", "inherit"]
+    });
+    const donePromise = new Promise((resolve, reject) => {
+      this._doneResolve = resolve;
+      this._doneReject = reject;
+    });
+    donePromise.catch(() => {});
+    this._donePromise = donePromise;
+    this.proc.stdout?.on("data", (chunk) => {
+      this._lineBuffer += chunk.toString();
+      const lines = this._lineBuffer.split(`
+`);
+      this._lineBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim())
+          this._handleEvent(line);
+      }
+    });
+    this.proc.stdout?.on("end", () => {
+      if (this._lineBuffer.trim()) {
+        this._handleEvent(this._lineBuffer);
+        this._lineBuffer = "";
+      }
+    });
+    this.proc.on("close", (code) => {
+      if (this._agentEndReceived || this._killed) {
+        this._doneResolve?.();
+      } else if (code === 0 || code === null) {
+        this._doneResolve?.();
+      } else {
+        this._doneReject?.(new Error(`pi process exited with code ${code}`));
+      }
+    });
+  }
+  _handleEvent(line) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    const { type } = event;
+    if (type === "message_start" && event.message?.role === "assistant") {
+      const { provider, model } = event.message ?? {};
+      if (provider || model) {
+        this.options.onMeta?.({ backend: provider ?? "", model: model ?? "" });
+      }
+      return;
+    }
+    if (type === "agent_end") {
+      const messages = event.messages ?? [];
+      const last = [...messages].reverse().find((m) => m.role === "assistant");
+      if (last) {
+        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+      }
+      this._agentEndReceived = true;
+      this.options.onEvent?.("done");
+      this._doneResolve?.();
+      return;
+    }
+    if (type === "thinking_start") {
+      this.options.onEvent?.("thinking");
+      return;
+    }
+    if (type === "thinking_delta") {
+      if (event.delta)
+        this.options.onThinking?.(event.delta);
+      this.options.onEvent?.("thinking");
+      return;
+    }
+    if (type === "thinking_end") {
+      return;
+    }
+    if (type === "toolcall_start") {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("toolcall");
+      return;
+    }
+    if (type === "toolcall_end") {
+      this.options.onEvent?.("toolcall");
+      return;
+    }
+    if (type === "tool_execution_start") {
+      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("tool_execution");
+      return;
+    }
+    if (type === "tool_execution_update") {
+      this.options.onEvent?.("tool_execution");
+      return;
+    }
+    if (type === "tool_execution_end") {
+      this.options.onToolEnd?.(event.name ?? event.toolName ?? "tool");
+      this.options.onEvent?.("tool_execution_end");
+      return;
+    }
+    if (type === "message_update") {
+      const ae = event.assistantMessageEvent;
+      if (!ae)
+        return;
+      if (ae.type === "text_delta" && ae.delta) {
+        this.options.onToken?.(ae.delta);
+        this.options.onEvent?.("text");
+      }
+    }
+  }
+  async prompt(task) {
+    const msg = JSON.stringify({ type: "prompt", message: task }) + `
+`;
+    this.proc?.stdin?.write(msg);
+    this.proc?.stdin?.end();
+  }
+  async waitForDone() {
+    return this._donePromise;
+  }
+  async getLastOutput() {
+    return this._lastOutput;
+  }
+  kill() {
+    if (this._killed)
+      return;
+    this._killed = true;
+    this.proc?.kill();
+    this.proc = undefined;
+    this._doneReject?.(new SessionKilledError);
+  }
+}
+var SessionKilledError;
+var init_session = __esm(() => {
+  init_backendMap();
+  SessionKilledError = class SessionKilledError extends Error {
+    constructor() {
+      super("Session was killed");
+      this.name = "SessionKilledError";
+    }
+  };
+});
+
+// src/specialist/beads.ts
+import { spawnSync } from "node:child_process";
+
+class BeadsClient {
+  available;
+  constructor() {
+    this.available = BeadsClient.checkAvailable();
+    if (!this.available) {
+      console.warn("[specialists] bd CLI not found — beads tracking disabled");
+    }
+  }
+  static checkAvailable() {
+    const result = spawnSync("bd", ["--version"], { stdio: "ignore" });
+    return result.status === 0;
+  }
+  isAvailable() {
+    return this.available;
+  }
+  createBead(specialistName) {
+    if (!this.available)
+      return null;
+    const result = spawnSync("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    if (result.status !== 0)
+      return null;
+    const id = result.stdout?.trim();
+    return id || null;
+  }
+  closeBead(id, status, durationMs, model) {
+    if (!this.available || !id)
+      return;
+    const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
+    spawnSync("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+  }
+  auditBead(id, toolName, model, exitCode) {
+    if (!this.available || !id)
+      return;
+    spawnSync("bd", [
+      "audit",
+      "record",
+      "--kind",
+      "tool_call",
+      "--tool-name",
+      toolName,
+      "--model",
+      model,
+      "--issue-id",
+      id,
+      "--exit-code",
+      String(exitCode)
+    ], { stdio: "ignore" });
+  }
+}
+function shouldCreateBead(beadsIntegration, permissionRequired) {
+  if (beadsIntegration === "never")
+    return false;
+  if (beadsIntegration === "always")
+    return true;
+  return permissionRequired !== "READ_ONLY";
+}
+var init_beads = () => {};
+
+// src/specialist/runner.ts
+import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+function runScript(scriptPath) {
+  try {
+    const output = execSync(scriptPath, { encoding: "utf8", timeout: 30000 });
+    return { name: basename(scriptPath), output, exitCode: 0 };
+  } catch (e) {
+    return { name: basename(scriptPath), output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
+  }
+}
+function formatScriptOutput(results) {
+  const withOutput = results.filter((r) => r.output.trim());
+  if (withOutput.length === 0)
+    return "";
+  const blocks = withOutput.map((r) => {
+    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
+    return `<script name="${r.name}"${status}>
+${r.output.trim()}
+</script>`;
+  }).join(`
+`);
+  return `<pre_flight_context>
+${blocks}
+</pre_flight_context>`;
+}
+
+class SpecialistRunner {
+  deps;
+  sessionFactory;
+  constructor(deps) {
+    this.deps = deps;
+    this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
+  }
+  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated) {
+    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
+    const invocationId = crypto.randomUUID();
+    const start = Date.now();
+    const spec = await loader.get(options.name);
+    const { metadata, execution, prompt, communication } = spec.specialist;
+    const primaryModel = options.backendOverride ?? execution.model;
+    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
+    const fallbackUsed = model !== primaryModel;
+    await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
+      variables_keys: Object.keys(options.variables ?? {}),
+      backend_resolved: model,
+      fallback_used: fallbackUsed,
+      circuit_breaker_state: circuitBreaker.getState(model),
+      scope: "project"
+    });
+    const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
+    const preResults = preScripts.map((s) => runScript(s.path)).filter((_, i) => preScripts[i].inject_output);
+    const preScriptOutput = formatScriptOutput(preResults);
+    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
+    const renderedTask = renderTemplate(prompt.task_template, variables);
+    const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
+    await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
+      prompt_hash: promptHash,
+      prompt_length_chars: renderedTask.length,
+      estimated_tokens: Math.ceil(renderedTask.length / 4),
+      system_prompt_present: !!prompt.system
+    });
+    let agentsMd = prompt.system ?? "";
+    if (prompt.skill_inherit) {
+      const { readFile: readFile2 } = await import("node:fs/promises");
+      const skillContent = await readFile2(prompt.skill_inherit, "utf-8").catch(() => "");
+      if (skillContent)
+        agentsMd += `
+
+---
+# Service Knowledge
+
+${skillContent}`;
+    }
+    if (spec.specialist.capabilities?.diagnostic_scripts?.length) {
+      agentsMd += `
+
+---
+# Diagnostic Scripts
+You have access via Bash:
+`;
+      for (const s of spec.specialist.capabilities.diagnostic_scripts) {
+        agentsMd += `- \`${s}\`
+`;
+      }
+    }
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    await hooks.emit("pre_execute", invocationId, metadata.name, metadata.version, {
+      backend: model,
+      model,
+      timeout_ms: execution.timeout_ms,
+      permission_level: permissionLevel
+    });
+    const beadsIntegration = spec.specialist.beads_integration ?? "auto";
+    let beadId;
+    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId)
+        onBeadCreated?.(beadId);
+    }
+    let output;
+    let sessionBackend = model;
+    let session;
+    try {
+      session = await this.sessionFactory({
+        model,
+        systemPrompt: agentsMd || undefined,
+        permissionLevel,
+        onToken: (delta) => onProgress?.(delta),
+        onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
+        onToolStart: (tool) => onProgress?.(`
+⚙ ${tool}…`),
+        onToolEnd: (_tool) => onProgress?.(`✓
+`),
+        onEvent: (type) => onEvent?.(type),
+        onMeta: (meta) => onMeta?.(meta)
+      });
+      await session.start();
+      onKillRegistered?.(session.kill.bind(session));
+      await session.prompt(renderedTask);
+      await session.waitForDone();
+      sessionBackend = session.meta.backend;
+      output = await session.getLastOutput();
+      sessionBackend = session.meta.backend;
+      const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
+      for (const script of postScripts)
+        runScript(script.path);
+      circuitBreaker.recordSuccess(model);
+    } catch (err) {
+      const isCancelled = err instanceof SessionKilledError;
+      if (!isCancelled) {
+        circuitBreaker.recordFailure(model);
+      }
+      const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
+      if (beadId) {
+        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+      }
+      await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
+        status: isCancelled ? "CANCELLED" : "ERROR",
+        duration_ms: Date.now() - start,
+        output_valid: false,
+        error: { type: isCancelled ? "cancelled" : "backend_error", message: err.message }
+      });
+      throw err;
+    } finally {
+      session?.kill();
+    }
+    const durationMs = Date.now() - start;
+    if (communication?.output_to) {
+      await writeFile(communication.output_to, output, "utf-8").catch(() => {});
+    }
+    await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
+      status: "COMPLETE",
+      duration_ms: durationMs,
+      output_valid: true
+    });
+    if (beadId) {
+      beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+    }
+    return {
+      output,
+      backend: sessionBackend,
+      model,
+      durationMs,
+      specialistVersion: metadata.version,
+      beadId
+    };
+  }
+  async startAsync(options, registry2) {
+    const jobId = crypto.randomUUID();
+    let specialistVersion = "?";
+    try {
+      const spec = await this.deps.loader.get(options.name);
+      specialistVersion = spec.specialist.metadata.version;
+    } catch {}
+    registry2.register(jobId, {
+      backend: options.backendOverride ?? "starting",
+      model: "?",
+      specialistVersion
+    });
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    return jobId;
+  }
+}
+var init_runner = __esm(() => {
+  init_session();
+  init_beads();
+});
+
+// src/specialist/hooks.ts
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+
+class HookEmitter {
+  tracePath;
+  customHandlers = new Map;
+  ready;
+  constructor(options) {
+    this.tracePath = options.tracePath;
+    this.ready = mkdir(dirname(options.tracePath), { recursive: true }).then(() => {});
+  }
+  async emit(hook, invocationId, specialistName, specialistVersion, payload) {
+    await this.ready;
+    const event = {
+      invocation_id: invocationId,
+      hook,
+      timestamp: new Date().toISOString(),
+      specialist_name: specialistName,
+      specialist_version: specialistVersion,
+      ...payload
+    };
+    await appendFile(this.tracePath, JSON.stringify(event) + `
+`, "utf-8");
+    for (const handler of this.customHandlers.get(hook) ?? []) {
+      Promise.resolve().then(() => handler(event)).catch(() => {});
+    }
+  }
+  onHook(hook, handler) {
+    if (!this.customHandlers.has(hook))
+      this.customHandlers.set(hook, []);
+    this.customHandlers.get(hook).push(handler);
+  }
+}
+var init_hooks = () => {};
+
+// src/utils/circuitBreaker.ts
+class CircuitBreaker {
+  states = new Map;
+  threshold;
+  cooldownMs;
+  constructor(options = {}) {
+    this.threshold = options.failureThreshold ?? 3;
+    this.cooldownMs = options.cooldownMs ?? 60000;
+  }
+  getState(backend) {
+    const entry = this.states.get(backend);
+    if (!entry)
+      return "CLOSED";
+    if (entry.state === "OPEN" && Date.now() - entry.openedAt > this.cooldownMs) {
+      entry.state = "HALF_OPEN";
+    }
+    return entry.state;
+  }
+  isAvailable(backend) {
+    return this.getState(backend) !== "OPEN";
+  }
+  recordSuccess(backend) {
+    this.states.set(backend, { state: "CLOSED", failures: 0 });
+  }
+  recordFailure(backend) {
+    const entry = this.states.get(backend) ?? { state: "CLOSED", failures: 0 };
+    entry.failures++;
+    if (entry.failures >= this.threshold) {
+      entry.state = "OPEN";
+      entry.openedAt = Date.now();
+    }
+    this.states.set(backend, entry);
+  }
+}
+
 // src/cli/install.ts
 var exports_install = {};
 __export(exports_install, {
@@ -17879,26 +18432,133 @@ var init_edit = __esm(() => {
   VALID_PERMISSIONS = ["READ_ONLY", "LOW", "MEDIUM", "HIGH"];
 });
 
+// src/cli/run.ts
+var exports_run = {};
+__export(exports_run, {
+  run: () => run6
+});
+import { join as join6 } from "node:path";
+async function parseArgs3(argv) {
+  const name = argv[0];
+  if (!name || name.startsWith("--")) {
+    console.error('Usage: specialists run <name> [--prompt "..."] [--model <model>] [--no-beads]');
+    process.exit(1);
+  }
+  let prompt = "";
+  let model;
+  let noBeads = false;
+  for (let i = 1;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--prompt" && argv[i + 1]) {
+      prompt = argv[++i];
+      continue;
+    }
+    if (token === "--model" && argv[i + 1]) {
+      model = argv[++i];
+      continue;
+    }
+    if (token === "--no-beads") {
+      noBeads = true;
+      continue;
+    }
+  }
+  if (!prompt) {
+    if (process.stdin.isTTY) {
+      process.stderr.write(dim4("Prompt (Ctrl+D when done): "));
+    }
+    prompt = await new Promise((resolve) => {
+      let buf = "";
+      process.stdin.setEncoding("utf-8");
+      process.stdin.on("data", (chunk) => {
+        buf += chunk;
+      });
+      process.stdin.on("end", () => resolve(buf.trim()));
+    });
+  }
+  return { name, prompt, model, noBeads };
+}
+async function run6() {
+  const args = await parseArgs3(process.argv.slice(3));
+  const loader = new SpecialistLoader;
+  const circuitBreaker = new CircuitBreaker;
+  const hooks = new HookEmitter({ tracePath: join6(process.cwd(), ".specialists", "trace.jsonl") });
+  const beadsClient = args.noBeads ? null : new BeadsClient;
+  const runner = new SpecialistRunner({
+    loader,
+    hooks,
+    circuitBreaker,
+    beadsClient: beadsClient ?? undefined
+  });
+  process.stderr.write(`
+${bold4(`Running ${cyan2(args.name)}`)}
+
+`);
+  let beadId;
+  const result = await runner.run({
+    name: args.name,
+    prompt: args.prompt,
+    backendOverride: args.model
+  }, (delta) => process.stdout.write(delta), undefined, (meta) => process.stderr.write(dim4(`
+[${meta.backend} / ${meta.model}]
+
+`)), (killFn) => {
+    process.on("SIGINT", () => {
+      process.stderr.write(`
+
+Interrupted.
+`);
+      killFn();
+      process.exit(130);
+    });
+  }, (id) => {
+    beadId = id;
+    process.stderr.write(dim4(`
+[bead: ${id}]
+`));
+  });
+  if (result.output && !result.output.endsWith(`
+`))
+    process.stdout.write(`
+`);
+  const secs = (result.durationMs / 1000).toFixed(1);
+  const footer = [
+    beadId ? `bead ${beadId}` : "",
+    `${secs}s`,
+    dim4(result.model)
+  ].filter(Boolean).join("  ");
+  process.stderr.write(`
+${green3("✓")} ${footer}
+
+`);
+}
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, cyan2 = (s) => `\x1B[36m${s}\x1B[0m`;
+var init_run = __esm(() => {
+  init_loader();
+  init_runner();
+  init_hooks();
+  init_beads();
+});
+
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run6
+  run: () => run7
 });
-async function run6() {
+async function run7() {
   const lines = [
     "",
-    bold4("specialists <command>"),
+    bold5("specialists <command>"),
     "",
     "Commands:",
-    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim4(desc)}`),
+    ...COMMANDS.map(([cmd, desc]) => `  ${cmd.padEnd(COL_WIDTH)}    ${dim5(desc)}`),
     "",
-    dim4("Run 'specialists <command> --help' for command-specific options."),
+    dim5("Run 'specialists <command> --help' for command-specific options."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
 var init_help = __esm(() => {
   COMMANDS = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
@@ -25180,550 +25840,9 @@ var logger = {
 
 // src/server.ts
 init_loader();
-
-// src/specialist/runner.ts
-import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-
-// src/specialist/templateEngine.ts
-function renderTemplate(template, variables) {
-  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
-    return variables[key] !== undefined ? variables[key] : match;
-  });
-}
-
-// src/pi/session.ts
-import { spawn } from "node:child_process";
-
-// src/pi/backendMap.ts
-var BACKEND_MAP = {
-  gemini: "google-gemini-cli",
-  google: "google-gemini-cli",
-  claude: "anthropic",
-  anthropic: "anthropic",
-  openai: "openai",
-  qwen: "openai",
-  openrouter: "openrouter",
-  groq: "groq"
-};
-function mapSpecialistBackend(model) {
-  const provider = BACKEND_MAP[model.toLowerCase()];
-  if (!provider) {
-    return model.toLowerCase();
-  }
-  return provider;
-}
-function getProviderArgs(model) {
-  const m = model.toLowerCase();
-  if (m === "qwen") {
-    return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
-  }
-  return [];
-}
-
-// src/pi/session.ts
-class SessionKilledError extends Error {
-  constructor() {
-    super("Session was killed");
-    this.name = "SessionKilledError";
-  }
-}
-function mapPermissionToTools(level) {
-  switch (level?.toUpperCase()) {
-    case "READ_ONLY":
-      return "read,bash,grep,find,ls";
-    case "BASH_ONLY":
-      return "bash";
-    default:
-      return;
-  }
-}
-
-class PiAgentSession {
-  options;
-  proc;
-  _lastOutput = "";
-  _doneResolve;
-  _doneReject;
-  _agentEndReceived = false;
-  _killed = false;
-  _lineBuffer = "";
-  meta;
-  constructor(options, meta) {
-    this.options = options;
-    this.meta = meta;
-  }
-  static async create(options) {
-    const meta = {
-      backend: options.model.includes("/") ? options.model.split("/")[0] : mapSpecialistBackend(options.model),
-      model: options.model,
-      sessionId: crypto.randomUUID(),
-      startedAt: new Date
-    };
-    return new PiAgentSession(options, meta);
-  }
-  async start() {
-    const model = this.options.model;
-    const extraArgs = getProviderArgs(model);
-    const providerArgs = model.includes("/") ? ["--model", model] : ["--provider", mapSpecialistBackend(model)];
-    const args = [
-      "--mode",
-      "rpc",
-      ...providerArgs,
-      "--no-session",
-      ...extraArgs
-    ];
-    const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
-    if (toolsFlag)
-      args.push("--tools", toolsFlag);
-    if (this.options.systemPrompt) {
-      args.push("--append-system-prompt", this.options.systemPrompt);
-    }
-    this.proc = spawn("pi", args, {
-      stdio: ["pipe", "pipe", "inherit"]
-    });
-    const donePromise = new Promise((resolve, reject) => {
-      this._doneResolve = resolve;
-      this._doneReject = reject;
-    });
-    donePromise.catch(() => {});
-    this._donePromise = donePromise;
-    this.proc.stdout?.on("data", (chunk) => {
-      this._lineBuffer += chunk.toString();
-      const lines = this._lineBuffer.split(`
-`);
-      this._lineBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.trim())
-          this._handleEvent(line);
-      }
-    });
-    this.proc.stdout?.on("end", () => {
-      if (this._lineBuffer.trim()) {
-        this._handleEvent(this._lineBuffer);
-        this._lineBuffer = "";
-      }
-    });
-    this.proc.on("close", (code) => {
-      if (this._agentEndReceived || this._killed) {
-        this._doneResolve?.();
-      } else if (code === 0 || code === null) {
-        this._doneResolve?.();
-      } else {
-        this._doneReject?.(new Error(`pi process exited with code ${code}`));
-      }
-    });
-  }
-  _handleEvent(line) {
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      return;
-    }
-    const { type } = event;
-    if (type === "message_start" && event.message?.role === "assistant") {
-      const { provider, model } = event.message ?? {};
-      if (provider || model) {
-        this.options.onMeta?.({ backend: provider ?? "", model: model ?? "" });
-      }
-      return;
-    }
-    if (type === "agent_end") {
-      const messages = event.messages ?? [];
-      const last = [...messages].reverse().find((m) => m.role === "assistant");
-      if (last) {
-        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
-      }
-      this._agentEndReceived = true;
-      this.options.onEvent?.("done");
-      this._doneResolve?.();
-      return;
-    }
-    if (type === "thinking_start") {
-      this.options.onEvent?.("thinking");
-      return;
-    }
-    if (type === "thinking_delta") {
-      if (event.delta)
-        this.options.onThinking?.(event.delta);
-      this.options.onEvent?.("thinking");
-      return;
-    }
-    if (type === "thinking_end") {
-      return;
-    }
-    if (type === "toolcall_start") {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
-      this.options.onEvent?.("toolcall");
-      return;
-    }
-    if (type === "toolcall_end") {
-      this.options.onEvent?.("toolcall");
-      return;
-    }
-    if (type === "tool_execution_start") {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
-      this.options.onEvent?.("tool_execution");
-      return;
-    }
-    if (type === "tool_execution_update") {
-      this.options.onEvent?.("tool_execution");
-      return;
-    }
-    if (type === "tool_execution_end") {
-      this.options.onToolEnd?.(event.name ?? event.toolName ?? "tool");
-      this.options.onEvent?.("tool_execution_end");
-      return;
-    }
-    if (type === "message_update") {
-      const ae = event.assistantMessageEvent;
-      if (!ae)
-        return;
-      if (ae.type === "text_delta" && ae.delta) {
-        this.options.onToken?.(ae.delta);
-        this.options.onEvent?.("text");
-      }
-    }
-  }
-  async prompt(task) {
-    const msg = JSON.stringify({ type: "prompt", message: task }) + `
-`;
-    this.proc?.stdin?.write(msg);
-    this.proc?.stdin?.end();
-  }
-  async waitForDone() {
-    return this._donePromise;
-  }
-  async getLastOutput() {
-    return this._lastOutput;
-  }
-  kill() {
-    if (this._killed)
-      return;
-    this._killed = true;
-    this.proc?.kill();
-    this.proc = undefined;
-    this._doneReject?.(new SessionKilledError);
-  }
-}
-
-// src/specialist/beads.ts
-import { spawnSync } from "node:child_process";
-
-class BeadsClient {
-  available;
-  constructor() {
-    this.available = BeadsClient.checkAvailable();
-    if (!this.available) {
-      console.warn("[specialists] bd CLI not found — beads tracking disabled");
-    }
-  }
-  static checkAvailable() {
-    const result = spawnSync("bd", ["--version"], { stdio: "ignore" });
-    return result.status === 0;
-  }
-  isAvailable() {
-    return this.available;
-  }
-  createBead(specialistName) {
-    if (!this.available)
-      return null;
-    const result = spawnSync("bd", ["q", `specialist:${specialistName}`, "--type", "task", "--labels", "specialist"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
-    if (result.status !== 0)
-      return null;
-    const id = result.stdout?.trim();
-    return id || null;
-  }
-  closeBead(id, status, durationMs, model) {
-    if (!this.available || !id)
-      return;
-    const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
-    spawnSync("bd", ["close", id, "-r", reason], { stdio: "ignore" });
-  }
-  auditBead(id, toolName, model, exitCode) {
-    if (!this.available || !id)
-      return;
-    spawnSync("bd", [
-      "audit",
-      "record",
-      "--kind",
-      "tool_call",
-      "--tool-name",
-      toolName,
-      "--model",
-      model,
-      "--issue-id",
-      id,
-      "--exit-code",
-      String(exitCode)
-    ], { stdio: "ignore" });
-  }
-}
-function shouldCreateBead(beadsIntegration, permissionRequired) {
-  if (beadsIntegration === "never")
-    return false;
-  if (beadsIntegration === "always")
-    return true;
-  return permissionRequired !== "READ_ONLY";
-}
-
-// src/specialist/runner.ts
-import { execSync } from "node:child_process";
-import { basename } from "node:path";
-function runScript(scriptPath) {
-  try {
-    const output = execSync(scriptPath, { encoding: "utf8", timeout: 30000 });
-    return { name: basename(scriptPath), output, exitCode: 0 };
-  } catch (e) {
-    return { name: basename(scriptPath), output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
-  }
-}
-function formatScriptOutput(results) {
-  const withOutput = results.filter((r) => r.output.trim());
-  if (withOutput.length === 0)
-    return "";
-  const blocks = withOutput.map((r) => {
-    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
-    return `<script name="${r.name}"${status}>
-${r.output.trim()}
-</script>`;
-  }).join(`
-`);
-  return `<pre_flight_context>
-${blocks}
-</pre_flight_context>`;
-}
-
-class SpecialistRunner {
-  deps;
-  sessionFactory;
-  constructor(deps) {
-    this.deps = deps;
-    this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
-  }
-  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated) {
-    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
-    const invocationId = crypto.randomUUID();
-    const start = Date.now();
-    const spec = await loader.get(options.name);
-    const { metadata, execution, prompt, communication } = spec.specialist;
-    const primaryModel = options.backendOverride ?? execution.model;
-    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
-    const fallbackUsed = model !== primaryModel;
-    await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
-      variables_keys: Object.keys(options.variables ?? {}),
-      backend_resolved: model,
-      fallback_used: fallbackUsed,
-      circuit_breaker_state: circuitBreaker.getState(model),
-      scope: "project"
-    });
-    const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
-    const preResults = preScripts.map((s) => runScript(s.path)).filter((_, i) => preScripts[i].inject_output);
-    const preScriptOutput = formatScriptOutput(preResults);
-    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
-    const renderedTask = renderTemplate(prompt.task_template, variables);
-    const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
-    await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
-      prompt_hash: promptHash,
-      prompt_length_chars: renderedTask.length,
-      estimated_tokens: Math.ceil(renderedTask.length / 4),
-      system_prompt_present: !!prompt.system
-    });
-    let agentsMd = prompt.system ?? "";
-    if (prompt.skill_inherit) {
-      const { readFile: readFile2 } = await import("node:fs/promises");
-      const skillContent = await readFile2(prompt.skill_inherit, "utf-8").catch(() => "");
-      if (skillContent)
-        agentsMd += `
-
----
-# Service Knowledge
-
-${skillContent}`;
-    }
-    if (spec.specialist.capabilities?.diagnostic_scripts?.length) {
-      agentsMd += `
-
----
-# Diagnostic Scripts
-You have access via Bash:
-`;
-      for (const s of spec.specialist.capabilities.diagnostic_scripts) {
-        agentsMd += `- \`${s}\`
-`;
-      }
-    }
-    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
-    await hooks.emit("pre_execute", invocationId, metadata.name, metadata.version, {
-      backend: model,
-      model,
-      timeout_ms: execution.timeout_ms,
-      permission_level: permissionLevel
-    });
-    const beadsIntegration = spec.specialist.beads_integration ?? "auto";
-    let beadId;
-    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
-      beadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (beadId)
-        onBeadCreated?.(beadId);
-    }
-    let output;
-    let sessionBackend = model;
-    let session;
-    try {
-      session = await this.sessionFactory({
-        model,
-        systemPrompt: agentsMd || undefined,
-        permissionLevel,
-        onToken: (delta) => onProgress?.(delta),
-        onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
-        onToolStart: (tool) => onProgress?.(`
-⚙ ${tool}…`),
-        onToolEnd: (_tool) => onProgress?.(`✓
-`),
-        onEvent: (type) => onEvent?.(type),
-        onMeta: (meta) => onMeta?.(meta)
-      });
-      await session.start();
-      onKillRegistered?.(session.kill.bind(session));
-      await session.prompt(renderedTask);
-      await session.waitForDone();
-      sessionBackend = session.meta.backend;
-      output = await session.getLastOutput();
-      sessionBackend = session.meta.backend;
-      const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
-      for (const script of postScripts)
-        runScript(script.path);
-      circuitBreaker.recordSuccess(model);
-    } catch (err) {
-      const isCancelled = err instanceof SessionKilledError;
-      if (!isCancelled) {
-        circuitBreaker.recordFailure(model);
-      }
-      const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
-      if (beadId) {
-        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(beadId, metadata.name, model, 1);
-      }
-      await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
-        status: isCancelled ? "CANCELLED" : "ERROR",
-        duration_ms: Date.now() - start,
-        output_valid: false,
-        error: { type: isCancelled ? "cancelled" : "backend_error", message: err.message }
-      });
-      throw err;
-    } finally {
-      session?.kill();
-    }
-    const durationMs = Date.now() - start;
-    if (communication?.output_to) {
-      await writeFile(communication.output_to, output, "utf-8").catch(() => {});
-    }
-    await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
-      status: "COMPLETE",
-      duration_ms: durationMs,
-      output_valid: true
-    });
-    if (beadId) {
-      beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
-      beadsClient?.auditBead(beadId, metadata.name, model, 0);
-    }
-    return {
-      output,
-      backend: sessionBackend,
-      model,
-      durationMs,
-      specialistVersion: metadata.version,
-      beadId
-    };
-  }
-  async startAsync(options, registry2) {
-    const jobId = crypto.randomUUID();
-    let specialistVersion = "?";
-    try {
-      const spec = await this.deps.loader.get(options.name);
-      specialistVersion = spec.specialist.metadata.version;
-    } catch {}
-    registry2.register(jobId, {
-      backend: options.backendOverride ?? "starting",
-      model: "?",
-      specialistVersion
-    });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
-    return jobId;
-  }
-}
-
-// src/specialist/hooks.ts
-import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
-
-class HookEmitter {
-  tracePath;
-  customHandlers = new Map;
-  ready;
-  constructor(options) {
-    this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname(options.tracePath), { recursive: true }).then(() => {});
-  }
-  async emit(hook, invocationId, specialistName, specialistVersion, payload) {
-    await this.ready;
-    const event = {
-      invocation_id: invocationId,
-      hook,
-      timestamp: new Date().toISOString(),
-      specialist_name: specialistName,
-      specialist_version: specialistVersion,
-      ...payload
-    };
-    await appendFile(this.tracePath, JSON.stringify(event) + `
-`, "utf-8");
-    for (const handler of this.customHandlers.get(hook) ?? []) {
-      Promise.resolve().then(() => handler(event)).catch(() => {});
-    }
-  }
-  onHook(hook, handler) {
-    if (!this.customHandlers.has(hook))
-      this.customHandlers.set(hook, []);
-    this.customHandlers.get(hook).push(handler);
-  }
-}
-
-// src/utils/circuitBreaker.ts
-class CircuitBreaker {
-  states = new Map;
-  threshold;
-  cooldownMs;
-  constructor(options = {}) {
-    this.threshold = options.failureThreshold ?? 3;
-    this.cooldownMs = options.cooldownMs ?? 60000;
-  }
-  getState(backend) {
-    const entry = this.states.get(backend);
-    if (!entry)
-      return "CLOSED";
-    if (entry.state === "OPEN" && Date.now() - entry.openedAt > this.cooldownMs) {
-      entry.state = "HALF_OPEN";
-    }
-    return entry.state;
-  }
-  isAvailable(backend) {
-    return this.getState(backend) !== "OPEN";
-  }
-  recordSuccess(backend) {
-    this.states.set(backend, { state: "CLOSED", failures: 0 });
-  }
-  recordFailure(backend) {
-    const entry = this.states.get(backend) ?? { state: "CLOSED", failures: 0 };
-    entry.failures++;
-    if (entry.failures >= this.threshold) {
-      entry.state = "OPEN";
-      entry.openedAt = Date.now();
-    }
-    this.states.set(backend, entry);
-  }
-}
+init_runner();
+init_hooks();
+init_beads();
 
 // src/tools/specialist/list_specialists.tool.ts
 init_zod();
@@ -26196,7 +26315,7 @@ class SpecialistsServer {
 
 // src/index.ts
 var sub = process.argv[2];
-async function run7() {
+async function run8() {
   if (sub === "install") {
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
@@ -26217,6 +26336,10 @@ async function run7() {
     const { run: handler } = await Promise.resolve().then(() => (init_edit(), exports_edit));
     return handler();
   }
+  if (sub === "run") {
+    const { run: handler } = await Promise.resolve().then(() => (init_run(), exports_run));
+    return handler();
+  }
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
@@ -26225,7 +26348,7 @@ async function run7() {
   const server = new SpecialistsServer;
   await server.start();
 }
-run7().catch((error2) => {
+run8().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
