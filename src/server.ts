@@ -30,6 +30,7 @@ import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/speciali
 import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { z } from "zod";
 
+import { createOmniInitTool, omniInitSchema } from "./tools/specialist/omni_init.tool.js";
 type AnyTool = {
   name: string;
   description: string;
@@ -58,6 +59,7 @@ export class UnitAIServer {
       createStartSpecialistTool(runner, registry),
       createPollSpecialistTool(registry),
       createStopSpecialistTool(registry),
+      createOmniInitTool(loader),
     ];
 
     this.server = new Server(
@@ -79,6 +81,7 @@ export class UnitAIServer {
       start_specialist: startSpecialistSchema,
       poll_specialist: pollSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
+      omni_init: omniInitSchema,
     };
     this.toolSchemas = schemaMap;
 
