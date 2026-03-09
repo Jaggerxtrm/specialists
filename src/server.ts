@@ -1,5 +1,5 @@
 /**
- * UnitAI MCP Server — v2 Specialist System
+ * Specialists MCP Server — v2 Specialist System
  *
  * 7-tool orchestration layer: list_specialists, use_specialist,
  * run_parallel, specialist_status, start_specialist, poll_specialist,
@@ -136,7 +136,7 @@ export class UnitAIServer {
     try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
-      logger.info(`UnitAI MCP Server v2 started — ${this.tools.length} tools registered`);
+      logger.info(`Specialists MCP Server v2 started — ${this.tools.length} tools registered`);
     } catch (error) {
       logger.error("Failed to start server", error);
       process.exit(1);
