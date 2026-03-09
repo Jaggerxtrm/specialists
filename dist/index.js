@@ -24940,7 +24940,6 @@ class PiAgentSession {
       "rpc",
       ...providerArgs,
       "--no-session",
-      "--print",
       ...extraArgs
     ];
     const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
@@ -25059,6 +25058,7 @@ class PiAgentSession {
     const msg = JSON.stringify({ type: "prompt", message: task }) + `
 `;
     this.proc?.stdin?.write(msg);
+    this.proc?.stdin?.end();
   }
   async waitForDone() {
     return this._donePromise;

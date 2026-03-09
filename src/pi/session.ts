@@ -97,7 +97,9 @@ export class PiAgentSession {
       '--mode', 'rpc',
       ...providerArgs,
       '--no-session',
-      '--print',
+      // NOTE: --print is intentionally omitted. In --mode rpc, pi reads JSON
+      // commands from stdin indefinitely; we signal completion by closing stdin
+      // after prompt() rather than relying on --print (which is a no-op in rpc).
       ...extraArgs,
     ];
 
@@ -225,6 +227,10 @@ export class PiAgentSession {
   async prompt(task: string): Promise<void> {
     const msg = JSON.stringify({ type: 'prompt', message: task }) + '\n';
     this.proc?.stdin?.write(msg);
+    // Close stdin so pi sees EOF and processes this as the final command.
+    // In --mode rpc, pi reads JSON commands indefinitely until stdin closes;
+    // without this, agent_end never fires and waitForDone() hangs forever.
+    this.proc?.stdin?.end();
   }
 
   async waitForDone(): Promise<void> {
