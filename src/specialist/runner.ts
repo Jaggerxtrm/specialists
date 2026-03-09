@@ -24,9 +24,12 @@ export interface RunResult {
   beadId?: string;
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'executeBash' | 'kill' | 'meta'>>;
+export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'kill' | 'meta'>>;
 
 import { type BeadsClient, shouldCreateBead } from './beads.js';
+
+import { execSync } from 'node:child_process';
+import { basename } from 'node:path';
 
 interface RunnerDeps {
   loader: SpecialistLoader;
@@ -36,6 +39,35 @@ interface RunnerDeps {
   sessionFactory?: SessionFactory;
   /** Optional beads client for specialist run tracking */
   beadsClient?: BeadsClient;
+}
+
+// ── Pre/post script helpers ───────────────────────────────────────────────────
+
+interface ScriptResult {
+  name: string;
+  output: string;
+  exitCode: number;
+}
+
+function runScript(scriptPath: string): ScriptResult {
+  try {
+    const output = execSync(scriptPath, { encoding: 'utf8', timeout: 30_000 });
+    return { name: basename(scriptPath), output, exitCode: 0 };
+  } catch (e: any) {
+    return { name: basename(scriptPath), output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
+  }
+}
+
+function formatScriptOutput(results: ScriptResult[]): string {
+  const withOutput = results.filter(r => r.output.trim());
+  if (withOutput.length === 0) return '';
+  const blocks = withOutput
+    .map(r => {
+      const status = r.exitCode === 0 ? '' : ` exit_code="${r.exitCode}"`;
+      return `<script name="${r.name}"${status}>\n${r.output.trim()}\n</script>`;
+    })
+    .join('\n');
+  return `<pre_flight_context>\n${blocks}\n</pre_flight_context>`;
 }
 
 export class SpecialistRunner {
@@ -75,8 +107,16 @@ export class SpecialistRunner {
       scope: 'project',
     });
 
-    // Render task template
-    const variables = { prompt: options.prompt, ...options.variables };
+    // Pre-phase scripts run locally before the pi session starts.
+    // Their stdout is captured and injected into the task via $pre_script_output.
+    const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
+    const preResults = preScripts
+      .map(s => runScript(s.path))
+      .filter((_, i) => preScripts[i].inject_output);
+    const preScriptOutput = formatScriptOutput(preResults);
+
+    // Render task template (pre_script_output is '' when no scripts ran)
+    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
     const renderedTask = renderTemplate(prompt.task_template, variables);
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
@@ -137,27 +177,13 @@ export class SpecialistRunner {
       // Register kill function with the caller (e.g. JobRegistry for stop_specialist)
       onKillRegistered?.(session.kill.bind(session));
 
-      // Pre-phase scripts
-      const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
-      let preScriptOutput = '';
-      for (const script of preScripts) {
-        const out = await session.executeBash(script.path);
-        if (script.inject_output) preScriptOutput += out + '\n';
-      }
-
-      const finalTask = preScriptOutput
-        ? renderTemplate(renderedTask, { pre_script_output: preScriptOutput.trim() })
-        : renderedTask;
-
-      await session.prompt(finalTask);
+      await session.prompt(renderedTask);
       await session.waitForDone();
       output = await session.getLastOutput();
 
-      // Post-phase scripts
+      // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
-      for (const script of postScripts) {
-        await session.executeBash(script.path);
-      }
+      for (const script of postScripts) runScript(script.path);
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {

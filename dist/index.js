@@ -25066,19 +25066,6 @@ class PiAgentSession {
   async getLastOutput() {
     return this._lastOutput;
   }
-  async executeBash(cmd) {
-    return new Promise((resolve) => {
-      const msg = JSON.stringify({ type: "bash", command: cmd }) + `
-`;
-      this.proc?.stdin?.write(msg);
-      const orig = this.options.onEvent;
-      let result = "";
-      this.options.onEvent = (t) => {
-        orig?.(t);
-      };
-      resolve(result);
-    });
-  }
   kill() {
     this._killed = true;
     this.proc?.kill();
@@ -25148,6 +25135,32 @@ function shouldCreateBead(beadsIntegration, permissionRequired) {
 }
 
 // src/specialist/runner.ts
+import { execSync } from "node:child_process";
+import { basename } from "node:path";
+function runScript(scriptPath) {
+  try {
+    const output = execSync(scriptPath, { encoding: "utf8", timeout: 30000 });
+    return { name: basename(scriptPath), output, exitCode: 0 };
+  } catch (e) {
+    return { name: basename(scriptPath), output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
+  }
+}
+function formatScriptOutput(results) {
+  const withOutput = results.filter((r) => r.output.trim());
+  if (withOutput.length === 0)
+    return "";
+  const blocks = withOutput.map((r) => {
+    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
+    return `<script name="${r.name}"${status}>
+${r.output.trim()}
+</script>`;
+  }).join(`
+`);
+  return `<pre_flight_context>
+${blocks}
+</pre_flight_context>`;
+}
+
 class SpecialistRunner {
   deps;
   sessionFactory;
@@ -25171,7 +25184,10 @@ class SpecialistRunner {
       circuit_breaker_state: circuitBreaker.getState(model),
       scope: "project"
     });
-    const variables = { prompt: options.prompt, ...options.variables };
+    const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
+    const preResults = preScripts.map((s) => runScript(s.path)).filter((_, i) => preScripts[i].inject_output);
+    const preScriptOutput = formatScriptOutput(preResults);
+    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
     const renderedTask = renderTemplate(prompt.task_template, variables);
     const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
     await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
@@ -25236,22 +25252,12 @@ You have access via Bash:
       });
       await session.start();
       onKillRegistered?.(session.kill.bind(session));
-      const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
-      let preScriptOutput = "";
-      for (const script of preScripts) {
-        const out = await session.executeBash(script.path);
-        if (script.inject_output)
-          preScriptOutput += out + `
-`;
-      }
-      const finalTask = preScriptOutput ? renderTemplate(renderedTask, { pre_script_output: preScriptOutput.trim() }) : renderedTask;
-      await session.prompt(finalTask);
+      await session.prompt(renderedTask);
       await session.waitForDone();
       output = await session.getLastOutput();
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
-      for (const script of postScripts) {
-        await session.executeBash(script.path);
-      }
+      for (const script of postScripts)
+        runScript(script.path);
       circuitBreaker.recordSuccess(model);
     } catch (err) {
       circuitBreaker.recordFailure(model);

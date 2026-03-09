@@ -241,19 +241,8 @@ export class PiAgentSession {
     return this._lastOutput;
   }
 
-  async executeBash(cmd: string): Promise<string> {
-    return new Promise((resolve) => {
-      const msg = JSON.stringify({ type: 'bash', command: cmd }) + '\n';
-      this.proc?.stdin?.write(msg);
-      // Collect next bash_result event
-      const orig = this.options.onEvent;
-      let result = '';
-      this.options.onEvent = (t) => {
-        orig?.(t);
-      };
-      resolve(result);
-    });
-  }
+  // executeBash removed — pre/post scripts run locally in runner.ts via execSync,
+  // not via pi RPC (pi has no bash command in its protocol).
 
   kill(): void {
     this._killed = true;

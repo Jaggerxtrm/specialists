@@ -4,18 +4,23 @@ import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
 
-function makeMockSession(overrides: Partial<{
-  executeBash: () => Promise<string>;
-}> = {}) {
+// Mock execSync — scripts run locally, not via pi RPC
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn().mockReturnValue('script output\n'),
+  spawn: vi.fn(),
+}));
+
+import { execSync } from 'node:child_process';
+const mockExecSync = execSync as unknown as ReturnType<typeof vi.fn>;
+
+function makeMockSession() {
   return {
     start: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn().mockResolvedValue(undefined),
     waitForDone: vi.fn().mockResolvedValue(undefined),
     getLastOutput: vi.fn().mockResolvedValue('final output'),
-    executeBash: vi.fn().mockResolvedValue('script output'),
     kill: vi.fn(),
     meta: { backend: 'google-gemini-cli', model: 'gemini', sessionId: 'sid', startedAt: new Date() },
-    ...overrides,
   };
 }
 
@@ -40,10 +45,11 @@ describe('SpecialistRunner — script execution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = makeMockSession();
+    mockExecSync.mockReturnValue('script output\n');
   });
 
-  it('runs pre-phase scripts and injects output into prompt', async () => {
-    mockSession.executeBash.mockResolvedValue('tree output here');
+  it('runs pre-phase scripts and injects XML-formatted output into prompt', async () => {
+    mockExecSync.mockReturnValue('tree output here\n');
     const runner = new SpecialistRunner({
       loader: makeLoader([{ path: 'tree .', phase: 'pre', inject_output: true }]),
       hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts.jsonl' }),
@@ -51,10 +57,13 @@ describe('SpecialistRunner — script execution', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
     await runner.run({ name: 'test-spec', prompt: 'analyze' });
-    expect(mockSession.executeBash).toHaveBeenCalledWith('tree .');
-    // The prompt should contain the injected pre_script_output
+
+    expect(mockExecSync).toHaveBeenCalledWith('tree .', expect.objectContaining({ encoding: 'utf8' }));
+
     const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+    expect(promptArg).toContain('<pre_flight_context>');
     expect(promptArg).toContain('tree output here');
+    expect(promptArg).toContain('</pre_flight_context>');
   });
 
   it('runs post-phase scripts after getting output', async () => {
@@ -65,13 +74,14 @@ describe('SpecialistRunner — script execution', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
-    // post script runs after getLastOutput
-    const bashCallOrder = mockSession.executeBash.mock.invocationCallOrder[0];
-    const outputCallOrder = mockSession.getLastOutput.mock.invocationCallOrder[0];
-    expect(outputCallOrder).toBeLessThan(bashCallOrder);
+
+    // execSync (post script) must be called after getLastOutput
+    const execOrder = mockExecSync.mock.invocationCallOrder[0];
+    const outputOrder = mockSession.getLastOutput.mock.invocationCallOrder[0];
+    expect(outputOrder).toBeLessThan(execOrder);
   });
 
-  it('does not inject if inject_output is false', async () => {
+  it('does not inject output when inject_output is false', async () => {
     const runner = new SpecialistRunner({
       loader: makeLoader([{ path: 'ls', phase: 'pre', inject_output: false }]),
       hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts3.jsonl' }),
@@ -79,9 +89,13 @@ describe('SpecialistRunner — script execution', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
     await runner.run({ name: 'test-spec', prompt: 'x' });
-    expect(mockSession.executeBash).toHaveBeenCalledWith('ls');
-    // No injection — pre_script_output remains as literal (not substituted since value is '')
+
+    // Script still runs (for side effects)
+    expect(mockExecSync).toHaveBeenCalledWith('ls', expect.anything());
+
+    // But output is not injected into the prompt
     const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+    expect(promptArg).not.toContain('<pre_flight_context>');
     expect(promptArg).not.toContain('script output');
   });
 
@@ -93,7 +107,27 @@ describe('SpecialistRunner — script execution', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
     const result = await runner.run({ name: 'test-spec', prompt: 'no scripts' });
-    expect(mockSession.executeBash).not.toHaveBeenCalled();
+
+    expect(mockExecSync).not.toHaveBeenCalled();
     expect(result.output).toBe('final output');
+  });
+
+  it('includes exit_code attribute when script fails', async () => {
+    const err: any = new Error('command failed');
+    err.stdout = 'partial output\n';
+    err.status = 1;
+    mockExecSync.mockImplementationOnce(() => { throw err; });
+
+    const runner = new SpecialistRunner({
+      loader: makeLoader([{ path: 'failing-check.sh', phase: 'pre', inject_output: true }]),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-runner-scripts5.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+    await runner.run({ name: 'test-spec', prompt: 'run' });
+
+    const promptArg = mockSession.prompt.mock.calls[0][0] as string;
+    expect(promptArg).toContain('exit_code="1"');
+    expect(promptArg).toContain('partial output');
   });
 });
