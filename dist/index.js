@@ -18149,7 +18149,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as dirname2, join as join4 } from "node:path";
 async function run() {
-  const installerPath = join4(dirname2(fileURLToPath(import.meta.url)), "..", "..", "bin", "install.js");
+  const installerPath = join4(dirname2(fileURLToPath(import.meta.url)), "..", "bin", "install.js");
   execFileSync(process.execPath, [installerPath], { stdio: "inherit" });
 }
 var init_install = () => {};
