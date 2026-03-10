@@ -202,6 +202,7 @@ Once installed globally, `specialists <command>` provides:
 | `specialists install` | Full-stack installer: pi, beads, dolt, MCP registration, hooks |
 | `specialists init` | Scaffold `./specialists/` and inject usage block into `AGENTS.md` |
 | `specialists list` | List discovered specialists with model, description, and scope |
+| `specialists models` | List models available on pi with thinking/images flags and usage markers |
 | `specialists edit <name> --<field> <value>` | Edit a specialist field in-place |
 | `specialists run <name>` | Run a specialist and stream output to stdout |
 | `specialists status` | Show system health: specialists, pi, beads, MCP |
@@ -214,16 +215,41 @@ Once installed globally, `specialists <command>` provides:
 ```
 Specialists (9)
 
-  auto-remediation   google-gemini-cli/gemini-3-flash-preview  Autonomous self-healing workflow...  [project]
-  bug-hunt           anthropic/claude-sonnet-4-6               Autonomously investigates bugs...    [project]
-  codebase-explorer  google-gemini-cli/gemini-3-flash-preview  Explores codebase structure...       [project]
-  init-session       anthropic/claude-haiku-4-5                Gathers git/commit context...        [project]
-  overthinker        anthropic/claude-sonnet-4-6               Multi-phase deep reasoning...        [project]
+  auto-remediation   [project]  google-gemini-cli/gemini-3-flash-preview
+                     Autonomous self-healing workflow: detect issue, diagnose root cause…
+
+  bug-hunt           [project]  anthropic/claude-sonnet-4-6
+                     Autonomously investigates bug symptoms across the codebase…
+
+  overthinker        [project]  anthropic/claude-sonnet-4-6
+                     Multi-phase deep reasoning: analysis → critique → synthesis…
 ```
 
-Scopes: `[project]` = `./specialists/` (or `.claude/specialists/`), `[user]` = `~/.agents/specialists/`
+Scopes: `[project]` = `./specialists/`, `[user]` = `~/.agents/specialists/`
 
 Filter by scope or category: `specialists list --scope user --category analysis`
+
+### specialists models
+
+```
+Models on pi  (39 total)
+
+  anthropic  23 models
+    claude-haiku-4-5       ctx 200K   thinking  images  ← init-session, report-generator, test-runner
+    claude-sonnet-4-6      ctx 200K   thinking  images  ← bug-hunt, feature-design, overthinker
+
+  google-gemini-cli  6 models
+    gemini-3-flash-preview  ctx 1.0M   thinking  images  ← auto-remediation, codebase-explorer
+    gemini-3-pro-preview    ctx 1.0M   thinking  images
+```
+
+Shows every model pi has configured, grouped by provider. Models marked with `←` are
+currently referenced in your specialists — useful when choosing a model for `specialists edit`.
+
+```bash
+specialists models --provider anthropic   # filter to one provider
+specialists models --used                 # only show models in use
+```
 
 ### specialists edit
 
