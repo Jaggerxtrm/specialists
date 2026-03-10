@@ -303,14 +303,14 @@ process.exit(0);
 
 const BEADS_EDIT_GATE_ENTRY = {
   matcher: 'Edit|Write|MultiEdit|NotebookEdit|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol',
-  hooks: [{ type: 'command', command: BEADS_EDIT_GATE_FILE, timeout: 10 }],
+  hooks: [{ type: 'command', command: BEADS_EDIT_GATE_FILE, timeout: 10000 }],
 };
 const BEADS_COMMIT_GATE_ENTRY = {
   matcher: 'Bash',
-  hooks: [{ type: 'command', command: BEADS_COMMIT_GATE_FILE, timeout: 10 }],
+  hooks: [{ type: 'command', command: BEADS_COMMIT_GATE_FILE, timeout: 10000 }],
 };
 const BEADS_STOP_GATE_ENTRY = {
-  hooks: [{ type: 'command', command: BEADS_STOP_GATE_FILE, timeout: 10 }],
+  hooks: [{ type: 'command', command: BEADS_STOP_GATE_FILE, timeout: 10000 }],
 };
 
 function installHook() {
