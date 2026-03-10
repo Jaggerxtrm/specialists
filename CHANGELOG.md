@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.13] - 2026-03-10
+
+### Added
+- **`specialists status`** — system health check: Specialists (count by scope,
+  STALE/AGED flags), pi (version + active providers), beads (bd installed +
+  `.beads/` present), MCP (binary install verified; manual registration hint shown)
+
+---
+
+## [2.1.12] - 2026-03-10
+
+### Added
+- **`specialists run <name>`** — spawns a specialist directly (no MCP hop);
+  streams token output to stdout in real time; `--prompt "..."` or reads from
+  stdin; `--model` overrides the specialist model; `--no-beads` skips beads
+  lifecycle; Ctrl+C kills the session cleanly; footer shows duration + model
+
+---
+
+## [2.1.11] - 2026-03-10
+
+### Added
+- **`specialists init`** — project-level setup: creates `./specialists/`,
+  appends Specialists usage block to `AGENTS.md`; idempotent
+- **`specialists edit <name> --<field> <value>`** — in-place YAML field edits;
+  fields: `model`, `fallback-model`, `description`, `permission`, `timeout`,
+  `tags`; `--dry-run` shows diff without writing; `--scope` disambiguates scope
+
+---
+
+## [2.1.10] - 2026-03-10
+
+### Added
+- **`specialists help`** — formatted subcommand reference (`--help` / `-h` aliases)
+- **CLI dispatcher refactor** — `src/index.ts` is now a pure dispatcher; all
+  subcommand logic lives in `src/cli/` handler modules (`help.ts`, `version.ts`,
+  `install.ts`, `list.ts`); each exports `async function run()`
+- **`specialists list` flags** — `--category <cat>` and `--scope project|user`
+  filtering; exports `parseArgs` + `ArgParseError` for testability
+
+---
+
 ## [2.1.9] - 2026-03-09
 
 ### Added

@@ -195,13 +195,18 @@ Pre-script output is formatted as `<pre_flight_context>` XML and available in `t
 
 ## CLI
 
-Once installed globally, the `specialists` command provides:
+Once installed globally, `specialists <command>` provides:
 
 | Command | Description |
 |---------|-------------|
-| `specialists install` | Full-stack installer: pi, beads, dolt, MCP registration, hooks, scaffold |
-| `specialists list` | List all discovered specialists with model, description, and scope |
-| `specialists version` | Print the installed package version |
+| `specialists install` | Full-stack installer: pi, beads, dolt, MCP registration, hooks |
+| `specialists init` | Scaffold `./specialists/` and inject usage block into `AGENTS.md` |
+| `specialists list` | List discovered specialists with model, description, and scope |
+| `specialists edit <name> --<field> <value>` | Edit a specialist field in-place |
+| `specialists run <name>` | Run a specialist and stream output to stdout |
+| `specialists status` | Show system health: specialists, pi, beads, MCP |
+| `specialists version` | Print installed package version |
+| `specialists help` | Show command reference |
 | `specialists` | Start the MCP server (called by Claude Code — not for direct use) |
 
 ### specialists list
@@ -217,6 +222,59 @@ Specialists (9)
 ```
 
 Scopes: `[project]` = `./specialists/` (or `.claude/specialists/`), `[user]` = `~/.agents/specialists/`
+
+Filter by scope or category: `specialists list --scope user --category analysis`
+
+### specialists edit
+
+Edit individual fields without opening the file:
+
+```bash
+specialists edit init-session --model anthropic/claude-sonnet-4-6
+specialists edit bug-hunt --permission MEDIUM
+specialists edit overthinker --timeout 300000
+specialists edit codebase-explorer --tags "analysis,architecture"
+specialists edit my-spec --description "New description" --dry-run
+```
+
+Editable fields: `model`, `fallback-model`, `description`, `permission`, `timeout`, `tags`
+
+### specialists run
+
+Run a specialist directly from the terminal — no MCP required:
+
+```bash
+# Inline prompt
+specialists run init-session --prompt "What changed recently?"
+
+# Pipe from stdin
+echo "Analyse the architecture" | specialists run codebase-explorer
+
+# Override model, skip beads
+specialists run overthinker --prompt "Refactor strategy?" --model anthropic/claude-sonnet-4-6 --no-beads
+```
+
+Output streams to stdout in real time. Model, duration, and bead ID appear on stderr.
+
+### specialists status
+
+```
+specialists status
+
+── Specialists ───────────────────────────
+  ✓ 9 found  (9 project)
+
+── pi  (coding agent runtime) ────────────
+  ✓ v0.57.1  —  4 providers active  (anthropic, google-gemini-cli, qwen, zai)
+
+── beads  (issue tracker) ────────────────
+  ✓ bd installed  v0.59.0
+  ✓ .beads/ present in project
+
+── MCP ───────────────────────────────────
+  ✓ specialists binary installed  /usr/local/bin/specialists
+  verify registration: claude mcp get specialists
+```
 
 ---
 
