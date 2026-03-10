@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.19] - 2026-03-10
+
+### Fixed
+- **`specialists install` SyntaxError on Node 25.1** — remnant of old `HOOK_SCRIPT`
+  embedded string left by regex patch caused unterminated template literal, producing
+  `SyntaxError: Unexpected identifier` on Ubuntu/linuxbrew Node 25.1.0
+
+---
+
+## [2.1.18] - 2026-03-10
+
+### Fixed
+- **Hook drift detection prompt** — `specialists install` now detects when installed
+  hooks differ from bundled versions, shows which hooks are missing/changed, and
+  asks `Update hooks? [Y/n]` before overwriting. Non-TTY defaults to yes.
+
+---
+
+## [2.1.17] - 2026-03-10
+
+### Changed
+- **Hook messages show full workflow** — every hook block now displays the complete
+  7-step workflow with the current blocked step marked `← you are here`, so agents
+  understand the full process from the first gate they hit
+
+---
+
+## [2.1.16] - 2026-03-10
+
+### Fixed
+- **Hook scripts extracted to `hooks/` directory** — hook scripts were hardcoded
+  strings in `bin/install.js` that drifted from actual hooks. Now `hooks/` contains
+  real `.mjs` files as source of truth; installer copies them at install time.
+  `specialists-main-guard.mjs` updated to current version (PR enforcement, no stale
+  git commit/push block)
+
+---
+
+## [2.1.15] - 2026-03-10
+
+### Fixed
+- **`specialists install` path** — removed extra `..` in `bin/install.js` path
+  resolution (`dist/` → package root requires only one `..`, not two)
+
+---
+
 ## [2.1.13] - 2026-03-10
 
 ### Added
