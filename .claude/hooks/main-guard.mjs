@@ -39,4 +39,27 @@ if (WRITE_TOOLS.has(tool)) {
   process.exit(2);
 }
 
+// Block direct pushes to master — agents must use feature branches + gh pr create/merge
+if (tool === 'Bash') {
+  const cmd = (input.tool_input?.command ?? '').trim().replace(/\s+/g, ' ');
+  if (/^git push/.test(cmd)) {
+    const tokens = cmd.split(' ');
+    const lastToken = tokens[tokens.length - 1];
+    // Block if explicitly targeting master/main
+    const explicitMaster = /^(master|main)$/.test(lastToken) || /:(master|main)$/.test(lastToken);
+    // Block if bare push (no explicit branch) while sitting on master/main
+    const impliedMaster = tokens.length <= 3 && (branch === 'main' || branch === 'master');
+    if (explicitMaster || impliedMaster) {
+      process.stderr.write(
+        `⛔ Direct push to '${branch}' is not allowed.\n` +
+        `Use the PR workflow instead:\n` +
+        `  git push -u origin <feature-branch>\n` +
+        `  gh pr create --fill\n` +
+        `  gh pr merge --squash\n`
+      );
+      process.exit(2);
+    }
+  }
+}
+
 process.exit(0);
