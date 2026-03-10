@@ -16,7 +16,7 @@ async function run() {
     return handler();
   }
 
-  if (sub === 'version') {
+  if (sub === 'version' || sub === '--version' || sub === '-v') {
     const { run: handler } = await import('./cli/version.js');
     return handler();
   }
@@ -51,7 +51,13 @@ async function run() {
     return handler();
   }
 
-  // Default: MCP server
+  // Unknown subcommand — error instead of silently starting the MCP server
+  if (sub) {
+    console.error(`Unknown command: '${sub}'\nRun 'specialists help' to see available commands.`);
+    process.exit(1);
+  }
+
+  // No subcommand: MCP server mode
   logger.info("Starting Specialists MCP Server...");
   const server = new SpecialistsServer();
   await server.start();

@@ -18218,17 +18218,18 @@ async function run3() {
     return;
   }
   const nameWidth = Math.max(...specialists.map((s) => s.name.length), 4);
-  const modelWidth = Math.max(...specialists.map((s) => s.model.length), 5);
   console.log(`
 ${bold(`Specialists (${specialists.length})`)}
 `);
   for (const s of specialists) {
     const name = cyan(s.name.padEnd(nameWidth));
-    const model = dim(s.model.padEnd(modelWidth));
     const scopeTag = yellow(`[${s.scope}]`);
-    console.log(`  ${name}  ${model}  ${s.description}  ${scopeTag}`);
+    const model = dim(s.model);
+    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
+    console.log(`  ${name}  ${scopeTag}  ${model}`);
+    console.log(`  ${" ".repeat(nameWidth)}  ${dim(desc)}`);
+    console.log();
   }
-  console.log();
 }
 var dim = (s) => `\x1B[2m${s}\x1B[0m`, bold = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError;
 var init_list = __esm(() => {
@@ -26421,7 +26422,7 @@ async function run9() {
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
   }
-  if (sub === "version") {
+  if (sub === "version" || sub === "--version" || sub === "-v") {
     const { run: handler } = await Promise.resolve().then(() => (init_version(), exports_version));
     return handler();
   }
@@ -26448,6 +26449,11 @@ async function run9() {
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
+  }
+  if (sub) {
+    console.error(`Unknown command: '${sub}'
+Run 'specialists help' to see available commands.`);
+    process.exit(1);
   }
   logger.info("Starting Specialists MCP Server...");
   const server = new SpecialistsServer;
