@@ -46,9 +46,25 @@ if (WRITE_TOOLS.has(tool)) {
   process.exit(2);
 }
 
-// Block direct pushes to master — agents must use feature branches + gh pr create/merge
+// Block direct commits and pushes to master — use feature branches + gh pr create/merge
 if (tool === 'Bash') {
   const cmd = (input.tool_input?.command ?? '').trim().replace(/\s+/g, ' ');
+
+  if (/^git commit/.test(cmd)) {
+    process.stderr.write(
+      `⛔ Don't commit directly to '${branch}' — use a feature branch.\n\n` +
+      'Full workflow:\n' +
+      '  1. git checkout -b feature/<name>         ← start here\n' +
+      '  2. bd create + bd update in_progress      track your work\n' +
+      '  3. Edit files / write code\n' +
+      '  4. bd close <id> && git add && git commit\n' +
+      '  5. git push -u origin feature/<name>\n' +
+      '  6. gh pr create --fill && gh pr merge --squash\n' +
+      '  7. git checkout master && git reset --hard origin/master\n'
+    );
+    process.exit(2);
+  }
+
   if (/^git push/.test(cmd)) {
     const tokens = cmd.split(' ');
     const lastToken = tokens[tokens.length - 1];
