@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // beads-stop-gate — Claude Code Stop hook
 // Blocks the agent from stopping when in_progress beads issues remain.
-// Forces the session close protocol before declaring done.
 // Exit 0: allow stop  |  Exit 2: block stop (stderr shown to Claude)
 //
-// Installed by: npx --package=@jaggerxtrm/specialists install
+// Installed by: specialists install
 
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -37,12 +36,15 @@ try {
 
 if (inProgress > 0) {
   process.stderr.write(
-    '\u{1F6AB} BEADS STOP GATE: Cannot stop with unresolved in_progress issues.\n' +
-    'Complete the session close protocol:\n\n' +
-    '  bd close <id1> <id2> ...\n' +
-    '  git add <files> && git commit -m "..."\n' +
-    '  git push\n\n' +
-    `Open issues:\n${summary}\n`
+    '🚫 BEADS STOP GATE: Unresolved issues — complete the session close protocol.\n\n' +
+    `Open issues:\n${summary}\n\n` +
+    'Session close protocol:\n' +
+    '  3. bd close <id1> <id2> ...               close all in_progress issues\n' +
+    '  4. git add <files> && git commit -m "..."  commit your changes\n' +
+    '  5. git push -u origin <feature-branch>     push feature branch\n' +
+    '  6. gh pr create --fill                     create PR\n' +
+    '  7. gh pr merge --squash                    merge PR\n' +
+    '  8. git checkout master && git reset --hard origin/master\n'
   );
   process.exit(2);
 }
