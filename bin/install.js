@@ -104,6 +104,11 @@ const BEADS_COMMIT_GATE_ENTRY = {
 const BEADS_STOP_GATE_ENTRY = {
   hooks: [{ type: 'command', command: BEADS_STOP_GATE_FILE, timeout: 10000 }],
 };
+const BEADS_CLOSE_MEMORY_PROMPT_FILE  = join(HOOKS_DIR, 'beads-close-memory-prompt.mjs');
+const BEADS_CLOSE_MEMORY_PROMPT_ENTRY = {
+  matcher: 'Bash',
+  hooks: [{ type: 'command', command: BEADS_CLOSE_MEMORY_PROMPT_FILE, timeout: 10000 }],
+};
 
 function promptYN(question) {
   if (!process.stdin.isTTY) return true; // non-interactive: default yes
@@ -118,10 +123,11 @@ function promptYN(question) {
 
 function getHookDrift() {
   const pairs = [
-    ['specialists-main-guard.mjs', HOOK_FILE],
-    ['beads-edit-gate.mjs',        BEADS_EDIT_GATE_FILE],
-    ['beads-commit-gate.mjs',      BEADS_COMMIT_GATE_FILE],
-    ['beads-stop-gate.mjs',        BEADS_STOP_GATE_FILE],
+    ['specialists-main-guard.mjs',       HOOK_FILE],
+    ['beads-edit-gate.mjs',              BEADS_EDIT_GATE_FILE],
+    ['beads-commit-gate.mjs',            BEADS_COMMIT_GATE_FILE],
+    ['beads-stop-gate.mjs',              BEADS_STOP_GATE_FILE],
+    ['beads-close-memory-prompt.mjs',    BEADS_CLOSE_MEMORY_PROMPT_FILE],
   ];
   return pairs
     .map(([bundled, dest]) => ({
@@ -147,6 +153,8 @@ function installHook() {
   chmodSync(BEADS_COMMIT_GATE_FILE, 0o755);
   copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-stop-gate.mjs'), BEADS_STOP_GATE_FILE);
   chmodSync(BEADS_STOP_GATE_FILE, 0o755);
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-close-memory-prompt.mjs'), BEADS_CLOSE_MEMORY_PROMPT_FILE);
+  chmodSync(BEADS_CLOSE_MEMORY_PROMPT_FILE, 0o755);
 
   let settings = {};
   if (existsSync(SETTINGS_FILE)) {
@@ -167,6 +175,13 @@ function installHook() {
   settings.hooks.PreToolUse.push(HOOK_ENTRY);
   settings.hooks.PreToolUse.push(BEADS_EDIT_GATE_ENTRY);
   settings.hooks.PreToolUse.push(BEADS_COMMIT_GATE_ENTRY);
+
+  // PostToolUse — replace any existing beads-close-memory-prompt entry
+  if (!Array.isArray(settings.hooks.PostToolUse)) settings.hooks.PostToolUse = [];
+  settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(e =>
+    !e.hooks?.some(h => h.command?.includes('beads-close-memory-prompt'))
+  );
+  settings.hooks.PostToolUse.push(BEADS_CLOSE_MEMORY_PROMPT_ENTRY);
 
   // Stop — replace any existing beads-stop-gate entry
   if (!Array.isArray(settings.hooks.Stop)) settings.hooks.Stop = [];
