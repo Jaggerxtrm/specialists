@@ -7,7 +7,8 @@
   "files": [
     "dist/index.js",
     "bin/install.js",
-    "specialists/"
+    "specialists/",
+    "hooks/"
   ],
   "bin": {
     "specialists": "dist/index.js",

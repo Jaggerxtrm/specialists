@@ -18,6 +18,7 @@ const GITHUB_PKG      = '@jaggerxtrm/specialists';
 
 // Bundled specialists dir — resolved relative to this file (bin/../specialists/)
 const BUNDLED_SPECIALISTS_DIR = new URL('../specialists', import.meta.url).pathname;
+const BUNDLED_HOOKS_DIR       = new URL('../hooks', import.meta.url).pathname;
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 const dim    = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -81,40 +82,6 @@ function registerMCP() {
 
 // ── Hook installation ─────────────────────────────────────────────────────────
 
-const HOOK_SCRIPT = `#!/usr/bin/env node
-// specialists — Claude Code PreToolUse hook
-// Blocks writes and git commit/push on main/master branch.
-// Exit 0: allow  |  Exit 2: block (message shown to user)
-//
-// Installed by: npx --package=@jaggerxtrm/specialists install
-
-import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-
-let branch = '';
-try {
-  branch = execSync('git branch --show-current', {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  }).trim();
-} catch {}
-
-if (!branch || (branch !== 'main' && branch !== 'master')) {
-  process.exit(0);
-}
-
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const tool = input.tool_name ?? '';
-const blockMsg =
-  \`⛔ Direct edits on '\${branch}' are not allowed.\\n\` +
-  \`Create a feature branch first: git checkout -b feature/<name>\`;
-
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 if (WRITE_TOOLS.has(tool)) {
@@ -143,164 +110,6 @@ const BEADS_EDIT_GATE_FILE   = join(HOOKS_DIR, 'beads-edit-gate.mjs');
 const BEADS_COMMIT_GATE_FILE = join(HOOKS_DIR, 'beads-commit-gate.mjs');
 const BEADS_STOP_GATE_FILE   = join(HOOKS_DIR, 'beads-stop-gate.mjs');
 
-const BEADS_EDIT_GATE_SCRIPT = `#!/usr/bin/env node
-// beads-edit-gate — Claude Code PreToolUse hook
-// Blocks file edits when no beads issue is in_progress.
-// Only active in projects with a .beads/ directory.
-// Exit 0: allow  |  Exit 2: block (stderr shown to Claude)
-//
-// Installed by: npx --package=@jaggerxtrm/specialists install
-
-import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const cwd = input.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-if (!existsSync(join(cwd, '.beads'))) process.exit(0);
-
-let inProgress = 0;
-try {
-  const output = execSync('bd list --status=in_progress', {
-    encoding: 'utf8',
-    cwd,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 8000,
-  });
-  inProgress = (output.match(/in_progress/g) ?? []).length;
-} catch {
-  process.exit(0);
-}
-
-if (inProgress === 0) {
-  process.stderr.write(
-    '\\u{1F6AB} BEADS GATE: No in_progress issue tracked.\\n' +
-    'You MUST create and claim a beads issue BEFORE editing any file:\\n\\n' +
-    '  bd create --title="<task summary>" --type=task --priority=2\\n' +
-    '  bd update <id> --status=in_progress\\n\\n' +
-    'No exceptions. Momentum is not an excuse.\\n'
-  );
-  process.exit(2);
-}
-
-process.exit(0);
-`;
-
-const BEADS_COMMIT_GATE_SCRIPT = `#!/usr/bin/env node
-// beads-commit-gate — Claude Code PreToolUse hook
-// Blocks \`git commit\` when in_progress beads issues still exist.
-// Forces: close issues first, THEN commit.
-// Exit 0: allow  |  Exit 2: block (stderr shown to Claude)
-//
-// Installed by: npx --package=@jaggerxtrm/specialists install
-
-import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const tool = input.tool_name ?? '';
-if (tool !== 'Bash') process.exit(0);
-
-const cmd = input.tool_input?.command ?? '';
-if (!/\\bgit\\s+commit\\b/.test(cmd)) process.exit(0);
-
-const cwd = input.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-if (!existsSync(join(cwd, '.beads'))) process.exit(0);
-
-let inProgress = 0;
-let summary = '';
-try {
-  const output = execSync('bd list --status=in_progress', {
-    encoding: 'utf8',
-    cwd,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 8000,
-  });
-  inProgress = (output.match(/in_progress/g) ?? []).length;
-  summary = output.trim();
-} catch {
-  process.exit(0);
-}
-
-if (inProgress > 0) {
-  process.stderr.write(
-    '\\u{1F6AB} BEADS GATE: Cannot commit with open in_progress issues.\\n' +
-    'Close them first, THEN commit:\\n\\n' +
-    '  bd close <id1> <id2> ...\\n' +
-    '  git add <files> && git commit -m "..."\\n\\n' +
-    \`Open issues:\\n\${summary}\\n\`
-  );
-  process.exit(2);
-}
-
-process.exit(0);
-`;
-
-const BEADS_STOP_GATE_SCRIPT = `#!/usr/bin/env node
-// beads-stop-gate — Claude Code Stop hook
-// Blocks the agent from stopping when in_progress beads issues remain.
-// Forces the session close protocol before declaring done.
-// Exit 0: allow stop  |  Exit 2: block stop (stderr shown to Claude)
-//
-// Installed by: npx --package=@jaggerxtrm/specialists install
-
-import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-let input;
-try {
-  input = JSON.parse(readFileSync(0, 'utf8'));
-} catch {
-  process.exit(0);
-}
-
-const cwd = input.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-if (!existsSync(join(cwd, '.beads'))) process.exit(0);
-
-let inProgress = 0;
-let summary = '';
-try {
-  const output = execSync('bd list --status=in_progress', {
-    encoding: 'utf8',
-    cwd,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: 8000,
-  });
-  inProgress = (output.match(/in_progress/g) ?? []).length;
-  summary = output.trim();
-} catch {
-  process.exit(0);
-}
-
-if (inProgress > 0) {
-  process.stderr.write(
-    '\\u{1F6AB} BEADS STOP GATE: Cannot stop with unresolved in_progress issues.\\n' +
-    'Complete the session close protocol:\\n\\n' +
-    '  bd close <id1> <id2> ...\\n' +
-    '  git add <files> && git commit -m "..."\\n' +
-    '  git push\\n\\n' +
-    \`Open issues:\\n\${summary}\\n\`
-  );
-  process.exit(2);
-}
-
-process.exit(0);
-`;
-
 const BEADS_EDIT_GATE_ENTRY = {
   matcher: 'Edit|Write|MultiEdit|NotebookEdit|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol',
   hooks: [{ type: 'command', command: BEADS_EDIT_GATE_FILE, timeout: 10000 }],
@@ -316,14 +125,14 @@ const BEADS_STOP_GATE_ENTRY = {
 function installHook() {
   mkdirSync(HOOKS_DIR, { recursive: true });
 
-  // Write all hook files
-  writeFileSync(HOOK_FILE, HOOK_SCRIPT, 'utf8');
+  // Copy hook files from bundled hooks/ directory
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'specialists-main-guard.mjs'), HOOK_FILE);
   chmodSync(HOOK_FILE, 0o755);
-  writeFileSync(BEADS_EDIT_GATE_FILE, BEADS_EDIT_GATE_SCRIPT, 'utf8');
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-edit-gate.mjs'), BEADS_EDIT_GATE_FILE);
   chmodSync(BEADS_EDIT_GATE_FILE, 0o755);
-  writeFileSync(BEADS_COMMIT_GATE_FILE, BEADS_COMMIT_GATE_SCRIPT, 'utf8');
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-commit-gate.mjs'), BEADS_COMMIT_GATE_FILE);
   chmodSync(BEADS_COMMIT_GATE_FILE, 0o755);
-  writeFileSync(BEADS_STOP_GATE_FILE, BEADS_STOP_GATE_SCRIPT, 'utf8');
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-stop-gate.mjs'), BEADS_STOP_GATE_FILE);
   chmodSync(BEADS_STOP_GATE_FILE, 0o755);
 
   let settings = {};
@@ -427,7 +236,7 @@ installHook();
 hookExisted
   ? ok('hooks updated (main-guard + beads gates)')
   : ok('hooks installed → ~/.claude/hooks/');
-info('main-guard: blocks Edit/Write/git commit/push on main or master branch');
+info('main-guard: blocks file edits and direct master pushes (enforces PR workflow)');
 info('beads-edit-gate: requires in_progress bead before editing files');
 info('beads-commit-gate: requires issues closed before git commit');
 info('beads-stop-gate: requires issues closed before session end');
