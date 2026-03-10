@@ -79,15 +79,18 @@ export async function run(): Promise<void> {
     return;
   }
 
-  const nameWidth  = Math.max(...specialists.map(s => s.name.length),  4);
-  const modelWidth = Math.max(...specialists.map(s => s.model.length), 5);
+  const nameWidth = Math.max(...specialists.map(s => s.name.length), 4);
 
   console.log(`\n${bold(`Specialists (${specialists.length})`)}\n`);
   for (const s of specialists) {
     const name     = cyan(s.name.padEnd(nameWidth));
-    const model    = dim(s.model.padEnd(modelWidth));
     const scopeTag = yellow(`[${s.scope}]`);
-    console.log(`  ${name}  ${model}  ${s.description}  ${scopeTag}`);
+    const model    = dim(s.model);
+    const desc     = s.description.length > 80
+      ? s.description.slice(0, 79) + '…'
+      : s.description;
+    console.log(`  ${name}  ${scopeTag}  ${model}`);
+    console.log(`  ${' '.repeat(nameWidth)}  ${dim(desc)}`);
+    console.log();
   }
-  console.log();
 }
