@@ -26,6 +26,11 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'models') {
+    const { run: handler } = await import('./cli/models.js');
+    return handler();
+  }
+
   if (sub === 'init') {
     const { run: handler } = await import('./cli/init.js');
     return handler();
