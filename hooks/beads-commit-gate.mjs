@@ -4,7 +4,7 @@
 // Forces: close issues first, THEN commit.
 // Exit 0: allow  |  Exit 2: block (stderr shown to Claude)
 //
-// Installed by: npx --package=@jaggerxtrm/specialists install
+// Installed by: specialists install
 
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -43,11 +43,14 @@ try {
 
 if (inProgress > 0) {
   process.stderr.write(
-    '\u{1F6AB} BEADS GATE: Cannot commit with open in_progress issues.\n' +
-    'Close them first, THEN commit:\n\n' +
-    '  bd close <id1> <id2> ...\n' +
-    '  git add <files> && git commit -m "..."\n\n' +
-    `Open issues:\n${summary}\n`
+    '🚫 BEADS GATE: Close open issues before committing.\n\n' +
+    `Open issues:\n${summary}\n\n` +
+    'Next steps:\n' +
+    '  3. bd close <id1> <id2> ...             ← you are here\n' +
+    '  4. git add <files> && git commit -m "..."\n' +
+    '  5. git push -u origin <feature-branch>\n' +
+    '  6. gh pr create --fill && gh pr merge --squash\n' +
+    '  7. git checkout master && git reset --hard origin/master\n'
   );
   process.exit(2);
 }

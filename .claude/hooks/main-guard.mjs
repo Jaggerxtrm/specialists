@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Claude Code PreToolUse hook — block writes/commits on main/master
+// Claude Code PreToolUse hook — block writes and direct master pushes
 // Exit 0: allow  |  Exit 2: block (message shown to user)
 //
-// Receives JSON on stdin: {"tool_name": "...", "tool_input": {...}}
+// Installed by: specialists install
 
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -28,14 +28,21 @@ try {
 }
 
 const tool = input.tool_name ?? '';
-const blockMsg =
-  `⛔ Direct edits on '${branch}' are not allowed.\n` +
-  `Create a feature branch first: git checkout -b feature/<name>`;
 
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 if (WRITE_TOOLS.has(tool)) {
-  process.stderr.write(blockMsg + '\n');
+  process.stderr.write(
+    `⛔ You are on '${branch}' — never edit files directly on master.\n\n` +
+    'Full workflow:\n' +
+    '  1. git checkout -b feature/<name>         ← start here\n' +
+    '  2. bd create + bd update in_progress      track your work\n' +
+    '  3. Edit files / write code\n' +
+    '  4. bd close <id> && git add && git commit\n' +
+    '  5. git push -u origin feature/<name>\n' +
+    '  6. gh pr create --fill && gh pr merge --squash\n' +
+    '  7. git checkout master && git reset --hard origin/master\n'
+  );
   process.exit(2);
 }
 
@@ -45,17 +52,19 @@ if (tool === 'Bash') {
   if (/^git push/.test(cmd)) {
     const tokens = cmd.split(' ');
     const lastToken = tokens[tokens.length - 1];
-    // Block if explicitly targeting master/main
     const explicitMaster = /^(master|main)$/.test(lastToken) || /:(master|main)$/.test(lastToken);
-    // Block if bare push (no explicit branch) while sitting on master/main
     const impliedMaster = tokens.length <= 3 && (branch === 'main' || branch === 'master');
     if (explicitMaster || impliedMaster) {
       process.stderr.write(
-        `⛔ Direct push to '${branch}' is not allowed.\n` +
-        `Use the PR workflow instead:\n` +
-        `  git push -u origin <feature-branch>\n` +
-        `  gh pr create --fill\n` +
-        `  gh pr merge --squash\n`
+        `⛔ Don't push directly to '${branch}' — use the PR workflow.\n\n` +
+        'Next steps:\n' +
+        '  5. git push -u origin <feature-branch>     ← push your branch\n' +
+        '  6. gh pr create --fill                      create PR\n' +
+        '     gh pr merge --squash                     merge it\n' +
+        '  7. git checkout master                      sync master\n' +
+        '     git reset --hard origin/master\n\n' +
+        'If you\'re not on a feature branch yet:\n' +
+        '  git checkout -b feature/<name>    (then re-commit and push)\n'
       );
       process.exit(2);
     }

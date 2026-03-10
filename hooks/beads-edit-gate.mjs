@@ -4,7 +4,7 @@
 // Only active in projects with a .beads/ directory.
 // Exit 0: allow  |  Exit 2: block (stderr shown to Claude)
 //
-// Installed by: npx --package=@jaggerxtrm/specialists install
+// Installed by: specialists install
 
 import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -35,11 +35,17 @@ try {
 
 if (inProgress === 0) {
   process.stderr.write(
-    '\u{1F6AB} BEADS GATE: No in_progress issue tracked.\n' +
-    'You MUST create and claim a beads issue BEFORE editing any file:\n\n' +
-    '  bd create --title="<task summary>" --type=task --priority=2\n' +
+    '🚫 BEADS GATE: No active issue — create one before editing files.\n\n' +
+    '  bd create --title="<what you\'re doing>" --type=task --priority=2\n' +
     '  bd update <id> --status=in_progress\n\n' +
-    'No exceptions. Momentum is not an excuse.\n'
+    'Full workflow (do this every session):\n' +
+    '  1. bd create + bd update in_progress   ← you are here\n' +
+    '  2. Edit files / write code\n' +
+    '  3. bd close <id>                        close when done\n' +
+    '  4. git add <files> && git commit\n' +
+    '  5. git push -u origin <feature-branch>\n' +
+    '  6. gh pr create --fill && gh pr merge --squash\n' +
+    '  7. git checkout master && git reset --hard origin/master\n'
   );
   process.exit(2);
 }
