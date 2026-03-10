@@ -39,12 +39,4 @@ if (WRITE_TOOLS.has(tool)) {
   process.exit(2);
 }
 
-if (tool === 'Bash') {
-  const cmd = input.tool_input?.command ?? '';
-  if (/^git (commit|push)/.test(cmd)) {
-    process.stderr.write(blockMsg + '\n');
-    process.exit(2);
-  }
-}
-
 process.exit(0);
