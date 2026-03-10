@@ -7,6 +7,7 @@ const dim  = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const COMMANDS: [string, string][] = [
   ['install', 'Full-stack installer: pi, beads, dolt, MCP registration, hooks'],
   ['list',    'List available specialists with model and description'],
+  ['models',  'List models available on pi, flagged with thinking/images support'],
   ['version', 'Print installed version'],
   ['init',    'Initialize specialists in the current project'],
   ['edit',    'Edit a specialist field  (e.g. --model, --description)'],

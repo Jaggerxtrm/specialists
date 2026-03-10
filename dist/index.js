@@ -18242,23 +18242,128 @@ var init_list = __esm(() => {
   };
 });
 
+// src/cli/models.ts
+var exports_models = {};
+__export(exports_models, {
+  run: () => run4
+});
+import { spawnSync as spawnSync3 } from "node:child_process";
+function parsePiModels() {
+  const r = spawnSync3("pi", ["--list-models"], {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 8000
+  });
+  if (r.status !== 0 || r.error)
+    return null;
+  return r.stdout.split(`
+`).slice(1).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const cols = line.split(/\s+/);
+    return {
+      provider: cols[0] ?? "",
+      model: cols[1] ?? "",
+      context: cols[2] ?? "",
+      maxOut: cols[3] ?? "",
+      thinking: cols[4] === "yes",
+      images: cols[5] === "yes"
+    };
+  }).filter((m) => m.provider && m.model);
+}
+function parseArgs2(argv) {
+  const out = {};
+  for (let i = 0;i < argv.length; i++) {
+    if (argv[i] === "--provider" && argv[i + 1]) {
+      out.provider = argv[++i];
+      continue;
+    }
+    if (argv[i] === "--used") {
+      out.used = true;
+      continue;
+    }
+  }
+  return out;
+}
+async function run4() {
+  const args = parseArgs2(process.argv.slice(3));
+  const loader = new SpecialistLoader;
+  const specialists = await loader.list();
+  const usedBy = new Map;
+  for (const s of specialists) {
+    const key = s.model;
+    if (!usedBy.has(key))
+      usedBy.set(key, []);
+    usedBy.get(key).push(s.name);
+  }
+  const allModels = parsePiModels();
+  if (!allModels) {
+    console.error("pi not found or failed — run specialists install");
+    process.exit(1);
+  }
+  let models = allModels;
+  if (args.provider) {
+    models = models.filter((m) => m.provider.toLowerCase().includes(args.provider.toLowerCase()));
+  }
+  if (args.used) {
+    models = models.filter((m) => usedBy.has(`${m.provider}/${m.model}`));
+  }
+  if (models.length === 0) {
+    console.log("No models match.");
+    return;
+  }
+  const byProvider = new Map;
+  for (const m of models) {
+    if (!byProvider.has(m.provider))
+      byProvider.set(m.provider, []);
+    byProvider.get(m.provider).push(m);
+  }
+  const total = models.length;
+  console.log(`
+${bold2(`Models on pi`)}  ${dim2(`(${total} total)`)}
+`);
+  for (const [provider, pModels] of byProvider) {
+    console.log(`  ${cyan2(provider)}  ${dim2(`${pModels.length} model${pModels.length !== 1 ? "s" : ""}`)}`);
+    const modelWidth = Math.max(...pModels.map((m) => m.model.length));
+    for (const m of pModels) {
+      const key = `${m.provider}/${m.model}`;
+      const inUse = usedBy.get(key);
+      const flags = [
+        m.thinking ? green("thinking") : dim2("·"),
+        m.images ? dim2("images") : ""
+      ].filter(Boolean).join("  ");
+      const ctx = dim2(`ctx ${m.context}`);
+      const usedLabel = inUse ? `  ${yellow2("←")} ${dim2(inUse.join(", "))}` : "";
+      console.log(`    ${m.model.padEnd(modelWidth)}  ${ctx.padEnd(18)}  ${flags}${usedLabel}`);
+    }
+    console.log();
+  }
+  if (!args.used) {
+    console.log(dim2(`  --provider <name>  filter by provider`));
+    console.log(dim2(`  --used             only show models used by your specialists`));
+    console.log();
+  }
+}
+var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, cyan2 = (s) => `\x1B[36m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`;
+var init_models = __esm(() => {
+  init_loader();
+});
+
 // src/cli/init.ts
 var exports_init = {};
 __export(exports_init, {
-  run: () => run4
+  run: () => run5
 });
 import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join as join5 } from "node:path";
 function ok(msg) {
-  console.log(`  ${green("✓")} ${msg}`);
+  console.log(`  ${green2("✓")} ${msg}`);
 }
 function skip(msg) {
-  console.log(`  ${yellow2("○")} ${msg}`);
+  console.log(`  ${yellow3("○")} ${msg}`);
 }
-async function run4() {
+async function run5() {
   const cwd = process.cwd();
   console.log(`
-${bold2("specialists init")}
+${bold3("specialists init")}
 `);
   const specialistsDir = join5(cwd, "specialists");
   if (existsSync3(specialistsDir)) {
@@ -18283,15 +18388,15 @@ ${bold2("specialists init")}
     ok("created AGENTS.md with Specialists section");
   }
   console.log(`
-${bold2("Done!")}
+${bold3("Done!")}
 `);
-  console.log(`  ${dim2("Next steps:")}`);
-  console.log(`  1. Add your specialists to ${yellow2("specialists/")}`);
-  console.log(`  2. Run ${yellow2("specialists list")} to verify they are discovered`);
+  console.log(`  ${dim3("Next steps:")}`);
+  console.log(`  1. Add your specialists to ${yellow3("specialists/")}`);
+  console.log(`  2. Run ${yellow3("specialists list")} to verify they are discovered`);
   console.log(`  3. Restart Claude Code to pick up AGENTS.md changes
 `);
 }
-var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists";
+var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists";
 var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
@@ -18306,10 +18411,10 @@ specialist without user intervention.
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run5
+  run: () => run6
 });
 import { readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
-function parseArgs2(argv) {
+function parseArgs3(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
     console.error("Usage: specialists edit <name> --<field> <value> [--dry-run]");
@@ -18371,8 +18476,8 @@ function setIn(doc2, path, value) {
     node.set(leaf, value);
   }
 }
-async function run5() {
-  const args = parseArgs2(process.argv.slice(3));
+async function run6() {
+  const args = parseArgs3(process.argv.slice(3));
   const { name, field, value, dryRun, scope } = args;
   const loader = new SpecialistLoader;
   const all = await loader.list();
@@ -18380,7 +18485,7 @@ async function run5() {
   if (!match) {
     const hint = scope ? ` (scope: ${scope})` : "";
     console.error(`Error: specialist "${name}" not found${hint}`);
-    console.error(`  Run ${yellow3("specialists list")} to see available specialists`);
+    console.error(`  Run ${yellow4("specialists list")} to see available specialists`);
     process.exit(1);
   }
   const raw = readFileSync2(match.filePath, "utf-8");
@@ -18396,10 +18501,10 @@ async function run5() {
   const updated = doc2.toString();
   if (dryRun) {
     console.log(`
-${bold3(`[dry-run] ${match.filePath}`)}
+${bold4(`[dry-run] ${match.filePath}`)}
 `);
-    console.log(dim3("--- current"));
-    console.log(dim3(`+++ updated`));
+    console.log(dim4("--- current"));
+    console.log(dim4(`+++ updated`));
     const oldLines = raw.split(`
 `);
     const newLines = updated.split(`
@@ -18407,8 +18512,8 @@ ${bold3(`[dry-run] ${match.filePath}`)}
     newLines.forEach((line, i) => {
       if (line !== oldLines[i]) {
         if (oldLines[i] !== undefined)
-          console.log(dim3(`- ${oldLines[i]}`));
-        console.log(green2(`+ ${line}`));
+          console.log(dim4(`- ${oldLines[i]}`));
+        console.log(green3(`+ ${line}`));
       }
     });
     console.log();
@@ -18416,9 +18521,9 @@ ${bold3(`[dry-run] ${match.filePath}`)}
   }
   writeFileSync2(match.filePath, updated, "utf-8");
   const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
-  console.log(`${green2("✓")} ${bold3(name)}: ${yellow3(field)} = ${displayValue}` + dim3(` (${match.filePath})`));
+  console.log(`${green3("✓")} ${bold4(name)}: ${yellow4(field)} = ${displayValue}` + dim4(` (${match.filePath})`));
 }
-var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
 var init_edit = __esm(() => {
   init_dist();
   init_loader();
@@ -18436,10 +18541,10 @@ var init_edit = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run6
+  run: () => run7
 });
 import { join as join6 } from "node:path";
-async function parseArgs3(argv) {
+async function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
     console.error('Usage: specialists run <name> [--prompt "..."] [--model <model>] [--no-beads]');
@@ -18465,7 +18570,7 @@ async function parseArgs3(argv) {
   }
   if (!prompt) {
     if (process.stdin.isTTY) {
-      process.stderr.write(dim4("Prompt (Ctrl+D when done): "));
+      process.stderr.write(dim5("Prompt (Ctrl+D when done): "));
     }
     prompt = await new Promise((resolve) => {
       let buf = "";
@@ -18478,8 +18583,8 @@ async function parseArgs3(argv) {
   }
   return { name, prompt, model, noBeads };
 }
-async function run6() {
-  const args = await parseArgs3(process.argv.slice(3));
+async function run7() {
+  const args = await parseArgs4(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
   const hooks = new HookEmitter({ tracePath: join6(process.cwd(), ".specialists", "trace.jsonl") });
@@ -18491,7 +18596,7 @@ async function run6() {
     beadsClient: beadsClient ?? undefined
   });
   process.stderr.write(`
-${bold4(`Running ${cyan2(args.name)}`)}
+${bold5(`Running ${cyan3(args.name)}`)}
 
 `);
   let beadId;
@@ -18499,7 +18604,7 @@ ${bold4(`Running ${cyan2(args.name)}`)}
     name: args.name,
     prompt: args.prompt,
     backendOverride: args.model
-  }, (delta) => process.stdout.write(delta), undefined, (meta) => process.stderr.write(dim4(`
+  }, (delta) => process.stdout.write(delta), undefined, (meta) => process.stderr.write(dim5(`
 [${meta.backend} / ${meta.model}]
 
 `)), (killFn) => {
@@ -18513,7 +18618,7 @@ Interrupted.
     });
   }, (id) => {
     beadId = id;
-    process.stderr.write(dim4(`
+    process.stderr.write(dim5(`
 [bead: ${id}]
 `));
   });
@@ -18525,14 +18630,14 @@ Interrupted.
   const footer = [
     beadId ? `bead ${beadId}` : "",
     `${secs}s`,
-    dim4(result.model)
+    dim5(result.model)
   ].filter(Boolean).join("  ");
   process.stderr.write(`
-${green3("✓")} ${footer}
+${green4("✓")} ${footer}
 
 `);
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, cyan2 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -18543,30 +18648,30 @@ var init_run = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run7
+  run: () => run8
 });
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { existsSync as existsSync4 } from "node:fs";
 import { join as join7 } from "node:path";
 function ok2(msg) {
-  console.log(`  ${green4("✓")} ${msg}`);
+  console.log(`  ${green5("✓")} ${msg}`);
 }
 function warn(msg) {
-  console.log(`  ${yellow4("○")} ${msg}`);
+  console.log(`  ${yellow5("○")} ${msg}`);
 }
 function fail(msg) {
   console.log(`  ${red("✗")} ${msg}`);
 }
 function info(msg) {
-  console.log(`  ${dim5(msg)}`);
+  console.log(`  ${dim6(msg)}`);
 }
 function section(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold5(`── ${label} ${line}`)}`);
+${bold6(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync3(bin, args, {
+  const r = spawnSync4(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -18574,69 +18679,69 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync3("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync4("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
-async function run7() {
+async function run8() {
   console.log(`
-${bold5("specialists status")}
+${bold6("specialists status")}
 `);
   section("Specialists");
   const loader = new SpecialistLoader;
   const all = await loader.list();
   if (all.length === 0) {
-    warn(`no specialists found — run ${yellow4("specialists init")} to scaffold`);
+    warn(`no specialists found — run ${yellow5("specialists init")} to scaffold`);
   } else {
     const byScope = all.reduce((acc, s) => {
       acc[s.scope] = (acc[s.scope] ?? 0) + 1;
       return acc;
     }, {});
     const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
-    ok2(`${all.length} found  ${dim5(`(${scopeSummary})`)}`);
+    ok2(`${all.length} found  ${dim6(`(${scopeSummary})`)}`);
     for (const s of all) {
       const staleness = await checkStaleness(s);
       if (staleness === "AGED") {
-        warn(`${s.name}  ${red("AGED")}  ${dim5(s.scope)}`);
+        warn(`${s.name}  ${red("AGED")}  ${dim6(s.scope)}`);
       } else if (staleness === "STALE") {
-        warn(`${s.name}  ${yellow4("STALE")}  ${dim5(s.scope)}`);
+        warn(`${s.name}  ${yellow5("STALE")}  ${dim6(s.scope)}`);
       }
     }
   }
   section("pi  (coding agent runtime)");
   if (!isInstalled("pi")) {
-    fail(`pi not installed — run ${yellow4("specialists install")}`);
+    fail(`pi not installed — run ${yellow5("specialists install")}`);
   } else {
     const version2 = cmd("pi", ["--version"]);
     const models = cmd("pi", ["--list-models"]);
     const providers = new Set(models.stdout.split(`
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean));
     const vStr = version2.ok ? `v${version2.stdout}` : "unknown version";
-    const pStr = providers.size > 0 ? `${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim5(`(${[...providers].join(", ")})`)} ` : yellow4("no providers configured — run pi config");
+    const pStr = providers.size > 0 ? `${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim6(`(${[...providers].join(", ")})`)} ` : yellow5("no providers configured — run pi config");
     ok2(`${vStr}  —  ${pStr}`);
   }
   section("beads  (issue tracker)");
   if (!isInstalled("bd")) {
-    fail(`bd not installed — run ${yellow4("specialists install")}`);
+    fail(`bd not installed — run ${yellow5("specialists install")}`);
   } else {
     const bdVersion = cmd("bd", ["--version"]);
-    ok2(`bd installed${bdVersion.ok ? `  ${dim5(bdVersion.stdout)}` : ""}`);
+    ok2(`bd installed${bdVersion.ok ? `  ${dim6(bdVersion.stdout)}` : ""}`);
     if (existsSync4(join7(process.cwd(), ".beads"))) {
       ok2(".beads/ present in project");
     } else {
-      warn(`.beads/ not found — run ${yellow4("bd init")} to enable issue tracking`);
+      warn(`.beads/ not found — run ${yellow5("bd init")} to enable issue tracking`);
     }
   }
   section("MCP");
   const specialistsBin = cmd("which", ["specialists"]);
   if (!specialistsBin.ok) {
-    fail(`specialists not installed globally — run ${yellow4("npm install -g @jaggerxtrm/specialists")}`);
+    fail(`specialists not installed globally — run ${yellow5("npm install -g @jaggerxtrm/specialists")}`);
   } else {
-    ok2(`specialists binary installed  ${dim5(specialistsBin.stdout)}`);
+    ok2(`specialists binary installed  ${dim6(specialistsBin.stdout)}`);
     info(`verify registration: claude mcp get specialists`);
     info(`re-register:         specialists install`);
   }
   console.log();
 }
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`;
+var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_status = __esm(() => {
   init_loader();
 });
@@ -18644,27 +18749,28 @@ var init_status = __esm(() => {
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run8
+  run: () => run9
 });
-async function run8() {
+async function run9() {
   const lines = [
     "",
-    bold6("specialists <command>"),
+    bold7("specialists <command>"),
     "",
     "Commands:",
-    ...COMMANDS.map(([cmd2, desc]) => `  ${cmd2.padEnd(COL_WIDTH)}    ${dim6(desc)}`),
+    ...COMMANDS.map(([cmd2, desc]) => `  ${cmd2.padEnd(COL_WIDTH)}    ${dim7(desc)}`),
     "",
-    dim6("Run 'specialists <command> --help' for command-specific options."),
+    dim7("Run 'specialists <command> --help' for command-specific options."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
 var init_help = __esm(() => {
   COMMANDS = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
     ["list", "List available specialists with model and description"],
+    ["models", "List models available on pi, flagged with thinking/images support"],
     ["version", "Print installed version"],
     ["init", "Initialize specialists in the current project"],
     ["edit", "Edit a specialist field  (e.g. --model, --description)"],
@@ -26417,7 +26523,7 @@ class SpecialistsServer {
 
 // src/index.ts
 var sub = process.argv[2];
-async function run9() {
+async function run10() {
   if (sub === "install") {
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
@@ -26428,6 +26534,10 @@ async function run9() {
   }
   if (sub === "list") {
     const { run: handler } = await Promise.resolve().then(() => (init_list(), exports_list));
+    return handler();
+  }
+  if (sub === "models") {
+    const { run: handler } = await Promise.resolve().then(() => (init_models(), exports_models));
     return handler();
   }
   if (sub === "init") {
@@ -26459,7 +26569,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run9().catch((error2) => {
+run10().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
