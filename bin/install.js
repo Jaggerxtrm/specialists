@@ -122,6 +122,36 @@ const BEADS_STOP_GATE_ENTRY = {
   hooks: [{ type: 'command', command: BEADS_STOP_GATE_FILE, timeout: 10000 }],
 };
 
+function promptYN(question) {
+  if (!process.stdin.isTTY) return true; // non-interactive: default yes
+  process.stdout.write(`${question} [Y/n]: `);
+  const r = spawnSync('/bin/sh', ['-c', 'read ans; printf "%s" "$ans"'], {
+    stdio: ['inherit', 'pipe', 'inherit'],
+    encoding: 'utf8',
+  });
+  const ans = (r.stdout ?? '').trim().toLowerCase();
+  return ans === '' || ans === 'y' || ans === 'yes';
+}
+
+function getHookDrift() {
+  const pairs = [
+    ['specialists-main-guard.mjs', HOOK_FILE],
+    ['beads-edit-gate.mjs',        BEADS_EDIT_GATE_FILE],
+    ['beads-commit-gate.mjs',      BEADS_COMMIT_GATE_FILE],
+    ['beads-stop-gate.mjs',        BEADS_STOP_GATE_FILE],
+  ];
+  return pairs
+    .map(([bundled, dest]) => ({
+      name: bundled,
+      dest,
+      missing: !existsSync(dest),
+      changed: existsSync(dest) &&
+        readFileSync(join(BUNDLED_HOOKS_DIR, bundled), 'utf8') !==
+        readFileSync(dest, 'utf8'),
+    }))
+    .filter(h => h.missing || h.changed);
+}
+
 function installHook() {
   mkdirSync(HOOKS_DIR, { recursive: true });
 
@@ -231,11 +261,27 @@ info('Edit any .specialist.yaml in ~/.agents/specialists/ to customise models, p
 
 // 6. Claude Code hooks
 section('Claude Code hooks');
-const hookExisted = existsSync(HOOK_FILE);
-installHook();
-hookExisted
-  ? ok('hooks updated (main-guard + beads gates)')
-  : ok('hooks installed → ~/.claude/hooks/');
+const drift = getHookDrift();
+const hooksExist = existsSync(HOOK_FILE);
+
+if (!hooksExist) {
+  installHook();
+  ok('hooks installed → ~/.claude/hooks/');
+} else if (drift.length === 0) {
+  skip('hooks up to date');
+} else {
+  const label = (h) => h.missing ? red('missing') : yellow('updated');
+  console.log(`  ${yellow('○')} ${drift.length} of 4 hook(s) have changes:`);
+  for (const h of drift) info(`      ${h.name}  ${label(h)}`);
+  console.log();
+  const confirmed = promptYN('  Update hooks?');
+  if (confirmed) {
+    installHook();
+    ok('hooks updated');
+  } else {
+    skip('hooks update skipped');
+  }
+}
 info('main-guard: blocks file edits and direct master pushes (enforces PR workflow)');
 info('beads-edit-gate: requires in_progress bead before editing files');
 info('beads-commit-gate: requires issues closed before git commit');
