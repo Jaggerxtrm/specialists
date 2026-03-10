@@ -82,23 +82,6 @@ function registerMCP() {
 
 // ── Hook installation ─────────────────────────────────────────────────────────
 
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-
-if (WRITE_TOOLS.has(tool)) {
-  process.stderr.write(blockMsg + '\\n');
-  process.exit(2);
-}
-
-if (tool === 'Bash') {
-  const cmd = input.tool_input?.command ?? '';
-  if (/^git (commit|push)/.test(cmd)) {
-    process.stderr.write(blockMsg + '\\n');
-    process.exit(2);
-  }
-}
-
-process.exit(0);
-`;
 
 const HOOK_ENTRY = {
   matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash',
