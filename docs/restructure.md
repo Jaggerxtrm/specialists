@@ -1,23 +1,24 @@
 # Specialists System — Restructure Findings
 
-> Status: In-progress thinking. Adversarial critique running via overthinker specialist.
+> Status: Decision reached. See Section 7 for the chosen path.
 > Updated: 2026-03-10
+> Adversarial critique: overthinker specialist, job `50bbf162`, Sonnet 4.6, 169s
 
 ---
 
 ## 1. The Core Problem
 
-The current execution layer is wrong in two ways:
+The current execution layer has two issues:
 
-1. **`PiAgentSession` manually reimplements what `RpcClient` already provides** — raw subprocess + manual NDJSON line buffering, custom `agent_end` detection, `proc.stdin.end()` hack. This is the source of the split-chunk bug (2.1.5 hotfix) and every future pi protocol change breaking the integration.
+1. **`PiAgentSession` manually reimplements what pi already provides** — raw subprocess + manual NDJSON line buffering, custom `agent_end` detection, `proc.stdin.end()` hack. Source of the split-chunk bug (2.1.5 hotfix) and fragility against any pi protocol change.
 
-2. **MCP is request-response only** — there is no mechanism for the MCP server to push events to Claude. `poll_specialist` requires Claude to call repeatedly, generating tool call noise on every poll, burning context window, and producing a degraded UX.
+2. **MCP is request-response only** — no server-push. `poll_specialist` requires Claude to call repeatedly, generating tool call noise, burning context window, cluttering the UI.
 
 ---
 
 ## 2. What Pi Actually Provides
 
-Source: `badlogic/pi-mono/packages/coding-agent` + direct spec analysis.
+Source: `badlogic/pi-mono/packages/coding-agent` wiki + direct spec analysis.
 
 ### RpcClient (subprocess wrapper)
 
@@ -27,13 +28,13 @@ import { RpcClient } from '@mariozechner/pi/rpc';
 const pi = new RpcClient({ provider: 'anthropic', cwd: sessionDir });
 await pi.start();
 await pi.prompt('Do the task');
-await pi.waitForIdle();                           // blocks until agent_end
+await pi.waitForIdle();
 const { data } = await pi.send({ type: 'get_last_assistant_text' });
 ```
 
-Key methods the current code reimplements manually:
+Methods the current code reimplements manually:
 - `onEvent(listener)` — subscribe to all pi events as they arrive
-- `waitForIdle(timeout?)` — waits for `agent_end`, no polling
+- `waitForIdle(timeout?)` — waits for `agent_end`, no manual polling
 - `collectEvents(timeout?)` — gathers all events until completion
 - `getLastAssistantText()` — clean output retrieval
 
@@ -43,19 +44,18 @@ Key methods the current code reimplements manually:
 import { createAgentSession } from '@mariozechner/pi-coding-agent';
 
 const session = await createAgentSession({ provider: 'anthropic', cwd: '.' });
-session.subscribe((event) => { /* native callbacks, no JSON parsing */ });
+session.subscribe((event) => { /* native TypeScript callbacks */ });
 await session.prompt('Do the task');
 ```
 
-`AgentSession` is the core that all pi modes (interactive, print, RPC) attach to. It can be used **directly as a library** — no subprocess, no NDJSON, no line buffering. Events are native TypeScript callbacks.
+`AgentSession` is the core that all pi modes (interactive, print, RPC) attach to. **Verification required**: whether this is a stable public export or internal only — this determines whether `PiAgentSession` can be replaced cleanly or just improved.
 
 ### Session Persistence
 
 - Sessions stored as branching JSONL in `~/.pi/agent/sessions/`
 - `get_state` RPC → returns `sessionFile` path
 - Resume: `pi --session <path>` CLI flag, or `switch_session` RPC command
-- Fork from any point: `{ type: 'fork', entryId }`
-- Multi-turn: call `prompt()` multiple times on the same instance — full context retained
+- Multi-turn: call `prompt()` multiple times on same instance — full context retained
 
 ---
 
@@ -63,104 +63,146 @@ await session.prompt('Do the task');
 
 ### Why it exists
 
-MCP is request-response. Claude calls `poll_specialist` → MCP server responds → Claude calls again. There is no server-push. The pi process runs fine, but Claude has no way to receive events without asking.
-
-### What we observed in testing
-
-A 30-second specialist run produces 30+ `poll_specialist` tool calls in the conversation. Each call:
-- Appears in Claude's tool history (context pressure)
-- Costs tokens
-- Shows in the Claude Code UI as noise
+MCP is request-response. No server-push mechanism. Claude calls `poll_specialist` → MCP server responds → Claude calls again. A 30-second specialist produces 30+ tool calls, each appearing in the conversation history.
 
 ### wait_ms (long-polling) — does NOT solve async
 
-Adding `wait_ms` to `poll_specialist` reduces call frequency but Claude **still blocks** during each poll. From Claude's perspective it's just `use_specialist` cut into N-second chunks. The specialist runs async; Claude does not.
+Reduces frequency but Claude still blocks during each poll. From Claude's perspective it's `use_specialist` cut into N-second chunks. Specialist runs async; Claude does not.
 
-### Why MCP cannot be fixed here
+### MCP cannot be fixed at the protocol level
 
-MCP notifications exist but cover meta-level events (capability changes), not arbitrary data push. Claude Code does not expose them to Claude as tool inputs. This is a protocol constraint, not an implementation gap.
+MCP notifications exist but cover meta-level events only. This is a constraint, not an implementation gap.
 
 ---
 
-## 4. How Overstory Solves It
+## 4. How Overstory Solves It (Reference)
 
-Overstory bypasses MCP for execution entirely:
-- `Bash(ov sling ...)` → spawns agent in a **tmux session** (returns immediately)
-- SQLite mail system for inter-agent communication
-- **`UserPromptSubmit` hook** injects pending results as a priority banner on next user message
+Overstory bypasses MCP for execution:
+- `Bash(ov sling ...)` → spawns agent in tmux (returns immediately)
+- SQLite mail for inter-agent communication
+- `UserPromptSubmit` hook injects completion notifications
 - Watchdog daemon for health monitoring
 
-Key insight: **hooks are a push channel MCP doesn't have**. The Claude Code hook system can inject context into Claude on any event, including `UserPromptSubmit`. This is the only mechanism available for the server to communicate to Claude without Claude asking first.
+Key insight: hooks are a push channel MCP doesn't have. But the architecture requires tmux, a watchdog daemon, and a SQLite mail system — significant infrastructure.
 
 ---
 
-## 5. Architecture Options
+## 5. Architecture Options Evaluated
 
-### Option A: Daemon + JSONL files (proposed)
+### Option A: Daemon + JSONL files ❌ REJECTED
 
 ```
-specialists daemon  ←  owns all RpcClient/AgentSession instances
-    │ onEvent()         writes .specialists/jobs/<id>/events.jsonl
-    ↓
-MCP tools           ←  thin file readers (poll = instant buffer read)
-    ↓
-specialists feed    ←  tails JSONL, shows live event stream + beads status
+specialists daemon → owns RpcClient instances → writes events.jsonl
+MCP tools → thin file readers
+specialists feed → tails JSONL
 ```
 
-**For**: Survives MCP restarts. Pi sessions persist. True background execution. `specialists feed` becomes natural output. Works with `RpcClient` or `AgentSession` SDK.
+**Rejected because** (from adversarial critique):
+- Two processes = two failure modes + one interaction failure mode
+- File-based IPC (`queue.jsonl`) is non-atomic, misses events, reinvents a message queue badly. Unix socket is the right tool; function calls are better still.
+- `poll_specialist` as file reader is strictly worse than memory reads (O(1) → O(n) per poll)
+- Daemon startup question unsolved: child of MCP = dies with MCP (no gain); system service = breaks the "just add to .mcp.json" UX
+- Event file accumulation with no GC is silent technical debt
+- Complexity budget: 3–5x more code for problems that are partially invented
 
-**Against** (to be validated by overthinker run): Daemon complexity. File-based IPC is fragile. What happens when daemon crashes? Two processes to manage instead of one. Does this actually solve Claude's polling UX or just the server-side lifecycle?
+### Option B: AgentSession SDK in-process + file-backed registry ✅ CHOSEN
 
-### Option B: AgentSession SDK in-process
+See Section 7.
 
-Use `createAgentSession()` directly inside the MCP server — no subprocess at all. Events are native callbacks. No NDJSON parsing. Session persistence via `SessionManager`.
-
-**For**: Simplest path. No daemon. No IPC. Events are TypeScript callbacks.
-**Against**: Sessions die when MCP server restarts. No true background execution. Same polling problem for Claude.
-
-### Option C: CLI background + hook notification (Overstory-inspired)
+### Option C: CLI background + hook notification (Overstory-inspired) — Deferred
 
 ```bash
 specialists run <name> --prompt "..." > .specialists/jobs/<id>/output.jsonl &
-echo $!   # returns immediately
-# Hook: UserPromptSubmit reads .specialists/ready/ and injects banner
+# UserPromptSubmit hook reads .specialists/ready/, injects banner
 # Claude calls poll_specialist ONCE to retrieve
 ```
 
-**For**: True background. No daemon complexity. Reuses existing `specialists run` CLI. Only 1 retrieval call needed.
-**Against**: Output only available on next user message (not mid-turn). Requires Claude to remember job_id between turns.
+Valid for true fire-and-forget background jobs. Deferred — not a prerequisite for the core rewrite.
 
 ---
 
-## 6. Multi-Turn Capability
+## 6. Adversarial Critique — Overthinker Output
 
-Pi natively supports multi-turn — send multiple `prompt()` calls to the same session, full context retained. This is **not currently exposed** in the MCP API.
+> Full run: job `50bbf162`, Sonnet 4.6, 169 seconds, ~12% context used.
 
-Missing MCP tool: `resume_specialist(job_id, followup_prompt)` — continues an existing session. Would enable:
+### Key findings from Phase 2 (Devil's Advocate)
+
+**Against the daemon:**
+1. Two processes, two failure modes, one interaction failure mode — reconnection protocol unspecified
+2. File-based IPC non-atomic, inotify unreliable, no delivery guarantee
+3. Writing 15,000+ events/run to disk: thousands of syscalls vs current zero I/O
+4. `poll_specialist` as file reader: `open + lseek + read + close + JSONL parse` vs `hashmap lookup + string.slice`
+5. Claude Code IS the scheduler — polling is how it works for long-running operations
+6. Pi SDK may be internal, not exported — assumption may be a mirage
+7. No GC for job files — silent technical debt
+
+### Phase 4 verdict (verbatim)
+
+> **Do not build the daemon.** It solves real problems with a solution whose complexity budget far exceeds the problems' severity.
+>
+> **One-line verdict:** The daemon is a distributed system solution to a persistence problem. Persistence is solved by writing files. Write files from where you already are.
+
+---
+
+## 7. Decision — The Chosen Path
+
+### File-backed in-memory registry (Priority 1 — low risk, high value)
+
+`JobRegistry` stays in memory. Add file writes as a non-blocking side-effect:
+
 ```
-start_specialist → job_id → (specialist runs) → poll (done)
-resume_specialist(job_id, "Now critique your own output") → follows up in same session
+On job start:    open .specialists/jobs/<id>/events.jsonl for append
+On every event:  fs.appendFile(eventsPath, JSON.stringify(event) + '\n')  ← async, non-blocking
+On completion:   write .specialists/jobs/<id>/result.json
+On MCP startup:  scan job files → recover done jobs → mark in-progress as crashed
+poll_specialist: memory (fast path) → result.json fallback for post-restart reads
 ```
 
-Session file path must be saved at job creation (`get_state` after `start`).
+**What this gives for free:**
+- ✅ `specialists feed` CLI: formatted `tail -f .specialists/jobs/*/events.jsonl`
+- ✅ Audit trail and debugging
+- ✅ Completed job recovery across MCP restarts
+- ✅ O(1) polling preserved (in-memory primary, file is secondary)
+- ✅ Zero daemon, zero IPC, zero lifecycle complexity
+- ✅ GC: TTL-based cleanup on MCP startup (e.g. delete job files >7 days)
+
+### Replace PiAgentSession with RpcClient/SDK (Priority 2 — verify first)
+
+**Before touching code:** confirm whether `RpcClient` or `AgentSession` is a stable public export from `@mariozechner/pi-coding-agent`.
+
+- If **exported**: clean swap — same subprocess behavior, native event callbacks, `waitForIdle()` replaces manual detection, `getLastAssistantText()` replaces output accumulation. Eliminates the split-chunk class of bugs.
+- If **internal only**: keep the subprocess, clean up the NDJSON parsing with a proper line buffer utility. Still worthwhile.
+
+### `specialists feed` CLI (Priority 3 — falls out from Priority 1)
+
+Once events.jsonl exists per job:
+```bash
+specialists feed           # all active jobs, formatted event stream
+specialists feed --job <id>  # single job
+specialists feed --follow    # live tail
+```
+
+Shows per job: specialist name, beadId, model, tool calls (type only), duration, status.
+
+### Polling UX (Priority 4 — defer)
+
+The adversarial critique is right: Claude polling IS the pattern for long-running MCP operations. The UX problem is real but not blocking. Hook notification (Option C) remains available as a follow-up once the core rewrite is stable.
 
 ---
 
-## 7. What Needs to Happen
+## 8. What Does NOT Change
 
-Regardless of which architecture wins, two things are clearly correct:
-
-1. **Replace `PiAgentSession` with `RpcClient` or `AgentSession` SDK** — eliminates the manual reimplementation, fixes split-chunk class of bugs, gives access to the full pi feature surface (sessions, forking, compaction, model switching).
-
-2. **Fix the polling UX** — whether via daemon+JSONL, hook notification, or long-polling, the current 30-call-per-run pattern is unacceptable.
-
-The adversarial critique from the overthinker specialist (job `50bbf162`) will inform which architecture to actually pursue.
+- The 8 MCP tool signatures — identical to consumers
+- `SpecialistRunner` orchestration logic
+- `CircuitBreaker`
+- Beads lifecycle integration
+- The `.specialist.yaml` schema
 
 ---
 
-## 8. Open Questions
+## 9. Open Questions (Remaining)
 
-- Is `AgentSession` exported as a stable public API from `@mariozechner/pi-coding-agent`, or is it internal?
-- Does the daemon need to be a separate process, or can it be a long-lived singleton inside the MCP server with session recovery on restart?
-- Can `UserPromptSubmit` hook reliably surface notifications even when Claude is mid-task (not waiting for user input)?
-- Is `specialists run` CLI sufficient for all interactive use cases, making the async MCP path only needed for true background/parallel jobs?
+- Is `RpcClient`/`AgentSession` a stable public export? → Verify against `@mariozechner/pi-coding-agent` package.json `exports` field
+- What event granularity to write to events.jsonl? All events (including thinking deltas) or only lifecycle events? Thinking deltas at 50/sec = significant I/O. Likely: lifecycle + tool events only, full text on completion.
+- `specialists feed` output format — match `specialists status` style or a new live-updating TUI?
+- Multi-turn (`resume_specialist` tool) — separate milestone once session file path is saved at job creation
