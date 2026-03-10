@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.21] - 2026-03-10
+
+### Added
+- **`specialists models`** — lists all models available on pi, grouped by provider.
+  Shows context window size and thinking/images capability flags. Models currently
+  used by your specialists are marked with `←` and the specialist names.
+  Flags: `--provider <name>` to filter, `--used` to show only in-use models.
+
+---
+
+## [2.1.20] - 2026-03-10
+
+### Added
+- **`specialists list` two-line layout** — name/scope/model on line 1, description
+  (truncated at 80 chars) indented on line 2 with blank lines between entries.
+  Replaces the unreadable single-line format.
+- **Unknown subcommand error** — `specialists update` (and any other unknown command)
+  now exits with `Unknown command: 'X' — Run 'specialists help'` instead of silently
+  starting the MCP server.
+- **`--version` / `-v` aliases** for `specialists version`.
+
+---
+
 ## [2.1.19] - 2026-03-10
 
 ### Fixed
