@@ -283,7 +283,7 @@ if (!hooksExist) {
   skip('hooks up to date');
 } else {
   const label = (h) => h.missing ? red('missing') : yellow('updated');
-  console.log(`  ${yellow('○')} ${drift.length} of 4 hook(s) have changes:`);
+  console.log(`  ${yellow('○')} ${drift.length} of 6 hook(s) have changes:`);
   for (const h of drift) info(`      ${h.name}  ${label(h)}`);
   console.log();
   const confirmed = promptYN('  Update hooks?');
@@ -298,6 +298,8 @@ info('main-guard: blocks file edits and direct master pushes (enforces PR workfl
 info('beads-edit-gate: requires in_progress bead before editing files');
 info('beads-commit-gate: requires issues closed before git commit');
 info('beads-stop-gate: requires issues closed before session end');
+info('beads-close-memory-prompt: nudges knowledge capture after bd close');
+info('specialists-complete: injects completion banners for background jobs');
 
 // 7. Health check
 section('Health check');
