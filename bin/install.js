@@ -109,6 +109,10 @@ const BEADS_CLOSE_MEMORY_PROMPT_ENTRY = {
   matcher: 'Bash',
   hooks: [{ type: 'command', command: BEADS_CLOSE_MEMORY_PROMPT_FILE, timeout: 10000 }],
 };
+const SPECIALISTS_COMPLETE_FILE  = join(HOOKS_DIR, 'specialists-complete.mjs');
+const SPECIALISTS_COMPLETE_ENTRY = {
+  hooks: [{ type: 'command', command: SPECIALISTS_COMPLETE_FILE, timeout: 5000 }],
+};
 
 function promptYN(question) {
   if (!process.stdin.isTTY) return true; // non-interactive: default yes
@@ -128,6 +132,7 @@ function getHookDrift() {
     ['beads-commit-gate.mjs',            BEADS_COMMIT_GATE_FILE],
     ['beads-stop-gate.mjs',              BEADS_STOP_GATE_FILE],
     ['beads-close-memory-prompt.mjs',    BEADS_CLOSE_MEMORY_PROMPT_FILE],
+    ['specialists-complete.mjs',          SPECIALISTS_COMPLETE_FILE],
   ];
   return pairs
     .map(([bundled, dest]) => ({
@@ -155,6 +160,8 @@ function installHook() {
   chmodSync(BEADS_STOP_GATE_FILE, 0o755);
   copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-close-memory-prompt.mjs'), BEADS_CLOSE_MEMORY_PROMPT_FILE);
   chmodSync(BEADS_CLOSE_MEMORY_PROMPT_FILE, 0o755);
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'specialists-complete.mjs'), SPECIALISTS_COMPLETE_FILE);
+  chmodSync(SPECIALISTS_COMPLETE_FILE, 0o755);
 
   let settings = {};
   if (existsSync(SETTINGS_FILE)) {
@@ -189,6 +196,13 @@ function installHook() {
     !e.hooks?.some(h => h.command?.includes('beads-stop-gate'))
   );
   settings.hooks.Stop.push(BEADS_STOP_GATE_ENTRY);
+
+  // UserPromptSubmit — replace any existing specialists-complete entry
+  if (!Array.isArray(settings.hooks.UserPromptSubmit)) settings.hooks.UserPromptSubmit = [];
+  settings.hooks.UserPromptSubmit = settings.hooks.UserPromptSubmit.filter(e =>
+    !e.hooks?.some(h => h.command?.includes('specialists-complete'))
+  );
+  settings.hooks.UserPromptSubmit.push(SPECIALISTS_COMPLETE_ENTRY);
 
   mkdirSync(CLAUDE_DIR, { recursive: true });
   writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');

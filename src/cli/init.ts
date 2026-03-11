@@ -23,6 +23,8 @@ specialist without user intervention.
 
 const AGENTS_MARKER = '## Specialists';
 
+const GITIGNORE_ENTRY = '.specialists/';
+
 export async function run(): Promise<void> {
   const cwd = process.cwd();
 
@@ -37,7 +39,33 @@ export async function run(): Promise<void> {
     ok('created specialists/');
   }
 
-  // ── 2. Scaffold AGENTS.md ─────────────────────────────────────────────────
+  // ── 2. Create .specialists/ runtime directory ─────────────────────────────
+  const runtimeDir = join(cwd, '.specialists');
+  if (existsSync(runtimeDir)) {
+    skip('.specialists/ already exists');
+  } else {
+    mkdirSync(join(runtimeDir, 'jobs'), { recursive: true });
+    mkdirSync(join(runtimeDir, 'ready'), { recursive: true });
+    ok('created .specialists/ (jobs/, ready/)');
+  }
+
+  // ── 3. Add .specialists/ to .gitignore ────────────────────────────────────
+  const gitignorePath = join(cwd, '.gitignore');
+  if (existsSync(gitignorePath)) {
+    const existing = readFileSync(gitignorePath, 'utf-8');
+    if (existing.includes(GITIGNORE_ENTRY)) {
+      skip('.gitignore already has .specialists/ entry');
+    } else {
+      const separator = existing.endsWith('\n') ? '' : '\n';
+      writeFileSync(gitignorePath, existing + separator + GITIGNORE_ENTRY + '\n', 'utf-8');
+      ok('added .specialists/ to .gitignore');
+    }
+  } else {
+    writeFileSync(gitignorePath, GITIGNORE_ENTRY + '\n', 'utf-8');
+    ok('created .gitignore with .specialists/ entry');
+  }
+
+  // ── 4. Scaffold AGENTS.md ─────────────────────────────────────────────────
   const agentsPath = join(cwd, 'AGENTS.md');
   if (existsSync(agentsPath)) {
     const existing = readFileSync(agentsPath, 'utf-8');

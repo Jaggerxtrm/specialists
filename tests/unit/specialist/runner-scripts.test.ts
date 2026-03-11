@@ -19,6 +19,8 @@ function makeMockSession() {
     prompt: vi.fn().mockResolvedValue(undefined),
     waitForDone: vi.fn().mockResolvedValue(undefined),
     getLastOutput: vi.fn().mockResolvedValue('final output'),
+    getState: vi.fn().mockResolvedValue(null),
+    close: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn(),
     meta: { backend: 'google-gemini-cli', model: 'gemini', sessionId: 'sid', startedAt: new Date() },
   };

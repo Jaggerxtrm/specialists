@@ -2,7 +2,7 @@
 
 /**
  * Specialists MCP Server — entry point
- * Subcommands: install, version, list, init, edit, run, status, help
+ * Subcommands: install, version, list, init, edit, run, status, result, feed, stop, help
  */
 
 import { SpecialistsServer } from "./server.js";
@@ -48,6 +48,21 @@ async function run() {
 
   if (sub === 'status') {
     const { run: handler } = await import('./cli/status.js');
+    return handler();
+  }
+
+  if (sub === 'result') {
+    const { run: handler } = await import('./cli/result.js');
+    return handler();
+  }
+
+  if (sub === 'feed') {
+    const { run: handler } = await import('./cli/feed.js');
+    return handler();
+  }
+
+  if (sub === 'stop') {
+    const { run: handler } = await import('./cli/stop.js');
     return handler();
   }
 
