@@ -20,29 +20,50 @@
 
 ## Features
 
-### P1 — Infrastructure, quality & docs
+### P1 — Bead integration depth (dependency chain)
+
+These must be done in order. `unitAI-fgy` unblocks everything below it.
+
+```
+unitAI-fgy  bead_id in status.json at creation
+    └── unitAI-iuj  pin specialist output to bead
+            ├── unitAI-6op  Dolt-backed run summaries (replace flat dirs)
+            ├── unitAI-c64  memory curator specialist
+            └── unitAI-hos  commit/PR provenance hook
+```
 
 | ID | Feature |
 |----|---------|
-| `unitAI-f3t` | **SessionStart hook** — `specialists-session-start.mjs` injects active jobs + available specialists into every new session (like `bd prime`) |
-| `unitAI-2v1` | **Skills installation** — `specialists install` installs a `specialists-usage` skill so Claude knows how to use the CLI |
-| `unitAI-7d0` | **`specialists setup`** — writes workflow block into AGENTS.md/CLAUDE.md (`--project` / `--global`), like `bd setup claude` |
-| `unitAI-pjx` | **Force memory judgment on `bd close`** — blocking gate requiring the agent to evaluate whether a memory is worth keeping per bd guidelines; auto-extract bypasses judgment |
-| `unitAI-9re` | **`specialists feed -f` global live feed** — all jobs simultaneously, color per job, bead status inline, auto-discovers new jobs; like `ov feed` |
-| `unitAI-xr1` | **Hook audit** — verify all 6 hooks are error-free, schema-compliant, correct exit codes, correct output format, graceful degradation; produce compliance matrix |
-| `unitAI-msh` | **Comprehensive docs** — every component gets its own README.md section with diagrams: schema, CLI, session lifecycle, supervisor/job state, MCP tools, hook system, beads integration, skills/scripts |
+| `unitAI-fgy` | **Write `bead_id` into `status.json` at job creation** — prerequisite for all below; currently only written at completion |
+| `unitAI-iuj` | **Pin specialist output to bead on completion** — `bd update <bead_id> --notes '<output>'` + prompt hash + git SHA; bead becomes a knowledge artifact, not just a timestamp receipt |
+| `unitAI-6op` | **Dolt-backed run summaries** — flush completed runs into Dolt; keep flat files only for hot-path streaming; enables cross-session SQL queries, `dolt push/pull` for sharing run history |
+| `unitAI-c64` | **Memory curator specialist** — READ_ONLY; queries closed specialist beads, diffs against `bd memories`, emits targeted `bd remember` calls, flags contradictions |
+| `unitAI-hos` | **Commit/PR provenance hook** — PostToolUse:Bash auto-wires `--external-ref gh-<n>` to active bead on `git commit` / `gh pr create` |
 
-### P2 — CLI & docs polish
+### P1 — Infrastructure & quality
 
 | ID | Feature |
 |----|---------|
-| `unitAI-3n1` | **Reduce hook verbosity** — single-line output in passing case, no repeated protocol text, <100ms per hook |
-| `unitAI-1vt` | **Project-local hook installation** — `specialists init` and `specialist_init` MCP write hooks to `.claude/settings.json` in project root; committable to repo |
+| `unitAI-f3t` | **SessionStart hook** — injects active jobs + available specialists into every new session (like `bd prime`) |
+| `unitAI-2v1` | **Skills installation** — `specialists install` installs `specialists-usage` skill |
+| `unitAI-7d0` | **`specialists setup`** — writes workflow block into AGENTS.md/CLAUDE.md (`--project` / `--global`) |
+| `unitAI-pjx` | **Force memory judgment on `bd close`** — blocking gate requiring agent to evaluate memory worth; auto-extract bypasses judgment |
+| `unitAI-9re` | **`specialists feed -f` global live feed** — all jobs simultaneously, color per job, bead status inline, auto-discovers new jobs |
+| `unitAI-xr1` | **Hook audit** — verify all 6 hooks: schema compliance, exit codes, output format, timeouts, graceful degradation |
+| `unitAI-msh` | **Comprehensive docs** — every component in README.md with diagrams (schema, CLI, session lifecycle, supervisor, MCP, hooks, beads, skills) |
+
+### P2 — CLI & polish
+
+| ID | Feature |
+|----|---------|
+| `unitAI-9xa` | **`specialists clean`** — purge old job dirs; `--all`, `--keep <n>`, `--dry-run`; short-term fix while Dolt migration proceeds |
+| `unitAI-3n1` | **Reduce hook verbosity** — ≤2 lines passing case, no repeated protocol text, <100ms per hook |
+| `unitAI-1vt` | **Project-local hook installation** — `specialists init` / `specialist_init` MCP write to `.claude/settings.json` in project root |
 | `unitAI-ln6` | **Per-command `--help`** — usage, flags, examples for every subcommand |
-| `unitAI-qls` | **`specialists quickstart`** — rich getting-started guide with examples for every workflow |
-| `unitAI-55j` | **YAML schema docs** — full `.specialist.yaml` field reference with types, defaults, examples |
-| `unitAI-npo` | **CLI polish** — `--json` flag, command categories in help, `--verbose`, consistent exit codes |
-| `unitAI-z0n` | **`specialists doctor`** — health check + auto-fix hints (pi provider, hooks, MCP, dirs, zombie jobs) |
+| `unitAI-qls` | **`specialists quickstart`** — rich getting-started guide |
+| `unitAI-55j` | **YAML schema docs** — full `.specialist.yaml` field reference |
+| `unitAI-npo` | **CLI polish** — `--json` flag, command categories, `--verbose`, consistent exit codes |
+| `unitAI-z0n` | **`specialists doctor`** — health check + auto-fix hints |
 
 ---
 
@@ -52,72 +73,67 @@
 
 ```
 specialists run <name> --background
-  → Supervisor.run() (in foreground process)
-    → writes .specialists/jobs/<id>/status.json  (atomic: tmp + rename)
-    → spawns pi subprocess
-    → pi runs, streams events to events.jsonl
-    → on done: writes result.txt, touches .specialists/ready/<id>
+  → Supervisor.run()
+    → writes status.json  { status: starting, pid, bead_id (once created) }
+    → runner.run() → creates bead → onBeadCreated → updateStatus({bead_id})
+    → pi runs, streams events.jsonl
+    → on done: writes result.txt, updateStatus(done), touches ready/<id>
+    → [TODO unitAI-iuj] bd update <bead_id> --notes '<output>'
   → prints "Job started: <id>", exits
 
 UserPromptSubmit hook (specialists-complete.mjs)
-  → scans .specialists/ready/
-  → injects "[Specialist '<name>' completed (job <id>, Xs). Run: specialists result <id>]"
-  → deletes marker (fires once per job)
+  → injects "[Specialist '<name>' completed …]" banner, deletes marker
 ```
 
 ### Known SIGTERM gap (unitAI-0ef)
 
-Background jobs have no watcher process. When `specialists stop` sends SIGTERM:
-1. pi receives SIGTERM, tries to flush final event → EPIPE (pipe to parent closed)
-2. pi crashes without writing `status.json` update
-3. `status.json` stays `"running"` forever
+When `specialists stop` sends SIGTERM to pi:
+1. pi tries to flush final event → EPIPE (parent pipe closed)
+2. pi crashes; no parent watcher → `status.json` stays `"running"` forever
 
-**Fix direction:** Keep the supervisor process alive as a thin watcher until pi exits,
-or spawn a detached watcher that traps the pi `close` event and writes the final status.
+**Fix:** keep supervisor alive as thin watcher until pi exits, trap `close` event, write final status.
 
-### Global feed vision (unitAI-9re)
+### Bead as knowledge artifact (unitAI-fgy → unitAI-iuj)
 
+Current bead record after a completed run:
 ```
-specialists feed -f
-  [43221b] codebase-explorer  ⚙ bash…
-  [43221b] codebase-explorer  tool_execution_end  bash
-  [2d7516] test-runner        ⚙ edit…          [bead: forge-3hg]
-  [43221b] codebase-explorer  ✓ done            43s
-  [2d7516] test-runner        ⚙ bash…
+COMPLETE  19373ms  anthropic/claude-haiku-4-5
 ```
 
-Auto-discovers new jobs as they start. Color per job. Bead ID shown if assigned.
-Integrates with SIGTERM fix: shows `cancelled` when a job is stopped.
+Target bead record:
+```
+COMPLETE  19373ms  anthropic/claude-haiku-4-5
+notes:    <full specialist output>
+metadata: prompt_hash=a3f2dd14  commit=894bca4  pr=31
+```
 
-### Memory judgment gate (unitAI-pjx)
+### Full provenance chain (unitAI-hos)
 
-`beads-close-memory-prompt` fires as PostToolUse on Bash — agents treat it as advisory.
+```
+user prompt
+  → specialists run → bead created (unitAI-fgy)
+  → output pinned to bead (unitAI-iuj)
+  → git commit → hook auto-adds commit SHA to bead
+  → gh pr create → hook auto-adds PR number to bead
+  → merged → bead record is permanent Dolt history
 
-The core issue: **agents must exercise judgment**, not just be reminded. bd guidelines
-are explicit about what constitutes a memory worth keeping (stable patterns, key
-decisions, recurring solutions) vs what doesn't (session context, speculative conclusions).
+Query: "all specialist runs that led to merged PRs this week"
+  → bd list --label specialist --status closed
+  → filter by external-ref matching gh-* merged PRs
+  → read output from notes field
+```
 
-**Correct fix:** A **blocking PreToolUse gate** on `bd close`. Like `beads-commit-gate`,
-the agent cannot proceed until it explicitly answers:
-- Did I learn something stable and reusable? → `bd remember "<precise insight>"`
-- Nothing worth persisting? → acknowledge and continue
+### Memory curator loop (unitAI-c64)
 
-Auto-extraction bypasses the judgment step and pollutes the memory store.
-
-### Comprehensive docs scope (unitAI-msh)
-
-Each section of README.md to cover (no exceptions):
-
-| Section | Key content |
-|---------|-------------|
-| Specialist schema | All fields, types, defaults, Zod validation, annotated YAML, field interaction diagram |
-| CLI reference | All subcommands, flags, exit codes, foreground vs background, supervisor spawn |
-| Agent session lifecycle | spawn→start→prompt→waitForDone→getLastOutput→getState→close, RPC protocol, event flow, kill vs close |
-| Supervisor & job state | .specialists/ layout, status.json state machine, events.jsonl schema, GC, crash recovery |
-| MCP tool surface | All 8 tools with input/output schema, deprecated tools, use_specialist vs CLI |
-| Hook system | All 6 hooks, event types, matchers, output format, global vs project-local install |
-| Beads integration | Bead creation policy, permission→bead mapping, lifecycle, audit records |
-| Skills & scripts | skills.paths resolution, pre/post scripts, skill_inherit, diagnostic_scripts |
+```
+specialists run memory-curator --prompt "Review runs since <date>"
+  → bd list --label specialist --status closed
+  → read notes field from each bead
+  → diff against bd memories
+  → bd remember "<stable insight>"     (new knowledge)
+  → bd update <mem_id> --notes "..."   (update existing)
+  → flag contradictions for human review
+```
 
 ### Hook inventory (v3.0.2)
 
@@ -127,7 +143,7 @@ Each section of README.md to cover (no exceptions):
 | `beads-edit-gate.mjs` | PreToolUse | Require in_progress bead before file edits |
 | `beads-commit-gate.mjs` | PreToolUse | Require issues closed before `git commit` |
 | `beads-stop-gate.mjs` | Stop | Require issues closed before session end |
-| `beads-close-memory-prompt.mjs` | PostToolUse(Bash) | Nudge knowledge capture after `bd close` (needs judgment gate — unitAI-pjx) |
+| `beads-close-memory-prompt.mjs` | PostToolUse(Bash) | Nudge knowledge capture after `bd close` (→ upgrade to blocking gate: unitAI-pjx) |
 | `specialists-complete.mjs` | UserPromptSubmit | Inject completion banners for background jobs |
 
-**Missing (roadmap):** SessionStart hook (`unitAI-f3t`). Project-local installation (`unitAI-1vt`).
+**Missing:** SessionStart (`unitAI-f3t`). Project-local install (`unitAI-1vt`). Provenance hook (`unitAI-hos`).
