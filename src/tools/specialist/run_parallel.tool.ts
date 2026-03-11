@@ -19,7 +19,7 @@ export const runParallelSchema = z.object({
 export function createRunParallelTool(runner: SpecialistRunner) {
   return {
     name: 'run_parallel' as const,
-    description: 'Execute multiple specialists concurrently. Returns aggregated results.',
+    description: '[DEPRECATED v3] Execute multiple specialists concurrently. Returns aggregated results. Prefer CLI background jobs for async work.',
     inputSchema: runParallelSchema,
     async execute(input: z.infer<typeof runParallelSchema>, onProgress?: (msg: string) => void) {
       if (input.merge_strategy === 'pipeline') {

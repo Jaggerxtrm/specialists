@@ -142,6 +142,13 @@ export class SpecialistsServer {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       logger.info(`Specialists MCP Server v2 started — ${this.tools.length} tools registered`);
+
+      // Graceful SIGTERM shutdown (e.g. when Claude Code session ends)
+      process.on('SIGTERM', async () => {
+        logger.info('SIGTERM received — shutting down');
+        await this.stop();
+        process.exit(0);
+      });
     } catch (error) {
       logger.error("Failed to start server", error);
       process.exit(1);

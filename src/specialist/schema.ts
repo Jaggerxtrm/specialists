@@ -21,6 +21,8 @@ const ExecutionSchema = z.object({
   model: z.string(),
   fallback_model: z.string().optional(),
   timeout_ms: z.number().default(120_000),
+  /** Stall timeout: kill if no event received for this many ms */
+  stall_timeout_ms: z.number().optional(),
   response_format: z.enum(['text', 'json', 'markdown']).default('text'),
   permission_required: z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']).default('READ_ONLY'),
   // Agent Forge fields — accepted but ignored by specialists
@@ -45,6 +47,8 @@ const SkillsSchema = z.object({
   })).optional(),
   references: z.array(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
+  /** Paths to skill/context files to inject into system prompt */
+  paths: z.array(z.string()).optional(),
 }).optional();
 
 const CapabilitiesSchema = z.object({

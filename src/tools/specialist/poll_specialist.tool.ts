@@ -13,7 +13,7 @@ export function createPollSpecialistTool(registry: JobRegistry) {
   return {
     name: 'poll_specialist' as const,
     description:
-      'Poll a running specialist job. Returns status (running|done|error|cancelled), ' +
+      '[DEPRECATED v3] Poll a running specialist job. Returns status (running|done|error|cancelled), ' +
       'delta (new tokens since cursor), next_cursor, and full output when done. ' +
       'Pass next_cursor back as cursor on each subsequent poll to receive only new content. ' +
       'Response also includes beadId (string | undefined) once the specialist has started — ' +

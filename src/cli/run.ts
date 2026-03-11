@@ -6,6 +6,7 @@ import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
 import { BeadsClient } from '../specialist/beads.js';
+import { Supervisor } from '../specialist/supervisor.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -19,24 +20,27 @@ interface RunArgs {
   prompt: string;
   model?: string;
   noBeads: boolean;
+  background: boolean;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists run <name> [--prompt "..."] [--model <model>] [--no-beads]');
+    console.error('Usage: specialists run <name> [--prompt "..."] [--model <model>] [--no-beads] [--background]');
     process.exit(1);
   }
 
   let prompt = '';
   let model: string | undefined;
   let noBeads = false;
+  let background = false;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
-    if (token === '--prompt' && argv[i + 1]) { prompt = argv[++i]; continue; }
-    if (token === '--model'  && argv[i + 1]) { model  = argv[++i]; continue; }
-    if (token === '--no-beads') { noBeads = true; continue; }
+    if (token === '--prompt'     && argv[i + 1]) { prompt = argv[++i]; continue; }
+    if (token === '--model'      && argv[i + 1]) { model  = argv[++i]; continue; }
+    if (token === '--no-beads')  { noBeads    = true; continue; }
+    if (token === '--background') { background = true; continue; }
   }
 
   // If no --prompt, read from stdin (pipe-friendly)
@@ -52,17 +56,17 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     });
   }
 
-  return { name, prompt, model, noBeads };
+  return { name, prompt, model, noBeads, background };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
 
-  const loader       = new SpecialistLoader();
+  const loader         = new SpecialistLoader();
   const circuitBreaker = new CircuitBreaker();
-  const hooks        = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
-  const beadsClient  = args.noBeads ? null : new BeadsClient();
+  const hooks          = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
+  const beadsClient    = args.noBeads ? null : new BeadsClient();
 
   const runner = new SpecialistRunner({
     loader,
@@ -71,7 +75,25 @@ export async function run(): Promise<void> {
     beadsClient: beadsClient ?? undefined,
   });
 
-  // Print header
+  // ── Background mode ─────────────────────────────────────────────────────────
+  if (args.background) {
+    const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+    const supervisor = new Supervisor({
+      runner,
+      runOptions: { name: args.name, prompt: args.prompt, backendOverride: args.model },
+      jobsDir,
+    });
+    try {
+      const jobId = await supervisor.run();
+      process.stdout.write(`Job started: ${jobId}\n`);
+    } catch (err: any) {
+      process.stderr.write(`Error: ${err?.message ?? err}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // ── Foreground mode (existing behavior) ─────────────────────────────────────
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
   let beadId: string | undefined;
