@@ -24,7 +24,6 @@ export class SessionKilledError extends Error {
 //   agent_end     — DONE, contains all messages
 //
 import { spawn, type ChildProcess } from 'node:child_process';
-import { EventEmitter } from 'node:events';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
 export interface AgentSessionMeta {
@@ -53,13 +52,15 @@ export interface PiSessionOptions {
   onMeta?: (meta: { backend: string; model: string }) => void;
 }
 
-/** Maps specialist permission_required to pi --tools argument.
- *  Returns undefined for full-access levels (pi defaults to read,bash,edit,write). */
+/** Maps specialist permission_required to pi --tools argument. */
 function mapPermissionToTools(level?: string): string | undefined {
   switch (level?.toUpperCase()) {
     case 'READ_ONLY': return 'read,bash,grep,find,ls';
     case 'BASH_ONLY': return 'bash';
-    default: return undefined; // LOW / MEDIUM / HIGH — full tool access
+    case 'LOW':
+    case 'MEDIUM':
+    case 'HIGH':    return 'read,bash,edit,write,grep,find,ls';
+    default:        return undefined;
   }
 }
 
@@ -71,6 +72,7 @@ export class PiAgentSession {
   private _agentEndReceived = false;
   private _killed = false;
   private _lineBuffer = '';   // accumulates partial lines split across stdout chunks
+  private _pendingCommand?: (response: any) => void;
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -104,9 +106,6 @@ export class PiAgentSession {
       '--mode', 'rpc',
       ...providerArgs,
       '--no-session',
-      // NOTE: --print is intentionally omitted. In --mode rpc, pi reads JSON
-      // commands from stdin indefinitely; we signal completion by closing stdin
-      // after prompt() rather than relying on --print (which is a no-op in rpc).
       ...extraArgs,
     ];
 
@@ -166,6 +165,14 @@ export class PiAgentSession {
     try { event = JSON.parse(line); } catch { return; }
 
     const { type } = event;
+
+    // ── RPC response (reply to a sendCommand call) ──────────────────────────
+    if (type === 'response') {
+      const handler = this._pendingCommand;
+      this._pendingCommand = undefined;
+      handler?.(event);
+      return;
+    }
 
     // ── Backend/model metadata (first assistant message) ───────────────────
     if (type === 'message_start' && event.message?.role === 'assistant') {
@@ -233,21 +240,92 @@ export class PiAgentSession {
     }
   }
 
+  /**
+   * Send a JSON command to pi's stdin and return a promise for the response.
+   * There can only be one pending command at a time.
+   */
+  private sendCommand(cmd: Record<string, any>): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.proc?.stdin) {
+        reject(new Error('No stdin available'));
+        return;
+      }
+      this._pendingCommand = resolve;
+      this.proc.stdin.write(JSON.stringify(cmd) + '\n', (err) => {
+        if (err) {
+          this._pendingCommand = undefined;
+          reject(err);
+        }
+      });
+    });
+  }
+
+  /**
+   * Write the prompt to pi's stdin. Stdin is kept open for subsequent RPC commands.
+   * Call waitForDone() to block until agent_end, then close() to terminate.
+   */
   async prompt(task: string): Promise<void> {
     const msg = JSON.stringify({ type: 'prompt', message: task }) + '\n';
     this.proc?.stdin?.write(msg);
-    // Close stdin so pi sees EOF and processes this as the final command.
-    // In --mode rpc, pi reads JSON commands indefinitely until stdin closes;
-    // without this, agent_end never fires and waitForDone() hangs forever.
-    this.proc?.stdin?.end();
+    // NOTE: stdin is intentionally NOT closed here. Call close() after waitForDone()
+    // to allow sendCommand() RPC calls between prompt completion and teardown.
   }
 
-  async waitForDone(): Promise<void> {
-    return (this as any)._donePromise;
+  /**
+   * Wait for the agent to finish. Optionally times out (throws Error on timeout).
+   */
+  async waitForDone(timeout?: number): Promise<void> {
+    const donePromise = (this as any)._donePromise as Promise<void>;
+    if (!timeout) return donePromise;
+    return Promise.race([
+      donePromise,
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error(`Specialist timed out after ${timeout}ms`)), timeout)
+      ),
+    ]);
   }
 
+  /**
+   * Get the last assistant output text. Tries RPC first, falls back to in-memory capture.
+   */
   async getLastOutput(): Promise<string> {
-    return this._lastOutput;
+    if (!this.proc?.stdin || !this.proc.stdin.writable) {
+      return this._lastOutput;
+    }
+    try {
+      const response = await Promise.race([
+        this.sendCommand({ type: 'get_last_assistant_text' }),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      ]);
+      return response?.data?.text ?? this._lastOutput;
+    } catch {
+      return this._lastOutput;
+    }
+  }
+
+  /**
+   * Get current session state via RPC.
+   */
+  async getState(): Promise<any> {
+    try {
+      const response = await Promise.race([
+        this.sendCommand({ type: 'get_state' }),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      ]);
+      return response?.data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Close the pi process cleanly by ending stdin (EOF) and waiting for exit.
+   */
+  async close(): Promise<void> {
+    if (this._killed) return;
+    this.proc?.stdin?.end();
+    // Wait for the process to exit (reuse done promise which resolves on close)
+    await (this as any)._donePromise.catch(() => {});
   }
 
   // executeBash removed — pre/post scripts run locally in runner.ts via execSync,

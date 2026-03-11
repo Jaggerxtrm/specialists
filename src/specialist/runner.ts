@@ -13,6 +13,8 @@ export interface RunOptions {
   variables?: Record<string, string>;
   backendOverride?: string;
   autonomyLevel?: string;
+  /** Path to an existing pi session file for continuation (Phase 2+) */
+  sessionPath?: string;
 }
 
 export interface RunResult {
@@ -24,7 +26,7 @@ export interface RunResult {
   beadId?: string;
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'kill' | 'meta'>>;
+export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta'>>;
 
 import { type BeadsClient, shouldCreateBead } from './beads.js';
 
@@ -127,12 +129,18 @@ export class SpecialistRunner {
       system_prompt_present: !!prompt.system,
     });
 
-    // Build system prompt: system + skill_inherit + diagnostic_scripts
+    // Build system prompt: system + skill_inherit + skills.paths + diagnostic_scripts
+    const { readFile } = await import('node:fs/promises');
     let agentsMd = prompt.system ?? '';
     if (prompt.skill_inherit) {
-      const { readFile } = await import('node:fs/promises');
       const skillContent = await readFile(prompt.skill_inherit, 'utf-8').catch(() => '');
       if (skillContent) agentsMd += `\n\n---\n# Service Knowledge\n\n${skillContent}`;
+    }
+    // Inject resolved skills.paths files (Phase 4)
+    const skillPaths = spec.specialist.skills?.paths ?? [];
+    for (const skillPath of skillPaths) {
+      const skillContent = await readFile(skillPath, 'utf-8').catch(() => '');
+      if (skillContent) agentsMd += `\n\n---\n# Skill: ${skillPath}\n\n${skillContent}`;
     }
     if (spec.specialist.capabilities?.diagnostic_scripts?.length) {
       agentsMd += '\n\n---\n# Diagnostic Scripts\nYou have access via Bash:\n';
@@ -179,10 +187,13 @@ export class SpecialistRunner {
       onKillRegistered?.(session.kill.bind(session));
 
       await session.prompt(renderedTask);
-      await session.waitForDone();
+      await session.waitForDone(execution.timeout_ms);
       sessionBackend = session.meta.backend;
       output = await session.getLastOutput();
       sessionBackend = session.meta.backend; // capture before finally calls kill()
+
+      // Clean shutdown: send EOF to stdin, await process exit
+      await session.close();
 
       // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
@@ -209,7 +220,7 @@ export class SpecialistRunner {
       });
       throw err;
     } finally {
-      session?.kill();
+      session?.kill(); // idempotent safety net; no-op if close() already succeeded
     }
 
     const durationMs = Date.now() - start;

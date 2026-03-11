@@ -11,8 +11,11 @@ const COMMANDS: [string, string][] = [
   ['version', 'Print installed version'],
   ['init',    'Initialize specialists in the current project'],
   ['edit',    'Edit a specialist field  (e.g. --model, --description)'],
-  ['run',     'Run a specialist with a prompt'],
-  ['status',  'Show system health (pi, beads, MCP)'],
+  ['run',     'Run a specialist with a prompt (--background for async)'],
+  ['result',  'Print result of a background job'],
+  ['feed',    'Tail events for a background job (--follow to stream)'],
+  ['stop',    'Send SIGTERM to a running background job'],
+  ['status',  'Show system health (pi, beads, MCP, jobs)'],
   ['help',    'Show this help message'],
 ];
 

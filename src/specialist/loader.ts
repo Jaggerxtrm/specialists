@@ -105,6 +105,20 @@ export class SpecialistLoader {
       if (existsSync(filePath)) {
         const content = await readFile(filePath, 'utf-8');
         const spec = await parseSpecialist(content);
+
+        // Resolve skills.paths at load time (~/..., ./..., absolute)
+        const rawPaths = spec.specialist.skills?.paths;
+        if (rawPaths?.length) {
+          const home = homedir();
+          const fileDir = dir.path;
+          const resolved = rawPaths.map(p => {
+            if (p.startsWith('~/')) return join(home, p.slice(2));
+            if (p.startsWith('./')) return join(fileDir, p.slice(2));
+            return p; // absolute
+          });
+          (spec.specialist.skills as any).paths = resolved;
+        }
+
         this.cache.set(name, spec);
         return spec;
       }
