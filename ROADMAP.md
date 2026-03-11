@@ -27,7 +27,7 @@
 | `unitAI-f3t` | **SessionStart hook** — `specialists-session-start.mjs` injects active jobs + available specialists into every new Claude session (like `bd prime`) |
 | `unitAI-2v1` | **Skills installation** — `specialists install` installs a `specialists-usage` skill so Claude knows how to use the CLI |
 | `unitAI-7d0` | **`specialists setup`** — writes workflow block into AGENTS.md/CLAUDE.md (`--project` / `--global`), like `bd setup claude` |
-| `unitAI-pjx` | **Improve `beads-close-memory-prompt`** — nudge rarely produces memories; evaluate: Stop hook, blocking gate, auto-extract from issue title/notes, or `bd close --remember` flag |
+| `unitAI-pjx` | **Force memory judgment on `bd close`** — blocking gate (not a nudge) that requires the agent to evaluate whether a memory is worth keeping per bd guidelines; auto-extract bypasses judgment and pollutes memories |
 | `unitAI-9re` | **`specialists feed -f`: global live feed** — tail ALL jobs simultaneously, auto-discover new ones, color per job, show bead status inline; like `ov feed` but for specialists |
 
 ### P2 — CLI & docs polish
@@ -87,11 +87,20 @@ Integrates SIGTERM fix: shows `cancelled` when a job is stopped.
 ### Memory persistence gap (unitAI-pjx)
 
 `beads-close-memory-prompt` fires as PostToolUse on Bash (when `bd close` runs).
-The hook emits a nudge in hook feedback, but agents treat it as advisory — compliance is low.
-Better placement candidates:
-- **Stop hook** — agent is explicitly closing the session, primed to summarize
-- **Blocking gate** — like `beads-commit-gate`, require a memory string before `bd close` proceeds
-- **Auto-extract** — parse closed issue title + notes, auto-save without agent action
+The hook emits a nudge that agents treat as advisory — compliance is low.
+
+The core issue is that **agents must exercise judgment**, not just be reminded.
+bd guidelines are explicit: memories should be stable patterns, key decisions, or
+solutions to recurring problems — NOT session-specific context or low-value noise.
+Auto-extraction bypasses this judgment and would pollute the memory store.
+
+**Correct fix:** A **blocking PreToolUse gate** on `bd close` — like `beads-commit-gate`
+blocks commits, this gate blocks the close until the agent explicitly answers:
+- Did I learn something stable and reusable?
+- If yes → `bd remember "<precise insight>"`
+- If no → acknowledge "nothing worth persisting" and proceed
+
+The agent cannot skip the evaluation. The judgment step is the feature.
 
 ### Hook inventory (v3.0.2)
 
