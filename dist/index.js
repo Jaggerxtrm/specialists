@@ -19556,44 +19556,431 @@ async function run12() {
 }
 var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`;
 
+// src/cli/doctor.ts
+var exports_doctor = {};
+__export(exports_doctor, {
+  run: () => run13
+});
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { existsSync as existsSync8, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync2 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join12 } from "node:path";
+function ok3(msg) {
+  console.log(`  ${green8("✓")} ${msg}`);
+}
+function warn2(msg) {
+  console.log(`  ${yellow8("○")} ${msg}`);
+}
+function fail2(msg) {
+  console.log(`  ${red5("✗")} ${msg}`);
+}
+function fix(msg) {
+  console.log(`    ${dim11("→ fix:")} ${yellow8(msg)}`);
+}
+function hint(msg) {
+  console.log(`    ${dim11(msg)}`);
+}
+function section3(label) {
+  const line = "─".repeat(Math.max(0, 38 - label.length));
+  console.log(`
+${bold8(`── ${label} ${line}`)}`);
+}
+function sp(bin, args) {
+  const r = spawnSync5(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
+}
+function isInstalled2(bin) {
+  return spawnSync5("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+}
+function checkPi() {
+  section3("pi  (coding agent runtime)");
+  if (!isInstalled2("pi")) {
+    fail2("pi not installed");
+    fix("specialists install");
+    return false;
+  }
+  const version2 = sp("pi", ["--version"]);
+  const models = sp("pi", ["--list-models"]);
+  const providers = models.ok ? new Set(models.stdout.split(`
+`).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
+  const vStr = version2.ok ? `v${version2.stdout}` : "unknown version";
+  if (providers.size === 0) {
+    warn2(`pi ${vStr} installed but no active providers`);
+    fix("pi config   (add at least one API key)");
+    return false;
+  }
+  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim11(`(${[...providers].join(", ")})`)} `);
+  return true;
+}
+function checkHooks() {
+  section3("Claude Code hooks  (6 expected)");
+  let allPresent = true;
+  for (const name of HOOK_NAMES) {
+    const dest = join12(HOOKS_DIR, name);
+    if (!existsSync8(dest)) {
+      fail2(`${name}  ${red5("missing")}`);
+      fix("specialists install   (reinstalls all hooks)");
+      allPresent = false;
+    } else {
+      ok3(name);
+    }
+  }
+  if (allPresent && existsSync8(SETTINGS_FILE)) {
+    try {
+      const settings = JSON.parse(readFileSync6(SETTINGS_FILE, "utf8"));
+      const hooks = settings.hooks ?? {};
+      const allEntries = [
+        ...hooks.PreToolUse ?? [],
+        ...hooks.PostToolUse ?? [],
+        ...hooks.Stop ?? [],
+        ...hooks.UserPromptSubmit ?? []
+      ];
+      const wiredCommands = new Set(allEntries.flatMap((e) => (e.hooks ?? []).map((h) => h.command ?? "")));
+      const guardWired = [...wiredCommands].some((c) => c.includes("specialists-main-guard"));
+      if (!guardWired) {
+        warn2("specialists-main-guard not wired in settings.json");
+        fix("specialists install   (rewires hooks in settings.json)");
+        allPresent = false;
+      } else {
+        hint(`Hooks wired in ${SETTINGS_FILE}`);
+      }
+    } catch {
+      warn2(`Could not parse ${SETTINGS_FILE}`);
+      allPresent = false;
+    }
+  }
+  return allPresent;
+}
+function checkMCP() {
+  section3("MCP registration");
+  const check2 = sp("claude", ["mcp", "get", MCP_NAME]);
+  if (!check2.ok) {
+    fail2(`MCP server '${MCP_NAME}' not registered`);
+    fix(`specialists install   (or: claude mcp add --scope user ${MCP_NAME} -- specialists)`);
+    return false;
+  }
+  ok3(`MCP server '${MCP_NAME}' registered`);
+  return true;
+}
+function checkRuntimeDirs() {
+  section3(".specialists/ runtime directories");
+  const cwd = process.cwd();
+  const rootDir = join12(cwd, ".specialists");
+  const jobsDir = join12(rootDir, "jobs");
+  const readyDir = join12(rootDir, "ready");
+  let allOk = true;
+  if (!existsSync8(rootDir)) {
+    warn2(".specialists/ not found in current project");
+    fix("specialists init");
+    allOk = false;
+  } else {
+    ok3(".specialists/ present");
+    for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
+      if (!existsSync8(subDir)) {
+        warn2(`.specialists/${label}/ missing — auto-creating`);
+        mkdirSync3(subDir, { recursive: true });
+        ok3(`.specialists/${label}/ created`);
+      } else {
+        ok3(`.specialists/${label}/ present`);
+      }
+    }
+  }
+  return allOk;
+}
+function checkZombieJobs() {
+  section3("Background jobs");
+  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  if (!existsSync8(jobsDir)) {
+    hint("No .specialists/jobs/ — skipping");
+    return true;
+  }
+  let entries;
+  try {
+    entries = readdirSync2(jobsDir);
+  } catch {
+    entries = [];
+  }
+  if (entries.length === 0) {
+    ok3("No jobs found");
+    return true;
+  }
+  let zombies = 0;
+  let total = 0;
+  let running = 0;
+  for (const jobId of entries) {
+    const statusPath = join12(jobsDir, jobId, "status.json");
+    if (!existsSync8(statusPath))
+      continue;
+    try {
+      const status = JSON.parse(readFileSync6(statusPath, "utf8"));
+      total++;
+      if (status.status === "running" || status.status === "starting") {
+        const pid = status.pid;
+        if (pid) {
+          let alive = false;
+          try {
+            process.kill(pid, 0);
+            alive = true;
+          } catch {}
+          if (alive) {
+            running++;
+          } else {
+            zombies++;
+            warn2(`${jobId}  ${yellow8("ZOMBIE")}  ${dim11(`pid ${pid} not found, status=${status.status}`)}`);
+            fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
+          }
+        }
+      }
+    } catch {}
+  }
+  if (zombies === 0) {
+    const detail = running > 0 ? `, ${running} currently running` : ", none currently running";
+    ok3(`${total} job${total !== 1 ? "s" : ""} checked${detail}`);
+  }
+  return zombies === 0;
+}
+async function run13() {
+  console.log(`
+${bold8("specialists doctor")}
+`);
+  const piOk = checkPi();
+  const hooksOk = checkHooks();
+  const mcpOk = checkMCP();
+  const dirsOk = checkRuntimeDirs();
+  const jobsOk = checkZombieJobs();
+  const allOk = piOk && hooksOk && mcpOk && dirsOk && jobsOk;
+  console.log("");
+  if (allOk) {
+    console.log(`  ${green8("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
+  } else {
+    console.log(`  ${yellow8("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
+    console.log(`  ${dim11("specialists install  fixes most issues automatically.")}`);
+  }
+  console.log("");
+}
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, HOME, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_NAME = "specialists", HOOK_NAMES;
+var init_doctor = __esm(() => {
+  HOME = homedir2();
+  CLAUDE_DIR = join12(HOME, ".claude");
+  HOOKS_DIR = join12(CLAUDE_DIR, "hooks");
+  SETTINGS_FILE = join12(CLAUDE_DIR, "settings.json");
+  HOOK_NAMES = [
+    "specialists-main-guard.mjs",
+    "beads-edit-gate.mjs",
+    "beads-commit-gate.mjs",
+    "beads-stop-gate.mjs",
+    "beads-close-memory-prompt.mjs",
+    "specialists-complete.mjs"
+  ];
+});
+
+// src/cli/setup.ts
+var exports_setup = {};
+__export(exports_setup, {
+  run: () => run14
+});
+import { existsSync as existsSync9, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join13, resolve } from "node:path";
+function ok4(msg) {
+  console.log(`  ${green9("✓")} ${msg}`);
+}
+function skip2(msg) {
+  console.log(`  ${yellow9("○")} ${msg}`);
+}
+function resolveTarget(target) {
+  switch (target) {
+    case "global":
+      return join13(homedir3(), ".claude", "CLAUDE.md");
+    case "agents":
+      return join13(process.cwd(), "AGENTS.md");
+    case "project":
+    default:
+      return join13(process.cwd(), "CLAUDE.md");
+  }
+}
+function parseArgs5() {
+  const argv = process.argv.slice(3);
+  let target = "project";
+  let dryRun = false;
+  for (let i = 0;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--global" || token === "-g") {
+      target = "global";
+      continue;
+    }
+    if (token === "--agents" || token === "-a") {
+      target = "agents";
+      continue;
+    }
+    if (token === "--project" || token === "-p") {
+      target = "project";
+      continue;
+    }
+    if (token === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+  }
+  return { target, dryRun };
+}
+async function run14() {
+  const { target, dryRun } = parseArgs5();
+  const filePath = resolve(resolveTarget(target));
+  const label = target === "global" ? "~/.claude/CLAUDE.md" : filePath.replace(process.cwd() + "/", "");
+  console.log(`
+${bold9("specialists setup")}
+`);
+  console.log(`  Target: ${yellow9(label)}${dryRun ? dim12("  (dry-run)") : ""}
+`);
+  if (existsSync9(filePath)) {
+    const existing = readFileSync7(filePath, "utf8");
+    if (existing.includes(MARKER)) {
+      skip2(`${label} already contains Specialists Workflow section`);
+      console.log(`
+  ${dim12("To force-update, remove the ## Specialists Workflow section and re-run.")}
+`);
+      return;
+    }
+    if (dryRun) {
+      console.log(dim12("─".repeat(60)));
+      console.log(dim12("Would append to existing file:"));
+      console.log("");
+      console.log(WORKFLOW_BLOCK);
+      console.log(dim12("─".repeat(60)));
+      return;
+    }
+    const separator = existing.trimEnd().endsWith(`
+`) ? `
+` : `
+
+`;
+    writeFileSync4(filePath, existing.trimEnd() + separator + WORKFLOW_BLOCK, "utf8");
+    ok4(`Appended Specialists Workflow section to ${label}`);
+  } else {
+    if (dryRun) {
+      console.log(dim12("─".repeat(60)));
+      console.log(dim12(`Would create ${label}:`));
+      console.log("");
+      console.log(WORKFLOW_BLOCK);
+      console.log(dim12("─".repeat(60)));
+      return;
+    }
+    writeFileSync4(filePath, WORKFLOW_BLOCK, "utf8");
+    ok4(`Created ${label} with Specialists Workflow section`);
+  }
+  console.log("");
+  console.log(`  ${dim12("Next steps:")}`);
+  console.log(`  • Restart Claude Code to pick up the new context`);
+  console.log(`  • Run ${yellow9("specialists list")} to see available specialists`);
+  console.log(`  • Run ${yellow9("specialist_init")} in a new session to bootstrap context`);
+  console.log("");
+}
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
+
+> Injected by \`specialists setup\`. Keep this section — agents use it for context.
+
+### When to use specialists
+
+Specialists are autonomous AI agents (running via the \`specialists\` MCP server)
+optimised for heavy tasks: code review, deep bug analysis, test generation,
+architecture design. Use them instead of doing the work yourself when the task
+would benefit from a fresh perspective, a second opinion, or a different model.
+
+### Quick reference
+
+\`\`\`
+# List available specialists
+specialists list                                    # all scopes
+specialists list --scope project                    # this project only
+
+# Run a specialist (foreground — streams output)
+specialists run <name> --prompt "..."
+
+# Run async (background — immediate job ID)
+specialists run <name> --prompt "..." --background
+  → Job started: job_a1b2c3d4
+
+# Watch / get results
+specialists feed job_a1b2c3d4 --follow             # tail live events
+specialists result job_a1b2c3d4                    # read final output
+specialists stop job_a1b2c3d4                      # cancel if needed
+\`\`\`
+
+### MCP tools (available in this session)
+
+| Tool | Purpose |
+|------|---------|
+| \`specialist_init\` | Bootstrap: bd init + list specialists |
+| \`list_specialists\` | Discover specialists across scopes |
+| \`use_specialist\` | Run foreground: load → inject context → execute → output |
+| \`start_specialist\` | Start async: returns job ID immediately |
+| \`poll_specialist\` | Poll job status + delta output by ID |
+| \`stop_specialist\` | Cancel a running job |
+| \`run_parallel\` | Run multiple specialists concurrently or as a pipeline |
+| \`specialist_status\` | Circuit breaker health + staleness |
+
+### Completion banner format
+
+When a specialist finishes, you may see:
+
+\`\`\`
+✓ bead unitAI-xxx  4.1s  anthropic/claude-sonnet-4-6
+\`\`\`
+
+This means:
+- The specialist completed successfully
+- A beads issue (\`unitAI-xxx\`) was created to track the run
+- The result can be fetched with \`specialists result <job-id>\`
+
+### When NOT to use specialists
+
+- Simple single-file edits — just do it directly
+- Tasks that need interactive back-and-forth — use foreground mode or work yourself
+- Short read-only queries — faster to answer directly
+`;
+var init_setup = () => {};
+
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run13
+  run: () => run15
 });
 function formatGroup(label, entries) {
   const colWidth = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return [
     "",
-    bold8(cyan7(label)),
-    ...entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(colWidth)}    ${dim11(desc)}`)
+    bold10(cyan7(label)),
+    ...entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(colWidth)}    ${dim13(desc)}`)
   ];
 }
-async function run13() {
+async function run15() {
   const lines = [
     "",
-    bold8("specialists <command> [options]"),
+    bold10("specialists <command> [options]"),
     "",
-    dim11("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    dim13("One MCP server. Multiple AI backends. Intelligent orchestration."),
     ...formatGroup("Setup", SETUP),
     ...formatGroup("Discovery", DISCOVERY),
     ...formatGroup("Running", RUNNING),
     ...formatGroup("Jobs", JOBS),
     ...formatGroup("Other", OTHER),
     "",
-    dim11("Run 'specialists <command> --help' for command-specific options."),
-    dim11("Run 'specialists quickstart' for a full getting-started guide."),
+    dim13("Run 'specialists <command> --help' for command-specific options."),
+    dim13("Run 'specialists quickstart' for a full getting-started guide."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, SETUP, DISCOVERY, RUNNING, JOBS, OTHER;
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, SETUP, DISCOVERY, RUNNING, JOBS, OTHER;
 var init_help = __esm(() => {
   SETUP = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
     ["init", "Scaffold specialists/, .specialists/, AGENTS.md in current project"],
-    ["quickstart", "Rich getting-started guide with examples and YAML schema reference"]
+    ["setup", "Inject workflow context block into CLAUDE.md or AGENTS.md"],
+    ["quickstart", "Rich getting-started guide with examples and YAML schema reference"],
+    ["doctor", "Health check: pi, hooks, MCP registration, dirs, zombie jobs"]
   ];
   DISCOVERY = [
     ["list", "List available specialists with model and description"],
@@ -27390,7 +27777,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run14() {
+async function run16() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -27638,6 +28025,60 @@ async function run14() {
     const { run: handler } = await Promise.resolve().then(() => exports_quickstart);
     return handler();
   }
+  if (sub === "doctor") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists doctor",
+        "",
+        "Health check for your specialists installation:",
+        "  1. pi installed and has at least one active provider",
+        "  2. All 6 Claude Code hooks present and wired in settings.json",
+        "  3. MCP server registered (claude mcp get specialists)",
+        "  4. .specialists/jobs/ and .specialists/ready/ dirs exist",
+        "  5. No zombie jobs (running status but dead PID)",
+        "",
+        "Prints fix hints for each failure.",
+        "Auto-creates missing runtime directories.",
+        "",
+        "Examples:",
+        "  specialists doctor",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_doctor(), exports_doctor));
+    return handler();
+  }
+  if (sub === "setup") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists setup [options]",
+        "",
+        "Inject the Specialists Workflow context block into AGENTS.md or CLAUDE.md.",
+        "This teaches agents in that project how to use specialists.",
+        "",
+        "Options:",
+        "  --project, -p   Write to ./CLAUDE.md (default)",
+        "  --agents,  -a   Write to ./AGENTS.md",
+        "  --global,  -g   Write to ~/.claude/CLAUDE.md",
+        "  --dry-run       Preview the block without writing",
+        "",
+        "Examples:",
+        "  specialists setup                  # → ./CLAUDE.md",
+        "  specialists setup --agents         # → ./AGENTS.md",
+        "  specialists setup --global         # → ~/.claude/CLAUDE.md",
+        "  specialists setup --dry-run        # preview only",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_setup(), exports_setup));
+    return handler();
+  }
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
@@ -27651,7 +28092,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run14().catch((error2) => {
+run16().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
