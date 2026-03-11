@@ -18281,6 +18281,10 @@ function parseArgs(argv) {
       result.scope = value;
       continue;
     }
+    if (token === "--json") {
+      result.json = true;
+      continue;
+    }
   }
   return result;
 }
@@ -18299,6 +18303,10 @@ async function run3() {
   let specialists = await loader.list(args.category);
   if (args.scope) {
     specialists = specialists.filter((s) => s.scope === args.scope);
+  }
+  if (args.json) {
+    console.log(JSON.stringify(specialists, null, 2));
+    return;
   }
   if (specialists.length === 0) {
     console.log("No specialists found.");
@@ -19038,23 +19046,86 @@ function statusColor(status) {
   }
 }
 async function run8() {
+  const argv = process.argv.slice(3);
+  const jsonMode = argv.includes("--json");
+  const loader = new SpecialistLoader;
+  const allSpecialists = await loader.list();
+  const piInstalled = isInstalled("pi");
+  const piVersion = piInstalled ? cmd("pi", ["--version"]) : null;
+  const piModels = piInstalled ? cmd("pi", ["--list-models"]) : null;
+  const piProviders = piModels ? new Set(piModels.stdout.split(`
+`).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
+  const bdInstalled = isInstalled("bd");
+  const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
+  const beadsPresent = existsSync5(join8(process.cwd(), ".beads"));
+  const specialistsBin = cmd("which", ["specialists"]);
+  const jobsDir = join8(process.cwd(), ".specialists", "jobs");
+  let jobs = [];
+  if (existsSync5(jobsDir)) {
+    const supervisor = new Supervisor({
+      runner: null,
+      runOptions: null,
+      jobsDir
+    });
+    jobs = supervisor.listJobs();
+  }
+  const stalenessMap = {};
+  for (const s of allSpecialists) {
+    stalenessMap[s.name] = await checkStaleness(s);
+  }
+  if (jsonMode) {
+    const output = {
+      specialists: {
+        count: allSpecialists.length,
+        items: allSpecialists.map((s) => ({
+          name: s.name,
+          scope: s.scope,
+          model: s.model,
+          description: s.description,
+          staleness: stalenessMap[s.name]
+        }))
+      },
+      pi: {
+        installed: piInstalled,
+        version: piVersion?.stdout ?? null,
+        providers: [...piProviders]
+      },
+      beads: {
+        installed: bdInstalled,
+        version: bdVersion?.stdout ?? null,
+        initialized: beadsPresent
+      },
+      mcp: {
+        specialists_installed: specialistsBin.ok,
+        binary_path: specialistsBin.ok ? specialistsBin.stdout : null
+      },
+      jobs: jobs.map((j) => ({
+        id: j.id,
+        specialist: j.specialist,
+        status: j.status,
+        elapsed_s: j.elapsed_s,
+        current_tool: j.current_tool ?? null,
+        error: j.error ?? null
+      }))
+    };
+    console.log(JSON.stringify(output, null, 2));
+    return;
+  }
   console.log(`
 ${bold6("specialists status")}
 `);
   section("Specialists");
-  const loader = new SpecialistLoader;
-  const all = await loader.list();
-  if (all.length === 0) {
+  if (allSpecialists.length === 0) {
     warn(`no specialists found — run ${yellow5("specialists init")} to scaffold`);
   } else {
-    const byScope = all.reduce((acc, s) => {
+    const byScope = allSpecialists.reduce((acc, s) => {
       acc[s.scope] = (acc[s.scope] ?? 0) + 1;
       return acc;
     }, {});
     const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
-    ok2(`${all.length} found  ${dim6(`(${scopeSummary})`)}`);
-    for (const s of all) {
-      const staleness = await checkStaleness(s);
+    ok2(`${allSpecialists.length} found  ${dim6(`(${scopeSummary})`)}`);
+    for (const s of allSpecialists) {
+      const staleness = stalenessMap[s.name];
       if (staleness === "AGED") {
         warn(`${s.name}  ${red("AGED")}  ${dim6(s.scope)}`);
       } else if (staleness === "STALE") {
@@ -19063,31 +19134,25 @@ ${bold6("specialists status")}
     }
   }
   section("pi  (coding agent runtime)");
-  if (!isInstalled("pi")) {
+  if (!piInstalled) {
     fail(`pi not installed — run ${yellow5("specialists install")}`);
   } else {
-    const version2 = cmd("pi", ["--version"]);
-    const models = cmd("pi", ["--list-models"]);
-    const providers = new Set(models.stdout.split(`
-`).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean));
-    const vStr = version2.ok ? `v${version2.stdout}` : "unknown version";
-    const pStr = providers.size > 0 ? `${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim6(`(${[...providers].join(", ")})`)} ` : yellow5("no providers configured — run pi config");
+    const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
+    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim6(`(${[...piProviders].join(", ")})`)} ` : yellow5("no providers configured — run pi config");
     ok2(`${vStr}  —  ${pStr}`);
   }
   section("beads  (issue tracker)");
-  if (!isInstalled("bd")) {
+  if (!bdInstalled) {
     fail(`bd not installed — run ${yellow5("specialists install")}`);
   } else {
-    const bdVersion = cmd("bd", ["--version"]);
-    ok2(`bd installed${bdVersion.ok ? `  ${dim6(bdVersion.stdout)}` : ""}`);
-    if (existsSync5(join8(process.cwd(), ".beads"))) {
+    ok2(`bd installed${bdVersion?.ok ? `  ${dim6(bdVersion.stdout)}` : ""}`);
+    if (beadsPresent) {
       ok2(".beads/ present in project");
     } else {
       warn(`.beads/ not found — run ${yellow5("bd init")} to enable issue tracking`);
     }
   }
   section("MCP");
-  const specialistsBin = cmd("which", ["specialists"]);
   if (!specialistsBin.ok) {
     fail(`specialists not installed globally — run ${yellow5("npm install -g @jaggerxtrm/specialists")}`);
   } else {
@@ -19095,21 +19160,12 @@ ${bold6("specialists status")}
     info(`verify registration: claude mcp get specialists`);
     info(`re-register:         specialists install`);
   }
-  const jobsDir = join8(process.cwd(), ".specialists", "jobs");
-  if (existsSync5(jobsDir)) {
-    const supervisor = new Supervisor({
-      runner: null,
-      runOptions: null,
-      jobsDir
-    });
-    const jobs = supervisor.listJobs();
-    if (jobs.length > 0) {
-      section("Active Jobs");
-      for (const job of jobs) {
-        const elapsed = formatElapsed(job);
-        const detail = job.status === "error" ? red(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim6(`tool: ${job.current_tool}`) : dim6(job.current_event ?? "");
-        console.log(`  ${dim6(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
-      }
+  if (jobs.length > 0) {
+    section("Active Jobs");
+    for (const job of jobs) {
+      const elapsed = formatElapsed(job);
+      const detail = job.status === "error" ? red(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim6(`tool: ${job.current_tool}`) : dim6(job.current_event ?? "");
+      console.log(`  ${dim6(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
     }
   }
   console.log();
@@ -19298,42 +19354,265 @@ var init_stop = __esm(() => {
   init_supervisor();
 });
 
-// src/cli/help.ts
-var exports_help = {};
-__export(exports_help, {
+// src/cli/quickstart.ts
+var exports_quickstart = {};
+__export(exports_quickstart, {
   run: () => run12
 });
+function section2(title) {
+  const bar = "─".repeat(60);
+  return `
+${bold7(cyan6(title))}
+${dim10(bar)}`;
+}
+function cmd2(s) {
+  return yellow7(s);
+}
+function flag(s) {
+  return green7(s);
+}
 async function run12() {
   const lines = [
     "",
-    bold7("specialists <command>"),
+    bold7("specialists  ·  Quick Start Guide"),
+    dim10("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    ""
+  ];
+  lines.push(section2("1. Installation"));
+  lines.push("");
+  lines.push(`  ${cmd2("npm install -g @jaggerxtrm/specialists")}    # install globally`);
+  lines.push(`  ${cmd2("specialists install")}                       # full-stack setup:`);
+  lines.push(`  ${dim10("                                            #   pi · beads · dolt · MCP · hooks")}`);
+  lines.push("");
+  lines.push(`  Verify everything is healthy:`);
+  lines.push(`  ${cmd2("specialists status")}                        # shows pi, beads, MCP, active jobs`);
+  lines.push("");
+  lines.push(section2("2. Initialize a Project"));
+  lines.push("");
+  lines.push(`  Run once per project root:`);
+  lines.push(`  ${cmd2("specialists init")}                          # creates specialists/, .specialists/, AGENTS.md`);
+  lines.push("");
+  lines.push(`  What this creates:`);
+  lines.push(`  ${dim10("specialists/")}       — put your .specialist.yaml files here`);
+  lines.push(`  ${dim10(".specialists/")}      — runtime data (jobs/, ready/) — gitignored`);
+  lines.push(`  ${dim10("AGENTS.md")}          — context block injected into Claude sessions`);
+  lines.push("");
+  lines.push(section2("3. Discover Specialists"));
+  lines.push("");
+  lines.push(`  ${cmd2("specialists list")}                          # all specialists (project + user)`);
+  lines.push(`  ${cmd2("specialists list")} ${flag("--scope project")}            # project-scoped only`);
+  lines.push(`  ${cmd2("specialists list")} ${flag("--scope user")}               # user-scoped (~/.specialists/)`);
+  lines.push(`  ${cmd2("specialists list")} ${flag("--category analysis")}        # filter by category`);
+  lines.push(`  ${cmd2("specialists list")} ${flag("--json")}                     # machine-readable JSON`);
+  lines.push("");
+  lines.push(`  Scopes (searched in order):`);
+  lines.push(`  ${blue("project")}   ./specialists/*.specialist.yaml`);
+  lines.push(`  ${blue("user")}      ~/.specialists/*.specialist.yaml`);
+  lines.push(`  ${blue("system")}    bundled specialists (shipped with the package)`);
+  lines.push("");
+  lines.push(section2("4. Running a Specialist"));
+  lines.push("");
+  lines.push(`  ${bold7("Foreground")} (streams output to stdout):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"Review src/api.ts for security issues"')}`);
+  lines.push("");
+  lines.push(`  ${bold7("Background")} (returns a job ID immediately):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"..."')} ${flag("--background")}`);
+  lines.push(`  ${dim10("  # → Job started: job_a1b2c3d4")}`);
+  lines.push("");
+  lines.push(`  Override model for one run:`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim10("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim10('"..."')}`);
+  lines.push("");
+  lines.push(`  Run without beads issue tracking:`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--no-beads")} ${flag("--prompt")} ${dim10('"..."')}`);
+  lines.push("");
+  lines.push(`  Pipe a prompt from stdin:`);
+  lines.push(`  ${cmd2("cat my-brief.md | specialists run code-review")}`);
+  lines.push("");
+  lines.push(section2("5. Background Job Lifecycle"));
+  lines.push("");
+  lines.push(`  ${bold7("Watch progress")} — stream events as they arrive:`);
+  lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
+  lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
+  lines.push("");
+  lines.push(`  ${bold7("Read results")} — print the final output:`);
+  lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
+  lines.push("");
+  lines.push(`  ${bold7("Cancel a job")}:`);
+  lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
+  lines.push("");
+  lines.push(`  ${bold7("Job files")} in ${dim10(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${dim10("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
+  lines.push(`  ${dim10("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
+  lines.push(`  ${dim10("result.txt")}    — final output (written when status=done)`);
+  lines.push("");
+  lines.push(section2("6. Editing Specialists"));
+  lines.push("");
+  lines.push(`  Change a field without opening the YAML manually:`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("anthropic/claude-sonnet-4-6")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--description")} ${dim10('"Updated description"')}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--timeout")} ${dim10("120000")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--permission")} ${dim10("HIGH")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--tags")} ${dim10("analysis,security,review")}`);
+  lines.push("");
+  lines.push(`  Preview without writing:`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("...")} ${flag("--dry-run")}`);
+  lines.push("");
+  lines.push(section2("7. .specialist.yaml Schema"));
+  lines.push("");
+  lines.push(`  Full annotated example:`);
+  lines.push("");
+  const schemaLines = [
+    "specialist:",
+    "  metadata:",
+    '    name: my-specialist          # required · used in "specialists run <name>"',
+    "    version: 1.0.0               # semver, for staleness detection",
+    '    description: "What it does"  # shown in specialists list',
+    "    category: analysis           # free-form tag for --category filter",
+    "    tags: [review, security]     # array of labels",
+    '    updated: "2026-03-11"        # ISO date — used for staleness check',
     "",
-    "Commands:",
-    ...COMMANDS.map(([cmd2, desc]) => `  ${cmd2.padEnd(COL_WIDTH)}    ${dim10(desc)}`),
+    "  execution:",
+    "    mode: tool                   # tool (default) | chat",
+    "    model: anthropic/claude-sonnet-4-6   # primary model",
+    "    fallback_model: qwen-cli/qwen3-coder  # if primary circuit-breaks",
+    "    timeout_ms: 120000           # ms before job is killed (default: 120000)",
+    "    stall_timeout_ms: 30000      # ms of silence before stall-detection fires",
+    "    response_format: markdown    # markdown | json | text",
+    "    permission_required: MEDIUM  # READ_ONLY | LOW | MEDIUM | HIGH",
     "",
-    dim10("Run 'specialists <command> --help' for command-specific options."),
+    "  prompt:",
+    "    system: |                    # system prompt (multiline YAML literal block)",
+    "      You are …",
+    "    user_template: |             # optional; $prompt and $context are substituted",
+    "      Task: $prompt",
+    "      Context: $context",
+    "",
+    "  skills:",
+    "    paths:                       # extra skill dirs searched at runtime",
+    "      - ./specialists/skills",
+    "      - ~/.specialists/skills",
+    "",
+    "  capabilities:",
+    "    web_search: false            # allow web search tool",
+    "    file_write: true             # allow file writes",
+    "",
+    "  beads_integration:",
+    "    auto_create: true            # create a beads issue per run",
+    "    issue_type: task             # task | bug | feature",
+    "    priority: 2                  # 0=critical … 4=backlog"
+  ];
+  for (const l of schemaLines) {
+    lines.push(`  ${dim10(l)}`);
+  }
+  lines.push("");
+  lines.push(section2("8. Hook System"));
+  lines.push("");
+  lines.push(`  Specialists emits lifecycle events to ${dim10(".specialists/trace.jsonl")}:`);
+  lines.push("");
+  lines.push(`  ${bold7("Hook point")}              ${bold7("When fired")}`);
+  lines.push(`  ${yellow7("specialist:start")}       before the agent session begins`);
+  lines.push(`  ${yellow7("specialist:token")}       on each streamed token (delta)`);
+  lines.push(`  ${yellow7("specialist:done")}        after successful completion`);
+  lines.push(`  ${yellow7("specialist:error")}       on failure or timeout`);
+  lines.push("");
+  lines.push(`  Each event line in trace.jsonl:`);
+  lines.push(`  ${dim10('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
+  lines.push("");
+  lines.push(`  Tail the trace file to observe all activity:`);
+  lines.push(`  ${cmd2("tail -f .specialists/trace.jsonl | jq .")}`);
+  lines.push("");
+  lines.push(section2("9. MCP Integration (Claude Code)"));
+  lines.push("");
+  lines.push(`  After ${cmd2("specialists install")}, these MCP tools are available to Claude:`);
+  lines.push("");
+  lines.push(`  ${bold7("specialist_init")}    — bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold7("list_specialists")}   — discover specialists (project/user/system)`);
+  lines.push(`  ${bold7("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
+  lines.push(`  ${bold7("run_parallel")}       — concurrent or pipeline execution`);
+  lines.push(`  ${bold7("start_specialist")}   — async job start, returns job ID`);
+  lines.push(`  ${bold7("poll_specialist")}    — poll job status/output by ID`);
+  lines.push(`  ${bold7("stop_specialist")}    — cancel a running job by ID`);
+  lines.push(`  ${bold7("specialist_status")}  — circuit breaker health + staleness`);
+  lines.push("");
+  lines.push(section2("10. Common Workflows"));
+  lines.push("");
+  lines.push(`  ${bold7("Foreground review, save to file:")}`);
+  lines.push(`  ${cmd2('specialists run code-review --prompt "Audit src/" > review.md')}`);
+  lines.push("");
+  lines.push(`  ${bold7("Fire-and-forget, check later:")}`);
+  lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
+  lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
+  lines.push(`  ${cmd2("specialists result <job-id> > analysis.md")}`);
+  lines.push("");
+  lines.push(`  ${bold7("Override model for a single run:")}`);
+  lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
+  lines.push("");
+  lines.push(dim10("─".repeat(62)));
+  lines.push(`  ${dim10("specialists help")}     command list         ${dim10("specialists <cmd> --help")}   per-command flags`);
+  lines.push(`  ${dim10("specialists status")}   health check         ${dim10("specialists models")}         available models`);
+  lines.push("");
+  console.log(lines.join(`
+`));
+}
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`;
+
+// src/cli/help.ts
+var exports_help = {};
+__export(exports_help, {
+  run: () => run13
+});
+function formatGroup(label, entries) {
+  const colWidth = Math.max(...entries.map(([cmd3]) => cmd3.length));
+  return [
+    "",
+    bold8(cyan7(label)),
+    ...entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(colWidth)}    ${dim11(desc)}`)
+  ];
+}
+async function run13() {
+  const lines = [
+    "",
+    bold8("specialists <command> [options]"),
+    "",
+    dim11("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    ...formatGroup("Setup", SETUP),
+    ...formatGroup("Discovery", DISCOVERY),
+    ...formatGroup("Running", RUNNING),
+    ...formatGroup("Jobs", JOBS),
+    ...formatGroup("Other", OTHER),
+    "",
+    dim11("Run 'specialists <command> --help' for command-specific options."),
+    dim11("Run 'specialists quickstart' for a full getting-started guide."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, COMMANDS, COL_WIDTH;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, SETUP, DISCOVERY, RUNNING, JOBS, OTHER;
 var init_help = __esm(() => {
-  COMMANDS = [
+  SETUP = [
     ["install", "Full-stack installer: pi, beads, dolt, MCP registration, hooks"],
+    ["init", "Scaffold specialists/, .specialists/, AGENTS.md in current project"],
+    ["quickstart", "Rich getting-started guide with examples and YAML schema reference"]
+  ];
+  DISCOVERY = [
     ["list", "List available specialists with model and description"],
     ["models", "List models available on pi, flagged with thinking/images support"],
-    ["version", "Print installed version"],
-    ["init", "Initialize specialists in the current project"],
-    ["edit", "Edit a specialist field  (e.g. --model, --description)"],
+    ["status", "Show system health (pi, beads, MCP, jobs)"]
+  ];
+  RUNNING = [
     ["run", "Run a specialist with a prompt (--background for async)"],
-    ["result", "Print result of a background job"],
+    ["edit", "Edit a specialist field  (e.g. --model, --description)"]
+  ];
+  JOBS = [
     ["feed", "Tail events for a background job (--follow to stream)"],
-    ["stop", "Send SIGTERM to a running background job"],
-    ["status", "Show system health (pi, beads, MCP, jobs)"],
+    ["result", "Print result of a background job"],
+    ["stop", "Send SIGTERM to a running background job"]
+  ];
+  OTHER = [
+    ["version", "Print installed version"],
     ["help", "Show this help message"]
   ];
-  COL_WIDTH = Math.max(...COMMANDS.map(([cmd2]) => cmd2.length));
 });
 
 // node_modules/zod/v4/core/core.js
@@ -27107,8 +27386,26 @@ class SpecialistsServer {
 
 // src/index.ts
 var sub = process.argv[2];
-async function run13() {
+var next = process.argv[3];
+function wantsHelp() {
+  return next === "--help" || next === "-h";
+}
+async function run14() {
   if (sub === "install") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists install",
+        "",
+        "Full-stack setup: installs pi, beads, dolt, registers the MCP server,",
+        "and installs session hooks for Claude Code.",
+        "",
+        "No flags — just run it.",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_install(), exports_install));
     return handler();
   }
@@ -27117,39 +27414,228 @@ async function run13() {
     return handler();
   }
   if (sub === "list") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists list [options]",
+        "",
+        "List available specialists across all scopes.",
+        "",
+        "Options:",
+        "  --scope <project|user>   Filter by scope",
+        "  --category <name>        Filter by category tag",
+        "  --json                   Output as JSON array",
+        "",
+        "Examples:",
+        "  specialists list",
+        "  specialists list --scope project",
+        "  specialists list --category analysis",
+        "  specialists list --json",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_list(), exports_list));
     return handler();
   }
   if (sub === "models") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists models",
+        "",
+        "List all models available on pi, with thinking and image support flags.",
+        "",
+        "No flags.",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_models(), exports_models));
     return handler();
   }
   if (sub === "init") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists init",
+        "",
+        "Initialize specialists in the current project:",
+        "  • Creates specialists/           — put .specialist.yaml files here",
+        "  • Creates .specialists/          — runtime data (gitignored)",
+        "  • Adds .specialists/ to .gitignore",
+        "  • Scaffolds AGENTS.md            — context injected into Claude sessions",
+        "",
+        "Safe to run on an existing project (skips already-present items).",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
     return handler();
   }
   if (sub === "edit") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists edit <name> --<field> <value> [options]",
+        "",
+        "Edit a field in a .specialist.yaml without opening the file.",
+        "",
+        "Editable fields:",
+        "  --model <value>          Primary execution model",
+        "  --fallback-model <value> Fallback model (used on circuit-break)",
+        "  --description <value>    One-line description",
+        "  --permission <value>     READ_ONLY | LOW | MEDIUM | HIGH",
+        "  --timeout <ms>           Timeout in milliseconds",
+        "  --tags <a,b,c>           Comma-separated list of tags",
+        "",
+        "Options:",
+        "  --dry-run                Preview the change without writing",
+        "  --scope <project|user>   Disambiguate if same name exists in multiple scopes",
+        "",
+        "Examples:",
+        "  specialists edit code-review --model anthropic/claude-opus-4-6",
+        "  specialists edit code-review --permission HIGH --dry-run",
+        "  specialists edit code-review --tags analysis,security",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_edit(), exports_edit));
     return handler();
   }
   if (sub === "run") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists run <name> [options]",
+        "",
+        "Run a specialist. Streams output to stdout by default.",
+        "Reads prompt from stdin if --prompt is not provided.",
+        "",
+        "Options:",
+        "  --prompt <text>    Prompt to send to the specialist (required unless piped)",
+        "  --model <model>    Override the model for this run only",
+        "  --background       Run async; prints job ID and exits immediately",
+        "  --no-beads         Skip creating a beads issue for this run",
+        "",
+        "Examples:",
+        '  specialists run code-review --prompt "Audit src/api.ts"',
+        '  specialists run code-review --prompt "..." --background',
+        "  cat brief.md | specialists run deep-analysis",
+        '  specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."',
+        "",
+        "See also:",
+        "  specialists feed --help   (tail events for a background job)",
+        "  specialists result --help (read background job output)",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_run(), exports_run));
     return handler();
   }
   if (sub === "status") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists status [options]",
+        "",
+        "Show system health: pi runtime, beads installation, MCP registration,",
+        "and all active background jobs.",
+        "",
+        "Options:",
+        "  --json    Output as JSON",
+        "",
+        "Examples:",
+        "  specialists status",
+        "  specialists status --json",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_status(), exports_status));
     return handler();
   }
   if (sub === "result") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists result <job-id>",
+        "",
+        "Print the final output of a completed background job.",
+        "Exits with code 1 if the job is still running or failed.",
+        "",
+        "Examples:",
+        "  specialists result job_a1b2c3d4",
+        "  specialists result job_a1b2c3d4 > output.md",
+        "",
+        "See also:",
+        "  specialists feed <job-id> --follow   (stream live events)",
+        "  specialists status                   (list all active jobs)",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_result(), exports_result));
     return handler();
   }
   if (sub === "feed") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists feed <job-id> [options]",
+        "       specialists feed --job <job-id> [options]",
+        "",
+        "Print events emitted by a background job.",
+        "",
+        "Options:",
+        "  --follow, -f    Stay open and stream new events as they arrive",
+        "                  (exits automatically when job completes)",
+        "",
+        "Examples:",
+        "  specialists feed job_a1b2c3d4",
+        "  specialists feed job_a1b2c3d4 --follow",
+        "  specialists feed --job job_a1b2c3d4 -f",
+        "",
+        "Event types: tool_use · tool_result · text · agent_end · error",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_feed(), exports_feed));
     return handler();
   }
   if (sub === "stop") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists stop <job-id>",
+        "",
+        "Send SIGTERM to the agent process for a running background job.",
+        "Has no effect if the job is already done or errored.",
+        "",
+        "Examples:",
+        "  specialists stop job_a1b2c3d4",
+        ""
+      ].join(`
+`));
+      return;
+    }
     const { run: handler } = await Promise.resolve().then(() => (init_stop(), exports_stop));
+    return handler();
+  }
+  if (sub === "quickstart") {
+    const { run: handler } = await Promise.resolve().then(() => exports_quickstart);
     return handler();
   }
   if (sub === "help" || sub === "--help" || sub === "-h") {
@@ -27165,7 +27651,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run13().catch((error2) => {
+run14().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

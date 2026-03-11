@@ -57,27 +57,107 @@ function statusColor(status: string): string {
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
+  const argv = process.argv.slice(3);
+  const jsonMode = argv.includes('--json');
+
+  // ── Collect all data ────────────────────────────────────────────────────────
+  const loader = new SpecialistLoader();
+  const allSpecialists = await loader.list();
+
+  const piInstalled = isInstalled('pi');
+  const piVersion   = piInstalled ? cmd('pi', ['--version']) : null;
+  const piModels    = piInstalled ? cmd('pi', ['--list-models']) : null;
+  const piProviders = piModels
+    ? new Set(
+        piModels.stdout.split('\n')
+          .slice(1)
+          .map(line => line.split(/\s+/)[0])
+          .filter(Boolean)
+      )
+    : new Set<string>();
+
+  const bdInstalled = isInstalled('bd');
+  const bdVersion   = bdInstalled ? cmd('bd', ['--version']) : null;
+  const beadsPresent = existsSync(join(process.cwd(), '.beads'));
+
+  const specialistsBin = cmd('which', ['specialists']);
+
+  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  let jobs: SupervisorStatus[] = [];
+  if (existsSync(jobsDir)) {
+    const supervisor = new Supervisor({
+      runner: null as any,
+      runOptions: null as any,
+      jobsDir,
+    });
+    jobs = supervisor.listJobs();
+  }
+
+  // Collect staleness for specialists
+  const stalenessMap: Record<string, string> = {};
+  for (const s of allSpecialists) {
+    stalenessMap[s.name] = await checkStaleness(s);
+  }
+
+  // ── JSON output ─────────────────────────────────────────────────────────────
+  if (jsonMode) {
+    const output = {
+      specialists: {
+        count: allSpecialists.length,
+        items: allSpecialists.map(s => ({
+          name: s.name,
+          scope: s.scope,
+          model: s.model,
+          description: s.description,
+          staleness: stalenessMap[s.name],
+        })),
+      },
+      pi: {
+        installed: piInstalled,
+        version: piVersion?.stdout ?? null,
+        providers: [...piProviders],
+      },
+      beads: {
+        installed: bdInstalled,
+        version: bdVersion?.stdout ?? null,
+        initialized: beadsPresent,
+      },
+      mcp: {
+        specialists_installed: specialistsBin.ok,
+        binary_path: specialistsBin.ok ? specialistsBin.stdout : null,
+      },
+      jobs: jobs.map(j => ({
+        id: j.id,
+        specialist: j.specialist,
+        status: j.status,
+        elapsed_s: j.elapsed_s,
+        current_tool: j.current_tool ?? null,
+        error: j.error ?? null,
+      })),
+    };
+    console.log(JSON.stringify(output, null, 2));
+    return;
+  }
+
+  // ── Human-readable output ───────────────────────────────────────────────────
   console.log(`\n${bold('specialists status')}\n`);
 
-  // ── 1. Specialists ──────────────────────────────────────────────────────────
+  // 1. Specialists
   section('Specialists');
-  const loader = new SpecialistLoader();
-  const all = await loader.list();
-
-  if (all.length === 0) {
+  if (allSpecialists.length === 0) {
     warn(`no specialists found — run ${yellow('specialists init')} to scaffold`);
   } else {
-    const byScope = all.reduce<Record<string, number>>((acc, s) => {
+    const byScope = allSpecialists.reduce<Record<string, number>>((acc, s) => {
       acc[s.scope] = (acc[s.scope] ?? 0) + 1;
       return acc;
     }, {});
     const scopeSummary = Object.entries(byScope)
       .map(([scope, n]) => `${n} ${scope}`)
       .join(', ');
-    ok(`${all.length} found  ${dim(`(${scopeSummary})`)}`);
+    ok(`${allSpecialists.length} found  ${dim(`(${scopeSummary})`)}`);
 
-    for (const s of all) {
-      const staleness = await checkStaleness(s);
+    for (const s of allSpecialists) {
+      const staleness = stalenessMap[s.name];
       if (staleness === 'AGED') {
         warn(`${s.name}  ${red('AGED')}  ${dim(s.scope)}`);
       } else if (staleness === 'STALE') {
@@ -86,46 +166,33 @@ export async function run(): Promise<void> {
     }
   }
 
-  // ── 2. pi ───────────────────────────────────────────────────────────────────
+  // 2. pi
   section('pi  (coding agent runtime)');
-  if (!isInstalled('pi')) {
+  if (!piInstalled) {
     fail(`pi not installed — run ${yellow('specialists install')}`);
   } else {
-    const version = cmd('pi', ['--version']);
-    const models  = cmd('pi', ['--list-models']);
-
-    const providers = new Set(
-      models.stdout.split('\n')
-        .slice(1)
-        .map(line => line.split(/\s+/)[0])
-        .filter(Boolean)
-    );
-
-    const vStr = version.ok ? `v${version.stdout}` : 'unknown version';
-    const pStr = providers.size > 0
-      ? `${providers.size} provider${providers.size > 1 ? 's' : ''} active  ${dim(`(${[...providers].join(', ')})`)} `
+    const vStr = piVersion?.ok ? `v${piVersion.stdout}` : 'unknown version';
+    const pStr = piProviders.size > 0
+      ? `${piProviders.size} provider${piProviders.size > 1 ? 's' : ''} active  ${dim(`(${[...piProviders].join(', ')})`)} `
       : yellow('no providers configured — run pi config');
-
     ok(`${vStr}  —  ${pStr}`);
   }
 
-  // ── 3. beads ────────────────────────────────────────────────────────────────
+  // 3. beads
   section('beads  (issue tracker)');
-  if (!isInstalled('bd')) {
+  if (!bdInstalled) {
     fail(`bd not installed — run ${yellow('specialists install')}`);
   } else {
-    const bdVersion = cmd('bd', ['--version']);
-    ok(`bd installed${bdVersion.ok ? `  ${dim(bdVersion.stdout)}` : ''}`);
-    if (existsSync(join(process.cwd(), '.beads'))) {
+    ok(`bd installed${bdVersion?.ok ? `  ${dim(bdVersion.stdout)}` : ''}`);
+    if (beadsPresent) {
       ok('.beads/ present in project');
     } else {
       warn(`.beads/ not found — run ${yellow('bd init')} to enable issue tracking`);
     }
   }
 
-  // ── 4. MCP ──────────────────────────────────────────────────────────────────
+  // 4. MCP
   section('MCP');
-  const specialistsBin = cmd('which', ['specialists']);
   if (!specialistsBin.ok) {
     fail(`specialists not installed globally — run ${yellow('npm install -g @jaggerxtrm/specialists')}`);
   } else {
@@ -134,28 +201,19 @@ export async function run(): Promise<void> {
     info(`re-register:         specialists install`);
   }
 
-  // ── 5. Active Jobs ──────────────────────────────────────────────────────────
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-  if (existsSync(jobsDir)) {
-    const supervisor = new Supervisor({
-      runner: null as any,
-      runOptions: null as any,
-      jobsDir,
-    });
-    const jobs = supervisor.listJobs();
-    if (jobs.length > 0) {
-      section('Active Jobs');
-      for (const job of jobs) {
-        const elapsed = formatElapsed(job);
-        const detail = job.status === 'error'
-          ? red(job.error?.slice(0, 40) ?? 'error')
-          : job.current_tool
-            ? dim(`tool: ${job.current_tool}`)
-            : dim(job.current_event ?? '');
-        console.log(
-          `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
-        );
-      }
+  // 5. Active Jobs
+  if (jobs.length > 0) {
+    section('Active Jobs');
+    for (const job of jobs) {
+      const elapsed = formatElapsed(job);
+      const detail = job.status === 'error'
+        ? red(job.error?.slice(0, 40) ?? 'error')
+        : job.current_tool
+          ? dim(`tool: ${job.current_tool}`)
+          : dim(job.current_event ?? '');
+      console.log(
+        `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
+      );
     }
   }
 
