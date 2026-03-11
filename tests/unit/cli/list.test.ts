@@ -57,3 +57,18 @@ describe('list CLI — parseArgs', () => {
     expect(parseArgs(['--unknown', 'foo'])).toEqual({});
   });
 });
+
+describe('list CLI — parseArgs --json', () => {
+  it('parses --json flag', () => {
+    expect(parseArgs(['--json'])).toEqual({ json: true });
+  });
+
+  it('parses --json with other flags', () => {
+    expect(parseArgs(['--scope', 'project', '--json'])).toEqual({ scope: 'project', json: true });
+  });
+
+  it('json defaults to undefined when not provided', () => {
+    const result = parseArgs([]);
+    expect(result.json).toBeUndefined();
+  });
+});

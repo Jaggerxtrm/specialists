@@ -7,31 +7,40 @@ describe('help CLI — run()', () => {
     vi.resetModules();
   });
 
-  it('prints all known subcommands', async () => {
+  async function captureHelp(): Promise<string> {
     const output: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((msg: string) => {
       output.push(msg ?? '');
     });
-
     const { run } = await import('../../../src/cli/help.js');
     await run();
+    return output.join('\n');
+  }
 
-    const combined = output.join('\n');
-    const expected = ['install', 'list', 'version', 'init', 'edit', 'run', 'status', 'help'];
+  it('prints all known subcommands', async () => {
+    const combined = await captureHelp();
+    const expected = ['install', 'list', 'version', 'init', 'edit', 'run', 'status', 'help',
+      'quickstart', 'doctor', 'setup'];
     for (const cmd of expected) {
-      expect(combined).toContain(cmd);
+      expect(combined, `missing command: ${cmd}`).toContain(cmd);
     }
   });
 
   it('prints specialists <command> usage header', async () => {
-    const output: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
-      output.push(msg ?? '');
-    });
+    const combined = await captureHelp();
+    expect(combined).toContain('specialists <command>');
+  });
 
-    const { run } = await import('../../../src/cli/help.js');
-    await run();
+  it('prints command categories', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('Setup');
+    expect(combined).toContain('Discovery');
+    expect(combined).toContain('Running');
+    expect(combined).toContain('Jobs');
+  });
 
-    expect(output.join('\n')).toContain('specialists <command>');
+  it('references quickstart guide', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('quickstart');
   });
 });
