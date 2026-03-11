@@ -12,6 +12,7 @@ const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 export interface ParsedArgs {
   category?: string;
   scope?: 'project' | 'user';
+  json?: boolean;
 }
 
 export class ArgParseError extends Error {
@@ -47,6 +48,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       result.scope = value;
       continue;
     }
+
+    if (token === '--json') {
+      result.json = true;
+      continue;
+    }
+
     // Unknown flags: silently ignored
   }
 
@@ -72,6 +79,11 @@ export async function run(): Promise<void> {
 
   if (args.scope) {
     specialists = specialists.filter(s => s.scope === args.scope);
+  }
+
+  if (args.json) {
+    console.log(JSON.stringify(specialists, null, 2));
+    return;
   }
 
   if (specialists.length === 0) {
