@@ -34,6 +34,7 @@ unitAI-fgy  bead_id in status.json at creation
 
 | ID | Feature |
 |----|---------|
+| `unitAI-55d` | **`specialists run --bead <id>`** — bead IS the prompt; orchestrator writes once, not twice; input bead vs tracking bead distinction; deps linked automatically |
 | `unitAI-fgy` | **Write `bead_id` into `status.json` at job creation** — prerequisite for all below; currently only written at completion |
 | `unitAI-iuj` | **Pin specialist output to bead on completion** — `bd update <bead_id> --notes '<output>'` + prompt hash + git SHA; bead becomes a knowledge artifact, not just a timestamp receipt |
 | `unitAI-6op` | **Dolt-backed run summaries** — flush completed runs into Dolt; keep flat files only for hot-path streaming; enables cross-session SQL queries, `dolt push/pull` for sharing run history |
