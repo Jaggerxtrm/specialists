@@ -20,13 +20,15 @@
 
 ## Features
 
-### P1 — Infrastructure parity with `bd`
+### P1 — Infrastructure & UX
 
 | ID | Feature |
 |----|---------|
 | `unitAI-f3t` | **SessionStart hook** — `specialists-session-start.mjs` injects active jobs + available specialists into every new Claude session (like `bd prime`) |
-| `unitAI-2v1` | **Skills installation** — `specialists install` installs a `specialists-usage` skill so Claude knows how to use the CLI (like `bd` installing skills) |
-| `unitAI-7d0` | **`specialists setup`** — writes workflow block into AGENTS.md/CLAUDE.md (`--project` and `--global`), like `bd setup claude` |
+| `unitAI-2v1` | **Skills installation** — `specialists install` installs a `specialists-usage` skill so Claude knows how to use the CLI |
+| `unitAI-7d0` | **`specialists setup`** — writes workflow block into AGENTS.md/CLAUDE.md (`--project` / `--global`), like `bd setup claude` |
+| `unitAI-pjx` | **Improve `beads-close-memory-prompt`** — nudge rarely produces memories; evaluate: Stop hook, blocking gate, auto-extract from issue title/notes, or `bd close --remember` flag |
+| `unitAI-9re` | **`specialists feed -f`: global live feed** — tail ALL jobs simultaneously, auto-discover new ones, color per job, show bead status inline; like `ov feed` but for specialists |
 
 ### P2 — CLI & docs polish
 
@@ -66,7 +68,30 @@ Background jobs have no watcher process. When `specialists stop` sends SIGTERM:
 2. pi crashes without writing `status.json` update
 3. `status.json` stays `"running"` forever
 
-**Fix direction:** Keep the parent supervisor process alive as a thin watcher until pi exits, or spawn a detached watcher that traps the pi `close` event and writes the final status.
+**Fix direction:** Keep the supervisor process alive as a thin watcher until pi exits, or spawn a detached watcher that traps the pi `close` event and writes the final status.
+
+### Global feed vision (unitAI-9re)
+
+```
+specialists feed -f
+  [43221b] codebase-explorer  ⚙ bash…
+  [43221b] codebase-explorer  tool_execution_end  bash
+  [2d7516] test-runner        ⚙ edit…          [bead: forge-3hg]
+  [43221b] codebase-explorer  ✓ done            43s
+  [2d7516] test-runner        ⚙ bash…
+```
+
+Auto-discovers new jobs as they start. Color per job. Bead ID shown if assigned.
+Integrates SIGTERM fix: shows `cancelled` when a job is stopped.
+
+### Memory persistence gap (unitAI-pjx)
+
+`beads-close-memory-prompt` fires as PostToolUse on Bash (when `bd close` runs).
+The hook emits a nudge in hook feedback, but agents treat it as advisory — compliance is low.
+Better placement candidates:
+- **Stop hook** — agent is explicitly closing the session, primed to summarize
+- **Blocking gate** — like `beads-commit-gate`, require a memory string before `bd close` proceeds
+- **Auto-extract** — parse closed issue title + notes, auto-save without agent action
 
 ### Hook inventory (v3.0.2)
 
@@ -76,7 +101,7 @@ Background jobs have no watcher process. When `specialists stop` sends SIGTERM:
 | `beads-edit-gate.mjs` | PreToolUse | Require in_progress bead before file edits |
 | `beads-commit-gate.mjs` | PreToolUse | Require issues closed before `git commit` |
 | `beads-stop-gate.mjs` | Stop | Require issues closed before session end |
-| `beads-close-memory-prompt.mjs` | PostToolUse(Bash) | Nudge knowledge capture after `bd close` |
+| `beads-close-memory-prompt.mjs` | PostToolUse(Bash) | Nudge knowledge capture after `bd close` (needs improvement) |
 | `specialists-complete.mjs` | UserPromptSubmit | Inject completion banners for background jobs |
 
 **Missing (roadmap):** SessionStart hook to inject context at session open.
