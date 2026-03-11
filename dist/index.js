@@ -19613,7 +19613,7 @@ function checkPi() {
   return true;
 }
 function checkHooks() {
-  section3("Claude Code hooks  (6 expected)");
+  section3("Claude Code hooks  (7 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
     const dest = join12(HOOKS_DIR, name);
@@ -19633,7 +19633,8 @@ function checkHooks() {
         ...hooks.PreToolUse ?? [],
         ...hooks.PostToolUse ?? [],
         ...hooks.Stop ?? [],
-        ...hooks.UserPromptSubmit ?? []
+        ...hooks.UserPromptSubmit ?? [],
+        ...hooks.SessionStart ?? []
       ];
       const wiredCommands = new Set(allEntries.flatMap((e) => (e.hooks ?? []).map((h) => h.command ?? "")));
       const guardWired = [...wiredCommands].some((c) => c.includes("specialists-main-guard"));
@@ -19770,7 +19771,8 @@ var init_doctor = __esm(() => {
     "beads-commit-gate.mjs",
     "beads-stop-gate.mjs",
     "beads-close-memory-prompt.mjs",
-    "specialists-complete.mjs"
+    "specialists-complete.mjs",
+    "specialists-session-start.mjs"
   ];
 });
 
@@ -27785,7 +27787,7 @@ async function run16() {
         "Usage: specialists install",
         "",
         "Full-stack setup: installs pi, beads, dolt, registers the MCP server,",
-        "and installs session hooks for Claude Code.",
+        "and installs session hooks and skills for Claude Code.",
         "",
         "No flags — just run it.",
         ""
@@ -28033,7 +28035,7 @@ async function run16() {
         "",
         "Health check for your specialists installation:",
         "  1. pi installed and has at least one active provider",
-        "  2. All 6 Claude Code hooks present and wired in settings.json",
+        "  2. All 7 Claude Code hooks present and wired in settings.json",
         "  3. MCP server registered (claude mcp get specialists)",
         "  4. .specialists/jobs/ and .specialists/ready/ dirs exist",
         "  5. No zombie jobs (running status but dead PID)",

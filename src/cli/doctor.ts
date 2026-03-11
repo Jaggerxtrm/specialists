@@ -47,6 +47,7 @@ const HOOK_NAMES = [
   'beads-stop-gate.mjs',
   'beads-close-memory-prompt.mjs',
   'specialists-complete.mjs',
+  'specialists-session-start.mjs',
 ] as const;
 
 // ── Individual checks ─────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ function checkPi(): boolean {
 }
 
 function checkHooks(): boolean {
-  section('Claude Code hooks  (6 expected)');
+  section('Claude Code hooks  (7 expected)');
   let allPresent = true;
 
   for (const name of HOOK_NAMES) {
@@ -108,6 +109,7 @@ function checkHooks(): boolean {
         ...(hooks.PostToolUse ?? []),
         ...(hooks.Stop ?? []),
         ...(hooks.UserPromptSubmit ?? []),
+        ...(hooks.SessionStart ?? []),
       ];
       const wiredCommands = new Set(
         allEntries.flatMap(e => (e.hooks ?? []).map(h => h.command ?? ''))
