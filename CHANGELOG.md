@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-03-11
+
+Feature parity with `bd` CLI. Closes the documentation and usability gap
+between specialists and beads.
+
+### Added
+
+**CLI Help & Discovery**
+- `specialists <cmd> --help` — all 11 subcommands now print usage, flags, and examples
+- `specialists quickstart` — 10-section getting-started guide: install, init, list,
+  foreground/background run, job lifecycle, edit, full YAML schema (`stall_timeout_ms`,
+  `skills.paths`, `beads_integration`), hook system, MCP tools, common workflows
+- `specialists help` — command categories (Setup / Discovery / Running / Jobs / Other);
+  references quickstart
+- `specialists list --json` — machine-readable JSON array output
+- `specialists status --json` — structured JSON: specialists, pi, beads, MCP, jobs
+
+**New Commands**
+- `specialists doctor` — 5-point health check: pi providers, all 7 hooks present +
+  wired in settings.json, MCP registration, runtime dirs, zombie job detection
+- `specialists setup` — inject Specialists Workflow block into CLAUDE.md / AGENTS.md /
+  ~/.claude/CLAUDE.md with --project/--agents/--global/--dry-run flags
+
+**Session Context**
+- `hooks/specialists-session-start.mjs` — SessionStart hook: injects active background
+  jobs, available specialists list, and CLI quick reference at every session start
+- `skills/specialists-usage/SKILL.md` — usage skill: when-to-use table, lifecycle
+  diagram, MCP tools reference, completion banner interpretation, troubleshooting
+
+**Installer**
+- `specialists install` now installs the SessionStart hook (step 7 → hooks now 7 total)
+- `specialists install` now installs skills to `~/.claude/skills/` (new step 7: Skills)
+- YAML schema fully documented in `quickstart` output
+
+---
+
 ## [3.0.0] - 2026-03-11
 
 Complete architecture redesign. The **CLI becomes the execution plane**; MCP becomes the control plane. File-based job state replaces in-memory `JobRegistry`. Async MCP tools deprecated.
