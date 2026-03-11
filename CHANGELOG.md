@@ -7,25 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [3.0.0] - 2026-03-11
+
+Complete architecture redesign. The **CLI becomes the execution plane**; MCP becomes the control plane. File-based job state replaces in-memory `JobRegistry`. Async MCP tools deprecated.
+
+### Added
+
+**Background jobs (Phase 1)**
+- **`specialists run <name> --background`** — starts a specialist as a supervised background process; prints `Job started: <id>` and exits immediately
+- **`specialists result <id>`** — print `result.txt` for a completed job; exits 1 if still running or failed
+- **`specialists feed --job <id> [--follow]`** — tail `events.jsonl`; `--follow` streams live with `watchFile`
+- **`specialists stop <id>`** — send SIGTERM to the PID recorded in `status.json`
+- **`src/specialist/supervisor.ts`** — Supervisor class wrapping `SpecialistRunner`:
+  - writes `status.json` atomically (tmp + rename) with id, specialist, status, model, backend, pid, elapsed\_s, bead\_id, error
+  - writes `events.jsonl` (thinking, toolcall, tool\_execution\_end, agent\_end — high-noise events dropped)
+  - writes `result.txt` on completion
+  - GC: deletes job dirs older than `SPECIALISTS_JOB_TTL_DAYS` (default 7)
+  - crash recovery: marks running jobs with dead PID as error on next startup
+  - touches `.specialists/ready/<id>` marker on completion for hook pickup
+- **`specialists init`** now creates `.specialists/jobs/` and `.specialists/ready/` and adds `.specialists/` to `.gitignore`
+
+**Completion hook (Phase 3)**
+- **`hooks/specialists-complete.mjs`** — `UserPromptSubmit` hook: scans `.specialists/ready/`, injects completion banners via `{"type":"inject","content":"..."}`, deletes markers (fires once per job)
+- `specialists install` now installs and registers this hook
+
+**Schema additions (Phase 4)**
+- **`skills.paths`** — array of skill/context files injected into the system prompt at run time; paths resolved at load time (`~/` → home, `./` → specialist file dir, absolute unchanged)
+- **`execution.stall_timeout_ms`** — schema field for future stall detection
+
+### Changed
+
+**PiAgentSession protocol (Phase 2)**
+- **`prompt()`** no longer closes stdin — stdin stays open for subsequent RPC commands
+- **`waitForDone(timeout?)`** — optional timeout via `Promise.race`; throws `Error('Specialist timed out')` on expiry
+- **`sendCommand(cmd)`** — writes JSON command to stdin, returns promise resolved by `response` events
+- **`getLastOutput()`** — tries `get_last_assistant_text` RPC first, falls back to in-memory capture on timeout/error
+- **`getState()`** (new) — sends `get_state` RPC, returns session info or null
+- **`close()`** (new) — sends EOF to stdin, awaits process exit cleanly
+- **`mapPermissionToTools()`** — `LOW`/`MEDIUM`/`HIGH` now explicitly map to `'read,bash,edit,write,grep,find,ls'` (previously returned `undefined`, relying on pi defaults)
+- `_handleEvent()` handles `type === 'response'` to dispatch pending RPC commands
+
+**Runner (Phase 2 + Phase 4)**
+- `runner.run()` passes `execution.timeout_ms` to `waitForDone()` — previously no timeout was enforced
+- `runner.run()` calls `session.close()` for clean shutdown after output retrieval; `kill()` retained as idempotent finally-block safety net
+- `SessionFactory` type extended with `close` and `getState`
+- `RunOptions` adds optional `sessionPath` field
+- Injects resolved `skills.paths` files into system prompt (alongside existing `skill_inherit`)
+- `readFile` import de-duplicated (removed redundant inner import)
+
+**CLI + help**
+- `specialists status` adds **Active Jobs** section from `.specialists/jobs/*/status.json`
+- `specialist_status` MCP tool adds `background_jobs` array to response
+- `src/cli/help.ts` documents `result`, `feed`, `stop` subcommands
+- `src/index.ts` routes `result`, `feed`, `stop` subcommands
+
+**MCP tools deprecated**
+- `start_specialist`, `poll_specialist`, `stop_specialist`, `run_parallel` — descriptions now include `[DEPRECATED v3]` note pointing to CLI equivalents; tools remain functional for backward compatibility
+
+**Server**
+- `server.ts` registers `SIGTERM` handler for graceful shutdown
+
+### Fixed
+- **Test mock sessions** — `runner.test.ts` and `runner-scripts.test.ts` mocks updated to include `close()` and `getState()`; previously `session.close is not a function` would fail all runner tests
+
+---
+
 ## [2.1.21] - 2026-03-10
 
 ### Added
-- **`specialists models`** — lists all models available on pi, grouped by provider.
-  Shows context window size and thinking/images capability flags. Models currently
-  used by your specialists are marked with `←` and the specialist names.
-  Flags: `--provider <name>` to filter, `--used` to show only in-use models.
+- **`specialists models`** — lists all models available on pi, grouped by provider. Shows context window size and thinking/images capability flags. Models currently used by your specialists are marked with `←` and the specialist names. Flags: `--provider <name>` to filter, `--used` to show only in-use models.
 
 ---
 
 ## [2.1.20] - 2026-03-10
 
 ### Added
-- **`specialists list` two-line layout** — name/scope/model on line 1, description
-  (truncated at 80 chars) indented on line 2 with blank lines between entries.
-  Replaces the unreadable single-line format.
-- **Unknown subcommand error** — `specialists update` (and any other unknown command)
-  now exits with `Unknown command: 'X' — Run 'specialists help'` instead of silently
-  starting the MCP server.
+- **`specialists list` two-line layout** — name/scope/model on line 1, description (truncated at 80 chars) indented on line 2 with blank lines between entries.
+- **Unknown subcommand error** — exits with `Unknown command: 'X'` instead of silently starting the MCP server.
 - **`--version` / `-v` aliases** for `specialists version`.
 
 ---
@@ -33,336 +93,149 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.1.19] - 2026-03-10
 
 ### Fixed
-- **`specialists install` SyntaxError on Node 25.1** — remnant of old `HOOK_SCRIPT`
-  embedded string left by regex patch caused unterminated template literal, producing
-  `SyntaxError: Unexpected identifier` on Ubuntu/linuxbrew Node 25.1.0
+- **`specialists install` SyntaxError on Node 25.1** — remnant `HOOK_SCRIPT` embedded string caused unterminated template literal.
 
 ---
 
 ## [2.1.18] - 2026-03-10
 
 ### Fixed
-- **Hook drift detection prompt** — `specialists install` now detects when installed
-  hooks differ from bundled versions, shows which hooks are missing/changed, and
-  asks `Update hooks? [Y/n]` before overwriting. Non-TTY defaults to yes.
+- **Hook drift detection** — `specialists install` detects when installed hooks differ from bundled versions, shows which hooks are missing/changed, asks `Update hooks? [Y/n]`.
 
 ---
 
 ## [2.1.17] - 2026-03-10
 
 ### Changed
-- **Hook messages show full workflow** — every hook block now displays the complete
-  7-step workflow with the current blocked step marked `← you are here`, so agents
-  understand the full process from the first gate they hit
+- **Hook messages show full workflow** — every hook block displays the complete 7-step workflow with the blocked step marked `← you are here`.
 
 ---
 
 ## [2.1.16] - 2026-03-10
 
 ### Fixed
-- **Hook scripts extracted to `hooks/` directory** — hook scripts were hardcoded
-  strings in `bin/install.js` that drifted from actual hooks. Now `hooks/` contains
-  real `.mjs` files as source of truth; installer copies them at install time.
-  `specialists-main-guard.mjs` updated to current version (PR enforcement, no stale
-  git commit/push block)
+- **Hook scripts extracted to `hooks/` directory** — hook scripts were hardcoded strings in `bin/install.js`. Now `hooks/` contains real `.mjs` files as source of truth; installer copies them at install time.
 
 ---
 
 ## [2.1.15] - 2026-03-10
 
 ### Fixed
-- **`specialists install` path** — removed extra `..` in `bin/install.js` path
-  resolution (`dist/` → package root requires only one `..`, not two)
+- **`specialists install` path** — removed extra `..` in `bin/install.js` path resolution.
 
 ---
 
 ## [2.1.13] - 2026-03-10
 
 ### Added
-- **`specialists status`** — system health check: Specialists (count by scope,
-  STALE/AGED flags), pi (version + active providers), beads (bd installed +
-  `.beads/` present), MCP (binary install verified; manual registration hint shown)
+- **`specialists status`** — system health check: Specialists, pi, beads, MCP.
 
 ---
 
 ## [2.1.12] - 2026-03-10
 
 ### Added
-- **`specialists run <name>`** — spawns a specialist directly (no MCP hop);
-  streams token output to stdout in real time; `--prompt "..."` or reads from
-  stdin; `--model` overrides the specialist model; `--no-beads` skips beads
-  lifecycle; Ctrl+C kills the session cleanly; footer shows duration + model
+- **`specialists run <name>`** — spawns a specialist directly; streams token output to stdout; `--prompt`, `--model`, `--no-beads`; Ctrl+C kills cleanly.
 
 ---
 
 ## [2.1.11] - 2026-03-10
 
 ### Added
-- **`specialists init`** — project-level setup: creates `./specialists/`,
-  appends Specialists usage block to `AGENTS.md`; idempotent
-- **`specialists edit <name> --<field> <value>`** — in-place YAML field edits;
-  fields: `model`, `fallback-model`, `description`, `permission`, `timeout`,
-  `tags`; `--dry-run` shows diff without writing; `--scope` disambiguates scope
+- **`specialists init`** — creates `./specialists/`, appends Specialists block to `AGENTS.md`; idempotent.
+- **`specialists edit`** — in-place YAML field edits; `--dry-run` support.
 
 ---
 
 ## [2.1.10] - 2026-03-10
 
 ### Added
-- **`specialists help`** — formatted subcommand reference (`--help` / `-h` aliases)
-- **CLI dispatcher refactor** — `src/index.ts` is now a pure dispatcher; all
-  subcommand logic lives in `src/cli/` handler modules (`help.ts`, `version.ts`,
-  `install.ts`, `list.ts`); each exports `async function run()`
-- **`specialists list` flags** — `--category <cat>` and `--scope project|user`
-  filtering; exports `parseArgs` + `ArgParseError` for testability
+- **`specialists help`** — formatted subcommand reference.
+- **CLI dispatcher refactor** — `src/index.ts` is a pure dispatcher; all subcommand logic in `src/cli/` modules.
 
 ---
 
 ## [2.1.9] - 2026-03-09
 
 ### Added
-- **`specialists version`** — prints `@jaggerxtrm/specialists v<version>` and exits
-- **`specialists list`** — discovers all `.specialist.yaml` files across project and
-  user scopes, prints name, model, description, and scope tag; mirrors the
-  `list_specialists` MCP tool output in the terminal
+- **`specialists version`** — prints version and exits.
+- **`specialists list`** — discovers `.specialist.yaml` files, prints name/model/description/scope.
 
 ---
 
 ## [2.1.8] - 2026-03-09
 
 ### Added
-- **Beads enforcement hooks** — three Claude Code hooks installed by the specialists
-  installer (`npx --package=@jaggerxtrm/specialists install`) that make beads issue
-  tracking mandatory:
-  - `beads-edit-gate.mjs` (`PreToolUse`): blocks any file edit when no beads issue is
-    `in_progress`. Forces `bd create` + `bd update --status=in_progress` before touching
-    files. No-op in projects without `.beads/`
-  - `beads-commit-gate.mjs` (`PreToolUse`): blocks `git commit` while `in_progress`
-    issues exist. Enforces close-issues-then-commit order
-  - `beads-stop-gate.mjs` (`Stop`): blocks the agent from stopping with unresolved
-    `in_progress` issues. Forces the full session close protocol
-- Hook sources embedded in `bin/install.js`; `installHook()` writes and wires all four
-  hooks (including `specialists-main-guard`) into `~/.claude/settings.json` on install
-
-### Fixed
-- Duplicate `sessionBackend` declaration in `src/specialist/runner.ts` that caused build
-  failure
+- **Beads enforcement hooks** — `beads-edit-gate.mjs`, `beads-commit-gate.mjs`, `beads-stop-gate.mjs` make beads issue tracking mandatory.
+- **`beads-close-memory-prompt.mjs`** — PostToolUse hook nudges knowledge capture after `bd close`.
 
 ---
 
 ## [2.1.7] - 2026-03-09
 
 ### Changed
-- **System scope removed from `SpecialistLoader`** — the bundled system scope was a
-  silent fallback that would resurrect deleted specialists against user intent. Since
-  built-in specialists are now copied to `~/.agents/specialists/` on install, system
-  scope serves no purpose. Two scopes remain: project → user (first wins)
+- **System scope removed** — two scopes remain: project → user.
 
 ---
 
 ## [2.1.6] - 2026-03-09
 
 ### Changed
-- **Built-in specialists copied to `~/.agents/specialists/` on install** — previously
-  specialists were only accessible as read-only files bundled inside the npm package;
-  users had no way to edit models, prompts, or permissions. `specialists install` now
-  copies all 9 built-in `.specialist.yaml` files to `~/.agents/specialists/` so users
-  own them directly. Skip-if-exists: re-running install never overwrites user-modified
-  files. Bundled system scope remains as a silent fallback if user scope is empty
-- **Installer "Next steps"** updated: step 3 now points to `~/.agents/specialists/`
-  for customisation
-- **README** scope table updated: user scope described as "Built-in defaults (copied
-  on install) + your own"
+- **Built-in specialists copied to `~/.agents/specialists/` on install** — users can now edit models, prompts, permissions directly.
 
 ---
 
 ## [2.1.5] - 2026-03-09
 
 ### Fixed
-- **`agent_end` split-chunk hang** — `agent_end` is a single NDJSON line containing the
-  full conversation history; for long-running specialists (20+ tool calls) this line can
-  exceed 64 KB (Node.js stdout chunk size). The old handler split each raw chunk on `\n`,
-  so `JSON.parse` failed silently on both halves, `_agentEndReceived` never flipped, and
-  `waitForDone()` hung indefinitely. Fix: accumulate chunks in `_lineBuffer`, emit only on
-  confirmed `\n`, flush remaining content on stdout `end` (`79ac2cb`)
-- **`agent_end` never fires — stdin never closed** — `pi --mode rpc` reads stdin
-  indefinitely; the subprocess waited forever for more commands so `agent_end` was never
-  emitted and `waitForDone()` hung. Fix: `proc.stdin.end()` after writing the prompt.
-  Also removed `--print` from spawn args (no-op in RPC mode per pi docs) (`c305396`)
-- **Pre/post script execution silently broken** — `executeBash()` sent
-  `{"type":"bash",...}` over pi's stdin, which is not a pi RPC command; pi ignored it and
-  script output injection was always a no-op. Fix: removed `executeBash()` from
-  `PiAgentSession`; scripts now run locally via `execSync` before the pi session starts.
-  Output formatted as `<pre_flight_context><script name="...">` XML and injected via
-  `$pre_script_output` template variable; failed scripts include `exit_code` attribute
-  (`bf837b4`)
-
----
-
-## [2.1.4] - 2026-03-09
-
-### Changed
-- **`main-guard` hook rewritten in JS** — replaces `main-guard.sh` with `main-guard.mjs`
-  for consistent cross-platform behaviour; installed at `~/.claude/hooks/main-guard.mjs`
-  by `specialists install`
-
----
-
-## [2.1.3] - 2026-03-09
-
-### Added
-- **`specialists install` subcommand** — idempotent one-shot setup: installs `pi`,
-  `bd`, `dolt`, registers the `specialists` MCP at user scope, scaffolds
-  `~/.agents/specialists/`, and installs the `main-guard` PreToolUse hook into
-  `~/.claude/hooks/`; re-runnable at any time to update or repair
-
----
-
-## [2.1.2] - 2026-03-09
-
-### Fixed
-- **`specialists install` hanging** — `specialists` bin points to `dist/index.js`
-  (the MCP server), which blocks on stdio waiting for JSON-RPC input; the `install`
-  arg was silently ignored. Fix: added early-exit guard in `src/index.ts` —
-  `process.argv[2] === 'install'` delegates to `bin/install.js` via `execFileSync`
-  so `specialists install` and `npx --package=@jaggerxtrm/specialists install` are
-  now equivalent
-
-### Changed
-- **README**: `npm install -g @jaggerxtrm/specialists` + `specialists install` is now
-  the recommended installation path; `npx` demoted to "one-time / no global install"
-
----
-
-## [2.1.1] - 2026-03-09
-
-### Fixed
-- **`BeadsClient` not wired in production** — `server.ts` was never instantiating or passing `BeadsClient` to `SpecialistRunner`; beads lifecycle silently no-op'd in production while unit tests (which inject the client) passed green
-- **`specialist_init` zod import** — `import { z }` → `import * as z` for Bun+Vitest compatibility
-- **`startAsync` missing `onBeadCreated`** — async specialist jobs now forward `beadId` to `JobRegistry.setBeadId()` immediately on creation so `poll_specialist` snapshots include it
+- **`agent_end` split-chunk hang** — accumulate chunks in `_lineBuffer`; emit only on confirmed `\n`.
+- **`agent_end` never fires** — `proc.stdin.end()` after writing the prompt; removed no-op `--print`.
+- **Pre/post script execution broken** — scripts now run locally via `execSync`; output injected via `$pre_script_output`.
 
 ---
 
 ## [2.1.0] - 2026-03-09
 
 ### Added
-- **M4 Beads Integration** — `beads_integration: auto|always|never` field in `.specialist.yaml`; `shouldCreateBead()` policy function
-- **`SpecialistRunner` beads lifecycle** — auto-creates bead after `pre_execute`, closes with `COMPLETE`/`ERROR` status, duration, model, and audit entry
-- **`JobRegistry.setBeadId()`** — `beadId` propagated to `poll_specialist` snapshots so orchestrator can link bead to job
-- **`specialist_init` MCP tool** (8th tool) — session bootstrap: runs `bd init` if `.beads/` missing, returns specialist list + beads availability
-- **`main-guard.sh`** Claude Code PreToolUse hook — blocks Edit/Write/MultiEdit/NotebookEdit and `git commit`/`git push` on main/master branch
-
-### Changed
-- All `omni_init`/`OmniInitDeps`/`createOmniInitTool` → `specialist_init`/`SpecialistInitDeps`/`createSpecialistInitTool`
-- `UnitAIServer` → `SpecialistsServer`; MCP logger string `unitai` → `specialists`
-- Trace path `.unitai/trace.jsonl` → `.specialists/trace.jsonl`
-- 67 unit tests (was 40 after v2; now 67 after M4 additions)
-
----
-
-## [2.0.1] - 2026-03-08
-
-### Added
-- **GitHub installer** (`bin/install.js`) — one-line setup via
-  `npx --package=github:Jaggerxtrm/specialists install`;
-  installs `@mariozechner/pi-coding-agent`, `@beads/bd`, prints dolt sudo instructions,
-  installs `@jaggerxtrm/specialists` globally and registers MCP as `specialists` at user scope,
-  scaffolds `~/.agents/specialists/`
-- `ROADMAP.md` — post-v2 product roadmap
-
-### Changed
-- Repo renamed `unitAI` → `omnispecialist` → **`specialists`** (GitHub + package.json)
-- `package.json`: name `@jaggerxtrm/specialists`, bin `specialists`
-- MCP server name: `omnispecialist` → `specialists`
-- Installer: pi package corrected to `@mariozechner/pi-coding-agent`
-- Installer: dolt Linux command updated to `sudo bash -c 'curl -L ... | bash'`
-- Installer: MCP registration via `npm install -g` (global) instead of npx on-demand
-- `dist/`: removed 259 v1 tsc-compiled files; only bun-bundled `dist/index.js` retained
-- `report-generator` specialist: model reassigned from `google-gemini-cli/gemini-3-flash-preview`
-  to `anthropic/claude-haiku-4-5`
-- `report-generator` system prompt: added `STRICT PRIORITY` block
+- **Beads Integration** — `beads_integration: auto|always|never`; auto-creates/closes bead per run.
+- **`specialist_init`** MCP tool — session bootstrap.
+- **`main-guard.mjs`** Claude Code PreToolUse hook.
 
 ---
 
 ## [2.0.0] - 2026-03-07
 
-Complete rewrite. The v1 workflow/agent system is replaced by the **Specialist System**.
+Complete rewrite. v1 workflow/agent system replaced by the **Specialist System**.
 
 ### Added
-- **7-tool MCP surface**: `list_specialists`, `use_specialist`, `start_specialist`,
-  `poll_specialist`, `stop_specialist`, `run_parallel`, `specialist_status`
-- **Specialist System**: `.specialist.yaml` discovery across project/user/system scopes
-  via `SpecialistLoader` with 3-scope resolution and caching
-- **`SpecialistRunner`**: full lifecycle — agents.md injection, pre/post scripts,
-  circuit breaker integration, `onMeta`/`onKillRegistered` callbacks
-- **`PiAgentSession`**: spawns `pi --mode rpc` subprocess, NDJSON event stream,
-  `waitForDone()` (no timeout), `kill()` method
-- **`JobRegistry`**: job state management with `cancelled` status, cursor-based
-  delta output via `snapshot(id, cursor)`, `setMeta()`, `setKillFn()` with
-  race condition guard
-- **`stop_specialist` tool**: cancel running specialist jobs cleanly
-- **Cursor-based polling**: `poll_specialist(job_id, cursor?)` returns only new
-  content since last cursor — avoids sending full output on every poll
-- **Permission enforcement**: `READ_ONLY` maps to `pi --tools read,bash,grep,find,ls`
-  at spawn time — edit/write physically unavailable, not just prompt-instructed
-- **9 built-in specialists**: `init-session`, `codebase-explorer`, `overthinker`,
-  `parallel-review`, `bug-hunt`, `feature-design`, `auto-remediation`,
-  `report-generator`, `test-runner`
-- **Tiered model assignment**: Sonnet for deep reasoning, Haiku for fast/simple,
-  Gemini Flash for context-heavy exploration
-- **Full provider/model ID support**: `anthropic/claude-sonnet-4-6`,
-  `google-gemini-cli/gemini-3-flash-preview` passed as `pi --model provider/id`
-- **STRICT CONSTRAINTS** in READ_ONLY specialist system prompts: belt-and-suspenders
-  alongside `--tools` enforcement
-- **`HookEmitter`**: 4-point lifecycle hooks, JSONL trace sink at `.unitai/trace.jsonl`
-- **`pipeline.ts`**: sequential `$previous_result` chaining for `run_parallel`
-- **40 unit tests**: specialist loader, runner, job registry, pi session, circuit breaker
+- 7-tool MCP surface: `list_specialists`, `use_specialist`, `start_specialist`, `poll_specialist`, `stop_specialist`, `run_parallel`, `specialist_status`
+- `SpecialistLoader` — 2-scope YAML discovery with caching
+- `SpecialistRunner` — full lifecycle: agents.md injection, pre/post scripts, circuit breaker
+- `PiAgentSession` — spawns `pi --mode rpc`, NDJSON event stream, `waitForDone()`, `kill()`
+- `JobRegistry` — in-memory async job state with cursor-based delta output
+- 9 built-in specialists
+- Permission enforcement via `pi --tools` at spawn time
+- `HookEmitter` — 4-point lifecycle hooks, JSONL trace sink
+- 40 unit tests
 
 ### Removed
-- All v1 workflow files (`src/workflows/`)
-- All v1 agent role files (`src/agents/`)
-- All v1 MCP tools except analytics (replaced by 7-tool specialist surface)
-- `waitForIdle()` timeout — replaced by `waitForDone()` with no timeout
-
-### Changed
-- `backendMap.ts`: Gemini provider corrected to `google-gemini-cli` (was `google`)
-- Gemini OAuth: removed erroneous `--api-key` passthrough; pi inherits env vars natively
-- Build system: migrated to `bun build` (`bun:sqlite`, `bun --bun vitest`)
+- All v1 workflow, agent role, and analytics files
 
 ---
 
 ## [0.4.0] - 2026-01-22
 
 ### Added
-- **Overthinker Workflow** — 4-phase reasoning: Prompt Refiner → Initial Reasoning
-  → Iterative Review → Final Consolidation. Outputs to `.unitai/overthinking.md`
-- **Init-Session Workflow** — git history analysis, Serena memory search,
-  structured session report
-- SSOT for init-session workflow (`.serena/memories/`)
-
-### Changed
-- Infrastructure aligned with MCP 2.0 best practices
-- Model upgrades: `gemini-3-pro-preview` (PRIMARY), `gemini-3-flash-preview` (FLASH)
-- Cursor Agent replaces Qwen as testing/review backend
-- Droid (GLM-4.6) established as Implementer backend
+- Overthinker Workflow — 4-phase reasoning
+- Init-Session Workflow — git history analysis, Serena memory search
 
 ---
 
 ## [0.3.0] - 2025-12-01
 
 ### Added
-- Circuit Breaker pattern with automatic backend fallback
-- 4-tier permission system (READ_ONLY / LOW / MEDIUM / HIGH)
-- Activity analytics with SQLite persistence
-
----
-
-## [0.2.0] - 2025-11-01
-
-### Added
-- Multi-backend support: Gemini, Cursor, Droid
-- Agent role specialization (Architect / Implementer / Tester)
-- Zod schema validation for all tool invocations
+- Circuit Breaker with automatic backend fallback
+- 4-tier permission system
 
 ---
 
@@ -370,4 +243,3 @@ Complete rewrite. The v1 workflow/agent system is replaced by the **Specialist S
 
 ### Added
 - Initial MCP server with basic tool registry
-- Gemini backend integration

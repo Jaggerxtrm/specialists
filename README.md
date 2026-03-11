@@ -6,22 +6,78 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-**Specialists** is a **Model Context Protocol (MCP) server** that lets Claude (and other AI agents) discover and run specialist agents — each a full autonomous coding agent powered by [pi](https://github.com/mariozechner/pi), scoped to a specific task.
+**Specialists** is a **Model Context Protocol (MCP) server** that lets Claude discover and delegate to specialist agents — each a full autonomous coding agent powered by [pi](https://github.com/mariozechner/pi), scoped to a specific task.
 
-**Designed for agents, not just users.** Claude can autonomously route heavy tasks (code review, bug hunting, deep reasoning, session init) to the right specialist without user intervention. Specialists run in the background while Claude continues working.
+**Designed for agents, not users.** Claude autonomously routes heavy tasks (code review, bug hunting, deep reasoning, session init) to the right specialist. In v3, specialists run as **background CLI processes** — zero polling overhead, notifications on completion.
 
 ---
 
 ## How it works
 
-Specialists are `.specialist.yaml` files that define an autonomous agent: its model, system prompt, task template, and permission tier. The server discovers them across two scopes:
+```
+┌──────────────────────────────────────────────┐
+│                 Claude Code                  │
+│                                              │
+│  MCP (control plane)   CLI (execution plane) │
+│  ─────────────────────  ──────────────────── │
+│  specialist_init        specialists run \    │
+│  list_specialists         <name> --background│
+│  use_specialist         specialists result \ │
+│  specialist_status        <id>               │
+└──────────────────────────────────────────────┘
+              ↓ file-based job state
+     .specialists/jobs/<id>/
+       status.json   result.txt   events.jsonl
+```
+
+Specialists are `.specialist.yaml` files discovered across two scopes:
 
 | Scope | Location | Purpose |
 |-------|----------|---------|
 | **project** | `./specialists/` | Per-project specialists |
 | **user** | `~/.agents/specialists/` | Built-in defaults (copied on install) + your own |
 
-When a specialist runs, the server spawns a `pi` subprocess with the right model, tools, and system prompt injected. Output streams back in real time via cursor-based polling.
+When a specialist runs, the server spawns a `pi` subprocess with the right model, tools, and system prompt injected. For background jobs, a **Supervisor** writes job state to disk — status, events, and final output — so Claude gets a one-shot notification on completion instead of polling.
+
+---
+
+## Background Jobs (v3)
+
+The primary workflow for long-running specialists:
+
+```bash
+# Start in background — returns immediately
+specialists run overthinker --prompt "Refactor strategy?" --background
+# → Job started: a1b2c3
+
+# Check progress
+specialists status
+# → Active Jobs
+#   a1b2c3  overthinker  running  1m12s  tool: bash
+
+# Stream events live
+specialists feed --job a1b2c3 --follow
+
+# Get result when done
+specialists result a1b2c3
+
+# Cancel
+specialists stop a1b2c3
+```
+
+When a background job completes, Claude's next prompt automatically receives a banner:
+
+```
+[Specialist 'overthinker' completed (job a1b2c3, 87s). Run: specialists result a1b2c3]
+```
+
+Job files live in `.specialists/jobs/<id>/` (gitignored by `specialists init`):
+
+| File | Contents |
+|------|---------|
+| `status.json` | id, specialist, status, model, backend, pid, elapsed_s, bead_id, error |
+| `events.jsonl` | thinking\_start, toolcall\_start, tool\_execution\_end, agent\_end |
+| `result.txt` | Final assistant output |
 
 ---
 
@@ -32,11 +88,13 @@ When a specialist runs, the server spawns a `pi` subprocess with the right model
 | `specialist_init` | Session bootstrap: init beads if needed, return available specialists |
 | `list_specialists` | Discover all available specialists across scopes |
 | `use_specialist` | Run a specialist synchronously and return the result |
-| `start_specialist` | Fire-and-forget: start a specialist job, returns `job_id` |
-| `poll_specialist` | Poll a running job; returns delta since last cursor + `beadId` |
-| `stop_specialist` | Cancel a running job |
-| `run_parallel` | Run multiple specialists concurrently or as a pipeline |
-| `specialist_status` | Circuit breaker health + job status |
+| `specialist_status` | Circuit breaker health + background job summary |
+| `start_specialist` | *(deprecated v3)* Async job via in-memory registry — use CLI instead |
+| `poll_specialist` | *(deprecated v3)* Poll in-memory job — use CLI instead |
+| `stop_specialist` | *(deprecated v3)* Kill in-memory job — use `specialists stop <id>` |
+| `run_parallel` | *(deprecated v3)* Concurrent in-memory jobs — use CLI `--background` |
+
+For production use: `use_specialist` for short synchronous tasks, CLI `--background` for anything that takes more than a few seconds.
 
 ---
 
@@ -44,42 +102,42 @@ When a specialist runs, the server spawns a `pi` subprocess with the right model
 
 | Specialist | Model | Purpose |
 |-----------|-------|---------|
-| `init-session` | Haiku | Analyze git state, recent commits, surface relevant context |
+| `init-session` | Haiku | Analyse git state, recent commits, surface relevant context |
 | `codebase-explorer` | Gemini Flash | Architecture analysis, directory structure, patterns |
 | `overthinker` | Sonnet | 4-phase deep reasoning: analysis → critique → synthesis → output |
 | `parallel-review` | Sonnet | Concurrent code review across multiple focus areas |
 | `bug-hunt` | Sonnet | Autonomous bug investigation from symptoms to root cause |
 | `feature-design` | Sonnet | Turn feature requests into structured implementation plans |
 | `auto-remediation` | Gemini Flash | Apply fixes to identified issues automatically |
-| `report-generator` | Haiku | Synthesize data/analysis results into structured markdown |
+| `report-generator` | Haiku | Synthesise data/analysis results into structured markdown |
 | `test-runner` | Haiku | Run tests, parse results, surface failures |
 
 ---
 
 ## Permission Tiers
 
-Specialists declare their required permission level, enforced at spawn time via `pi --tools`:
+| Tier | pi tools | Use case |
+|------|---------|----------|
+| `READ_ONLY` | read, bash, grep, find, ls | Analysis, exploration |
+| `LOW` | read, bash, edit, write, grep, find, ls | Code modifications |
+| `MEDIUM` | read, bash, edit, write, grep, find, ls | Code modifications + git |
+| `HIGH` | read, bash, edit, write, grep, find, ls | Full autonomy |
 
-| Tier | Allowed tools | Use case |
-|------|--------------|----------|
-| `READ_ONLY` | read, bash (read-only), grep, find, ls | Analysis, exploration |
-| `LOW` | + edit, write | Code modifications |
-| `MEDIUM` | + git operations | Commits, branching |
-| `HIGH` | Full autonomy | External API calls, push |
+Permission is enforced at spawn time via `pi --tools`, not just in the system prompt.
 
 ---
 
 ## Beads Integration
 
-Specialists with write permissions (`LOW`/`MEDIUM`/`HIGH`) automatically create a [beads](https://github.com/beads/bd) issue when they run and close it on completion. Control this per-specialist with `beads_integration`:
+Specialists with write permissions automatically create a [beads](https://github.com/beads/bd) issue and close it on completion. Control this per-specialist:
 
 ```yaml
-beads_integration: auto    # default — create for LOW/MEDIUM/HIGH, skip for READ_ONLY
-beads_integration: always  # always create, regardless of permission tier
+beads_integration: auto    # default — create for LOW/MEDIUM/HIGH
+beads_integration: always  # always create
 beads_integration: never   # never create
 ```
 
-The orchestrating agent can retrieve the `beadId` from `poll_specialist` output to link the issue for follow-up (`bd remember`, `bd update --notes`, etc.).
+The `bead_id` is written to `status.json` so you can link issues for follow-up.
 
 ---
 
@@ -92,53 +150,23 @@ npm install -g @jaggerxtrm/specialists
 specialists install
 ```
 
-Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt** (interactive sudo on Linux / brew on macOS), registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, copies built-in specialists, and installs four Claude Code hooks into `~/.claude/hooks/`:
+Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt**, registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, copies built-in specialists, and installs five Claude Code hooks:
 
 | Hook | Event | Enforces |
 |------|-------|---------|
-| `specialists-main-guard.mjs` | `PreToolUse` | No direct edits/commits on `main`/`master` — use a feature branch |
-| `beads-edit-gate.mjs` | `PreToolUse` | No file edits without an `in_progress` beads issue (beads projects only) |
-| `beads-commit-gate.mjs` | `PreToolUse` | No `git commit` while issues are still `in_progress` — close them first |
-| `beads-stop-gate.mjs` | `Stop` | Agent cannot declare done while `in_progress` issues remain |
+| `specialists-main-guard.mjs` | `PreToolUse` | No direct edits/commits on `main`/`master` |
+| `beads-edit-gate.mjs` | `PreToolUse` | No file edits without an `in_progress` beads issue |
+| `beads-commit-gate.mjs` | `PreToolUse` | No `git commit` while issues are `in_progress` |
+| `beads-stop-gate.mjs` | `Stop` | Agent cannot stop with unresolved issues |
+| `specialists-complete.mjs` | `UserPromptSubmit` | Injects background job completion banners |
 
-After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair the installation.
+After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair.
 
 ### One-time (no global install)
 
 ```bash
 npx --package=@jaggerxtrm/specialists install
 ```
-
----
-
-### Manual installation
-
-**1. pi** — coding agent runtime:
-```bash
-npm install -g @mariozechner/pi-coding-agent
-```
-Run `pi` once, then `pi config` to enable your model providers (Anthropic, Google, etc.).
-
-**2. beads** — issue tracker:
-```bash
-npm install -g @beads/bd
-```
-
-**3. dolt** — beads sync backend:
-```bash
-# Linux
-sudo bash -c 'curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | bash'
-# macOS
-brew install dolt
-```
-
-**4. specialists + MCP:**
-```bash
-npm install -g @jaggerxtrm/specialists
-claude mcp add --scope user specialists -- specialists
-```
-
-Then **restart Claude Code**.
 
 ---
 
@@ -154,7 +182,7 @@ specialist:
     description: "What this specialist does."
     category: analysis
     tags: [analysis, example]
-    updated: "2026-03-09"
+    updated: "2026-03-11"
 
   execution:
     mode: tool
@@ -172,22 +200,26 @@ specialist:
     task_template: |
       $prompt
 
-      Working directory: $cwd
+    # Inject a single skill file into the system prompt
+    skill_inherit: ~/.agents/skills/my-domain-knowledge.md
 
   communication:
-    publishes: [result]
+    output_to: .specialists/my-specialist-result.md   # optional file sink
 
-  # Optional: run scripts before/after the specialist
   skills:
+    # Run scripts before/after the specialist
     scripts:
       - path: ./scripts/health-check.sh
         phase: pre            # runs before the task prompt
-        inject_output: true   # output injected as $pre_script_output
+        inject_output: true   # output available as $pre_script_output
       - path: ./scripts/cleanup.sh
-        phase: post           # runs after the specialist completes
-```
+        phase: post
 
-Pre-script output is formatted as `<pre_flight_context>` XML and available in `task_template` via `$pre_script_output`. Scripts run locally via the host shell — not inside the pi agent. Failed scripts include their exit code so the specialist can reason about failures.
+    # Inject multiple skill/context files into the system prompt (v3)
+    paths:
+      - ~/skills/domain-context.md
+      - ./specialists/shared/conventions.md
+```
 
 **Model IDs** use the full provider/model format: `anthropic/claude-sonnet-4-6`, `google-gemini-cli/gemini-3-flash-preview`, `anthropic/claude-haiku-4-5`.
 
@@ -195,92 +227,38 @@ Pre-script output is formatted as `<pre_flight_context>` XML and available in `t
 
 ## CLI
 
-Once installed globally, `specialists <command>` provides:
-
 | Command | Description |
 |---------|-------------|
-| `specialists install` | Full-stack installer: pi, beads, dolt, MCP registration, hooks |
-| `specialists init` | Scaffold `./specialists/` and inject usage block into `AGENTS.md` |
-| `specialists list` | List discovered specialists with model, description, and scope |
-| `specialists models` | List models available on pi with thinking/images flags and usage markers |
+| `specialists install` | Full-stack installer: pi, beads, dolt, MCP, hooks |
+| `specialists init` | Scaffold `./specialists/`, `.specialists/`, update `.gitignore`, inject `AGENTS.md` block |
+| `specialists list` | List discovered specialists with model, description, scope |
+| `specialists models` | List models available on pi with capability flags |
 | `specialists edit <name> --<field> <value>` | Edit a specialist field in-place |
-| `specialists run <name>` | Run a specialist and stream output to stdout |
-| `specialists status` | Show system health: specialists, pi, beads, MCP |
-| `specialists version` | Print installed package version |
+| `specialists run <name>` | Run a specialist (foreground by default) |
+| `specialists run <name> --background` | Start as background job, print job ID |
+| `specialists result <id>` | Print result of a completed background job |
+| `specialists feed --job <id> [--follow]` | Tail events.jsonl; `--follow` streams live |
+| `specialists stop <id>` | Send SIGTERM to a running background job |
+| `specialists status` | System health + active background jobs |
+| `specialists version` | Print installed version |
 | `specialists help` | Show command reference |
-| `specialists` | Start the MCP server (called by Claude Code — not for direct use) |
-
-### specialists list
-
-```
-Specialists (9)
-
-  auto-remediation   [project]  google-gemini-cli/gemini-3-flash-preview
-                     Autonomous self-healing workflow: detect issue, diagnose root cause…
-
-  bug-hunt           [project]  anthropic/claude-sonnet-4-6
-                     Autonomously investigates bug symptoms across the codebase…
-
-  overthinker        [project]  anthropic/claude-sonnet-4-6
-                     Multi-phase deep reasoning: analysis → critique → synthesis…
-```
-
-Scopes: `[project]` = `./specialists/`, `[user]` = `~/.agents/specialists/`
-
-Filter by scope or category: `specialists list --scope user --category analysis`
-
-### specialists models
-
-```
-Models on pi  (39 total)
-
-  anthropic  23 models
-    claude-haiku-4-5       ctx 200K   thinking  images  ← init-session, report-generator, test-runner
-    claude-sonnet-4-6      ctx 200K   thinking  images  ← bug-hunt, feature-design, overthinker
-
-  google-gemini-cli  6 models
-    gemini-3-flash-preview  ctx 1.0M   thinking  images  ← auto-remediation, codebase-explorer
-    gemini-3-pro-preview    ctx 1.0M   thinking  images
-```
-
-Shows every model pi has configured, grouped by provider. Models marked with `←` are
-currently referenced in your specialists — useful when choosing a model for `specialists edit`.
-
-```bash
-specialists models --provider anthropic   # filter to one provider
-specialists models --used                 # only show models in use
-```
-
-### specialists edit
-
-Edit individual fields without opening the file:
-
-```bash
-specialists edit init-session --model anthropic/claude-sonnet-4-6
-specialists edit bug-hunt --permission MEDIUM
-specialists edit overthinker --timeout 300000
-specialists edit codebase-explorer --tags "analysis,architecture"
-specialists edit my-spec --description "New description" --dry-run
-```
-
-Editable fields: `model`, `fallback-model`, `description`, `permission`, `timeout`, `tags`
 
 ### specialists run
 
-Run a specialist directly from the terminal — no MCP required:
-
 ```bash
-# Inline prompt
+# Foreground — streams output to stdout
 specialists run init-session --prompt "What changed recently?"
+
+# Background — returns job ID immediately
+specialists run overthinker --prompt "Refactor?" --background
+
+# Background with model override, no beads
+specialists run bug-hunt --prompt "TypeError in auth" --background \
+  --model anthropic/claude-sonnet-4-6 --no-beads
 
 # Pipe from stdin
 echo "Analyse the architecture" | specialists run codebase-explorer
-
-# Override model, skip beads
-specialists run overthinker --prompt "Refactor strategy?" --model anthropic/claude-sonnet-4-6 --no-beads
 ```
-
-Output streams to stdout in real time. Model, duration, and bead ID appear on stderr.
 
 ### specialists status
 
@@ -299,7 +277,10 @@ specialists status
 
 ── MCP ───────────────────────────────────
   ✓ specialists binary installed  /usr/local/bin/specialists
-  verify registration: claude mcp get specialists
+
+── Active Jobs ───────────────────────────
+  a1b2c3  overthinker           running   1m12s  tool: bash
+  g7h8i9  init-session          done      0m08s
 ```
 
 ---
@@ -310,15 +291,11 @@ specialists status
 git clone https://github.com/Jaggerxtrm/specialists.git
 cd specialists
 bun install
-bun run build
-bun test
+bun run build    # bun build src/index.ts --target=node --outfile=dist/index.js
+bun test         # bun --bun vitest run
 ```
 
-- **Build**: `bun build src/index.ts --target=node --outfile=dist/index.js`
-- **Test**: `bun --bun vitest run` (68 unit tests)
-- **Lint**: `tsc --noEmit`
-
-See [CLAUDE.md](CLAUDE.md) for the full architecture guide and [ROADMAP.md](ROADMAP.md) for planned features.
+See [CLAUDE.md](CLAUDE.md) for the full architecture guide.
 
 ---
 
