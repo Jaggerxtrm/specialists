@@ -267,6 +267,60 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'doctor') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists doctor',
+        '',
+        'Health check for your specialists installation:',
+        '  1. pi installed and has at least one active provider',
+        '  2. All 6 Claude Code hooks present and wired in settings.json',
+        '  3. MCP server registered (claude mcp get specialists)',
+        '  4. .specialists/jobs/ and .specialists/ready/ dirs exist',
+        '  5. No zombie jobs (running status but dead PID)',
+        '',
+        'Prints fix hints for each failure.',
+        'Auto-creates missing runtime directories.',
+        '',
+        'Examples:',
+        '  specialists doctor',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/doctor.js');
+    return handler();
+  }
+
+  if (sub === 'setup') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists setup [options]',
+        '',
+        'Inject the Specialists Workflow context block into AGENTS.md or CLAUDE.md.',
+        'This teaches agents in that project how to use specialists.',
+        '',
+        'Options:',
+        '  --project, -p   Write to ./CLAUDE.md (default)',
+        '  --agents,  -a   Write to ./AGENTS.md',
+        '  --global,  -g   Write to ~/.claude/CLAUDE.md',
+        '  --dry-run       Preview the block without writing',
+        '',
+        'Examples:',
+        '  specialists setup                  # → ./CLAUDE.md',
+        '  specialists setup --agents         # → ./AGENTS.md',
+        '  specialists setup --global         # → ~/.claude/CLAUDE.md',
+        '  specialists setup --dry-run        # preview only',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/setup.js');
+    return handler();
+  }
+
   if (sub === 'help' || sub === '--help' || sub === '-h') {
     const { run: handler } = await import('./cli/help.js');
     return handler();
