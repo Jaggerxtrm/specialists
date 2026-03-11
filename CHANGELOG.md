@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.0] - 2026-03-11
+
+GitNexus-powered specialist upgrades: `codebase-explorer`, `bug-hunt`, and `feature-design`
+now use the knowledge graph as their primary investigation strategy.
+
+### Changed
+
+- **`codebase-explorer` v1.1.0** — GitNexus-first exploration: `gitnexus_query` for
+  execution flows, `gitnexus_context` for symbol deep-dives, cluster/process resources
+  for architectural maps. Bash/grep retained as fallback.
+- **`bug-hunt` v1.1.0** — Added Phase 0 GitNexus triage before file reading: query
+  error text against knowledge graph, trace callers/callees with `gitnexus_context`,
+  use `gitnexus_cypher` for custom call chains. Root cause pinpointing is now
+  call-chain-aware rather than grep-based.
+- **`feature-design` v1.1.0** — Added Phase 0 impact analysis: `gitnexus_impact`
+  blast radius (d=1/d=2/d=3) on symbols affected by the feature before designing
+  anything. Regression tests now explicitly target d=1 (WILL BREAK) symbols.
+  Timeout increased 240s → 300s. Publishes `impact_report` in addition to existing events.
+
+---
+
 ## [3.1.0] - 2026-03-11
 
 Feature parity with `bd` CLI. Closes the documentation and usability gap

@@ -1,6 +1,6 @@
 {
   "name": "@jaggerxtrm/specialists",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "OmniSpecialist \u2014 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
   "main": "dist/index.js",
   "type": "module",
