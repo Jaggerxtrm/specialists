@@ -112,7 +112,13 @@ const BEADS_CLOSE_MEMORY_PROMPT_ENTRY = {
 const SPECIALISTS_COMPLETE_FILE  = join(HOOKS_DIR, 'specialists-complete.mjs');
 const SPECIALISTS_COMPLETE_ENTRY = {
   hooks: [{ type: 'command', command: SPECIALISTS_COMPLETE_FILE, timeout: 5000 }],
+}
+const SPECIALISTS_SESSION_START_FILE  = join(HOOKS_DIR, 'specialists-session-start.mjs');
+const SPECIALISTS_SESSION_START_ENTRY = {
+  hooks: [{ type: 'command', command: SPECIALISTS_SESSION_START_FILE, timeout: 8000 }],
 };
+const BUNDLED_SKILLS_DIR = new URL('../skills', import.meta.url).pathname;
+const CLAUDE_SKILLS_DIR  = join(CLAUDE_DIR, 'skills');;
 
 function promptYN(question) {
   if (!process.stdin.isTTY) return true; // non-interactive: default yes
@@ -132,7 +138,8 @@ function getHookDrift() {
     ['beads-commit-gate.mjs',            BEADS_COMMIT_GATE_FILE],
     ['beads-stop-gate.mjs',              BEADS_STOP_GATE_FILE],
     ['beads-close-memory-prompt.mjs',    BEADS_CLOSE_MEMORY_PROMPT_FILE],
-    ['specialists-complete.mjs',          SPECIALISTS_COMPLETE_FILE],
+    ['specialists-complete.mjs',         SPECIALISTS_COMPLETE_FILE],
+    ['specialists-session-start.mjs',    SPECIALISTS_SESSION_START_FILE],
   ];
   return pairs
     .map(([bundled, dest]) => ({
@@ -162,6 +169,8 @@ function installHook() {
   chmodSync(BEADS_CLOSE_MEMORY_PROMPT_FILE, 0o755);
   copyFileSync(join(BUNDLED_HOOKS_DIR, 'specialists-complete.mjs'), SPECIALISTS_COMPLETE_FILE);
   chmodSync(SPECIALISTS_COMPLETE_FILE, 0o755);
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'specialists-session-start.mjs'), SPECIALISTS_SESSION_START_FILE);
+  chmodSync(SPECIALISTS_SESSION_START_FILE, 0o755);
 
   let settings = {};
   if (existsSync(SETTINGS_FILE)) {
@@ -204,8 +213,57 @@ function installHook() {
   );
   settings.hooks.UserPromptSubmit.push(SPECIALISTS_COMPLETE_ENTRY);
 
+  // SessionStart — replace any existing specialists-session-start entry
+  if (!Array.isArray(settings.hooks.SessionStart)) settings.hooks.SessionStart = [];
+  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(e =>
+    !e.hooks?.some(h => h.command?.includes('specialists-session-start'))
+  );
+  settings.hooks.SessionStart.push(SPECIALISTS_SESSION_START_ENTRY);
+
   mkdirSync(CLAUDE_DIR, { recursive: true });
   writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+}
+
+
+function installSkills() {
+  if (!existsSync(BUNDLED_SKILLS_DIR)) return { installed: 0, skipped: 0 };
+  mkdirSync(CLAUDE_SKILLS_DIR, { recursive: true });
+
+  let installed = 0;
+  let skippedCount = 0;
+  let skillNames;
+  try {
+    skillNames = readdirSync(BUNDLED_SKILLS_DIR, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+  } catch {
+    return { installed: 0, skipped: 0 };
+  }
+
+  for (const skillName of skillNames) {
+    const srcDir  = join(BUNDLED_SKILLS_DIR, skillName);
+    const destDir = join(CLAUDE_SKILLS_DIR, skillName);
+    const skillFile     = join(srcDir, 'SKILL.md');
+    const destSkillFile = join(destDir, 'SKILL.md');
+
+    if (!existsSync(skillFile)) continue;
+
+    if (existsSync(destSkillFile)) {
+      // Check if content matches bundled version
+      try {
+        if (readFileSync(skillFile, 'utf8') === readFileSync(destSkillFile, 'utf8')) {
+          skippedCount++;
+          continue;
+        }
+      } catch { /* fall through to copy */ }
+    }
+
+    mkdirSync(destDir, { recursive: true });
+    copyFileSync(skillFile, destSkillFile);
+    installed++;
+  }
+
+  return { installed, skipped: skippedCount };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -283,7 +341,7 @@ if (!hooksExist) {
   skip('hooks up to date');
 } else {
   const label = (h) => h.missing ? red('missing') : yellow('updated');
-  console.log(`  ${yellow('○')} ${drift.length} of 6 hook(s) have changes:`);
+  console.log(`  ${yellow('○')} ${drift.length} of 7 hook(s) have changes:`);
   for (const h of drift) info(`      ${h.name}  ${label(h)}`);
   console.log();
   const confirmed = promptYN('  Update hooks?');
@@ -300,8 +358,17 @@ info('beads-commit-gate: requires issues closed before git commit');
 info('beads-stop-gate: requires issues closed before session end');
 info('beads-close-memory-prompt: nudges knowledge capture after bd close');
 info('specialists-complete: injects completion banners for background jobs');
+info('specialists-session-start: injects context (jobs, specialists, commands) at session start');
 
-// 7. Health check
+// 7. Skills
+section('Skills');
+const skillResult = installSkills();
+if (skillResult.installed > 0) ok(`${skillResult.installed} skill(s) installed → ~/.claude/skills/`);
+if (skillResult.skipped > 0)   skip(`${skillResult.skipped} skill(s) already up to date`);
+if (skillResult.installed === 0 && skillResult.skipped === 0) skip('No bundled skills found');
+info("specialists-usage: teaches agents when/how to use specialists CLI and MCP tools");
+
+// 8. Health check
 section('Health check');
 if (isInstalled('pi')) {
   const r = spawnSync('pi', ['--list-models'], { encoding: 'utf8' });
@@ -310,7 +377,7 @@ if (isInstalled('pi')) {
     : skip('No active provider — run pi config to set one up');
 }
 
-// 8. Done
+// 9. Done
 console.log('\n' + bold(green('  Done!')));
 console.log('\n' + bold('  Next steps:'));
 console.log(`  1. ${bold('Configure pi:')} run ${yellow('pi')} then ${yellow('pi config')} to enable model providers`);
