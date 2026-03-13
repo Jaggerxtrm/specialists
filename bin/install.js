@@ -9,7 +9,8 @@ import { join } from 'node:path';
 
 const HOME            = homedir();
 const SPECIALISTS_DIR = join(HOME, '.agents', 'specialists');
-const CLAUDE_DIR      = join(HOME, '.claude');
+const CWD             = process.cwd();
+const CLAUDE_DIR      = join(CWD, '.claude');
 const HOOKS_DIR       = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE   = join(CLAUDE_DIR, 'settings.json');
 const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.mjs');
@@ -74,7 +75,7 @@ function registerMCP() {
   npmInstallGlobal(GITHUB_PKG);
 
   const r = spawnSync('claude', [
-    'mcp', 'add', '--scope', 'user', MCP_NAME, '--', MCP_NAME,
+    'mcp', 'add', '--scope', 'project', MCP_NAME, '--', MCP_NAME,
   ], { stdio: 'inherit', encoding: 'utf8' });
   if (r.status !== 0) throw new Error('claude mcp add failed');
   return true;
@@ -85,7 +86,7 @@ function registerMCP() {
 
 const HOOK_ENTRY = {
   matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash',
-  hooks: [{ type: 'command', command: HOOK_FILE }],
+  hooks: [{ type: 'command', command: HOOK_FILE, timeout: 5000 }],
 };
 
 
@@ -153,7 +154,54 @@ function getHookDrift() {
     .filter(h => h.missing || h.changed);
 }
 
+
+// ── Global conflict detection ─────────────────────────────────────────────────
+// Our hook filenames — used to detect if the same hooks are already registered
+// in the user's global ~/.claude/settings.json.
+const MANAGED_HOOK_NAMES = [
+  'specialists-main-guard.mjs',
+  'beads-edit-gate.mjs',
+  'beads-commit-gate.mjs',
+  'beads-stop-gate.mjs',
+  'beads-close-memory-prompt.mjs',
+  'specialists-complete.mjs',
+  'specialists-session-start.mjs',
+];
+
+function checkGlobalConflicts() {
+  const globalSettings = join(homedir(), '.claude', 'settings.json');
+  if (!existsSync(globalSettings)) return;
+
+  let global = {};
+  try { global = JSON.parse(readFileSync(globalSettings, 'utf8')); } catch { return; }
+
+  const conflicts = [];
+  for (const [event, entries] of Object.entries(global.hooks ?? {})) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      for (const h of entry.hooks ?? []) {
+        const cmd = h.command ?? '';
+        const match = MANAGED_HOOK_NAMES.find(name => cmd.includes(name));
+        if (match) conflicts.push({ event, cmd, name: match });
+      }
+    }
+  }
+
+  if (conflicts.length === 0) return;
+
+  console.log('');
+  console.log(yellow('  ⚠  Global hook conflicts detected in ~/.claude/settings.json:'));
+  for (const c of conflicts) {
+    console.log(yellow(`     ${c.event}: ${c.name}`));
+    console.log(dim(`       → ${c.cmd}`));
+  }
+  console.log(yellow('  Both the global and project-local copies will run.'));
+  console.log(yellow('  Remove the global entries if you want only project-local hooks active.'));
+  console.log('');
+}
+
 function installHook() {
+  checkGlobalConflicts();
   mkdirSync(HOOKS_DIR, { recursive: true });
 
   // Copy hook files from bundled hooks/ directory
