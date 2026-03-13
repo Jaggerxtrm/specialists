@@ -28,7 +28,7 @@ try {
     stdio: ['pipe', 'pipe', 'pipe'],
     timeout: 8000,
   });
-  inProgress = (output.match(/in_progress/g) ?? []).length;
+  inProgress = (output.match(/^◐/gm) ?? []).length;
 } catch {
   process.exit(0);
 }
