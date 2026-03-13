@@ -13,7 +13,7 @@ const CWD             = process.cwd();
 const CLAUDE_DIR      = join(CWD, '.claude');
 const HOOKS_DIR       = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE   = join(CLAUDE_DIR, 'settings.json');
-const HOOK_FILE       = join(HOOKS_DIR, 'specialists-main-guard.mjs');
+const HOOK_FILE       = join(HOOKS_DIR, 'main-guard.mjs');
 const MCP_NAME        = 'specialists';
 const GITHUB_PKG      = '@jaggerxtrm/specialists';
 
@@ -90,6 +90,7 @@ const HOOK_ENTRY = {
 };
 
 
+const BEADS_GATE_UTILS_FILE = join(HOOKS_DIR, 'beads-gate-utils.mjs');
 const BEADS_EDIT_GATE_FILE   = join(HOOKS_DIR, 'beads-edit-gate.mjs');
 const BEADS_COMMIT_GATE_FILE = join(HOOKS_DIR, 'beads-commit-gate.mjs');
 const BEADS_STOP_GATE_FILE   = join(HOOKS_DIR, 'beads-stop-gate.mjs');
@@ -134,7 +135,8 @@ function promptYN(question) {
 
 function getHookDrift() {
   const pairs = [
-    ['specialists-main-guard.mjs',       HOOK_FILE],
+    ['main-guard.mjs',       HOOK_FILE],
+    ['beads-gate-utils.mjs',             BEADS_GATE_UTILS_FILE],
     ['beads-edit-gate.mjs',              BEADS_EDIT_GATE_FILE],
     ['beads-commit-gate.mjs',            BEADS_COMMIT_GATE_FILE],
     ['beads-stop-gate.mjs',              BEADS_STOP_GATE_FILE],
@@ -159,7 +161,7 @@ function getHookDrift() {
 // Our hook filenames — used to detect if the same hooks are already registered
 // in the user's global ~/.claude/settings.json.
 const MANAGED_HOOK_NAMES = [
-  'specialists-main-guard.mjs',
+  'main-guard.mjs',
   'beads-edit-gate.mjs',
   'beads-commit-gate.mjs',
   'beads-stop-gate.mjs',
@@ -205,8 +207,10 @@ function installHook() {
   mkdirSync(HOOKS_DIR, { recursive: true });
 
   // Copy hook files from bundled hooks/ directory
-  copyFileSync(join(BUNDLED_HOOKS_DIR, 'specialists-main-guard.mjs'), HOOK_FILE);
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'main-guard.mjs'), HOOK_FILE);
   chmodSync(HOOK_FILE, 0o755);
+  copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-gate-utils.mjs'), BEADS_GATE_UTILS_FILE);
+  chmodSync(BEADS_GATE_UTILS_FILE, 0o755);
   copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-edit-gate.mjs'), BEADS_EDIT_GATE_FILE);
   chmodSync(BEADS_EDIT_GATE_FILE, 0o755);
   copyFileSync(join(BUNDLED_HOOKS_DIR, 'beads-commit-gate.mjs'), BEADS_COMMIT_GATE_FILE);
@@ -231,7 +235,7 @@ function installHook() {
   if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(e =>
     !e.hooks?.some(h =>
-      h.command?.includes('specialists-main-guard') ||
+      h.command?.includes('main-guard') ||
       h.command?.includes('beads-edit-gate') ||
       h.command?.includes('beads-commit-gate')
     )
