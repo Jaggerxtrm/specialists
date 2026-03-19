@@ -96,6 +96,8 @@ Job files live in `.specialists/jobs/<id>/` (gitignored by `specialists init`):
 
 For production use: `use_specialist` for short synchronous tasks, CLI `--background` for anything that takes more than a few seconds.
 
+See [docs/mcp-servers.md](docs/mcp-servers.md) for registration details.
+
 ---
 
 ## Built-in Specialists
@@ -150,15 +152,9 @@ npm install -g @jaggerxtrm/specialists
 specialists install
 ```
 
-Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt**, registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, copies built-in specialists, and installs five Claude Code hooks:
+Installs: **pi** (`@mariozechner/pi-coding-agent`), **beads** (`@beads/bd`), **dolt**, registers the `specialists` MCP at user scope, scaffolds `~/.agents/specialists/`, copies built-in specialists, and installs 7 Claude Code hooks for workflow enforcement.
 
-| Hook | Event | Enforces |
-|------|-------|---------|
-| `specialists-main-guard.mjs` | `PreToolUse` | No direct edits/commits on `main`/`master` |
-| `beads-edit-gate.mjs` | `PreToolUse` | No file edits without an `in_progress` beads issue |
-| `beads-commit-gate.mjs` | `PreToolUse` | No `git commit` while issues are `in_progress` |
-| `beads-stop-gate.mjs` | `Stop` | Agent cannot stop with unresolved issues |
-| `specialists-complete.mjs` | `UserPromptSubmit` | Injects background job completion banners |
+**Hooks installed:** main-guard, beads-edit-gate, beads-commit-gate, beads-stop-gate, specialists-complete, specialists-session-start, beads-close-memory-prompt. See [docs/hooks.md](docs/hooks.md) for full reference.
 
 After running, **restart Claude Code** to load the MCP. Re-run `specialists install` at any time to update or repair.
 
