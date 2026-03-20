@@ -75,8 +75,26 @@
 
 ### Hooks (7 installed)
 
-| Hook | Event | Purpose |
-|------|-------|---------|
+| Hook | Event | Purpose | Parity status |
+|------|-------|---------|---------------|
+| `main-guard.mjs` | PreToolUse | Block edits on master/main | ⚠️ xtrm-tools removed from active runtime — evaluate removal (unitAI-o6j) |
+| `beads-edit-gate.mjs` | PreToolUse | Require in_progress bead | ⚠️ pre-refactor; sync with xtrm canonical (unitAI-o6j) |
+| `beads-commit-gate.mjs` | PreToolUse | Block commit with open issues | ⚠️ pre-refactor; sync with xtrm canonical (unitAI-o6j) |
+| `beads-stop-gate.mjs` | Stop | Block session end with issues | ⚠️ pre-refactor; sync with xtrm canonical (unitAI-o6j) |
+| `specialists-complete.mjs` | UserPromptSubmit | Inject completion banners | ✅ specialists-specific |
+| `specialists-session-start.mjs` | SessionStart | Prime context at session start | ✅ specialists-specific |
+| `beads-close-memory-prompt.mjs` | PostToolUse | Nudge knowledge capture | ❌ deprecated — xtrm replaced with `beads-memory-gate.mjs` Stop hook; see unitAI-pjx |
+
+**Missing vs xtrm-tools canonical:**
+
+| Hook | Event | Purpose | Issue |
+|------|-------|---------|-------|
+| `beads-memory-gate.mjs` | Stop | Hard-block until memory decision | unitAI-pjx |
+| `beads-compact-save.mjs` | Stop | Preserve session context across compaction | unitAI-4az |
+| `beads-compact-restore.mjs` | SessionStart | Restore context post-compaction | unitAI-4az |
+| `beads-claim-sync.mjs` | PostToolUse | Auto-commit on bd close | unitAI-200 |
+
+------|-------|---------|
 | \`main-guard.mjs\` | PreToolUse | Block edits on master/main |
 | \`beads-edit-gate.mjs\` | PreToolUse | Require in_progress bead |
 | \`beads-commit-gate.mjs\` | PreToolUse | Block commit with open issues |
@@ -87,14 +105,30 @@
 
 ---
 
-## Open Issues (26 total)
+## xtrm-tools Parity Status (as of 2026-03-20)
+
+Specialists hooks and session flow must stay in sync with xtrm-tools canonical. Key gaps:
+
+| Gap | Issue | Notes |
+|-----|-------|-------|
+| Worktree Dolt bootstrap for spawned Pi sessions | unitAI-lmi (P1) | Background specialists jobs spawn Pi subprocesses; if in worktree context, auto-isolated Dolt breaks all bd commands. Must redirect to canonical Dolt port before subprocess starts. Same trick as xtrm worktrees: `bd dolt stop && echo <main_port> > .beads/dolt-server.port` |
+| Hook sync with xtrm canonical (beads-gate-utils refactor) | unitAI-o6j (P2) | Beads hooks are pre-refactor standalone. Port beads-gate-utils.mjs shared module + updated gate logic. **Replace** `beads-close-memory-prompt.mjs` with `beads-memory-gate.mjs` — do NOT port the old file. |
+| Compact save/restore hooks | unitAI-4az (P1) | Long-running sessions will be compacted; without these hooks context is lost and gates can deadlock |
+| Auto-commit on close | unitAI-200 (P2) | beads-claim-sync.mjs: `<close_reason> (<id>)` commit message on `bd close` |
+| pi-structured-return extension | unitAI-mst (P2) | `nextpi install npm:@robhowley/pi-structured-return` — enables typed output from Pi sessions; may unblock unitAI-iuj |
+
+**CLI naming (open decision):** xtrm-tools uses `xtrm` (canonical) / `xt` (alias). The `xt sp` namespace for specialists is planned but not yet implemented in xtrm. Specialists CLI remains `specialists run/status/result/stop` until the wrapper exists.
+
+---
+
+## Open Issues (30 total)
 
 ### Priority Summary
 
 | Priority | Count | Category |
 |----------|-------|----------|
-| P1 🔴 | 14 | 1 bug, 13 features |
-| P2 🟡 | 8 | 2 bugs, 6 features |
+| P1 🔴 | 16 | 1 bug, 15 features (added: unitAI-lmi, unitAI-4az) |
+| P2 🟡 | 10 | 2 bugs, 8 features (added: unitAI-200, unitAI-mst) |
 | P3 🟢 | 3 | 1 bug, 2 features |
 | P4 ⚪ | 1 | 1 bug |
 
@@ -232,4 +266,4 @@ bun test         # bun --bun vitest run --no-coverage
 
 ---
 
-*Generated: 2026-03-19*
+*Generated: 2026-03-19 · Updated: 2026-03-20 (xtrm-tools parity gaps, 4 new issues: unitAI-lmi, unitAI-4az, unitAI-200, unitAI-mst)*
