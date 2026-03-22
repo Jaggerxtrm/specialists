@@ -6,33 +6,42 @@
 
 ## Current State (2026-03-22)
 
-### What was just completed
+### Phases Complete
 
-**Phase 0 — Hook system alignment** (commit d143a09):
-- `specialists/hooks/` now has exactly 2 files: `specialists-complete.mjs`, `specialists-session-start.mjs`
-- All beads hooks deleted — xtrm-tools is REQUIRED for the hook system; specialists does not bundle them
-- `src/pi/session.ts`: `--no-extensions` added to Pi subprocess spawn + selective re-enable of `quality-gates`/`service-skills`
-- Pre-existing type errors fixed: `beads.ts`, `hooks.ts` (CANCELLED status), `loader.ts` (scope narrowing), `session.ts` (`_donePromise` class property)
+**Phase 0 — Hook system alignment** (commit d143a09 + unitAI-5nm):
+- `specialists/hooks/` has exactly 2 files: `specialists-complete.mjs`, `specialists-session-start.mjs`
+- xtrm-tools is REQUIRED for the hook system; specialists does not bundle beads hooks
+- `src/pi/session.ts`: `--no-extensions` + selective re-enable of `quality-gates`/`service-skills`
+- `bin/install.js`: prereq checks (pi/bd/xt), installs 2 hooks, registers MCP in `.mcp.json`
 
 **Phase 1 — Core bugs** (commit ca51fb6):
-- `unitAI-fgy`: already implemented — `onBeadCreated` at `supervisor.ts:208` fires at bead creation before Pi starts
-- `unitAI-0ef`: fixed — SIGTERM now routed via `killFn` captured from `onKillRegistered`; `process.once('SIGTERM', () => killFn?.())` in `Supervisor.run()`; catch block writes `status:'error'`
+- `unitAI-fgy` ✓: `onBeadCreated` fires at bead creation before Pi starts
+- `unitAI-0ef` ✓: SIGTERM → `killFn` → `SessionKilledError` → `status:'error'`
+
+**Phase 2 — Output pinning** (PR #42, commit c67c0e7):
+- `unitAI-iuj` ✓: specialist output pinned to bead notes with `prompt_hash`, `git_sha`, `elapsed_ms`, `model`, `backend`
+
+**Phase 3 — Workflow** (PR #45, commit a90a58a):
+- `unitAI-7fm` ✓: `specialists init` registers MCP in `.mcp.json`
+- `unitAI-55d` ✓: `specialists run --bead <id>` — bead IS the prompt; `bd show <id> --json`
+- `unitAI-slu` ✓: single-bead lifecycle enforced — `--bead` runs skip `createBead`; `ownsBead` gates `closeBead`
 
 ### Key architecture decisions (binding)
 1. **xtrm-tools is REQUIRED** for hooks — specialists handles only agent running
 2. **Orchestrator pattern is correct** — Claude claims issue, spawns specialist, closes on completion
 3. **Pi subprocess isolation** — `--no-extensions` prevents beads extension from blocking edits in subprocess
+4. **Single-bead lifecycle** — `--bead <id>` uses the orchestrator's bead directly; runner never creates a second one
 
-### Next: Phase 2
-**`unitAI-iuj`** — Pin specialist output to bead on job completion
-- File: `src/specialist/supervisor.ts` lines 213-227 (after `writeFileSync(resultPath)`)
-- After writing `result.txt`, call `bd update <bead_id> --notes '<output>'` via `BeadsClient`
-- `bead_id` is guaranteed present in `status.json` at this point (fgy confirmed done)
-- Implementation: add `updateBead(id, notes)` to `BeadsClient` in `beads.ts`, call from supervisor done path
-- Then `unitAI-5nm`: install rework (xtrm prereq check + 2 hook installs + MCP registration)
+### Next priorities (open board)
+Run `bd ready` to see current queue. Top candidates:
+- `unitAI-750` (P1) — Dependency-aware context injection: propagate blocker outputs into specialist prompt
+- `unitAI-9re` (P1) — `specialists feed -f`: global live feed across all running jobs
+- `unitAI-msh` (P1) — Comprehensive docs (in_progress)
+- `unitAI-c64` (P2) — Memory curator specialist (now unblocked by iuj)
+- `unitAI-hos` (P2) — Commit/PR provenance hook
 
 ### Full issue board context
-See `PARITY-ANALYSIS.md` for all 30 issues, final 11 STALE / 17 KEEP / 2 MODIFY classification, and sprint order.
+See `docs/xtrm-specialists-analysis.md` for full classification, sprint history, and architecture decisions.
 
 ---
 
@@ -258,10 +267,9 @@ unitAI-csu (bd init prerequisite)
 
 ## Recommended Starting Point
 
-1. **Verify \`unitAI-fgy\`** — grep \`supervisor.ts\` for \`onBeadCreated\`. If callback writes \`bead_id\` during run, close as done.
-2. **Fix \`unitAI-0ef\`** (SIGTERM) — critical for reliability
-3. **Implement \`unitAI-iuj\`** — unblocks 4 downstream features
-4. **Complete init chain** — enables retiring \`install\` command
+1. `bd ready` — see full unblocked queue
+2. Claim with `bd update <id> --claim`, work in a worktree (`xt worktree create`)
+3. Top P1: `unitAI-750` (context injection) or `unitAI-9re` (global feed)
 
 ---
 
@@ -284,7 +292,7 @@ specialists doctor                        # troubleshoot
 \`\`\`bash
 bun install
 bun run build    # bun build src/index.ts --target=node --outfile=dist/index.js
-bun test         # bun --bun vitest run --no-coverage
+bun run test     # bun --bun vitest run (use `bun run test`, NOT `bun test`)
 \`\`\`
 
 ---
@@ -298,4 +306,4 @@ bun test         # bun --bun vitest run --no-coverage
 
 ---
 
-*Generated: 2026-03-19 · Updated: 2026-03-20 (xtrm-tools parity gaps, 4 new issues: unitAI-lmi, unitAI-4az, unitAI-200, unitAI-mst)*
+*Generated: 2026-03-19 · Updated: 2026-03-22 (Phases 0-3 complete; PR #45 merged)*

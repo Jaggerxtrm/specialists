@@ -64,14 +64,14 @@ if (toolsFlag) args.push('--tools', toolsFlag);
 
 ## SPRINT ORDER
 
-### Phase 0: Cleanup (no new features) — Epic unitAI-faf
+### Phase 0: Cleanup (no new features) — ✓ COMPLETE (Epic unitAI-faf closed)
 **Key decision**: xtrm is REQUIRED for hooks. specialists does NOT bundle beads hooks.
 specialists/hooks/ → only specialists-complete.mjs + specialists-session-start.mjs.
 
 1. ✓ faf.2: `--no-extensions` + conditional `-e` in session.ts (commit d143a09)
 2. ✓ faf.1: Closed 11 stale issues, updated PARITY-ANALYSIS.md
 3. ✓ faf.3: Deleted all 6 beads hooks; specialists/hooks/ has 2 files only
-4. unitAI-5nm: Install rework — prereq check (xtrm required), install 2 specialists hooks, MCP registration
+4. ✓ unitAI-5nm: Install rework — prereq check (xtrm required), install 2 specialists hooks, MCP registration
 
 ### Phase 1: Core bugs — ✓ COMPLETE (commit ca51fb6)
 - **`unitAI-fgy`** ✓ Already done: `onBeadCreated` at supervisor.ts:208 fires right after `createBead` (runner.ts:166), before Pi starts
@@ -85,9 +85,10 @@ specialists/hooks/ → only specialists-complete.mjs + specialists-session-start
   - Supporting change: `RunResult` now carries `promptHash`; background runs pass `beadsClient` into `Supervisor`
   - Verification: specialist unit tests updated and passing; `npx tsc --noEmit` passing
 
-### Phase 3: Workflow
-- **`unitAI-7fm`** — Register MCP at project scope (part of `specialists init`)
-- **`unitAI-55d`** — `specialists run --bead <id>`: bead IS the prompt; read via `bd show <id> --json`; input_bead_id ≠ tracking_bead_id
+### Phase 3: Workflow — ✓ COMPLETE (PR #45, merge commit a90a58a)
+- **`unitAI-7fm`** ✓ `specialists init` registers `@jaggerxtrm/specialists` in `.mcp.json`
+- **`unitAI-55d`** ✓ `specialists run --bead <id>`: bead IS the prompt; `bd show <id> --json`; single-bead orchestrator-owned lifecycle
+- **`unitAI-slu`** ✓ Bug fixed: `--bead` runs no longer create a second tracking bead; `ownsBead` flag gates `closeBead`; orchestrator closes input bead
 
 ---
 
@@ -97,16 +98,17 @@ Changes from original PARITY-ANALYSIS marked ⬆.
 
 | ID | Pri | Description | Final | Action |
 |----|-----|-------------|-------|--------|
-| `unitAI-0ef` | P1 | SIGTERM doesn't update job status | **KEEP** | Fix Supervisor watcher — Phase 1 |
+| `unitAI-0ef` | P1 | SIGTERM doesn't update job status | **DONE** ✓ | Fixed Phase 1 (commit ca51fb6) |
+| `unitAI-0qj` | P2 | Review and reconcile unrelated .claude workflow changes | **KEEP** | Added post-analysis; review .claude/ drift |
 | `unitAI-4az` | P1 | beads-compact-save/restore hooks | **KEEP** ⬆ | Bundle in specialists for standalone; was STALE (wrong: xtrm has them but standalone needs them too) |
-| `unitAI-55d` | P1 | `specialists run --bead <id>` | **KEEP** | Phase 3 |
+| `unitAI-55d` | P1 | `specialists run --bead <id>` | **DONE** ✓ | Completed PR #45; single-bead orchestrator lifecycle |
 | `unitAI-750` | P1 | Dependency-aware context injection | **KEEP** | Future — needs iuj first |
-| `unitAI-7fm` | P1 | specialists init: register MCP at project scope | **KEEP** | Phase 3 |
+| `unitAI-7fm` | P1 | specialists init: register MCP at project scope | **DONE** ✓ | Completed PR #45 |
 | `unitAI-9re` | P1 | specialists feed -f global live feed | **KEEP** | CLI feature |
 | `unitAI-aq0` | P1 | specialists init: detect-and-defer beads hooks | **STALE** | Addressed by Phase 0 peer dep detection |
 | `unitAI-bi6` | P1 | specialists init: install project-local hooks | **STALE** | Addressed by Phase 0 peer dep detection |
 | `unitAI-csu` | P1 | specialists init: run bd init prerequisite | **STALE** | xtrm init handles it; peer dep model delegates |
-| `unitAI-fgy` | P1 | Write bead_id at job creation | **KEEP** | Phase 1 — unblocks everything below |
+| `unitAI-fgy` | P1 | Write bead_id at job creation | **DONE** ✓ | Already implemented at supervisor.ts:208 |
 | `unitAI-iuj` | P1 | Pin specialist output to bead | **DONE** ✓ | Completed in PR #42; notes include full output + metadata |
 | `unitAI-lmi` | P1 | Worktree Dolt bootstrap | **STALE** ✓ | `bd worktree create` handles port redirect; `--no-extensions` eliminates Pi conflict |
 | `unitAI-msh` | P1 | Comprehensive docs | **MODIFY** | Update to document peer dep model + integration |
@@ -116,7 +118,7 @@ Changes from original PARITY-ANALYSIS marked ⬆.
 | `unitAI-200` | P2 | beads-claim-sync hook | **KEEP** ⬆ | Bundle in specialists for standalone; was STALE (wrong: standalone needs it) |
 | `unitAI-3n1` | P2 | Reduce hook verbosity | **STALE** | Phase 0 replaces with xtrm canonical (already clean) |
 | `unitAI-5dj` | P2 | hooks-deployer review | **STALE** | overstory is separate, not relevant to specialists |
-| `unitAI-5nm` | P2 | Retire specialists install / bin/install.js | **MODIFY** | Keep but rework: peer dep detection + MCP registration only |
+| `unitAI-5nm` | P2 | Retire specialists install / bin/install.js | **DONE** ✓ | Reworked: prereq checks + 2 hooks + MCP reg |
 | `unitAI-9xa` | P2 | specialists clean | **KEEP** ⬆ | `xt clean` removes orphaned hooks, not job dirs — different scope; was STALE |
 | `unitAI-c64` | P2 | Memory curator specialist | **KEEP** | New specialist YAML — needs iuj first |
 | `unitAI-hgo` | P2 | specialists install is silent | **STALE** | Phase 0 reworks install with output |
@@ -188,13 +190,13 @@ Changes from original: unitAI-4az, unitAI-200, unitAI-9xa moved STALE→KEEP; un
 | `specialist/runner.ts` (283 LOC) | 17-step lifecycle: load→render→scripts→beads→execute→close→audit |
 | `specialist/supervisor.ts` (242 LOC) | File-based job state: status.json, events.jsonl, result.txt, ready/ markers |
 | `specialist/loader.ts` | 3-scope YAML discovery: project / user (`~/.agents/specialists/`) / system |
-| `specialist/beads.ts` | BeadsClient: createBead, closeBead, auditBead via `bd` CLI |
+| `specialist/beads.ts` | BeadsClient: createBead, closeBead, auditBead, updateBeadNotes, readBead, buildBeadContext |
 | `specialist/jobRegistry.ts` | In-memory registry (deprecated v2; v3 uses file-based Supervisor) |
 | `pi/session.ts` | PiAgentSession: spawn pi --mode rpc, RPC over stdin/stdout NDJSON |
 | `pi/backendMap.ts` | Provider alias map (gemini→google-gemini-cli, claude→anthropic, etc.) |
 | `cli/run.ts` | `specialists run` — foreground + `--background` (writes Supervisor job) |
 | `cli/status.ts` | Health check + active background jobs from `.specialists/jobs/` |
-| `cli/stop.ts` | SIGTERM to pi PID (broken — unitAI-0ef) |
+| `cli/stop.ts` | SIGTERM to pi PID → routed via killFn → SessionKilledError → status:'error' |
 | `cli/feed.ts` | Tail `events.jsonl` with optional `--follow` |
 
 ### Pi --no-extensions flag (confirmed)
@@ -227,7 +229,7 @@ xtrm install
 ## MATURITY SNAPSHOT
 | Project | Verdict | Key gaps |
 |---------|---------|---------|
-| specialists v3.2.0 | ⚠️ **Beta** | 3 P1 bugs (0ef, fgy, iuj), 0% test coverage on core |
+| specialists v3.2.0 | ⚠️ **Beta** | Phases 0-3 complete; growing test coverage; P1 backlog cleared |
 | xtrm-tools v0.5.26 | ✅ **Stable** | 0% test coverage on 4007 LOC CLI |
 | xtrm velocity | 2.6× faster | 428 vs 162 commits (Feb-Mar 2026) |
 
