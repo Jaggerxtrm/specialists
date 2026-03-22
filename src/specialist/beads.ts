@@ -44,6 +44,12 @@ export class BeadsClient {
     spawnSync('bd', ['close', id, '-r', reason], { stdio: 'ignore' });
   }
 
+  /** Update bead notes with specialist output or metadata. */
+  updateBeadNotes(id: string, notes: string): void {
+    if (!this.available || !id || !notes) return;
+    spawnSync('bd', ['update', id, '--notes', notes], { stdio: 'ignore' });
+  }
+
   /** Record a bd audit entry linking the bead to the specialist invocation. */
   auditBead(id: string, toolName: string, model: string, exitCode: number): void {
     if (!this.available || !id) return;

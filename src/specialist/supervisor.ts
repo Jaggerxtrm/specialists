@@ -15,7 +15,9 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
+import type { BeadsClient } from './beads.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 
@@ -40,10 +42,33 @@ export interface SupervisorOptions {
   runner: SpecialistRunner;
   runOptions: RunOptions;
   jobsDir: string; // absolute path to .specialists/jobs/
+  beadsClient?: BeadsClient;
 }
 
 // Events worth writing to events.jsonl (high-signal only; drop thinking_delta, text_delta, etc.)
 const LOGGED_EVENTS = new Set(['thinking', 'toolcall', 'tool_execution_end', 'done']);
+
+function getCurrentGitSha(): string | undefined {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (result.status !== 0) return undefined;
+  const sha = result.stdout?.trim();
+  return sha || undefined;
+}
+
+function formatBeadNotes(result: { output: string; promptHash: string; durationMs: number; model: string; backend: string }): string {
+  const metadata = [
+    `prompt_hash=${result.promptHash}`,
+    `git_sha=${getCurrentGitSha() ?? 'unknown'}`,
+    `elapsed_ms=${Math.round(result.durationMs)}`,
+    `model=${result.model}`,
+    `backend=${result.backend}`,
+  ].join('\n');
+  return `${result.output}\n\n---\n${metadata}`;
+}
+
 
 export class Supervisor {
   constructor(private opts: SupervisorOptions) {}
@@ -216,6 +241,9 @@ export class Supervisor {
 
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       writeFileSync(this.resultPath(id), result.output, 'utf-8');
+      if (result.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+      }
       this.updateStatus(id, {
         status: 'done',
         elapsed_s: elapsed,

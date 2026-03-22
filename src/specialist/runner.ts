@@ -23,6 +23,7 @@ export interface RunResult {
   model: string;
   durationMs: number;
   specialistVersion: string;
+  promptHash: string;
   beadId?: string;
 }
 
@@ -247,6 +248,7 @@ export class SpecialistRunner {
       model,
       durationMs,
       specialistVersion: metadata.version,
+      promptHash,
       beadId,
     };
   }

@@ -23,6 +23,7 @@ function makeMockRunner(output = 'test output', model = 'haiku', backend = 'anth
       backend,
       durationMs: 100,
       specialistVersion: '1.0.0',
+      promptHash: 'abc123def4567890',
       beadId: undefined,
     }),
   } as any;
@@ -107,6 +108,37 @@ describe('Supervisor', () => {
 
     const readyMarker = join(jobsDir, '..', 'ready', id);
     expect(existsSync(readyMarker)).toBe(true);
+  });
+
+
+  it('pins result output and metadata to bead notes when beadId is present', async () => {
+    const beadsClient = { updateBeadNotes: vi.fn() } as any;
+    const runner = makeMockRunner('hello bead', 'claude-haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'hello bead',
+      model: 'claude-haiku',
+      backend: 'anthropic',
+      durationMs: 321,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123def4567890',
+      beadId: 'specialists-123',
+    });
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
+
+    await sup.run();
+
+    expect(beadsClient.updateBeadNotes).toHaveBeenCalledWith(
+      'specialists-123',
+      expect.stringContaining('hello bead'),
+    );
+    expect(beadsClient.updateBeadNotes).toHaveBeenCalledWith(
+      'specialists-123',
+      expect.stringContaining('prompt_hash=abc123def4567890'),
+    );
+    expect(beadsClient.updateBeadNotes).toHaveBeenCalledWith(
+      'specialists-123',
+      expect.stringContaining('elapsed_ms=321'),
+    );
   });
 
   it('on runner error: status=error, error field set, no result.txt written', async () => {

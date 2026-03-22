@@ -41,6 +41,7 @@ function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): Bead
     createBead: vi.fn().mockReturnValue('specialists-test-1'),
     closeBead: vi.fn(),
     auditBead: vi.fn(),
+    updateBeadNotes: vi.fn(),
     ...overrides,
   } as unknown as BeadsClient;
 }
@@ -64,6 +65,7 @@ describe('SpecialistRunner', () => {
     expect(result.output).toBe('{"result": "ok"}');
     expect(result.backend).toBe('google-gemini-cli');
     expect(result.specialistVersion).toBe('1.0.0');
+    expect(result.promptHash).toHaveLength(16);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
