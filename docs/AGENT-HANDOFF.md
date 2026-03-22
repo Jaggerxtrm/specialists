@@ -4,6 +4,38 @@
 
 ---
 
+## Current State (2026-03-22)
+
+### What was just completed
+
+**Phase 0 — Hook system alignment** (commit d143a09):
+- `specialists/hooks/` now has exactly 2 files: `specialists-complete.mjs`, `specialists-session-start.mjs`
+- All beads hooks deleted — xtrm-tools is REQUIRED for the hook system; specialists does not bundle them
+- `src/pi/session.ts`: `--no-extensions` added to Pi subprocess spawn + selective re-enable of `quality-gates`/`service-skills`
+- Pre-existing type errors fixed: `beads.ts`, `hooks.ts` (CANCELLED status), `loader.ts` (scope narrowing), `session.ts` (`_donePromise` class property)
+
+**Phase 1 — Core bugs** (commit ca51fb6):
+- `unitAI-fgy`: already implemented — `onBeadCreated` at `supervisor.ts:208` fires at bead creation before Pi starts
+- `unitAI-0ef`: fixed — SIGTERM now routed via `killFn` captured from `onKillRegistered`; `process.once('SIGTERM', () => killFn?.())` in `Supervisor.run()`; catch block writes `status:'error'`
+
+### Key architecture decisions (binding)
+1. **xtrm-tools is REQUIRED** for hooks — specialists handles only agent running
+2. **Orchestrator pattern is correct** — Claude claims issue, spawns specialist, closes on completion
+3. **Pi subprocess isolation** — `--no-extensions` prevents beads extension from blocking edits in subprocess
+
+### Next: Phase 2
+**`unitAI-iuj`** — Pin specialist output to bead on job completion
+- File: `src/specialist/supervisor.ts` lines 213-227 (after `writeFileSync(resultPath)`)
+- After writing `result.txt`, call `bd update <bead_id> --notes '<output>'` via `BeadsClient`
+- `bead_id` is guaranteed present in `status.json` at this point (fgy confirmed done)
+- Implementation: add `updateBead(id, notes)` to `BeadsClient` in `beads.ts`, call from supervisor done path
+- Then `unitAI-5nm`: install rework (xtrm prereq check + 2 hook installs + MCP registration)
+
+### Full issue board context
+See `PARITY-ANALYSIS.md` for all 30 issues, final 11 STALE / 17 KEEP / 2 MODIFY classification, and sprint order.
+
+---
+
 ## What This Project Is
 
 **Specialists** is an MCP (Model Context Protocol) server that lets Claude Code discover and delegate to autonomous coding agents. Each "specialist" is a full AI agent scoped to a specific domain (bug hunting, architecture analysis, code review) — powered by [pi](https://github.com/mariozechner/pi).

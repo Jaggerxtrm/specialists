@@ -171,15 +171,15 @@ unitAI-hos moved MODIFY→KEEP; yielding 11/17/2.
 |------|-------------|--------|
 | faf.1 | Board triage: close 11 stale issues, update docs | ✓ done |
 | faf.2 | Pi subprocess isolation: `--no-extensions` in session.ts | ✓ done |
-| faf.3 | Hook cleanup: delete all 6 beads hooks from specialists/hooks/ | open |
+| faf.3 | Hook cleanup: delete all 6 beads hooks from specialists/hooks/ | ✓ done |
 | unitAI-4az | Bundle compact-save/restore | ❄ deferred (xtrm required, no bundling) |
 | unitAI-200 | Bundle claim-sync | ❄ deferred (xtrm required, no bundling) |
 | faf.4 | Bundle memory-gate + wiring | ❄ deferred (xtrm required, no bundling) |
 | unitAI-5nm | Install rework: xtrm prereq check + 2 specialist hooks + MCP | open |
 
-### Phase 1: Core bugs (parallel)
-- **`unitAI-fgy`** — Write `bead_id` into `status.json` at job creation
-- **`unitAI-0ef`** — Fix SIGTERM: supervisor stays alive, traps pi `close` event
+### Phase 1: Core bugs (parallel) — ✓ COMPLETE
+- **`unitAI-fgy`** ✓ Already implemented: `onBeadCreated` at supervisor.ts:208 fires right after `createBead` (runner.ts:166), before Pi session starts
+- **`unitAI-0ef`** ✓ Fixed: SIGTERM handler added to `Supervisor.run()` — captures `killFn`, routes SIGTERM → `session.kill()` → `SessionKilledError` → catch writes `status:'error'`
 
 ### Phase 2: Output pinning (unblocks 4 downstream features)
 - **`unitAI-iuj`** — `bd update <bead_id> --notes '<output>'` after writing result.txt
