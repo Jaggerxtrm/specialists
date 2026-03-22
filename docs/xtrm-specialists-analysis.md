@@ -230,6 +230,40 @@ xtrm install
 
 ---
 
+## xtrm-tools FUTURE WORK
+
+These items live in `/home/dawid/projects/xtrm-tools`, NOT in specialists.
+
+### 1. `xt sp` command namespace — NOT YET IMPLEMENTED
+Planned CLI surface for specialists inside xtrm:
+- `xt sp run <name> --prompt "..."` — delegates to `specialists run`
+- `xt sp status` — delegates to `specialists status`
+- `xt sp stop <job>` — delegates to `specialists stop`
+- `xt sp feed <job>` — delegates to `specialists feed`
+Purpose: make specialists a first-class citizen of the `xt` CLI so users never have to remember two CLIs.
+Files to create: `xtrm-tools/cli/sp.ts` or similar. Check existing CLI structure first.
+
+### 2. specialists-aware `xtrm install`
+When xtrm detects `@jaggerxtrm/specialists` is installed (global or local), it should optionally:
+- Wire `specialists-complete.mjs` and `specialists-session-start.mjs` into the project's hooks
+- These hook files live in the specialists package at `hooks/`
+- Currently `specialists install` does this — xtrm could absorb it for integrated mode
+Status: LOW priority — `specialists install` handles it today.
+
+### 3. Document specialists as hard dependency consumer
+In xtrm-tools docs/README: note that specialists requires xtrm-tools for:
+- All beads hooks (edit/commit/stop gates, claim-sync, compact-save/restore, memory-gate)
+- Pi extensions system (quality-gates, service-skills)
+xtrm should reflect this in its own docs so users know to install it.
+
+### 4. `pi-structured-return` Pi extension (evaluate)
+`unitAI-mst` in specialists: evaluate whether `pi-structured-return` belongs in xtrm's Pi extensions.
+If it's a general-purpose structured output extension for Pi, it belongs in xtrm.
+If it's specialists-specific output parsing, it stays in specialists.
+Evaluate BEFORE implementing `unitAI-iuj` (pin output to bead) — may simplify that work significantly.
+
+---
+
 ## OPEN QUESTIONS
 1. Should quality-gates load for READ_ONLY specialist sessions? (Probably not — nothing to lint)
 2. `xt sp` namespace: planned but not implemented in xtrm. When?
