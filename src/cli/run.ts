@@ -79,19 +79,21 @@ export async function run(): Promise<void> {
   const circuitBreaker = new CircuitBreaker();
   const hooks          = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
   const beadsClient = args.noBeads ? undefined : new BeadsClient();
+  // Always create a reader for bead content — --no-beads only suppresses tracking
+  const beadReader = beadsClient ?? new BeadsClient();
 
   let prompt = args.prompt;
   let variables: Record<string, string> | undefined;
 
   if (args.beadId) {
-    const bead = beadsClient?.readBead(args.beadId);
+    const bead = beadReader.readBead(args.beadId);
     if (!bead) {
       throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
     }
 
     // Fetch completed blockers at the requested depth (default 1)
-    const blockers = (args.contextDepth > 0 && beadsClient)
-      ? beadsClient.getCompletedBlockers(args.beadId, args.contextDepth)
+    const blockers = (args.contextDepth > 0)
+      ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth)
       : [];
 
     if (blockers.length > 0) {
