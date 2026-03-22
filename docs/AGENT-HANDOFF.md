@@ -26,6 +26,13 @@
 - `unitAI-55d` ✓: `specialists run --bead <id>` — bead IS the prompt; `bd show <id> --json`
 - `unitAI-slu` ✓: single-bead lifecycle enforced — `--bead` runs skip `createBead`; `ownsBead` gates `closeBead`
 
+**Post-sprint housekeeping** (commits c40c9fb, 04d2e36):
+- `$cwd` injected as built-in template variable in `runner.ts` — 6 specialists use it; was never substituted
+- `planner.specialist.yaml` fixed: removed `defaults` key (not in schema) + `READ_WRITE` → `HIGH` permission; was silently dropped by loader
+- `unitAI-vbl` (P2 bug): loader should warn on invalid YAML instead of silent skip — filed
+- `unitAI-hdd` (P2 task): `specialist-author` skill to guide writing valid YAML — filed
+- Global install: `npm install -g .` → `specialists` available system-wide (v3.2.0, 11 specialists)
+
 ### Key architecture decisions (binding)
 1. **xtrm-tools is REQUIRED** for hooks — specialists handles only agent running
 2. **Orchestrator pattern is correct** — Claude claims issue, spawns specialist, closes on completion
@@ -36,7 +43,9 @@
 Run `bd ready` to see current queue. Top candidates:
 - `unitAI-750` (P1) — Dependency-aware context injection: propagate blocker outputs into specialist prompt
 - `unitAI-9re` (P1) — `specialists feed -f`: global live feed across all running jobs
-- `unitAI-msh` (P1) — Comprehensive docs (in_progress)
+- `unitAI-4az` (P1) — compact save/restore hooks (needed for long specialist sessions)
+- `unitAI-vbl` (P2) — loader warn on invalid YAML (quick fix, high value)
+- `unitAI-hdd` (P2) — specialist-author skill
 - `unitAI-c64` (P2) — Memory curator specialist (now unblocked by iuj)
 - `unitAI-hos` (P2) — Commit/PR provenance hook
 
