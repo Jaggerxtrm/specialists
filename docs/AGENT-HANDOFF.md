@@ -26,6 +26,10 @@
 - `unitAI-55d` ✓: `specialists run --bead <id>` — bead IS the prompt; `bd show <id> --json`
 - `unitAI-slu` ✓: single-bead lifecycle enforced — `--bead` runs skip `createBead`; `ownsBead` gates `closeBead`
 
+**Phase 4 — Context injection** (PR #47, commits 2e3365b + 35cb506):
+- `unitAI-750` ✓: `--context-depth <n>` flag (default 1 with --bead); `getCompletedBlockers(id, depth)` walks dep tree via `bd dep list --json`, reads closed blocker notes; `buildBeadContext(bead, blockers[])` injects as `## Context from completed dependencies:` section
+- Fix: `--no-beads` no longer blocks `--bead` reads — split `beadReader` (always available) from `beadsClient` (tracking only)
+
 **Post-sprint housekeeping** (commits c40c9fb, 04d2e36):
 - `$cwd` injected as built-in template variable in `runner.ts` — 6 specialists use it; was never substituted
 - `planner.specialist.yaml` fixed: removed `defaults` key (not in schema) + `READ_WRITE` → `HIGH` permission; was silently dropped by loader
@@ -41,7 +45,6 @@
 
 ### Next priorities (open board)
 Run `bd ready` to see current queue. Top candidates:
-- `unitAI-750` (P1) — Dependency-aware context injection: propagate blocker outputs into specialist prompt
 - `unitAI-9re` (P1) — `specialists feed -f`: global live feed across all running jobs
 - `unitAI-4az` (P1) — compact save/restore hooks (needed for long specialist sessions)
 - `unitAI-vbl` (P2) — loader warn on invalid YAML (quick fix, high value)
