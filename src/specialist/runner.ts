@@ -13,6 +13,8 @@ export interface RunOptions {
   variables?: Record<string, string>;
   backendOverride?: string;
   autonomyLevel?: string;
+  /** Existing bead whose content should be used as the task prompt. */
+  inputBeadId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
   sessionPath?: string;
 }
@@ -119,7 +121,15 @@ export class SpecialistRunner {
     const preScriptOutput = formatScriptOutput(preResults);
 
     // Render task template (pre_script_output is '' when no scripts ran)
-    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
+    const beadVariables = options.inputBeadId
+      ? { bead_context: options.prompt, bead_id: options.inputBeadId }
+      : {};
+    const variables = {
+      prompt: options.prompt,
+      pre_script_output: preScriptOutput,
+      ...(options.variables ?? {}),
+      ...beadVariables,
+    };
     const renderedTask = renderTemplate(prompt.task_template, variables);
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
@@ -159,12 +169,16 @@ export class SpecialistRunner {
       permission_level: permissionLevel,
     });
 
-    // Beads: create bead if policy allows
+    // Beads: use provided input bead OR create a new tracking bead.
+    // When inputBeadId is present the orchestrator owns the lifecycle — do NOT create a second bead.
     const beadsIntegration = spec.specialist.beads_integration ?? 'auto';
     let beadId: string | undefined;
-    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+    let ownsBead = false; // true only when runner created the bead (not inherited from orchestrator)
+    if (options.inputBeadId) {
+      beadId = options.inputBeadId;
+    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
       beadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (beadId) onBeadCreated?.(beadId);
+      if (beadId) { ownsBead = true; onBeadCreated?.(beadId); }
     }
 
     let output: string;
@@ -207,10 +221,11 @@ export class SpecialistRunner {
         // Only record a circuit-breaker failure for real backend errors
         circuitBreaker.recordFailure(model);
       }
-      // Beads: close with CANCELLED for kill, ERROR for real failures; always audit
+      // Beads: close with CANCELLED for kill, ERROR for real failures; always audit.
+      // Only close if runner owns the bead — input beads are closed by the orchestrator.
       const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
       if (beadId) {
-        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        if (ownsBead) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
         beadsClient?.auditBead(beadId, metadata.name, model, 1);
       }
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
@@ -236,9 +251,10 @@ export class SpecialistRunner {
       output_valid: true,
     });
 
-    // Beads: close with COMPLETE and emit audit record
+    // Beads: close with COMPLETE and emit audit record.
+    // Only close if runner owns the bead — input beads are closed by the orchestrator.
     if (beadId) {
-      beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
+      if (ownsBead) beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
       beadsClient?.auditBead(beadId, metadata.name, model, 0);
     }
 

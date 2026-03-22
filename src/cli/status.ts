@@ -169,7 +169,7 @@ export async function run(): Promise<void> {
   // 2. pi
   section('pi  (coding agent runtime)');
   if (!piInstalled) {
-    fail(`pi not installed — run ${yellow('specialists install')}`);
+    fail(`pi not installed — install ${yellow('pi')} first`);
   } else {
     const vStr = piVersion?.ok ? `v${piVersion.stdout}` : 'unknown version';
     const pStr = piProviders.size > 0
@@ -181,7 +181,7 @@ export async function run(): Promise<void> {
   // 3. beads
   section('beads  (issue tracker)');
   if (!bdInstalled) {
-    fail(`bd not installed — run ${yellow('specialists install')}`);
+    fail(`bd not installed — install ${yellow('bd')} first`);
   } else {
     ok(`bd installed${bdVersion?.ok ? `  ${dim(bdVersion.stdout)}` : ''}`);
     if (beadsPresent) {

@@ -1,0 +1,14 @@
+
+tests/integration/cli/init.integration.test.ts:
+(pass) integration: specialists init > writes project-scoped .mcp.json via the real CLI entrypoint [275.00ms]
+(pass) integration: specialists init > merges specialists registration into an existing .mcp.json file [196.00ms]
+
+tests/integration/cli/run.integration.test.ts:
+(pass) integration: specialists run > rejects using --prompt and --bead together through the real CLI boundary [180.00ms]
+(pass) integration: specialists run > rejects missing prompt, stdin, and bead through the real CLI boundary [179.00ms]
+(pass) integration: specialists run > fails early when bead lookup cannot be resolved before any pi session starts [289.00ms]
+
+ 5 pass
+ 0 fail
+ 12 expect() calls
+Ran 5 tests across 2 files. [1171.00ms]

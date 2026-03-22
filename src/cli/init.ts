@@ -22,8 +22,44 @@ specialist without user intervention.
 `.trimStart();
 
 const AGENTS_MARKER = '## Specialists';
-
 const GITIGNORE_ENTRY = '.specialists/';
+const MCP_FILE = '.mcp.json';
+const MCP_SERVER_NAME = 'specialists';
+const MCP_SERVER_CONFIG = { command: 'specialists', args: [] };
+
+function loadJson(path: string, fallback: Record<string, unknown>): Record<string, any> {
+  if (!existsSync(path)) return structuredClone(fallback);
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, any>;
+  } catch {
+    return structuredClone(fallback);
+  }
+}
+
+function saveJson(path: string, value: Record<string, unknown>): void {
+  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf-8');
+}
+
+function ensureProjectMcp(cwd: string): void {
+  const mcpPath = join(cwd, MCP_FILE);
+  const mcp = loadJson(mcpPath, { mcpServers: {} });
+  mcp.mcpServers ??= {};
+
+  const existing = mcp.mcpServers[MCP_SERVER_NAME];
+  if (
+    existing &&
+    existing.command === MCP_SERVER_CONFIG.command &&
+    Array.isArray(existing.args) &&
+    existing.args.length === MCP_SERVER_CONFIG.args.length
+  ) {
+    skip('.mcp.json already registers specialists');
+    return;
+  }
+
+  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
+  saveJson(mcpPath, mcp);
+  ok('registered specialists in project .mcp.json');
+}
 
 export async function run(): Promise<void> {
   const cwd = process.cwd();
@@ -80,10 +116,13 @@ export async function run(): Promise<void> {
     ok('created AGENTS.md with Specialists section');
   }
 
+  // ── 5. Register MCP at project scope ──────────────────────────────────────
+  ensureProjectMcp(cwd);
+
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
   console.log(`  ${dim('Next steps:')}`);
   console.log(`  1. Add your specialists to ${yellow('specialists/')}`);
   console.log(`  2. Run ${yellow('specialists list')} to verify they are discovered`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md changes\n`);
+  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json changes\n`);
 }
