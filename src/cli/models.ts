@@ -72,7 +72,7 @@ export async function run(): Promise<void> {
 
   const allModels = parsePiModels();
   if (!allModels) {
-    console.error('pi not found or failed — run specialists install');
+    console.error('pi not found or failed — install and configure pi first');
     process.exit(1);
   }
 
