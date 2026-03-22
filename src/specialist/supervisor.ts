@@ -168,6 +168,10 @@ export class Supervisor {
 
     let textLogged = false;
     let currentTool = '';
+    let killFn: (() => void) | undefined;
+
+    const sigtermHandler = () => killFn?.();
+    process.once('SIGTERM', sigtermHandler);
 
     try {
       const result = await runner.run(
@@ -202,8 +206,8 @@ export class Supervisor {
           this.updateStatus(id, { model: meta.model, backend: meta.backend });
           appendEvent({ type: 'meta', model: meta.model, backend: meta.backend });
         },
-        // onKillRegistered — PID already recorded in initial status
-        (_killFn) => {},
+        // onKillRegistered — capture so SIGTERM can kill the Pi session cleanly
+        (fn) => { killFn = fn; },
         // onBeadCreated
         (beadId) => {
           this.updateStatus(id, { bead_id: beadId });
@@ -236,6 +240,7 @@ export class Supervisor {
       appendEvent({ type: 'error', message: err?.message ?? String(err) });
       throw err;
     } finally {
+      process.removeListener('SIGTERM', sigtermHandler);
       closeSync(eventsFd);
     }
   }
