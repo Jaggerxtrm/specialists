@@ -24,6 +24,9 @@ export class SessionKilledError extends Error {
 //   agent_end     — DONE, contains all messages
 //
 import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
 export interface AgentSessionMeta {
@@ -67,12 +70,13 @@ function mapPermissionToTools(level?: string): string | undefined {
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
+  private _donePromise?: Promise<void>;
   private _doneResolve?: () => void;
   private _doneReject?: (e: Error) => void;
   private _agentEndReceived = false;
   private _killed = false;
   private _lineBuffer = '';   // accumulates partial lines split across stdout chunks
-  private _pendingCommand?: (response: any) => void;
+  private _pendingCommand?: (response: unknown) => void;
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -104,6 +108,7 @@ export class PiAgentSession {
 
     const args = [
       '--mode', 'rpc',
+      '--no-extensions',   // disable ALL auto-discovered xtrm Pi extensions (beads, session-flow, etc.)
       ...providerArgs,
       '--no-session',
       ...extraArgs,
@@ -112,6 +117,16 @@ export class PiAgentSession {
     // Enforce permission level via --tools flag
     const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
     if (toolsFlag) args.push('--tools', toolsFlag);
+
+    // Selectively re-enable useful Pi extensions if installed
+    const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
+    const permLevel = (this.options.permissionLevel ?? '').toUpperCase();
+    if (permLevel !== 'READ_ONLY') {
+      const qgPath = join(piExtDir, 'quality-gates');
+      if (existsSync(qgPath)) args.push('-e', qgPath);
+    }
+    const ssPath = join(piExtDir, 'service-skills');
+    if (existsSync(ssPath)) args.push('-e', ssPath);
 
     if (this.options.systemPrompt) {
       args.push('--append-system-prompt', this.options.systemPrompt);
@@ -127,7 +142,7 @@ export class PiAgentSession {
     });
     // Prevent unhandled rejection warnings when kill() is called before waitForDone() is awaited
     donePromise.catch(() => {});
-    (this as any)._donePromise = donePromise;
+    this._donePromise = donePromise;
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
       // Accumulate into the line buffer — agent_end JSON can be 100KB+,
@@ -275,7 +290,7 @@ export class PiAgentSession {
    * Wait for the agent to finish. Optionally times out (throws Error on timeout).
    */
   async waitForDone(timeout?: number): Promise<void> {
-    const donePromise = (this as any)._donePromise as Promise<void>;
+    const donePromise = this._donePromise ?? Promise.resolve();
     if (!timeout) return donePromise;
     return Promise.race([
       donePromise,
@@ -325,7 +340,7 @@ export class PiAgentSession {
     if (this._killed) return;
     this.proc?.stdin?.end();
     // Wait for the process to exit (reuse done promise which resolves on close)
-    await (this as any)._donePromise.catch(() => {});
+    await this._donePromise?.catch(() => {});
   }
 
   // executeBash removed — pre/post scripts run locally in runner.ts via execSync,

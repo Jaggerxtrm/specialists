@@ -26,7 +26,7 @@ interface HookPayloads {
     permission_level: string;
   };
   post_execute: {
-    status: 'COMPLETE' | 'IN_PROGRESS' | 'BLOCKED' | 'ERROR';
+    status: 'COMPLETE' | 'IN_PROGRESS' | 'BLOCKED' | 'ERROR' | 'CANCELLED';
     duration_ms: number;
     output_valid: boolean;
     error?: { type: string; message: string };

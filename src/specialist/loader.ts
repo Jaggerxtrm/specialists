@@ -57,12 +57,13 @@ export class SpecialistLoader {
   }
 
   private getScanDirs(): Array<{ path: string; scope: 'project' | 'user' | 'system' }> {
-    return [
+    const dirs: Array<{ path: string; scope: 'project' | 'user' | 'system' }> = [
       { path: join(this.projectDir, 'specialists'), scope: 'project' },
       { path: join(this.projectDir, '.claude', 'specialists'), scope: 'project' },
       { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'project' },
       { path: this.userDir, scope: 'user' },
-    ].filter(d => existsSync(d.path));
+    ];
+    return dirs.filter(d => existsSync(d.path));
   }
 
   async list(category?: string): Promise<SpecialistSummary[]> {

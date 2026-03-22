@@ -38,7 +38,7 @@ export class BeadsClient {
   }
 
   /** Close a bead with COMPLETE or ERROR status. */
-  closeBead(id: string, status: 'COMPLETE' | 'ERROR', durationMs: number, model: string): void {
+  closeBead(id: string, status: 'COMPLETE' | 'ERROR' | 'CANCELLED', durationMs: number, model: string): void {
     if (!this.available || !id) return;
     const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
     spawnSync('bd', ['close', id, '-r', reason], { stdio: 'ignore' });
