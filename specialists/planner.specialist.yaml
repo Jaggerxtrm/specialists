@@ -18,7 +18,7 @@ specialist:
     fallback_model: google-gemini-cli/gemini-3.1-pro-preview
     timeout_ms: 600000
     response_format: markdown
-    permission_required: READ_WRITE
+    permission_required: HIGH
 
   prompt:
     system: |
@@ -67,18 +67,13 @@ specialist:
       Task: $prompt
 
       Working directory: $cwd
-      Planning skill: $skill_path
-
-      $context
+      Planning skill: ~/.agents/skills/planning/SKILL.md
 
       Follow the planning skill workflow (Phases 2–6). Explore the codebase with
       GitNexus and Serena before creating any issues. Create real bd issues via
       the bd CLI. Apply test-planning logic to add test issues per layer.
       End with the structured "## Planner result" block.
 
-  defaults:
-    skill_path: "~/.agents/skills/planning/SKILL.md"
-    context: ""
 
   capabilities:
     required_tools: [bash, read, grep, glob]
