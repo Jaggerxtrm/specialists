@@ -77,10 +77,13 @@ specialists/hooks/ → only specialists-complete.mjs + specialists-session-start
 - **`unitAI-fgy`** ✓ Already done: `onBeadCreated` at supervisor.ts:208 fires right after `createBead` (runner.ts:166), before Pi starts
 - **`unitAI-0ef`** ✓ Fixed: `process.once('SIGTERM', () => killFn?.())` in `Supervisor.run()`; killFn captured from `onKillRegistered`; routes SIGTERM → `session.kill()` → `SessionKilledError` → catch writes `status:'error'`
 
-### Phase 2: Output pinning (unblocks 4 downstream features)
-- **`unitAI-iuj`** — `bd update <bead_id> --notes '<output>'` after writing result.txt
-  - File: `src/specialist/supervisor.ts` lines 213-227
-  - Requires unitAI-fgy (bead_id must exist at creation, not just completion)
+### Phase 2: Output pinning — ✓ COMPLETE (PR #42, merge commit c67c0e7)
+- **`unitAI-iuj`** ✓ Implemented in `Supervisor.run()` after writing `result.txt`
+  - Files: `src/specialist/supervisor.ts`, `src/specialist/beads.ts`, `src/specialist/runner.ts`, `src/cli/run.ts`
+  - Behavior: if `beadId` exists, specialists now pin the full output into bead notes via `bd update <bead_id> --notes ...`
+  - Added metadata: `prompt_hash`, `git_sha`, `elapsed_ms`, `model`, `backend`
+  - Supporting change: `RunResult` now carries `promptHash`; background runs pass `beadsClient` into `Supervisor`
+  - Verification: specialist unit tests updated and passing; `npx tsc --noEmit` passing
 
 ### Phase 3: Workflow
 - **`unitAI-7fm`** — Register MCP at project scope (part of `specialists init`)
@@ -104,7 +107,7 @@ Changes from original PARITY-ANALYSIS marked ⬆.
 | `unitAI-bi6` | P1 | specialists init: install project-local hooks | **STALE** | Addressed by Phase 0 peer dep detection |
 | `unitAI-csu` | P1 | specialists init: run bd init prerequisite | **STALE** | xtrm init handles it; peer dep model delegates |
 | `unitAI-fgy` | P1 | Write bead_id at job creation | **KEEP** | Phase 1 — unblocks everything below |
-| `unitAI-iuj` | P1 | Pin specialist output to bead | **KEEP** | Phase 2 |
+| `unitAI-iuj` | P1 | Pin specialist output to bead | **DONE** ✓ | Completed in PR #42; notes include full output + metadata |
 | `unitAI-lmi` | P1 | Worktree Dolt bootstrap | **STALE** ✓ | `bd worktree create` handles port redirect; `--no-extensions` eliminates Pi conflict |
 | `unitAI-msh` | P1 | Comprehensive docs | **MODIFY** | Update to document peer dep model + integration |
 | `unitAI-pjx` | P1 | Force memory judgment on bd close | **STALE** ✓ | `beads-memory-gate.mjs` confirmed in xtrm as full blocking Stop gate |
@@ -260,12 +263,12 @@ xtrm should reflect this in its own docs so users know to install it.
 `unitAI-mst` in specialists: evaluate whether `pi-structured-return` belongs in xtrm's Pi extensions.
 If it's a general-purpose structured output extension for Pi, it belongs in xtrm.
 If it's specialists-specific output parsing, it stays in specialists.
-Evaluate BEFORE implementing `unitAI-iuj` (pin output to bead) — may simplify that work significantly.
+Evaluation complete: `pi-structured-return` is a useful general Pi extension, but it does not materially simplify `unitAI-iuj` because bead pinning uses Pi session output rather than parsed shell command output.
 
 ---
 
 ## OPEN QUESTIONS
 1. Should quality-gates load for READ_ONLY specialist sessions? (Probably not — nothing to lint)
 2. `xt sp` namespace: planned but not implemented in xtrm. When?
-3. `unitAI-mst` (pi-structured-return Pi extension): evaluate before implementing unitAI-iuj — may simplify output pinning
+3. `unitAI-mst` (pi-structured-return Pi extension): evaluated. Useful for compact shell/test output parsing, but it does not materially simplify `unitAI-iuj` because pinning uses Pi session output from `getLastOutput()`, not parsed CLI output.
 4. Test coverage sprint item: add to roadmap or defer?
