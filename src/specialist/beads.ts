@@ -20,16 +20,9 @@ export interface BeadRecord {
   description?: string;
   notes?: string;
   dependencies?: BeadDependency[];
-  status?: string;
 }
 
-export function buildBeadContext(
-  bead: BeadRecord,
-  options?: {
-    blockers?: BeadRecord[];
-    depth?: number;
-  },
-): string {
+export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord[] = []): string {
   const lines = [`# Task: ${bead.title}`];
 
   if (bead.description?.trim()) {
@@ -40,35 +33,16 @@ export function buildBeadContext(
     lines.push('', '## Notes', bead.notes.trim());
   }
 
-  // Inject completed blocker outputs when depth > 0
-  const blockers = options?.blockers ?? [];
-  const completedBlockers = blockers.filter(
-    (b) => b.status === 'closed' && b.notes?.trim(),
-  );
-
-  if (completedBlockers.length > 0 && (options?.depth ?? 0) > 0) {
+  if (completedBlockers.length > 0) {
     lines.push('', '## Context from completed dependencies:');
     for (const blocker of completedBlockers) {
-      const statusMarker = blocker.status === 'closed' ? 'COMPLETE' : blocker.status ?? 'unknown';
-      lines.push(
-        '',
-        `### ${blocker.title ?? blocker.id} (${blocker.id} — ${statusMarker})`,
-      );
-      if (blocker.notes?.trim()) {
-        lines.push(blocker.notes.trim());
+      lines.push('', `### ${blocker.title} (${blocker.id})`);
+      if (blocker.description?.trim()) {
+        lines.push(blocker.description.trim());
       }
-    }
-  }
-
-  // List all blockers (even without notes) for visibility when no completed blockers
-  const allBlockers = (bead.dependencies ?? []).filter(
-    (dep) => dep.dependency_type === 'blocks' || !dep.dependency_type,
-  );
-  if (allBlockers.length > 0 && completedBlockers.length === 0) {
-    lines.push('', '## Dependencies');
-    for (const blocker of allBlockers) {
-      const statusInfo = blocker.status ? ` [${blocker.status}]` : '';
-      lines.push(`- ${blocker.title ?? blocker.id}${statusInfo}`);
+      if (blocker.notes?.trim()) {
+        lines.push('', blocker.notes.trim());
+      }
     }
   }
 
@@ -107,49 +81,64 @@ export class BeadsClient {
     return id || null;
   }
 
-  /** Read a bead and its immediate dependencies. */
+  /** Read a bead by ID. Returns null on any failure. */
   readBead(id: string): BeadRecord | null {
     if (!this.available || !id) return null;
     const result = spawnSync(
       'bd',
       ['show', id, '--json'],
-      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
     );
-    if (result.status !== 0 || !result.stdout?.trim()) return null;
+    if (result.error || result.status !== 0 || !result.stdout?.trim()) return null;
 
     try {
       const parsed = JSON.parse(result.stdout);
       const bead = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (!bead || typeof bead !== 'object' || typeof bead.title !== 'string') return null;
+      if (!bead || typeof bead !== 'object'
+        || typeof bead.id !== 'string'
+        || typeof bead.title !== 'string') return null;
       return bead as BeadRecord;
-    } catch {
+    } catch (err) {
+      console.warn(`[specialists] readBead: JSON parse failed for id=${id}: ${err}`);
       return null;
     }
   }
 
-  /** Get blocker beads at specified depth (1 = immediate blockers only). */
-  getBlockers(beadId: string, depth: number = 1): BeadRecord[] {
-    if (!this.available || !beadId || depth < 1) return [];
-    const bead = this.readBead(beadId);
-    if (!bead?.dependencies) return [];
+  /**
+   * Fetch completed blockers of a bead at the given depth.
+   * depth=1 returns immediate completed blockers only.
+   * depth=2 also includes their completed blockers, etc.
+   */
+  getCompletedBlockers(id: string, depth = 1): BeadRecord[] {
+    if (!this.available || !id || depth < 1) return [];
 
-    const blockerIds = bead.dependencies
-      .filter((dep) => dep.dependency_type === 'blocks' || !dep.dependency_type)
-      .map((dep) => dep.id);
+    const result = spawnSync(
+      'bd',
+      ['dep', 'list', id, '--json'],
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
+    );
+    if (result.error || result.status !== 0 || !result.stdout?.trim()) return [];
 
-    const blockers: BeadRecord[] = [];
-    for (const id of blockerIds) {
-      const blockerBead = this.readBead(id);
-      if (blockerBead) {
-        blockers.push(blockerBead);
-        // Recursively get blockers at deeper levels
+    let deps: BeadDependency[];
+    try {
+      deps = JSON.parse(result.stdout);
+      if (!Array.isArray(deps)) return [];
+    } catch {
+      return [];
+    }
+
+    const blockers = deps.filter(d => d.dependency_type === 'blocks' && d.status === 'closed');
+    const records: BeadRecord[] = [];
+    for (const dep of blockers) {
+      const record = this.readBead(dep.id);
+      if (record) {
+        records.push(record);
         if (depth > 1) {
-          const nestedBlockers = this.getBlockers(id, depth - 1);
-          blockers.push(...nestedBlockers);
+          records.push(...this.getCompletedBlockers(dep.id, depth - 1));
         }
       }
     }
-    return blockers;
+    return records;
   }
 
   /** Link a tracking bead back to the input bead that supplied the prompt. */

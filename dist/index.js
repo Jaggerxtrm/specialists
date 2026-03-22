@@ -17917,7 +17917,7 @@ var init_session = __esm(() => {
 
 // src/specialist/beads.ts
 import { spawnSync } from "node:child_process";
-function buildBeadContext(bead, options) {
+function buildBeadContext(bead, completedBlockers = []) {
   const lines = [`# Task: ${bead.title}`];
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
@@ -17925,24 +17925,16 @@ function buildBeadContext(bead, options) {
   if (bead.notes?.trim()) {
     lines.push("", "## Notes", bead.notes.trim());
   }
-  const blockers = options?.blockers ?? [];
-  const completedBlockers = blockers.filter((b) => b.status === "closed" && b.notes?.trim());
-  if (completedBlockers.length > 0 && (options?.depth ?? 0) > 0) {
+  if (completedBlockers.length > 0) {
     lines.push("", "## Context from completed dependencies:");
     for (const blocker of completedBlockers) {
-      const statusMarker = blocker.status === "closed" ? "COMPLETE" : blocker.status ?? "unknown";
-      lines.push("", `### ${blocker.title ?? blocker.id} (${blocker.id} — ${statusMarker})`);
-      if (blocker.notes?.trim()) {
-        lines.push(blocker.notes.trim());
+      lines.push("", `### ${blocker.title} (${blocker.id})`);
+      if (blocker.description?.trim()) {
+        lines.push(blocker.description.trim());
       }
-    }
-  }
-  const allBlockers = (bead.dependencies ?? []).filter((dep) => dep.dependency_type === "blocks" || !dep.dependency_type);
-  if (allBlockers.length > 0 && completedBlockers.length === 0) {
-    lines.push("", "## Dependencies");
-    for (const blocker of allBlockers) {
-      const statusInfo = blocker.status ? ` [${blocker.status}]` : "";
-      lines.push(`- ${blocker.title ?? blocker.id}${statusInfo}`);
+      if (blocker.notes?.trim()) {
+        lines.push("", blocker.notes.trim());
+      }
     }
   }
   return lines.join(`
@@ -17976,38 +17968,46 @@ class BeadsClient {
   readBead(id) {
     if (!this.available || !id)
       return null;
-    const result = spawnSync("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
-    if (result.status !== 0 || !result.stdout?.trim())
+    const result = spawnSync("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    if (result.error || result.status !== 0 || !result.stdout?.trim())
       return null;
     try {
       const parsed = JSON.parse(result.stdout);
       const bead = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (!bead || typeof bead !== "object" || typeof bead.title !== "string")
+      if (!bead || typeof bead !== "object" || typeof bead.id !== "string" || typeof bead.title !== "string")
         return null;
       return bead;
-    } catch {
+    } catch (err) {
+      console.warn(`[specialists] readBead: JSON parse failed for id=${id}: ${err}`);
       return null;
     }
   }
-  getBlockers(beadId, depth = 1) {
-    if (!this.available || !beadId || depth < 1)
+  getCompletedBlockers(id, depth = 1) {
+    if (!this.available || !id || depth < 1)
       return [];
-    const bead = this.readBead(beadId);
-    if (!bead?.dependencies)
+    const result = spawnSync("bd", ["dep", "list", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+    if (result.error || result.status !== 0 || !result.stdout?.trim())
       return [];
-    const blockerIds = bead.dependencies.filter((dep) => dep.dependency_type === "blocks" || !dep.dependency_type).map((dep) => dep.id);
-    const blockers = [];
-    for (const id of blockerIds) {
-      const blockerBead = this.readBead(id);
-      if (blockerBead) {
-        blockers.push(blockerBead);
+    let deps;
+    try {
+      deps = JSON.parse(result.stdout);
+      if (!Array.isArray(deps))
+        return [];
+    } catch {
+      return [];
+    }
+    const blockers = deps.filter((d) => d.dependency_type === "blocks" && d.status === "closed");
+    const records = [];
+    for (const dep of blockers) {
+      const record3 = this.readBead(dep.id);
+      if (record3) {
+        records.push(record3);
         if (depth > 1) {
-          const nestedBlockers = this.getBlockers(id, depth - 1);
-          blockers.push(...nestedBlockers);
+          records.push(...this.getCompletedBlockers(dep.id, depth - 1));
         }
       }
     }
-    return blockers;
+    return records;
   }
   addDependency(trackingBeadId, inputBeadId) {
     if (!this.available || !trackingBeadId || !inputBeadId)
@@ -19045,7 +19045,7 @@ import { join as join8 } from "node:path";
 async function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--model <model>] [--no-beads] [--background] [--context-depth <n>]');
+    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background]');
     process.exit(1);
   }
   let prompt = "";
@@ -19053,7 +19053,7 @@ async function parseArgs4(argv) {
   let model;
   let noBeads = false;
   let background = false;
-  let contextDepth;
+  let contextDepth = 1;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
@@ -19068,16 +19068,16 @@ async function parseArgs4(argv) {
       model = argv[++i];
       continue;
     }
+    if (token === "--context-depth" && argv[i + 1]) {
+      contextDepth = parseInt(argv[++i], 10) || 0;
+      continue;
+    }
     if (token === "--no-beads") {
       noBeads = true;
       continue;
     }
     if (token === "--background") {
       background = true;
-      continue;
-    }
-    if (token === "--context-depth" && argv[i + 1]) {
-      contextDepth = parseInt(argv[++i], 10);
       continue;
     }
   }
@@ -19114,8 +19114,13 @@ async function run7() {
     if (!bead) {
       throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
     }
-    const blockers = args.contextDepth && args.contextDepth > 0 ? beadsClient?.getBlockers(args.beadId, args.contextDepth) ?? [] : [];
-    const beadContext = buildBeadContext(bead, { blockers, depth: args.contextDepth ?? 0 });
+    const blockers = args.contextDepth > 0 && beadsClient ? beadsClient.getCompletedBlockers(args.beadId, args.contextDepth) : [];
+    if (blockers.length > 0) {
+      process.stderr.write(dim5(`
+[context: ${blockers.length} completed dep${blockers.length > 1 ? "s" : ""} injected]
+`));
+    }
+    const beadContext = buildBeadContext(bead, blockers);
     prompt = beadContext;
     variables = {
       bead_context: beadContext,

@@ -22,13 +22,13 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   background: boolean;
-  contextDepth?: number;
+  contextDepth: number;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--model <model>] [--no-beads] [--background] [--context-depth <n>]');
+    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background]');
     process.exit(1);
   }
 
@@ -37,16 +37,16 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let background = false;
-  let contextDepth: number | undefined;
+  let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
-    if (token === '--prompt'       && argv[i + 1]) { prompt = argv[++i]; continue; }
-    if (token === '--bead'         && argv[i + 1]) { beadId = argv[++i]; continue; }
-    if (token === '--model'        && argv[i + 1]) { model  = argv[++i]; continue; }
-    if (token === '--no-beads')    { noBeads    = true; continue; }
-    if (token === '--background')  { background = true; continue; }
-    if (token === '--context-depth' && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10); continue; }
+    if (token === '--prompt'         && argv[i + 1]) { prompt       = argv[++i]; continue; }
+    if (token === '--bead'           && argv[i + 1]) { beadId       = argv[++i]; continue; }
+    if (token === '--model'          && argv[i + 1]) { model        = argv[++i]; continue; }
+    if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
+    if (token === '--no-beads')   { noBeads    = true; continue; }
+    if (token === '--background') { background = true; continue; }
   }
 
   if (prompt && beadId) {
@@ -88,11 +88,17 @@ export async function run(): Promise<void> {
     if (!bead) {
       throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
     }
-    // Get blocker context if depth is specified
-    const blockers = args.contextDepth && args.contextDepth > 0
-      ? beadsClient?.getBlockers(args.beadId, args.contextDepth) ?? []
+
+    // Fetch completed blockers at the requested depth (default 1)
+    const blockers = (args.contextDepth > 0 && beadsClient)
+      ? beadsClient.getCompletedBlockers(args.beadId, args.contextDepth)
       : [];
-    const beadContext = buildBeadContext(bead, { blockers, depth: args.contextDepth ?? 0 });
+
+    if (blockers.length > 0) {
+      process.stderr.write(dim(`\n[context: ${blockers.length} completed dep${blockers.length > 1 ? 's' : ''} injected]\n`));
+    }
+
+    const beadContext = buildBeadContext(bead, blockers);
     prompt = beadContext;
     variables = {
       bead_context: beadContext,
