@@ -1,8 +1,8 @@
 specialist:
   metadata:
-    name: merge-prs
+    name: xt-merge
     version: 1.0.0
-    description: "Drains the xt worktree PR queue in FIFO order: lists open xt/ PRs sorted by creation time, checks CI status on the oldest, merges it with --rebase --delete-branch, then rebases all remaining branches onto the new main and force-pushes them. Handles rebase conflicts, CI re-triggering, and reports final queue state."
+    description: "Drains the xt worktree PR queue in FIFO order: lists open xt/ PRs sorted by creation time, checks CI status on the oldest, merges it with --rebase --delete-branch, then rebases all remaining branches onto the new default branch and force-pushes them. Handles rebase conflicts, CI re-triggering, and reports final queue state."
     category: workflow
     tags: [git, pr, merge, worktree, xt, rebase, ci]
     updated: "2026-03-22"
