@@ -126,6 +126,7 @@ export class SpecialistRunner {
       : {};
     const variables = {
       prompt: options.prompt,
+      cwd: process.cwd(),
       pre_script_output: preScriptOutput,
       ...(options.variables ?? {}),
       ...beadVariables,

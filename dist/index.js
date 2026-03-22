@@ -17917,6 +17917,30 @@ var init_session = __esm(() => {
 
 // src/specialist/beads.ts
 import { spawnSync } from "node:child_process";
+function buildBeadContext(bead) {
+  const lines = [`# Task: ${bead.title}`];
+  if (bead.description?.trim()) {
+    lines.push(bead.description.trim());
+  }
+  if (bead.notes?.trim()) {
+    lines.push("", "## Notes", bead.notes.trim());
+  }
+  const blockers = (bead.dependencies ?? []).filter((dep) => dep.dependency_type === "blocks" || !dep.dependency_type);
+  if (blockers.length > 0) {
+    lines.push("", "## Context: Blocked by");
+    for (const blocker of blockers) {
+      lines.push(`- ${blocker.title ?? blocker.id} (${blocker.id})`);
+      if (blocker.description?.trim()) {
+        lines.push(`  ${blocker.description.trim()}`);
+      }
+      if (blocker.notes?.trim()) {
+        lines.push(`  Notes: ${blocker.notes.trim()}`);
+      }
+    }
+  }
+  return lines.join(`
+`).trim();
+}
 
 class BeadsClient {
   available;
@@ -17941,6 +17965,27 @@ class BeadsClient {
       return null;
     const id = result.stdout?.trim();
     return id || null;
+  }
+  readBead(id) {
+    if (!this.available || !id)
+      return null;
+    const result = spawnSync("bd", ["show", id, "--json"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    if (result.status !== 0 || !result.stdout?.trim())
+      return null;
+    try {
+      const parsed = JSON.parse(result.stdout);
+      const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (!bead || typeof bead !== "object" || typeof bead.title !== "string")
+        return null;
+      return bead;
+    } catch {
+      return null;
+    }
+  }
+  addDependency(trackingBeadId, inputBeadId) {
+    if (!this.available || !trackingBeadId || !inputBeadId)
+      return;
+    spawnSync("bd", ["dep", "add", trackingBeadId, inputBeadId], { stdio: "ignore" });
   }
   closeBead(id, status, durationMs, model) {
     if (!this.available || !id)
@@ -18036,7 +18081,14 @@ class SpecialistRunner {
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
     const preResults = preScripts.map((s) => runScript(s.path)).filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
-    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
+    const beadVariables = options.inputBeadId ? { bead_context: options.prompt, bead_id: options.inputBeadId } : {};
+    const variables = {
+      prompt: options.prompt,
+      cwd: process.cwd(),
+      pre_script_output: preScriptOutput,
+      ...options.variables ?? {},
+      ...beadVariables
+    };
     const renderedTask = renderTemplate(prompt.task_template, variables);
     const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
     await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
@@ -18089,10 +18141,15 @@ You have access via Bash:
     });
     const beadsIntegration = spec.specialist.beads_integration ?? "auto";
     let beadId;
-    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+    let ownsBead = false;
+    if (options.inputBeadId) {
+      beadId = options.inputBeadId;
+    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
       beadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (beadId)
+      if (beadId) {
+        ownsBead = true;
         onBeadCreated?.(beadId);
+      }
     }
     let output;
     let sessionBackend = model;
@@ -18130,7 +18187,8 @@ You have access via Bash:
       }
       const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
       if (beadId) {
-        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        if (ownsBead)
+          beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
         beadsClient?.auditBead(beadId, metadata.name, model, 1);
       }
       await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
@@ -18153,7 +18211,8 @@ You have access via Bash:
       output_valid: true
     });
     if (beadId) {
-      beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
+      if (ownsBead)
+        beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
       beadsClient?.auditBead(beadId, metadata.name, model, 0);
     }
     return {
@@ -18486,6 +18545,32 @@ function ok(msg) {
 function skip(msg) {
   console.log(`  ${yellow3("○")} ${msg}`);
 }
+function loadJson(path, fallback) {
+  if (!existsSync4(path))
+    return structuredClone(fallback);
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return structuredClone(fallback);
+  }
+}
+function saveJson(path, value) {
+  writeFileSync(path, JSON.stringify(value, null, 2) + `
+`, "utf-8");
+}
+function ensureProjectMcp(cwd) {
+  const mcpPath = join6(cwd, MCP_FILE);
+  const mcp = loadJson(mcpPath, { mcpServers: {} });
+  mcp.mcpServers ??= {};
+  const existing = mcp.mcpServers[MCP_SERVER_NAME];
+  if (existing && existing.command === MCP_SERVER_CONFIG.command && Array.isArray(existing.args) && existing.args.length === MCP_SERVER_CONFIG.args.length) {
+    skip(".mcp.json already registers specialists");
+    return;
+  }
+  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
+  saveJson(mcpPath, mcp);
+  ok("registered specialists in project .mcp.json");
+}
 async function run5() {
   const cwd = process.cwd();
   console.log(`
@@ -18539,16 +18624,17 @@ ${bold3("specialists init")}
     writeFileSync(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
   }
+  ensureProjectMcp(cwd);
   console.log(`
 ${bold3("Done!")}
 `);
   console.log(`  ${dim3("Next steps:")}`);
   console.log(`  1. Add your specialists to ${yellow3("specialists/")}`);
   console.log(`  2. Run ${yellow3("specialists list")} to verify they are discovered`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md changes
+  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json changes
 `);
 }
-var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRY = ".specialists/";
+var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRY = ".specialists/", MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
 var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
@@ -18558,6 +18644,7 @@ see available specialists. Use \`use_specialist\` or \`start_specialist\` to
 delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
 specialist without user intervention.
 `.trimStart();
+  MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
 // src/cli/edit.ts
@@ -18931,10 +19018,11 @@ import { join as join8 } from "node:path";
 async function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists run <name> [--prompt "..."] [--model <model>] [--no-beads] [--background]');
+    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--model <model>] [--no-beads] [--background]');
     process.exit(1);
   }
   let prompt = "";
+  let beadId;
   let model;
   let noBeads = false;
   let background = false;
@@ -18942,6 +19030,10 @@ async function parseArgs4(argv) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
       prompt = argv[++i];
+      continue;
+    }
+    if (token === "--bead" && argv[i + 1]) {
+      beadId = argv[++i];
       continue;
     }
     if (token === "--model" && argv[i + 1]) {
@@ -18957,10 +19049,11 @@ async function parseArgs4(argv) {
       continue;
     }
   }
-  if (!prompt) {
-    if (process.stdin.isTTY) {
-      process.stderr.write(dim5("Prompt (Ctrl+D when done): "));
-    }
+  if (prompt && beadId) {
+    console.error("Error: use either --prompt or --bead, not both.");
+    process.exit(1);
+  }
+  if (!prompt && !beadId && !process.stdin.isTTY) {
     prompt = await new Promise((resolve) => {
       let buf = "";
       process.stdin.setEncoding("utf-8");
@@ -18970,27 +19063,51 @@ async function parseArgs4(argv) {
       process.stdin.on("end", () => resolve(buf.trim()));
     });
   }
-  return { name, prompt, model, noBeads, background };
+  if (!prompt && !beadId) {
+    console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
+    process.exit(1);
+  }
+  return { name, prompt, beadId, model, noBeads, background };
 }
 async function run7() {
   const args = await parseArgs4(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
   const hooks = new HookEmitter({ tracePath: join8(process.cwd(), ".specialists", "trace.jsonl") });
-  const beadsClient = args.noBeads ? null : new BeadsClient;
+  const beadsClient = args.noBeads ? undefined : new BeadsClient;
+  let prompt = args.prompt;
+  let variables;
+  if (args.beadId) {
+    const bead = beadsClient?.readBead(args.beadId);
+    if (!bead) {
+      throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
+    }
+    const beadContext = buildBeadContext(bead);
+    prompt = beadContext;
+    variables = {
+      bead_context: beadContext,
+      bead_id: args.beadId
+    };
+  }
   const runner = new SpecialistRunner({
     loader,
     hooks,
     circuitBreaker,
-    beadsClient: beadsClient ?? undefined
+    beadsClient
   });
   if (args.background) {
     const jobsDir = join8(process.cwd(), ".specialists", "jobs");
     const supervisor = new Supervisor({
       runner,
-      runOptions: { name: args.name, prompt: args.prompt, backendOverride: args.model },
+      runOptions: {
+        name: args.name,
+        prompt,
+        variables,
+        backendOverride: args.model,
+        inputBeadId: args.beadId
+      },
       jobsDir,
-      beadsClient: beadsClient ?? undefined
+      beadsClient
     });
     try {
       const jobId = await supervisor.run();
@@ -19007,11 +19124,13 @@ async function run7() {
 ${bold5(`Running ${cyan3(args.name)}`)}
 
 `);
-  let beadId;
+  let trackingBeadId;
   const result = await runner.run({
     name: args.name,
-    prompt: args.prompt,
-    backendOverride: args.model
+    prompt,
+    variables,
+    backendOverride: args.model,
+    inputBeadId: args.beadId
   }, (delta) => process.stdout.write(delta), undefined, (meta) => process.stderr.write(dim5(`
 [${meta.backend} / ${meta.model}]
 
@@ -19024,10 +19143,10 @@ Interrupted.
       killFn();
       process.exit(130);
     });
-  }, (id) => {
-    beadId = id;
+  }, (beadId) => {
+    trackingBeadId = beadId;
     process.stderr.write(dim5(`
-[bead: ${id}]
+[bead: ${beadId}]
 `));
   });
   if (result.output && !result.output.endsWith(`
@@ -19035,8 +19154,9 @@ Interrupted.
     process.stdout.write(`
 `);
   const secs = (result.durationMs / 1000).toFixed(1);
+  const effectiveBeadId = args.beadId ?? trackingBeadId;
   const footer = [
-    beadId ? `bead ${beadId}` : "",
+    effectiveBeadId ? `bead ${effectiveBeadId}` : "",
     `${secs}s`,
     dim5(result.model)
   ].filter(Boolean).join("  ");
@@ -19657,7 +19777,7 @@ function sp(bin, args) {
 function isInstalled2(bin) {
   return spawnSync6("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
-function loadJson(path) {
+function loadJson2(path) {
   if (!existsSync9(path))
     return null;
   try {
@@ -19723,7 +19843,7 @@ function checkHooks() {
       ok3(name);
     }
   }
-  const settings = loadJson(SETTINGS_FILE);
+  const settings = loadJson2(SETTINGS_FILE);
   if (!settings) {
     warn2(`Could not read ${SETTINGS_FILE}`);
     fix("specialists install");
@@ -19748,14 +19868,14 @@ function checkHooks() {
 }
 function checkMCP() {
   section3("MCP registration");
-  const mcp = loadJson(MCP_FILE);
+  const mcp = loadJson2(MCP_FILE2);
   const spec = mcp?.mcpServers?.specialists;
   if (!spec || spec.command !== "specialists") {
     fail2(`MCP server 'specialists' not registered in .mcp.json`);
     fix("specialists install");
     return false;
   }
-  ok3(`MCP server 'specialists' registered in ${MCP_FILE}`);
+  ok3(`MCP server 'specialists' registered in ${MCP_FILE2}`);
   return true;
 }
 function checkRuntimeDirs() {
@@ -19855,13 +19975,13 @@ ${bold8("specialists doctor")}
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE, HOOK_NAMES;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join13(CWD, ".claude");
   HOOKS_DIR = join13(CLAUDE_DIR, "hooks");
   SETTINGS_FILE = join13(CLAUDE_DIR, "settings.json");
-  MCP_FILE = join13(CWD, ".mcp.json");
+  MCP_FILE2 = join13(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -27455,25 +27575,47 @@ function createListSpecialistsTool(loader) {
 
 // src/tools/specialist/use_specialist.tool.ts
 init_zod();
+init_beads();
 var useSpecialistSchema = exports_external.object({
   name: exports_external.string().describe("Specialist identifier (e.g. codebase-explorer)"),
-  prompt: exports_external.string().describe("The task or question for the specialist"),
+  prompt: exports_external.string().optional().describe("The task or question for the specialist"),
+  bead_id: exports_external.string().optional().describe("Use an existing bead as the specialist prompt"),
   variables: exports_external.record(exports_external.string()).optional().describe("Additional $variable substitutions"),
   backend_override: exports_external.string().optional().describe("Force a specific backend (gemini, qwen, anthropic)"),
   autonomy_level: exports_external.string().optional().describe("Override permission level for this invocation")
+}).refine((input) => Boolean(input.prompt?.trim() || input.bead_id), {
+  message: "Either prompt or bead_id is required",
+  path: ["prompt"]
 });
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load → agents.md → pi session → output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions.",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load → agents.md → pi session → output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it.",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
+      let prompt = input.prompt?.trim() ?? "";
+      let variables = input.variables;
+      if (input.bead_id) {
+        const beadsClient = new BeadsClient;
+        const bead = beadsClient.readBead(input.bead_id);
+        if (!bead) {
+          throw new Error(`Unable to read bead '${input.bead_id}' via bd show --json`);
+        }
+        const beadContext = buildBeadContext(bead);
+        prompt = beadContext;
+        variables = {
+          ...input.variables ?? {},
+          bead_context: beadContext,
+          bead_id: input.bead_id
+        };
+      }
       return runner.run({
         name: input.name,
-        prompt: input.prompt,
-        variables: input.variables,
+        prompt,
+        variables,
         backendOverride: input.backend_override,
-        autonomyLevel: input.autonomy_level
+        autonomyLevel: input.autonomy_level,
+        inputBeadId: input.bead_id
       }, onProgress);
     }
   };
@@ -28016,6 +28158,7 @@ async function run16() {
         "  • Creates .specialists/          — runtime data (gitignored)",
         "  • Adds .specialists/ to .gitignore",
         "  • Scaffolds AGENTS.md            — context injected into Claude sessions",
+        "  • Registers specialists in .mcp.json at project scope",
         "",
         "Safe to run on an existing project (skips already-present items).",
         ""
@@ -28068,13 +28211,15 @@ async function run16() {
         "Reads prompt from stdin if --prompt is not provided.",
         "",
         "Options:",
-        "  --prompt <text>    Prompt to send to the specialist (required unless piped)",
+        "  --prompt <text>    Prompt to send to the specialist (required unless piped or --bead is used)",
+        "  --bead <id>        Read the task from an existing bead and use it as the prompt",
         "  --model <model>    Override the model for this run only",
         "  --background       Run async; prints job ID and exits immediately",
-        "  --no-beads         Skip creating a beads issue for this run",
+        "  --no-beads         Skip creating a tracking bead for this run",
         "",
         "Examples:",
         '  specialists run code-review --prompt "Audit src/api.ts"',
+        "  specialists run code-review --bead unitAI-55d",
         '  specialists run code-review --prompt "..." --background',
         "  cat brief.md | specialists run deep-analysis",
         '  specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."',
