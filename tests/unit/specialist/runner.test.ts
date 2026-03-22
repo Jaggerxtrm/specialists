@@ -39,6 +39,8 @@ function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): Bead
   return {
     isAvailable: vi.fn().mockReturnValue(true),
     createBead: vi.fn().mockReturnValue('specialists-test-1'),
+    readBead: vi.fn(),
+    addDependency: vi.fn(),
     closeBead: vi.fn(),
     auditBead: vi.fn(),
     updateBeadNotes: vi.fn(),
@@ -199,6 +201,51 @@ describe('SpecialistRunner', () => {
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
       expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
       expect(result.beadId).toBe('specialists-test-1');
+    });
+
+    it('links tracking bead back to the input bead', async () => {
+      const beadsClient = makeBeadsClient();
+      const runner = new SpecialistRunner({
+        loader: makeLoader({ permission_required: 'MEDIUM' }, 'auto'),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient,
+      });
+      const result = await runner.run({ name: 'test-spec', prompt: 'go', inputBeadId: 'unitAI-55d' });
+      expect(beadsClient.addDependency).toHaveBeenCalledWith('specialists-test-1', 'unitAI-55d');
+      expect(result.beadId).toBe('specialists-test-1');
+    });
+
+    it('exposes bead_context and bead_id template variables for bead runs', async () => {
+      const loader = {
+        get: vi.fn().mockResolvedValue({
+          specialist: {
+            metadata: { name: 'test-spec', version: '1.0.0' },
+            execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+            prompt: { task_template: 'Prompt=$prompt\nBead=$bead_context\nId=$bead_id', system: 'You are helpful.' },
+            communication: undefined,
+            capabilities: undefined,
+            beads_integration: 'never',
+          },
+        }),
+      } as any;
+      const runner = new SpecialistRunner({
+        loader,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+      await runner.run({
+        name: 'test-spec',
+        prompt: '# Task: Refactor auth',
+        inputBeadId: 'unitAI-55d',
+      });
+      expect(mockSession.prompt).toHaveBeenCalledWith([
+        'Prompt=# Task: Refactor auth',
+        'Bead=# Task: Refactor auth',
+        'Id=unitAI-55d',
+      ].join('\n'));
     });
 
     it('does not crash when createBead returns null', async () => {

@@ -5,6 +5,51 @@
 
 import { spawnSync } from 'node:child_process';
 
+export interface BeadDependency {
+  id: string;
+  title?: string;
+  description?: string;
+  notes?: string;
+  status?: string;
+  dependency_type?: string;
+}
+
+export interface BeadRecord {
+  id: string;
+  title: string;
+  description?: string;
+  notes?: string;
+  dependencies?: BeadDependency[];
+}
+
+export function buildBeadContext(bead: BeadRecord): string {
+  const lines = [`# Task: ${bead.title}`];
+
+  if (bead.description?.trim()) {
+    lines.push(bead.description.trim());
+  }
+
+  if (bead.notes?.trim()) {
+    lines.push('', '## Notes', bead.notes.trim());
+  }
+
+  const blockers = (bead.dependencies ?? []).filter((dep) => dep.dependency_type === 'blocks' || !dep.dependency_type);
+  if (blockers.length > 0) {
+    lines.push('', '## Context: Blocked by');
+    for (const blocker of blockers) {
+      lines.push(`- ${blocker.title ?? blocker.id} (${blocker.id})`);
+      if (blocker.description?.trim()) {
+        lines.push(`  ${blocker.description.trim()}`);
+      }
+      if (blocker.notes?.trim()) {
+        lines.push(`  Notes: ${blocker.notes.trim()}`);
+      }
+    }
+  }
+
+  return lines.join('\n').trim();
+}
+
 export class BeadsClient {
   private readonly available: boolean;
 
@@ -35,6 +80,32 @@ export class BeadsClient {
     if (result.status !== 0) return null;
     const id = result.stdout?.trim();
     return id || null;
+  }
+
+  /** Read a bead and its immediate dependencies. */
+  readBead(id: string): BeadRecord | null {
+    if (!this.available || !id) return null;
+    const result = spawnSync(
+      'bd',
+      ['show', id, '--json'],
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    if (result.status !== 0 || !result.stdout?.trim()) return null;
+
+    try {
+      const parsed = JSON.parse(result.stdout);
+      const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (!bead || typeof bead !== 'object' || typeof bead.title !== 'string') return null;
+      return bead as BeadRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Link a tracking bead back to the input bead that supplied the prompt. */
+  addDependency(trackingBeadId: string, inputBeadId: string): void {
+    if (!this.available || !trackingBeadId || !inputBeadId) return;
+    spawnSync('bd', ['dep', 'add', trackingBeadId, inputBeadId], { stdio: 'ignore' });
   }
 
   /** Close a bead with COMPLETE or ERROR status. */

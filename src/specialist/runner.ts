@@ -13,6 +13,8 @@ export interface RunOptions {
   variables?: Record<string, string>;
   backendOverride?: string;
   autonomyLevel?: string;
+  /** Existing bead whose content should be used as the task prompt. */
+  inputBeadId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
   sessionPath?: string;
 }
@@ -119,7 +121,15 @@ export class SpecialistRunner {
     const preScriptOutput = formatScriptOutput(preResults);
 
     // Render task template (pre_script_output is '' when no scripts ran)
-    const variables = { prompt: options.prompt, pre_script_output: preScriptOutput, ...options.variables };
+    const beadVariables = options.inputBeadId
+      ? { bead_context: options.prompt, bead_id: options.inputBeadId }
+      : {};
+    const variables = {
+      prompt: options.prompt,
+      pre_script_output: preScriptOutput,
+      ...(options.variables ?? {}),
+      ...beadVariables,
+    };
     const renderedTask = renderTemplate(prompt.task_template, variables);
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
@@ -161,10 +171,13 @@ export class SpecialistRunner {
 
     // Beads: create bead if policy allows
     const beadsIntegration = spec.specialist.beads_integration ?? 'auto';
-    let beadId: string | undefined;
+    let trackingBeadId: string | undefined;
     if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
-      beadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (beadId) onBeadCreated?.(beadId);
+      trackingBeadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (trackingBeadId && options.inputBeadId) {
+        beadsClient.addDependency(trackingBeadId, options.inputBeadId);
+      }
+      if (trackingBeadId) onBeadCreated?.(trackingBeadId);
     }
 
     let output: string;
@@ -209,9 +222,9 @@ export class SpecialistRunner {
       }
       // Beads: close with CANCELLED for kill, ERROR for real failures; always audit
       const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
-      if (beadId) {
-        beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+      if (trackingBeadId) {
+        beadsClient?.closeBead(trackingBeadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(trackingBeadId, metadata.name, model, 1);
       }
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
         status: isCancelled ? 'CANCELLED' : 'ERROR',
@@ -237,9 +250,9 @@ export class SpecialistRunner {
     });
 
     // Beads: close with COMPLETE and emit audit record
-    if (beadId) {
-      beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
-      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+    if (trackingBeadId) {
+      beadsClient?.closeBead(trackingBeadId, 'COMPLETE', durationMs, model);
+      beadsClient?.auditBead(trackingBeadId, metadata.name, model, 0);
     }
 
     return {
@@ -249,7 +262,7 @@ export class SpecialistRunner {
       durationMs,
       specialistVersion: metadata.version,
       promptHash,
-      beadId,
+      beadId: trackingBeadId,
     };
   }
 

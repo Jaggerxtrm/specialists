@@ -1,0 +1,723 @@
+
+tests/unit/circuitBreaker.test.ts:
+(pass) CircuitBreaker (3-state) > starts CLOSED [1.00ms]
+(pass) CircuitBreaker (3-state) > transitions CLOSED → OPEN after threshold failures
+(pass) CircuitBreaker (3-state) > transitions OPEN → HALF_OPEN after cooldown [61.00ms]
+(pass) CircuitBreaker (3-state) > transitions HALF_OPEN → CLOSED on success [61.00ms]
+(pass) CircuitBreaker (3-state) > transitions HALF_OPEN → OPEN on failure [60.00ms]
+
+tests/unit/cli/doctor.test.ts:
+1 | import { describe, it, expect, vi, afterEach } from 'vitest';
+2 | 
+3 | describe('doctor CLI — run()', () => {
+4 |   afterEach(() => {
+5 |     vi.restoreAllMocks();
+6 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/doctor.test.ts:6:8)
+(fail) doctor CLI — run() > prints specialists doctor header [2171.02ms]
+1 | import { describe, it, expect, vi, afterEach } from 'vitest';
+2 | 
+3 | describe('doctor CLI — run()', () => {
+4 |   afterEach(() => {
+5 |     vi.restoreAllMocks();
+6 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/doctor.test.ts:6:8)
+(fail) doctor CLI — run() > prints all section headers [2611.03ms]
+1 | import { describe, it, expect, vi, afterEach } from 'vitest';
+2 | 
+3 | describe('doctor CLI — run()', () => {
+4 |   afterEach(() => {
+5 |     vi.restoreAllMocks();
+6 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/doctor.test.ts:6:8)
+(fail) doctor CLI — run() > prints a summary result line [2838.03ms]
+1 | import { describe, it, expect, vi, afterEach } from 'vitest';
+2 | 
+3 | describe('doctor CLI — run()', () => {
+4 |   afterEach(() => {
+5 |     vi.restoreAllMocks();
+6 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/doctor.test.ts:6:8)
+(fail) doctor CLI — run() > checks for both expected hooks [2745.03ms]
+1 | import { describe, it, expect, vi, afterEach } from 'vitest';
+2 | 
+3 | describe('doctor CLI — run()', () => {
+4 |   afterEach(() => {
+5 |     vi.restoreAllMocks();
+6 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/doctor.test.ts:6:8)
+(fail) doctor CLI — run() > mentions fix hints for failures [2775.03ms]
+
+tests/unit/cli/edit.test.ts:
+36 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+37 |   });
+38 | 
+39 |   afterEach(() => {
+40 |     vi.restoreAllMocks();
+41 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:41:8)
+(fail) edit CLI — parseArgs error paths (via process.exit mock) > exits 1 when no name given
+36 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+37 |   });
+38 | 
+39 |   afterEach(() => {
+40 |     vi.restoreAllMocks();
+41 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:41:8)
+(fail) edit CLI — parseArgs error paths (via process.exit mock) > exits 1 for unknown field
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > updates model field in YAML [91.00ms]
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > updates description field in YAML [16.00ms]
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > updates timeout to numeric value [12.00ms]
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > updates tags as array from comma-separated string [10.00ms]
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > dry-run does not write to file [10.00ms]
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > exits 1 for non-numeric timeout
+ 96 |     vi.spyOn(console, 'error').mockImplementation(() => {});
+ 97 |   });
+ 98 | 
+ 99 |   afterEach(async () => {
+100 |     vi.restoreAllMocks();
+101 |     vi.resetModules();
+             ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:101:8)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/edit.test.ts:99:13)
+(fail) edit CLI — run() YAML mutations > exits 1 for invalid permission value [1.00ms]
+
+tests/unit/cli/help.test.ts:
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('help CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/help.test.ts:7:8)
+(fail) help CLI — run() > prints all known subcommands [1.00ms]
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('help CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/help.test.ts:7:8)
+(fail) help CLI — run() > prints specialists <command> usage header
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('help CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/help.test.ts:7:8)
+(fail) help CLI — run() > prints command categories
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('help CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/help.test.ts:7:8)
+(fail) help CLI — run() > references quickstart guide
+
+tests/unit/cli/init.test.ts:
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > creates specialists/ directory when it does not exist [1.00ms]
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > creates AGENTS.md with Specialists section when file does not exist
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > appends Specialists section to existing AGENTS.md without marker
+49 |     expect(content).toContain('## Specialists');
+50 |   });
+51 | 
+52 |   it('does not duplicate Specialists section on second run', async () => {
+53 |     await runInit(tempDir);
+54 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:54:8)
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > does not duplicate Specialists section on second run [1.00ms]
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > does not overwrite existing AGENTS.md that already has ## Specialists
+68 |     expect((content.match(/## Specialists/g) ?? []).length).toBe(1);
+69 |   });
+70 | 
+71 |   it('does not fail if specialists/ directory already exists', async () => {
+72 |     await mkdir(join(tempDir, 'specialists'));
+73 |     await expect(runInit(tempDir)).resolves.not.toThrow();
+                                                     ^
+error: expect(received).not.toThrow()
+
+Thrown value: undefined
+
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:73:49)
+23 | 
+24 |   afterEach(async () => {
+25 |     vi.restoreAllMocks();
+26 |     await rm(tempDir, { recursive: true, force: true });
+27 |     // clear module cache so each test gets a fresh import
+28 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/init.test.ts:28:8)
+(fail) init CLI — run() > does not fail if specialists/ directory already exists [1.00ms]
+
+tests/unit/cli/install.test.ts:
+(pass) install script > installs specialists hooks and project MCP config [43.00ms]
+(pass) install script > is idempotent on repeated runs [69.00ms]
+(pass) install script > fails with a clear error when xt is missing [33.00ms]
+(pass) install script > defers hook registration when an external manager already owns a hook [35.00ms]
+
+tests/unit/cli/list.test.ts:
+(pass) list CLI — parseArgs > returns empty object for no args
+(pass) list CLI — parseArgs > parses --category
+(pass) list CLI — parseArgs > parses --scope project
+(pass) list CLI — parseArgs > parses --scope user
+(pass) list CLI — parseArgs > parses both --category and --scope together
+(pass) list CLI — parseArgs > parses flags in any order
+(pass) list CLI — parseArgs > throws ArgParseError for invalid --scope value
+(pass) list CLI — parseArgs > throws ArgParseError for empty --scope
+(pass) list CLI — parseArgs > throws ArgParseError for --category with no value
+(pass) list CLI — parseArgs > throws ArgParseError when --category value looks like a flag
+(pass) list CLI — parseArgs > silently ignores unknown flags
+(pass) list CLI — parseArgs --json > parses --json flag
+(pass) list CLI — parseArgs --json > parses --json with other flags
+(pass) list CLI — parseArgs --json > json defaults to undefined when not provided
+
+tests/unit/cli/quickstart.test.ts:
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > prints title header [2.00ms]
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > covers all 10 sections [1.00ms]
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > documents --background flag
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > documents stall_timeout_ms in YAML schema
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > documents skills.paths in YAML schema [1.00ms]
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > documents beads_integration in YAML schema
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > documents hook points
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > lists all MCP tools
+2 | import { describe, it, expect, vi, afterEach } from 'vitest';
+3 | 
+4 | describe('quickstart CLI — run()', () => {
+5 |   afterEach(() => {
+6 |     vi.restoreAllMocks();
+7 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/quickstart.test.ts:7:8)
+(fail) quickstart CLI — run() > references trace.jsonl
+
+tests/unit/cli/setup.test.ts:
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > creates CLAUDE.md with workflow block by default [2.00ms]
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > creates AGENTS.md with --agents flag
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > workflow block contains MCP tools table
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > workflow block contains CLI quick reference
+69 | 
+70 |   it('is idempotent — skips if marker already present', async () => {
+71 |     await runSetup(['--project']);
+72 |     const firstContent = readFileSync(join(tmpDir, 'CLAUDE.md'), 'utf-8');
+73 | 
+74 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:74:8)
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > is idempotent — skips if marker already present [1.00ms]
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > appends to existing file without overwriting
+92 |   });
+93 | 
+94 |   it('--dry-run prints block without writing', async () => {
+95 |     const { stdout } = await runSetup(['--project', '--dry-run']);
+96 |     const claudePath = join(tmpDir, 'CLAUDE.md');
+97 |     expect(existsSync(claudePath)).toBe(false);
+                                        ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:97:36)
+17 |     process.cwd = () => tmpDir;
+18 |   });
+19 | 
+20 |   afterEach(() => {
+21 |     vi.restoreAllMocks();
+22 |     vi.resetModules();
+            ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/setup.test.ts:22:8)
+(fail) setup CLI — run() > --dry-run prints block without writing
+
+tests/unit/cli/status.test.ts:
+10 |   });
+11 | 
+12 |   it('completes without throwing', async () => {
+13 |     vi.spyOn(console, 'log').mockImplementation(() => {});
+14 |     const { run } = await import('../../../src/cli/status.js');
+15 |     await expect(run()).resolves.not.toThrow();
+                                          ^
+error: expect(received).not.toThrow()
+
+Thrown value: undefined
+
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:15:38)
+4 | import { describe, it, expect, vi, afterEach } from 'vitest';
+5 | 
+6 | describe('status CLI — run()', () => {
+7 |   afterEach(() => {
+8 |     vi.restoreAllMocks();
+9 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:9:8)
+(fail) status CLI — run() > completes without throwing [2728.03ms]
+4 | import { describe, it, expect, vi, afterEach } from 'vitest';
+5 | 
+6 | describe('status CLI — run()', () => {
+7 |   afterEach(() => {
+8 |     vi.restoreAllMocks();
+9 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:9:8)
+(fail) status CLI — run() > prints Specialists section header [2658.03ms]
+4 | import { describe, it, expect, vi, afterEach } from 'vitest';
+5 | 
+6 | describe('status CLI — run()', () => {
+7 |   afterEach(() => {
+8 |     vi.restoreAllMocks();
+9 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:9:8)
+(fail) status CLI — run() > prints pi section header [2840.03ms]
+4 | import { describe, it, expect, vi, afterEach } from 'vitest';
+5 | 
+6 | describe('status CLI — run()', () => {
+7 |   afterEach(() => {
+8 |     vi.restoreAllMocks();
+9 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:9:8)
+(fail) status CLI — run() > prints beads section header [2736.03ms]
+4 | import { describe, it, expect, vi, afterEach } from 'vitest';
+5 | 
+6 | describe('status CLI — run()', () => {
+7 |   afterEach(() => {
+8 |     vi.restoreAllMocks();
+9 |     vi.resetModules();
+           ^
+TypeError: vi.resetModules is not a function. (In 'vi.resetModules()', 'vi.resetModules' is undefined)
+      at <anonymous> (/home/dawid/projects/specialists/.xtrm/worktrees/specialists-xt-pi-ly7c/tests/unit/cli/status.test.ts:9:8)
+(fail) status CLI — run() > prints MCP section header [2487.03ms]
+
+tests/unit/pi/session.test.ts:
+(pass) backendMap > maps gemini to google-gemini-cli
+(pass) backendMap > maps qwen to openai
+(pass) backendMap > maps claude/anthropic to anthropic [1.00ms]
+(pass) backendMap > passes through unknown backends
+(pass) backendMap > returns --api-key args for qwen
+(pass) backendMap > returns empty args for gemini
+(pass) PiAgentSession > prompt() does NOT close stdin
+(pass) PiAgentSession > waitForDone(100) rejects with timeout error when agent_end never fires [102.00ms]
+(pass) PiAgentSession > close() calls stdin.end() and resolves when process exits
+(pass) PiAgentSession > mapPermissionToTools('LOW') passes 'read,bash,edit,write,grep,find,ls' to --tools
+(pass) PiAgentSession > mapPermissionToTools('READ_ONLY') passes 'read,bash,grep,find,ls' to --tools
+(pass) PiAgentSession > mapPermissionToTools('HIGH') passes 'read,bash,edit,write,grep,find,ls' to --tools
+
+tests/unit/specialist/beads.test.ts:
+(pass) shouldCreateBead > returns false when never
+(pass) shouldCreateBead > returns true when always, regardless of permission
+(pass) shouldCreateBead > returns false when auto and READ_ONLY
+(pass) shouldCreateBead > returns true when auto and LOW
+(pass) shouldCreateBead > returns true when auto and MEDIUM
+(pass) shouldCreateBead > returns true when auto and HIGH
+
+tests/unit/specialist/hooks.test.ts:
+(pass) HookEmitter > writes pre_render event to JSONL [1.00ms]
+(pass) HookEmitter > appends multiple events with same invocation_id [1.00ms]
+(pass) HookEmitter > fires custom handler (fire-and-forget) [10.00ms]
+
+tests/unit/specialist/jobRegistry.test.ts:
+(pass) JobRegistry > registers a job and returns running snapshot [1.00ms]
+(pass) JobRegistry > snapshot includes beadId when set via setBeadId
+(pass) JobRegistry > complete propagates beadId from RunResult
+(pass) JobRegistry > complete without beadId leaves beadId undefined
+(pass) JobRegistry > setBeadId is no-op on unknown job
+
+tests/unit/specialist/loader.test.ts:
+(pass) SpecialistLoader > discovers specialists in project specialists/ dir [2.00ms]
+(pass) SpecialistLoader > returns empty list when no specialists
+(pass) SpecialistLoader > loads and caches a specialist by name [1.00ms]
+(pass) SpecialistLoader > throws when specialist not found [1.00ms]
+(pass) SpecialistLoader > project-level specialist overrides user-level (same name) [1.00ms]
+
+tests/unit/specialist/pipeline.test.ts:
+(pass) runPipeline > passes previous output as $previous_result to next step
+(pass) runPipeline > returns final_output from last step
+(pass) runPipeline > stops pipeline on failure and marks step as rejected
+
+tests/unit/specialist/run_parallel.test.ts:
+(pass) createRunParallelTool > includes beadId in result when runner returns one [1.00ms]
+(pass) createRunParallelTool > includes undefined beadId when runner does not create a bead
+(pass) createRunParallelTool > sets beadId to undefined on rejected specialist
+(pass) createRunParallelTool > returns output and durationMs alongside beadId
+
+tests/unit/specialist/runner-scripts.test.ts:
+(pass) SpecialistRunner — script execution > runs pre-phase scripts and injects XML-formatted output into prompt [6.00ms]
+(pass) SpecialistRunner — script execution > runs post-phase scripts after getting output [1.00ms]
+(pass) SpecialistRunner — script execution > does not inject output when inject_output is false
+(pass) SpecialistRunner — script execution > works without any scripts defined [1.00ms]
+(pass) SpecialistRunner — script execution > includes exit_code attribute when script fails
+
+tests/unit/specialist/runner.test.ts:
+(pass) SpecialistRunner > executes specialist and returns output [1.00ms]
+(pass) SpecialistRunner > calls pi session lifecycle in order
+(pass) SpecialistRunner > returns correct backend even when kill() destroys meta [1.00ms]
+(pass) SpecialistRunner > kills session even on error [1.00ms]
+(pass) SpecialistRunner > uses fallback backend when primary circuit is OPEN
+(pass) SpecialistRunner > beads integration > creates and closes bead on success when always [1.00ms]
+(pass) SpecialistRunner > beads integration > closes bead with ERROR status on run failure
+(pass) SpecialistRunner > beads integration > skips bead when never
+(pass) SpecialistRunner > beads integration > skips bead when auto and READ_ONLY [1.00ms]
+(pass) SpecialistRunner > beads integration > creates bead when auto and MEDIUM permission
+(pass) SpecialistRunner > beads integration > links tracking bead back to the input bead
+(pass) SpecialistRunner > beads integration > exposes bead_context and bead_id template variables for bead runs [1.00ms]
+(pass) SpecialistRunner > beads integration > does not crash when createBead returns null
+(pass) SpecialistRunner > beads integration > runs normally without beadsClient provided
+(pass) SpecialistRunner > cancellation via SessionKilledError > does not record circuit-breaker failure when session is killed [1.00ms]
+(pass) SpecialistRunner > cancellation via SessionKilledError > closes bead with CANCELLED status when session is killed [2.00ms]
+(pass) SpecialistRunner > cancellation via SessionKilledError > records circuit-breaker failure for real backend errors (not kills)
+
+tests/unit/specialist/schema.test.ts:
+(pass) parseSpecialist > parses a valid specialist YAML [1.00ms]
+(pass) parseSpecialist > applies defaults for optional execution fields
+(pass) parseSpecialist > rejects invalid name (not kebab-case) [1.00ms]
+(pass) parseSpecialist > rejects invalid version (not semver) [1.00ms]
+(pass) parseSpecialist > accepts unknown fields (superset tolerance — Agent Forge / Mercury fields)
+(pass) parseSpecialist > rejects missing required task_template [1.00ms]
+(pass) parseSpecialist > beads_integration field > defaults to auto when not specified
+(pass) parseSpecialist > beads_integration field > accepts always [1.00ms]
+(pass) parseSpecialist > beads_integration field > accepts never
+(pass) parseSpecialist > beads_integration field > rejects invalid value [1.00ms]
+
+tests/unit/specialist/specialist-init.test.ts:
+(pass) specialist_init tool > returns specialist list
+(pass) specialist_init tool > skips bd init when bd not available
+(pass) specialist_init tool > runs bd init when bd available and .beads/ missing
+(pass) specialist_init tool > skips bd init when .beads/ already exists
+(pass) specialist_init tool > reports initialized false when bd init fails [1.00ms]
+
+tests/unit/specialist/supervisor.test.ts:
+(pass) Supervisor > run() creates job directory with status.json, events.jsonl, result.txt [1.00ms]
+(pass) Supervisor > status.json has all expected fields after successful run [1.00ms]
+(pass) Supervisor > result.txt contains the runner output string
+(pass) Supervisor > events.jsonl contains at least one valid JSON line
+(pass) Supervisor > .specialists/ready/<id> marker is created on success [1.00ms]
+(pass) Supervisor > pins result output and metadata to bead notes when beadId is present [2.00ms]
+(pass) Supervisor > on runner error: status=error, error field set, no result.txt written
+(pass) Supervisor > GC: job dirs older than TTL are deleted on next run [1.00ms]
+(pass) Supervisor > crash recovery: status=running with dead PID gets marked error
+(pass) Supervisor > listJobs() returns all jobs sorted newest-first [1.00ms]
+(pass) Supervisor > readStatus() returns null for unknown id
+
+tests/unit/specialist/templateEngine.test.ts:
+(pass) renderTemplate > substitutes $variables
+(pass) renderTemplate > substitutes multiple occurrences
+(pass) renderTemplate > leaves unknown $vars intact
+(pass) renderTemplate > handles $prompt as standard variable
+
+45 tests failed:
+(fail) doctor CLI — run() > prints specialists doctor header [2171.02ms]
+(fail) doctor CLI — run() > prints all section headers [2611.03ms]
+(fail) doctor CLI — run() > prints a summary result line [2838.03ms]
+(fail) doctor CLI — run() > checks for both expected hooks [2745.03ms]
+(fail) doctor CLI — run() > mentions fix hints for failures [2775.03ms]
+(fail) edit CLI — parseArgs error paths (via process.exit mock) > exits 1 when no name given
+(fail) edit CLI — parseArgs error paths (via process.exit mock) > exits 1 for unknown field
+(fail) edit CLI — run() YAML mutations > updates model field in YAML [91.00ms]
+(fail) edit CLI — run() YAML mutations > updates description field in YAML [16.00ms]
+(fail) edit CLI — run() YAML mutations > updates timeout to numeric value [12.00ms]
+(fail) edit CLI — run() YAML mutations > updates tags as array from comma-separated string [10.00ms]
+(fail) edit CLI — run() YAML mutations > dry-run does not write to file [10.00ms]
+(fail) edit CLI — run() YAML mutations > exits 1 for non-numeric timeout
+(fail) edit CLI — run() YAML mutations > exits 1 for invalid permission value [1.00ms]
+(fail) help CLI — run() > prints all known subcommands [1.00ms]
+(fail) help CLI — run() > prints specialists <command> usage header
+(fail) help CLI — run() > prints command categories
+(fail) help CLI — run() > references quickstart guide
+(fail) init CLI — run() > creates specialists/ directory when it does not exist [1.00ms]
+(fail) init CLI — run() > creates AGENTS.md with Specialists section when file does not exist
+(fail) init CLI — run() > appends Specialists section to existing AGENTS.md without marker
+(fail) init CLI — run() > does not duplicate Specialists section on second run [1.00ms]
+(fail) init CLI — run() > does not overwrite existing AGENTS.md that already has ## Specialists
+(fail) init CLI — run() > does not fail if specialists/ directory already exists [1.00ms]
+(fail) quickstart CLI — run() > prints title header [2.00ms]
+(fail) quickstart CLI — run() > covers all 10 sections [1.00ms]
+(fail) quickstart CLI — run() > documents --background flag
+(fail) quickstart CLI — run() > documents stall_timeout_ms in YAML schema
+(fail) quickstart CLI — run() > documents skills.paths in YAML schema [1.00ms]
+(fail) quickstart CLI — run() > documents beads_integration in YAML schema
+(fail) quickstart CLI — run() > documents hook points
+(fail) quickstart CLI — run() > lists all MCP tools
+(fail) quickstart CLI — run() > references trace.jsonl
+(fail) setup CLI — run() > creates CLAUDE.md with workflow block by default [2.00ms]
+(fail) setup CLI — run() > creates AGENTS.md with --agents flag
+(fail) setup CLI — run() > workflow block contains MCP tools table
+(fail) setup CLI — run() > workflow block contains CLI quick reference
+(fail) setup CLI — run() > is idempotent — skips if marker already present [1.00ms]
+(fail) setup CLI — run() > appends to existing file without overwriting
+(fail) setup CLI — run() > --dry-run prints block without writing
+(fail) status CLI — run() > completes without throwing [2728.03ms]
+(fail) status CLI — run() > prints Specialists section header [2658.03ms]
+(fail) status CLI — run() > prints pi section header [2840.03ms]
+(fail) status CLI — run() > prints beads section header [2736.03ms]
+(fail) status CLI — run() > prints MCP section header [2487.03ms]
+
+ 113 pass
+ 45 fail
+ 315 expect() calls
+Ran 158 tests across 23 files. [27.32s]
