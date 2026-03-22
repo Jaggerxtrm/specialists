@@ -82,6 +82,7 @@ export async function run(): Promise<void> {
       runner,
       runOptions: { name: args.name, prompt: args.prompt, backendOverride: args.model },
       jobsDir,
+      beadsClient: beadsClient ?? undefined,
     });
     try {
       const jobId = await supervisor.run();

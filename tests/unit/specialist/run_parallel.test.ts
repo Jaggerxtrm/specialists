@@ -12,6 +12,7 @@ function makeRunner(overrides: Partial<Record<string, unknown>>[] = []) {
         model: 'gemini',
         durationMs: 42,
         specialistVersion: '1.0.0',
+        promptHash: 'abc123def4567890',
         beadId: undefined as string | undefined,
         ...(overrides[call] ?? {}),
       };

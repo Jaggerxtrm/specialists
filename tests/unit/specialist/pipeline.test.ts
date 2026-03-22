@@ -11,6 +11,7 @@ function makeRunner(outputs: string[]) {
       model: 'gemini',
       durationMs: 10,
       specialistVersion: '1.0.0',
+      promptHash: 'abc123def4567890',
     })),
   } as any;
 }
@@ -46,7 +47,7 @@ describe('runPipeline', () => {
   it('stops pipeline on failure and marks step as rejected', async () => {
     const runner = {
       run: vi.fn()
-        .mockResolvedValueOnce({ output: 'ok', backend: 'g', model: 'g', durationMs: 1, specialistVersion: '1' })
+        .mockResolvedValueOnce({ output: 'ok', backend: 'g', model: 'g', durationMs: 1, specialistVersion: '1', promptHash: 'abc123def4567890' })
         .mockRejectedValueOnce(new Error('boom')),
     } as any;
     const result = await runPipeline(

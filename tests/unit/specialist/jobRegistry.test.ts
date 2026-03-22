@@ -9,6 +9,7 @@ function makeResult(overrides = {}) {
     model: 'claude-haiku-4-5',
     durationMs: 1234,
     specialistVersion: '1.0.0',
+    promptHash: 'abc123def4567890',
     ...overrides,
   };
 }
