@@ -153,6 +153,7 @@ async function run() {
         '  --model <model>    Override the model for this run only',
         '  --background       Run async; prints job ID and exits immediately',
         '  --no-beads         Skip creating a tracking bead for this run',
+        '  --context-depth <n> Inject outputs from completed blockers (1=immediate, 2=recursive)',
         '',
         'Examples:',
         '  specialists run code-review --prompt "Audit src/api.ts"',
