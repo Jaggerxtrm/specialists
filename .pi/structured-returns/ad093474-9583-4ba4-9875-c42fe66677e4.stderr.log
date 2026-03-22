@@ -1,0 +1,1 @@
+$ bun build src/index.ts --target=node --outfile=dist/index.js && chmod +x dist/index.js
