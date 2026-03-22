@@ -30,21 +30,12 @@ describe('shouldCreateBead', () => {
 });
 
 describe('buildBeadContext', () => {
-  it('formats title, description, notes, and blockers into specialist-ready context', () => {
+  it('formats title, description and notes with no blockers', () => {
     const context = buildBeadContext({
       id: 'unitAI-55d',
       title: 'Refactor auth module',
       description: 'Extract JWT validation into AuthService.',
       notes: 'Keep middleware API stable.',
-      dependencies: [
-        {
-          id: 'unitAI-fgy',
-          title: 'Write bead_id into status.json',
-          description: 'Make bead tracking visible before completion.',
-          notes: 'Needed for output pinning.',
-          dependency_type: 'blocks',
-        },
-      ],
     });
 
     expect(context).toBe([
@@ -53,12 +44,56 @@ describe('buildBeadContext', () => {
       '',
       '## Notes',
       'Keep middleware API stable.',
-      '',
-      '## Context: Blocked by',
-      '- Write bead_id into status.json (unitAI-fgy)',
-      '  Make bead tracking visible before completion.',
-      '  Notes: Needed for output pinning.',
     ].join('\n'));
+  });
+
+  it('injects completed blockers from second argument', () => {
+    const context = buildBeadContext(
+      {
+        id: 'unitAI-55d',
+        title: 'Refactor auth module',
+        description: 'Extract JWT validation into AuthService.',
+        notes: 'Keep middleware API stable.',
+      },
+      [
+        {
+          id: 'unitAI-fgy',
+          title: 'Write bead_id into status.json',
+          description: 'Make bead tracking visible before completion.',
+          notes: 'Needed for output pinning.',
+        },
+      ],
+    );
+
+    expect(context).toBe([
+      '# Task: Refactor auth module',
+      'Extract JWT validation into AuthService.',
+      '',
+      '## Notes',
+      'Keep middleware API stable.',
+      '',
+      '## Context from completed dependencies:',
+      '',
+      '### Write bead_id into status.json (unitAI-fgy)',
+      'Make bead tracking visible before completion.',
+      '',
+      'Needed for output pinning.',
+    ].join('\n'));
+  });
+
+  it('omits context section when no blockers provided', () => {
+    const context = buildBeadContext({
+      id: 'unitAI-7fm',
+      title: 'Register project MCP',
+      description: 'Write project-scoped .mcp.json registration.',
+    });
+
+    expect(context).toBe([
+      '# Task: Register project MCP',
+      'Write project-scoped .mcp.json registration.',
+    ].join('\n'));
+    expect(context).not.toContain('dependencies');
+    expect(context).not.toContain('Context from');
   });
 
   it('omits optional sections when notes and blockers are absent', () => {
