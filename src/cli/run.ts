@@ -22,12 +22,13 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   background: boolean;
+  contextDepth?: number;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--model <model>] [--no-beads] [--background]');
+    console.error('Usage: specialists run <name> [--prompt "..."] [--bead <id>] [--model <model>] [--no-beads] [--background] [--context-depth <n>]');
     process.exit(1);
   }
 
@@ -36,14 +37,16 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let background = false;
+  let contextDepth: number | undefined;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
-    if (token === '--prompt'      && argv[i + 1]) { prompt = argv[++i]; continue; }
-    if (token === '--bead'        && argv[i + 1]) { beadId = argv[++i]; continue; }
-    if (token === '--model'       && argv[i + 1]) { model  = argv[++i]; continue; }
-    if (token === '--no-beads')   { noBeads    = true; continue; }
-    if (token === '--background') { background = true; continue; }
+    if (token === '--prompt'       && argv[i + 1]) { prompt = argv[++i]; continue; }
+    if (token === '--bead'         && argv[i + 1]) { beadId = argv[++i]; continue; }
+    if (token === '--model'        && argv[i + 1]) { model  = argv[++i]; continue; }
+    if (token === '--no-beads')    { noBeads    = true; continue; }
+    if (token === '--background')  { background = true; continue; }
+    if (token === '--context-depth' && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10); continue; }
   }
 
   if (prompt && beadId) {
@@ -65,7 +68,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, background };
+  return { name, prompt, beadId, model, noBeads, background, contextDepth };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -85,7 +88,11 @@ export async function run(): Promise<void> {
     if (!bead) {
       throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
     }
-    const beadContext = buildBeadContext(bead);
+    // Get blocker context if depth is specified
+    const blockers = args.contextDepth && args.contextDepth > 0
+      ? beadsClient?.getBlockers(args.beadId, args.contextDepth) ?? []
+      : [];
+    const beadContext = buildBeadContext(bead, { blockers, depth: args.contextDepth ?? 0 });
     prompt = beadContext;
     variables = {
       bead_context: beadContext,

@@ -20,9 +20,16 @@ export interface BeadRecord {
   description?: string;
   notes?: string;
   dependencies?: BeadDependency[];
+  status?: string;
 }
 
-export function buildBeadContext(bead: BeadRecord): string {
+export function buildBeadContext(
+  bead: BeadRecord,
+  options?: {
+    blockers?: BeadRecord[];
+    depth?: number;
+  },
+): string {
   const lines = [`# Task: ${bead.title}`];
 
   if (bead.description?.trim()) {
@@ -33,17 +40,35 @@ export function buildBeadContext(bead: BeadRecord): string {
     lines.push('', '## Notes', bead.notes.trim());
   }
 
-  const blockers = (bead.dependencies ?? []).filter((dep) => dep.dependency_type === 'blocks' || !dep.dependency_type);
-  if (blockers.length > 0) {
-    lines.push('', '## Context: Blocked by');
-    for (const blocker of blockers) {
-      lines.push(`- ${blocker.title ?? blocker.id} (${blocker.id})`);
-      if (blocker.description?.trim()) {
-        lines.push(`  ${blocker.description.trim()}`);
-      }
+  // Inject completed blocker outputs when depth > 0
+  const blockers = options?.blockers ?? [];
+  const completedBlockers = blockers.filter(
+    (b) => b.status === 'closed' && b.notes?.trim(),
+  );
+
+  if (completedBlockers.length > 0 && (options?.depth ?? 0) > 0) {
+    lines.push('', '## Context from completed dependencies:');
+    for (const blocker of completedBlockers) {
+      const statusMarker = blocker.status === 'closed' ? 'COMPLETE' : blocker.status ?? 'unknown';
+      lines.push(
+        '',
+        `### ${blocker.title ?? blocker.id} (${blocker.id} — ${statusMarker})`,
+      );
       if (blocker.notes?.trim()) {
-        lines.push(`  Notes: ${blocker.notes.trim()}`);
+        lines.push(blocker.notes.trim());
       }
+    }
+  }
+
+  // List all blockers (even without notes) for visibility when no completed blockers
+  const allBlockers = (bead.dependencies ?? []).filter(
+    (dep) => dep.dependency_type === 'blocks' || !dep.dependency_type,
+  );
+  if (allBlockers.length > 0 && completedBlockers.length === 0) {
+    lines.push('', '## Dependencies');
+    for (const blocker of allBlockers) {
+      const statusInfo = blocker.status ? ` [${blocker.status}]` : '';
+      lines.push(`- ${blocker.title ?? blocker.id}${statusInfo}`);
     }
   }
 
@@ -100,6 +125,31 @@ export class BeadsClient {
     } catch {
       return null;
     }
+  }
+
+  /** Get blocker beads at specified depth (1 = immediate blockers only). */
+  getBlockers(beadId: string, depth: number = 1): BeadRecord[] {
+    if (!this.available || !beadId || depth < 1) return [];
+    const bead = this.readBead(beadId);
+    if (!bead?.dependencies) return [];
+
+    const blockerIds = bead.dependencies
+      .filter((dep) => dep.dependency_type === 'blocks' || !dep.dependency_type)
+      .map((dep) => dep.id);
+
+    const blockers: BeadRecord[] = [];
+    for (const id of blockerIds) {
+      const blockerBead = this.readBead(id);
+      if (blockerBead) {
+        blockers.push(blockerBead);
+        // Recursively get blockers at deeper levels
+        if (depth > 1) {
+          const nestedBlockers = this.getBlockers(id, depth - 1);
+          blockers.push(...nestedBlockers);
+        }
+      }
+    }
+    return blockers;
   }
 
   /** Link a tracking bead back to the input bead that supplied the prompt. */
