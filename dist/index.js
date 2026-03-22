@@ -18139,14 +18139,16 @@ You have access via Bash:
       permission_level: permissionLevel
     });
     const beadsIntegration = spec.specialist.beads_integration ?? "auto";
-    let trackingBeadId;
-    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
-      trackingBeadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (trackingBeadId && options.inputBeadId) {
-        beadsClient.addDependency(trackingBeadId, options.inputBeadId);
+    let beadId;
+    let ownsBead = false;
+    if (options.inputBeadId) {
+      beadId = options.inputBeadId;
+    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId) {
+        ownsBead = true;
+        onBeadCreated?.(beadId);
       }
-      if (trackingBeadId)
-        onBeadCreated?.(trackingBeadId);
     }
     let output;
     let sessionBackend = model;
@@ -18183,9 +18185,10 @@ You have access via Bash:
         circuitBreaker.recordFailure(model);
       }
       const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
-      if (trackingBeadId) {
-        beadsClient?.closeBead(trackingBeadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(trackingBeadId, metadata.name, model, 1);
+      if (beadId) {
+        if (ownsBead)
+          beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
       }
       await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
         status: isCancelled ? "CANCELLED" : "ERROR",
@@ -18206,9 +18209,10 @@ You have access via Bash:
       duration_ms: durationMs,
       output_valid: true
     });
-    if (trackingBeadId) {
-      beadsClient?.closeBead(trackingBeadId, "COMPLETE", durationMs, model);
-      beadsClient?.auditBead(trackingBeadId, metadata.name, model, 0);
+    if (beadId) {
+      if (ownsBead)
+        beadsClient?.closeBead(beadId, "COMPLETE", durationMs, model);
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
     }
     return {
       output,
@@ -18217,7 +18221,7 @@ You have access via Bash:
       durationMs,
       specialistVersion: metadata.version,
       promptHash,
-      beadId: trackingBeadId
+      beadId
     };
   }
   async startAsync(options, registry2) {
@@ -19069,8 +19073,7 @@ async function run7() {
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
   const hooks = new HookEmitter({ tracePath: join8(process.cwd(), ".specialists", "trace.jsonl") });
-  const beadsClient = args.beadId || !args.noBeads ? new BeadsClient : undefined;
-  const trackingBeadsClient = args.noBeads ? undefined : beadsClient;
+  const beadsClient = args.noBeads ? undefined : new BeadsClient;
   let prompt = args.prompt;
   let variables;
   if (args.beadId) {
@@ -19089,7 +19092,7 @@ async function run7() {
     loader,
     hooks,
     circuitBreaker,
-    beadsClient: trackingBeadsClient
+    beadsClient
   });
   if (args.background) {
     const jobsDir = join8(process.cwd(), ".specialists", "jobs");
@@ -19103,7 +19106,7 @@ async function run7() {
         inputBeadId: args.beadId
       },
       jobsDir,
-      beadsClient: trackingBeadsClient
+      beadsClient
     });
     try {
       const jobId = await supervisor.run();
@@ -19150,8 +19153,9 @@ Interrupted.
     process.stdout.write(`
 `);
   const secs = (result.durationMs / 1000).toFixed(1);
+  const effectiveBeadId = args.beadId ?? trackingBeadId;
   const footer = [
-    trackingBeadId ? `bead ${trackingBeadId}` : "",
+    effectiveBeadId ? `bead ${effectiveBeadId}` : "",
     `${secs}s`,
     dim5(result.model)
   ].filter(Boolean).join("  ");

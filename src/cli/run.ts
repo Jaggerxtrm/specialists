@@ -75,8 +75,7 @@ export async function run(): Promise<void> {
   const loader         = new SpecialistLoader();
   const circuitBreaker = new CircuitBreaker();
   const hooks          = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
-  const beadsClient    = (args.beadId || !args.noBeads) ? new BeadsClient() : undefined;
-  const trackingBeadsClient = args.noBeads ? undefined : beadsClient;
+  const beadsClient = args.noBeads ? undefined : new BeadsClient();
 
   let prompt = args.prompt;
   let variables: Record<string, string> | undefined;
@@ -98,7 +97,7 @@ export async function run(): Promise<void> {
     loader,
     hooks,
     circuitBreaker,
-    beadsClient: trackingBeadsClient,
+    beadsClient,
   });
 
   // ── Background mode ─────────────────────────────────────────────────────────
@@ -114,7 +113,7 @@ export async function run(): Promise<void> {
         inputBeadId: args.beadId,
       },
       jobsDir,
-      beadsClient: trackingBeadsClient,
+      beadsClient,
     });
     try {
       const jobId = await supervisor.run();
@@ -165,8 +164,9 @@ export async function run(): Promise<void> {
 
   // Footer
   const secs = (result.durationMs / 1000).toFixed(1);
+  const effectiveBeadId = args.beadId ?? trackingBeadId;
   const footer = [
-    trackingBeadId ? `bead ${trackingBeadId}` : '',
+    effectiveBeadId ? `bead ${effectiveBeadId}` : '',
     `${secs}s`,
     dim(result.model),
   ].filter(Boolean).join('  ');

@@ -203,7 +203,7 @@ describe('SpecialistRunner', () => {
       expect(result.beadId).toBe('specialists-test-1');
     });
 
-    it('links tracking bead back to the input bead', async () => {
+    it('uses input bead directly — no second tracking bead created', async () => {
       const beadsClient = makeBeadsClient();
       const runner = new SpecialistRunner({
         loader: makeLoader({ permission_required: 'MEDIUM' }, 'auto'),
@@ -213,8 +213,8 @@ describe('SpecialistRunner', () => {
         beadsClient,
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go', inputBeadId: 'unitAI-55d' });
-      expect(beadsClient.addDependency).toHaveBeenCalledWith('specialists-test-1', 'unitAI-55d');
-      expect(result.beadId).toBe('specialists-test-1');
+      expect(beadsClient.createBead).not.toHaveBeenCalled();
+      expect(result.beadId).toBe('unitAI-55d');
     });
 
     it('exposes bead_context and bead_id template variables for bead runs', async () => {

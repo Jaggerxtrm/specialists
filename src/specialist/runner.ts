@@ -169,15 +169,16 @@ export class SpecialistRunner {
       permission_level: permissionLevel,
     });
 
-    // Beads: create bead if policy allows
+    // Beads: use provided input bead OR create a new tracking bead.
+    // When inputBeadId is present the orchestrator owns the lifecycle — do NOT create a second bead.
     const beadsIntegration = spec.specialist.beads_integration ?? 'auto';
-    let trackingBeadId: string | undefined;
-    if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
-      trackingBeadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (trackingBeadId && options.inputBeadId) {
-        beadsClient.addDependency(trackingBeadId, options.inputBeadId);
-      }
-      if (trackingBeadId) onBeadCreated?.(trackingBeadId);
+    let beadId: string | undefined;
+    let ownsBead = false; // true only when runner created the bead (not inherited from orchestrator)
+    if (options.inputBeadId) {
+      beadId = options.inputBeadId;
+    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId) { ownsBead = true; onBeadCreated?.(beadId); }
     }
 
     let output: string;
@@ -220,11 +221,12 @@ export class SpecialistRunner {
         // Only record a circuit-breaker failure for real backend errors
         circuitBreaker.recordFailure(model);
       }
-      // Beads: close with CANCELLED for kill, ERROR for real failures; always audit
+      // Beads: close with CANCELLED for kill, ERROR for real failures; always audit.
+      // Only close if runner owns the bead — input beads are closed by the orchestrator.
       const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
-      if (trackingBeadId) {
-        beadsClient?.closeBead(trackingBeadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(trackingBeadId, metadata.name, model, 1);
+      if (beadId) {
+        if (ownsBead) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
       }
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
         status: isCancelled ? 'CANCELLED' : 'ERROR',
@@ -249,10 +251,11 @@ export class SpecialistRunner {
       output_valid: true,
     });
 
-    // Beads: close with COMPLETE and emit audit record
-    if (trackingBeadId) {
-      beadsClient?.closeBead(trackingBeadId, 'COMPLETE', durationMs, model);
-      beadsClient?.auditBead(trackingBeadId, metadata.name, model, 0);
+    // Beads: close with COMPLETE and emit audit record.
+    // Only close if runner owns the bead — input beads are closed by the orchestrator.
+    if (beadId) {
+      if (ownsBead) beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
     }
 
     return {
@@ -262,7 +265,7 @@ export class SpecialistRunner {
       durationMs,
       specialistVersion: metadata.version,
       promptHash,
-      beadId: trackingBeadId,
+      beadId,
     };
   }
 
