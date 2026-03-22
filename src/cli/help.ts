@@ -8,7 +8,7 @@ const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 type CommandEntry = [string, string];
 
 const SETUP: CommandEntry[] = [
-  ['install',    'Full-stack installer: pi, beads, dolt, MCP registration, hooks'],
+  ['install',    'Project installer: prereq check, MCP registration, specialists hooks'],
   ['init',       'Scaffold specialists/, .specialists/, AGENTS.md in current project'],
   ['setup',      'Inject workflow context block into CLAUDE.md or AGENTS.md'],
   ['quickstart', 'Rich getting-started guide with examples and YAML schema reference'],

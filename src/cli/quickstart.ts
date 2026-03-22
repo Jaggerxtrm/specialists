@@ -29,8 +29,8 @@ export async function run(): Promise<void> {
   lines.push(section('1. Installation'));
   lines.push('');
   lines.push(`  ${cmd('npm install -g @jaggerxtrm/specialists')}    # install globally`);
-  lines.push(`  ${cmd('specialists install')}                       # full-stack setup:`);
-  lines.push(`  ${dim('                                            #   pi · beads · dolt · MCP · hooks')}`);
+  lines.push(`  ${cmd('specialists install')}                       # project setup:`);
+  lines.push(`  ${dim('                                            #   checks pi · bd · xt, then wires MCP + hooks')}`);
   lines.push('');
   lines.push(`  Verify everything is healthy:`);
   lines.push(`  ${cmd('specialists status')}                        # shows pi, beads, MCP, active jobs`);
