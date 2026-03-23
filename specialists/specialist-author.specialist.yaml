@@ -48,7 +48,7 @@ specialist:
 
   capabilities:
     diagnostic_scripts:
-      - skills/specialist-author/scripts/validate-specialist.sh specialists/<name>.specialist.yaml
+      - bun skills/specialist-author/scripts/validate-specialist.ts specialists/<name>.specialist.yaml
 
   communication:
     publishes: [specialist_yaml, validation_command]

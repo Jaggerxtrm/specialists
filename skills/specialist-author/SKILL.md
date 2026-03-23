@@ -144,7 +144,7 @@ specialist:
 
 Validate before committing:
 ```bash
-skills/specialist-author/scripts/validate-specialist.sh specialists/my-specialist.specialist.yaml
+bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
 ```
 
 ---
@@ -406,7 +406,7 @@ pi --model <provider>/<model-id> --print "ping"   # must return "pong"
 # 1. Write the YAML with the verified model
 
 # 2. Validate schema with the bundled helper
-skills/specialist-author/scripts/validate-specialist.sh specialists/my-specialist.specialist.yaml
+bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
 
 # 3. List to confirm discovery
 specialists list
@@ -415,4 +415,4 @@ specialists list
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
-If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.sh`. It is a thin wrapper over `parseSpecialist()` from `src/specialist/schema.ts`.
+If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.
