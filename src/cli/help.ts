@@ -2,8 +2,6 @@
 // Top-level help for the specialists CLI.
 // Richer and plainer than a terse command list, but smaller than quickstart.
 
-import { renderCommandHelp, COMMAND_REFERENCE } from '../specialist/workflow.js';
-
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 
@@ -97,13 +95,4 @@ export async function run(): Promise<void> {
   ];
 
   console.log(lines.join('\n'));
-}
-
-export function runCommandHelp(command: string): boolean {
-  const key = command as keyof typeof COMMAND_REFERENCE;
-  if (COMMAND_REFERENCE[key]) {
-    console.log(renderCommandHelp(key));
-    return true;
-  }
-  return false;
 }
