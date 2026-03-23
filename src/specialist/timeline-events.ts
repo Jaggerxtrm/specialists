@@ -1,0 +1,442 @@
+// src/specialist/timeline-events.ts
+/**
+ * Feed v2 Timeline Event Model
+ *
+ * This module defines the canonical event types for the specialists feed v2 timeline.
+ * It is grounded in the actual Pi RPC lifecycle, not in legacy callback abstractions.
+ *
+ * ## Source of truth
+ *
+ * This model was derived from:
+ * - Live `pi --mode rpc` traces (see unitAI-4pq.1 exploration notes)
+ * - Official docs in docs/pi-rpc.md
+ * - Current implementation analysis in src/pi/session.ts, src/specialist/supervisor.ts
+ *
+ * ## Layer model (from RPC reality)
+ *
+ * 1. **Message construction layer** (nested under message_update.assistantMessageEvent):
+ *    - text_start, text_delta, text_end
+ *    - thinking_start, thinking_delta, thinking_end
+ *    - toolcall_start, toolcall_delta, toolcall_end
+ *    - done (message-level completion, reasons: stop | length | toolUse)
+ *    - error (message-level failure, reasons: aborted | error)
+ *
+ * 2. **Tool execution layer** (top-level):
+ *    - tool_execution_start
+ *    - tool_execution_update (optional, streaming)
+ *    - tool_execution_end
+ *
+ * 3. **Tool result layer** (message role: toolResult):
+ *    - message_start (role: toolResult)
+ *    - message_end
+ *
+ * 4. **Turn boundary layer**:
+ *    - turn_start
+ *    - turn_end (includes assistant message + toolResults[])
+ *
+ * 5. **Run boundary layer**:
+ *    - agent_start
+ *    - agent_end (run completion, contains all messages[])
+ *
+ * ## Completion semantic
+ *
+ * For feed v2, the canonical completion event is a single `run_complete` event.
+ * This resolves the historical ambiguity between:
+ * - callback-level `done` (synthetic, from agent_end)
+ * - persisted `agent_end` (added after runner returns)
+ *
+ * The `run_complete` event is emitted once per job and contains:
+ * - final status (COMPLETE | ERROR | CANCELLED)
+ * - elapsed time
+ * - model/backend
+ * - error message if applicable
+ *
+ * ## Persistence contract
+ *
+ * events.jsonl contains TimelineEvent records (one per line, NDJSON).
+ * status.json remains the live mutable state snapshot.
+ * result.txt remains final output storage.
+ */
+
+// ============================================================================
+// CANONICAL TIMELINE EVENT TYPES
+// ============================================================================
+
+/**
+ * Base fields present in every timeline event.
+ * Written to events.jsonl as NDJSON (one event per line).
+ */
+export interface TimelineEventBase {
+  /** Unix timestamp in milliseconds when the event was written */
+  t: number;
+  /** Event type (see TimelineEventType constants) */
+  type: string;
+}
+
+/**
+ * Run started event.
+ * Emitted once when the specialist begins processing.
+ */
+export interface TimelineEventRunStart extends TimelineEventBase {
+  type: 'run_start';
+  /** Specialist name */
+  specialist: string;
+  /** Bead ID if tracking is enabled */
+  bead_id?: string;
+}
+
+/**
+ * Model/backend metadata event.
+ * Emitted when the first assistant message_start reveals provider info.
+ */
+export interface TimelineEventMeta extends TimelineEventBase {
+  type: 'meta';
+  /** Resolved model ID (e.g., 'claude-sonnet-4-6') */
+  model: string;
+  /** Backend provider (e.g., 'anthropic') */
+  backend: string;
+}
+
+/**
+ * Thinking event.
+ * Emitted once when reasoning/thinking activity is detected.
+ * Note: thinking_* are optional and backend-dependent.
+ */
+export interface TimelineEventThinking extends TimelineEventBase {
+  type: 'thinking';
+}
+
+/**
+ * Tool activity event.
+ * Represents tool execution lifecycle (construction + execution + result).
+ *
+ * Feed v2 collapses toolcall_* and tool_execution_* into a single tool event
+ * because:
+ * - toolcall construction is nested under message_update (not durable)
+ * - tool execution is the observable action
+ * - the combined view is what operators care about
+ */
+export interface TimelineEventTool extends TimelineEventBase {
+  type: 'tool';
+  /** Tool name (e.g., 'bash', 'read', 'ls') */
+  tool: string;
+  /** Execution phase */
+  phase: 'start' | 'end';
+  /** Tool call ID for correlation */
+  tool_call_id?: string;
+  /** Whether execution resulted in error */
+  is_error?: boolean;
+}
+
+/**
+ * Text output event.
+ * Emitted once when text content is first detected.
+ * Feed v2 does not persist text deltas (too verbose); just presence.
+ */
+export interface TimelineEventText extends TimelineEventBase {
+  type: 'text';
+}
+
+/**
+ * Run completion event.
+ * THE CANONICAL COMPLETION SIGNAL FOR FEED V2.
+ *
+ * Emitted exactly once per run, containing final status and metadata.
+ * This replaces the historical double-completion (done + agent_end).
+ */
+export interface TimelineEventRunComplete extends TimelineEventBase {
+  type: 'run_complete';
+  /** Final status */
+  status: 'COMPLETE' | 'ERROR' | 'CANCELLED';
+  /** Elapsed time in seconds */
+  elapsed_s: number;
+  /** Model ID */
+  model?: string;
+  /** Backend provider */
+  backend?: string;
+  /** Bead ID if tracking was enabled */
+  bead_id?: string;
+  /** Error message if status is ERROR */
+  error?: string;
+}
+
+/**
+ * Union of all timeline event types.
+ * This is the canonical type for events.jsonl records.
+ */
+export type TimelineEvent =
+  | TimelineEventRunStart
+  | TimelineEventMeta
+  | TimelineEventThinking
+  | TimelineEventTool
+  | TimelineEventText
+  | TimelineEventRunComplete;
+
+// ============================================================================
+// EVENT TYPE CONSTANTS
+// ============================================================================
+
+export const TIMELINE_EVENT_TYPES = {
+  RUN_START: 'run_start',
+  META: 'meta',
+  THINKING: 'thinking',
+  TOOL: 'tool',
+  TEXT: 'text',
+  RUN_COMPLETE: 'run_complete',
+} as const;
+
+// ============================================================================
+// MAPPING FROM RPC/CALLBACK EVENTS TO TIMELINE EVENTS
+// ============================================================================
+
+/**
+ * Maps PiAgentSession callback event types to timeline event types.
+ *
+ * Historical callback events (from current implementation):
+ * - 'thinking' -> TIMELINE_EVENT_TYPES.THINKING
+ * - 'toolcall' -> TIMELINE_EVENT_TYPES.TOOL (phase: start)
+ * - 'tool_execution_end' -> TIMELINE_EVENT_TYPES.TOOL (phase: end)
+ * - 'text' -> TIMELINE_EVENT_TYPES.TEXT
+ * - 'done' -> IGNORED (use run_complete instead)
+ *
+ * Note: This mapping exists for transition compatibility.
+ * The long-term fix (unitAI-4rn) is to align PiAgentSession with RPC reality.
+ */
+export function mapCallbackEventToTimelineEvent(
+  callbackEvent: string,
+  context: {
+    tool?: string;
+    toolCallId?: string;
+    isError?: boolean;
+  }
+): TimelineEvent | null {
+  const t = Date.now();
+
+  switch (callbackEvent) {
+    case 'thinking':
+      return { t, type: TIMELINE_EVENT_TYPES.THINKING };
+
+    case 'toolcall':
+      // Tool construction phase (assistant deciding to call tool)
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? 'unknown',
+        phase: 'start',
+        tool_call_id: context.toolCallId,
+      };
+
+    case 'tool_execution_end':
+      // Tool execution completed
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? 'unknown',
+        phase: 'end',
+        tool_call_id: context.toolCallId,
+        is_error: context.isError,
+      };
+
+    case 'text':
+      return { t, type: TIMELINE_EVENT_TYPES.TEXT };
+
+    case 'done':
+      // IGNORE: We use run_complete instead
+      // The 'done' callback event is synthetic from agent_end
+      return null;
+
+    default:
+      // Unknown callback event - don't persist
+      return null;
+  }
+}
+
+// ============================================================================
+// TIMELINE EVENT CONSTRUCTORS
+// ============================================================================
+
+/**
+ * Create a run_start event.
+ */
+export function createRunStartEvent(
+  specialist: string,
+  beadId?: string
+): TimelineEventRunStart {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_START,
+    specialist,
+    bead_id: beadId,
+  };
+}
+
+/**
+ * Create a meta event.
+ */
+export function createMetaEvent(
+  model: string,
+  backend: string
+): TimelineEventMeta {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.META,
+    model,
+    backend,
+  };
+}
+
+/**
+ * Create a run_complete event.
+ * THE CANONICAL COMPLETION EVENT.
+ */
+export function createRunCompleteEvent(
+  status: 'COMPLETE' | 'ERROR' | 'CANCELLED',
+  elapsed_s: number,
+  options?: {
+    model?: string;
+    backend?: string;
+    bead_id?: string;
+    error?: string;
+  }
+): TimelineEventRunComplete {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
+    status,
+    elapsed_s,
+    ...options,
+  };
+}
+
+// ============================================================================
+// PARSING HELPERS
+// ============================================================================
+
+/**
+ * Parse a timeline event from an events.jsonl line.
+ * Returns null for malformed or unknown event types.
+ */
+export function parseTimelineEvent(line: string): TimelineEvent | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.t !== 'number') return null;
+    if (typeof parsed.type !== 'string') return null;
+
+    // Validate against known types
+    const knownTypes = Object.values(TIMELINE_EVENT_TYPES);
+    if (!knownTypes.includes(parsed.type as any)) return null;
+
+    return parsed as TimelineEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if an event is the canonical completion event.
+ */
+export function isRunCompleteEvent(event: TimelineEvent): event is TimelineEventRunComplete {
+  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
+}
+
+/**
+ * Check if an event represents tool activity.
+ */
+export function isToolEvent(event: TimelineEvent): event is TimelineEventTool {
+  return event.type === TIMELINE_EVENT_TYPES.TOOL;
+}
+
+// ============================================================================
+// ORDERING SEMANTICS
+// ============================================================================
+
+/**
+ * Compare two timeline events by timestamp for sorting.
+ * Earlier events come first (ascending order).
+ *
+ * For events with identical timestamps, the order is preserved (stable sort).
+ */
+export function compareTimelineEvents(a: TimelineEvent, b: TimelineEvent): number {
+  return a.t - b.t;
+}
+
+/**
+ * Merge timeline events from multiple jobs into a single chronological stream.
+ * Events are sorted by timestamp ascending.
+ *
+ * @param eventBatches - Array of { jobId, events } objects
+ * @returns Merged and sorted events with job attribution
+ */
+export function mergeTimelineEvents(
+  eventBatches: Array<{ jobId: string; specialist: string; events: TimelineEvent[] }>
+): Array<{ jobId: string; specialist: string; event: TimelineEvent }> {
+  const merged: Array<{ jobId: string; specialist: string; event: TimelineEvent }> = [];
+
+  for (const batch of eventBatches) {
+    for (const event of batch.events) {
+      merged.push({
+        jobId: batch.jobId,
+        specialist: batch.specialist,
+        event,
+      });
+    }
+  }
+
+  // Sort by timestamp ascending
+  merged.sort((a, b) => compareTimelineEvents(a.event, b.event));
+
+  return merged;
+}
+
+// ============================================================================
+// FEED V2 DESIGN NOTES (for implementers)
+// ============================================================================
+
+/**
+ * ## What to persist (events.jsonl)
+ *
+ * For feed v2, persist these event types only:
+ *
+ * 1. `run_start` - once per job
+ * 2. `meta` - once when model/backend known
+ * 3. `thinking` - once if reasoning detected
+ * 4. `tool` - per tool start/end
+ * 5. `text` - once if text output detected
+ * 6. `run_complete` - ONCE per job (canonical completion)
+ *
+ * Do NOT persist:
+ * - `done` (legacy, ambiguous)
+ * - `agent_end` (replaced by run_complete)
+ * - Streaming deltas (text_delta, thinking_delta, toolcall_delta)
+ *
+ * ## What to read from status.json
+ *
+ * status.json provides live mutable state:
+ * - current_event, current_tool (for in-progress jobs)
+ * - status (starting | running | done | error)
+ * - elapsed_s, last_event_at_ms
+ * - bead_id
+ * - error message
+ *
+ * For completed jobs, events.jsonl is the source of truth.
+ * status.json may be consulted for real-time state.
+ *
+ * ## What to read from result.txt
+ *
+ * result.txt contains the final assistant output text.
+ * It is NOT part of the event timeline.
+ * Use it for result display, not for timeline rendering.
+ *
+ * ## Completion semantic (repeated for emphasis)
+ *
+ * There is ONE canonical completion event: `run_complete`.
+ * It replaces both:
+ * - legacy callback-level `done`
+ * - persisted `agent_end`
+ *
+ * When updating Supervisor to use this model:
+ * 1. Remove 'done' from LOGGED_EVENTS
+ * 2. Add run_complete emission instead of agent_end
+ * 3. Include status, elapsed_s, model, backend, bead_id, error in run_complete
+ */
