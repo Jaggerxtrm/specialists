@@ -15,75 +15,25 @@
  *   --json             Output as NDJSON
  */
 
-import { existsSync, readdirSync, watch, watchFile, unwatchFile } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Supervisor, type SupervisorStatus } from '../specialist/supervisor.js';
 import {
   type TimelineEvent,
   isRunCompleteEvent,
-  isToolEvent,
-  TIMELINE_EVENT_TYPES,
 } from '../specialist/timeline-events.js';
 import {
   readAllJobEvents,
   queryTimeline,
-  getRecentEvents,
-  type JobEventsBatch,
 } from '../specialist/timeline-query.js';
-
-// ============================================================================
-// ANSI Formatting
-// ============================================================================
-
-const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
-const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
-const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
-const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
-const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
-const blue = (s: string) => `\x1b[34m${s}\x1b[0m`;
-const magenta = (s: string) => `\x1b[35m${s}\x1b[0m`;
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-
-type Colorizer = (s: string) => string;
-const COLORS: Colorizer[] = [cyan, yellow, magenta, green, blue, red];
-
-// ============================================================================
-// Event Formatting
-// ============================================================================
-
-const EVENT_LABELS: Record<string, string> = {
-  run_start: 'START',
-  meta: 'META',
-  thinking: 'THINK',
-  tool: 'TOOL',
-  text: 'TEXT',
-  run_complete: 'DONE',
-};
-
-function formatTimestamp(t: number): string {
-  return new Date(t).toISOString().slice(11, 19);
-}
-
-function formatLabel(type: string): string {
-  return EVENT_LABELS[type] ?? type.slice(0, 5).toUpperCase();
-}
-
-function formatEventCompact(event: TimelineEvent, colorize: Colorizer): string {
-  const ts = dim(formatTimestamp(event.t));
-  const label = formatLabel(event.type).padEnd(5);
-
-  let detail = '';
-  if (event.type === 'meta') {
-    detail = `${event.model} ${dim(event.backend)}`;
-  } else if (event.type === 'tool') {
-    detail = event.tool + (event.phase === 'end' ? dim(' ✓') : '');
-  } else if (event.type === 'run_complete') {
-    detail = `${event.status} ${dim(`${event.elapsed_s}s`)}`;
-    if (event.error) detail += ` ${red(event.error)}`;
-  }
-
-  return `${ts} ${colorize(bold(label))} ${detail}`;
-}
+import {
+  dim,
+  cyan,
+  red,
+  green,
+  type Colorizer,
+  JobColorMap,
+  formatEventLine,
+} from './format-helpers.js';
 
 // ============================================================================
 // CLI Options
@@ -152,14 +102,7 @@ function printSnapshot(
   }
 
   // Build color map for jobs
-  const jobColors = new Map<string, Colorizer>();
-  let colorIdx = 0;
-  for (const { jobId } of merged) {
-    if (!jobColors.has(jobId)) {
-      jobColors.set(jobId, COLORS[colorIdx % COLORS.length]);
-      colorIdx++;
-    }
-  }
+  const colorMap = new JobColorMap();
 
   if (options.json) {
     for (const { jobId, specialist, beadId, event } of merged) {
@@ -170,8 +113,8 @@ function printSnapshot(
 
   // Compact format
   for (const { jobId, event } of merged) {
-    const colorize = jobColors.get(jobId) ?? dim;
-    console.log(formatEventCompact(event, colorize));
+    const colorize = colorMap.get(jobId);
+    console.log(formatEventLine(event, colorize));
   }
 }
 
@@ -182,15 +125,7 @@ function printSnapshot(
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
-  const jobColors = new Map<string, Colorizer>();
-  let colorIdx = 0;
-  const getColor = (jobId: string): Colorizer => {
-    if (!jobColors.has(jobId)) {
-      jobColors.set(jobId, COLORS[colorIdx % COLORS.length]);
-      colorIdx++;
-    }
-    return jobColors.get(jobId)!;
-  };
+  const colorMap = new JobColorMap();
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
@@ -269,8 +204,8 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         if (options.json) {
           console.log(JSON.stringify({ jobId, event }));
         } else {
-          const colorize = getColor(jobId);
-          console.log(formatEventCompact(event, colorize));
+          const colorize = colorMap.get(jobId);
+          console.log(formatEventLine(event, colorize));
         }
       }
 
