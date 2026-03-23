@@ -190,6 +190,7 @@ export class SpecialistRunner {
         model,
         systemPrompt: agentsMd || undefined,
         permissionLevel,
+        cwd: process.cwd(),
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool)  => onProgress?.(`\n⚙ ${tool}…`),
