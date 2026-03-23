@@ -170,6 +170,26 @@ describe('feed CLI', () => {
     expect(combined).toContain('COMPLETE');
   });
 
+  it('exits immediately in follow mode for legacy completed jobs without run_complete', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test', [
+      { t: now - 1000, type: 'text' },
+      { t: now, type: 'agent_end', elapsed_s: 1 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed', '-f'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(logs.join('\n')).toContain('DONE');
+  });
+
   // ── Regression tests for merged chronology ─────────────────────────────────
 
   it('merges events from multiple jobs in chronological order', async () => {

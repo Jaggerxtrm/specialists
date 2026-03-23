@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 async function importInitModule() {
-  return import(`../../../src/cli/init.js?test=${Date.now()}-${Math.random()}`);
+  return import('../../../src/cli/init.js');
 }
 
 async function runInit(cwd: string) {
@@ -24,6 +24,7 @@ describe('init CLI — run()', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.resetModules();
     await rm(tempDir, { recursive: true, force: true });
   });
 

@@ -124,12 +124,20 @@ function printSnapshot(
 
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
+function isCompletionEvent(event: TimelineEvent): boolean {
+  return isRunCompleteEvent(event) || event.type === 'done' || event.type === 'agent_end';
+}
+
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
   const colorMap = new JobColorMap();
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
   const completedJobs = new Set<string>();
+
+  const filteredBatches = () => readAllJobEvents(jobsDir)
+    .filter((batch) => !options.jobId || batch.jobId === options.jobId)
+    .filter((batch) => !options.specialist || batch.specialist === options.specialist);
 
   // Initial snapshot
   const initial = queryTimeline(jobsDir, {
@@ -141,20 +149,24 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
 
   printSnapshot(initial, { ...options, json: options.json });
 
-  // Track last timestamp per job
-  for (const { jobId, event } of initial) {
-    lastSeenT.set(jobId, event.t);
+  for (const batch of filteredBatches()) {
+    if (batch.events.length > 0) {
+      const maxT = Math.max(...batch.events.map((event) => event.t));
+      lastSeenT.set(batch.jobId, maxT);
+    }
+
+    if (batch.events.some(isCompletionEvent)) {
+      completedJobs.add(batch.jobId);
+    }
   }
 
   // Check if all jobs are complete (exit early if not forever)
-  if (initial.length > 0) {
-    const allComplete = initial.every(({ event }) => isRunCompleteEvent(event));
-    if (!options.forever && allComplete) {
-      if (!options.json) {
-        process.stderr.write(dim('All jobs complete.\n'));
-      }
-      return;
+  const initialBatchCount = filteredBatches().length;
+  if (!options.forever && initialBatchCount > 0 && completedJobs.size === initialBatchCount) {
+    if (!options.json) {
+      process.stderr.write(dim('All jobs complete.\n'));
     }
+    return;
   }
 
   if (!options.json) {
@@ -164,15 +176,11 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
   // Poll for new events
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
-      const batches = readAllJobEvents(jobsDir);
+      const batches = filteredBatches();
 
       // Filter and merge new events
       const newEvents: MergedEvent[] = [];
       for (const batch of batches) {
-        if (options.jobId && batch.jobId !== options.jobId) continue;
-        if (options.specialist && batch.specialist !== options.specialist) continue;
-        if (completedJobs.has(batch.jobId)) continue;
-
         const lastT = lastSeenT.get(batch.jobId) ?? 0;
         for (const event of batch.events) {
           if (event.t > lastT) {
@@ -192,7 +200,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         }
 
         // Check completion
-        if (batch.events.some((e) => e.type === 'run_complete')) {
+        if (batch.events.some(isCompletionEvent)) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -200,9 +208,9 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       // Sort and print new events
       newEvents.sort((a, b) => a.event.t - b.event.t);
 
-      for (const { jobId, event } of newEvents) {
+      for (const { jobId, specialist, beadId, event } of newEvents) {
         if (options.json) {
-          console.log(JSON.stringify({ jobId, event }));
+          console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
         } else {
           const colorize = colorMap.get(jobId);
           console.log(formatEventLine(event, colorize));
@@ -210,7 +218,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       }
 
       // Resolve if not forever and all complete
-      if (!options.forever && completedJobs.size === batches.length && batches.length > 0) {
+      if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {
         clearInterval(interval);
         resolve();
       }

@@ -82,6 +82,8 @@ export const EVENT_LABELS: Record<string, string> = {
   tool: 'TOOL',
   text: 'TEXT',
   run_complete: 'DONE',
+  done: 'DONE',
+  agent_end: 'DONE',
   error: 'ERR',
 };
 
@@ -226,6 +228,8 @@ export function formatEventLine(
     if (event.error) {
       detail += ` ${red(event.error)}`;
     }
+  } else if (event.type === 'done' || event.type === 'agent_end') {
+    detail = `${colorize('COMPLETE')} ${dim(formatElapsed(event.elapsed_s ?? 0))}`;
   } else if (event.type === 'run_start') {
     detail = event.specialist;
     if (event.bead_id) {
