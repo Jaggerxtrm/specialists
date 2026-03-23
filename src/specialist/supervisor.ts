@@ -18,6 +18,14 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
 import type { BeadsClient } from './beads.js';
+import {
+  type TimelineEvent,
+  TIMELINE_EVENT_TYPES,
+  createRunStartEvent,
+  createMetaEvent,
+  createRunCompleteEvent,
+  mapCallbackEventToTimelineEvent,
+} from './timeline-events.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 
@@ -45,8 +53,7 @@ export interface SupervisorOptions {
   beadsClient?: BeadsClient;
 }
 
-// Events worth writing to events.jsonl (high-signal only; drop thinking_delta, text_delta, etc.)
-const LOGGED_EVENTS = new Set(['thinking', 'toolcall', 'tool_execution_end', 'done']);
+
 
 function getCurrentGitSha(): string | undefined {
   const result = spawnSync('git', ['rev-parse', 'HEAD'], {
@@ -187,12 +194,16 @@ export class Supervisor {
 
     // Keep events.jsonl fd open for the job lifetime
     const eventsFd = openSync(this.eventsPath(id), 'a');
-    const appendEvent = (obj: Record<string, any>): void => {
-      try { writeSync(eventsFd, JSON.stringify({ t: Date.now(), ...obj }) + '\n'); } catch { /* ignore */ }
+    const appendTimelineEvent = (event: TimelineEvent): void => {
+      try { writeSync(eventsFd, JSON.stringify(event) + '\n'); } catch { /* ignore */ }
     };
+
+    // Emit run_start event
+    appendTimelineEvent(createRunStartEvent(runOptions.name));
 
     let textLogged = false;
     let currentTool = '';
+    let currentToolCallId = '';
     let killFn: (() => void) | undefined;
 
     const sigtermHandler = () => killFn?.();
@@ -209,7 +220,7 @@ export class Supervisor {
             this.updateStatus(id, { current_tool: currentTool });
           }
         },
-        // onEvent
+        // onEvent — map callback events to timeline events
         (eventType) => {
           const now = Date.now();
           this.updateStatus(id, {
@@ -218,18 +229,25 @@ export class Supervisor {
             last_event_at_ms: now,
             elapsed_s: Math.round((now - startedAtMs) / 1000),
           });
-          if (LOGGED_EVENTS.has(eventType)) {
-            const tool = (eventType === 'toolcall' || eventType === 'tool_execution_end') ? currentTool : undefined;
-            appendEvent({ type: eventType, ...(tool ? { tool } : {}) });
+
+          // Map callback event to timeline event using the canonical model
+          const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
+            tool: currentTool,
+            toolCallId: currentToolCallId || undefined,
+          });
+
+          if (timelineEvent) {
+            appendTimelineEvent(timelineEvent);
           } else if (eventType === 'text' && !textLogged) {
+            // Text presence event (not streaming deltas)
             textLogged = true;
-            appendEvent({ type: 'text' });
+            appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
           }
         },
-        // onMeta
+        // onMeta — model/backend metadata
         (meta) => {
           this.updateStatus(id, { model: meta.model, backend: meta.backend });
-          appendEvent({ type: 'meta', model: meta.model, backend: meta.backend });
+          appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
         },
         // onKillRegistered — capture so SIGTERM can kill the Pi session cleanly
         (fn) => { killFn = fn; },
@@ -252,7 +270,13 @@ export class Supervisor {
         backend: result.backend,
         bead_id: result.beadId,
       });
-      appendEvent({ type: 'agent_end', elapsed_s: elapsed });
+
+      // Emit run_complete — THE canonical completion event
+      appendTimelineEvent(createRunCompleteEvent('COMPLETE', elapsed, {
+        model: result.model,
+        backend: result.backend,
+        bead_id: result.beadId,
+      }));
 
       // Touch ready marker so the hook can surface completion banners
       writeFileSync(join(this.readyDir(), id), '', 'utf-8');
@@ -260,12 +284,17 @@ export class Supervisor {
       return id;
     } catch (err: any) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const errorMsg = err?.message ?? String(err);
       this.updateStatus(id, {
         status: 'error',
         elapsed_s: elapsed,
-        error: err?.message ?? String(err),
+        error: errorMsg,
       });
-      appendEvent({ type: 'error', message: err?.message ?? String(err) });
+
+      // Emit run_complete with ERROR status
+      appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
+        error: errorMsg,
+      }));
       throw err;
     } finally {
       process.removeListener('SIGTERM', sigtermHandler);
