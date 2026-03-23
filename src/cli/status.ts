@@ -6,12 +6,18 @@ import { join } from 'node:path';
 import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
-
-// ── ANSI helpers ───────────────────────────────────────────────────────────────
-const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
-const green  = (s: string) => `\x1b[32m${s}\x1b[0m`;
-const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+import {
+  bold,
+  dim,
+  green,
+  yellow,
+  red,
+  cyan,
+  formatDateTime,
+  formatElapsed,
+  getStatusLabel,
+  statusColorizer,
+} from './format-helpers.js';
 const red    = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
 
