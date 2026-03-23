@@ -1,340 +1,313 @@
 // src/cli/feed.ts
-// Tail events.jsonl for one job, or all jobs with --follow and no job ID.
+/**
+ * Feed v2: unified chronological timeline for specialists jobs.
+ *
+ * Usage:
+ *   specialists feed [options]
+ *
+ * Options:
+ *   --job <id>         Filter to a specific job
+ *   --specialist <name> Filter by specialist name
+ *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
+ *   --limit <n>        Max events to show (default: 100)
+ *   --follow, -f       Live follow mode (append new events at bottom)
+ *   --forever          Stay open even when all jobs complete
+ *   --json             Output as NDJSON
+ */
 
-import { existsSync, readFileSync, readdirSync, watch, watchFile, unwatchFile } from 'node:fs';
+import { existsSync, readdirSync, watch, watchFile, unwatchFile } from 'node:fs';
 import { join } from 'node:path';
 import { Supervisor, type SupervisorStatus } from '../specialist/supervisor.js';
+import {
+  type TimelineEvent,
+  isRunCompleteEvent,
+  isToolEvent,
+  TIMELINE_EVENT_TYPES,
+} from '../specialist/timeline-events.js';
+import {
+  readAllJobEvents,
+  queryTimeline,
+  getRecentEvents,
+  type JobEventsBatch,
+} from '../specialist/timeline-query.js';
 
-const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
-const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
+// ============================================================================
+// ANSI Formatting
+// ============================================================================
+
+const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
+const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
-const red    = (s: string) => `\x1b[31m${s}\x1b[0m`;
-const green  = (s: string) => `\x1b[32m${s}\x1b[0m`;
-const blue   = (s: string) => `\x1b[34m${s}\x1b[0m`;
+const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
+const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
+const blue = (s: string) => `\x1b[34m${s}\x1b[0m`;
 const magenta = (s: string) => `\x1b[35m${s}\x1b[0m`;
+const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 
 type Colorizer = (s: string) => string;
-
-type FeedJobState = {
-  id: string;
-  linesRead: number;
-  done: boolean;
-  status?: SupervisorStatus['status'];
-  specialist?: string;
-  beadId?: string;
-  startedAtMs?: number;
-  colorize: Colorizer;
-};
-
 const COLORS: Colorizer[] = [cyan, yellow, magenta, green, blue, red];
 
-function formatEvent(line: string): string {
-  try {
-    const e = JSON.parse(line);
-    const ts = new Date(e.t).toISOString().slice(11, 19);
-    const type = e.type ?? '?';
-    const extra = e.tool ? ` ${cyan(e.tool)}` : e.model ? ` ${dim(e.model)}` : e.message ? ` ${red(e.message)}` : '';
-    return `${dim(ts)}  ${type}${extra}`;
-  } catch {
-    return line;
-  }
+// ============================================================================
+// Event Formatting
+// ============================================================================
+
+const EVENT_LABELS: Record<string, string> = {
+  run_start: 'START',
+  meta: 'META',
+  thinking: 'THINK',
+  tool: 'TOOL',
+  text: 'TEXT',
+  run_complete: 'DONE',
+};
+
+function formatTimestamp(t: number): string {
+  return new Date(t).toISOString().slice(11, 19);
 }
 
-function createSupervisor(jobsDir: string): Supervisor {
-  return new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
+function formatLabel(type: string): string {
+  return EVENT_LABELS[type] ?? type.slice(0, 5).toUpperCase();
 }
 
-function statusPath(jobsDir: string, jobId: string): string {
-  return join(jobsDir, jobId, 'status.json');
-}
+function formatEventCompact(event: TimelineEvent, colorize: Colorizer): string {
+  const ts = dim(formatTimestamp(event.t));
+  const label = formatLabel(event.type).padEnd(5);
 
-function eventsPath(jobsDir: string, jobId: string): string {
-  return join(jobsDir, jobId, 'events.jsonl');
-}
-
-function beadStateForStatus(status: SupervisorStatus['status'] | undefined): string {
-  switch (status) {
-    case 'done': return 'COMPLETE';
-    case 'error': return 'ERROR';
-    default: return (status ?? 'UNKNOWN').toUpperCase();
-  }
-}
-
-function formatDateTime(ts?: number): string {
-  if (!ts) return 'unknown';
-  const d = new Date(ts);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-
-function formatPrefix(job: FeedJobState): string {
-  const started = dim(`[${formatDateTime(job.startedAtMs)}]`);
-  const id = job.colorize(`[${job.id}]`);
-  const specialist = job.specialist ?? 'unknown';
-  const bead = job.beadId ? ` ${dim(`[bead: ${job.beadId}]`)}` : '';
-  return `${started} ${id} ${specialist}${bead}`;
-}
-
-function printLines(content: string, from: number, prefix?: string): number {
-  const lines = content.split('\n').filter(Boolean);
-  for (let i = from; i < lines.length; i++) {
-    const line = formatEvent(lines[i]);
-    console.log(prefix ? `${prefix}  ${line}` : line);
-  }
-  return lines.length;
-}
-
-function readStatus(supervisor: Supervisor, jobId: string): SupervisorStatus | null {
-  try {
-    return supervisor.readStatus(jobId);
-  } catch {
-    return null;
-  }
-}
-
-function emitSingleJobFinal(status: SupervisorStatus): void {
-  const finalMsg = status.status === 'done'
-    ? `\n${yellow('Job complete.')} Run: specialists result ${status.id}`
-    : `\n${red(`Job ${status.status}.`)} ${status.error ?? ''}`;
-  process.stderr.write(finalMsg + '\n');
-}
-
-async function followSingleJob(jobId: string, jobsDir: string): Promise<void> {
-  const supervisor = createSupervisor(jobsDir);
-  const filePath = eventsPath(jobsDir, jobId);
-
-  if (!existsSync(filePath)) {
-    if (!readStatus(supervisor, jobId)) {
-      console.error(`No job found: ${jobId}`);
-      process.exit(1);
-    }
-    console.log(dim('No events yet.'));
-    return;
+  let detail = '';
+  if (event.type === 'meta') {
+    detail = `${event.model} ${dim(event.backend)}`;
+  } else if (event.type === 'tool') {
+    detail = event.tool + (event.phase === 'end' ? dim(' ✓') : '');
+  } else if (event.type === 'run_complete') {
+    detail = `${event.status} ${dim(`${event.elapsed_s}s`)}`;
+    if (event.error) detail += ` ${red(event.error)}`;
   }
 
-  const content = readFileSync(filePath, 'utf-8');
-  let linesRead = printLines(content, 0);
+  return `${ts} ${colorize(bold(label))} ${detail}`;
+}
 
-  const currentStatus = readStatus(supervisor, jobId);
-  if (!currentStatus || (currentStatus.status !== 'running' && currentStatus.status !== 'starting')) {
-    return;
+// ============================================================================
+// CLI Options
+// ============================================================================
+
+interface FeedOptions {
+  jobId?: string;
+  specialist?: string;
+  since?: number;
+  limit: number;
+  follow: boolean;
+  forever: boolean;
+  json: boolean;
+}
+
+function parseSince(value: string): number | undefined {
+  // ISO 8601 timestamp
+  if (value.includes('T') || value.includes('-')) {
+    return new Date(value).getTime();
   }
-
-  process.stderr.write(dim(`Following ${jobId}... (Ctrl+C to stop)\n`));
-
-  await new Promise<void>((resolve) => {
-    const onChange = () => {
-      try {
-        if (existsSync(filePath)) {
-          const updated = readFileSync(filePath, 'utf-8');
-          linesRead = printLines(updated, linesRead);
-        }
-
-        const status = readStatus(supervisor, jobId);
-        if (status && status.status !== 'running' && status.status !== 'starting') {
-          emitSingleJobFinal(status);
-          unwatchFile(filePath, onChange);
-          resolve();
-        }
-      } catch {
-        // file may be mid-write
-      }
-    };
-
-    watchFile(filePath, { interval: 500 }, onChange);
-  });
+  // Relative time like '5m', '1h', '30s'
+  const match = value.match(/^(\d+)([smhd])$/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const unit = match[2];
+    const multipliers: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+    return Date.now() - num * multipliers[unit];
+  }
+  return undefined;
 }
 
-function allTrackedJobsDone(jobs: Map<string, FeedJobState>): boolean {
-  return jobs.size > 0 && [...jobs.values()].every((job) => job.done);
-}
-
-async function followAllJobs(jobsDir: string, forever: boolean): Promise<void> {
-  const supervisor = createSupervisor(jobsDir);
-  const jobs = new Map<string, FeedJobState>();
-  const cleanups: Array<() => void> = [];
-  let watcherClosed = false;
-
-  const stopAll = (): void => {
-    if (watcherClosed) return;
-    watcherClosed = true;
-    for (const cleanup of cleanups) cleanup();
-  };
-
-  const maybeResolve = (resolve: () => void): void => {
-    if (!forever && allTrackedJobsDone(jobs)) {
-      stopAll();
-      resolve();
-    }
-  };
-
-  const attachJob = (jobId: string, resolve: () => void): void => {
-    if (jobs.has(jobId)) return;
-
-    const job: FeedJobState = {
-      id: jobId,
-      linesRead: 0,
-      done: false,
-      colorize: COLORS[jobs.size % COLORS.length],
-    };
-    jobs.set(jobId, job);
-
-    const refreshEvents = (): void => {
-      try {
-        if (!job.specialist && existsSync(statusPath(jobsDir, jobId))) {
-          refreshStatus(false);
-        }
-        if (!job.specialist) return;
-
-        const filePath = eventsPath(jobsDir, jobId);
-        if (!existsSync(filePath)) return;
-        const updated = readFileSync(filePath, 'utf-8');
-        job.linesRead = printLines(updated, job.linesRead, formatPrefix(job));
-      } catch {
-        // file may be mid-write
-      }
-    };
-
-    const refreshStatus = (announce: boolean): void => {
-      const status = readStatus(supervisor, jobId);
-      if (!status) return;
-
-      const previous = job.status;
-      job.status = status.status;
-      job.specialist = status.specialist;
-      job.beadId = status.bead_id;
-      job.startedAtMs = status.started_at_ms;
-      job.done = status.status !== 'running' && status.status !== 'starting';
-
-      const changed = previous !== undefined && previous !== status.status;
-      if (announce && changed) {
-        const label = beadStateForStatus(status.status);
-        const banner = status.status === 'done'
-          ? green(`=== ${formatPrefix(job)} ${label} ===`)
-          : red(`=== ${formatPrefix(job)} ${label}${status.error ? `: ${status.error}` : ''} ===`);
-        process.stderr.write(banner + '\n');
-      }
-    };
-
-    refreshStatus(false);
-    refreshEvents();
-    if (job.done && !forever) {
-      maybeResolve(resolve);
-      return;
-    }
-
-    const filePath = eventsPath(jobsDir, jobId);
-    const statPath = statusPath(jobsDir, jobId);
-    const onStatusChange = (): void => {
-      refreshStatus(true);
-      maybeResolve(resolve);
-    };
-    watchFile(filePath, { interval: 500 }, refreshEvents);
-    watchFile(statPath, { interval: 500 }, onStatusChange);
-    cleanups.push(() => unwatchFile(filePath, refreshEvents));
-    cleanups.push(() => unwatchFile(statPath, onStatusChange));
-
-    maybeResolve(resolve);
-  };
-
-  await new Promise<void>((resolve) => {
-    if (!existsSync(jobsDir)) {
-      console.log(dim('No jobs to follow.'));
-      if (!forever) {
-        resolve();
-        return;
-      }
-    }
-
-    if (existsSync(jobsDir)) {
-      const entries = readdirSync(jobsDir)
-        .map((entry) => ({ entry, status: readStatus(supervisor, entry) }))
-        .sort((a, b) => (a.status?.started_at_ms ?? 0) - (b.status?.started_at_ms ?? 0));
-      for (const { entry } of entries) {
-        attachJob(entry, resolve);
-      }
-    }
-
-    if (!forever && allTrackedJobsDone(jobs)) {
-      resolve();
-      return;
-    }
-
-    if (jobs.size === 0) {
-      console.log(dim(forever ? 'Waiting for jobs...' : 'No jobs to follow.'));
-      if (!forever) {
-        resolve();
-        return;
-      }
-    } else {
-      process.stderr.write(dim('Following all jobs... (Ctrl+C to stop)\n'));
-    }
-
-    try {
-      const dirWatcher = watch(jobsDir, () => {
-        try {
-          for (const entry of readdirSync(jobsDir)) {
-            const isNew = !jobs.has(entry);
-            attachJob(entry, resolve);
-            if (isNew) process.stderr.write(cyan(`=== discovered ${entry} ===\n`));
-          }
-        } catch {
-          // directory may be mid-update
-        }
-      });
-      cleanups.push(() => dirWatcher.close());
-    } catch {
-      // fs.watch may be unavailable on some filesystems; polling watchers still work for known jobs
-    }
-  });
-}
-
-export async function run(): Promise<void> {
-  const argv = process.argv.slice(3);
+function parseArgs(argv: string[]): FeedOptions {
   let jobId: string | undefined;
+  let specialist: string | undefined;
+  let since: number | undefined;
+  let limit = 100;
   let follow = false;
   let forever = false;
+  let json = false;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--job' && argv[i + 1]) { jobId = argv[++i]; continue; }
+    if (argv[i] === '--specialist' && argv[i + 1]) { specialist = argv[++i]; continue; }
+    if (argv[i] === '--since' && argv[i + 1]) { since = parseSince(argv[++i]); continue; }
+    if (argv[i] === '--limit' && argv[i + 1]) { limit = parseInt(argv[++i], 10); continue; }
     if (argv[i] === '--follow' || argv[i] === '-f') { follow = true; continue; }
     if (argv[i] === '--forever') { forever = true; continue; }
+    if (argv[i] === '--json') { json = true; continue; }
     if (!jobId && !argv[i].startsWith('--')) jobId = argv[i];
   }
 
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  return { jobId, specialist, since, limit, follow, forever, json };
+}
 
-  if (!jobId && follow) {
-    await followAllJobs(jobsDir, forever);
+// ============================================================================
+// Snapshot Mode
+// ============================================================================
+
+function printSnapshot(
+  merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
+  options: FeedOptions
+): void {
+  if (merged.length === 0) {
+    if (!options.json) console.log(dim('No events found.'));
     return;
   }
 
-  if (!jobId) {
-    console.error('Usage: specialists feed --job <job-id> [--follow]');
-    process.exit(1);
+  // Build color map for jobs
+  const jobColors = new Map<string, Colorizer>();
+  let colorIdx = 0;
+  for (const { jobId } of merged) {
+    if (!jobColors.has(jobId)) {
+      jobColors.set(jobId, COLORS[colorIdx % COLORS.length]);
+      colorIdx++;
+    }
   }
 
-  if (!follow) {
-    const filePath = eventsPath(jobsDir, jobId);
-    if (!existsSync(filePath)) {
-      const supervisor = createSupervisor(jobsDir);
-      if (!readStatus(supervisor, jobId)) {
-        console.error(`No job found: ${jobId}`);
-        process.exit(1);
+  if (options.json) {
+    for (const { jobId, specialist, beadId, event } of merged) {
+      console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
+    }
+    return;
+  }
+
+  // Compact format
+  for (const { jobId, event } of merged) {
+    const colorize = jobColors.get(jobId) ?? dim;
+    console.log(formatEventCompact(event, colorize));
+  }
+}
+
+// ============================================================================
+// Follow Mode
+// ============================================================================
+
+type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
+
+async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
+  const jobColors = new Map<string, Colorizer>();
+  let colorIdx = 0;
+  const getColor = (jobId: string): Colorizer => {
+    if (!jobColors.has(jobId)) {
+      jobColors.set(jobId, COLORS[colorIdx % COLORS.length]);
+      colorIdx++;
+    }
+    return jobColors.get(jobId)!;
+  };
+
+  // Track last seen timestamp per job
+  const lastSeenT = new Map<string, number>();
+  const completedJobs = new Set<string>();
+
+  // Initial snapshot
+  const initial = queryTimeline(jobsDir, {
+    jobId: options.jobId,
+    specialist: options.specialist,
+    since: options.since,
+    limit: options.limit,
+  });
+
+  printSnapshot(initial, { ...options, json: options.json });
+
+  // Track last timestamp per job
+  for (const { jobId, event } of initial) {
+    lastSeenT.set(jobId, event.t);
+  }
+
+  // Check if all jobs are complete (exit early if not forever)
+  if (initial.length > 0) {
+    const allComplete = initial.every(({ event }) => isRunCompleteEvent(event));
+    if (!options.forever && allComplete) {
+      if (!options.json) {
+        process.stderr.write(dim('All jobs complete.\n'));
       }
-      console.log(dim('No events yet.'));
       return;
     }
+  }
 
-    const content = readFileSync(filePath, 'utf-8');
-    printLines(content, 0);
+  if (!options.json) {
+    process.stderr.write(dim('Following... (Ctrl+C to stop)\n'));
+  }
+
+  // Poll for new events
+  await new Promise<void>((resolve) => {
+    const interval = setInterval(() => {
+      const batches = readAllJobEvents(jobsDir);
+
+      // Filter and merge new events
+      const newEvents: MergedEvent[] = [];
+      for (const batch of batches) {
+        if (options.jobId && batch.jobId !== options.jobId) continue;
+        if (options.specialist && batch.specialist !== options.specialist) continue;
+        if (completedJobs.has(batch.jobId)) continue;
+
+        const lastT = lastSeenT.get(batch.jobId) ?? 0;
+        for (const event of batch.events) {
+          if (event.t > lastT) {
+            newEvents.push({
+              jobId: batch.jobId,
+              specialist: batch.specialist,
+              beadId: batch.beadId,
+              event,
+            });
+          }
+        }
+
+        // Update last seen
+        if (batch.events.length > 0) {
+          const maxT = Math.max(...batch.events.map((e) => e.t));
+          lastSeenT.set(batch.jobId, maxT);
+        }
+
+        // Check completion
+        if (batch.events.some((e) => e.type === 'run_complete')) {
+          completedJobs.add(batch.jobId);
+        }
+      }
+
+      // Sort and print new events
+      newEvents.sort((a, b) => a.event.t - b.event.t);
+
+      for (const { jobId, event } of newEvents) {
+        if (options.json) {
+          console.log(JSON.stringify({ jobId, event }));
+        } else {
+          const colorize = getColor(jobId);
+          console.log(formatEventCompact(event, colorize));
+        }
+      }
+
+      // Resolve if not forever and all complete
+      if (!options.forever && completedJobs.size === batches.length && batches.length > 0) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 500);
+  });
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+export async function run(): Promise<void> {
+  const options = parseArgs(process.argv.slice(3));
+  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+
+  if (!existsSync(jobsDir)) {
+    console.log(dim('No jobs directory found.'));
     return;
   }
 
-  await followSingleJob(jobId, jobsDir);
+  if (options.follow) {
+    await followMerged(jobsDir, options);
+    return;
+  }
+
+  // Snapshot mode
+  const merged = queryTimeline(jobsDir, {
+    jobId: options.jobId,
+    specialist: options.specialist,
+    since: options.since,
+    limit: options.limit,
+  });
+
+  printSnapshot(merged, options);
 }

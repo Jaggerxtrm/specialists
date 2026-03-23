@@ -88,13 +88,18 @@ export function readAllJobEvents(jobsDir: string): JobEventsBatch[] {
   if (!existsSync(jobsDir)) return [];
 
   const batches: JobEventsBatch[] = [];
-  const entries = readdirSync(jobsDir, { withFileTypes: true });
+  const entries = readdirSync(jobsDir);
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    const jobDir = join(jobsDir, entry);
+    try {
+      const stat = require('node:fs').statSync(jobDir);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
 
-    const jobId = entry.name;
-    const jobDir = join(jobsDir, jobId);
+    const jobId = entry;
     const statusPath = join(jobDir, 'status.json');
 
     // Read specialist name from status.json
