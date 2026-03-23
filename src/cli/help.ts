@@ -27,7 +27,7 @@ const RUNNING: CommandEntry[] = [
 ];
 
 const JOBS: CommandEntry[] = [
-  ['feed',   'Tail job events or follow all jobs with -f [--forever]'],
+  ['feed',   'Unified timeline: --since, --limit, --specialist, --job, --follow, --json'],
   ['result', 'Print result of a background job'],
   ['stop',   'Send SIGTERM to a running background job'],
 ];
