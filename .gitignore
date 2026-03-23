@@ -37,17 +37,12 @@ venv/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
-# bd worktree
-.xtrm/worktrees/specialists-xt-pi-ly7c/
-# bd worktree
-.xtrm/worktrees/specialists-xt-pi-dvcc/
+
+# xtrm worktrees
+.xtrm/worktrees/
 
 # bv (beads viewer) local config and caches
 .bv/
-# bd worktree
-.xtrm/worktrees/specialists-xt-pi-qrk2/
-# bd worktree
-.xtrm/worktrees/specialists-xt-claude-6ggd/
 .claude/settings.json
 .claude/settings.local.json
 
@@ -55,7 +50,3 @@ venv/
 .specialists/jobs/
 .specialists/trace.jsonl
 .specialists/sync-docs-report.md
-# bd worktree
-.xtrm/worktrees/specialists-xt-pi-lqjk/
-# bd worktree
-.xtrm/worktrees/specialists-xt-pi-zm9l/
