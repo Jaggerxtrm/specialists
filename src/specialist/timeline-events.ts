@@ -161,6 +161,15 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
 }
 
 /**
+ * Legacy completion events that still exist in older jobs.
+ * These are accepted for backward compatibility while feed v2 migrates history.
+ */
+export interface TimelineEventLegacyComplete extends TimelineEventBase {
+  type: 'done' | 'agent_end';
+  elapsed_s?: number;
+}
+
+/**
  * Union of all timeline event types.
  * This is the canonical type for events.jsonl records.
  */
@@ -170,7 +179,8 @@ export type TimelineEvent =
   | TimelineEventThinking
   | TimelineEventTool
   | TimelineEventText
-  | TimelineEventRunComplete;
+  | TimelineEventRunComplete
+  | TimelineEventLegacyComplete;
 
 // ============================================================================
 // EVENT TYPE CONSTANTS
@@ -183,6 +193,8 @@ export const TIMELINE_EVENT_TYPES = {
   TOOL: 'tool',
   TEXT: 'text',
   RUN_COMPLETE: 'run_complete',
+  DONE: 'done',
+  AGENT_END: 'agent_end',
 } as const;
 
 // ============================================================================
@@ -241,8 +253,8 @@ export function mapCallbackEventToTimelineEvent(
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
 
     case 'done':
-      // IGNORE: We use run_complete instead
-      // The 'done' callback event is synthetic from agent_end
+      // IGNORE on the write path: modern runs persist run_complete instead.
+      // Legacy done/agent_end records are still accepted by parseTimelineEvent().
       return null;
 
     default:
@@ -323,8 +335,25 @@ export function parseTimelineEvent(line: string): TimelineEvent | null {
     if (typeof parsed.t !== 'number') return null;
     if (typeof parsed.type !== 'string') return null;
 
-    // Validate against known types
-    const knownTypes = Object.values(TIMELINE_EVENT_TYPES);
+    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.DONE,
+        elapsed_s: typeof parsed.elapsed_s === 'number' ? parsed.elapsed_s : undefined,
+      };
+    }
+
+    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.AGENT_END,
+        elapsed_s: typeof parsed.elapsed_s === 'number' ? parsed.elapsed_s : undefined,
+      };
+    }
+
+    // Validate against canonical types
+    const knownTypes = Object.values(TIMELINE_EVENT_TYPES)
+      .filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
     if (!knownTypes.includes(parsed.type as any)) return null;
 
     return parsed as TimelineEvent;
