@@ -8,7 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- docs/hooks.md, docs/mcp-servers.md, docs/skills.md with full content; YAML frontmatter for all docs
+
+**Context injection (Phase 4, unitAI-750)**
+- `specialists run --context-depth <n>` — dependency-aware context injection; walks the bd dep tree up to depth `n` (default 1 with `--bead`), reads closed blocker notes, and prepends them as `## Context from completed dependencies:` in the specialist prompt
+- `getCompletedBlockers(id, depth)` in runner — recursive dep traversal via `bd dep list --json`; reads bead notes from each closed blocker
+
+**Workflow (Phase 3, PR #45)**
+- `specialists run --bead <id>` — use a beads issue as the specialist prompt; `bd show <id> --json` replaces the `--prompt` text; single-bead lifecycle enforced (`ownsBead` gates `closeBead`)
+- `specialists init` now registers MCP in project-local `.mcp.json` (unitAI-7fm)
+
+**Specialist author tooling**
+- `skills/specialist-author/SKILL.md` — comprehensive authoring guide: full schema reference, built-in template variables (`$prompt`, `$cwd`, `$pre_script_output`, `$bead_context`, `$bead_id`), skills injection, pre/post scripts, common Zod errors → fixes table, validation workflow
+- `specialists/specialist-author.specialist.yaml` — specialist that writes valid YAML on first attempt; uses `skills/specialist-author/SKILL.md` via `skills.paths`
+- `specialists/sync-docs.specialist.yaml` — doc sync specialist; validated live with bead workflow end-to-end
+
+**Bug fixes**
+- `fix(run)`: `--no-beads` no longer blocks `--bead` content reads — `beadReader` (always available) split from `beadsClient` (tracking only)
+- `fix(runner)`: `$cwd` injected as built-in template variable for all specialists (was silently un-substituted for 6 specialists)
+- `fix(planner)`: removed invalid `defaults` top-level key + `READ_WRITE` → `HIGH` permission from `planner.specialist.yaml`; was silently dropped by loader
+
+**Hook system alignment (Phase 0, unitAI-5nm)**
+- `hooks/` now contains exactly 2 files: `specialists-complete.mjs`, `specialists-session-start.mjs`
+- Beads workflow hooks removed from this package — ownership transferred to xtrm-tools
+- `bin/install.js` installs only the 2 bundled hooks; prerequires pi/bd/xt
+
+**Docs**
+- `docs/hooks.md` restructured: documents only the 2 bundled hooks; dedicated section defers beads hooks to xtrm-tools with install instructions
+- `docs/skills.md` updated: added `specialist-author` skill entry with full description
+- `docs/AGENT-HANDOFF.md`: added YAML frontmatter; updated with Phases 0-4 completion status
+- `docs/xtrm-specialists-analysis.md`: added YAML frontmatter; records final architectural decisions
 
 ---
 

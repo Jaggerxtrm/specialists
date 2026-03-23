@@ -6,9 +6,11 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const CWD = process.cwd();
@@ -17,6 +19,8 @@ const HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
 const MCP_FILE = join(CWD, '.mcp.json');
 const BUNDLED_HOOKS_DIR = new URL('../hooks', import.meta.url).pathname;
+const BUNDLED_SPECIALISTS_DIR = new URL('../specialists', import.meta.url).pathname;
+const USER_SPECIALISTS_DIR = join(homedir(), '.agents', 'specialists');
 
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -122,6 +126,25 @@ function ensureHook(settings, hook) {
   return true;
 }
 
+function installBundledSpecialists() {
+  if (!existsSync(BUNDLED_SPECIALISTS_DIR)) {
+    skip('bundled specialists dir not found — skipping');
+    return;
+  }
+  mkdirSync(USER_SPECIALISTS_DIR, { recursive: true });
+  const files = readdirSync(BUNDLED_SPECIALISTS_DIR).filter(f => f.endsWith('.specialist.yaml'));
+  for (const file of files) {
+    const source = join(BUNDLED_SPECIALISTS_DIR, file);
+    const dest = join(USER_SPECIALISTS_DIR, file);
+    if (sameFileContent(source, dest)) {
+      skip(`${file} already up to date`);
+    } else {
+      copyFileSync(source, dest);
+      ok(`${file} installed in ~/.agents/specialists/`);
+    }
+  }
+}
+
 function ensureMcpRegistration() {
   const mcp = loadJson(MCP_FILE, { mcpServers: {} });
   mcp.mcpServers ??= {};
@@ -144,7 +167,7 @@ function ensureMcpRegistration() {
 }
 
 console.log(`\n${bold('Specialists installer')}`);
-console.log(dim('Project scope only: prerequisite check, specialists hooks, MCP registration'));
+console.log(dim('Project scope: prerequisite check, bundled specialists, hooks, MCP registration'));
 
 section('Prerequisite check');
 const prereqs = [
@@ -175,6 +198,9 @@ const settings = loadJson(SETTINGS_FILE, {});
 for (const hook of HOOKS) ensureHook(settings, hook);
 saveJson(SETTINGS_FILE, settings);
 ok(`updated ${SETTINGS_FILE}`);
+
+section('Bundled specialists');
+installBundledSpecialists();
 
 section('MCP registration');
 ensureMcpRegistration();

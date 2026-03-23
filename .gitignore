@@ -50,3 +50,8 @@ venv/
 .xtrm/worktrees/specialists-xt-claude-6ggd/
 .claude/settings.json
 .claude/settings.local.json
+
+# Specialist job outputs (runtime artifacts)
+.specialists/jobs/
+.specialists/trace.jsonl
+.specialists/sync-docs-report.md

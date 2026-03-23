@@ -2,14 +2,12 @@
 title: Hooks Reference
 scope: hooks
 category: reference
-version: 1.0.0
-updated: 2026-03-19
+version: 1.1.0
+updated: 2026-03-22
+synced_at: d043215
 source_of_truth_for:
-  - "hooks/**/*.mjs"
-  - "policies/*.json"
-tracks:
-  - "hooks/**/*.mjs"
-  - "policies/*.json"
+  - "hooks/specialists-complete.mjs"
+  - "hooks/specialists-session-start.mjs"
 domain: []
 ---
 
@@ -17,134 +15,94 @@ domain: []
 | Section | Summary |
 |---|---|
 | [Hook Inventory](#hook-inventory) | | Hook | Event | Purpose | |
-| [PreToolUse Hooks](#pretooluse-hooks) | **Purpose:** Enforce feature branch workflow |
-| [Stop Hook](#stop-hook) | **Purpose:** Prevent incomplete sessions |
-| [UserPromptSubmit Hook](#userpromptsubmit-hook) | **Purpose:** Notify Claude when background jobs complete |
-| [SessionStart Hook](#sessionstart-hook) | **Purpose:** Prime Claude with specialists context at session start |
-| [PostToolUse Hook](#posttooluse-hook) | **Purpose:** Encourage knowledge capture after closing issues |
-| [Installation](#installation) | All hooks are installed by \`specialists install\` to user scope (\`~/ |
-| [See Also](#see-also) | - [ROADMAP |
+| [UserPromptSubmit Hook](#userpromptsubmit-hook) | **Purpose:** Notify Claude when background specialist jobs complete |
+| [SessionStart Hook](#sessionstart-hook) | **Purpose:** Prime Claude with specialist context at the start of every session |
+| [Installation](#installation) | Both hooks are installed by `specialists install` to user scope (`~/ |
+| [Beads Hooks](#beads-hooks) | Beads workflow enforcement (edit gate, commit gate, stop gate, memory judgment) is **not bundled here** |
+| [See Also](#see-also) | - [docs/xtrm-specialists-analysis |
 <!-- END INDEX -->
 
 # Hooks Reference
 
-Claude Code hooks installed by \`specialists install\`. All hooks exit \`0\` (allow) or \`2\` (block with message).
+Claude Code hooks bundled with `specialists`. Only **2 hooks** are owned by this package — all beads/gate hooks are provided by [xtrm-tools](https://github.com/jaggerxtrm/xtrm-tools).
 
 ## Hook Inventory
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| \`main-guard.mjs\` | PreToolUse | Block direct edits/commits on \`main\`/\`master\` |
-| \`beads-edit-gate.mjs\` | PreToolUse | Require \`in_progress\` bead before file edits |
-| \`beads-commit-gate.mjs\` | PreToolUse | Block \`git commit\` with open issues |
-| \`beads-stop-gate.mjs\` | Stop | Block session end with unresolved issues |
-| \`specialists-complete.mjs\` | UserPromptSubmit | Inject background job completion banners |
-| \`specialists-session-start.mjs\` | SessionStart | Inject active jobs + available specialists |
-| \`beads-close-memory-prompt.mjs\` | PostToolUse(Bash) | Nudge knowledge capture after \`bd close\` |
+| `specialists-complete.mjs` | UserPromptSubmit | Inject background job completion banners |
+| `specialists-session-start.mjs` | SessionStart | Inject active jobs + available specialists |
 
-## PreToolUse Hooks
-
-### main-guard.mjs
-
-**Purpose:** Enforce feature branch workflow. Never edit files or push directly to \`main\`/\`master\`.
-
-**Behavior:**
-- Checks current git branch
-- On protected branch (\`main\` or \`master\`):
-  - Blocks \`Edit\`, \`Write\`, \`MultiEdit\`, \`NotebookEdit\` tools
-  - Blocks \`git commit\` and \`git push\` commands
-- Shows full workflow guidance on block
-
-**Exit codes:** \`0\` (allow) | \`2\` (block with message)
-
-### beads-edit-gate.mjs
-
-**Purpose:** Ensure all code changes are tracked. Require an \`in_progress\` beads issue before file edits.
-
-**Behavior:**
-- Checks for \`.beads/\` directory (only active in beads projects)
-- Runs \`bd list --status=in_progress\`
-- If count is \`0\`, blocks with workflow guidance
-- Does not block on non-beads projects
-
-**Exit codes:** \`0\` (allow) | \`2\` (block with message)
-
-### beads-commit-gate.mjs
-
-**Purpose:** Ensure clean commits. Block \`git commit\` when issues remain \`in_progress\`.
-
-**Behavior:**
-- Only fires on \`Bash\` tool with \`git commit\` command
-- Checks \`.beads/\` exists
-- Lists open issues in block message
-- Forces: close issues → then commit
-
-**Exit codes:** \`0\` (allow) | \`2\` (block with message)
-
-## Stop Hook
-
-### beads-stop-gate.mjs
-
-**Purpose:** Prevent incomplete sessions. Block agent from stopping with unresolved issues.
-
-**Behavior:**
-- Checks \`.beads/\` exists
-- Lists all \`in_progress\` issues in block message
-- Shows session close protocol (close → commit → push → PR → merge → sync)
-
-**Exit codes:** \`0\` (allow stop) | \`2\` (block stop with message)
+Both hooks are installed to `~/.claude/settings.json` by `specialists install`.
 
 ## UserPromptSubmit Hook
 
 ### specialists-complete.mjs
 
-**Purpose:** Notify Claude when background jobs complete.
+**Purpose:** Notify Claude when background specialist jobs complete.
 
 **Behavior:**
-- Scans \`.specialists/ready/\` for job ID markers
-- Reads \`status.json\` for specialist name and elapsed time
-- Injects banner: \`[Specialist 'name' completed (job id, Xs). Run: specialists result id]\`
-- Deletes marker after injection (fires once per completion)
+- Scans `.specialists/ready/` for job ID markers dropped by the Supervisor
+- Reads each job's `status.json` for specialist name and elapsed time
+- Injects a banner: `[Specialist '<name>' completed (<job-id>, <Xs>). Run: specialists result <id>]`
+- Deletes the marker after injection — fires exactly once per completion
 
-**Output:** JSON \`{ type: "inject", content: "..." }\` to stdout
+**Output:** JSON `{ type: "inject", content: "..." }` to stdout (non-blocking)
 
 ## SessionStart Hook
 
 ### specialists-session-start.mjs
 
-**Purpose:** Prime Claude with specialists context at session start.
+**Purpose:** Prime Claude with specialist context at the start of every session.
 
-**Injects:**
-1. **Active Background Jobs** — running jobs with elapsed time
-2. **Available Specialists** — project and user scope names
-3. **Quick Reference** — key CLI commands
+**Injects three sections:**
 
-**Output:** JSON \`{ type: "inject", content: "..." }\` to stdout
+1. **Active Background Jobs** — IDs, specialist names, elapsed time for all running jobs
+2. **Available Specialists** — names discovered from project and user scope
+3. **Quick Reference** — key CLI commands (`run`, `result`, `feed`, `stop`, `status`)
 
-## PostToolUse Hook
-
-### beads-close-memory-prompt.mjs
-
-**Purpose:** Encourage knowledge capture after closing issues.
-
-**Behavior:**
-- Fires on \`Bash\` tool with \`bd close\` command
-- Only active in beads projects
-- Suggests \`bd remember\` for insights
-- Reminds of underused features: \`bd dep\`, \`bd graph\`, \`bd orphans\`, \`bd preflight\`, \`bd stale\`
-
-**Output:** Context injection to stdout (non-blocking)
+**Output:** JSON `{ type: "inject", content: "..." }` to stdout
 
 ## Installation
 
-All hooks are installed by \`specialists install\` to user scope (\`~/.claude/settings.json\`).
+Both hooks are installed by `specialists install` to user scope (`~/.claude/settings.json`):
 
-\`\`\`bash
-specialists install   # installs hooks + MCP + pi + beads + dolt
-specialists init      # project-local: scaffolds dirs, updates .gitignore
-\`\`\`
+```bash
+specialists install   # installs hooks + MCP + registers pi/beads/dolt prereqs
+specialists init      # project-local: scaffolds .specialists/ dirs, updates .gitignore
+```
+
+After install, verify with:
+
+```bash
+specialists doctor    # checks all hooks present and wired
+```
+
+## Beads Hooks
+
+Beads workflow enforcement (edit gate, commit gate, stop gate, memory judgment) is **not bundled here**. These hooks are owned and versioned by [xtrm-tools](https://github.com/jaggerxtrm/xtrm-tools):
+
+| Hook | Event | Purpose |
+|------|-------|---------|
+| `beads-edit-gate.mjs` | PreToolUse | Require `in_progress` bead before file edits |
+| `beads-commit-gate.mjs` | PreToolUse | Block `git commit` with open issues |
+| `beads-stop-gate.mjs` | Stop | Block session end with unresolved issues |
+| `beads-memory-gate.mjs` | Stop | Require memory decision before closing |
+| `beads-claim-sync.mjs` | PostToolUse | Auto-commit on `bd close` |
+| `beads-compact-save.mjs` | Stop | Preserve context across compaction |
+| `beads-compact-restore.mjs` | SessionStart | Restore context post-compaction |
+
+Install xtrm-tools to get these hooks:
+
+```bash
+npm install -g xtrm-tools
+xtrm install   # installs all beads hooks to ~/.claude/settings.json
+```
+
+**Why the split:** specialists handles agent running; xtrm-tools owns the beads workflow. See [xtrm-specialists-analysis.md](xtrm-specialists-analysis.md) for the architectural decision.
 
 ## See Also
 
-- [ROADMAP.md](ROADMAP.md) — Planned hook improvements (unitAI-xr1 hook audit)
+- [docs/xtrm-specialists-analysis.md](xtrm-specialists-analysis.md) — architectural decisions, xtrm boundary
 - [docs/spec-v3.md](spec-v3.md) — v3 architecture details
+- [ROADMAP.md](../ROADMAP.md) — planned hook improvements (unitAI-xr1 hook audit, unitAI-4az compact hooks)

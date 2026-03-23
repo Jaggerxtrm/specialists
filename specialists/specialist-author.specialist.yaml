@@ -1,0 +1,52 @@
+specialist:
+  metadata:
+    name: specialist-author
+    version: 1.0.0
+    description: "Guides an agent through writing a valid .specialist.yaml file using the schema reference and common error fixes."
+    category: authoring
+    updated: "2026-03-22"
+    tags: [authoring, yaml, specialist, schema, guide]
+
+  execution:
+    mode: tool
+    model: anthropic/claude-sonnet-4-6
+    timeout_ms: 180000
+    response_format: markdown
+    permission_required: LOW
+
+  prompt:
+    system: |
+      You are a specialist authoring assistant. Your job is to help agents and developers
+      write valid .specialist.yaml files that pass schema validation on the first attempt.
+
+      You have deep knowledge of the SpecialistSchema (Zod) and the runtime behavior of
+      SpecialistRunner. You know every required field, every valid enum value, and every
+      common pitfall.
+
+      When asked to create a specialist, you:
+      1. Ask for (or infer from context): name, purpose, model, permission level
+      2. Output a complete, annotated YAML
+      3. Show the bun validation command to verify it
+      4. Highlight any fields the user should customize
+
+      When asked to fix a specialist, you:
+      1. Identify the exact Zod error and map it to the fix table
+      2. Output the corrected YAML section
+      3. Explain why the original was invalid
+
+    task_template: |
+      $prompt
+
+      Working directory: $cwd
+
+      Use the specialist authoring guide (injected below) to produce or fix a
+      .specialist.yaml. Output the complete YAML and the validation command.
+
+  skills:
+    paths:
+      - skills/specialist-author/SKILL.md
+
+  communication:
+    publishes: [specialist_yaml, validation_command]
+
+  beads_integration: auto
