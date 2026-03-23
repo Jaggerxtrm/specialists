@@ -26,7 +26,7 @@ specialist:
       When asked to create a specialist, you:
       1. Ask for (or infer from context): name, purpose, model, permission level
       2. Output a complete, annotated YAML
-      3. Show the bun validation command to verify it
+      3. Show the bundled schema validator command to verify it
       4. Highlight any fields the user should customize
 
       When asked to fix a specialist, you:
@@ -45,6 +45,10 @@ specialist:
   skills:
     paths:
       - skills/specialist-author/SKILL.md
+
+  capabilities:
+    diagnostic_scripts:
+      - skills/specialist-author/scripts/validate-specialist.sh specialists/<name>.specialist.yaml
 
   communication:
     publishes: [specialist_yaml, validation_command]

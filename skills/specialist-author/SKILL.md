@@ -144,10 +144,7 @@ specialist:
 
 Validate before committing:
 ```bash
-bun -e "import {parseSpecialist} from './src/specialist/schema.ts'; \
-  import {readFileSync} from 'fs'; \
-  parseSpecialist(readFileSync('specialists/my-specialist.specialist.yaml','utf8')) \
-  .then(()=>console.log('OK')).catch(e=>console.error(e.message))"
+skills/specialist-author/scripts/validate-specialist.sh specialists/my-specialist.specialist.yaml
 ```
 
 ---
@@ -399,6 +396,8 @@ Name your file `<metadata.name>.specialist.yaml`.
 
 ## Validation Workflow
 
+A bundled validator is included with this skill so the agent does not need to reconstruct the `bun -e` one-liner from memory. It prints `OK <file>` on success and a field-by-field error list on failure.
+
 ```bash
 # 0. Select and verify model (REQUIRED before writing YAML)
 pi --list-models
@@ -406,16 +405,8 @@ pi --model <provider>/<model-id> --print "ping"   # must return "pong"
 
 # 1. Write the YAML with the verified model
 
-# 2. Validate schema
-bun -e "
-import {parseSpecialist} from './src/specialist/schema.ts';
-import {readFileSync} from 'fs';
-const yaml = readFileSync('specialists/my-specialist.specialist.yaml', 'utf8');
-parseSpecialist(yaml).then(() => console.log('OK')).catch(e => {
-  console.error('Invalid:', e.errors ?? e.message);
-  process.exit(1);
-});
-"
+# 2. Validate schema with the bundled helper
+skills/specialist-author/scripts/validate-specialist.sh specialists/my-specialist.specialist.yaml
 
 # 3. List to confirm discovery
 specialists list
@@ -423,3 +414,5 @@ specialists list
 # 4. Smoke test
 specialists run my-specialist --prompt "ping" --no-beads
 ```
+
+If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.sh`. It is a thin wrapper over `parseSpecialist()` from `src/specialist/schema.ts`.
