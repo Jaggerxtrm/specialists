@@ -50,3 +50,6 @@ venv/
 .specialists/jobs/
 .specialists/trace.jsonl
 .specialists/sync-docs-report.md
+
+# bv transient lock
+.beads/.bv.lock

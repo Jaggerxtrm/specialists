@@ -6,17 +6,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-**Specialists** is a versatile framework for running specialist agents in a way that is powerful, composable, and still straightforward to control. It can be used directly by a human operator, by coding agents through MCP, inside autonomous multi-agent and coordination systems, or from scripts and CI/CD pipelines that need deterministic execution surfaces and machine-readable outputs.
+**Specialists is a universal framework for defining, running, and coordinating specialist agents.** Use it from a terminal, through MCP inside coding agents, inside autonomous multi-agent systems, or from scripts and CI/CD pipelines — with the same mental model in every case. It gives you precise but straightforward control over models, tools, prompts, permissions, tracking, memory, and context, so specialist behavior stays composable instead of ad hoc.
 
-At its core, Specialists combines a **Model Context Protocol (MCP) server** with a **CLI execution plane**. A specialist is a reusable unit of behavior with its own model choice, tools, system prompt, task prompt, runtime policy, and output contract. That makes the framework suitable both for interactive delegation and for disciplined automation.
+Specialists is built to run within the **xt/xtrm architecture** — that is the intended execution model, not an optional add-on. xtrm provides the worktree isolation, execution discipline, and session structure that let Specialists run correctly and predictably. On top of that runtime architecture, Specialists uses **beads** by **Steven Yegge** as its tracking and communication layer. I built a similar issue system for the Mercury AACS and Terminal systems back in November, but Beads is widely used, actively maintained, and evolving quickly; it is better to build xt/Specialists around that standard than to maintain yet another intricate workflow layer.
 
-Specialists is designed to work especially well with the **xt/xtrm architecture**: xt provides worktree-based execution and session isolation, while Specialists provides the specialist runtime, orchestration surface, and observability layer. Together they support everything from one-off deep-reasoning runs to structured autonomous workflows.
-
-For tracking and standardized communication, Specialists integrates with **beads** by **Steven Yegge**. Beads acts as the workflow layer for issue tracking, ownership, dependency modeling, and durable context handoff. A specialist can run from a normal prompt, from a richer system+task prompt setup, or directly from an **issue/bead ID as the prompt source**, with dependency chains pulled in as contextual input.
-
-The framework also supports specialist-local skills, centralized memory, and context enrichment patterns that make agents more useful over time instead of more chaotic. In practice, that means you can control behavior very precisely — model, permissions, prompts, dependency context, tracking, memory, background execution, result retrieval — without turning the system into a pile of custom glue.
-
-In v3, specialists run as **background CLI processes** with file-backed state, compact observability, and completion notifications instead of polling loops. The result is a universal specialist layer that can sit inside user workflows, agent workflows, autonomous coordination loops, and production automation without changing the mental model each time.
+A specialist is a reusable unit of behavior with its own model, tools, skills, system prompt, task prompt, runtime policy, and output contract. It can run from a normal prompt, from a richer system+task prompt setup, or directly from an **issue/bead ID as the prompt source**, with dependency chains pulled in as contextual input. Combined with centralized memory and background execution, that gives you a specialist layer that works for humans, agents, autonomous coordination systems, and production automation without changing the control surface each time.
 
 ---
 
