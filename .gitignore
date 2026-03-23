@@ -55,3 +55,7 @@ venv/
 .specialists/jobs/
 .specialists/trace.jsonl
 .specialists/sync-docs-report.md
+# bd worktree
+.xtrm/worktrees/specialists-xt-pi-lqjk/
+# bd worktree
+.xtrm/worktrees/specialists-xt-pi-zm9l/

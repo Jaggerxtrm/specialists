@@ -1,0 +1,11 @@
+
+ RUN  v2.1.9 /home/dawid/projects/specialists
+
+ ✓ tests/unit/cli/help.test.ts (4 tests) 40ms
+ ✓ tests/unit/cli/feed.test.ts (4 tests) 84ms
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  00:59:43
+   Duration  412ms (transform 150ms, setup 0ms, collect 101ms, tests 124ms, environment 1ms, prepare 124ms)
+
