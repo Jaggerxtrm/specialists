@@ -58,6 +58,15 @@ specialists status
 # Stream events live
 specialists feed --job a1b2c3 --follow
 
+# Global feed: all jobs in one timeline
+specialists feed -f
+
+# Filtered timeline
+specialists feed --specialist bug-hunt --since 5m --limit 50
+
+# JSON output for scripts
+specialists feed --json
+
 # Get result when done
 specialists result a1b2c3
 
@@ -293,7 +302,7 @@ specialist:
 | `specialists run <name>` | Run a specialist (foreground by default) |
 | `specialists run <name> --background` | Start as background job, print job ID |
 | `specialists result <id>` | Print result of a completed background job |
-| `specialists feed --job <id> [--follow]` | Tail events.jsonl; `--follow` streams live |
+| `specialists feed [options]` | Unified timeline: `--job`, `--specialist`, `--since`, `--limit`, `--follow`, `--json` |
 | `specialists stop <id>` | Send SIGTERM to a running background job |
 | `specialists status` | System health + active background jobs |
 | `specialists version` | Print installed version |

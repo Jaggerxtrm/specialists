@@ -169,4 +169,160 @@ describe('feed CLI', () => {
     expect(combined).toContain('DONE');
     expect(combined).toContain('COMPLETE');
   });
+
+  // ── Regression tests for merged chronology ─────────────────────────────────
+
+  it('merges events from multiple jobs in chronological order', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test1', [
+      { t: now - 2000, type: 'run_start', specialist: 'test1' },
+      { t: now - 1000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ]);
+    createJobDir('job2', 'test2', [
+      { t: now - 1500, type: 'run_start', specialist: 'test2' },
+      { t: now - 500, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    // Should have 4 events total, in chronological order
+    expect(logs.length).toBe(4);
+    
+    // First event should be job1 start (earliest)
+    expect(logs[0]).toContain('START');
+    
+    // Last event should be job2 complete (latest)
+    expect(logs[3]).toContain('DONE');
+  });
+
+  it('filters by --specialist name', async () => {
+    createJobDir('job1', 'code-review', [
+      { t: Date.now() - 1000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ]);
+    createJobDir('job2', 'bug-hunt', [
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 2 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed', '--specialist', 'bug-hunt'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    // Should only have bug-hunt job
+    expect(logs.length).toBe(1);
+  });
+
+  it('filters by --since relative time', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test', [
+      { t: now - 600000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 }, // 10 min ago
+      { t: now - 1000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 2 },   // 1 sec ago
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed', '--since', '5m'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    // Should only have recent event
+    expect(logs.length).toBe(1);
+  });
+
+  it('respects --limit flag', async () => {
+    createJobDir('job1', 'test', [
+      { t: Date.now() - 3000, type: 'run_start', specialist: 'test' },
+      { t: Date.now() - 2000, type: 'meta', model: 'claude-3', backend: 'anthropic' },
+      { t: Date.now() - 1000, type: 'tool', tool: 'Read', phase: 'start' },
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 3 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed', '--limit', '2'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(logs.length).toBe(2);
+  });
+
+  // ── Edge cases ─────────────────────────────────────────────────────────────
+
+  it('handles malformed event lines gracefully', async () => {
+    const jobDir = join(jobsDir, 'job1');
+    mkdirSync(jobDir, { recursive: true });
+
+    // Write malformed events.jsonl
+    writeFileSync(
+      join(jobDir, 'events.jsonl'),
+      `{"t": ${Date.now()}, "type": "run_start", "specialist": "test"}
+invalid json line here
+{"t": ${Date.now() + 1000}, "type": "run_complete", "status": "COMPLETE", "elapsed_s": 1}`,
+      'utf-8'
+    );
+
+    writeFileSync(
+      join(jobDir, 'status.json'),
+      JSON.stringify({ id: 'job1', specialist: 'test', status: 'done' }),
+      'utf-8'
+    );
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    // Should still show valid events
+    expect(logs.length).toBe(2);
+  });
+
+  it('handles jobs with no events.jsonl', async () => {
+    const jobDir = join(jobsDir, 'job1');
+    mkdirSync(jobDir, { recursive: true });
+    // Only status.json, no events
+    writeFileSync(
+      join(jobDir, 'status.json'),
+      JSON.stringify({ id: 'job1', specialist: 'test', status: 'done' }),
+      'utf-8'
+    );
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    // Should show no events found
+    expect(logs.join('\n')).toContain('No events found');
+  });
 });
