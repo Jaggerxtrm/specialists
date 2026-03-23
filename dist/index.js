@@ -29,7 +29,7 @@ var __export = (target, all) => {
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
-// ../../../node_modules/zod/v3/helpers/util.js
+// node_modules/zod/v3/helpers/util.js
 var util, objectUtil, ZodParsedType, getParsedType = (data) => {
   const t = typeof data;
   switch (t) {
@@ -160,7 +160,7 @@ var init_util = __esm(() => {
   ]);
 });
 
-// ../../../node_modules/zod/v3/ZodError.js
+// node_modules/zod/v3/ZodError.js
 var ZodIssueCode, quotelessJson = (obj) => {
   const json = JSON.stringify(obj, null, 2);
   return json.replace(/"([^"]+)":/g, "$1:");
@@ -281,7 +281,7 @@ var init_ZodError = __esm(() => {
   };
 });
 
-// ../../../node_modules/zod/v3/locales/en.js
+// node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -388,7 +388,7 @@ var init_en = __esm(() => {
   en_default = errorMap;
 });
 
-// ../../../node_modules/zod/v3/errors.js
+// node_modules/zod/v3/errors.js
 function setErrorMap(map) {
   overrideErrorMap = map;
 }
@@ -401,7 +401,7 @@ var init_errors = __esm(() => {
   overrideErrorMap = en_default;
 });
 
-// ../../../node_modules/zod/v3/helpers/parseUtil.js
+// node_modules/zod/v3/helpers/parseUtil.js
 function addIssueToContext(ctx, issueData) {
   const overrideMap = getErrorMap();
   const issue = makeIssue({
@@ -506,10 +506,10 @@ var init_parseUtil = __esm(() => {
   });
 });
 
-// ../../../node_modules/zod/v3/helpers/typeAliases.js
+// node_modules/zod/v3/helpers/typeAliases.js
 var init_typeAliases = () => {};
 
-// ../../../node_modules/zod/v3/helpers/errorUtil.js
+// node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 var init_errorUtil = __esm(() => {
   (function(errorUtil2) {
@@ -518,7 +518,7 @@ var init_errorUtil = __esm(() => {
   })(errorUtil || (errorUtil = {}));
 });
 
-// ../../../node_modules/zod/v3/types.js
+// node_modules/zod/v3/types.js
 class ParseInputLazyPath {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -3869,7 +3869,7 @@ var init_types = __esm(() => {
   NEVER = INVALID;
 });
 
-// ../../../node_modules/zod/v3/external.js
+// node_modules/zod/v3/external.js
 var exports_external = {};
 __export(exports_external, {
   void: () => voidType,
@@ -3989,7 +3989,7 @@ var init_external = __esm(() => {
   init_ZodError();
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/code.js
+// node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.regexpCode = exports.getEsmExportName = exports.getProperty = exports.safeStringify = exports.stringify = exports.strConcat = exports.addCodeArg = exports.str = exports._ = exports.nil = exports._Code = exports.Name = exports.IDENTIFIER = exports._CodeOrName = undefined;
@@ -4143,7 +4143,7 @@ var require_code = __commonJS((exports) => {
   exports.regexpCode = regexpCode;
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/scope.js
+// node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.ValueScope = exports.ValueScopeName = exports.Scope = exports.varKinds = exports.UsedValueState = undefined;
@@ -4289,7 +4289,7 @@ var require_scope = __commonJS((exports) => {
   exports.ValueScope = ValueScope;
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/index.js
+// node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.or = exports.and = exports.not = exports.CodeGen = exports.operators = exports.varKinds = exports.ValueScopeName = exports.ValueScope = exports.Scope = exports.Name = exports.regexpCode = exports.stringify = exports.getProperty = exports.nil = exports.strConcat = exports.str = exports._ = undefined;
@@ -4999,7 +4999,7 @@ var require_codegen = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/util.js
+// node_modules/ajv/dist/compile/util.js
 var require_util = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.checkStrictMode = exports.getErrorPath = exports.Type = exports.useFunc = exports.setEvaluated = exports.evaluatedPropsToName = exports.mergeEvaluated = exports.eachItem = exports.unescapeJsonPointer = exports.escapeJsonPointer = exports.escapeFragment = exports.unescapeFragment = exports.schemaRefOrVal = exports.schemaHasRulesButRef = exports.schemaHasRules = exports.checkUnknownRules = exports.alwaysValidSchema = exports.toHash = undefined;
@@ -5163,7 +5163,7 @@ var require_util = __commonJS((exports) => {
   exports.checkStrictMode = checkStrictMode;
 });
 
-// ../../../node_modules/ajv/dist/compile/names.js
+// node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -5188,7 +5188,7 @@ var require_names = __commonJS((exports) => {
   exports.default = names;
 });
 
-// ../../../node_modules/ajv/dist/compile/errors.js
+// node_modules/ajv/dist/compile/errors.js
 var require_errors = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.extendErrors = exports.resetErrorsCount = exports.reportExtraError = exports.reportError = exports.keyword$DataError = exports.keywordError = undefined;
@@ -5306,7 +5306,7 @@ var require_errors = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/boolSchema.js
+// node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.boolOrEmptySchema = exports.topBoolOrEmptySchema = undefined;
@@ -5354,7 +5354,7 @@ var require_boolSchema = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/rules.js
+// node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getRules = exports.isJSONType = undefined;
@@ -5382,7 +5382,7 @@ var require_rules = __commonJS((exports) => {
   exports.getRules = getRules;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/applicability.js
+// node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = undefined;
@@ -5402,7 +5402,7 @@ var require_applicability = __commonJS((exports) => {
   exports.shouldUseRule = shouldUseRule;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/dataType.js
+// node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.reportTypeError = exports.checkDataTypes = exports.checkDataType = exports.coerceAndCheckDataType = exports.getJSONTypes = exports.getSchemaTypes = exports.DataType = undefined;
@@ -5583,7 +5583,7 @@ var require_dataType = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/defaults.js
+// node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.assignDefaults = undefined;
@@ -5617,7 +5617,7 @@ var require_defaults = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/code.js
+// node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateUnion = exports.validateArray = exports.usePattern = exports.callValidateCode = exports.schemaProperties = exports.allSchemaProperties = exports.noPropertyInData = exports.propertyInData = exports.isOwnProperty = exports.hasPropFunc = exports.reportMissingProp = exports.checkMissingProp = exports.checkReportMissingProp = undefined;
@@ -5746,7 +5746,7 @@ var require_code2 = __commonJS((exports) => {
   exports.validateUnion = validateUnion;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/keyword.js
+// node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateKeywordUsage = exports.validSchemaType = exports.funcKeywordCode = exports.macroKeywordCode = undefined;
@@ -5861,7 +5861,7 @@ var require_keyword = __commonJS((exports) => {
   exports.validateKeywordUsage = validateKeywordUsage;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/subschema.js
+// node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = undefined;
@@ -5941,7 +5941,7 @@ var require_subschema = __commonJS((exports) => {
   exports.extendSubschemaMode = extendSubschemaMode;
 });
 
-// ../../../node_modules/fast-deep-equal/index.js
+// node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS((exports, module) => {
   module.exports = function equal(a, b) {
     if (a === b)
@@ -5983,7 +5983,7 @@ var require_fast_deep_equal = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/json-schema-traverse/index.js
+// node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS((exports, module) => {
   var traverse = module.exports = function(schema, opts, cb) {
     if (typeof opts == "function") {
@@ -6066,7 +6066,7 @@ var require_json_schema_traverse = __commonJS((exports, module) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/resolve.js
+// node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getSchemaRefs = exports.resolveUrl = exports.normalizeId = exports._getFullPath = exports.getFullPath = exports.inlineRef = undefined;
@@ -6219,7 +6219,7 @@ var require_resolve = __commonJS((exports) => {
   exports.getSchemaRefs = getSchemaRefs;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/index.js
+// node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getData = exports.KeywordCxt = exports.validateFunctionCode = undefined;
@@ -6724,7 +6724,7 @@ var require_validate = __commonJS((exports) => {
   exports.getData = getData;
 });
 
-// ../../../node_modules/ajv/dist/runtime/validation_error.js
+// node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
 
@@ -6738,7 +6738,7 @@ var require_validation_error = __commonJS((exports) => {
   exports.default = ValidationError;
 });
 
-// ../../../node_modules/ajv/dist/compile/ref_error.js
+// node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var resolve_1 = require_resolve();
@@ -6753,7 +6753,7 @@ var require_ref_error = __commonJS((exports) => {
   exports.default = MissingRefError;
 });
 
-// ../../../node_modules/ajv/dist/compile/index.js
+// node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.resolveSchema = exports.getCompilingSchema = exports.resolveRef = exports.compileSchema = exports.SchemaEnv = undefined;
@@ -6974,7 +6974,7 @@ var require_compile = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/refs/data.json
+// node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS((exports, module) => {
   module.exports = {
     $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
@@ -6991,7 +6991,7 @@ var require_data = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/lib/utils.js
+// node_modules/fast-uri/lib/utils.js
 var require_utils = __commonJS((exports, module) => {
   var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
   var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
@@ -7246,7 +7246,7 @@ var require_utils = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/lib/schemes.js
+// node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS((exports, module) => {
   var { isUUID } = require_utils();
   var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
@@ -7420,7 +7420,7 @@ var require_schemes = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/index.js
+// node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS((exports, module) => {
   var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizeComponentEncoding, isIPv4, nonSimpleDomain } = require_utils();
   var { SCHEMES, getSchemeHandler } = require_schemes();
@@ -7671,7 +7671,7 @@ var require_fast_uri = __commonJS((exports, module) => {
   module.exports.fastUri = fastUri;
 });
 
-// ../../../node_modules/ajv/dist/runtime/uri.js
+// node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var uri = require_fast_uri();
@@ -7679,7 +7679,7 @@ var require_uri = __commonJS((exports) => {
   exports.default = uri;
 });
 
-// ../../../node_modules/ajv/dist/core.js
+// node_modules/ajv/dist/core.js
 var require_core = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = undefined;
@@ -8272,7 +8272,7 @@ var require_core = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/id.js
+// node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var def = {
@@ -8284,7 +8284,7 @@ var require_id = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/ref.js
+// node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.callRef = exports.getValidate = undefined;
@@ -8403,7 +8403,7 @@ var require_ref = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/index.js
+// node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var id_1 = require_id();
@@ -8421,7 +8421,7 @@ var require_core2 = __commonJS((exports) => {
   exports.default = core2;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8450,7 +8450,7 @@ var require_limitNumber = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8475,7 +8475,7 @@ var require_multipleOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/runtime/ucs2length.js
+// node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   function ucs2length(str) {
@@ -8498,7 +8498,7 @@ var require_ucs2length = __commonJS((exports) => {
   ucs2length.code = 'require("ajv/dist/runtime/ucs2length").default';
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8527,7 +8527,7 @@ var require_limitLength = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/pattern.js
+// node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -8561,7 +8561,7 @@ var require_pattern = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8587,7 +8587,7 @@ var require_limitProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/required.js
+// node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -8666,7 +8666,7 @@ var require_required = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8692,7 +8692,7 @@ var require_limitItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/runtime/equal.js
+// node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var equal = require_fast_deep_equal();
@@ -8700,7 +8700,7 @@ var require_equal = __commonJS((exports) => {
   exports.default = equal;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var dataType_1 = require_dataType();
@@ -8764,7 +8764,7 @@ var require_uniqueItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/const.js
+// node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8790,7 +8790,7 @@ var require_const = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/enum.js
+// node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8836,7 +8836,7 @@ var require_enum = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/index.js
+// node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var limitNumber_1 = require_limitNumber();
@@ -8866,7 +8866,7 @@ var require_validation = __commonJS((exports) => {
   exports.default = validation;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateAdditionalItems = undefined;
@@ -8916,7 +8916,7 @@ var require_additionalItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/items.js
+// node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateTuple = undefined;
@@ -8970,7 +8970,7 @@ var require_items = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var items_1 = require_items();
@@ -8984,7 +8984,7 @@ var require_prefixItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9016,7 +9016,7 @@ var require_items2020 = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/contains.js
+// node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9107,7 +9107,7 @@ var require_contains = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateSchemaDeps = exports.validatePropertyDeps = exports.error = undefined;
@@ -9192,7 +9192,7 @@ var require_dependencies = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9232,7 +9232,7 @@ var require_propertyNames = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9335,7 +9335,7 @@ var require_additionalProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/properties.js
+// node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var validate_1 = require_validate();
@@ -9390,7 +9390,7 @@ var require_properties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9461,7 +9461,7 @@ var require_patternProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/not.js
+// node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9489,7 +9489,7 @@ var require_not = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9503,7 +9503,7 @@ var require_anyOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9558,7 +9558,7 @@ var require_oneOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9582,7 +9582,7 @@ var require_allOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/if.js
+// node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9648,7 +9648,7 @@ var require_if = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9663,7 +9663,7 @@ var require_thenElse = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/index.js
+// node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var additionalItems_1 = require_additionalItems();
@@ -9706,7 +9706,7 @@ var require_applicator = __commonJS((exports) => {
   exports.default = getApplicator;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/format/format.js
+// node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9793,7 +9793,7 @@ var require_format = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/format/index.js
+// node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var format_1 = require_format();
@@ -9801,7 +9801,7 @@ var require_format2 = __commonJS((exports) => {
   exports.default = format;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/metadata.js
+// node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.contentVocabulary = exports.metadataVocabulary = undefined;
@@ -9821,7 +9821,7 @@ var require_metadata = __commonJS((exports) => {
   ];
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/draft7.js
+// node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft7 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var core_1 = require_core2();
@@ -9840,7 +9840,7 @@ var require_draft7 = __commonJS((exports) => {
   exports.default = draft7Vocabularies;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/discriminator/types.js
+// node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.DiscrError = undefined;
@@ -9851,7 +9851,7 @@ var require_types = __commonJS((exports) => {
   })(DiscrError || (exports.DiscrError = DiscrError = {}));
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/discriminator/index.js
+// node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9953,7 +9953,7 @@ var require_discriminator = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/refs/json-schema-draft-07.json
+// node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_07 = __commonJS((exports, module) => {
   module.exports = {
     $schema: "http://json-schema.org/draft-07/schema#",
@@ -10108,7 +10108,7 @@ var require_json_schema_draft_07 = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/ajv/dist/ajv.js
+// node_modules/ajv/dist/ajv.js
 var require_ajv = __commonJS((exports, module) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.MissingRefError = exports.ValidationError = exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = exports.Ajv = undefined;
@@ -10176,7 +10176,7 @@ var require_ajv = __commonJS((exports, module) => {
   } });
 });
 
-// ../../../node_modules/ajv-formats/dist/formats.js
+// node_modules/ajv-formats/dist/formats.js
 var require_formats = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.formatNames = exports.fastFormats = exports.fullFormats = undefined;
@@ -10353,7 +10353,7 @@ var require_formats = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv-formats/dist/limit.js
+// node_modules/ajv-formats/dist/limit.js
 var require_limit = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.formatLimitDefinition = undefined;
@@ -10422,7 +10422,7 @@ var require_limit = __commonJS((exports) => {
   exports.default = formatLimitPlugin;
 });
 
-// ../../../node_modules/ajv-formats/dist/index.js
+// node_modules/ajv-formats/dist/index.js
 var require_dist = __commonJS((exports, module) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var formats_1 = require_formats();
@@ -10461,13 +10461,13 @@ var require_dist = __commonJS((exports, module) => {
   exports.default = formatsPlugin;
 });
 
-// ../../../node_modules/zod/index.js
+// node_modules/zod/index.js
 var init_zod = __esm(() => {
   init_external();
   init_external();
 });
 
-// ../../../node_modules/yaml/dist/nodes/identity.js
+// node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS((exports) => {
   var ALIAS = Symbol.for("yaml.alias");
   var DOC = Symbol.for("yaml.document");
@@ -10521,7 +10521,7 @@ var require_identity = __commonJS((exports) => {
   exports.isSeq = isSeq;
 });
 
-// ../../../node_modules/yaml/dist/visit.js
+// node_modules/yaml/dist/visit.js
 var require_visit = __commonJS((exports) => {
   var identity = require_identity();
   var BREAK = Symbol("break visit");
@@ -10676,7 +10676,7 @@ var require_visit = __commonJS((exports) => {
   exports.visitAsync = visitAsync;
 });
 
-// ../../../node_modules/yaml/dist/doc/directives.js
+// node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -10828,7 +10828,7 @@ var require_directives = __commonJS((exports) => {
   exports.Directives = Directives;
 });
 
-// ../../../node_modules/yaml/dist/doc/anchors.js
+// node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -10890,7 +10890,7 @@ var require_anchors = __commonJS((exports) => {
   exports.findNewAnchor = findNewAnchor;
 });
 
-// ../../../node_modules/yaml/dist/doc/applyReviver.js
+// node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS((exports) => {
   function applyReviver(reviver, obj, key, val) {
     if (val && typeof val === "object") {
@@ -10937,7 +10937,7 @@ var require_applyReviver = __commonJS((exports) => {
   exports.applyReviver = applyReviver;
 });
 
-// ../../../node_modules/yaml/dist/nodes/toJS.js
+// node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS((exports) => {
   var identity = require_identity();
   function toJS(value, arg, ctx) {
@@ -10964,7 +10964,7 @@ var require_toJS = __commonJS((exports) => {
   exports.toJS = toJS;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Node.js
+// node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS((exports) => {
   var applyReviver = require_applyReviver();
   var identity = require_identity();
@@ -11001,7 +11001,7 @@ var require_Node = __commonJS((exports) => {
   exports.NodeBase = NodeBase;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Alias.js
+// node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS((exports) => {
   var anchors = require_anchors();
   var visit = require_visit();
@@ -11109,7 +11109,7 @@ var require_Alias = __commonJS((exports) => {
   exports.Alias = Alias;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Scalar.js
+// node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Node = require_Node();
@@ -11137,7 +11137,7 @@ var require_Scalar = __commonJS((exports) => {
   exports.isScalarValue = isScalarValue;
 });
 
-// ../../../node_modules/yaml/dist/doc/createNode.js
+// node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -11209,7 +11209,7 @@ var require_createNode = __commonJS((exports) => {
   exports.createNode = createNode;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Collection.js
+// node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS((exports) => {
   var createNode = require_createNode();
   var identity = require_identity();
@@ -11324,7 +11324,7 @@ var require_Collection = __commonJS((exports) => {
   exports.isEmptyPath = isEmptyPath;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyComment.js
+// node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS((exports) => {
   var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
   function indentComment(comment, indent) {
@@ -11341,7 +11341,7 @@ var require_stringifyComment = __commonJS((exports) => {
   exports.stringifyComment = stringifyComment;
 });
 
-// ../../../node_modules/yaml/dist/stringify/foldFlowLines.js
+// node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS((exports) => {
   var FOLD_FLOW = "flow";
   var FOLD_BLOCK = "block";
@@ -11478,7 +11478,7 @@ ${indent}${text.slice(fold + 1, end2)}`;
   exports.foldFlowLines = foldFlowLines;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyString.js
+// node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var foldFlowLines = require_foldFlowLines();
@@ -11776,7 +11776,7 @@ ${indent}`);
   exports.stringifyString = stringifyString;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringify.js
+// node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS((exports) => {
   var anchors = require_anchors();
   var identity = require_identity();
@@ -11896,7 +11896,7 @@ ${ctx.indent}${str}`;
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyPair.js
+// node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -12032,7 +12032,7 @@ ${ctx.indent}`;
   exports.stringifyPair = stringifyPair;
 });
 
-// ../../../node_modules/yaml/dist/log.js
+// node_modules/yaml/dist/log.js
 var require_log = __commonJS((exports) => {
   var node_process = __require("process");
   function debug(logLevel, ...messages) {
@@ -12051,7 +12051,7 @@ var require_log = __commonJS((exports) => {
   exports.warn = warn;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -12105,7 +12105,7 @@ var require_merge = __commonJS((exports) => {
   exports.merge = merge2;
 });
 
-// ../../../node_modules/yaml/dist/nodes/addPairToJSMap.js
+// node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS((exports) => {
   var log = require_log();
   var merge2 = require_merge();
@@ -12166,7 +12166,7 @@ var require_addPairToJSMap = __commonJS((exports) => {
   exports.addPairToJSMap = addPairToJSMap;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Pair.js
+// node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyPair = require_stringifyPair();
@@ -12204,7 +12204,7 @@ var require_Pair = __commonJS((exports) => {
   exports.createPair = createPair;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyCollection.js
+// node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -12349,7 +12349,7 @@ ${indent}${end}`;
   exports.stringifyCollection = stringifyCollection;
 });
 
-// ../../../node_modules/yaml/dist/nodes/YAMLMap.js
+// node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS((exports) => {
   var stringifyCollection = require_stringifyCollection();
   var addPairToJSMap = require_addPairToJSMap();
@@ -12476,7 +12476,7 @@ var require_YAMLMap = __commonJS((exports) => {
   exports.findPair = findPair;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/map.js
+// node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLMap = require_YAMLMap();
@@ -12495,7 +12495,7 @@ var require_map = __commonJS((exports) => {
   exports.map = map2;
 });
 
-// ../../../node_modules/yaml/dist/nodes/YAMLSeq.js
+// node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyCollection = require_stringifyCollection();
@@ -12588,7 +12588,7 @@ var require_YAMLSeq = __commonJS((exports) => {
   exports.YAMLSeq = YAMLSeq;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/seq.js
+// node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLSeq = require_YAMLSeq();
@@ -12607,7 +12607,7 @@ var require_seq = __commonJS((exports) => {
   exports.seq = seq;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/string.js
+// node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS((exports) => {
   var stringifyString = require_stringifyString();
   var string4 = {
@@ -12623,7 +12623,7 @@ var require_string = __commonJS((exports) => {
   exports.string = string4;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/null.js
+// node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var nullTag = {
@@ -12638,7 +12638,7 @@ var require_null = __commonJS((exports) => {
   exports.nullTag = nullTag;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/bool.js
+// node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var boolTag = {
@@ -12659,7 +12659,7 @@ var require_bool = __commonJS((exports) => {
   exports.boolTag = boolTag;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyNumber.js
+// node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS((exports) => {
   function stringifyNumber({ format, minFractionDigits, tag, value }) {
     if (typeof value === "bigint")
@@ -12683,7 +12683,7 @@ var require_stringifyNumber = __commonJS((exports) => {
   exports.stringifyNumber = stringifyNumber;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/float.js
+// node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -12726,7 +12726,7 @@ var require_float = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/int.js
+// node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -12768,7 +12768,7 @@ var require_int = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/schema.js
+// node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -12793,7 +12793,7 @@ var require_schema = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/json/schema.js
+// node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var map2 = require_map();
@@ -12857,7 +12857,7 @@ var require_schema2 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS((exports) => {
   var node_buffer = __require("buffer");
   var Scalar = require_Scalar();
@@ -12912,7 +12912,7 @@ var require_binary = __commonJS((exports) => {
   exports.binary = binary;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -12987,7 +12987,7 @@ ${cn.comment}` : item.comment;
   exports.resolvePairs = resolvePairs;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS((exports) => {
   var identity = require_identity();
   var toJS = require_toJS();
@@ -13059,7 +13059,7 @@ var require_omap = __commonJS((exports) => {
   exports.omap = omap;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function boolStringify({ value, source }, ctx) {
@@ -13088,7 +13088,7 @@ var require_bool2 = __commonJS((exports) => {
   exports.trueTag = trueTag;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/float.js
+// node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -13134,7 +13134,7 @@ var require_float2 = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/int.js
+// node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -13210,7 +13210,7 @@ var require_int2 = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/set.js
+// node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -13293,7 +13293,7 @@ var require_set = __commonJS((exports) => {
   exports.set = set2;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   function parseSexagesimal(str, asBigInt) {
@@ -13375,7 +13375,7 @@ var require_timestamp = __commonJS((exports) => {
   exports.timestamp = timestamp;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -13416,7 +13416,7 @@ var require_schema3 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/tags.js
+// node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -13507,7 +13507,7 @@ var require_tags = __commonJS((exports) => {
   exports.getTags = getTags;
 });
 
-// ../../../node_modules/yaml/dist/schema/Schema.js
+// node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS((exports) => {
   var identity = require_identity();
   var map2 = require_map();
@@ -13537,7 +13537,7 @@ var require_Schema = __commonJS((exports) => {
   exports.Schema = Schema;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyDocument.js
+// node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -13617,7 +13617,7 @@ var require_stringifyDocument = __commonJS((exports) => {
   exports.stringifyDocument = stringifyDocument;
 });
 
-// ../../../node_modules/yaml/dist/doc/Document.js
+// node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS((exports) => {
   var Alias = require_Alias();
   var Collection = require_Collection();
@@ -13852,7 +13852,7 @@ var require_Document = __commonJS((exports) => {
   exports.Document = Document;
 });
 
-// ../../../node_modules/yaml/dist/errors.js
+// node_modules/yaml/dist/errors.js
 var require_errors2 = __commonJS((exports) => {
   class YAMLError extends Error {
     constructor(name, pos, code, message) {
@@ -13917,7 +13917,7 @@ ${pointer}
   exports.prettifyError = prettifyError;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-props.js
+// node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS((exports) => {
   function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
     let spaceBefore = false;
@@ -14047,7 +14047,7 @@ var require_resolve_props = __commonJS((exports) => {
   exports.resolveProps = resolveProps;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-contains-newline.js
+// node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS((exports) => {
   function containsNewline(key) {
     if (!key)
@@ -14087,7 +14087,7 @@ var require_util_contains_newline = __commonJS((exports) => {
   exports.containsNewline = containsNewline;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-flow-indent-check.js
+// node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS((exports) => {
   var utilContainsNewline = require_util_contains_newline();
   function flowIndentCheck(indent, fc, onError) {
@@ -14102,7 +14102,7 @@ var require_util_flow_indent_check = __commonJS((exports) => {
   exports.flowIndentCheck = flowIndentCheck;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-map-includes.js
+// node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS((exports) => {
   var identity = require_identity();
   function mapIncludes(ctx, items, search) {
@@ -14115,7 +14115,7 @@ var require_util_map_includes = __commonJS((exports) => {
   exports.mapIncludes = mapIncludes;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-map.js
+// node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS((exports) => {
   var Pair = require_Pair();
   var YAMLMap = require_YAMLMap();
@@ -14222,7 +14222,7 @@ var require_resolve_block_map = __commonJS((exports) => {
   exports.resolveBlockMap = resolveBlockMap;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-seq.js
+// node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS((exports) => {
   var YAMLSeq = require_YAMLSeq();
   var resolveProps = require_resolve_props();
@@ -14270,7 +14270,7 @@ var require_resolve_block_seq = __commonJS((exports) => {
   exports.resolveBlockSeq = resolveBlockSeq;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-end.js
+// node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS((exports) => {
   function resolveEnd(end, offset, reqSpace, onError) {
     let comment = "";
@@ -14310,7 +14310,7 @@ var require_resolve_end = __commonJS((exports) => {
   exports.resolveEnd = resolveEnd;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-flow-collection.js
+// node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -14501,7 +14501,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
   exports.resolveFlowCollection = resolveFlowCollection;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-collection.js
+// node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -14563,7 +14563,7 @@ var require_compose_collection = __commonJS((exports) => {
   exports.composeCollection = composeCollection;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-scalar.js
+// node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function resolveBlockScalar(ctx, scalar, onError) {
@@ -14756,7 +14756,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
   exports.resolveBlockScalar = resolveBlockScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var resolveEnd = require_resolve_end();
@@ -14972,7 +14972,7 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
   exports.resolveFlowScalar = resolveFlowScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-scalar.js
+// node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -15050,7 +15050,7 @@ var require_compose_scalar = __commonJS((exports) => {
   exports.composeScalar = composeScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS((exports) => {
   function emptyScalarPosition(offset, before, pos) {
     if (before) {
@@ -15077,7 +15077,7 @@ var require_util_empty_scalar_position = __commonJS((exports) => {
   exports.emptyScalarPosition = emptyScalarPosition;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-node.js
+// node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -15175,7 +15175,7 @@ var require_compose_node = __commonJS((exports) => {
   exports.composeNode = composeNode;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-doc.js
+// node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS((exports) => {
   var Document = require_Document();
   var composeNode = require_compose_node();
@@ -15215,7 +15215,7 @@ var require_compose_doc = __commonJS((exports) => {
   exports.composeDoc = composeDoc;
 });
 
-// ../../../node_modules/yaml/dist/compose/composer.js
+// node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS((exports) => {
   var node_process = __require("process");
   var directives = require_directives();
@@ -15404,7 +15404,7 @@ ${end.comment}` : end.comment;
   exports.Composer = Composer;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-scalar.js
+// node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS((exports) => {
   var resolveBlockScalar = require_resolve_block_scalar();
   var resolveFlowScalar = require_resolve_flow_scalar();
@@ -15594,7 +15594,7 @@ var require_cst_scalar = __commonJS((exports) => {
   exports.setScalarValue = setScalarValue;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-stringify.js
+// node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS((exports) => {
   var stringify = (cst) => ("type" in cst) ? stringifyToken(cst) : stringifyItem(cst);
   function stringifyToken(token) {
@@ -15652,7 +15652,7 @@ var require_cst_stringify = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-visit.js
+// node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS((exports) => {
   var BREAK = Symbol("break visit");
   var SKIP = Symbol("skip children");
@@ -15711,7 +15711,7 @@ var require_cst_visit = __commonJS((exports) => {
   exports.visit = visit;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst.js
+// node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS((exports) => {
   var cstScalar = require_cst_scalar();
   var cstStringify = require_cst_stringify();
@@ -15812,7 +15812,7 @@ var require_cst = __commonJS((exports) => {
   exports.tokenType = tokenType;
 });
 
-// ../../../node_modules/yaml/dist/parse/lexer.js
+// node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS((exports) => {
   var cst = require_cst();
   function isEmpty(ch) {
@@ -16398,7 +16398,7 @@ var require_lexer = __commonJS((exports) => {
   exports.Lexer = Lexer;
 });
 
-// ../../../node_modules/yaml/dist/parse/line-counter.js
+// node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS((exports) => {
   class LineCounter {
     constructor() {
@@ -16426,7 +16426,7 @@ var require_line_counter = __commonJS((exports) => {
   exports.LineCounter = LineCounter;
 });
 
-// ../../../node_modules/yaml/dist/parse/parser.js
+// node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS((exports) => {
   var node_process = __require("process");
   var cst = require_cst();
@@ -17275,7 +17275,7 @@ var require_parser = __commonJS((exports) => {
   exports.Parser = Parser;
 });
 
-// ../../../node_modules/yaml/dist/public-api.js
+// node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS((exports) => {
   var composer = require_composer();
   var Document = require_Document();
@@ -17369,7 +17369,7 @@ var require_public_api = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/index.js
+// node_modules/yaml/dist/index.js
 var composer, Document, Schema, errors4, Alias, identity, Pair, Scalar, YAMLMap, YAMLSeq, cst, lexer, lineCounter, parser, publicApi, visit, $Composer, $Document, $Schema, $YAMLError, $YAMLParseError, $YAMLWarning, $Alias, $isAlias, $isCollection, $isDocument, $isMap, $isNode, $isPair, $isScalar, $isSeq, $Pair, $Scalar, $YAMLMap, $YAMLSeq, $Lexer, $LineCounter, $Parser, $parse, $parseAllDocuments, $parseDocument, $stringify, $visit, $visitAsync;
 var init_dist = __esm(() => {
   composer = require_composer();
@@ -18806,6 +18806,113 @@ var init_edit = __esm(() => {
   VALID_PERMISSIONS = ["READ_ONLY", "LOW", "MEDIUM", "HIGH"];
 });
 
+// src/specialist/timeline-events.ts
+function mapCallbackEventToTimelineEvent(callbackEvent, context) {
+  const t = Date.now();
+  switch (callbackEvent) {
+    case "thinking":
+      return { t, type: TIMELINE_EVENT_TYPES.THINKING };
+    case "toolcall":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "start",
+        tool_call_id: context.toolCallId
+      };
+    case "tool_execution_end":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "end",
+        tool_call_id: context.toolCallId,
+        is_error: context.isError
+      };
+    case "text":
+      return { t, type: TIMELINE_EVENT_TYPES.TEXT };
+    case "done":
+      return null;
+    default:
+      return null;
+  }
+}
+function createRunStartEvent(specialist, beadId) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_START,
+    specialist,
+    bead_id: beadId
+  };
+}
+function createMetaEvent(model, backend) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.META,
+    model,
+    backend
+  };
+}
+function createRunCompleteEvent(status, elapsed_s, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
+    status,
+    elapsed_s,
+    ...options
+  };
+}
+function parseTimelineEvent(line) {
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    if (typeof parsed.t !== "number")
+      return null;
+    if (typeof parsed.type !== "string")
+      return null;
+    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.DONE,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.AGENT_END,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    const knownTypes = Object.values(TIMELINE_EVENT_TYPES).filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
+    if (!knownTypes.includes(parsed.type))
+      return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function isRunCompleteEvent(event) {
+  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
+}
+function compareTimelineEvents(a, b) {
+  return a.t - b.t;
+}
+var TIMELINE_EVENT_TYPES;
+var init_timeline_events = __esm(() => {
+  TIMELINE_EVENT_TYPES = {
+    RUN_START: "run_start",
+    META: "meta",
+    THINKING: "thinking",
+    TOOL: "tool",
+    TEXT: "text",
+    RUN_COMPLETE: "run_complete",
+    DONE: "done",
+    AGENT_END: "agent_end"
+  };
+});
+
 // src/specialist/supervisor.ts
 import {
   closeSync,
@@ -18960,14 +19067,16 @@ class Supervisor {
     };
     this.writeStatusFile(id, initialStatus);
     const eventsFd = openSync(this.eventsPath(id), "a");
-    const appendEvent = (obj) => {
+    const appendTimelineEvent = (event) => {
       try {
-        writeSync(eventsFd, JSON.stringify({ t: Date.now(), ...obj }) + `
+        writeSync(eventsFd, JSON.stringify(event) + `
 `);
       } catch {}
     };
+    appendTimelineEvent(createRunStartEvent(runOptions.name));
     let textLogged = false;
     let currentTool = "";
+    let currentToolCallId = "";
     let killFn;
     const sigtermHandler = () => killFn?.();
     process.once("SIGTERM", sigtermHandler);
@@ -18986,16 +19095,19 @@ class Supervisor {
           last_event_at_ms: now,
           elapsed_s: Math.round((now - startedAtMs) / 1000)
         });
-        if (LOGGED_EVENTS.has(eventType)) {
-          const tool = eventType === "toolcall" || eventType === "tool_execution_end" ? currentTool : undefined;
-          appendEvent({ type: eventType, ...tool ? { tool } : {} });
+        const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
+          tool: currentTool,
+          toolCallId: currentToolCallId || undefined
+        });
+        if (timelineEvent) {
+          appendTimelineEvent(timelineEvent);
         } else if (eventType === "text" && !textLogged) {
           textLogged = true;
-          appendEvent({ type: "text" });
+          appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
         }
       }, (meta) => {
         this.updateStatus(id, { model: meta.model, backend: meta.backend });
-        appendEvent({ type: "meta", model: meta.model, backend: meta.backend });
+        appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
       }, (fn) => {
         killFn = fn;
       }, (beadId) => {
@@ -19014,17 +19126,24 @@ class Supervisor {
         backend: result.backend,
         bead_id: result.beadId
       });
-      appendEvent({ type: "agent_end", elapsed_s: elapsed });
+      appendTimelineEvent(createRunCompleteEvent("COMPLETE", elapsed, {
+        model: result.model,
+        backend: result.backend,
+        bead_id: result.beadId
+      }));
       writeFileSync3(join7(this.readyDir(), id), "", "utf-8");
       return id;
     } catch (err) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const errorMsg = err?.message ?? String(err);
       this.updateStatus(id, {
         status: "error",
         elapsed_s: elapsed,
-        error: err?.message ?? String(err)
+        error: errorMsg
       });
-      appendEvent({ type: "error", message: err?.message ?? String(err) });
+      appendTimelineEvent(createRunCompleteEvent("ERROR", elapsed, {
+        error: errorMsg
+      }));
       throw err;
     } finally {
       process.removeListener("SIGTERM", sigtermHandler);
@@ -19032,10 +19151,10 @@ class Supervisor {
     }
   }
 }
-var JOB_TTL_DAYS, LOGGED_EVENTS;
+var JOB_TTL_DAYS;
 var init_supervisor = __esm(() => {
+  init_timeline_events();
   JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
-  LOGGED_EVENTS = new Set(["thinking", "toolcall", "tool_execution_end", "done"]);
 });
 
 // src/cli/run.ts
@@ -19215,6 +19334,85 @@ var init_run = __esm(() => {
   init_supervisor();
 });
 
+// src/cli/format-helpers.ts
+function formatTime(t) {
+  return new Date(t).toISOString().slice(11, 19);
+}
+function formatElapsed(seconds) {
+  if (seconds < 60)
+    return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+function getEventLabel(type) {
+  return EVENT_LABELS[type] ?? type.slice(0, 5).toUpperCase();
+}
+
+class JobColorMap {
+  colors = new Map;
+  nextIdx = 0;
+  getColor(jobId) {
+    let color = this.colors.get(jobId);
+    if (!color) {
+      color = JOB_COLORS[this.nextIdx % JOB_COLORS.length];
+      this.colors.set(jobId, color);
+      this.nextIdx++;
+    }
+    return color;
+  }
+  get(jobId) {
+    return this.getColor(jobId);
+  }
+  has(jobId) {
+    return this.colors.has(jobId);
+  }
+  get size() {
+    return this.colors.size;
+  }
+}
+function formatEventLine(event, colorize) {
+  const ts = dim6(formatTime(event.t));
+  const label = getEventLabel(event.type).padEnd(5);
+  let detail = "";
+  if (event.type === "meta") {
+    detail = `${event.model} ${dim6(event.backend)}`;
+  } else if (event.type === "tool") {
+    detail = event.tool;
+    if (event.phase === "end") {
+      detail += event.is_error ? ` ${red("✗")}` : ` ${dim6("✓")}`;
+    }
+  } else if (event.type === "run_complete") {
+    detail = `${colorize(event.status)} ${dim6(formatElapsed(event.elapsed_s))}`;
+    if (event.error) {
+      detail += ` ${red(event.error)}`;
+    }
+  } else if (event.type === "done" || event.type === "agent_end") {
+    detail = `${colorize("COMPLETE")} ${dim6(formatElapsed(event.elapsed_s ?? 0))}`;
+  } else if (event.type === "run_start") {
+    detail = event.specialist;
+    if (event.bead_id) {
+      detail += ` ${dim6(`[${event.bead_id}]`)}`;
+    }
+  }
+  return `${ts} ${colorize(bold6(label))} ${detail}`;
+}
+var dim6 = (s) => `\x1B[2m${s}\x1B[0m`, bold6 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var init_format_helpers = __esm(() => {
+  JOB_COLORS = [cyan4, yellow5, magenta, green5, blue, red];
+  EVENT_LABELS = {
+    run_start: "START",
+    meta: "META",
+    thinking: "THINK",
+    tool: "TOOL",
+    text: "TEXT",
+    run_complete: "DONE",
+    done: "DONE",
+    agent_end: "DONE",
+    error: "ERR"
+  };
+});
+
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
@@ -19230,7 +19428,7 @@ function warn(msg) {
   console.log(`  ${yellow5("○")} ${msg}`);
 }
 function fail(msg) {
-  console.log(`  ${red("✗")} ${msg}`);
+  console.log(`  ${red2("✗")} ${msg}`);
 }
 function info(msg) {
   console.log(`  ${dim6(msg)}`);
@@ -19251,7 +19449,7 @@ function cmd(bin, args) {
 function isInstalled(bin) {
   return spawnSync5("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
-function formatElapsed(s) {
+function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
     return "...";
   const m = Math.floor(s.elapsed_s / 60);
@@ -19261,11 +19459,11 @@ function formatElapsed(s) {
 function statusColor(status) {
   switch (status) {
     case "running":
-      return cyan4(status);
+      return cyan5(status);
     case "done":
       return green5(status);
     case "error":
-      return red(status);
+      return red2(status);
     case "starting":
       return yellow5(status);
     default:
@@ -19354,7 +19552,7 @@ ${bold6("specialists status")}
     for (const s of allSpecialists) {
       const staleness = stalenessMap[s.name];
       if (staleness === "AGED") {
-        warn(`${s.name}  ${red("AGED")}  ${dim6(s.scope)}`);
+        warn(`${s.name}  ${red2("AGED")}  ${dim6(s.scope)}`);
       } else if (staleness === "STALE") {
         warn(`${s.name}  ${yellow5("STALE")}  ${dim6(s.scope)}`);
       }
@@ -19390,17 +19588,18 @@ ${bold6("specialists status")}
   if (jobs.length > 0) {
     section("Active Jobs");
     for (const job of jobs) {
-      const elapsed = formatElapsed(job);
-      const detail = job.status === "error" ? red(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim6(`tool: ${job.current_tool}`) : dim6(job.current_event ?? "");
+      const elapsed = formatElapsed2(job);
+      const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim6(`tool: ${job.current_tool}`) : dim6(job.current_event ?? "");
       console.log(`  ${dim6(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
     }
   }
   console.log();
 }
-var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`;
+var red2 = (s) => `\x1B[31m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_status = __esm(() => {
   init_loader();
   init_supervisor();
+  init_format_helpers();
 });
 
 // src/cli/result.ts
@@ -19429,7 +19628,7 @@ async function run9() {
     process.exit(1);
   }
   if (status.status === "error") {
-    process.stderr.write(`${red2(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
+    process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
 `);
     process.exit(1);
   }
@@ -19440,9 +19639,106 @@ async function run9() {
   }
   process.stdout.write(readFileSync4(resultPath, "utf-8"));
 }
-var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`;
+var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
+});
+
+// src/specialist/timeline-query.ts
+import { existsSync as existsSync8, readdirSync as readdirSync2, readFileSync as readFileSync5 } from "node:fs";
+import { join as join11 } from "node:path";
+function readJobEvents(jobDir) {
+  const eventsPath = join11(jobDir, "events.jsonl");
+  if (!existsSync8(eventsPath))
+    return [];
+  const content = readFileSync5(eventsPath, "utf-8");
+  const lines = content.split(`
+`).filter(Boolean);
+  const events = [];
+  for (const line of lines) {
+    const event = parseTimelineEvent(line);
+    if (event)
+      events.push(event);
+  }
+  events.sort(compareTimelineEvents);
+  return events;
+}
+function readAllJobEvents(jobsDir) {
+  if (!existsSync8(jobsDir))
+    return [];
+  const batches = [];
+  const entries = readdirSync2(jobsDir);
+  for (const entry of entries) {
+    const jobDir = join11(jobsDir, entry);
+    try {
+      const stat2 = __require("node:fs").statSync(jobDir);
+      if (!stat2.isDirectory())
+        continue;
+    } catch {
+      continue;
+    }
+    const jobId = entry;
+    const statusPath = join11(jobDir, "status.json");
+    let specialist = "unknown";
+    let beadId;
+    if (existsSync8(statusPath)) {
+      try {
+        const status = JSON.parse(readFileSync5(statusPath, "utf-8"));
+        specialist = status.specialist ?? "unknown";
+        beadId = status.bead_id;
+      } catch {}
+    }
+    const events = readJobEvents(jobDir);
+    if (events.length > 0) {
+      batches.push({ jobId, specialist, beadId, events });
+    }
+  }
+  return batches;
+}
+function mergeTimelineEvents(batches) {
+  const merged = [];
+  for (const batch of batches) {
+    for (const event of batch.events) {
+      merged.push({
+        jobId: batch.jobId,
+        specialist: batch.specialist,
+        beadId: batch.beadId,
+        event
+      });
+    }
+  }
+  merged.sort((a, b) => compareTimelineEvents(a.event, b.event));
+  return merged;
+}
+function filterTimelineEvents(merged, filter) {
+  let result = merged;
+  if (filter.since !== undefined) {
+    result = result.filter(({ event }) => event.t >= filter.since);
+  }
+  if (filter.jobId !== undefined) {
+    result = result.filter(({ jobId }) => jobId === filter.jobId);
+  }
+  if (filter.specialist !== undefined) {
+    result = result.filter(({ specialist }) => specialist === filter.specialist);
+  }
+  if (filter.limit !== undefined && filter.limit > 0) {
+    result = result.slice(0, filter.limit);
+  }
+  return result;
+}
+function queryTimeline(jobsDir, filter = {}) {
+  let batches = readAllJobEvents(jobsDir);
+  if (filter.jobId !== undefined) {
+    batches = batches.filter((b) => b.jobId === filter.jobId);
+  }
+  if (filter.specialist !== undefined) {
+    batches = batches.filter((b) => b.specialist === filter.specialist);
+  }
+  const merged = mergeTimelineEvents(batches);
+  return filterTimelineEvents(merged, filter);
+}
+var init_timeline_query = __esm(() => {
+  init_timeline_events();
 });
 
 // src/cli/feed.ts
@@ -19450,250 +19746,44 @@ var exports_feed = {};
 __export(exports_feed, {
   run: () => run10
 });
-import { existsSync as existsSync8, readFileSync as readFileSync5, readdirSync as readdirSync2, watch, watchFile, unwatchFile } from "node:fs";
-import { join as join11 } from "node:path";
-function formatEvent(line) {
-  try {
-    const e = JSON.parse(line);
-    const ts = new Date(e.t).toISOString().slice(11, 19);
-    const type = e.type ?? "?";
-    const extra = e.tool ? ` ${cyan5(e.tool)}` : e.model ? ` ${dim8(e.model)}` : e.message ? ` ${red3(e.message)}` : "";
-    return `${dim8(ts)}  ${type}${extra}`;
-  } catch {
-    return line;
+import { existsSync as existsSync9 } from "node:fs";
+import { join as join12 } from "node:path";
+function parseSince(value) {
+  if (value.includes("T") || value.includes("-")) {
+    return new Date(value).getTime();
   }
-}
-function createSupervisor(jobsDir) {
-  return new Supervisor({ runner: null, runOptions: null, jobsDir });
-}
-function statusPath(jobsDir, jobId) {
-  return join11(jobsDir, jobId, "status.json");
-}
-function eventsPath(jobsDir, jobId) {
-  return join11(jobsDir, jobId, "events.jsonl");
-}
-function beadStateForStatus(status) {
-  switch (status) {
-    case "done":
-      return "COMPLETE";
-    case "error":
-      return "ERROR";
-    default:
-      return (status ?? "UNKNOWN").toUpperCase();
+  const match = value.match(/^(\d+)([smhd])$/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const unit = match[2];
+    const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+    return Date.now() - num * multipliers[unit];
   }
+  return;
 }
-function formatDateTime(ts) {
-  if (!ts)
-    return "unknown";
-  const d = new Date(ts);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
-function formatPrefix(job) {
-  const started = dim8(`[${formatDateTime(job.startedAtMs)}]`);
-  const id = job.colorize(`[${job.id}]`);
-  const specialist = job.specialist ?? "unknown";
-  const bead = job.beadId ? ` ${dim8(`[bead: ${job.beadId}]`)}` : "";
-  return `${started} ${id} ${specialist}${bead}`;
-}
-function printLines(content, from, prefix) {
-  const lines = content.split(`
-`).filter(Boolean);
-  for (let i = from;i < lines.length; i++) {
-    const line = formatEvent(lines[i]);
-    console.log(prefix ? `${prefix}  ${line}` : line);
-  }
-  return lines.length;
-}
-function readStatus(supervisor, jobId) {
-  try {
-    return supervisor.readStatus(jobId);
-  } catch {
-    return null;
-  }
-}
-function emitSingleJobFinal(status) {
-  const finalMsg = status.status === "done" ? `
-${yellow6("Job complete.")} Run: specialists result ${status.id}` : `
-${red3(`Job ${status.status}.`)} ${status.error ?? ""}`;
-  process.stderr.write(finalMsg + `
-`);
-}
-async function followSingleJob(jobId, jobsDir) {
-  const supervisor = createSupervisor(jobsDir);
-  const filePath = eventsPath(jobsDir, jobId);
-  if (!existsSync8(filePath)) {
-    if (!readStatus(supervisor, jobId)) {
-      console.error(`No job found: ${jobId}`);
-      process.exit(1);
-    }
-    console.log(dim8("No events yet."));
-    return;
-  }
-  const content = readFileSync5(filePath, "utf-8");
-  let linesRead = printLines(content, 0);
-  const currentStatus = readStatus(supervisor, jobId);
-  if (!currentStatus || currentStatus.status !== "running" && currentStatus.status !== "starting") {
-    return;
-  }
-  process.stderr.write(dim8(`Following ${jobId}... (Ctrl+C to stop)
-`));
-  await new Promise((resolve) => {
-    const onChange = () => {
-      try {
-        if (existsSync8(filePath)) {
-          const updated = readFileSync5(filePath, "utf-8");
-          linesRead = printLines(updated, linesRead);
-        }
-        const status = readStatus(supervisor, jobId);
-        if (status && status.status !== "running" && status.status !== "starting") {
-          emitSingleJobFinal(status);
-          unwatchFile(filePath, onChange);
-          resolve();
-        }
-      } catch {}
-    };
-    watchFile(filePath, { interval: 500 }, onChange);
-  });
-}
-function allTrackedJobsDone(jobs) {
-  return jobs.size > 0 && [...jobs.values()].every((job) => job.done);
-}
-async function followAllJobs(jobsDir, forever) {
-  const supervisor = createSupervisor(jobsDir);
-  const jobs = new Map;
-  const cleanups = [];
-  let watcherClosed = false;
-  const stopAll = () => {
-    if (watcherClosed)
-      return;
-    watcherClosed = true;
-    for (const cleanup of cleanups)
-      cleanup();
-  };
-  const maybeResolve = (resolve) => {
-    if (!forever && allTrackedJobsDone(jobs)) {
-      stopAll();
-      resolve();
-    }
-  };
-  const attachJob = (jobId, resolve) => {
-    if (jobs.has(jobId))
-      return;
-    const job = {
-      id: jobId,
-      linesRead: 0,
-      done: false,
-      colorize: COLORS[jobs.size % COLORS.length]
-    };
-    jobs.set(jobId, job);
-    const refreshEvents = () => {
-      try {
-        if (!job.specialist && existsSync8(statusPath(jobsDir, jobId))) {
-          refreshStatus(false);
-        }
-        if (!job.specialist)
-          return;
-        const filePath2 = eventsPath(jobsDir, jobId);
-        if (!existsSync8(filePath2))
-          return;
-        const updated = readFileSync5(filePath2, "utf-8");
-        job.linesRead = printLines(updated, job.linesRead, formatPrefix(job));
-      } catch {}
-    };
-    const refreshStatus = (announce) => {
-      const status = readStatus(supervisor, jobId);
-      if (!status)
-        return;
-      const previous = job.status;
-      job.status = status.status;
-      job.specialist = status.specialist;
-      job.beadId = status.bead_id;
-      job.startedAtMs = status.started_at_ms;
-      job.done = status.status !== "running" && status.status !== "starting";
-      const changed = previous !== undefined && previous !== status.status;
-      if (announce && changed) {
-        const label = beadStateForStatus(status.status);
-        const banner = status.status === "done" ? green6(`=== ${formatPrefix(job)} ${label} ===`) : red3(`=== ${formatPrefix(job)} ${label}${status.error ? `: ${status.error}` : ""} ===`);
-        process.stderr.write(banner + `
-`);
-      }
-    };
-    refreshStatus(false);
-    refreshEvents();
-    if (job.done && !forever) {
-      maybeResolve(resolve);
-      return;
-    }
-    const filePath = eventsPath(jobsDir, jobId);
-    const statPath = statusPath(jobsDir, jobId);
-    const onStatusChange = () => {
-      refreshStatus(true);
-      maybeResolve(resolve);
-    };
-    watchFile(filePath, { interval: 500 }, refreshEvents);
-    watchFile(statPath, { interval: 500 }, onStatusChange);
-    cleanups.push(() => unwatchFile(filePath, refreshEvents));
-    cleanups.push(() => unwatchFile(statPath, onStatusChange));
-    maybeResolve(resolve);
-  };
-  await new Promise((resolve) => {
-    if (!existsSync8(jobsDir)) {
-      console.log(dim8("No jobs to follow."));
-      if (!forever) {
-        resolve();
-        return;
-      }
-    }
-    if (existsSync8(jobsDir)) {
-      const entries = readdirSync2(jobsDir).map((entry) => ({ entry, status: readStatus(supervisor, entry) })).sort((a, b) => (a.status?.started_at_ms ?? 0) - (b.status?.started_at_ms ?? 0));
-      for (const { entry } of entries) {
-        attachJob(entry, resolve);
-      }
-    }
-    if (!forever && allTrackedJobsDone(jobs)) {
-      resolve();
-      return;
-    }
-    if (jobs.size === 0) {
-      console.log(dim8(forever ? "Waiting for jobs..." : "No jobs to follow."));
-      if (!forever) {
-        resolve();
-        return;
-      }
-    } else {
-      process.stderr.write(dim8(`Following all jobs... (Ctrl+C to stop)
-`));
-    }
-    try {
-      const dirWatcher = watch(jobsDir, () => {
-        try {
-          for (const entry of readdirSync2(jobsDir)) {
-            const isNew = !jobs.has(entry);
-            attachJob(entry, resolve);
-            if (isNew)
-              process.stderr.write(cyan5(`=== discovered ${entry} ===
-`));
-          }
-        } catch {}
-      });
-      cleanups.push(() => dirWatcher.close());
-    } catch {}
-  });
-}
-async function run10() {
-  const argv = process.argv.slice(3);
+function parseArgs5(argv) {
   let jobId;
+  let specialist;
+  let since;
+  let limit = 100;
   let follow = false;
   let forever = false;
+  let json = false;
   for (let i = 0;i < argv.length; i++) {
     if (argv[i] === "--job" && argv[i + 1]) {
       jobId = argv[++i];
+      continue;
+    }
+    if (argv[i] === "--specialist" && argv[i + 1]) {
+      specialist = argv[++i];
+      continue;
+    }
+    if (argv[i] === "--since" && argv[i + 1]) {
+      since = parseSince(argv[++i]);
+      continue;
+    }
+    if (argv[i] === "--limit" && argv[i + 1]) {
+      limit = parseInt(argv[++i], 10);
       continue;
     }
     if (argv[i] === "--follow" || argv[i] === "-f") {
@@ -19704,39 +19794,132 @@ async function run10() {
       forever = true;
       continue;
     }
+    if (argv[i] === "--json") {
+      json = true;
+      continue;
+    }
     if (!jobId && !argv[i].startsWith("--"))
       jobId = argv[i];
   }
-  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
-  if (!jobId && follow) {
-    await followAllJobs(jobsDir, forever);
-    return;
-  }
-  if (!jobId) {
-    console.error("Usage: specialists feed --job <job-id> [--follow]");
-    process.exit(1);
-  }
-  if (!follow) {
-    const filePath = eventsPath(jobsDir, jobId);
-    if (!existsSync8(filePath)) {
-      const supervisor = createSupervisor(jobsDir);
-      if (!readStatus(supervisor, jobId)) {
-        console.error(`No job found: ${jobId}`);
-        process.exit(1);
-      }
-      console.log(dim8("No events yet."));
-      return;
-    }
-    const content = readFileSync5(filePath, "utf-8");
-    printLines(content, 0);
-    return;
-  }
-  await followSingleJob(jobId, jobsDir);
+  return { jobId, specialist, since, limit, follow, forever, json };
 }
-var dim8 = (s) => `\x1B[2m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, COLORS;
+function printSnapshot(merged, options) {
+  if (merged.length === 0) {
+    if (!options.json)
+      console.log(dim6("No events found."));
+    return;
+  }
+  const colorMap = new JobColorMap;
+  if (options.json) {
+    for (const { jobId, specialist, beadId, event } of merged) {
+      console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
+    }
+    return;
+  }
+  for (const { jobId, event } of merged) {
+    const colorize = colorMap.get(jobId);
+    console.log(formatEventLine(event, colorize));
+  }
+}
+function isCompletionEvent(event) {
+  return isRunCompleteEvent(event) || event.type === "done" || event.type === "agent_end";
+}
+async function followMerged(jobsDir, options) {
+  const colorMap = new JobColorMap;
+  const lastSeenT = new Map;
+  const completedJobs = new Set;
+  const filteredBatches = () => readAllJobEvents(jobsDir).filter((batch) => !options.jobId || batch.jobId === options.jobId).filter((batch) => !options.specialist || batch.specialist === options.specialist);
+  const initial = queryTimeline(jobsDir, {
+    jobId: options.jobId,
+    specialist: options.specialist,
+    since: options.since,
+    limit: options.limit
+  });
+  printSnapshot(initial, { ...options, json: options.json });
+  for (const batch of filteredBatches()) {
+    if (batch.events.length > 0) {
+      const maxT = Math.max(...batch.events.map((event) => event.t));
+      lastSeenT.set(batch.jobId, maxT);
+    }
+    if (batch.events.some(isCompletionEvent)) {
+      completedJobs.add(batch.jobId);
+    }
+  }
+  const initialBatchCount = filteredBatches().length;
+  if (!options.forever && initialBatchCount > 0 && completedJobs.size === initialBatchCount) {
+    if (!options.json) {
+      process.stderr.write(dim6(`All jobs complete.
+`));
+    }
+    return;
+  }
+  if (!options.json) {
+    process.stderr.write(dim6(`Following... (Ctrl+C to stop)
+`));
+  }
+  await new Promise((resolve) => {
+    const interval = setInterval(() => {
+      const batches = filteredBatches();
+      const newEvents = [];
+      for (const batch of batches) {
+        const lastT = lastSeenT.get(batch.jobId) ?? 0;
+        for (const event of batch.events) {
+          if (event.t > lastT) {
+            newEvents.push({
+              jobId: batch.jobId,
+              specialist: batch.specialist,
+              beadId: batch.beadId,
+              event
+            });
+          }
+        }
+        if (batch.events.length > 0) {
+          const maxT = Math.max(...batch.events.map((e) => e.t));
+          lastSeenT.set(batch.jobId, maxT);
+        }
+        if (batch.events.some(isCompletionEvent)) {
+          completedJobs.add(batch.jobId);
+        }
+      }
+      newEvents.sort((a, b) => a.event.t - b.event.t);
+      for (const { jobId, specialist, beadId, event } of newEvents) {
+        if (options.json) {
+          console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
+        } else {
+          const colorize = colorMap.get(jobId);
+          console.log(formatEventLine(event, colorize));
+        }
+      }
+      if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, 500);
+  });
+}
+async function run10() {
+  const options = parseArgs5(process.argv.slice(3));
+  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  if (!existsSync9(jobsDir)) {
+    console.log(dim6("No jobs directory found."));
+    return;
+  }
+  if (options.follow) {
+    await followMerged(jobsDir, options);
+    return;
+  }
+  const merged = queryTimeline(jobsDir, {
+    jobId: options.jobId,
+    specialist: options.specialist,
+    since: options.since,
+    limit: options.limit
+  });
+  printSnapshot(merged, options);
+}
 var init_feed = __esm(() => {
-  init_supervisor();
-  COLORS = [cyan5, yellow6, magenta, green6, blue, red3];
+  init_timeline_events();
+  init_timeline_query();
+  init_format_helpers();
 });
 
 // src/cli/stop.ts
@@ -19744,14 +19927,14 @@ var exports_stop = {};
 __export(exports_stop, {
   run: () => run11
 });
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 async function run11() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -19759,12 +19942,12 @@ async function run11() {
     process.exit(1);
   }
   if (status.status === "done" || status.status === "error") {
-    process.stderr.write(`${dim9(`Job ${jobId} is already ${status.status}.`)}
+    process.stderr.write(`${dim8(`Job ${jobId} is already ${status.status}.`)}
 `);
     return;
   }
   if (!status.pid) {
-    process.stderr.write(`${red4(`No PID recorded for job ${jobId}.`)}
+    process.stderr.write(`${red5(`No PID recorded for job ${jobId}.`)}
 `);
     process.exit(1);
   }
@@ -19774,16 +19957,16 @@ async function run11() {
 `);
   } catch (err) {
     if (err.code === "ESRCH") {
-      process.stderr.write(`${red4(`Process ${status.pid} not found.`)} Job may have already completed.
+      process.stderr.write(`${red5(`Process ${status.pid} not found.`)} Job may have already completed.
 `);
     } else {
-      process.stderr.write(`${red4("Error:")} ${err.message}
+      process.stderr.write(`${red5("Error:")} ${err.message}
 `);
       process.exit(1);
     }
   }
 }
-var green7 = (s) => `\x1B[32m${s}\x1B[0m`, red4 = (s) => `\x1B[31m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green7 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
 });
@@ -19796,11 +19979,11 @@ __export(exports_quickstart, {
 function section2(title) {
   const bar = "─".repeat(60);
   return `
-${bold7(cyan6(title))}
-${dim10(bar)}`;
+${bold7(cyan7(title))}
+${dim9(bar)}`;
 }
 function cmd2(s) {
-  return yellow7(s);
+  return yellow6(s);
 }
 function flag(s) {
   return green8(s);
@@ -19809,14 +19992,14 @@ async function run12() {
   const lines = [
     "",
     bold7("specialists  ·  Quick Start Guide"),
-    dim10("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    dim9("One MCP server. Multiple AI backends. Intelligent orchestration."),
     ""
   ];
   lines.push(section2("1. Installation"));
   lines.push("");
   lines.push(`  ${cmd2("npm install -g @jaggerxtrm/specialists")}    # install globally`);
   lines.push(`  ${cmd2("specialists install")}                       # project setup:`);
-  lines.push(`  ${dim10("                                            #   checks pi · bd · xt, then wires MCP + hooks")}`);
+  lines.push(`  ${dim9("                                            #   checks pi · bd · xt, then wires MCP + hooks")}`);
   lines.push("");
   lines.push(`  Verify everything is healthy:`);
   lines.push(`  ${cmd2("specialists status")}                        # shows pi, beads, MCP, active jobs`);
@@ -19827,9 +20010,9 @@ async function run12() {
   lines.push(`  ${cmd2("specialists init")}                          # creates specialists/, .specialists/, AGENTS.md`);
   lines.push("");
   lines.push(`  What this creates:`);
-  lines.push(`  ${dim10("specialists/")}       — put your .specialist.yaml files here`);
-  lines.push(`  ${dim10(".specialists/")}      — runtime data (jobs/, ready/) — gitignored`);
-  lines.push(`  ${dim10("AGENTS.md")}          — context block injected into Claude sessions`);
+  lines.push(`  ${dim9("specialists/")}       — put your .specialist.yaml files here`);
+  lines.push(`  ${dim9(".specialists/")}      — runtime data (jobs/, ready/) — gitignored`);
+  lines.push(`  ${dim9("AGENTS.md")}          — context block injected into Claude sessions`);
   lines.push("");
   lines.push(section2("3. Discover Specialists"));
   lines.push("");
@@ -19847,17 +20030,17 @@ async function run12() {
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
   lines.push(`  ${bold7("Foreground")} (streams output to stdout):`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"Review src/api.ts for security issues"')}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"Review src/api.ts for security issues"')}`);
   lines.push("");
   lines.push(`  ${bold7("Background")} (returns a job ID immediately):`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"..."')} ${flag("--background")}`);
-  lines.push(`  ${dim10("  # → Job started: job_a1b2c3d4")}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"..."')} ${flag("--background")}`);
+  lines.push(`  ${dim9("  # → Job started: job_a1b2c3d4")}`);
   lines.push("");
   lines.push(`  Override model for one run:`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim10("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim10('"..."')}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim9("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim9('"..."')}`);
   lines.push("");
   lines.push(`  Run without beads issue tracking:`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--no-beads")} ${flag("--prompt")} ${dim10('"..."')}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--no-beads")} ${flag("--prompt")} ${dim9('"..."')}`);
   lines.push("");
   lines.push(`  Pipe a prompt from stdin:`);
   lines.push(`  ${cmd2("cat my-brief.md | specialists run code-review")}`);
@@ -19874,22 +20057,22 @@ async function run12() {
   lines.push(`  ${bold7("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
-  lines.push(`  ${bold7("Job files")} in ${dim10(".specialists/jobs/<job-id>/")}:`);
-  lines.push(`  ${dim10("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
-  lines.push(`  ${dim10("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
-  lines.push(`  ${dim10("result.txt")}    — final output (written when status=done)`);
+  lines.push(`  ${bold7("Job files")} in ${dim9(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${dim9("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
+  lines.push(`  ${dim9("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
+  lines.push(`  ${dim9("result.txt")}    — final output (written when status=done)`);
   lines.push("");
   lines.push(section2("6. Editing Specialists"));
   lines.push("");
   lines.push(`  Change a field without opening the YAML manually:`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("anthropic/claude-sonnet-4-6")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--description")} ${dim10('"Updated description"')}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--timeout")} ${dim10("120000")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--permission")} ${dim10("HIGH")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--tags")} ${dim10("analysis,security,review")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim9("anthropic/claude-sonnet-4-6")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--description")} ${dim9('"Updated description"')}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--timeout")} ${dim9("120000")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--permission")} ${dim9("HIGH")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--tags")} ${dim9("analysis,security,review")}`);
   lines.push("");
   lines.push(`  Preview without writing:`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("...")} ${flag("--dry-run")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim9("...")} ${flag("--dry-run")}`);
   lines.push("");
   lines.push(section2("7. .specialist.yaml Schema"));
   lines.push("");
@@ -19936,21 +20119,21 @@ async function run12() {
     "    priority: 2                  # 0=critical … 4=backlog"
   ];
   for (const l of schemaLines) {
-    lines.push(`  ${dim10(l)}`);
+    lines.push(`  ${dim9(l)}`);
   }
   lines.push("");
   lines.push(section2("8. Hook System"));
   lines.push("");
-  lines.push(`  Specialists emits lifecycle events to ${dim10(".specialists/trace.jsonl")}:`);
+  lines.push(`  Specialists emits lifecycle events to ${dim9(".specialists/trace.jsonl")}:`);
   lines.push("");
   lines.push(`  ${bold7("Hook point")}              ${bold7("When fired")}`);
-  lines.push(`  ${yellow7("specialist:start")}       before the agent session begins`);
-  lines.push(`  ${yellow7("specialist:token")}       on each streamed token (delta)`);
-  lines.push(`  ${yellow7("specialist:done")}        after successful completion`);
-  lines.push(`  ${yellow7("specialist:error")}       on failure or timeout`);
+  lines.push(`  ${yellow6("specialist:start")}       before the agent session begins`);
+  lines.push(`  ${yellow6("specialist:token")}       on each streamed token (delta)`);
+  lines.push(`  ${yellow6("specialist:done")}        after successful completion`);
+  lines.push(`  ${yellow6("specialist:error")}       on failure or timeout`);
   lines.push("");
   lines.push(`  Each event line in trace.jsonl:`);
-  lines.push(`  ${dim10('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
+  lines.push(`  ${dim9('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
   lines.push("");
   lines.push(`  Tail the trace file to observe all activity:`);
   lines.push(`  ${cmd2("tail -f .specialists/trace.jsonl | jq .")}`);
@@ -19981,14 +20164,14 @@ async function run12() {
   lines.push(`  ${bold7("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
-  lines.push(dim10("─".repeat(62)));
-  lines.push(`  ${dim10("specialists help")}     command list         ${dim10("specialists <cmd> --help")}   per-command flags`);
-  lines.push(`  ${dim10("specialists status")}   health check         ${dim10("specialists models")}         available models`);
+  lines.push(dim9("─".repeat(62)));
+  lines.push(`  ${dim9("specialists help")}     command list         ${dim9("specialists <cmd> --help")}   per-command flags`);
+  lines.push(`  ${dim9("specialists status")}   health check         ${dim9("specialists models")}         available models`);
   lines.push("");
   console.log(lines.join(`
 `));
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
@@ -19996,22 +20179,22 @@ __export(exports_doctor, {
   run: () => run13
 });
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync9, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
+import { join as join14 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green9("✓")} ${msg}`);
 }
 function warn2(msg) {
-  console.log(`  ${yellow8("○")} ${msg}`);
+  console.log(`  ${yellow7("○")} ${msg}`);
 }
 function fail2(msg) {
-  console.log(`  ${red5("✗")} ${msg}`);
+  console.log(`  ${red6("✗")} ${msg}`);
 }
 function fix(msg) {
-  console.log(`    ${dim11("→ fix:")} ${yellow8(msg)}`);
+  console.log(`    ${dim10("→ fix:")} ${yellow7(msg)}`);
 }
 function hint(msg) {
-  console.log(`    ${dim11(msg)}`);
+  console.log(`    ${dim10(msg)}`);
 }
 function section3(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
@@ -20026,7 +20209,7 @@ function isInstalled2(bin) {
   return spawnSync6("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync9(path))
+  if (!existsSync10(path))
     return null;
   try {
     return JSON.parse(readFileSync6(path, "utf8"));
@@ -20051,7 +20234,7 @@ function checkPi() {
     fix("pi config   (add at least one API key)");
     return false;
   }
-  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim11(`(${[...providers].join(", ")})`)}`);
+  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim10(`(${[...providers].join(", ")})`)}`);
   return true;
 }
 function checkBd() {
@@ -20061,8 +20244,8 @@ function checkBd() {
     fix("install beads (bd) first");
     return false;
   }
-  ok3(`bd installed  ${dim11(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync9(join13(CWD, ".beads")))
+  ok3(`bd installed  ${dim10(sp("bd", ["--version"]).stdout || "")}`);
+  if (existsSync10(join14(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -20075,16 +20258,16 @@ function checkXt() {
     fix("install xtrm-tools first");
     return false;
   }
-  ok3(`xt installed  ${dim11(sp("xt", ["--version"]).stdout || "")}`);
+  ok3(`xt installed  ${dim10(sp("xt", ["--version"]).stdout || "")}`);
   return true;
 }
 function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join13(HOOKS_DIR, name);
-    if (!existsSync9(dest)) {
-      fail2(`${name}  ${red5("missing")}`);
+    const dest = join14(HOOKS_DIR, name);
+    if (!existsSync10(dest)) {
+      fail2(`${name}  ${red6("missing")}`);
       fix("specialists install");
       allPresent = false;
     } else {
@@ -20103,7 +20286,7 @@ function checkHooks() {
     ...hooks.SessionStart ?? []
   ].flatMap((entry) => (entry.hooks ?? []).map((h) => h.command ?? "")));
   for (const name of HOOK_NAMES) {
-    const expected = join13(HOOKS_DIR, name);
+    const expected = join14(HOOKS_DIR, name);
     if (!wiredCommands.has(expected)) {
       warn2(`${name} not wired in settings.json`);
       fix("specialists install");
@@ -20128,18 +20311,18 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join13(CWD, ".specialists");
-  const jobsDir = join13(rootDir, "jobs");
-  const readyDir = join13(rootDir, "ready");
+  const rootDir = join14(CWD, ".specialists");
+  const jobsDir = join14(rootDir, "jobs");
+  const readyDir = join14(rootDir, "ready");
   let allOk = true;
-  if (!existsSync9(rootDir)) {
+  if (!existsSync10(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync9(subDir)) {
+      if (!existsSync10(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
         mkdirSync3(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
@@ -20152,8 +20335,8 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join13(CWD, ".specialists", "jobs");
-  if (!existsSync9(jobsDir)) {
+  const jobsDir = join14(CWD, ".specialists", "jobs");
+  if (!existsSync10(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -20171,11 +20354,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath2 = join13(jobsDir, jobId, "status.json");
-    if (!existsSync9(statusPath2))
+    const statusPath = join14(jobsDir, jobId, "status.json");
+    if (!existsSync10(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync6(statusPath2, "utf8"));
+      const status = JSON.parse(readFileSync6(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -20189,7 +20372,7 @@ function checkZombieJobs() {
             running++;
           else {
             zombies++;
-            warn2(`${jobId}  ${yellow8("ZOMBIE")}  ${dim11(`pid ${pid} not found, status=${status.status}`)}`);
+            warn2(`${jobId}  ${yellow7("ZOMBIE")}  ${dim10(`pid ${pid} not found, status=${status.status}`)}`);
             fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
           }
         }
@@ -20218,18 +20401,18 @@ ${bold8("specialists doctor")}
   if (allOk) {
     console.log(`  ${green9("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
   } else {
-    console.log(`  ${yellow8("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
-    console.log(`  ${dim11("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
+    console.log(`  ${yellow7("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
+    console.log(`  ${dim10("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join13(CWD, ".claude");
-  HOOKS_DIR = join13(CLAUDE_DIR, "hooks");
-  SETTINGS_FILE = join13(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join13(CWD, ".mcp.json");
+  CLAUDE_DIR = join14(CWD, ".claude");
+  HOOKS_DIR = join14(CLAUDE_DIR, "hooks");
+  SETTINGS_FILE = join14(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join14(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -20241,27 +20424,27 @@ var exports_setup = {};
 __export(exports_setup, {
   run: () => run14
 });
-import { existsSync as existsSync10, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join14, resolve } from "node:path";
+import { join as join15, resolve } from "node:path";
 function ok4(msg) {
   console.log(`  ${green10("✓")} ${msg}`);
 }
 function skip2(msg) {
-  console.log(`  ${yellow9("○")} ${msg}`);
+  console.log(`  ${yellow8("○")} ${msg}`);
 }
 function resolveTarget(target) {
   switch (target) {
     case "global":
-      return join14(homedir3(), ".claude", "CLAUDE.md");
+      return join15(homedir3(), ".claude", "CLAUDE.md");
     case "agents":
-      return join14(process.cwd(), "AGENTS.md");
+      return join15(process.cwd(), "AGENTS.md");
     case "project":
     default:
-      return join14(process.cwd(), "CLAUDE.md");
+      return join15(process.cwd(), "CLAUDE.md");
   }
 }
-function parseArgs5() {
+function parseArgs6() {
   const argv = process.argv.slice(3);
   let target = "project";
   let dryRun = false;
@@ -20287,29 +20470,29 @@ function parseArgs5() {
   return { target, dryRun };
 }
 async function run14() {
-  const { target, dryRun } = parseArgs5();
+  const { target, dryRun } = parseArgs6();
   const filePath = resolve(resolveTarget(target));
   const label = target === "global" ? "~/.claude/CLAUDE.md" : filePath.replace(process.cwd() + "/", "");
   console.log(`
 ${bold9("specialists setup")}
 `);
-  console.log(`  Target: ${yellow9(label)}${dryRun ? dim12("  (dry-run)") : ""}
+  console.log(`  Target: ${yellow8(label)}${dryRun ? dim11("  (dry-run)") : ""}
 `);
-  if (existsSync10(filePath)) {
+  if (existsSync11(filePath)) {
     const existing = readFileSync7(filePath, "utf8");
     if (existing.includes(MARKER)) {
       skip2(`${label} already contains Specialists Workflow section`);
       console.log(`
-  ${dim12("To force-update, remove the ## Specialists Workflow section and re-run.")}
+  ${dim11("To force-update, remove the ## Specialists Workflow section and re-run.")}
 `);
       return;
     }
     if (dryRun) {
-      console.log(dim12("─".repeat(60)));
-      console.log(dim12("Would append to existing file:"));
+      console.log(dim11("─".repeat(60)));
+      console.log(dim11("Would append to existing file:"));
       console.log("");
       console.log(WORKFLOW_BLOCK);
-      console.log(dim12("─".repeat(60)));
+      console.log(dim11("─".repeat(60)));
       return;
     }
     const separator = existing.trimEnd().endsWith(`
@@ -20321,24 +20504,24 @@ ${bold9("specialists setup")}
     ok4(`Appended Specialists Workflow section to ${label}`);
   } else {
     if (dryRun) {
-      console.log(dim12("─".repeat(60)));
-      console.log(dim12(`Would create ${label}:`));
+      console.log(dim11("─".repeat(60)));
+      console.log(dim11(`Would create ${label}:`));
       console.log("");
       console.log(WORKFLOW_BLOCK);
-      console.log(dim12("─".repeat(60)));
+      console.log(dim11("─".repeat(60)));
       return;
     }
     writeFileSync4(filePath, WORKFLOW_BLOCK, "utf8");
     ok4(`Created ${label} with Specialists Workflow section`);
   }
   console.log("");
-  console.log(`  ${dim12("Next steps:")}`);
+  console.log(`  ${dim11("Next steps:")}`);
   console.log(`  • Restart Claude Code to pick up the new context`);
-  console.log(`  • Run ${yellow9("specialists list")} to see available specialists`);
-  console.log(`  • Run ${yellow9("specialist_init")} in a new session to bootstrap context`);
+  console.log(`  • Run ${yellow8("specialists list")} to see available specialists`);
+  console.log(`  • Run ${yellow8("specialist_init")} in a new session to bootstrap context`);
   console.log("");
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
 
 > Injected by \`specialists setup\`. Keep this section — agents use it for context.
 
@@ -20412,8 +20595,8 @@ function formatGroup(label, entries) {
   const colWidth = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return [
     "",
-    bold10(cyan7(label)),
-    ...entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(colWidth)}    ${dim13(desc)}`)
+    bold10(cyan8(label)),
+    ...entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(colWidth)}    ${dim12(desc)}`)
   ];
 }
 async function run15() {
@@ -20421,7 +20604,7 @@ async function run15() {
     "",
     bold10("specialists <command> [options]"),
     "",
-    dim13("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    dim12("One MCP server. Multiple AI backends. Intelligent orchestration."),
     ...formatGroup("Setup", SETUP),
     ...formatGroup("Discovery", DISCOVERY),
     ...formatGroup("Running", RUNNING),
@@ -20429,14 +20612,14 @@ async function run15() {
     ...formatGroup("Other", OTHER),
     ...formatGroup("xtrm Worktree", WORKTREE),
     "",
-    dim13("Run 'specialists <command> --help' for command-specific options."),
-    dim13("Run 'specialists quickstart' for a full getting-started guide."),
+    dim12("Run 'specialists <command> --help' for command-specific options."),
+    dim12("Run 'specialists quickstart' for a full getting-started guide."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, SETUP, DISCOVERY, RUNNING, JOBS, OTHER, WORKTREE;
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, cyan8 = (s) => `\x1B[36m${s}\x1B[0m`, SETUP, DISCOVERY, RUNNING, JOBS, OTHER, WORKTREE;
 var init_help = __esm(() => {
   SETUP = [
     ["install", "Project installer: prereq check, MCP registration, specialists hooks"],
@@ -20455,7 +20638,7 @@ var init_help = __esm(() => {
     ["edit", "Edit a specialist field  (e.g. --model, --description)"]
   ];
   JOBS = [
-    ["feed", "Tail job events or follow all jobs with -f [--forever]"],
+    ["feed", "Unified timeline: --since, --limit, --specialist, --job, --follow, --json"],
     ["result", "Print result of a background job"],
     ["stop", "Send SIGTERM to a running background job"]
   ];
@@ -20472,7 +20655,7 @@ var init_help = __esm(() => {
   ];
 });
 
-// ../../../node_modules/zod/v4/core/core.js
+// node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
   status: "aborted"
 });
@@ -20532,7 +20715,7 @@ function config(newConfig) {
     Object.assign(globalConfig, newConfig);
   return globalConfig;
 }
-// ../../../node_modules/zod/v4/core/util.js
+// node_modules/zod/v4/core/util.js
 var exports_util = {};
 __export(exports_util, {
   unwrapMessage: () => unwrapMessage,
@@ -21046,7 +21229,7 @@ class Class {
   constructor(..._args) {}
 }
 
-// ../../../node_modules/zod/v4/core/errors.js
+// node_modules/zod/v4/core/errors.js
 var initializer = (inst, def) => {
   inst.name = "$ZodError";
   Object.defineProperty(inst, "_zod", {
@@ -21120,7 +21303,7 @@ function formatError(error, _mapper) {
   return fieldErrors;
 }
 
-// ../../../node_modules/zod/v4/core/parse.js
+// node_modules/zod/v4/core/parse.js
 var _parse = (_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
   const result = schema._zod.run({ value, issues: [] }, ctx);
@@ -21169,7 +21352,7 @@ var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
   } : { success: true, data: result.value };
 };
 var safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
-// ../../../node_modules/zod/v4/core/regexes.js
+// node_modules/zod/v4/core/regexes.js
 var cuid = /^[cC][^\s-]{8,}$/;
 var cuid2 = /^[0-9a-z]+$/;
 var ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
@@ -21227,7 +21410,7 @@ var _null = /null/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
 
-// ../../../node_modules/zod/v4/core/checks.js
+// node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a;
   inst._zod ?? (inst._zod = {});
@@ -21611,7 +21794,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../../../node_modules/zod/v4/core/doc.js
+// node_modules/zod/v4/core/doc.js
 class Doc {
   constructor(args = []) {
     this.content = [];
@@ -21649,14 +21832,14 @@ class Doc {
   }
 }
 
-// ../../../node_modules/zod/v4/core/versions.js
+// node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 0,
   patch: 0
 };
 
-// ../../../node_modules/zod/v4/core/schemas.js
+// node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a;
   inst ?? (inst = {});
@@ -22887,7 +23070,7 @@ function handleRefineResult(result, payload, input, inst) {
     payload.issues.push(issue(_iss));
   }
 }
-// ../../../node_modules/zod/v4/locales/en.js
+// node_modules/zod/v4/locales/en.js
 var parsedType = (data) => {
   const t = typeof data;
   switch (t) {
@@ -23004,7 +23187,7 @@ function en_default2() {
     localeError: error()
   };
 }
-// ../../../node_modules/zod/v4/core/registries.js
+// node_modules/zod/v4/core/registries.js
 var $output = Symbol("ZodOutput");
 var $input = Symbol("ZodInput");
 
@@ -23054,7 +23237,7 @@ function registry() {
   return new $ZodRegistry;
 }
 var globalRegistry = /* @__PURE__ */ registry();
-// ../../../node_modules/zod/v4/core/api.js
+// node_modules/zod/v4/core/api.js
 function _string(Class2, params) {
   return new Class2({
     type: "string",
@@ -23489,7 +23672,7 @@ function _refine(Class2, fn, _params) {
   });
   return schema;
 }
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
@@ -23551,7 +23734,7 @@ function getLiteralValue(schema) {
     return directValue;
   return;
 }
-// ../../../node_modules/zod/v4/classic/iso.js
+// node_modules/zod/v4/classic/iso.js
 var exports_iso = {};
 __export(exports_iso, {
   time: () => time2,
@@ -23592,7 +23775,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../../../node_modules/zod/v4/classic/errors.js
+// node_modules/zod/v4/classic/errors.js
 var initializer2 = (inst, issues) => {
   $ZodError.init(inst, issues);
   inst.name = "ZodError";
@@ -23621,13 +23804,13 @@ var ZodRealError = $constructor("ZodError", initializer2, {
   Parent: Error
 });
 
-// ../../../node_modules/zod/v4/classic/parse.js
+// node_modules/zod/v4/classic/parse.js
 var parse3 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse3 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
 
-// ../../../node_modules/zod/v4/classic/schemas.js
+// node_modules/zod/v4/classic/schemas.js
 var ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   $ZodType.init(inst, def);
   inst.def = def;
@@ -24232,10 +24415,10 @@ function superRefine(fn) {
 function preprocess(fn, schema) {
   return pipe(transform(fn), schema);
 }
-// ../../../node_modules/zod/v4/classic/external.js
+// node_modules/zod/v4/classic/external.js
 config(en_default2());
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
@@ -25067,12 +25250,12 @@ class UrlElicitationRequiredError extends McpError {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/Options.js
+// node_modules/zod-to-json-schema/dist/esm/Options.js
 var ignoreOverride = Symbol("Let zodToJsonSchema decide on which parser to use");
 var defaultOptions = {
   name: undefined,
@@ -25105,7 +25288,7 @@ var getDefaultOptions = (options) => typeof options === "string" ? {
   ...defaultOptions,
   ...options
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/Refs.js
+// node_modules/zod-to-json-schema/dist/esm/Refs.js
 var getRefs = (options) => {
   const _options = getDefaultOptions(options);
   const currentPath = _options.name !== undefined ? [..._options.basePath, _options.definitionPath, _options.name] : _options.basePath;
@@ -25124,7 +25307,7 @@ var getRefs = (options) => {
     ]))
   };
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/errorMessages.js
+// node_modules/zod-to-json-schema/dist/esm/errorMessages.js
 function addErrorMessage(res, key, errorMessage, refs) {
   if (!refs?.errorMessages)
     return;
@@ -25139,7 +25322,7 @@ function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
   res[key] = value;
   addErrorMessage(res, key, errorMessage, refs);
 }
-// ../../../node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
+// node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
 var getRelativePath = (pathA, pathB) => {
   let i = 0;
   for (;i < pathA.length && i < pathB.length; i++) {
@@ -25148,7 +25331,7 @@ var getRelativePath = (pathA, pathB) => {
   }
   return [(pathA.length - i).toString(), ...pathB.slice(i)].join("/");
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/any.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/any.js
 function parseAnyDef(refs) {
   if (refs.target !== "openAi") {
     return {};
@@ -25164,7 +25347,7 @@ function parseAnyDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/array.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/array.js
 function parseArrayDef(def, refs) {
   const res = {
     type: "array"
@@ -25188,7 +25371,7 @@ function parseArrayDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
 function parseBigintDef(def, refs) {
   const res = {
     type: "integer",
@@ -25234,24 +25417,24 @@ function parseBigintDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
 function parseBooleanDef() {
   return {
     type: "boolean"
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
 function parseBrandedDef(_def, refs) {
   return parseDef(_def.type._def, refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
 var parseCatchDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/date.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/date.js
 function parseDateDef(def, refs, overrideDateStrategy) {
   const strategy = overrideDateStrategy ?? refs.dateStrategy;
   if (Array.isArray(strategy)) {
@@ -25296,7 +25479,7 @@ var integerDateParser = (def, refs) => {
   return res;
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/default.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/default.js
 function parseDefaultDef(_def, refs) {
   return {
     ...parseDef(_def.innerType._def, refs),
@@ -25304,12 +25487,12 @@ function parseDefaultDef(_def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
 function parseEffectsDef(_def, refs) {
   return refs.effectStrategy === "input" ? parseDef(_def.schema._def, refs) : parseAnyDef(refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
 function parseEnumDef(def) {
   return {
     type: "string",
@@ -25317,7 +25500,7 @@ function parseEnumDef(def) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
 var isJsonSchema7AllOfType = (type) => {
   if ("type" in type && type.type === "string")
     return false;
@@ -25359,7 +25542,7 @@ function parseIntersectionDef(def, refs) {
   } : undefined;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
 function parseLiteralDef(def, refs) {
   const parsedType2 = typeof def.value;
   if (parsedType2 !== "bigint" && parsedType2 !== "number" && parsedType2 !== "boolean" && parsedType2 !== "string") {
@@ -25379,7 +25562,7 @@ function parseLiteralDef(def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/string.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/string.js
 var emojiRegex2 = undefined;
 var zodPatterns = {
   cuid: /^[cC][^\s-]{8,}$/,
@@ -25676,7 +25859,7 @@ function stringifyRegExpWithFlags(regex, refs) {
   return pattern;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/record.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/record.js
 function parseRecordDef(def, refs) {
   if (refs.target === "openAi") {
     console.warn("Warning: OpenAI may not support records in schemas! Try an array of key-value pairs instead.");
@@ -25728,7 +25911,7 @@ function parseRecordDef(def, refs) {
   return schema;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/map.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/map.js
 function parseMapDef(def, refs) {
   if (refs.mapStrategy === "record") {
     return parseRecordDef(def, refs);
@@ -25753,7 +25936,7 @@ function parseMapDef(def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
 function parseNativeEnumDef(def) {
   const object3 = def.values;
   const actualKeys = Object.keys(def.values).filter((key) => {
@@ -25767,7 +25950,7 @@ function parseNativeEnumDef(def) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/never.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/never.js
 function parseNeverDef(refs) {
   return refs.target === "openAi" ? undefined : {
     not: parseAnyDef({
@@ -25777,7 +25960,7 @@ function parseNeverDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/null.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/null.js
 function parseNullDef(refs) {
   return refs.target === "openApi3" ? {
     enum: ["null"],
@@ -25787,7 +25970,7 @@ function parseNullDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/union.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/union.js
 var primitiveMappings = {
   ZodString: "string",
   ZodNumber: "number",
@@ -25855,7 +26038,7 @@ var asAnyOf = (def, refs) => {
   return anyOf.length ? { anyOf } : undefined;
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
 function parseNullableDef(def, refs) {
   if (["ZodString", "ZodNumber", "ZodBigInt", "ZodBoolean", "ZodNull"].includes(def.innerType._def.typeName) && (!def.innerType._def.checks || !def.innerType._def.checks.length)) {
     if (refs.target === "openApi3") {
@@ -25887,7 +26070,7 @@ function parseNullableDef(def, refs) {
   return base && { anyOf: [base, { type: "null" }] };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/number.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/number.js
 function parseNumberDef(def, refs) {
   const res = {
     type: "number"
@@ -25936,7 +26119,7 @@ function parseNumberDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/object.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/object.js
 function parseObjectDef(def, refs) {
   const forceOptionalIntoNullable = refs.target === "openAi";
   const result = {
@@ -26006,7 +26189,7 @@ function safeIsOptional(schema) {
   }
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
 var parseOptionalDef = (def, refs) => {
   if (refs.currentPath.toString() === refs.propertyPath?.toString()) {
     return parseDef(def.innerType._def, refs);
@@ -26025,7 +26208,7 @@ var parseOptionalDef = (def, refs) => {
   } : parseAnyDef(refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
 var parsePipelineDef = (def, refs) => {
   if (refs.pipeStrategy === "input") {
     return parseDef(def.in._def, refs);
@@ -26045,12 +26228,12 @@ var parsePipelineDef = (def, refs) => {
   };
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
 function parsePromiseDef(def, refs) {
   return parseDef(def.type._def, refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/set.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/set.js
 function parseSetDef(def, refs) {
   const items = parseDef(def.valueType._def, {
     ...refs,
@@ -26070,7 +26253,7 @@ function parseSetDef(def, refs) {
   return schema;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
 function parseTupleDef(def, refs) {
   if (def.rest) {
     return {
@@ -26098,24 +26281,24 @@ function parseTupleDef(def, refs) {
   }
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
 function parseUndefinedDef(refs) {
   return {
     not: parseAnyDef(refs)
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
 function parseUnknownDef(refs) {
   return parseAnyDef(refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
 var parseReadonlyDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/selectParser.js
+// node_modules/zod-to-json-schema/dist/esm/selectParser.js
 var selectParser = (def, typeName, refs) => {
   switch (typeName) {
     case ZodFirstPartyTypeKind.ZodString:
@@ -26193,7 +26376,7 @@ var selectParser = (def, typeName, refs) => {
   }
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parseDef.js
+// node_modules/zod-to-json-schema/dist/esm/parseDef.js
 function parseDef(def, refs, forceResolution = false) {
   const seenItem = refs.seen.get(def);
   if (refs.override) {
@@ -26248,7 +26431,7 @@ var addMeta = (def, refs, jsonSchema) => {
   }
   return jsonSchema;
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
+// node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
 var zodToJsonSchema = (schema, options) => {
   const refs = getRefs(options);
   let definitions = typeof options === "object" && options.definitions ? Object.entries(options.definitions).reduce((acc, [name2, schema2]) => ({
@@ -26308,7 +26491,7 @@ var zodToJsonSchema = (schema, options) => {
   }
   return combined;
 };
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
 function getMethodLiteral(schema) {
   const shape = getObjectShape(schema);
   const methodSchema = shape?.method;
@@ -26329,7 +26512,7 @@ function parseWithCompat(schema, data) {
   return result.data;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
 var DEFAULT_REQUEST_TIMEOUT_MSEC = 60000;
 
 class Protocol {
@@ -27164,7 +27347,7 @@ function mergeCapabilities(base, additional) {
   return result;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
 function createDefaultAjvInstance() {
@@ -27204,7 +27387,7 @@ class AjvJsonSchemaValidator {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
 class ExperimentalServerTasks {
   constructor(_server) {
     this._server = _server;
@@ -27282,7 +27465,7 @@ class ExperimentalServerTasks {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
 function assertToolsCallTaskCapability(requests, method, entityName) {
   if (!requests) {
     throw new Error(`${entityName} does not support task creation (required for ${method})`);
@@ -27317,7 +27500,7 @@ function assertClientRequestTaskCapability(requests, method, entityName) {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
 class Server extends Protocol {
   constructor(_serverInfo, options) {
     super(options);
@@ -27650,10 +27833,10 @@ class Server extends Protocol {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
 class ReadBuffer {
   append(chunk) {
     this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
@@ -27683,7 +27866,7 @@ function serializeMessage(message) {
 `;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 class StdioServerTransport {
   constructor(_stdin = process2.stdin, _stdout = process2.stdout) {
     this._stdin = _stdin;
@@ -28368,18 +28551,24 @@ async function run16() {
         "",
         "Usage: specialists list [options]",
         "",
-        "List available specialists across all scopes.",
+        "List specialists in the current project.",
+        "",
+        "What it shows:",
+        "  - specialist name",
+        "  - model",
+        "  - short description",
         "",
         "Options:",
-        "  --scope <project|user>   Filter by scope",
-        "  --category <name>        Filter by category tag",
-        "  --json                   Output as JSON array",
+        "  --category <name>   Filter by category tag",
+        "  --json              Output as JSON array",
         "",
         "Examples:",
         "  specialists list",
-        "  specialists list --scope project",
         "  specialists list --category analysis",
         "  specialists list --json",
+        "",
+        "Project model:",
+        "  Specialists are project-only. User-scope discovery is deprecated.",
         ""
       ].join(`
 `));
@@ -28409,16 +28598,27 @@ async function run16() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists init",
+        "Usage: specialists init [--force-workflow]",
         "",
-        "Initialize specialists in the current project:",
-        "  • Creates specialists/           — put .specialist.yaml files here",
-        "  • Creates .specialists/          — runtime data (gitignored)",
-        "  • Adds .specialists/ to .gitignore",
-        "  • Scaffolds AGENTS.md            — context injected into Claude sessions",
-        "  • Registers specialists in .mcp.json at project scope",
+        "Bootstrap a project for specialists. This is the sole onboarding command.",
         "",
-        "Safe to run on an existing project (skips already-present items).",
+        "What it does:",
+        "  • creates specialists/ for project .specialist.yaml files",
+        "  • creates .specialists/ runtime dirs (jobs/, ready/)",
+        "  • adds .specialists/ to .gitignore",
+        "  • injects the managed workflow block into AGENTS.md and CLAUDE.md",
+        "  • registers the Specialists MCP server at project scope",
+        "",
+        "Options:",
+        "  --force-workflow   Overwrite existing managed workflow blocks",
+        "",
+        "Examples:",
+        "  specialists init",
+        "  specialists init --force-workflow",
+        "",
+        "Notes:",
+        "  setup and install are deprecated; use specialists init.",
+        "  Safe to run again; existing project state is preserved where possible.",
         ""
       ].join(`
 `));
@@ -28465,27 +28665,29 @@ async function run16() {
         "",
         "Usage: specialists run <name> [options]",
         "",
-        "Run a specialist. Streams output to stdout by default.",
-        "Reads prompt from stdin if --prompt is not provided.",
+        "Run a specialist in foreground or background.",
+        "",
+        "Primary modes:",
+        "  tracked:  specialists run <name> --bead <id>",
+        '  ad-hoc:   specialists run <name> --prompt "..."',
         "",
         "Options:",
-        "  --prompt <text>    Prompt to send to the specialist (required unless piped or --bead is used)",
-        "  --bead <id>        Read the task from an existing bead and use it as the prompt",
-        "  --model <model>    Override the model for this run only",
-        "  --background       Run async; prints job ID and exits immediately",
-        "  --no-beads         Skip creating a tracking bead for this run",
-        "  --context-depth <n> Inject outputs from completed blockers (1=immediate, 2=recursive)",
+        "  --bead <id>          Use an existing bead as the prompt source",
+        "  --prompt <text>      Ad-hoc prompt for untracked work",
+        "  --context-depth <n>  Dependency context depth when using --bead (default: 1)",
+        "  --no-beads           Do not create a new tracking bead (does not disable bead reading)",
+        "  --background         Start async and return a job id",
+        "  --model <model>      Override the configured model for this run",
         "",
         "Examples:",
+        "  specialists run bug-hunt --bead unitAI-55d",
+        "  specialists run bug-hunt --bead unitAI-55d --context-depth 2 --background",
         '  specialists run code-review --prompt "Audit src/api.ts"',
-        "  specialists run code-review --bead unitAI-55d",
-        '  specialists run code-review --prompt "..." --background',
-        "  cat brief.md | specialists run deep-analysis",
-        '  specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."',
+        "  cat brief.md | specialists run report-generator",
         "",
-        "See also:",
-        "  specialists feed --help   (tail events for a background job)",
-        "  specialists result --help (read background job output)",
+        "Rules:",
+        "  Use --bead for tracked work.",
+        "  Use --prompt for quick ad-hoc work.",
         ""
       ].join(`
 `));
@@ -28500,11 +28702,17 @@ async function run16() {
         "",
         "Usage: specialists status [options]",
         "",
-        "Show system health: pi runtime, beads installation, MCP registration,",
-        "and all active background jobs.",
+        "Show current runtime state.",
+        "",
+        "Sections include:",
+        "  - discovered specialists",
+        "  - pi provider/runtime health",
+        "  - beads availability",
+        "  - MCP registration hints",
+        "  - active background jobs",
         "",
         "Options:",
-        "  --json    Output as JSON",
+        "  --json   Output machine-readable JSON",
         "",
         "Examples:",
         "  specialists status",
@@ -28546,20 +28754,24 @@ async function run16() {
       console.log([
         "",
         "Usage: specialists feed <job-id> [options]",
-        "       specialists feed --job <job-id> [options]",
+        "       specialists feed -f [--forever]",
         "",
-        "Print events emitted by a background job.",
+        "Read background job events.",
+        "",
+        "Modes:",
+        "  specialists feed <job-id>        Replay events for one job",
+        "  specialists feed <job-id> -f     Follow one job until completion",
+        "  specialists feed -f              Follow all jobs globally",
         "",
         "Options:",
-        "  --follow, -f    Stay open and stream new events as they arrive",
-        "                  (exits automatically when job completes)",
+        "  -f, --follow   Follow live updates",
+        "  --forever      Keep following in global mode even when all jobs complete",
         "",
         "Examples:",
-        "  specialists feed job_a1b2c3d4",
-        "  specialists feed job_a1b2c3d4 --follow",
-        "  specialists feed --job job_a1b2c3d4 -f",
-        "",
-        "Event types: tool_use · tool_result · text · agent_end · error",
+        "  specialists feed 49adda",
+        "  specialists feed 49adda --follow",
+        "  specialists feed -f",
+        "  specialists feed -f --forever",
         ""
       ].join(`
 `));
@@ -28597,15 +28809,20 @@ async function run16() {
         "",
         "Usage: specialists doctor",
         "",
-        "Health check for your specialists installation:",
-        "  1. pi installed and has at least one active provider",
-        "  2. All 7 Claude Code hooks present and wired in settings.json",
-        "  3. MCP server registered (claude mcp get specialists)",
-        "  4. .specialists/jobs/ and .specialists/ready/ dirs exist",
-        "  5. No zombie jobs (running status but dead PID)",
+        "Diagnose bootstrap and runtime problems.",
         "",
-        "Prints fix hints for each failure.",
-        "Auto-creates missing runtime directories.",
+        "Checks:",
+        "  1. pi installed and has active providers",
+        "  2. beads installed and .beads/ present",
+        "  3. xtrm-tools availability",
+        "  4. Specialists MCP registration in .mcp.json",
+        "  5. .specialists/ runtime directories",
+        "  6. hook wiring expectations",
+        "  7. zombie job detection",
+        "",
+        "Behavior:",
+        "  - prints fix hints for failing checks",
+        "  - auto-creates missing runtime directories when possible",
         "",
         "Examples:",
         "  specialists doctor",

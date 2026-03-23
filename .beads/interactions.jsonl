@@ -9,3 +9,4 @@
 {"id":"int-0c5ec2c1","kind":"tool_call","created_at":"2026-03-22T22:30:12.00312773Z","actor":"you@example.com","issue_id":"unitAI-abh","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
 {"id":"int-a8f3c3ee","kind":"tool_call","created_at":"2026-03-22T22:32:52.300062263Z","actor":"you@example.com","issue_id":"unitAI-abh","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
 {"id":"int-8ab0f8ce","kind":"tool_call","created_at":"2026-03-22T22:54:11.07414526Z","actor":"you@example.com","issue_id":"unitAI-02n","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
+{"id":"int-4c2acf8d","kind":"tool_call","created_at":"2026-03-23T16:12:13.448553923Z","actor":"you@example.com","issue_id":"unitAI-2ha","model":"anthropic/claude-haiku-4-5","tool_name":"codebase-explorer","exit_code":0}

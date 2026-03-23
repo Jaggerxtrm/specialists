@@ -1,75 +1,109 @@
 // src/cli/help.ts
+// Top-level help for the specialists CLI.
+// Richer and plainer than a terse command list, but smaller than quickstart.
 
-// ── ANSI helpers ───────────────────────────────────────────────────────────────
+import { renderCommandHelp, COMMAND_REFERENCE } from '../specialist/workflow.js';
+
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const dim  = (s: string) => `\x1b[2m${s}\x1b[0m`;
-const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
+const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 
 type CommandEntry = [string, string];
 
-const SETUP: CommandEntry[] = [
-  ['install',    'Project installer: prereq check, MCP registration, specialists hooks'],
-  ['init',       'Scaffold specialists/, .specialists/, AGENTS.md in current project'],
-  ['setup',      'Inject workflow context block into CLAUDE.md or AGENTS.md'],
-  ['quickstart', 'Rich getting-started guide with examples and YAML schema reference'],
-  ['doctor',     'Health check: pi, hooks, MCP registration, dirs, zombie jobs'],
+const CORE_COMMANDS: CommandEntry[] = [
+  ['init', 'Bootstrap a project: dirs, workflow injection, project MCP registration'],
+  ['list', 'List specialists in this project'],
+  ['run', 'Run a specialist with --bead for tracked work or --prompt for ad-hoc work'],
+  ['feed', 'Tail job events; use -f to follow all jobs'],
+  ['result', 'Print final output of a completed background job'],
+  ['stop', 'Stop a running background job'],
+  ['status', 'Show health, MCP state, and active jobs'],
+  ['doctor', 'Diagnose installation/runtime problems'],
+  ['quickstart', 'Full getting-started guide'],
+  ['help', 'Show this help'],
 ];
 
-const DISCOVERY: CommandEntry[] = [
-  ['list',    'List available specialists with model and description'],
-  ['models',  'List models available on pi, flagged with thinking/images support'],
-  ['status',  'Show system health (pi, beads, MCP, jobs)'],
-];
-
-const RUNNING: CommandEntry[] = [
-  ['run',    'Run a specialist with a prompt (--background for async)'],
-  ['edit',   'Edit a specialist field  (e.g. --model, --description)'],
-];
-
-const JOBS: CommandEntry[] = [
-  ['feed',   'Unified timeline: --since, --limit, --specialist, --job, --follow, --json'],
-  ['result', 'Print result of a background job'],
-  ['stop',   'Send SIGTERM to a running background job'],
-];
-
-const OTHER: CommandEntry[] = [
+const EXTENDED_COMMANDS: CommandEntry[] = [
+  ['edit', 'Edit a specialist field such as model or description'],
+  ['models', 'List models available on pi'],
   ['version', 'Print installed version'],
-  ['help',    'Show this help message'],
+  ['setup', '[deprecated] Use specialists init instead'],
+  ['install', '[deprecated] Use specialists init instead'],
 ];
 
-const WORKTREE: CommandEntry[] = [
-  ['xt claude [name]',    'New Claude session in a sandboxed xt/<name> worktree'],
-  ['xt pi [name]',        'New Pi session in a sandboxed xt/<name> worktree'],
-  ['xt attach [slug]',    'Re-enter an existing worktree and resume the session'],
-  ['xt worktree list',    'List worktrees: runtime, last activity, last commit, resume hint'],
-  ['xt end',              'Close session: rebase, push, PR, cleanup'],
+const WORKTREE_COMMANDS: CommandEntry[] = [
+  ['xt pi [name]', 'Start a Pi session in a sandboxed xt worktree'],
+  ['xt claude [name]', 'Start a Claude session in a sandboxed xt worktree'],
+  ['xt attach [slug]', 'Resume an existing xt worktree session'],
+  ['xt worktree list', 'List worktrees with runtime and activity'],
+  ['xt end', 'Close session, push, PR, cleanup'],
 ];
 
-function formatGroup(label: string, entries: CommandEntry[]): string[] {
-  const colWidth = Math.max(...entries.map(([cmd]) => cmd.length));
-  return [
-    '',
-    bold(cyan(label)),
-    ...entries.map(([cmd, desc]) => `  ${cmd.padEnd(colWidth)}    ${dim(desc)}`),
-  ];
+function formatCommands(entries: CommandEntry[]): string[] {
+  const width = Math.max(...entries.map(([cmd]) => cmd.length));
+  return entries.map(([cmd, desc]) => `  ${cmd.padEnd(width)}   ${desc}`);
 }
 
 export async function run(): Promise<void> {
   const lines: string[] = [
     '',
-    bold('specialists <command> [options]'),
+    'Specialists lets you run project-scoped specialist agents with a bead-first workflow.',
     '',
-    dim('One MCP server. Multiple AI backends. Intelligent orchestration.'),
-    ...formatGroup('Setup', SETUP),
-    ...formatGroup('Discovery', DISCOVERY),
-    ...formatGroup('Running', RUNNING),
-    ...formatGroup('Jobs', JOBS),
-    ...formatGroup('Other', OTHER),
-    ...formatGroup('xtrm Worktree', WORKTREE),
+    bold('Usage:'),
+    '  specialists [command]',
+    '  specialists [command] --help',
     '',
-    dim("Run 'specialists <command> --help' for command-specific options."),
-    dim("Run 'specialists quickstart' for a full getting-started guide."),
+    bold('Common flows:'),
+    '',
+    '  Tracked work (primary)',
+    '    bd create "Task title" -t task -p 1 --json',
+    '    specialists run <name> --bead <id> [--context-depth N] [--background]',
+    '    specialists feed -f',
+    '    bd close <id> --reason "Done"',
+    '',
+    '  Ad-hoc work',
+    '    specialists run <name> --prompt "..."',
+    '',
+    '  Rules',
+    '    --bead is for tracked work',
+    '    --prompt is for quick untracked work',
+    '    --context-depth defaults to 1 with --bead',
+    '    --no-beads does not disable bead reading',
+    '',
+    bold('Core commands:'),
+    ...formatCommands(CORE_COMMANDS),
+    '',
+    bold('Extended commands:'),
+    ...formatCommands(EXTENDED_COMMANDS),
+    '',
+    bold('xtrm worktree commands:'),
+    ...formatCommands(WORKTREE_COMMANDS),
+    '',
+    bold('Examples:'),
+    '  specialists init',
+    '  specialists list',
+    '  specialists run bug-hunt --bead unitAI-123 --background',
+    '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
+    '  specialists feed -f',
+    '  specialists result <job-id>',
+    '',
+    bold('More help:'),
+    '  specialists quickstart      Full guide and workflow reference',
+    '  specialists run --help      Run command details and flags',
+    '  specialists init --help     Bootstrap behavior and workflow injection',
+    '  specialists feed --help     Background job monitoring details',
+    '',
+    dim('Project model: specialists are project-only; user-scope discovery is deprecated.'),
     '',
   ];
+
   console.log(lines.join('\n'));
+}
+
+export function runCommandHelp(command: string): boolean {
+  const key = command as keyof typeof COMMAND_REFERENCE;
+  if (COMMAND_REFERENCE[key]) {
+    console.log(renderCommandHelp(key));
+    return true;
+  }
+  return false;
 }

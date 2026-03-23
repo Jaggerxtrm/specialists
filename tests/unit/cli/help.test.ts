@@ -4,7 +4,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 describe('help CLI — run()', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
   });
 
   async function captureHelp(): Promise<string> {
@@ -17,30 +16,61 @@ describe('help CLI — run()', () => {
     return output.join('\n');
   }
 
-  it('prints all known subcommands', async () => {
+  it('prints usage section', async () => {
     const combined = await captureHelp();
-    const expected = ['install', 'list', 'version', 'init', 'edit', 'run', 'status', 'help',
-      'quickstart', 'doctor', 'setup'];
-    for (const cmd of expected) {
+    expect(combined).toContain('Usage:');
+    expect(combined).toContain('specialists [command]');
+  });
+
+  it('teaches bead-first workflow', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('bd create');
+    expect(combined).toContain('--bead');
+    expect(combined).toContain('Tracked work');
+  });
+
+  it('distinguishes tracked vs ad-hoc work', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('Ad-hoc work');
+    expect(combined).toContain('--prompt');
+  });
+
+  it('mentions --context-depth and --no-beads semantics', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('--context-depth');
+    expect(combined).toContain('--no-beads');
+    expect(combined).toContain('does not disable bead reading');
+  });
+
+  it('lists core commands plainly', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('Core commands:');
+    for (const cmd of ['init', 'list', 'run', 'feed', 'result', 'stop', 'status', 'doctor', 'quickstart']) {
       expect(combined, `missing command: ${cmd}`).toContain(cmd);
     }
   });
 
-  it('prints specialists <command> usage header', async () => {
+  it('shows deprecated setup and install commands', async () => {
     const combined = await captureHelp();
-    expect(combined).toContain('specialists <command>');
+    expect(combined).toContain('[deprecated] Use specialists init instead');
   });
 
-  it('prints command categories', async () => {
+  it('mentions xtrm worktree commands', async () => {
     const combined = await captureHelp();
-    expect(combined).toContain('Setup');
-    expect(combined).toContain('Discovery');
-    expect(combined).toContain('Running');
-    expect(combined).toContain('Jobs');
+    expect(combined).toContain('xtrm worktree commands:');
+    expect(combined).toContain('xt pi');
+    expect(combined).toContain('xt end');
   });
 
-  it('references quickstart guide', async () => {
+  it('references quickstart and command-specific help', async () => {
     const combined = await captureHelp();
-    expect(combined).toContain('quickstart');
+    expect(combined).toContain('specialists quickstart');
+    expect(combined).toContain('specialists run --help');
+    expect(combined).toContain('specialists init --help');
+  });
+
+  it('states project-only model', async () => {
+    const combined = await captureHelp();
+    expect(combined).toContain('project-only');
   });
 });

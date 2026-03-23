@@ -6,9 +6,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-**Specialists** is a **Model Context Protocol (MCP) server** that lets Claude discover and delegate to specialist agents — each a full autonomous coding agent powered by [pi](https://github.com/mariozechner/pi), scoped to a specific task.
+**Specialists** is a versatile framework for running specialist agents in a way that is powerful, composable, and still straightforward to control. It can be used directly by a human operator, by coding agents through MCP, inside autonomous multi-agent and coordination systems, or from scripts and CI/CD pipelines that need deterministic execution surfaces and machine-readable outputs.
 
-**Designed for agents, not users.** Claude autonomously routes heavy tasks (code review, bug hunting, deep reasoning, session init) to the right specialist. In v3, specialists run as **background CLI processes** — zero polling overhead, notifications on completion.
+At its core, Specialists combines a **Model Context Protocol (MCP) server** with a **CLI execution plane**. A specialist is a reusable unit of behavior with its own model choice, tools, system prompt, task prompt, runtime policy, and output contract. That makes the framework suitable both for interactive delegation and for disciplined automation.
+
+Specialists is designed to work especially well with the **xt/xtrm architecture**: xt provides worktree-based execution and session isolation, while Specialists provides the specialist runtime, orchestration surface, and observability layer. Together they support everything from one-off deep-reasoning runs to structured autonomous workflows.
+
+For tracking and standardized communication, Specialists integrates with **beads** by **Steven Yegge**. Beads acts as the workflow layer for issue tracking, ownership, dependency modeling, and durable context handoff. A specialist can run from a normal prompt, from a richer system+task prompt setup, or directly from an **issue/bead ID as the prompt source**, with dependency chains pulled in as contextual input.
+
+The framework also supports specialist-local skills, centralized memory, and context enrichment patterns that make agents more useful over time instead of more chaotic. In practice, that means you can control behavior very precisely — model, permissions, prompts, dependency context, tracking, memory, background execution, result retrieval — without turning the system into a pile of custom glue.
+
+In v3, specialists run as **background CLI processes** with file-backed state, compact observability, and completion notifications instead of polling loops. The result is a universal specialist layer that can sit inside user workflows, agent workflows, autonomous coordination loops, and production automation without changing the mental model each time.
 
 ---
 
@@ -30,12 +38,12 @@
        status.json   result.txt   events.jsonl
 ```
 
-Specialists are `.specialist.yaml` files discovered across two scopes:
+Specialists are `.specialist.yaml` files discovered at **project scope**:
 
 | Scope | Location | Purpose |
 |-------|----------|---------|
-| **project** | `./specialists/` | Per-project specialists |
-| **user** | `~/.agents/specialists/` | Built-in defaults (copied on install) + your own |
+| **project** | `./specialists/` | Per-project specialists checked into the repo and aligned with that project's workflow |
+| **project-local extensions** | `./.claude/specialists/` | Optional project-local specialist definitions that live alongside Claude project config |
 
 When a specialist runs, the server spawns a `pi` subprocess with the right model, tools, and system prompt injected. For background jobs, a **Supervisor** writes job state to disk — status, events, and final output — so Claude gets a one-shot notification on completion instead of polling.
 
