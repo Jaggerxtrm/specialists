@@ -41,6 +41,8 @@ export interface PiSessionOptions {
   systemPrompt?: string;
   /** Permission level from specialist YAML — controls which pi tools are enabled */
   permissionLevel?: string;
+  /** Working directory for the pi process — defaults to process.cwd() if not set */
+  cwd?: string;
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -134,6 +136,7 @@ export class PiAgentSession {
 
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'inherit'],
+      cwd: this.options.cwd,
     });
 
     const donePromise = new Promise<void>((resolve, reject) => {
