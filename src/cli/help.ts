@@ -27,7 +27,7 @@ const RUNNING: CommandEntry[] = [
 ];
 
 const JOBS: CommandEntry[] = [
-  ['feed',   'Tail events for a background job (--follow to stream)'],
+  ['feed',   'Tail job events or follow all jobs with -f [--forever]'],
   ['result', 'Print result of a background job'],
   ['stop',   'Send SIGTERM to a running background job'],
 ];
@@ -35,6 +35,14 @@ const JOBS: CommandEntry[] = [
 const OTHER: CommandEntry[] = [
   ['version', 'Print installed version'],
   ['help',    'Show this help message'],
+];
+
+const WORKTREE: CommandEntry[] = [
+  ['xt claude [name]',    'New Claude session in a sandboxed xt/<name> worktree'],
+  ['xt pi [name]',        'New Pi session in a sandboxed xt/<name> worktree'],
+  ['xt attach [slug]',    'Re-enter an existing worktree and resume the session'],
+  ['xt worktree list',    'List worktrees: runtime, last activity, last commit, resume hint'],
+  ['xt end',              'Close session: rebase, push, PR, cleanup'],
 ];
 
 function formatGroup(label: string, entries: CommandEntry[]): string[] {
@@ -57,6 +65,7 @@ export async function run(): Promise<void> {
     ...formatGroup('Running', RUNNING),
     ...formatGroup('Jobs', JOBS),
     ...formatGroup('Other', OTHER),
+    ...formatGroup('xtrm Worktree', WORKTREE),
     '',
     dim("Run 'specialists <command> --help' for command-specific options."),
     dim("Run 'specialists quickstart' for a full getting-started guide."),
