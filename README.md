@@ -113,6 +113,7 @@ See [docs/mcp-servers.md](docs/mcp-servers.md) for registration details.
 | `auto-remediation` | Gemini Flash | Apply fixes to identified issues automatically |
 | `report-generator` | Haiku | Synthesise data/analysis results into structured markdown |
 | `test-runner` | Haiku | Run tests, parse results, surface failures |
+| `xt-merge` | Sonnet | FIFO PR merge queue — merges oldest `xt/` PR, rebases remaining branches |
 
 ---
 
@@ -140,6 +141,65 @@ beads_integration: never   # never create
 ```
 
 The `bead_id` is written to `status.json` so you can link issues for follow-up.
+
+---
+
+## xtrm Worktree Integration
+
+Specialists are designed to run inside [xtrm](https://github.com/Jaggerxtrm/xtrm-tools) worktree sessions. Each `xt claude` or `xt pi` session gets an isolated git branch with a shared beads database — the right environment for spawning background specialists.
+
+### Session lifecycle
+
+```bash
+# 1. Start a Claude session in a sandboxed worktree
+xt claude
+
+# 2. Claude spawns specialists as background jobs — no interruption to main session
+specialists run bug-hunt --prompt "Investigate the auth regression" --background
+
+# 3. Session closes unexpectedly? Re-attach and resume where you left off
+xt attach          # most recent worktree — resumes with --continue
+xt attach ab3k     # specific worktree by slug
+
+# 4. Inspect available worktrees with runtime, last activity, and resume hint
+xt worktree list
+
+# 5. Close the session cleanly
+xt end             # rebase, push, PR, cleanup
+```
+
+### Re-attaching after unexpected close
+
+`xt attach` reads `.session-meta.json` written at worktree creation to know which runtime was used (Claude or Pi), then launches it with `--continue` / `-c` to resume the previous conversation. Any background specialists that completed while the session was closed will surface their banners on the next prompt.
+
+When multiple worktrees exist, `xt attach` shows an interactive picker:
+
+```
+? Select worktree to attach
+❯ xt/ab3k [claude]  —  3/23/2026, 14:22:01  "fix: auth token expiry"
+  xt/pq7r [pi]      —  3/23/2026, 11:05:33  "feat: add rate limiting"
+```
+
+### xt-merge specialist
+
+After a session closes and a PR is open, use the `xt-merge` specialist to drain the PR queue:
+
+```bash
+specialists run xt-merge
+```
+
+This merges the oldest `xt/` PR with `--rebase --delete-branch`, then rebases all remaining `xt/` branches onto the new main — maintaining linear history automatically.
+
+### Worktree commands reference
+
+| Command | Description |
+|---------|-------------|
+| `xt claude [name]` | New Claude session in a sandboxed `xt/<name>` worktree |
+| `xt pi [name]` | New Pi session in a sandboxed `xt/<name>` worktree |
+| `xt attach [slug]` | Re-enter an existing worktree and resume the session |
+| `xt worktree list` | List worktrees with runtime, last activity, last commit, resume hint |
+| `xt worktree clean` | Remove worktrees merged into main |
+| `xt end` | Close session: rebase, push, PR, cleanup |
 
 ---
 

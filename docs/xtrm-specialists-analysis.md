@@ -207,12 +207,27 @@ pi --extension, -e <path>  Load specific extension (repeatable)
 
 ### xtrm worktree + Dolt flow
 ```
-bd worktree create <path> --branch <branch>
-  → git worktree add
-  → writes .beads/dolt-server.port = <main_port> in worktree BEFORE any agent launch
-  → bd commands in worktree connect to main's Dolt server (same DB, no isolation)
+xt claude / xt pi [name]
+  → generate slug (4 random chars, or --name value)
+  → bd worktree create <path> --branch xt/<slug>
+       → git worktree add
+       → writes .beads/dolt-server.port = <main_port> BEFORE any agent launch
+  → writes .session-meta.json { runtime, launchedAt } into worktree root
+  → injects statusline → worktree/.claude/settings.local.json (claude only)
+  → launches runtime
+
+xt attach [slug]                         ← NEW (xtrm v0.5.36)
+  → reads .session-meta.json to determine runtime (claude|pi)
+  → launches with --continue (claude) or -c (pi) for session resumption
+  → interactive picker when multiple worktrees exist (shows timestamps + last commit)
+  → falls back to runtime prompt if no .session-meta.json
+
+xt worktree list
+  → shows runtime badge, last activity timestamp, last commit, "xt attach <slug>" hint
+
+bd commands in worktrees connect to main's Dolt server (same DB, no isolation)
 ```
-This is why `unitAI-lmi` is STALE — bd handles port redirect natively.
+This is why `unitAI-lmi` is STALE — bd handles port redirect natively. `xt attach` handles session resumption after unexpected close.
 
 ### xtrm install flow (simplified)
 ```
