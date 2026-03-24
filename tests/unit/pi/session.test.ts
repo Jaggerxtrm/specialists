@@ -71,6 +71,128 @@ function makeFakeProc() {
   return { proc, stdin, stdout, stdoutHandlers, procHandlers };
 }
 
+// ── Protocol event injection helper ──────────────────────────────────────────
+
+/** Emit a single NDJSON line into the session as if pi wrote it to stdout. */
+function emitLine(fake: ReturnType<typeof makeFakeProc>, obj: object) {
+  fake.stdoutHandlers['data']?.(Buffer.from(JSON.stringify(obj) + '\n'));
+}
+
+// ── RPC protocol parsing tests ────────────────────────────────────────────────
+
+describe('_handleEvent — RPC protocol parsing', () => {
+  let fake: ReturnType<typeof makeFakeProc>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fake = makeFakeProc();
+  });
+
+  it('thinking_delta nested in message_update calls onThinking', async () => {
+    const onThinking = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onThinking });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'thinking_delta', delta: 'hmm...' },
+    });
+
+    expect(onThinking).toHaveBeenCalledOnce();
+    expect(onThinking).toHaveBeenCalledWith('hmm...');
+  });
+
+  it('top-level thinking_delta does NOT call onThinking', async () => {
+    const onThinking = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onThinking });
+    await session.start();
+
+    emitLine(fake, { type: 'thinking_delta', delta: 'should be ignored' });
+
+    expect(onThinking).not.toHaveBeenCalled();
+  });
+
+  it('thinking_start nested in message_update fires onEvent("thinking")', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'thinking_start' },
+    });
+
+    expect(onEvent).toHaveBeenCalledWith('thinking');
+  });
+
+  it('toolcall_start nested in message_update calls onToolStart and onEvent("toolcall")', async () => {
+    const onToolStart = vi.fn();
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onToolStart, onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'toolcall_start', name: 'bash' },
+    });
+
+    expect(onToolStart).toHaveBeenCalledOnce();
+    expect(onToolStart).toHaveBeenCalledWith('bash');
+    expect(onEvent).toHaveBeenCalledWith('toolcall');
+  });
+
+  it('top-level toolcall_start does NOT call onToolStart or onEvent("toolcall")', async () => {
+    const onToolStart = vi.fn();
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onToolStart, onEvent });
+    await session.start();
+
+    emitLine(fake, { type: 'toolcall_start', name: 'bash' });
+
+    expect(onToolStart).not.toHaveBeenCalled();
+    expect(onEvent).not.toHaveBeenCalledWith('toolcall');
+  });
+
+  it('agent_end fires onEvent("agent_end"), not onEvent("done")', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, { type: 'agent_end', messages: [] });
+
+    expect(onEvent).toHaveBeenCalledWith('agent_end');
+    expect(onEvent).not.toHaveBeenCalledWith('done');
+  });
+
+  it('assistantMessageEvent.done fires onEvent("message_done")', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'done', stopReason: 'stop' },
+    });
+
+    expect(onEvent).toHaveBeenCalledWith('message_done');
+  });
+
+  it('text_delta nested in message_update calls onToken and onEvent("text")', async () => {
+    const onToken = vi.fn();
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onToken, onEvent });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', delta: 'hello' },
+    });
+
+    expect(onToken).toHaveBeenCalledWith('hello');
+    expect(onEvent).toHaveBeenCalledWith('text');
+  });
+});
+
 // ── PiAgentSession behaviour tests ───────────────────────────────────────────
 describe('PiAgentSession', () => {
   let fake: ReturnType<typeof makeFakeProc>;
