@@ -16,6 +16,8 @@ domain:
 
 This package bundles hook scripts used by Specialists-aware environments.
 
+Specialists works alongside **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)**. Specialists owns only its specialist-specific hooks; xtrm-tools owns the broader beads/workflow enforcement hook layer.
+
 ## Hook inventory
 
 | Hook | Event | Purpose |

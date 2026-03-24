@@ -210,32 +210,42 @@ import type { TimelineEvent } from '../specialist/timeline-events.js';
  */
 export function formatEventLine(
   event: TimelineEvent,
-  colorize: Colorizer
+  options: { jobId: string; specialist: string; beadId?: string; colorize: Colorizer }
 ): string {
   const ts = dim(formatTime(event.t));
-  const label = getEventLabel(event.type).padEnd(5);
+  const label = options.colorize(bold(getEventLabel(event.type).padEnd(5)));
+  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim(`[${options.beadId}]`)}` : ''}`;
 
-  let detail = '';
+  const detailParts: string[] = [];
   if (event.type === 'meta') {
-    detail = `${event.model} ${dim(event.backend)}`;
+    detailParts.push(`model=${event.model}`);
+    detailParts.push(`backend=${event.backend}`);
   } else if (event.type === 'tool') {
-    detail = event.tool;
+    detailParts.push(`tool=${event.tool}`);
+    detailParts.push(`phase=${event.phase}`);
     if (event.phase === 'end') {
-      detail += event.is_error ? ` ${red('✗')}` : ` ${dim('✓')}`;
+      detailParts.push(`ok=${event.is_error ? 'false' : 'true'}`);
     }
   } else if (event.type === 'run_complete') {
-    detail = `${colorize(event.status)} ${dim(formatElapsed(event.elapsed_s))}`;
+    detailParts.push(`status=${event.status}`);
+    detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
     if (event.error) {
-      detail += ` ${red(event.error)}`;
+      detailParts.push(`error=${event.error}`);
     }
   } else if (event.type === 'done' || event.type === 'agent_end') {
-    detail = `${colorize('COMPLETE')} ${dim(formatElapsed(event.elapsed_s ?? 0))}`;
+    detailParts.push('status=COMPLETE');
+    detailParts.push(`elapsed=${formatElapsed(event.elapsed_s ?? 0)}`);
   } else if (event.type === 'run_start') {
-    detail = event.specialist;
+    detailParts.push(`specialist=${event.specialist}`);
     if (event.bead_id) {
-      detail += ` ${dim(`[${event.bead_id}]`)}`;
+      detailParts.push(`bead=${event.bead_id}`);
     }
+  } else if (event.type === 'text') {
+    detailParts.push('kind=assistant');
+  } else if (event.type === 'thinking') {
+    detailParts.push('kind=model');
   }
 
-  return `${ts} ${colorize(bold(label))} ${detail}`;
+  const detail = detailParts.length > 0 ? dim(detailParts.join(' ')) : '';
+  return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ''}`.trimEnd();
 }

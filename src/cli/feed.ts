@@ -49,6 +49,46 @@ interface FeedOptions {
   json: boolean;
 }
 
+function getHumanEventKey(event: TimelineEvent): string {
+  switch (event.type) {
+    case 'meta':
+      return `meta:${event.backend}:${event.model}`;
+    case 'tool':
+      return `tool:${event.tool}:${event.phase}:${event.is_error ? 'error' : 'ok'}`;
+    case 'text':
+      return 'text';
+    case 'thinking':
+      return 'thinking';
+    case 'run_start':
+      return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
+    case 'run_complete':
+      return `run_complete:${event.status}:${event.error ?? ''}`;
+    case 'done':
+    case 'agent_end':
+      return `complete:${event.type}`;
+    default:
+      return event.type;
+  }
+}
+
+function shouldSkipHumanEvent(
+  event: TimelineEvent,
+  jobId: string,
+  lastPrintedEventKey: Map<string, string>,
+  seenMetaKey: Map<string, string>
+): boolean {
+  if (event.type === 'meta') {
+    const metaKey = `${event.backend}:${event.model}`;
+    if (seenMetaKey.get(jobId) === metaKey) return true;
+    seenMetaKey.set(jobId, metaKey);
+  }
+
+  const key = getHumanEventKey(event);
+  if (lastPrintedEventKey.get(jobId) === key) return true;
+  lastPrintedEventKey.set(jobId, key);
+  return false;
+}
+
 function parseSince(value: string): number | undefined {
   // ISO 8601 timestamp
   if (value.includes('T') || value.includes('-')) {
@@ -111,10 +151,13 @@ function printSnapshot(
     return;
   }
 
-  // Compact format
-  for (const { jobId, event } of merged) {
+  const lastPrintedEventKey = new Map<string, string>();
+  const seenMetaKey = new Map<string, string>();
+
+  for (const { jobId, specialist, beadId, event } of merged) {
+    if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
     const colorize = colorMap.get(jobId);
-    console.log(formatEventLine(event, colorize));
+    console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
   }
 }
 
@@ -173,6 +216,9 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
     process.stderr.write(dim('Following... (Ctrl+C to stop)\n'));
   }
 
+  const lastPrintedEventKey = new Map<string, string>();
+  const seenMetaKey = new Map<string, string>();
+
   // Poll for new events
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
@@ -212,8 +258,9 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         if (options.json) {
           console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
         } else {
+          if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
           const colorize = colorMap.get(jobId);
-          console.log(formatEventLine(event, colorize));
+          console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
         }
       }
 

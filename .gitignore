@@ -51,5 +51,8 @@ venv/
 .specialists/trace.jsonl
 .specialists/sync-docs-report.md
 
+# Structured return logs
+.pi/structured-returns/
+
 # bv transient lock
 .beads/.bv.lock

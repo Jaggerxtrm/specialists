@@ -19371,31 +19371,41 @@ class JobColorMap {
     return this.colors.size;
   }
 }
-function formatEventLine(event, colorize) {
+function formatEventLine(event, options) {
   const ts = dim6(formatTime(event.t));
-  const label = getEventLabel(event.type).padEnd(5);
-  let detail = "";
+  const label = options.colorize(bold6(getEventLabel(event.type).padEnd(5)));
+  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim6(`[${options.beadId}]`)}` : ""}`;
+  const detailParts = [];
   if (event.type === "meta") {
-    detail = `${event.model} ${dim6(event.backend)}`;
+    detailParts.push(`model=${event.model}`);
+    detailParts.push(`backend=${event.backend}`);
   } else if (event.type === "tool") {
-    detail = event.tool;
+    detailParts.push(`tool=${event.tool}`);
+    detailParts.push(`phase=${event.phase}`);
     if (event.phase === "end") {
-      detail += event.is_error ? ` ${red("✗")}` : ` ${dim6("✓")}`;
+      detailParts.push(`ok=${event.is_error ? "false" : "true"}`);
     }
   } else if (event.type === "run_complete") {
-    detail = `${colorize(event.status)} ${dim6(formatElapsed(event.elapsed_s))}`;
+    detailParts.push(`status=${event.status}`);
+    detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
     if (event.error) {
-      detail += ` ${red(event.error)}`;
+      detailParts.push(`error=${event.error}`);
     }
   } else if (event.type === "done" || event.type === "agent_end") {
-    detail = `${colorize("COMPLETE")} ${dim6(formatElapsed(event.elapsed_s ?? 0))}`;
+    detailParts.push("status=COMPLETE");
+    detailParts.push(`elapsed=${formatElapsed(event.elapsed_s ?? 0)}`);
   } else if (event.type === "run_start") {
-    detail = event.specialist;
+    detailParts.push(`specialist=${event.specialist}`);
     if (event.bead_id) {
-      detail += ` ${dim6(`[${event.bead_id}]`)}`;
+      detailParts.push(`bead=${event.bead_id}`);
     }
+  } else if (event.type === "text") {
+    detailParts.push("kind=assistant");
+  } else if (event.type === "thinking") {
+    detailParts.push("kind=model");
   }
-  return `${ts} ${colorize(bold6(label))} ${detail}`;
+  const detail = detailParts.length > 0 ? dim6(detailParts.join(" ")) : "";
+  return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ""}`.trimEnd();
 }
 var dim6 = (s) => `\x1B[2m${s}\x1B[0m`, bold6 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
@@ -19748,6 +19758,40 @@ __export(exports_feed, {
 });
 import { existsSync as existsSync9 } from "node:fs";
 import { join as join12 } from "node:path";
+function getHumanEventKey(event) {
+  switch (event.type) {
+    case "meta":
+      return `meta:${event.backend}:${event.model}`;
+    case "tool":
+      return `tool:${event.tool}:${event.phase}:${event.is_error ? "error" : "ok"}`;
+    case "text":
+      return "text";
+    case "thinking":
+      return "thinking";
+    case "run_start":
+      return `run_start:${event.specialist}:${event.bead_id ?? ""}`;
+    case "run_complete":
+      return `run_complete:${event.status}:${event.error ?? ""}`;
+    case "done":
+    case "agent_end":
+      return `complete:${event.type}`;
+    default:
+      return event.type;
+  }
+}
+function shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey) {
+  if (event.type === "meta") {
+    const metaKey = `${event.backend}:${event.model}`;
+    if (seenMetaKey.get(jobId) === metaKey)
+      return true;
+    seenMetaKey.set(jobId, metaKey);
+  }
+  const key = getHumanEventKey(event);
+  if (lastPrintedEventKey.get(jobId) === key)
+    return true;
+  lastPrintedEventKey.set(jobId, key);
+  return false;
+}
 function parseSince(value) {
   if (value.includes("T") || value.includes("-")) {
     return new Date(value).getTime();
@@ -19816,9 +19860,13 @@ function printSnapshot(merged, options) {
     }
     return;
   }
-  for (const { jobId, event } of merged) {
+  const lastPrintedEventKey = new Map;
+  const seenMetaKey = new Map;
+  for (const { jobId, specialist, beadId, event } of merged) {
+    if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
+      continue;
     const colorize = colorMap.get(jobId);
-    console.log(formatEventLine(event, colorize));
+    console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
   }
 }
 function isCompletionEvent(event) {
@@ -19857,6 +19905,8 @@ async function followMerged(jobsDir, options) {
     process.stderr.write(dim6(`Following... (Ctrl+C to stop)
 `));
   }
+  const lastPrintedEventKey = new Map;
+  const seenMetaKey = new Map;
   await new Promise((resolve) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
@@ -19886,8 +19936,10 @@ async function followMerged(jobsDir, options) {
         if (options.json) {
           console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
         } else {
+          if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
+            continue;
           const colorize = colorMap.get(jobId);
-          console.log(formatEventLine(event, colorize));
+          console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
         }
       }
       if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {

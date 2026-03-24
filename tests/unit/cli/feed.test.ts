@@ -94,8 +94,59 @@ describe('feed CLI', () => {
     await run();
 
     const combined = logs.join('\n');
+    expect(combined).toContain('job1');
+    expect(combined).toContain('test');
     expect(combined).toContain('DONE');
     expect(combined).toContain('COMPLETE');
+  });
+
+  it('shows bead id in human-readable output when present', async () => {
+    createJobDir('job1', 'test', [
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, bead_id: 'unitAI-123' },
+    ], { bead_id: 'unitAI-123' });
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = logs.join('\n');
+    expect(combined).toContain('unitAI-123');
+    expect(combined).not.toContain('[bead:');
+    expect(combined).toContain('[unitAI-123]');
+  });
+
+  it('renders human-readable details as key=value pairs', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test', [
+      { t: now - 2000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
+      { t: now - 1000, type: 'tool', tool: 'read', phase: 'end', is_error: false },
+      { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = logs.join('\n');
+    expect(combined).toContain('model=claude-haiku-4-5');
+    expect(combined).toContain('backend=anthropic');
+    expect(combined).toContain('tool=read');
+    expect(combined).toContain('phase=end');
+    expect(combined).toContain('ok=true');
+    expect(combined).toContain('status=COMPLETE');
+    expect(combined).toContain('elapsed=5s');
   });
 
   it('outputs JSON with --json flag', async () => {
@@ -243,6 +294,33 @@ describe('feed CLI', () => {
 
     // Should only have bug-hunt job
     expect(logs.length).toBe(1);
+  });
+
+  it('dedupes repeated human-visible events for the same job', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test', [
+      { t: now - 5000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
+      { t: now - 4000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
+      { t: now - 3000, type: 'text' },
+      { t: now - 2000, type: 'text' },
+      { t: now - 1000, type: 'tool', tool: 'read', phase: 'end', is_error: false },
+      { t: now - 900, type: 'tool', tool: 'read', phase: 'end', is_error: false },
+      { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(logs.filter((line) => line.includes('META')).length).toBe(1);
+    expect(logs.filter((line) => line.includes('TEXT')).length).toBe(1);
+    expect(logs.filter((line) => line.includes('TOOL') && line.includes('read')).length).toBe(1);
   });
 
   it('filters by --since relative time', async () => {
