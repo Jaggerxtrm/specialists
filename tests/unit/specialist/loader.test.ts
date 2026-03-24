@@ -60,6 +60,28 @@ describe('SpecialistLoader', () => {
     await expect(loader.get('nonexistent')).rejects.toThrow('Specialist not found: nonexistent');
   });
 
+  it('warns to stderr and skips invalid YAML instead of silently dropping', async () => {
+    const dir = join(tempDir, 'specialists');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'bad.specialist.yaml'), 'not: valid: specialist: yaml: at all');
+    await writeFile(join(dir, 'good.specialist.yaml'), MINIMAL_YAML('good'));
+
+    const stderrChunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: any, ...args: any[]) => {
+      stderrChunks.push(String(chunk));
+      return orig(chunk, ...args);
+    };
+
+    const list = await loader.list();
+
+    process.stderr.write = orig;
+
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('good');
+    expect(stderrChunks.join('')).toMatch(/skipping.*bad\.specialist\.yaml/);
+  });
+
   it('project-level specialist overrides user-level (same name)', async () => {
     const projectDir = join(tempDir, 'specialists');
     const userDir = join(tempDir, 'user-specialists');

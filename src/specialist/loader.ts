@@ -90,8 +90,9 @@ export class SpecialistLoader {
             filestoWatch: spec.specialist.validation?.files_to_watch,
             staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
           });
-        } catch {
-          // Skip invalid YAML files silently
+        } catch (e: unknown) {
+          const reason = e instanceof Error ? e.message : String(e);
+          process.stderr.write(`[specialists] skipping ${filePath}: ${reason}\n`);
         }
       }
     }
