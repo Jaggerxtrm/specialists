@@ -8,7 +8,7 @@ description: >
   jobs, MCP tools (use_specialist, start_specialist, poll_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.0
+version: 3.1
 ---
 
 # Specialists Usage
@@ -61,9 +61,42 @@ specialists result <job-id>
 bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
 ```
 
-**`--background`** — returns immediately; use for anything >30 seconds.
+**`--background`** — returns immediately; use for anything that will take more than ~30 seconds.
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
+
+---
+
+## Choosing the Right Specialist
+
+Run `specialists list` to see what's available. Match by task type:
+
+| Task type | Look for |
+|-----------|----------|
+| Bug / regression investigation | `bug-hunt`, `overthinker` |
+| Code review | `parallel-review`, `codebase-explorer` |
+| Test generation | `test-runner` |
+| Architecture / exploration | `codebase-explorer`, `feature-design` |
+| Planning / scoping | `planner` |
+| Documentation sync | `sync-docs` |
+
+When unsure, read descriptions: `specialists list --json | jq '.[].description'`
+
+---
+
+## When a Specialist Fails
+
+If a specialist times out or errors, **don't silently fall back to doing the work yourself**.
+Surface the failure — the user may want to fix the specialist config or switch to a different one.
+
+```bash
+specialists feed <job-id>          # see what happened
+specialists doctor                 # check for systemic issues
+```
+
+If you need to retry: try foreground mode (no `--background`) for shorter timeout exposure,
+or try a different specialist. If all else fails, tell the user what you attempted and why
+it failed before doing the work yourself.
 
 ---
 
@@ -93,17 +126,6 @@ bd close unitAI-xyz --reason "Found 2 issues, filed unitAI-abc, unitAI-def"
 ```
 
 The specialist runs with full bead context, on a model tuned for the task, while you stay unblocked.
-
----
-
-## Discovering Specialists
-
-```bash
-specialists list                       # all specialists in this project
-specialists list --category analysis   # filter by category
-```
-
-Specialists live in `./specialists/*.specialist.yaml` — project-scoped only.
 
 ---
 

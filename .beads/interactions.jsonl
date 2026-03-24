@@ -11,3 +11,7 @@
 {"id":"int-8ab0f8ce","kind":"tool_call","created_at":"2026-03-22T22:54:11.07414526Z","actor":"you@example.com","issue_id":"unitAI-02n","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
 {"id":"int-4c2acf8d","kind":"tool_call","created_at":"2026-03-23T16:12:13.448553923Z","actor":"you@example.com","issue_id":"unitAI-2ha","model":"anthropic/claude-haiku-4-5","tool_name":"codebase-explorer","exit_code":0}
 {"id":"int-656991ff","kind":"tool_call","created_at":"2026-03-24T14:56:43.367609247Z","actor":"you@example.com","issue_id":"unitAI-tv3","model":"anthropic/claude-haiku-4-5","tool_name":"codebase-explorer","exit_code":0}
+{"id":"int-d63e7c17","kind":"tool_call","created_at":"2026-03-24T17:09:54.78314373Z","actor":"you@example.com","issue_id":"unitAI-laiv","model":"anthropic/claude-haiku-4-5","tool_name":"test-runner","exit_code":0}
+{"id":"int-04a4e8db","kind":"tool_call","created_at":"2026-03-24T17:11:16.312703505Z","actor":"you@example.com","issue_id":"unitAI-aaod","model":"anthropic/claude-sonnet-4-6","tool_name":"parallel-review","exit_code":0}
+{"id":"int-fece8747","kind":"tool_call","created_at":"2026-03-24T17:13:14.279181467Z","actor":"you@example.com","issue_id":"unitAI-s82l","model":"anthropic/claude-sonnet-4-6","tool_name":"bug-hunt","exit_code":1}
+{"id":"int-8e7f4484","kind":"tool_call","created_at":"2026-03-24T17:15:59.10062658Z","actor":"you@example.com","issue_id":"unitAI-aaod","model":"anthropic/claude-sonnet-4-6","tool_name":"parallel-review","exit_code":0}
