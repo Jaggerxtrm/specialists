@@ -1,3 +1,14 @@
+---
+title: RPC Mode Notes
+scope: pi-rpc
+category: reference
+version: 1.0.0
+updated: 2026-03-23
+description: Reference notes on pi RPC mode used alongside this repo.
+domain:
+  - rpc
+---
+
 # RPC Mode
 
 RPC mode enables headless operation of the coding agent via a JSON protocol over stdin/stdout. This is useful for embedding the agent in other applications, IDEs, or custom UIs.
