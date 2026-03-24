@@ -1,237 +1,136 @@
 ---
 name: specialists-usage
 description: >
-  How to use the specialists MCP server and CLI to delegate work to specialist AI agents.
-  Use this skill whenever you need to run a specialist, decide whether to delegate a task,
-  track work with --bead, monitor background jobs, read results, or understand the
-  bead-first workflow. Also use it when the user asks about specialists run, feed, result,
-  stop, list, init, doctor, or any MCP tool like use_specialist or start_specialist.
-  Consult this skill proactively when planning any task that might benefit from delegation —
-  don't wait for the user to explicitly say "use a specialist".
-version: 2.0
+  Use this skill whenever you're about to start a substantial task — pause first and
+  ask whether to delegate. Consult before any: code review, security audit, deep bug
+  investigation, test generation, multi-file refactor, or architecture analysis. Also
+  use for the mechanics of delegation: --bead workflow, --context-depth, background
+  jobs, MCP tools (use_specialist, start_specialist, poll_specialist), specialists init,
+  or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
+  evaluate whether delegation makes sense.
+version: 3.0
 ---
 
 # Specialists Usage
 
-> Specialists are autonomous AI agents optimised for heavy tasks. Use them instead of doing
-> the work yourself when the task benefits from a dedicated expert, a second opinion, or a
-> model tuned for the workload.
+Specialists are autonomous AI agents that run independently — fresh context, different
+model, no prior bias. Delegate when a task would take you significant effort, spans
+multiple files, or benefits from a dedicated focused run.
 
-## When to Use a Specialist
+The reason isn't just speed — it's quality. A specialist has no competing context,
+leaves a tracked record via beads, and can run in the background while you stay unblocked.
 
-| Use a specialist | Do it yourself |
-|-----------------|---------------|
-| Code review / security audit | Single-file edit |
-| Deep bug investigation | Quick config change |
-| Architecture analysis | Short read-only query |
-| Test generation for a module | Obvious one-liner |
-| Refactoring across many files | Simple documentation update |
-| Long-running analysis (>5 min) | Trivial formatting fix |
+## The Delegation Decision
 
-**Rule of thumb**: if the task would take you >5 minutes or benefit from a second opinion, delegate it.
+Before starting any substantial task, ask: is this worth delegating?
+
+**Delegate when:**
+- It would take >5 minutes of focused work
+- It spans multiple files or modules
+- A fresh perspective adds value (code review, security audit)
+- It can run in the background while you do other things
+
+**Do it yourself when:**
+- It's a single-file edit or quick config change
+- It needs interactive back-and-forth
+- It's obviously trivial (one-liner, formatting fix)
+
+When in doubt, delegate. Specialists run in parallel — you don't have to wait.
 
 ---
 
-## Primary Workflow: Bead-First (Tracked Work)
+## Canonical Workflow
 
-The canonical pattern for any real work. Always use `--bead` for tracked tasks.
+For tracked work, always use `--bead`. This gives the specialist your issue as context,
+links results back to the tracker, and creates an audit trail.
 
 ```bash
-# 1. Create a bead to track the work
-bd create --title "Review auth module for security issues" --type task --priority 2
+# 1. Create a bead describing what you need
+bd create --title "Audit authentication module for security issues" --type task --priority 2
+# → unitAI-abc
 
-# 2. Run the specialist, passing the bead ID
-specialists run code-review --bead unitAI-abc [--context-depth 1] [--background]
+# 2. Find and run the right specialist
+specialists list
+specialists run security-audit --bead unitAI-abc --background
 
-# 3. Monitor progress
-specialists feed -f                          # follow all active jobs
+# 3. Keep working; check in when ready
+specialists feed -f
 
-# 4. Close the bead when done
-bd close unitAI-abc --reason "Review complete, 3 issues found"
+# 4. Read results and close
+specialists result <job-id>
+bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
 ```
 
-**`--context-depth N`** — controls how much bead context is injected into the specialist's
-system prompt. Defaults to `1` (immediate bead only). Increase for deeper dependency context.
-
-**`--no-beads`** — skips creating a new tracking bead for this run. Does **not** disable
-reading the input bead passed via `--bead`. Use when you don't want an auto-created sub-issue.
+**`--background`** — returns immediately; use for anything >30 seconds.
+**`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
+**`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
 
 ---
 
-## Secondary Workflow: Ad-Hoc (Untracked Work)
-
-For quick, exploratory, or one-off tasks with no issue to track.
+## Ad-Hoc (No Tracking)
 
 ```bash
-specialists run codebase-explorer --prompt "Map the CLI architecture"
+specialists run codebase-explorer --prompt "Map the feed command architecture"
 ```
 
-Use `--prompt` only when there's no bead. For anything worth tracking, use `--bead`.
+Use `--prompt` only for throwaway exploration. For anything worth remembering, use `--bead`.
 
 ---
 
-## Discovery
+## Example: Delegation in Practice
+
+You're asked to review `src/auth/` for security issues. Without delegation, you'd read
+every file and write findings yourself — 15+ minutes, your full attention.
+
+With a specialist:
+```bash
+bd create --title "Security review: src/auth/" --type task --priority 1  # → unitAI-xyz
+specialists list --category security
+specialists run security-audit --bead unitAI-xyz --background             # → job_4a2b1c
+# go do other work
+specialists result job_4a2b1c
+bd close unitAI-xyz --reason "Found 2 issues, filed unitAI-abc, unitAI-def"
+```
+
+The specialist runs with full bead context, on a model tuned for the task, while you stay unblocked.
+
+---
+
+## Discovering Specialists
 
 ```bash
 specialists list                       # all specialists in this project
 specialists list --category analysis   # filter by category
-specialists list --json                # machine-readable
 ```
 
-Specialists are **project-scoped only** — loaded from `./specialists/*.specialist.yaml`.
-User-scope (`~/.specialists/`) is deprecated.
-
----
-
-## Running a Specialist
-
-### Foreground (streams output in real time)
-
-```bash
-specialists run <name> --bead <id>
-specialists run <name> --prompt "..."          # ad-hoc only
-```
-
-- Output streams to stdout as tokens arrive
-- Ctrl+C sends SIGTERM (clean stop)
-- Exit code 0 = success
-
-### Background (returns immediately, job runs async)
-
-```bash
-specialists run <name> --bead <id> --background
-# → Job started: job_a1b2c3d4
-```
-
-Use background mode for tasks that will take >30 seconds, or when you want to keep working
-while the specialist runs.
-
-### Other run flags
-
-| Flag | Purpose |
-|------|---------|
-| `--model <model>` | Override model for this run only |
-| `--no-beads` | Skip creating auto-tracking bead (still reads `--bead` input) |
-| `--context-depth N` | Bead context depth, default 1 |
-| stdin | Pipe a prompt: `cat brief.md \| specialists run code-review --bead <id>` |
-
----
-
-## Background Job Lifecycle
-
-```
-specialists run --background
-      │
-      ▼
-  job_a1b2c3d4  [starting]
-      │
-      ▼
-  job_a1b2c3d4  [running]   ← specialists feed -f
-      │
-      ├─► done   → specialists result <id>
-      └─► error  → specialists feed <id>  (see error event)
-```
-
-### Monitor with feed
-
-```bash
-specialists feed                              # snapshot of all jobs
-specialists feed -f                           # follow all active jobs (live)
-specialists feed job_a1b2c3d4 --follow        # follow a specific job
-```
-
-Event types in the feed:
-- `text` — streamed output token
-- `thinking` — model reasoning token
-- `tool` — specialist calling a tool (phase: start/end)
-- `run_complete` — specialist finished
-
-### Read the result
-
-```bash
-specialists result job_a1b2c3d4              # prints output, exits 1 if still running
-specialists result job_a1b2c3d4 > out.md     # capture to file
-```
-
-### Cancel
-
-```bash
-specialists stop job_a1b2c3d4                # sends SIGTERM
-```
-
-### Completion Banner
-
-When a background job completes, the next prompt you submit will show:
-
-```
-[Specialist 'code-review' completed (job job_a1b2c3d4, 42s). Run: specialists result job_a1b2c3d4]
-```
-
-This is injected by the `specialists-complete` hook. Retrieve the result with the shown command.
+Specialists live in `./specialists/*.specialist.yaml` — project-scoped only.
 
 ---
 
 ## MCP Tools (Claude Code)
 
-Available after `specialists init` has been run and Claude Code restarted.
+Available after `specialists init` and session restart.
 
-| Tool | When to use |
-|------|-------------|
-| `specialist_init` | **Start of every session** — bootstraps context, lists specialists |
-| `list_specialists` | Discover specialists programmatically |
-| `use_specialist` | **Preferred for foreground runs** — full lifecycle, pass `bead_id` for tracked work |
-| `start_specialist` | Start async job, returns job ID immediately |
-| `poll_specialist` | Check job status and read delta output |
-| `stop_specialist` | Cancel a running job |
-| `run_parallel` | Run multiple specialists concurrently or as a pipeline |
-| `specialist_status` | Circuit breaker health + staleness info |
-
-**Recommended pattern for tracked work:**
-
-```
-1. specialist_init                              ← bootstrap once per session
-2. use_specialist(name, prompt, bead_id=id)    ← foreground, bead context injected
-   OR
-2. start_specialist(name, prompt, bead_id=id)  ← async for long tasks
-3. poll_specialist(job_id)                     ← repeat until status=done
-```
+| Tool | Purpose |
+|------|---------|
+| `specialist_init` | Bootstrap once per session |
+| `use_specialist` | Foreground run; pass `bead_id` for tracked work |
+| `start_specialist` | Async: returns job ID immediately |
+| `poll_specialist` | Check status + delta output |
+| `stop_specialist` | Cancel |
+| `run_parallel` | Concurrent or pipeline execution |
+| `specialist_status` | Circuit breaker health + staleness |
 
 ---
 
-## Project Setup
+## Setup and Troubleshooting
 
 ```bash
-specialists init           # creates specialists/, .specialists/, injects AGENTS.md workflow
-specialists list           # verify specialists are discovered
+specialists init        # first-time setup: creates specialists/, wires AGENTS.md
+specialists doctor      # health check: hooks, MCP, zombie jobs
 ```
 
-Run `specialists init` once per project root. `specialists install` and `specialists setup`
-are **deprecated** — they redirect to `init`.
-
----
-
-## Editing Specialists
-
-```bash
-specialists edit code-review --model anthropic/claude-sonnet-4-6
-specialists edit code-review --timeout 180000
-specialists edit code-review --permission HIGH
-specialists edit code-review --description "Updated description"
-specialists edit code-review --dry-run                             # preview without writing
-```
-
----
-
-## Troubleshooting
-
-```bash
-specialists doctor         # detailed checks with fix hints (hooks, MCP, zombie jobs, pi)
-specialists status         # system health overview
-```
-
-Common issues:
-- **"specialist not found"** → run `specialists list`; only project-scope is searched
-- **Job hangs** → check `specialists feed <id>` for stall; use `specialists stop`
-- **MCP tools missing** → run `specialists init` then restart Claude Code
-- **Hook not firing** → run `specialists doctor` to verify hook wiring
-- **Invalid YAML skipped** → warnings now print to stderr with filename and reason
+- **"specialist not found"** → `specialists list` (project-scope only)
+- **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel
+- **MCP tools missing** → `specialists init` then restart Claude Code
+- **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
