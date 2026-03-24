@@ -204,15 +204,14 @@ export const TIMELINE_EVENT_TYPES = {
 /**
  * Maps PiAgentSession callback event types to timeline event types.
  *
- * Historical callback events (from current implementation):
- * - 'thinking' -> TIMELINE_EVENT_TYPES.THINKING
- * - 'toolcall' -> TIMELINE_EVENT_TYPES.TOOL (phase: start)
+ * Canonical callback events (post unitAI-4rn fix):
+ * - 'thinking'         -> TIMELINE_EVENT_TYPES.THINKING
+ * - 'toolcall'         -> TIMELINE_EVENT_TYPES.TOOL (phase: start) — fired from nested toolcall_start
  * - 'tool_execution_end' -> TIMELINE_EVENT_TYPES.TOOL (phase: end)
- * - 'text' -> TIMELINE_EVENT_TYPES.TEXT
- * - 'done' -> IGNORED (use run_complete instead)
- *
- * Note: This mapping exists for transition compatibility.
- * The long-term fix (unitAI-4rn) is to align PiAgentSession with RPC reality.
+ * - 'text'             -> TIMELINE_EVENT_TYPES.TEXT
+ * - 'agent_end'        -> IGNORED (run-level completion handled as run_complete by supervisor)
+ * - 'message_done'     -> IGNORED (message-level completion, not persisted to timeline)
+ * - 'done'             -> IGNORED (legacy name for agent_end, kept for safety)
  */
 export function mapCallbackEventToTimelineEvent(
   callbackEvent: string,
@@ -252,9 +251,11 @@ export function mapCallbackEventToTimelineEvent(
     case 'text':
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
 
+    case 'agent_end':
+    case 'message_done':
     case 'done':
-      // IGNORE on the write path: modern runs persist run_complete instead.
-      // Legacy done/agent_end records are still accepted by parseTimelineEvent().
+      // IGNORE on the write path: supervisor emits run_complete instead.
+      // Legacy 'done' kept for safety; 'agent_end' is the post-unitAI-4rn name.
       return null;
 
     default:

@@ -10,18 +10,25 @@ export class SessionKilledError extends Error {
 // PiAgentSession wraps the `pi` CLI (global binary) in --mode rpc.
 // Events are emitted per the pi RPC protocol over stdout (NDJSON).
 //
-// Pi lifecycle (per stdout in rpc mode):
-//   response      — ack that prompt command was received
-//   agent_start   — agent begins processing
-//   turn_start    — conversation turn opens
-//   message_start — a message begins (user or assistant)
-//   message_update — incremental content:
-//     .assistantMessageEvent.type === 'text_delta'  → token stream
-//     .assistantMessageEvent.type === 'tool_use_start' → tool starting
-//     .assistantMessageEvent.type === 'tool_result_start' → tool result
-//   message_end   — message complete
-//   turn_end      — turn complete (includes toolResults)
-//   agent_end     — DONE, contains all messages
+// Pi RPC event layers (per docs/pi-rpc.md):
+//
+// Top-level events:
+//   response              — ack that prompt command was received
+//   agent_start           — agent begins processing
+//   turn_start/end        — conversation turn boundaries
+//   message_start/end     — message boundaries
+//   message_update        — streaming update; carries .assistantMessageEvent
+//   tool_execution_start  — tool begins executing (top-level)
+//   tool_execution_update — tool execution progress (top-level)
+//   tool_execution_end    — tool execution complete (top-level)
+//   agent_end             — run complete, contains all generated messages
+//
+// Nested under message_update.assistantMessageEvent:
+//   text_start/delta/end    — text token streaming
+//   thinking_start/delta/end — thinking token streaming
+//   toolcall_start/delta/end — LLM tool-call construction
+//   done                    — message-level completion
+//   error                   — message-level error
 //
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -212,48 +219,52 @@ export class PiAgentSession {
           .join('');
       }
       this._agentEndReceived = true;
-      this.options.onEvent?.('done');
+      this.options.onEvent?.('agent_end');
       this._doneResolve?.();
       return;
     }
 
-    // ── Thinking ───────────────────────────────────────────────────────────
-    if (type === 'thinking_start') { this.options.onEvent?.('thinking'); return; }
-    if (type === 'thinking_delta') {
-      if (event.delta) this.options.onThinking?.(event.delta);
-      this.options.onEvent?.('thinking');
-      return;
-    }
-    if (type === 'thinking_end') { return; }
-
-    // ── Tool call construction ─────────────────────────────────────────────
-    if (type === 'toolcall_start') {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? 'tool');
-      this.options.onEvent?.('toolcall');
-      return;
-    }
-    if (type === 'toolcall_end') { this.options.onEvent?.('toolcall'); return; }
-
-    // ── Tool execution ─────────────────────────────────────────────────────
+    // ── Tool execution (top-level per RPC docs) ────────────────────────────────
     if (type === 'tool_execution_start') {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? 'tool');
+      // NOTE: onToolStart fires from nested toolcall_start inside message_update
       this.options.onEvent?.('tool_execution');
       return;
     }
     if (type === 'tool_execution_update') { this.options.onEvent?.('tool_execution'); return; }
     if (type === 'tool_execution_end') {
-      this.options.onToolEnd?.(event.name ?? event.toolName ?? 'tool');
+      this.options.onToolEnd?.(event.toolName ?? event.name ?? 'tool');
       this.options.onEvent?.('tool_execution_end');
       return;
     }
 
-    // ── Text streaming (inside message_update) ─────────────────────────────
+    // ── message_update — all streaming deltas are nested here ─────────────────
     if (type === 'message_update') {
       const ae = event.assistantMessageEvent;
       if (!ae) return;
-      if (ae.type === 'text_delta' && ae.delta) {
-        this.options.onToken?.(ae.delta);
-        this.options.onEvent?.('text');
+      switch (ae.type) {
+        case 'text_delta':
+          if (ae.delta) this.options.onToken?.(ae.delta);
+          this.options.onEvent?.('text');
+          break;
+        case 'thinking_start':
+          this.options.onEvent?.('thinking');
+          break;
+        case 'thinking_delta':
+          if (ae.delta) this.options.onThinking?.(ae.delta);
+          this.options.onEvent?.('thinking');
+          break;
+        case 'toolcall_start':
+          // Tool name known at LLM construction time — set before execution events fire
+          this.options.onToolStart?.(ae.name ?? ae.toolName ?? 'tool');
+          this.options.onEvent?.('toolcall');
+          break;
+        case 'toolcall_end':
+          this.options.onEvent?.('toolcall');
+          break;
+        case 'done':
+          // Message-level completion (distinct from run-level agent_end)
+          this.options.onEvent?.('message_done');
+          break;
       }
     }
   }
