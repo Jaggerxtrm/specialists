@@ -17785,34 +17785,11 @@ class PiAgentSession {
         this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
       }
       this._agentEndReceived = true;
-      this.options.onEvent?.("done");
+      this.options.onEvent?.("agent_end");
       this._doneResolve?.();
       return;
     }
-    if (type === "thinking_start") {
-      this.options.onEvent?.("thinking");
-      return;
-    }
-    if (type === "thinking_delta") {
-      if (event.delta)
-        this.options.onThinking?.(event.delta);
-      this.options.onEvent?.("thinking");
-      return;
-    }
-    if (type === "thinking_end") {
-      return;
-    }
-    if (type === "toolcall_start") {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
-      this.options.onEvent?.("toolcall");
-      return;
-    }
-    if (type === "toolcall_end") {
-      this.options.onEvent?.("toolcall");
-      return;
-    }
     if (type === "tool_execution_start") {
-      this.options.onToolStart?.(event.name ?? event.toolName ?? "tool");
       this.options.onEvent?.("tool_execution");
       return;
     }
@@ -17821,7 +17798,7 @@ class PiAgentSession {
       return;
     }
     if (type === "tool_execution_end") {
-      this.options.onToolEnd?.(event.name ?? event.toolName ?? "tool");
+      this.options.onToolEnd?.(event.toolName ?? event.name ?? "tool");
       this.options.onEvent?.("tool_execution_end");
       return;
     }
@@ -17829,9 +17806,30 @@ class PiAgentSession {
       const ae = event.assistantMessageEvent;
       if (!ae)
         return;
-      if (ae.type === "text_delta" && ae.delta) {
-        this.options.onToken?.(ae.delta);
-        this.options.onEvent?.("text");
+      switch (ae.type) {
+        case "text_delta":
+          if (ae.delta)
+            this.options.onToken?.(ae.delta);
+          this.options.onEvent?.("text");
+          break;
+        case "thinking_start":
+          this.options.onEvent?.("thinking");
+          break;
+        case "thinking_delta":
+          if (ae.delta)
+            this.options.onThinking?.(ae.delta);
+          this.options.onEvent?.("thinking");
+          break;
+        case "toolcall_start":
+          this.options.onToolStart?.(ae.name ?? ae.toolName ?? "tool");
+          this.options.onEvent?.("toolcall");
+          break;
+        case "toolcall_end":
+          this.options.onEvent?.("toolcall");
+          break;
+        case "done":
+          this.options.onEvent?.("message_done");
+          break;
       }
     }
   }
@@ -18831,6 +18829,8 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       };
     case "text":
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
+    case "agent_end":
+    case "message_done":
     case "done":
       return null;
     default:
