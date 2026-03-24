@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -59,6 +60,45 @@ function ensureProjectMcp(cwd: string): void {
   mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
   saveJson(mcpPath, mcp);
   ok('registered specialists in project .mcp.json');
+}
+
+function ensureProjectHooks(cwd: string): void {
+  // Resolve hooks directory relative to this package's installed location
+  const hooksDir = fileURLToPath(new URL('../hooks', import.meta.url));
+  const completeHook   = join(hooksDir, 'specialists-complete.mjs');
+  const sessionHook    = join(hooksDir, 'specialists-session-start.mjs');
+
+  const settingsDir  = join(cwd, '.claude');
+  const settingsPath = join(settingsDir, 'settings.json');
+
+  if (!existsSync(settingsDir)) mkdirSync(settingsDir, { recursive: true });
+
+  const settings = loadJson(settingsPath, {});
+  settings.hooks ??= {} as Record<string, unknown[]>;
+
+  let changed = false;
+
+  function addHook(event: string, command: string): void {
+    const list = (settings.hooks as Record<string, any[]>);
+    list[event] ??= [];
+    const alreadyWired = list[event].some((entry: any) =>
+      entry?.hooks?.some?.((h: any) => h?.command === command)
+    );
+    if (!alreadyWired) {
+      list[event].push({ matcher: '', hooks: [{ type: 'command', command }] });
+      changed = true;
+    }
+  }
+
+  addHook('UserPromptSubmit', `node ${completeHook}`);
+  addHook('SessionStart',     `node ${sessionHook}`);
+
+  if (changed) {
+    saveJson(settingsPath, settings);
+    ok('installed specialists hooks into .claude/settings.json');
+  } else {
+    skip('.claude/settings.json already has specialists hooks');
+  }
 }
 
 export async function run(): Promise<void> {
@@ -119,10 +159,13 @@ export async function run(): Promise<void> {
   // ── 5. Register MCP at project scope ──────────────────────────────────────
   ensureProjectMcp(cwd);
 
+  // ── 6. Install hooks into .claude/settings.json ───────────────────────────
+  ensureProjectHooks(cwd);
+
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
   console.log(`  ${dim('Next steps:')}`);
   console.log(`  1. Add your specialists to ${yellow('specialists/')}`);
   console.log(`  2. Run ${yellow('specialists list')} to verify they are discovered`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json changes\n`);
+  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes\n`);
 }

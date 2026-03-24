@@ -17569,7 +17569,11 @@ class SpecialistLoader {
             filestoWatch: spec.specialist.validation?.files_to_watch,
             staleThresholdDays: spec.specialist.validation?.stale_threshold_days
           });
-        } catch {}
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e);
+          process.stderr.write(`[specialists] skipping ${filePath}: ${reason}
+`);
+        }
       }
     }
     return results;
@@ -18566,6 +18570,7 @@ __export(exports_init, {
 });
 import { existsSync as existsSync4, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join as join6 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
   console.log(`  ${green2("✓")} ${msg}`);
 }
@@ -18597,6 +18602,35 @@ function ensureProjectMcp(cwd) {
   mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
   saveJson(mcpPath, mcp);
   ok("registered specialists in project .mcp.json");
+}
+function ensureProjectHooks(cwd) {
+  const hooksDir = fileURLToPath2(new URL("../hooks", import.meta.url));
+  const completeHook = join6(hooksDir, "specialists-complete.mjs");
+  const sessionHook = join6(hooksDir, "specialists-session-start.mjs");
+  const settingsDir = join6(cwd, ".claude");
+  const settingsPath = join6(settingsDir, "settings.json");
+  if (!existsSync4(settingsDir))
+    mkdirSync(settingsDir, { recursive: true });
+  const settings = loadJson(settingsPath, {});
+  settings.hooks ??= {};
+  let changed = false;
+  function addHook(event, command) {
+    const list = settings.hooks;
+    list[event] ??= [];
+    const alreadyWired = list[event].some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
+    if (!alreadyWired) {
+      list[event].push({ matcher: "", hooks: [{ type: "command", command }] });
+      changed = true;
+    }
+  }
+  addHook("UserPromptSubmit", `node ${completeHook}`);
+  addHook("SessionStart", `node ${sessionHook}`);
+  if (changed) {
+    saveJson(settingsPath, settings);
+    ok("installed specialists hooks into .claude/settings.json");
+  } else {
+    skip(".claude/settings.json already has specialists hooks");
+  }
 }
 async function run5() {
   const cwd = process.cwd();
@@ -18652,13 +18686,14 @@ ${bold3("specialists init")}
     ok("created AGENTS.md with Specialists section");
   }
   ensureProjectMcp(cwd);
+  ensureProjectHooks(cwd);
   console.log(`
 ${bold3("Done!")}
 `);
   console.log(`  ${dim3("Next steps:")}`);
   console.log(`  1. Add your specialists to ${yellow3("specialists/")}`);
   console.log(`  2. Run ${yellow3("specialists list")} to verify they are discovered`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json changes
+  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes
 `);
 }
 var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRY = ".specialists/", MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
