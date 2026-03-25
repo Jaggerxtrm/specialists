@@ -58,3 +58,4 @@ venv/
 .beads/.bv.lock
 
 .specialists/ready/
+.specialists/
