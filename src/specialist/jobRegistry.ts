@@ -37,6 +37,7 @@ interface JobState {
   endedAtMs?: number;
   error?: string;
   killFn?: () => void;
+  steerFn?: (msg: string) => Promise<void>;
   beadId?: string;
 }
 
@@ -90,6 +91,27 @@ export class JobRegistry {
       return;
     }
     job.killFn = killFn;
+  }
+
+  /** Register the steer function for this job. */
+  setSteerFn(id: string, steerFn: (msg: string) => Promise<void>): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.steerFn = steerFn;
+  }
+
+  /** Send a mid-run steering message to the Pi agent for this job. */
+  async steer(id: string, message: string): Promise<{ ok: boolean; error?: string }> {
+    const job = this.jobs.get(id);
+    if (!job) return { ok: false, error: `Job not found: ${id}` };
+    if (job.status !== 'running') return { ok: false, error: `Job is not running (status: ${job.status})` };
+    if (!job.steerFn) return { ok: false, error: 'Job session not ready for steering yet' };
+    try {
+      await job.steerFn(message);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
   }
 
   complete(id: string, result: RunResult): void {

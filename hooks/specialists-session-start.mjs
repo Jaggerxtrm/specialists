@@ -100,6 +100,8 @@ lines.push('MCP tools: specialist_init · use_specialist · start_specialist · 
 if (lines.length === 0) process.exit(0);
 
 process.stdout.write(JSON.stringify({
-  type: 'inject',
-  content: lines.join('\n'),
+  hookSpecificOutput: {
+    hookEventName: 'SessionStart',
+    additionalSystemPrompt: lines.join('\n'),
+  },
 }) + '\n');

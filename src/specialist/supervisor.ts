@@ -15,7 +15,9 @@ import {
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { createReadStream } from 'node:fs';
+import { spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
 import type { BeadsClient } from './beads.js';
 import {
@@ -43,6 +45,7 @@ export interface SupervisorStatus {
   last_event_at_ms?: number;
   bead_id?: string;
   session_file?: string;
+  fifo_path?: string;
   error?: string;
 }
 
@@ -201,10 +204,20 @@ export class Supervisor {
     // Emit run_start event
     appendTimelineEvent(createRunStartEvent(runOptions.name));
 
+    // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
+    const fifoPath = join(dir, 'steer.pipe');
+    try {
+      execFileSync('mkfifo', [fifoPath]);
+      this.updateStatus(id, { fifo_path: fifoPath });
+    } catch {
+      // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
+    }
+
     let textLogged = false;
     let currentTool = '';
     let currentToolCallId = '';
     let killFn: (() => void) | undefined;
+    let steerFn: ((msg: string) => Promise<void>) | undefined;
 
     const sigtermHandler = () => killFn?.();
     process.once('SIGTERM', sigtermHandler);
@@ -255,6 +268,25 @@ export class Supervisor {
         (beadId) => {
           this.updateStatus(id, { bead_id: beadId });
         },
+        // onSteerRegistered — wire FIFO reader to forward steer messages into the session
+        (fn) => {
+          steerFn = fn;
+          // Start a background reader loop on the FIFO.
+          // Opening with 'r+' (O_RDWR) prevents blocking on open when there's no writer yet.
+          // Each line received is forwarded as a steer message to the Pi session.
+          if (existsSync(fifoPath)) {
+            const rl = createInterface({ input: createReadStream(fifoPath, { flags: 'r+' }) });
+            rl.on('line', (line) => {
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed?.type === 'steer' && typeof parsed.message === 'string') {
+                  steerFn?.(parsed.message).catch(() => {});
+                }
+              } catch { /* ignore malformed lines */ }
+            });
+            rl.on('error', () => {}); // ignore FIFO errors
+          }
+        },
       );
 
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
@@ -299,6 +331,8 @@ export class Supervisor {
     } finally {
       process.removeListener('SIGTERM', sigtermHandler);
       closeSync(eventsFd);
+      // Remove the FIFO on job completion (best effort)
+      try { if (existsSync(fifoPath)) rmSync(fifoPath); } catch { /* ignore */ }
     }
   }
 }
