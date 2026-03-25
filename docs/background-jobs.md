@@ -18,6 +18,8 @@ domain:
 
 # Background Jobs
 
+> **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
+
 Use background mode when a specialist run will take longer or you want to keep working. Add `--keep-alive` for multi-turn sessions where the Pi session stays alive between turns.
 
 ## Start a background job

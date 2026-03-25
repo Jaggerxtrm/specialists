@@ -14,6 +14,8 @@ domain:
 
 # CLI Reference
 
+> **Alias:** `sp` is a shorter alias for `specialists`. Every command below works with either prefix — `sp run`, `sp list`, `sp feed`, etc.
+
 ## Core commands
 
 | Command | Purpose |

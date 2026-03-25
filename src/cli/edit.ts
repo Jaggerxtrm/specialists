@@ -35,7 +35,7 @@ interface EditArgs {
 function parseArgs(argv: string[]): EditArgs {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists edit <name> --<field> <value> [--dry-run]');
+    console.error('Usage: specialists|sp edit <name> --<field> <value> [--dry-run]');
     console.error(`  Fields: ${Object.keys(FIELD_MAP).join(', ')}`);
     process.exit(1);
   }

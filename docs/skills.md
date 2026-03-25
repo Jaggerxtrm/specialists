@@ -13,6 +13,8 @@ domain:
 
 # Skills Catalog
 
+> **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
+
 Skills are prompt packages that add focused guidance to specialist runs.
 
 ## Repo-local skills

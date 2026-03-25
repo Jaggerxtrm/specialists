@@ -13,6 +13,8 @@ domain:
 
 # Specialists Catalog
 
+> **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
+
 Current project specialists are defined in `specialists/*.specialist.yaml`.
 
 ## Current specialists

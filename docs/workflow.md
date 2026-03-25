@@ -16,6 +16,8 @@ domain:
 
 # Bead-First Workflow
 
+> **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
+
 The canonical workflow is **bead-first**.
 
 ## Tracked work (primary)
