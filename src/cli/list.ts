@@ -6,12 +6,13 @@ import { SpecialistLoader } from '../specialist/loader.js';
 const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
+const green  = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ParsedArgs {
   category?: string;
-  scope?: 'project' | 'user';
+  scope?: 'default' | 'user';
   json?: boolean;
 }
 
@@ -40,9 +41,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
     if (token === '--scope') {
       const value = argv[++i];
-      if (value !== 'project' && value !== 'user') {
+      if (value !== 'default' && value !== 'user') {
         throw new ArgParseError(
-          `--scope must be "project" or "user", got: "${value ?? ''}"`
+          `--scope must be "default" or "user", got: "${value ?? ''}"`
         );
       }
       result.scope = value;
@@ -96,7 +97,7 @@ export async function run(): Promise<void> {
   console.log(`\n${bold(`Specialists (${specialists.length})`)}\n`);
   for (const s of specialists) {
     const name     = cyan(s.name.padEnd(nameWidth));
-    const scopeTag = yellow(`[${s.scope}]`);
+    const scopeTag = s.scope === 'default' ? green('[default]') : yellow('[user]');
     const model    = dim(s.model);
     const desc     = s.description.length > 80
       ? s.description.slice(0, 79) + '…'

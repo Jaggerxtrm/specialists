@@ -28,9 +28,11 @@ describe('init CLI — run()', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('creates specialists/ directory when it does not exist', async () => {
+  it('creates .specialists/ directory structure', async () => {
     await runInit(tempDir);
-    expect(existsSync(join(tempDir, 'specialists'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'default'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user'))).toBe(true);
   });
 
   it('creates AGENTS.md with Specialists section when file does not exist', async () => {
@@ -64,12 +66,6 @@ describe('init CLI — run()', () => {
     const content = await readFile(join(tempDir, 'AGENTS.md'), 'utf-8');
     expect(content).toContain('Custom text here.');
     expect((content.match(/## Specialists/g) ?? []).length).toBe(1);
-  });
-
-  it('does not fail if specialists/ directory already exists', async () => {
-    await mkdir(join(tempDir, 'specialists'));
-    await runInit(tempDir);
-    expect(existsSync(join(tempDir, 'specialists'))).toBe(true);
   });
 
   it('creates project .mcp.json with specialists registration', async () => {
@@ -107,9 +103,9 @@ describe('init CLI — run()', () => {
     expect(second).toBe(first);
   });
 
-  it('copies canonical specialists to specialists/ directory', async () => {
+  it('copies canonical specialists to .specialists/default/specialists/', async () => {
     await runInit(tempDir);
-    const specialistsDir = join(tempDir, 'specialists');
+    const specialistsDir = join(tempDir, '.specialists', 'default', 'specialists');
     const files = await readdir(specialistsDir).catch(() => []);
     const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
     
@@ -122,7 +118,7 @@ describe('init CLI — run()', () => {
 
   it('does not overwrite existing specialist files', async () => {
     // Create a custom specialist with the same name as a canonical one
-    const specialistsDir = join(tempDir, 'specialists');
+    const specialistsDir = join(tempDir, '.specialists', 'default', 'specialists');
     await mkdir(specialistsDir, { recursive: true });
     const customContent = `specialist:
   metadata:
@@ -145,9 +141,9 @@ describe('init CLI — run()', () => {
     expect(content).toContain('Custom bug hunt');
   });
 
-  it('copies canonical hooks to .claude/hooks/', async () => {
+  it('copies canonical hooks to .specialists/default/hooks/', async () => {
     await runInit(tempDir);
-    const hooksDir = join(tempDir, '.claude', 'hooks');
+    const hooksDir = join(tempDir, '.specialists', 'default', 'hooks');
     const files = await readdir(hooksDir).catch(() => []);
     const mjsFiles = files.filter(f => f.endsWith('.mjs'));
     
@@ -156,7 +152,7 @@ describe('init CLI — run()', () => {
     expect(mjsFiles).toContain('specialists-session-start.mjs');
   });
 
-  it('wires hooks in settings.json with relative paths (not absolute)', async () => {
+  it('wires hooks in settings.json with paths to .specialists/default/hooks/', async () => {
     await runInit(tempDir);
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
@@ -165,16 +161,16 @@ describe('init CLI — run()', () => {
     expect(settings.UserPromptSubmit).toBeDefined();
     expect(settings.SessionStart).toBeDefined();
     
-    // Check relative paths (portable across machines)
+    // Check paths point to .specialists/default/hooks/
     const submitCommand = settings.UserPromptSubmit[0].hooks[0].command;
-    expect(submitCommand).toContain('.claude/hooks/specialists-complete.mjs');
+    expect(submitCommand).toContain('.specialists/default/hooks/specialists-complete.mjs');
     expect(submitCommand).not.toContain('/home/');
     expect(submitCommand).not.toContain('/Users/');
   });
 
-  it('copies canonical skills to .claude/skills/', async () => {
+  it('copies canonical skills to .specialists/default/skills/', async () => {
     await runInit(tempDir);
-    const skillsDir = join(tempDir, '.claude', 'skills');
+    const skillsDir = join(tempDir, '.specialists', 'default', 'skills');
     const dirs = await readdir(skillsDir).catch(() => []);
     
     expect(dirs.length).toBeGreaterThan(0);
@@ -182,19 +178,29 @@ describe('init CLI — run()', () => {
     expect(dirs).toContain('specialists-usage');
   });
 
-  it('copies canonical skills to .agents/skills/', async () => {
+  it('creates user directories for custom assets', async () => {
     await runInit(tempDir);
-    const skillsDir = join(tempDir, '.agents', 'skills');
-    const dirs = await readdir(skillsDir).catch(() => []);
-    
-    expect(dirs.length).toBeGreaterThan(0);
-    expect(dirs).toContain('specialist-author');
-    expect(dirs).toContain('specialists-usage');
+    expect(existsSync(join(tempDir, '.specialists', 'user', 'specialists'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user', 'hooks'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user', 'skills'))).toBe(true);
+  });
+
+  it('creates runtime directories (jobs, ready)', async () => {
+    await runInit(tempDir);
+    expect(existsSync(join(tempDir, '.specialists', 'jobs'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'ready'))).toBe(true);
+  });
+
+  it('adds runtime dirs to .gitignore', async () => {
+    await runInit(tempDir);
+    const gitignore = await readFile(join(tempDir, '.gitignore'), 'utf-8');
+    expect(gitignore).toContain('.specialists/jobs/');
+    expect(gitignore).toContain('.specialists/ready/');
   });
 
   it('does not overwrite existing hook files', async () => {
     // Create a custom hook with the same name
-    const hooksDir = join(tempDir, '.claude', 'hooks');
+    const hooksDir = join(tempDir, '.specialists', 'default', 'hooks');
     await mkdir(hooksDir, { recursive: true });
     await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// custom hook', 'utf-8');
     
@@ -206,7 +212,7 @@ describe('init CLI — run()', () => {
 
   it('does not overwrite existing skill directories', async () => {
     // Create a custom skill with the same name
-    const skillsDir = join(tempDir, '.claude', 'skills', 'specialist-author');
+    const skillsDir = join(tempDir, '.specialists', 'default', 'skills', 'specialist-author');
     await mkdir(skillsDir, { recursive: true });
     await writeFile(join(skillsDir, 'SKILL.md'), '# Custom skill', 'utf-8');
     

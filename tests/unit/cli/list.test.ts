@@ -11,8 +11,8 @@ describe('list CLI — parseArgs', () => {
     expect(parseArgs(['--category', 'analysis'])).toEqual({ category: 'analysis' });
   });
 
-  it('parses --scope project', () => {
-    expect(parseArgs(['--scope', 'project'])).toEqual({ scope: 'project' });
+  it('parses --scope default', () => {
+    expect(parseArgs(['--scope', 'default'])).toEqual({ scope: 'default' });
   });
 
   it('parses --scope user', () => {
@@ -25,15 +25,15 @@ describe('list CLI — parseArgs', () => {
   });
 
   it('parses flags in any order', () => {
-    expect(parseArgs(['--scope', 'project', '--category', 'debug']))
-      .toEqual({ category: 'debug', scope: 'project' });
+    expect(parseArgs(['--scope', 'default', '--category', 'debug']))
+      .toEqual({ category: 'debug', scope: 'default' });
   });
 
   it('throws ArgParseError for invalid --scope value', () => {
     expect(() => parseArgs(['--scope', 'system']))
       .toThrow(ArgParseError);
     expect(() => parseArgs(['--scope', 'system']))
-      .toThrow('must be "project" or "user"');
+      .toThrow('must be "default" or "user"');
   });
 
   it('throws ArgParseError for empty --scope', () => {
@@ -64,7 +64,7 @@ describe('list CLI — parseArgs --json', () => {
   });
 
   it('parses --json with other flags', () => {
-    expect(parseArgs(['--scope', 'project', '--json'])).toEqual({ scope: 'project', json: true });
+    expect(parseArgs(['--scope', 'default', '--json'])).toEqual({ scope: 'default', json: true });
   });
 
   it('json defaults to undefined when not provided', () => {

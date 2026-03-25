@@ -1,7 +1,6 @@
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { parseSpecialist, type Specialist } from './schema.js';
 
@@ -11,7 +10,7 @@ export interface SpecialistSummary {
   category: string;
   version: string;
   model: string;
-  scope: 'project' | 'user' | 'system';
+  scope: 'default' | 'user';
   filePath: string;
   updated?: string;
   filestoWatch?: string[];
@@ -42,26 +41,25 @@ export async function checkStaleness(
 
 interface LoaderOptions {
   projectDir?: string;
-  userDir?: string;    // override for testing
 }
 
 export class SpecialistLoader {
   private cache = new Map<string, Specialist>();
   private projectDir: string;
-  private userDir: string;
-  // system scope removed — specialists are copied to ~/.agents/specialists/ on install
 
   constructor(options: LoaderOptions = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
-    this.userDir = options.userDir ?? join(homedir(), '.agents', 'specialists');
   }
 
-  private getScanDirs(): Array<{ path: string; scope: 'project' | 'user' | 'system' }> {
-    const dirs: Array<{ path: string; scope: 'project' | 'user' | 'system' }> = [
-      { path: join(this.projectDir, 'specialists'), scope: 'project' },
-      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'project' },
-      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'project' },
-      { path: this.userDir, scope: 'user' },
+  private getScanDirs(): Array<{ path: string; scope: 'default' | 'user' }> {
+    const dirs: Array<{ path: string; scope: 'default' | 'user' }> = [
+      // User specialists take precedence over defaults
+      { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
+      { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
+      // Legacy paths for backwards compatibility
+      { path: join(this.projectDir, 'specialists'), scope: 'user' },
+      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'user' },
+      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'user' },
     ];
     return dirs.filter(d => existsSync(d.path));
   }
@@ -78,7 +76,7 @@ export class SpecialistLoader {
           const content = await readFile(filePath, 'utf-8');
           const spec = await parseSpecialist(content);
           const { name, description, category: cat, version, updated } = spec.specialist.metadata;
-          if (seen.has(name)) continue; // project overrides user/system (first wins)
+          if (seen.has(name)) continue; // first wins (user overrides default)
           if (category && cat !== category) continue;
           seen.add(name);
           results.push({
@@ -111,10 +109,9 @@ export class SpecialistLoader {
         // Resolve skills.paths at load time (~/..., ./..., absolute)
         const rawPaths = spec.specialist.skills?.paths;
         if (rawPaths?.length) {
-          const home = homedir();
           const fileDir = dir.path;
           const resolved = rawPaths.map(p => {
-            if (p.startsWith('~/')) return join(home, p.slice(2));
+            if (p.startsWith('~/')) return join(process.env.HOME || '', p.slice(2));
             if (p.startsWith('./')) return join(fileDir, p.slice(2));
             return p; // absolute
           });

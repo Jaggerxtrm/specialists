@@ -80,8 +80,17 @@ config/
 ├── hooks/          bundled hook scripts
 ├── skills/         repo-local skills used by specialists
 └── extensions/     pi extensions (future)
-specialists/        project specialist definitions (after init)
-.specialists/       runtime data (jobs/, ready/) — gitignored
+.specialists/
+├── default/        canonical assets (from init)
+│   ├── specialists/
+│   ├── hooks/
+│   └── skills/
+├── user/           custom additions
+│   ├── specialists/
+│   ├── hooks/
+│   └── skills/
+├── jobs/           runtime — gitignored
+└── ready/          runtime — gitignored
 src/                CLI, server, loader, runner, tools
 ```
 

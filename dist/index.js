@@ -17503,7 +17503,6 @@ var init_schema = __esm(() => {
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 async function checkStaleness(summary) {
   if (!summary.filestoWatch?.length || !summary.updated)
@@ -17527,17 +17526,16 @@ async function checkStaleness(summary) {
 class SpecialistLoader {
   cache = new Map;
   projectDir;
-  userDir;
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
-    this.userDir = options.userDir ?? join(homedir(), ".agents", "specialists");
   }
   getScanDirs() {
     const dirs = [
-      { path: join(this.projectDir, "specialists"), scope: "project" },
-      { path: join(this.projectDir, ".claude", "specialists"), scope: "project" },
-      { path: join(this.projectDir, ".agent-forge", "specialists"), scope: "project" },
-      { path: this.userDir, scope: "user" }
+      { path: join(this.projectDir, ".specialists", "user", "specialists"), scope: "user" },
+      { path: join(this.projectDir, ".specialists", "default", "specialists"), scope: "default" },
+      { path: join(this.projectDir, "specialists"), scope: "user" },
+      { path: join(this.projectDir, ".claude", "specialists"), scope: "user" },
+      { path: join(this.projectDir, ".agent-forge", "specialists"), scope: "user" }
     ];
     return dirs.filter((d) => existsSync(d.path));
   }
@@ -17588,11 +17586,10 @@ class SpecialistLoader {
         const spec = await parseSpecialist(content);
         const rawPaths = spec.specialist.skills?.paths;
         if (rawPaths?.length) {
-          const home = homedir();
           const fileDir = dir.path;
           const resolved = rawPaths.map((p) => {
             if (p.startsWith("~/"))
-              return join(home, p.slice(2));
+              return join(process.env.HOME || "", p.slice(2));
             if (p.startsWith("./"))
               return join(fileDir, p.slice(2));
             return p;
@@ -17655,7 +17652,7 @@ var init_backendMap = __esm(() => {
 // src/pi/session.ts
 import { spawn } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
+import { homedir } from "node:os";
 import { join as join2 } from "node:path";
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
@@ -17712,7 +17709,7 @@ class PiAgentSession {
     const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
     if (toolsFlag)
       args.push("--tools", toolsFlag);
-    const piExtDir = join2(homedir2(), ".pi", "agent", "extensions");
+    const piExtDir = join2(homedir(), ".pi", "agent", "extensions");
     const permLevel = (this.options.permissionLevel ?? "").toUpperCase();
     if (permLevel !== "READ_ONLY") {
       const qgPath = join2(piExtDir, "quality-gates");
@@ -18839,8 +18836,8 @@ function parseArgs(argv) {
     }
     if (token === "--scope") {
       const value = argv[++i];
-      if (value !== "project" && value !== "user") {
-        throw new ArgParseError(`--scope must be "project" or "user", got: "${value ?? ""}"`);
+      if (value !== "default" && value !== "user") {
+        throw new ArgParseError(`--scope must be "default" or "user", got: "${value ?? ""}"`);
       }
       result.scope = value;
       continue;
@@ -18882,7 +18879,7 @@ ${bold(`Specialists (${specialists.length})`)}
 `);
   for (const s of specialists) {
     const name = cyan(s.name.padEnd(nameWidth));
-    const scopeTag = yellow(`[${s.scope}]`);
+    const scopeTag = s.scope === "default" ? green("[default]") : yellow("[user]");
     const model = dim(s.model);
     const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
     console.log(`  ${name}  ${scopeTag}  ${model}`);
@@ -18890,7 +18887,7 @@ ${bold(`Specialists (${specialists.length})`)}
     console.log();
   }
 }
-var dim = (s) => `\x1B[2m${s}\x1B[0m`, bold = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError;
+var dim = (s) => `\x1B[2m${s}\x1B[0m`, bold = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError;
 var init_list = __esm(() => {
   init_loader();
   ArgParseError = class ArgParseError extends Error {
@@ -18986,7 +18983,7 @@ ${bold2(`Models on pi`)}  ${dim2(`(${total} total)`)}
       const key = `${m.provider}/${m.model}`;
       const inUse = usedBy.get(key);
       const flags = [
-        m.thinking ? green("thinking") : dim2("·"),
+        m.thinking ? green2("thinking") : dim2("·"),
         m.images ? dim2("images") : ""
       ].filter(Boolean).join("  ");
       const ctx = dim2(`ctx ${m.context}`);
@@ -19001,7 +18998,7 @@ ${bold2(`Models on pi`)}  ${dim2(`(${total} total)`)}
     console.log();
   }
 }
-var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, cyan2 = (s) => `\x1B[36m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold2 = (s) => `\x1B[1m${s}\x1B[0m`, dim2 = (s) => `\x1B[2m${s}\x1B[0m`, cyan2 = (s) => `\x1B[36m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`;
 var init_models = __esm(() => {
   init_loader();
 });
@@ -19015,7 +19012,7 @@ import { copyFileSync, cpSync, existsSync as existsSync5, mkdirSync as mkdirSync
 import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
-  console.log(`  ${green2("✓")} ${msg}`);
+  console.log(`  ${green3("✓")} ${msg}`);
 }
 function skip(msg) {
   console.log(`  ${yellow3("○")} ${msg}`);
@@ -19044,17 +19041,24 @@ function resolvePackagePath(relativePath) {
   return null;
 }
 function copyCanonicalSpecialists(cwd) {
-  const canonicalDir = resolvePackagePath("specialists");
-  if (!canonicalDir) {
+  const sourceDir = resolvePackagePath("specialists");
+  if (!sourceDir) {
     skip("no canonical specialists found in package");
     return;
   }
-  const targetDir = join9(cwd, "specialists");
-  const files = readdirSync2(canonicalDir).filter((f) => f.endsWith(".specialist.yaml"));
+  const targetDir = join9(cwd, ".specialists", "default", "specialists");
+  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.yaml"));
+  if (files.length === 0) {
+    skip("no specialist files found in package");
+    return;
+  }
+  if (!existsSync5(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
   let copied = 0;
   let skipped = 0;
   for (const file of files) {
-    const src = join9(canonicalDir, file);
+    const src = join9(sourceDir, file);
     const dest = join9(targetDir, file);
     if (existsSync5(dest)) {
       skipped++;
@@ -19064,36 +19068,23 @@ function copyCanonicalSpecialists(cwd) {
     }
   }
   if (copied > 0) {
-    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to specialists/`);
+    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to .specialists/default/specialists/`);
   }
   if (skipped > 0) {
     skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
-function ensureProjectMcp(cwd) {
-  const mcpPath = join9(cwd, MCP_FILE);
-  const mcp = loadJson(mcpPath, { mcpServers: {} });
-  mcp.mcpServers ??= {};
-  const existing = mcp.mcpServers[MCP_SERVER_NAME];
-  if (existing && existing.command === MCP_SERVER_CONFIG.command && Array.isArray(existing.args) && existing.args.length === MCP_SERVER_CONFIG.args.length) {
-    skip(".mcp.json already registers specialists");
-    return;
-  }
-  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
-  saveJson(mcpPath, mcp);
-  ok("registered specialists in project .mcp.json");
-}
 function copyCanonicalHooks(cwd) {
   const sourceDir = resolvePackagePath("hooks");
   if (!sourceDir) {
     skip("no canonical hooks found in package");
-    return null;
+    return;
   }
-  const targetDir = join9(cwd, ".claude", "hooks");
+  const targetDir = join9(cwd, ".specialists", "default", "hooks");
   const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
-    return null;
+    return;
   }
   if (!existsSync5(targetDir)) {
     mkdirSync2(targetDir, { recursive: true });
@@ -19111,18 +19102,18 @@ function copyCanonicalHooks(cwd) {
     }
   }
   if (copied > 0) {
-    ok(`copied ${copied} hook${copied === 1 ? "" : "s"} to .claude/hooks/`);
+    ok(`copied ${copied} hook${copied === 1 ? "" : "s"} to .specialists/default/hooks/`);
   }
   if (skipped > 0) {
     skip(`${skipped} hook${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
-  return targetDir;
 }
 function ensureProjectHooks(cwd) {
-  const hooksDir = copyCanonicalHooks(cwd);
-  if (!hooksDir)
-    return;
   const settingsPath = join9(cwd, ".claude", "settings.json");
+  const settingsDir = join9(cwd, ".claude");
+  if (!existsSync5(settingsDir)) {
+    mkdirSync2(settingsDir, { recursive: true });
+  }
   const settings = loadJson(settingsPath, {});
   let changed = false;
   function addHook(event, command) {
@@ -19134,8 +19125,8 @@ function ensureProjectHooks(cwd) {
       changed = true;
     }
   }
-  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
-  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
+  addHook("UserPromptSubmit", "node .specialists/default/hooks/specialists-complete.mjs");
+  addHook("SessionStart", "node .specialists/default/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
     ok("wired specialists hooks in .claude/settings.json");
@@ -19154,74 +19145,97 @@ function copyCanonicalSkills(cwd) {
     skip("no skill directories found in package");
     return;
   }
-  const targets = [
-    { path: join9(cwd, ".claude", "skills"), label: ".claude/skills/" },
-    { path: join9(cwd, ".agents", "skills"), label: ".agents/skills/" }
-  ];
-  for (const target of targets) {
-    let copied = 0;
-    let skipped = 0;
-    const parentDir = join9(target.path, "..");
-    if (!existsSync5(parentDir)) {
-      mkdirSync2(parentDir, { recursive: true });
+  const targetDir = join9(cwd, ".specialists", "default", "skills");
+  if (!existsSync5(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
+  let copied = 0;
+  let skipped = 0;
+  for (const skill of skills) {
+    const src = join9(sourceDir, skill);
+    const dest = join9(targetDir, skill);
+    if (existsSync5(dest)) {
+      skipped++;
+    } else {
+      cpSync(src, dest, { recursive: true });
+      copied++;
     }
-    for (const skill of skills) {
-      const src = join9(sourceDir, skill);
-      const dest = join9(target.path, skill);
-      if (existsSync5(dest)) {
-        skipped++;
-      } else {
-        cpSync(src, dest, { recursive: true });
-        copied++;
-      }
-    }
-    if (copied > 0) {
-      ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to ${target.label}`);
-    }
-    if (skipped > 0) {
-      skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist in ${target.label} (not overwritten)`);
-    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .specialists/default/skills/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
-async function run5() {
-  const cwd = process.cwd();
-  console.log(`
-${bold3("specialists init")}
-`);
-  const specialistsDir = join9(cwd, "specialists");
-  if (existsSync5(specialistsDir)) {
-    skip("specialists/ already exists");
-  } else {
-    mkdirSync2(specialistsDir, { recursive: true });
-    ok("created specialists/");
-  }
-  copyCanonicalSpecialists(cwd);
-  const runtimeDir = join9(cwd, ".specialists");
-  if (existsSync5(runtimeDir)) {
-    skip(".specialists/ already exists");
-  } else {
-    mkdirSync2(join9(runtimeDir, "jobs"), { recursive: true });
-    mkdirSync2(join9(runtimeDir, "ready"), { recursive: true });
-    ok("created .specialists/ (jobs/, ready/)");
-  }
-  const gitignorePath = join9(cwd, ".gitignore");
-  if (existsSync5(gitignorePath)) {
-    const existing = readFileSync2(gitignorePath, "utf-8");
-    if (existing.includes(GITIGNORE_ENTRY)) {
-      skip(".gitignore already has .specialists/ entry");
-    } else {
-      const separator = existing.endsWith(`
-`) ? "" : `
-`;
-      writeFileSync4(gitignorePath, existing + separator + GITIGNORE_ENTRY + `
-`, "utf-8");
-      ok("added .specialists/ to .gitignore");
+function createUserDirs(cwd) {
+  const userDirs = [
+    join9(cwd, ".specialists", "user", "specialists"),
+    join9(cwd, ".specialists", "user", "hooks"),
+    join9(cwd, ".specialists", "user", "skills")
+  ];
+  let created = 0;
+  for (const dir of userDirs) {
+    if (!existsSync5(dir)) {
+      mkdirSync2(dir, { recursive: true });
+      created++;
     }
-  } else {
-    writeFileSync4(gitignorePath, GITIGNORE_ENTRY + `
-`, "utf-8");
-    ok("created .gitignore with .specialists/ entry");
   }
+  if (created > 0) {
+    ok("created .specialists/user/ directories for custom assets");
+  }
+}
+function createRuntimeDirs(cwd) {
+  const runtimeDirs = [
+    join9(cwd, ".specialists", "jobs"),
+    join9(cwd, ".specialists", "ready")
+  ];
+  let created = 0;
+  for (const dir of runtimeDirs) {
+    if (!existsSync5(dir)) {
+      mkdirSync2(dir, { recursive: true });
+      created++;
+    }
+  }
+  if (created > 0) {
+    ok("created .specialists/jobs/ and .specialists/ready/");
+  }
+}
+function ensureProjectMcp(cwd) {
+  const mcpPath = join9(cwd, MCP_FILE);
+  const mcp = loadJson(mcpPath, { mcpServers: {} });
+  mcp.mcpServers ??= {};
+  const existing = mcp.mcpServers[MCP_SERVER_NAME];
+  if (existing && existing.command === MCP_SERVER_CONFIG.command && Array.isArray(existing.args) && existing.args.length === MCP_SERVER_CONFIG.args.length) {
+    skip(".mcp.json already registers specialists");
+    return;
+  }
+  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
+  saveJson(mcpPath, mcp);
+  ok("registered specialists in project .mcp.json");
+}
+function ensureGitignore(cwd) {
+  const gitignorePath = join9(cwd, ".gitignore");
+  const existing = existsSync5(gitignorePath) ? readFileSync2(gitignorePath, "utf-8") : "";
+  let added = 0;
+  const lines = existing.split(`
+`);
+  for (const entry of GITIGNORE_ENTRIES) {
+    if (!lines.includes(entry)) {
+      lines.push(entry);
+      added++;
+    }
+  }
+  if (added > 0) {
+    writeFileSync4(gitignorePath, lines.join(`
+`) + `
+`, "utf-8");
+    ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
+  } else {
+    skip(".gitignore already has runtime entries");
+  }
+}
+function ensureAgentsMd(cwd) {
   const agentsPath = join9(cwd, "AGENTS.md");
   if (existsSync5(agentsPath)) {
     const existing = readFileSync2(agentsPath, "utf-8");
@@ -19237,19 +19251,44 @@ ${bold3("specialists init")}
     writeFileSync4(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
   }
+}
+async function run5() {
+  const cwd = process.cwd();
+  console.log(`
+${bold3("specialists init")}
+`);
+  copyCanonicalSpecialists(cwd);
+  copyCanonicalHooks(cwd);
+  copyCanonicalSkills(cwd);
+  createUserDirs(cwd);
+  createRuntimeDirs(cwd);
+  ensureGitignore(cwd);
+  ensureAgentsMd(cwd);
   ensureProjectMcp(cwd);
   ensureProjectHooks(cwd);
-  copyCanonicalSkills(cwd);
   console.log(`
 ${bold3("Done!")}
 `);
-  console.log(`  ${dim3("Next steps:")}`);
+  console.log(`  ${dim3("Directory structure:")}`);
+  console.log(`  .specialists/`);
+  console.log(`  ├── default/      ${dim3("# canonical assets (from init)")}`);
+  console.log(`  │   ├── specialists/`);
+  console.log(`  │   ├── hooks/`);
+  console.log(`  │   └── skills/`);
+  console.log(`  ├── user/         ${dim3("# your custom additions")}`);
+  console.log(`  │   ├── specialists/`);
+  console.log(`  │   ├── hooks/`);
+  console.log(`  │   └── skills/`);
+  console.log(`  ├── jobs/         ${dim3("# runtime (gitignored)")}`);
+  console.log(`  └── ready/        ${dim3("# runtime (gitignored)")}`);
+  console.log(`
+  ${dim3("Next steps:")}`);
   console.log(`  1. Run ${yellow3("specialists list")} to see available specialists`);
-  console.log(`  2. Add custom specialists to ${yellow3("specialists/")} as needed`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes
+  console.log(`  2. Add custom specialists to ${yellow3(".specialists/user/specialists/")}`);
+  console.log(`  3. Restart Claude Code to pick up changes
 `);
 }
-var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green2 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRY = ".specialists/", MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
+var bold3 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow3 = (s) => `\x1B[33m${s}\x1B[0m`, dim3 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
 var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
@@ -19258,7 +19297,10 @@ Call \`specialist_init\` at the start of every session to bootstrap context and
 see available specialists. Use \`use_specialist\` or \`start_specialist\` to
 delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
 specialist without user intervention.
+
+Add custom specialists to \`.specialists/user/specialists/\` to extend the defaults.
 `.trimStart();
+  GITIGNORE_ENTRIES = [".specialists/jobs/", ".specialists/ready/"];
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
@@ -19367,7 +19409,7 @@ ${bold4(`[dry-run] ${match.filePath}`)}
       if (line !== oldLines[i]) {
         if (oldLines[i] !== undefined)
           console.log(dim4(`- ${oldLines[i]}`));
-        console.log(green3(`+ ${line}`));
+        console.log(green4(`+ ${line}`));
       }
     });
     console.log();
@@ -19375,9 +19417,9 @@ ${bold4(`[dry-run] ${match.filePath}`)}
   }
   writeFileSync5(match.filePath, updated, "utf-8");
   const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
-  console.log(`${green3("✓")} ${bold4(name)}: ${yellow4(field)} = ${displayValue}` + dim4(` (${match.filePath})`));
+  console.log(`${green4("✓")} ${bold4(name)}: ${yellow4(field)} = ${displayValue}` + dim4(` (${match.filePath})`));
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
 var init_edit = __esm(() => {
   init_dist();
   init_loader();
@@ -19562,11 +19604,11 @@ Interrupted.
     dim5(result.model)
   ].filter(Boolean).join("  ");
   process.stderr.write(`
-${green4("✓")} ${footer}
+${green5("✓")} ${footer}
 
 `);
 }
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -19648,9 +19690,9 @@ function formatEventLine(event, options) {
   const detail = detailParts.length > 0 ? dim6(detailParts.join(" ")) : "";
   return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ""}`.trimEnd();
 }
-var dim6 = (s) => `\x1B[2m${s}\x1B[0m`, bold6 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim6 = (s) => `\x1B[2m${s}\x1B[0m`, bold6 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
-  JOB_COLORS = [cyan4, yellow5, magenta, green5, blue, red];
+  JOB_COLORS = [cyan4, yellow5, magenta, green6, blue, red];
   EVENT_LABELS = {
     run_start: "START",
     meta: "META",
@@ -19673,7 +19715,7 @@ import { spawnSync as spawnSync5 } from "node:child_process";
 import { existsSync as existsSync6 } from "node:fs";
 import { join as join11 } from "node:path";
 function ok2(msg) {
-  console.log(`  ${green5("✓")} ${msg}`);
+  console.log(`  ${green6("✓")} ${msg}`);
 }
 function warn(msg) {
   console.log(`  ${yellow5("○")} ${msg}`);
@@ -19712,7 +19754,7 @@ function statusColor(status) {
     case "running":
       return cyan5(status);
     case "done":
-      return green5(status);
+      return green6(status);
     case "error":
       return red2(status);
     case "starting":
@@ -20252,7 +20294,7 @@ async function run11() {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
     writeFileSync6(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green7("✓")} Steer message sent to job ${jobId}
+    process.stdout.write(`${green8("✓")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
     process.stderr.write(`${red5("Error:")} Failed to write to steer pipe: ${err?.message}
@@ -20260,7 +20302,7 @@ async function run11() {
     process.exit(1);
   }
 }
-var green7 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
+var green8 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_steer = __esm(() => {
   init_supervisor();
 });
@@ -20302,7 +20344,7 @@ async function run12() {
     const payload = JSON.stringify({ type: "prompt", message }) + `
 `;
     writeFileSync7(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green8("✓")} Follow-up sent to job ${jobId}
+    process.stdout.write(`${green9("✓")} Follow-up sent to job ${jobId}
 `);
     process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
 `);
@@ -20312,7 +20354,7 @@ async function run12() {
     process.exit(1);
   }
 }
-var green8 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`;
+var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_follow_up = __esm(() => {
   init_supervisor();
 });
@@ -20348,7 +20390,7 @@ async function run13() {
   }
   try {
     process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green9("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
+    process.stdout.write(`${green10("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
   } catch (err) {
     if (err.code === "ESRCH") {
@@ -20361,7 +20403,7 @@ async function run13() {
     }
   }
 }
-var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
 });
@@ -20381,7 +20423,7 @@ function cmd2(s) {
   return yellow6(s);
 }
 function flag(s) {
-  return green10(s);
+  return green11(s);
 }
 async function run14() {
   const lines = [
@@ -20591,7 +20633,7 @@ async function run14() {
   console.log(lines.join(`
 `));
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
@@ -20602,7 +20644,7 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4 } from "node:fs";
 import { join as join18 } from "node:path";
 function ok3(msg) {
-  console.log(`  ${green11("✓")} ${msg}`);
+  console.log(`  ${green12("✓")} ${msg}`);
 }
 function warn2(msg) {
   console.log(`  ${yellow7("○")} ${msg}`);
@@ -20819,14 +20861,14 @@ ${bold8("specialists doctor")}
   const allOk = piOk && bdOk && xtOk && hooksOk && mcpOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green11("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
+    console.log(`  ${green12("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
   } else {
     console.log(`  ${yellow7("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
     console.log(`  ${dim10("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red8 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red8 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join18(CWD, ".claude");
@@ -20845,10 +20887,10 @@ __export(exports_setup, {
   run: () => run16
 });
 import { existsSync as existsSync11, readFileSync as readFileSync7, writeFileSync as writeFileSync8 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
+import { homedir as homedir2 } from "node:os";
 import { join as join19, resolve } from "node:path";
 function ok4(msg) {
-  console.log(`  ${green12("✓")} ${msg}`);
+  console.log(`  ${green13("✓")} ${msg}`);
 }
 function skip2(msg) {
   console.log(`  ${yellow8("○")} ${msg}`);
@@ -20856,7 +20898,7 @@ function skip2(msg) {
 function resolveTarget(target) {
   switch (target) {
     case "global":
-      return join19(homedir3(), ".claude", "CLAUDE.md");
+      return join19(homedir2(), ".claude", "CLAUDE.md");
     case "agents":
       return join19(process.cwd(), "AGENTS.md");
     case "project":
@@ -20941,7 +20983,7 @@ ${bold9("specialists setup")}
   console.log(`  • Run ${yellow8("specialist_init")} in a new session to bootstrap context`);
   console.log("");
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
 
 > Injected by \`specialists setup\`. Keep this section — agents use it for context.
 

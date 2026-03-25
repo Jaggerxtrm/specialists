@@ -1,7 +1,7 @@
 // src/cli/init.ts
 
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -20,10 +20,12 @@ Call \`specialist_init\` at the start of every session to bootstrap context and
 see available specialists. Use \`use_specialist\` or \`start_specialist\` to
 delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
 specialist without user intervention.
+
+Add custom specialists to \`.specialists/user/specialists/\` to extend the defaults.
 `.trimStart();
 
 const AGENTS_MARKER = '## Specialists';
-const GITIGNORE_ENTRY = '.specialists/';
+const GITIGNORE_ENTRIES = ['.specialists/jobs/', '.specialists/ready/'];
 const MCP_FILE = '.mcp.json';
 const MCP_SERVER_NAME = 'specialists';
 const MCP_SERVER_CONFIG = { command: 'specialists', args: [] };
@@ -60,22 +62,35 @@ function resolvePackagePath(relativePath: string): string | null {
   return null;
 }
 
+/**
+ * Copy canonical specialists to .specialists/default/specialists/
+ */
 function copyCanonicalSpecialists(cwd: string): void {
-  const canonicalDir = resolvePackagePath('specialists');
+  const sourceDir = resolvePackagePath('specialists');
   
-  if (!canonicalDir) {
+  if (!sourceDir) {
     skip('no canonical specialists found in package');
     return;
   }
 
-  const targetDir = join(cwd, 'specialists');
-  const files = readdirSync(canonicalDir).filter(f => f.endsWith('.specialist.yaml'));
+  const targetDir = join(cwd, '.specialists', 'default', 'specialists');
+  const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.yaml'));
   
+  if (files.length === 0) {
+    skip('no specialist files found in package');
+    return;
+  }
+
+  // Create target directory
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
   let copied = 0;
   let skipped = 0;
   
   for (const file of files) {
-    const src = join(canonicalDir, file);
+    const src = join(sourceDir, file);
     const dest = join(targetDir, file);
     
     if (existsSync(dest)) {
@@ -87,10 +102,194 @@ function copyCanonicalSpecialists(cwd: string): void {
   }
   
   if (copied > 0) {
-    ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to specialists/`);
+    ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to .specialists/default/specialists/`);
   }
   if (skipped > 0) {
     skip(`${skipped} specialist${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
+}
+
+/**
+ * Copy canonical hooks to .specialists/default/hooks/
+ */
+function copyCanonicalHooks(cwd: string): void {
+  const sourceDir = resolvePackagePath('hooks');
+  
+  if (!sourceDir) {
+    skip('no canonical hooks found in package');
+    return;
+  }
+
+  const targetDir = join(cwd, '.specialists', 'default', 'hooks');
+  const hooks = readdirSync(sourceDir).filter(f => f.endsWith('.mjs'));
+  
+  if (hooks.length === 0) {
+    skip('no hook files found in package');
+    return;
+  }
+
+  // Create target directory
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  let copied = 0;
+  let skipped = 0;
+
+  for (const file of hooks) {
+    const src = join(sourceDir, file);
+    const dest = join(targetDir, file);
+    
+    if (existsSync(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    ok(`copied ${copied} hook${copied === 1 ? '' : 's'} to .specialists/default/hooks/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} hook${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
+}
+
+/**
+ * Wire hooks in .claude/settings.json
+ */
+function ensureProjectHooks(cwd: string): void {
+  const settingsPath = join(cwd, '.claude', 'settings.json');
+  
+  // Ensure .claude directory exists
+  const settingsDir = join(cwd, '.claude');
+  if (!existsSync(settingsDir)) {
+    mkdirSync(settingsDir, { recursive: true });
+  }
+
+  const settings = loadJson(settingsPath, {});
+  let changed = false;
+
+  // Helper to add hook with correct settings.json format (events at top level)
+  function addHook(event: string, command: string): void {
+    const eventList = (settings as Record<string, any[]>)[event] ?? [];
+    (settings as Record<string, any[]>)[event] = eventList;
+    
+    const alreadyWired = eventList.some((entry: any) =>
+      entry?.hooks?.some?.((h: any) => h?.command === command)
+    );
+    
+    if (!alreadyWired) {
+      eventList.push({ matcher: '', hooks: [{ type: 'command', command }] });
+      changed = true;
+    }
+  }
+
+  // Wire hooks with paths to .specialists/default/hooks/
+  addHook('UserPromptSubmit', 'node .specialists/default/hooks/specialists-complete.mjs');
+  addHook('SessionStart',     'node .specialists/default/hooks/specialists-session-start.mjs');
+
+  if (changed) {
+    saveJson(settingsPath, settings);
+    ok('wired specialists hooks in .claude/settings.json');
+  } else {
+    skip('.claude/settings.json already has specialists hooks');
+  }
+}
+
+/**
+ * Copy canonical skills to .specialists/default/skills/
+ */
+function copyCanonicalSkills(cwd: string): void {
+  const sourceDir = resolvePackagePath('skills');
+  
+  if (!sourceDir) {
+    skip('no canonical skills found in package');
+    return;
+  }
+
+  const skills = readdirSync(sourceDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name);
+  
+  if (skills.length === 0) {
+    skip('no skill directories found in package');
+    return;
+  }
+
+  const targetDir = join(cwd, '.specialists', 'default', 'skills');
+  
+  // Create target directory
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  let copied = 0;
+  let skipped = 0;
+
+  for (const skill of skills) {
+    const src = join(sourceDir, skill);
+    const dest = join(targetDir, skill);
+    
+    if (existsSync(dest)) {
+      skipped++;
+    } else {
+      cpSync(src, dest, { recursive: true });
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .specialists/default/skills/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} skill${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
+}
+
+/**
+ * Create user directories for custom specialists, hooks, skills
+ */
+function createUserDirs(cwd: string): void {
+  const userDirs = [
+    join(cwd, '.specialists', 'user', 'specialists'),
+    join(cwd, '.specialists', 'user', 'hooks'),
+    join(cwd, '.specialists', 'user', 'skills'),
+  ];
+
+  let created = 0;
+  for (const dir of userDirs) {
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      created++;
+    }
+  }
+
+  if (created > 0) {
+    ok('created .specialists/user/ directories for custom assets');
+  }
+}
+
+/**
+ * Create runtime directories (jobs, ready)
+ */
+function createRuntimeDirs(cwd: string): void {
+  const runtimeDirs = [
+    join(cwd, '.specialists', 'jobs'),
+    join(cwd, '.specialists', 'ready'),
+  ];
+
+  let created = 0;
+  for (const dir of runtimeDirs) {
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      created++;
+    }
+  }
+
+  if (created > 0) {
+    ok('created .specialists/jobs/ and .specialists/ready/');
   }
 }
 
@@ -115,192 +314,29 @@ function ensureProjectMcp(cwd: string): void {
   ok('registered specialists in project .mcp.json');
 }
 
-function copyCanonicalHooks(cwd: string): string | null {
-  const sourceDir = resolvePackagePath('hooks');
-  
-  if (!sourceDir) {
-    skip('no canonical hooks found in package');
-    return null;
-  }
-
-  const targetDir = join(cwd, '.claude', 'hooks');
-  
-  // Count hooks to copy
-  const hooks = readdirSync(sourceDir).filter(f => f.endsWith('.mjs'));
-  if (hooks.length === 0) {
-    skip('no hook files found in package');
-    return null;
-  }
-
-  // Create target directory
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
-
-  let copied = 0;
-  let skipped = 0;
-
-  for (const file of hooks) {
-    const src = join(sourceDir, file);
-    const dest = join(targetDir, file);
-    
-    if (existsSync(dest)) {
-      skipped++;
-    } else {
-      copyFileSync(src, dest);
-      copied++;
-    }
-  }
-
-  if (copied > 0) {
-    ok(`copied ${copied} hook${copied === 1 ? '' : 's'} to .claude/hooks/`);
-  }
-  if (skipped > 0) {
-    skip(`${skipped} hook${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
-  }
-
-  return targetDir;
-}
-
-function ensureProjectHooks(cwd: string): void {
-  // First, copy hooks to .claude/hooks/
-  const hooksDir = copyCanonicalHooks(cwd);
-  if (!hooksDir) return;
-
-  // Now wire them in settings.json
-  const settingsPath = join(cwd, '.claude', 'settings.json');
-  const settings = loadJson(settingsPath, {});
-
-  let changed = false;
-
-  // Helper to add hook with correct settings.json format (events at top level)
-  function addHook(event: string, command: string): void {
-    // Get or create the event array (direct on settings, not nested in 'hooks')
-    const eventList = (settings as Record<string, any[]>)[event] ?? [];
-    (settings as Record<string, any[]>)[event] = eventList;
-    
-    // Check if already wired
-    const alreadyWired = eventList.some((entry: any) =>
-      entry?.hooks?.some?.((h: any) => h?.command === command)
-    );
-    
-    if (!alreadyWired) {
-      eventList.push({ matcher: '', hooks: [{ type: 'command', command }] });
-      changed = true;
-    }
-  }
-
-  // Wire hooks with relative paths (portable across machines)
-  addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
-  addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
-
-  if (changed) {
-    saveJson(settingsPath, settings);
-    ok('wired specialists hooks in .claude/settings.json');
-  } else {
-    skip('.claude/settings.json already has specialists hooks');
-  }
-}
-
-function copyCanonicalSkills(cwd: string): void {
-  const sourceDir = resolvePackagePath('skills');
-  
-  if (!sourceDir) {
-    skip('no canonical skills found in package');
-    return;
-  }
-
-  // Get skill directories (not files, each skill is a directory with SKILL.md)
-  const skills = readdirSync(sourceDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => d.name);
-  
-  if (skills.length === 0) {
-    skip('no skill directories found in package');
-    return;
-  }
-
-  // Copy to both locations
-  const targets = [
-    { path: join(cwd, '.claude', 'skills'), label: '.claude/skills/' },
-    { path: join(cwd, '.agents', 'skills'), label: '.agents/skills/' },
-  ];
-
-  for (const target of targets) {
-    let copied = 0;
-    let skipped = 0;
-
-    // Ensure parent directory exists
-    const parentDir = join(target.path, '..');
-    if (!existsSync(parentDir)) {
-      mkdirSync(parentDir, { recursive: true });
-    }
-
-    for (const skill of skills) {
-      const src = join(sourceDir, skill);
-      const dest = join(target.path, skill);
-      
-      if (existsSync(dest)) {
-        skipped++;
-      } else {
-        cpSync(src, dest, { recursive: true });
-        copied++;
-      }
-    }
-
-    if (copied > 0) {
-      ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to ${target.label}`);
-    }
-    if (skipped > 0) {
-      skip(`${skipped} skill${skipped === 1 ? '' : 's'} already exist in ${target.label} (not overwritten)`);
-    }
-  }
-}
-
-export async function run(): Promise<void> {
-  const cwd = process.cwd();
-
-  console.log(`\n${bold('specialists init')}\n`);
-
-  // ── 1. Create ./specialists/ directory ────────────────────────────────────
-  const specialistsDir = join(cwd, 'specialists');
-  if (existsSync(specialistsDir)) {
-    skip('specialists/ already exists');
-  } else {
-    mkdirSync(specialistsDir, { recursive: true });
-    ok('created specialists/');
-  }
-
-  // ── 1b. Copy canonical specialists ────────────────────────────────────────
-  copyCanonicalSpecialists(cwd);
-
-  // ── 2. Create .specialists/ runtime directory ─────────────────────────────
-  const runtimeDir = join(cwd, '.specialists');
-  if (existsSync(runtimeDir)) {
-    skip('.specialists/ already exists');
-  } else {
-    mkdirSync(join(runtimeDir, 'jobs'), { recursive: true });
-    mkdirSync(join(runtimeDir, 'ready'), { recursive: true });
-    ok('created .specialists/ (jobs/, ready/)');
-  }
-
-  // ── 3. Add .specialists/ to .gitignore ────────────────────────────────────
+function ensureGitignore(cwd: string): void {
   const gitignorePath = join(cwd, '.gitignore');
-  if (existsSync(gitignorePath)) {
-    const existing = readFileSync(gitignorePath, 'utf-8');
-    if (existing.includes(GITIGNORE_ENTRY)) {
-      skip('.gitignore already has .specialists/ entry');
-    } else {
-      const separator = existing.endsWith('\n') ? '' : '\n';
-      writeFileSync(gitignorePath, existing + separator + GITIGNORE_ENTRY + '\n', 'utf-8');
-      ok('added .specialists/ to .gitignore');
+  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+  
+  let added = 0;
+  const lines = existing.split('\n');
+  
+  for (const entry of GITIGNORE_ENTRIES) {
+    if (!lines.includes(entry)) {
+      lines.push(entry);
+      added++;
     }
-  } else {
-    writeFileSync(gitignorePath, GITIGNORE_ENTRY + '\n', 'utf-8');
-    ok('created .gitignore with .specialists/ entry');
   }
+  
+  if (added > 0) {
+    writeFileSync(gitignorePath, lines.join('\n') + '\n', 'utf-8');
+    ok('added .specialists/jobs/ and .specialists/ready/ to .gitignore');
+  } else {
+    skip('.gitignore already has runtime entries');
+  }
+}
 
-  // ── 4. Scaffold AGENTS.md ─────────────────────────────────────────────────
+function ensureAgentsMd(cwd: string): void {
   const agentsPath = join(cwd, 'AGENTS.md');
   if (existsSync(agentsPath)) {
     const existing = readFileSync(agentsPath, 'utf-8');
@@ -314,20 +350,48 @@ export async function run(): Promise<void> {
     writeFileSync(agentsPath, AGENTS_BLOCK, 'utf-8');
     ok('created AGENTS.md with Specialists section');
   }
+}
 
-  // ── 5. Register MCP at project scope ──────────────────────────────────────
+export async function run(): Promise<void> {
+  const cwd = process.cwd();
+
+  console.log(`\n${bold('specialists init')}\n`);
+
+  // ── 1. Create .specialists/ structure ─────────────────────────────────────
+  copyCanonicalSpecialists(cwd);
+  copyCanonicalHooks(cwd);
+  copyCanonicalSkills(cwd);
+  createUserDirs(cwd);
+  createRuntimeDirs(cwd);
+
+  // ── 2. Update .gitignore (only runtime dirs) ──────────────────────────────
+  ensureGitignore(cwd);
+
+  // ── 3. Scaffold AGENTS.md ─────────────────────────────────────────────────
+  ensureAgentsMd(cwd);
+
+  // ── 4. Register MCP at project scope ──────────────────────────────────────
   ensureProjectMcp(cwd);
 
-  // ── 6. Install hooks into .claude/hooks/ and wire in settings.json ───────
+  // ── 5. Wire hooks in .claude/settings.json ────────────────────────────────
   ensureProjectHooks(cwd);
-
-  // ── 7. Copy canonical skills ─────────────────────────────────────────────
-  copyCanonicalSkills(cwd);
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
-  console.log(`  ${dim('Next steps:')}`);
+  console.log(`  ${dim('Directory structure:')}`);
+  console.log(`  .specialists/`);
+  console.log(`  ├── default/      ${dim('# canonical assets (from init)')}`);
+  console.log(`  │   ├── specialists/`);
+  console.log(`  │   ├── hooks/`);
+  console.log(`  │   └── skills/`);
+  console.log(`  ├── user/         ${dim('# your custom additions')}`);
+  console.log(`  │   ├── specialists/`);
+  console.log(`  │   ├── hooks/`);
+  console.log(`  │   └── skills/`);
+  console.log(`  ├── jobs/         ${dim('# runtime (gitignored)')}`);
+  console.log(`  └── ready/        ${dim('# runtime (gitignored)')}`);
+  console.log(`\n  ${dim('Next steps:')}`);
   console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
-  console.log(`  2. Add custom specialists to ${yellow('specialists/')} as needed`);
-  console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes\n`);
+  console.log(`  2. Add custom specialists to ${yellow('.specialists/user/specialists/')}`);
+  console.log(`  3. Restart Claude Code to pick up changes\n`);
 }
