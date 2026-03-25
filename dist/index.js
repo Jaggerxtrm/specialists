@@ -19011,7 +19011,7 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run5
 });
-import { existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { copyFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
@@ -19032,6 +19032,36 @@ function loadJson(path, fallback) {
 function saveJson(path, value) {
   writeFileSync4(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
+}
+function copyCanonicalSpecialists(cwd) {
+  let canonicalDir = fileURLToPath2(new URL("../specialists", import.meta.url));
+  if (!existsSync5(canonicalDir)) {
+    canonicalDir = fileURLToPath2(new URL("../../specialists", import.meta.url));
+  }
+  if (!existsSync5(canonicalDir)) {
+    skip("no canonical specialists found in package");
+    return;
+  }
+  const targetDir = join9(cwd, "specialists");
+  const files = readdirSync2(canonicalDir).filter((f) => f.endsWith(".specialist.yaml"));
+  let copied = 0;
+  let skipped = 0;
+  for (const file of files) {
+    const src = join9(canonicalDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync5(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to specialists/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
 }
 function ensureProjectMcp(cwd) {
   const mcpPath = join9(cwd, MCP_FILE);
@@ -19087,6 +19117,7 @@ ${bold3("specialists init")}
     mkdirSync2(specialistsDir, { recursive: true });
     ok("created specialists/");
   }
+  copyCanonicalSpecialists(cwd);
   const runtimeDir = join9(cwd, ".specialists");
   if (existsSync5(runtimeDir)) {
     skip(".specialists/ already exists");
@@ -19134,8 +19165,8 @@ ${bold3("specialists init")}
 ${bold3("Done!")}
 `);
   console.log(`  ${dim3("Next steps:")}`);
-  console.log(`  1. Add your specialists to ${yellow3("specialists/")}`);
-  console.log(`  2. Run ${yellow3("specialists list")} to verify they are discovered`);
+  console.log(`  1. Run ${yellow3("specialists list")} to see available specialists`);
+  console.log(`  2. Add custom specialists to ${yellow3("specialists/")} as needed`);
   console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes
 `);
 }
@@ -19786,7 +19817,7 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync8, readdirSync as readdirSync2, readFileSync as readFileSync5 } from "node:fs";
+import { existsSync as existsSync8, readdirSync as readdirSync3, readFileSync as readFileSync5 } from "node:fs";
 import { join as join13 } from "node:path";
 function readJobEvents(jobDir) {
   const eventsPath = join13(jobDir, "events.jsonl");
@@ -19808,7 +19839,7 @@ function readAllJobEvents(jobsDir) {
   if (!existsSync8(jobsDir))
     return [];
   const batches = [];
-  const entries = readdirSync2(jobsDir);
+  const entries = readdirSync3(jobsDir);
   for (const entry of entries) {
     const jobDir = join13(jobsDir, entry);
     try {
@@ -20489,7 +20520,7 @@ __export(exports_doctor, {
   run: () => run15
 });
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4 } from "node:fs";
 import { join as join18 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green11("✓")} ${msg}`);
@@ -20652,7 +20683,7 @@ function checkZombieJobs() {
   }
   let entries;
   try {
-    entries = readdirSync3(jobsDir);
+    entries = readdirSync4(jobsDir);
   } catch {
     entries = [];
   }

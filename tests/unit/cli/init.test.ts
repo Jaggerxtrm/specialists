@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir, writeFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -105,5 +105,43 @@ describe('init CLI — run()', () => {
     await runInit(tempDir);
     const second = await readFile(join(tempDir, '.mcp.json'), 'utf-8');
     expect(second).toBe(first);
+  });
+
+  it('copies canonical specialists to specialists/ directory', async () => {
+    await runInit(tempDir);
+    const specialistsDir = join(tempDir, 'specialists');
+    const files = await readdir(specialistsDir).catch(() => []);
+    const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
+    
+    // Should have copied at least the known canonical specialists
+    expect(yamlFiles.length).toBeGreaterThan(0);
+    expect(yamlFiles).toContain('bug-hunt.specialist.yaml');
+    expect(yamlFiles).toContain('explorer.specialist.yaml');
+    expect(yamlFiles).toContain('overthinker.specialist.yaml');
+  });
+
+  it('does not overwrite existing specialist files', async () => {
+    // Create a custom specialist with the same name as a canonical one
+    const specialistsDir = join(tempDir, 'specialists');
+    await mkdir(specialistsDir, { recursive: true });
+    const customContent = `specialist:
+  metadata:
+    name: bug-hunt
+    version: 99.0.0
+    description: "Custom bug hunt"
+    category: test
+  execution:
+    model: test-model
+  prompt:
+    task_template: "custom"
+`;
+    await writeFile(join(specialistsDir, 'bug-hunt.specialist.yaml'), customContent, 'utf-8');
+    
+    await runInit(tempDir);
+    
+    // The custom file should NOT be overwritten
+    const content = await readFile(join(specialistsDir, 'bug-hunt.specialist.yaml'), 'utf-8');
+    expect(content).toContain('99.0.0');
+    expect(content).toContain('Custom bug hunt');
   });
 });

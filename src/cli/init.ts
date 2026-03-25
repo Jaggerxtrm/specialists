@@ -1,7 +1,7 @@
 // src/cli/init.ts
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -39,6 +39,48 @@ function loadJson(path: string, fallback: Record<string, unknown>): Record<strin
 
 function saveJson(path: string, value: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf-8');
+}
+
+function copyCanonicalSpecialists(cwd: string): void {
+  // Resolve canonical specialists directory relative to this package's installed location
+  // When bundled (dist/index.js): ../specialists -> specialists/
+  // When running from source (src/cli/init.ts): ../../specialists -> specialists/
+  let canonicalDir = fileURLToPath(new URL('../specialists', import.meta.url));
+  
+  if (!existsSync(canonicalDir)) {
+    // Try one level up (source mode)
+    canonicalDir = fileURLToPath(new URL('../../specialists', import.meta.url));
+  }
+  
+  if (!existsSync(canonicalDir)) {
+    skip('no canonical specialists found in package');
+    return;
+  }
+
+  const targetDir = join(cwd, 'specialists');
+  const files = readdirSync(canonicalDir).filter(f => f.endsWith('.specialist.yaml'));
+  
+  let copied = 0;
+  let skipped = 0;
+  
+  for (const file of files) {
+    const src = join(canonicalDir, file);
+    const dest = join(targetDir, file);
+    
+    if (existsSync(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  
+  if (copied > 0) {
+    ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to specialists/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} specialist${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
 }
 
 function ensureProjectMcp(cwd: string): void {
@@ -115,6 +157,9 @@ export async function run(): Promise<void> {
     ok('created specialists/');
   }
 
+  // ── 1b. Copy canonical specialists ────────────────────────────────────────
+  copyCanonicalSpecialists(cwd);
+
   // ── 2. Create .specialists/ runtime directory ─────────────────────────────
   const runtimeDir = join(cwd, '.specialists');
   if (existsSync(runtimeDir)) {
@@ -165,7 +210,7 @@ export async function run(): Promise<void> {
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
   console.log(`  ${dim('Next steps:')}`);
-  console.log(`  1. Add your specialists to ${yellow('specialists/')}`);
-  console.log(`  2. Run ${yellow('specialists list')} to verify they are discovered`);
+  console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
+  console.log(`  2. Add custom specialists to ${yellow('specialists/')} as needed`);
   console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes\n`);
 }
