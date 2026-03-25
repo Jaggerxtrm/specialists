@@ -2,13 +2,14 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.1.0
-updated: 2026-03-23
+version: 1.2.0
+updated: 2026-03-25
+synced_at: 5d9ab40
 description: How to write, place, and maintain project specialists.
 source_of_truth_for:
   - "src/specialist/schema.ts"
   - "config/skills/specialist-author/SKILL.md"
-  - "config/specialists/*.specialist.yaml"
+  - ".specialists/user/specialists/*.specialist.yaml"
 domain:
   - authoring
 ---
@@ -29,10 +30,11 @@ domain:
 
 > **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
 
-Project specialists live in:
+Project specialists live in two directories under `.specialists/`:
 
 ```text
-./specialists/*.specialist.yaml
+.specialists/default/specialists/   # canonical specialists (copied by init — do not edit)
+.specialists/user/specialists/      # your custom specialists (add here)
 ```
 
 ## Minimal skeleton
@@ -117,7 +119,8 @@ Recommended loop:
 
 - project-first only
 - user-scope specialist discovery is deprecated
-- canonical project directory is `specialists/`
+- **default specialists** live in `.specialists/default/specialists/` — copied by `specialists init`, do not edit
+- **custom specialists** go in `.specialists/user/specialists/` — add yours here, they take precedence on name collision
 
 ## See also
 

@@ -2,8 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.0.0
-updated: 2026-03-23
+version: 1.1.0
+updated: 2026-03-25
+synced_at: 5d9ab40
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -52,11 +53,15 @@ specialists init
 
 What it does:
 
-1. creates `specialists/`
-2. creates `.specialists/` with runtime subdirectories
-3. adds `.specialists/` to `.gitignore`
-4. injects the canonical workflow block into `AGENTS.md` and `CLAUDE.md`
-5. registers the Specialists MCP server at project scope with `claude mcp add --scope project`
+1. copies canonical specialists to `.specialists/default/specialists/`
+2. copies canonical hooks to `.specialists/default/hooks/`
+3. copies canonical skills to `.specialists/default/skills/`
+4. creates `.specialists/user/` directories for custom specialists, hooks, and skills
+5. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
+6. wires hooks into `.claude/settings.json`
+7. registers Specialists in `.mcp.json`
+8. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
+9. injects the canonical workflow block into `AGENTS.md` and `CLAUDE.md`
 
 ## Force-refresh workflow instructions
 

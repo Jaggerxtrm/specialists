@@ -23,7 +23,8 @@ domain:
 | [`specialists follow-up`](#specialists-follow-up) | Send a next-turn prompt to a keep-alive session |
 | [`specialists models`](#specialists-models) | Lists all models available on pi, flagged with thinking and image support |
 | [`specialists edit`](#specialists-edit) | Edit a specialist's fields directly in the YAML file |
-| [`specialists init`](#specialists-init) | These exist only for migration guidance: |
+| [`specialists init`](#specialists-init) | Diagnoses the installation and runtime environment |
+| [`specialists doctor`](#specialists-doctor) | Diagnoses the installation and runtime environment |
 | [Deprecated commands](#deprecated-commands) | These exist only for migration guidance: |
 | [See also](#see-also) | - [workflow |
 <!-- END INDEX -->

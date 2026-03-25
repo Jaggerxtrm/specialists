@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Documentation sync**
+- `docs/authoring.md`: updated specialist path from `specialists/` to `.specialists/default/specialists/` + `.specialists/user/specialists/`; scope rules now explain default vs user distinction
+- `docs/specialists-catalog.md`: updated prose and `source_of_truth_for` globs to reference both `.specialists/` paths; "Project-only scope" section updated
+- `docs/bootstrap.md`: `What it does` steps now accurately list all 9 init actions including hooks, skills, and user directory creation
+
 **Directory structure refactor**
 - All canonical assets now in `config/` (specialists/, hooks/, skills/) — dev workspace for working on defaults
 - `specialists init` creates `.specialists/default/` (canonical) + `.specialists/user/` (custom) structure
