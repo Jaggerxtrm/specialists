@@ -78,6 +78,7 @@ specialists doctor
 | Skills shipped in this repo | [docs/skills.md](docs/skills.md) |
 | xtrm / worktree integration | [docs/worktree.md](docs/worktree.md) |
 | RPC mode notes | [docs/pi-rpc.md](docs/pi-rpc.md) |
+| Pi subprocess isolation and extensions | [docs/pi-session.md](docs/pi-session.md) |
 
 ## Project structure
 
