@@ -374,6 +374,11 @@ export class PiAgentSession {
    * Writes {"type":"steer","message":"..."} to the agent's stdin.
    * Pi delivers it after the current assistant turn finishes tool calls.
    */
+  /**
+   * Send a mid-run steering message to the Pi agent.
+   * Writes {"type":"steer","message":"..."} to the agent's stdin.
+   * Pi delivers it after the current assistant turn finishes tool calls.
+   */
   async steer(message: string): Promise<void> {
     if (this._killed || !this.proc?.stdin) {
       throw new Error('Session is not active');
@@ -382,5 +387,27 @@ export class PiAgentSession {
     await new Promise<void>((resolve, reject) => {
       this.proc!.stdin!.write(cmd, (err) => (err ? reject(err) : resolve()));
     });
+  }
+
+  /**
+   * Start a new turn on the same Pi session (keep-alive multi-turn).
+   * Resets done state and sends a new prompt — Pi retains full conversation history.
+   * Only valid after waitForDone() has resolved for the previous turn.
+   */
+  async resume(task: string, timeout?: number): Promise<void> {
+    if (this._killed || !this.proc?.stdin) {
+      throw new Error('Session is not active');
+    }
+    // Reset done state for the new turn
+    this._agentEndReceived = false;
+    const donePromise = new Promise<void>((resolve, reject) => {
+      this._doneResolve = resolve;
+      this._doneReject = reject;
+    });
+    donePromise.catch(() => {});
+    this._donePromise = donePromise;
+
+    await this.prompt(task);
+    await this.waitForDone(timeout);
   }
 }

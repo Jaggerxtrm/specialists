@@ -1,0 +1,418 @@
+# Specialist Author Guide
+
+> Write a valid `.specialist.yaml` on the first attempt.
+> Source of truth: `src/specialist/schema.ts` | Runtime: `src/specialist/runner.ts`
+
+---
+
+## Model Setup (for a new specialist OR "setup my specialists models")
+
+### Quick Reference: Specialists CLI
+
+```bash
+specialists list                              # all specialists + current model
+specialists models                            # all pi models, flagged with thinking/images, shows current assignments
+specialists edit <name> --model <value>       # change primary model
+specialists edit <name> --fallback-model <v> # change fallback model
+specialists edit <name> --model <v> --dry-run # preview without writing
+specialists edit <name> --permission HIGH     # change permission level
+specialists status                            # system health
+specialists doctor                            # prereq + hook diagnostics
+```
+
+---
+
+### Scenario: "Setup my specialists models"
+
+When a user asks to set up or re-balance specialist models, run this workflow:
+
+#### Step 1 — Inventory
+
+```bash
+specialists list       # shows each specialist + its current model
+specialists models     # shows all available models on pi, with current assignments marked ←
+```
+
+Read both outputs carefully:
+- `specialists list` → what specialists exist and what they currently use
+- `specialists models` → what models are available, and which specialists already use each one (the `←` markers show assignments)
+
+#### Step 2 — Classify each specialist by tier
+
+| Tier | Specialists (typical) | Recommended model class |
+|------|-----------------------|------------------------|
+| **Heavy** — deep reasoning, multi-phase, architecture | `overthinker`, `feature-design`, `bug-hunt`, `planner`, `parallel-review` | Opus / Pro / GLM-5 |
+| **Standard** — code generation, review, authoring, docs | `codebase-explorer`, `specialist-author`, `sync-docs`, `xt-merge` | Sonnet / Flash-Pro |
+| **Light** — fast context, reporting, test runs | `init-session`, `report-generator`, `test-runner`, `auto-remediation` | Haiku / Flash |
+
+Adjust tiers based on what the user actually has installed. Custom specialists: read their `description` and `permission_required` to infer tier.
+
+#### Step 3 — Select models with provider diversity
+
+Rules:
+1. **Pick the highest version in each family** — `glm-5` not `glm-4.7`, `claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`
+2. **`model` and `fallback_model` must be different providers** — never stack two anthropic models
+3. **Spread providers across tiers** — don't assign all specialists to anthropic; distribute across anthropic / google-gemini-cli / zai / openai-codex where available
+4. **Match thinking capability to tier** — heavy specialists benefit from `thinking: yes` models
+
+Example distribution (based on current `specialists models` output):
+
+| Tier | model | fallback_model |
+|------|-------|----------------|
+| Heavy | `anthropic/claude-opus-4-6` | `google-gemini-cli/gemini-3.1-pro-preview` |
+| Standard | `anthropic/claude-sonnet-4-6` | `google-gemini-cli/gemini-3-flash-preview` |
+| Light | `anthropic/claude-haiku-4-5` | `zai/glm-5-turbo` |
+
+If anthropic is not available, use `zai/glm-5` (heavy), `google-gemini-cli/gemini-3.1-pro-preview` (standard), `google-gemini-cli/gemini-3-flash-preview` (light).
+
+#### Step 4 — Ping each chosen model before assigning
+
+```bash
+pi --model <provider>/<model-id> --print "ping"
+# Must output "pong" — if it errors, try next best in that tier
+```
+
+Ping **both** the primary and fallback before using them.
+
+#### Step 5 — Apply with `specialists edit`
+
+```bash
+# Example: upgrade heavy-tier specialists
+specialists edit overthinker     --model anthropic/claude-opus-4-6     --fallback-model google-gemini-cli/gemini-3.1-pro-preview
+specialists edit feature-design  --model anthropic/claude-opus-4-6     --fallback-model google-gemini-cli/gemini-3.1-pro-preview
+specialists edit bug-hunt        --model anthropic/claude-opus-4-6     --fallback-model google-gemini-cli/gemini-3.1-pro-preview
+
+# Standard tier
+specialists edit codebase-explorer --model anthropic/claude-sonnet-4-6 --fallback-model google-gemini-cli/gemini-3-flash-preview
+specialists edit sync-docs         --model anthropic/claude-sonnet-4-6 --fallback-model google-gemini-cli/gemini-3-flash-preview
+
+# Light tier
+specialists edit init-session    --model anthropic/claude-haiku-4-5    --fallback-model zai/glm-5-turbo
+specialists edit report-generator --model anthropic/claude-haiku-4-5   --fallback-model zai/glm-5-turbo
+```
+
+Use `--dry-run` first to preview any change before writing.
+
+#### Step 6 — Verify
+
+```bash
+specialists list    # confirm all models updated correctly
+specialists models  # confirm assignments look balanced
+```
+
+---
+
+### For a new specialist (single model selection)
+
+```bash
+# 1. See what's available
+specialists models
+
+# 2. Pick highest version in the right tier family (see tier table above)
+
+# 3. Ping both primary and fallback
+pi --model anthropic/claude-sonnet-4-6 --print "ping"      # must return "pong"
+pi --model google-gemini-cli/gemini-3-flash-preview --print "ping"  # must return "pong"
+
+# 4. Write to YAML
+```
+
+**Rule:** Never hardcode a model without pinging it. If ping fails, try the next best in that tier.
+
+---
+
+## Quick Start: Minimal Skeleton
+
+```yaml
+specialist:
+  metadata:
+    name: my-specialist          # kebab-case, required
+    version: 1.0.0               # semver, required
+    description: "One sentence." # required
+    category: workflow           # required (free text)
+
+  execution:
+    model: anthropic/claude-sonnet-4-6  # run model setup workflow above to choose + verify
+    permission_required: READ_ONLY
+
+  prompt:
+    task_template: |
+      $prompt
+
+      Working directory: $cwd
+```
+
+Validate before committing:
+```bash
+bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
+```
+
+---
+
+## Schema Reference
+
+### `specialist.metadata` (required)
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `name` | string | yes | kebab-case: `[a-z][a-z0-9-]*` |
+| `version` | string | yes | semver: `1.0.0` |
+| `description` | string | yes | One sentence |
+| `category` | string | yes | Free text (e.g. `workflow`, `analysis`, `codegen`) |
+| `author` | string | no | Optional |
+| `created` | string | no | Optional date |
+| `updated` | string | no | Optional date, quote it: `"2026-03-22"` |
+| `tags` | string[] | no | Optional list |
+
+### `specialist.execution` (required)
+
+| Field | Type | Default | Valid Values |
+|-------|------|---------|-------------|
+| `model` | string | — | Any pi-compatible model string (required) |
+| `fallback_model` | string | — | Optional fallback |
+| `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
+| `timeout_ms` | number | `120000` | Milliseconds |
+| `stall_timeout_ms` | number | — | Kill if no event for N ms |
+| `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
+| `permission_required` | enum | `READ_ONLY` | `READ_ONLY` \| `LOW` \| `MEDIUM` \| `HIGH` |
+
+**Common pitfall:** `READ_WRITE` is **not** a valid value — use `LOW` or higher.
+
+### `specialist.prompt` (required)
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `task_template` | string | yes | Template string with `$variable` substitution |
+| `system` | string | no | System prompt / agents.md content |
+| `skill_inherit` | string | no | Path to a file appended to system prompt |
+| `output_schema` | object | no | JSON schema for structured output |
+| `examples` | array | no | Few-shot examples |
+
+### `specialist.skills` (optional)
+
+```yaml
+skills:
+  paths:                          # Files injected into system prompt
+    - skills/my-skill/SKILL.md
+  scripts:
+    - path: scripts/pre-check.sh
+      phase: pre                  # "pre" or "post"
+      inject_output: true         # true = $pre_script_output populated
+  tools:
+    - bash
+    - read
+```
+
+### `specialist.capabilities` (optional)
+
+```yaml
+capabilities:
+  file_scope: [src/, tests/]
+  blocked_tools: [Write, Edit]
+  can_spawn: false
+  tools:
+    - name: bash
+      purpose: Read-only inspection
+  diagnostic_scripts:
+    - scripts/health-check.sh     # Listed in system prompt as available Bash commands
+```
+
+### `specialist.communication` (optional)
+
+```yaml
+communication:
+  output_to: .specialists/output.md   # Write final output to this file
+  publishes: [report, analysis]
+  subscribes: [session_context]
+```
+
+### `specialist.beads_integration` (optional)
+
+| Value | Behavior |
+|-------|----------|
+| `auto` (default) | Create tracking bead when permission_required is LOW+ |
+| `always` | Always create a tracking bead |
+| `never` | Never create a tracking bead |
+
+---
+
+## Built-in Template Variables
+
+These are **always available** in `task_template` — no configuration needed:
+
+| Variable | Value |
+|----------|-------|
+| `$prompt` | The user's prompt passed to `use_specialist` |
+| `$cwd` | `process.cwd()` at invocation time |
+| `$pre_script_output` | Stdout of `pre` scripts with `inject_output: true` (empty string if none) |
+
+**When invoked via `--bead`** (inputBeadId present):
+
+| Variable | Value |
+|----------|-------|
+| `$bead_context` | Full bead content (replaces `$prompt`) |
+| `$bead_id` | The bead ID |
+
+**Custom variables** can be passed at invocation time via `--variables key=value` and accessed as `$key`.
+
+---
+
+## Skills Injection (`skills.paths`)
+
+Files listed under `skills.paths` are read and appended to the system prompt at runtime:
+
+```yaml
+skills:
+  paths:
+    - skills/specialist-author/SKILL.md
+    - .claude/agents.md
+```
+
+Each file is appended as:
+```
+---
+# Skill: <path>
+
+<file content>
+```
+
+Missing files are silently skipped (no error).
+
+`skill_inherit` (in `prompt:`) works the same way but for a single file — it is an Agent Forge compatibility field, appended under `# Service Knowledge`.
+
+---
+
+## Pre/Post Scripts
+
+Scripts run **locally** (not inside the agent session):
+
+```yaml
+skills:
+  scripts:
+    - path: scripts/gather-context.sh
+      phase: pre
+      inject_output: true    # stdout -> $pre_script_output in task_template
+    - path: scripts/notify.sh
+      phase: post
+      inject_output: false   # runs after session, output discarded
+```
+
+- `pre` scripts run before the agent session starts; use `inject_output: true` to surface their stdout.
+- `post` scripts run after the session completes (cleanup, notifications).
+- Timeout: 30 seconds per script.
+- Exit code is captured but does not abort the run.
+
+---
+
+## Annotated Full Example
+
+```yaml
+specialist:
+  metadata:
+    name: code-reviewer
+    version: 1.0.0
+    description: "Reviews a PR diff for correctness, style, and security issues."
+    category: code-quality
+    author: team@example.com
+    updated: "2026-03-22"
+    tags: [review, code-quality, security]
+
+  execution:
+    mode: tool
+    model: anthropic/claude-sonnet-4-6
+    fallback_model: google-gemini-cli/gemini-3.1-pro-preview
+    timeout_ms: 300000
+    stall_timeout_ms: 60000
+    response_format: markdown
+    permission_required: READ_ONLY   # not READ_WRITE
+
+  prompt:
+    system: |
+      You are an expert code reviewer. Focus on correctness, maintainability, and security.
+      Do NOT modify any files -- output a markdown review only.
+
+    task_template: |
+      Review the following changes:
+
+      $prompt
+
+      $pre_script_output
+
+      Working directory: $cwd
+
+      Output a structured markdown review with sections: Summary, Issues, Suggestions.
+
+    skill_inherit: skills/code-review/guidelines.md
+
+  skills:
+    paths:
+      - skills/code-review/SKILL.md
+    scripts:
+      - path: scripts/get-diff.sh
+        phase: pre
+        inject_output: true
+
+  capabilities:
+    file_scope: [src/, tests/]
+    blocked_tools: [Write, Edit, Bash]
+
+  communication:
+    output_to: .specialists/review.md
+    publishes: [code_review]
+
+  beads_integration: auto
+```
+
+---
+
+## Common Errors and Fixes
+
+| Zod Error | Cause | Fix |
+|-----------|-------|-----|
+| `Must be kebab-case` | `name` has uppercase or spaces | Use `my-specialist` not `MySpecialist` |
+| `Must be semver` | `version: "v1.0"` | Use `version: 1.0.0` (no `v` prefix) |
+| `Invalid enum value ... 'READ_WRITE'` | Wrong permission value | Use `READ_ONLY`, `LOW`, `MEDIUM`, or `HIGH` |
+| `Invalid enum value ... 'auto'` on permission_required | Using `auto` for permission_required | `auto` is only valid for `beads_integration` |
+| `Required` on `task_template` | `task_template` missing from `prompt:` | Add `task_template` (even if just `$prompt`) |
+| `Required` on `model` | `model` missing from `execution:` | Add a model string |
+| `Required` on `description` | Missing `description` in `metadata` | Add description string |
+| `Required` on `category` | Missing `category` in `metadata` | Add category string |
+| Silently ignored / no output | YAML valid but `task_template` doesn't use `$prompt` | Add `$prompt` to `task_template` |
+| `defaults` key unrecognized | Using `defaults:` top-level key | Remove it; use `--variables` at invocation or built-ins |
+
+---
+
+## File Placement
+
+Specialists are discovered from three scopes (highest priority first):
+
+1. **Project**: `<project-root>/specialists/*.specialist.yaml`
+2. **User**: `~/.agents/specialists/*.specialist.yaml`
+3. **System**: package-bundled specialists
+
+Name your file `<metadata.name>.specialist.yaml`.
+
+---
+
+## Validation Workflow
+
+A bundled validator is included with this skill so the agent does not need to reconstruct the `bun -e` one-liner from memory. It prints `OK <file>` on success and a field-by-field error list on failure.
+
+```bash
+# 0. Select and verify model (REQUIRED before writing YAML)
+pi --list-models
+pi --model <provider>/<model-id> --print "ping"   # must return "pong"
+
+# 1. Write the YAML with the verified model
+
+# 2. Validate schema with the bundled helper
+bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
+
+# 3. List to confirm discovery
+specialists list
+
+# 4. Smoke test
+specialists run my-specialist --prompt "ping" --no-beads
+```
+
+If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.

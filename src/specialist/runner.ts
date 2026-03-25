@@ -17,6 +17,11 @@ export interface RunOptions {
   inputBeadId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
   sessionPath?: string;
+  /**
+   * Keep the Pi session alive after agent_end.
+   * Enables multi-turn: callers receive resumeFn/closeFn via onResumeReady callback.
+   */
+  keepAlive?: boolean;
 }
 
 export interface RunResult {
@@ -90,6 +95,10 @@ export class SpecialistRunner {
     onKillRegistered?: (killFn: () => void) => void,
     onBeadCreated?: (beadId: string) => void,
     onSteerRegistered?: (steerFn: (msg: string) => Promise<void>) => void,
+    onResumeReady?: (
+      resumeFn: (msg: string) => Promise<string>,
+      closeFn: () => Promise<void>,
+    ) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -186,6 +195,7 @@ export class SpecialistRunner {
     let output: string;
     let sessionBackend: string = model; // captured before kill() can destroy meta
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
+    let keepAliveActive = false; // set true when keepAlive hands session ownership to caller
     try {
       session = await this.sessionFactory({
         model,
@@ -212,8 +222,23 @@ export class SpecialistRunner {
       output = await session.getLastOutput();
       sessionBackend = session.meta.backend; // capture before finally calls kill()
 
-      // Clean shutdown: send EOF to stdin, await process exit
-      await session.close();
+      if (options.keepAlive && onResumeReady) {
+        // Hand the session to the caller for multi-turn use.
+        // Don't close here — caller owns the lifecycle via closeFn.
+        keepAliveActive = true;
+        const resumeFn = async (msg: string): Promise<string> => {
+          await session.resume(msg, execution.timeout_ms);
+          return session.getLastOutput();
+        };
+        const closeFn = async (): Promise<void> => {
+          keepAliveActive = false;
+          await session.close();
+        };
+        onResumeReady(resumeFn, closeFn);
+      } else {
+        // Clean shutdown: send EOF to stdin, await process exit
+        await session.close();
+      }
 
       // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
@@ -241,7 +266,9 @@ export class SpecialistRunner {
       });
       throw err;
     } finally {
-      session?.kill(); // idempotent safety net; no-op if close() already succeeded
+      if (!keepAliveActive) {
+        session?.kill(); // idempotent safety net; no-op if close() already succeeded
+      }
     }
 
     const durationMs = Date.now() - start;
@@ -299,6 +326,7 @@ export class SpecialistRunner {
       (killFn)    => registry.setKillFn(jobId, killFn),
       (beadId)    => registry.setBeadId(jobId, beadId),
       (steerFn)   => registry.setSteerFn(jobId, steerFn),
+      (resumeFn, closeFn) => registry.setResumeFn(jobId, resumeFn, closeFn),
     )
       .then(result => registry.complete(jobId, result))
       .catch(err   => registry.fail(jobId, err));

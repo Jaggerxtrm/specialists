@@ -22,6 +22,7 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   background: boolean;
+  keepAlive: boolean;
   contextDepth: number;
 }
 
@@ -37,6 +38,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let background = false;
+  let keepAlive = false;
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
   for (let i = 1; i < argv.length; i++) {
@@ -45,8 +47,9 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--bead'           && argv[i + 1]) { beadId       = argv[++i]; continue; }
     if (token === '--model'          && argv[i + 1]) { model        = argv[++i]; continue; }
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
-    if (token === '--no-beads')   { noBeads    = true; continue; }
-    if (token === '--background') { background = true; continue; }
+    if (token === '--no-beads')    { noBeads    = true; continue; }
+    if (token === '--background')  { background = true; continue; }
+    if (token === '--keep-alive')  { keepAlive  = true; continue; }
   }
 
   if (prompt && beadId) {
@@ -68,7 +71,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, background, contextDepth };
+  return { name, prompt, beadId, model, noBeads, background, keepAlive, contextDepth };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -126,6 +129,7 @@ export async function run(): Promise<void> {
         variables,
         backendOverride: args.model,
         inputBeadId: args.beadId,
+        keepAlive: args.keepAlive,
       },
       jobsDir,
       beadsClient,

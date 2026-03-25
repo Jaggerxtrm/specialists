@@ -17916,6 +17916,20 @@ class PiAgentSession {
       this.proc.stdin.write(cmd, (err) => err ? reject(err) : resolve());
     });
   }
+  async resume(task, timeout) {
+    if (this._killed || !this.proc?.stdin) {
+      throw new Error("Session is not active");
+    }
+    this._agentEndReceived = false;
+    const donePromise = new Promise((resolve, reject) => {
+      this._doneResolve = resolve;
+      this._doneReject = reject;
+    });
+    donePromise.catch(() => {});
+    this._donePromise = donePromise;
+    await this.prompt(task);
+    await this.waitForDone(timeout);
+  }
 }
 var SessionKilledError;
 var init_session = __esm(() => {
@@ -18102,7 +18116,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered) {
+  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady) {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -18194,6 +18208,7 @@ You have access via Bash:
     let output;
     let sessionBackend = model;
     let session;
+    let keepAliveActive = false;
     try {
       session = await this.sessionFactory({
         model,
@@ -18217,7 +18232,20 @@ You have access via Bash:
       sessionBackend = session.meta.backend;
       output = await session.getLastOutput();
       sessionBackend = session.meta.backend;
-      await session.close();
+      if (options.keepAlive && onResumeReady) {
+        keepAliveActive = true;
+        const resumeFn = async (msg) => {
+          await session.resume(msg, execution.timeout_ms);
+          return session.getLastOutput();
+        };
+        const closeFn = async () => {
+          keepAliveActive = false;
+          await session.close();
+        };
+        onResumeReady(resumeFn, closeFn);
+      } else {
+        await session.close();
+      }
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
       for (const script of postScripts)
         runScript(script.path);
@@ -18241,7 +18269,9 @@ You have access via Bash:
       });
       throw err;
     } finally {
-      session?.kill();
+      if (!keepAliveActive) {
+        session?.kill();
+      }
     }
     const durationMs = Date.now() - start;
     if (communication?.output_to) {
@@ -18279,7 +18309,7 @@ You have access via Bash:
       model: "?",
       specialistVersion
     });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn), (resumeFn, closeFn) => registry2.setResumeFn(jobId, resumeFn, closeFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
     return jobId;
   }
 }
@@ -18641,6 +18671,8 @@ class Supervisor {
     let currentToolCallId = "";
     let killFn;
     let steerFn;
+    let resumeFn;
+    let closeFn;
     const sigtermHandler = () => killFn?.();
     process.once("SIGTERM", sigtermHandler);
     try {
@@ -18684,11 +18716,32 @@ class Supervisor {
               const parsed = JSON.parse(line);
               if (parsed?.type === "steer" && typeof parsed.message === "string") {
                 steerFn?.(parsed.message).catch(() => {});
+              } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
+                if (resumeFn) {
+                  this.updateStatus(id, { status: "running", current_event: "starting" });
+                  resumeFn(parsed.message).then((output) => {
+                    writeFileSync(this.resultPath(id), output, "utf-8");
+                    this.updateStatus(id, {
+                      status: "waiting",
+                      current_event: "waiting",
+                      elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+                      last_event_at_ms: Date.now()
+                    });
+                  }).catch((err) => {
+                    this.updateStatus(id, { status: "error", error: err?.message ?? String(err) });
+                  });
+                }
+              } else if (parsed?.type === "close") {
+                closeFn?.().catch(() => {});
               }
             } catch {}
           });
           rl.on("error", () => {});
         }
+      }, (rFn, cFn) => {
+        resumeFn = rFn;
+        closeFn = cFn;
+        this.updateStatus(id, { status: "waiting", current_event: "waiting" });
       });
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       writeFileSync(this.resultPath(id), result.output, "utf-8");
@@ -18745,9 +18798,9 @@ __export(exports_install, {
 });
 import { execFileSync as execFileSync2 } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname as dirname2, join as join7 } from "node:path";
+import { dirname as dirname2, join as join8 } from "node:path";
 async function run() {
-  const installerPath = join7(dirname2(fileURLToPath(import.meta.url)), "..", "bin", "install.js");
+  const installerPath = join8(dirname2(fileURLToPath(import.meta.url)), "..", "bin", "install.js");
   execFileSync2(process.execPath, [installerPath], { stdio: "inherit" });
 }
 var init_install = () => {};
@@ -18958,8 +19011,8 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run5
 });
-import { existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join8 } from "node:path";
+import { copyFileSync, cpSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
   console.log(`  ${green2("✓")} ${msg}`);
@@ -18977,11 +19030,47 @@ function loadJson(path, fallback) {
   }
 }
 function saveJson(path, value) {
-  writeFileSync3(path, JSON.stringify(value, null, 2) + `
+  writeFileSync4(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
+function resolvePackagePath(relativePath) {
+  let resolved = fileURLToPath2(new URL(`../${relativePath}`, import.meta.url));
+  if (existsSync5(resolved))
+    return resolved;
+  resolved = fileURLToPath2(new URL(`../../${relativePath}`, import.meta.url));
+  if (existsSync5(resolved))
+    return resolved;
+  return null;
+}
+function copyCanonicalSpecialists(cwd) {
+  const canonicalDir = resolvePackagePath("specialists");
+  if (!canonicalDir) {
+    skip("no canonical specialists found in package");
+    return;
+  }
+  const targetDir = join9(cwd, "specialists");
+  const files = readdirSync2(canonicalDir).filter((f) => f.endsWith(".specialist.yaml"));
+  let copied = 0;
+  let skipped = 0;
+  for (const file of files) {
+    const src = join9(canonicalDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync5(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to specialists/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
+}
 function ensureProjectMcp(cwd) {
-  const mcpPath = join8(cwd, MCP_FILE);
+  const mcpPath = join9(cwd, MCP_FILE);
   const mcp = loadJson(mcpPath, { mcpServers: {} });
   mcp.mcpServers ??= {};
   const existing = mcp.mcpServers[MCP_SERVER_NAME];
@@ -18993,33 +19082,104 @@ function ensureProjectMcp(cwd) {
   saveJson(mcpPath, mcp);
   ok("registered specialists in project .mcp.json");
 }
+function copyCanonicalHooks(cwd) {
+  const sourceDir = resolvePackagePath("hooks");
+  if (!sourceDir) {
+    skip("no canonical hooks found in package");
+    return null;
+  }
+  const targetDir = join9(cwd, ".claude", "hooks");
+  const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
+  if (hooks.length === 0) {
+    skip("no hook files found in package");
+    return null;
+  }
+  if (!existsSync5(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
+  let copied = 0;
+  let skipped = 0;
+  for (const file of hooks) {
+    const src = join9(sourceDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync5(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} hook${copied === 1 ? "" : "s"} to .claude/hooks/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} hook${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
+  return targetDir;
+}
 function ensureProjectHooks(cwd) {
-  const hooksDir = fileURLToPath2(new URL("../hooks", import.meta.url));
-  const completeHook = join8(hooksDir, "specialists-complete.mjs");
-  const sessionHook = join8(hooksDir, "specialists-session-start.mjs");
-  const settingsDir = join8(cwd, ".claude");
-  const settingsPath = join8(settingsDir, "settings.json");
-  if (!existsSync5(settingsDir))
-    mkdirSync2(settingsDir, { recursive: true });
+  const hooksDir = copyCanonicalHooks(cwd);
+  if (!hooksDir)
+    return;
+  const settingsPath = join9(cwd, ".claude", "settings.json");
   const settings = loadJson(settingsPath, {});
-  settings.hooks ??= {};
   let changed = false;
   function addHook(event, command) {
-    const list = settings.hooks;
-    list[event] ??= [];
-    const alreadyWired = list[event].some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
+    const eventList = settings[event] ?? [];
+    settings[event] = eventList;
+    const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
     if (!alreadyWired) {
-      list[event].push({ matcher: "", hooks: [{ type: "command", command }] });
+      eventList.push({ matcher: "", hooks: [{ type: "command", command }] });
       changed = true;
     }
   }
-  addHook("UserPromptSubmit", `node ${completeHook}`);
-  addHook("SessionStart", `node ${sessionHook}`);
+  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
+  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
-    ok("installed specialists hooks into .claude/settings.json");
+    ok("wired specialists hooks in .claude/settings.json");
   } else {
     skip(".claude/settings.json already has specialists hooks");
+  }
+}
+function copyCanonicalSkills(cwd) {
+  const sourceDir = resolvePackagePath("skills");
+  if (!sourceDir) {
+    skip("no canonical skills found in package");
+    return;
+  }
+  const skills = readdirSync2(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  if (skills.length === 0) {
+    skip("no skill directories found in package");
+    return;
+  }
+  const targets = [
+    { path: join9(cwd, ".claude", "skills"), label: ".claude/skills/" },
+    { path: join9(cwd, ".agents", "skills"), label: ".agents/skills/" }
+  ];
+  for (const target of targets) {
+    let copied = 0;
+    let skipped = 0;
+    const parentDir = join9(target.path, "..");
+    if (!existsSync5(parentDir)) {
+      mkdirSync2(parentDir, { recursive: true });
+    }
+    for (const skill of skills) {
+      const src = join9(sourceDir, skill);
+      const dest = join9(target.path, skill);
+      if (existsSync5(dest)) {
+        skipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        copied++;
+      }
+    }
+    if (copied > 0) {
+      ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to ${target.label}`);
+    }
+    if (skipped > 0) {
+      skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist in ${target.label} (not overwritten)`);
+    }
   }
 }
 async function run5() {
@@ -19027,22 +19187,23 @@ async function run5() {
   console.log(`
 ${bold3("specialists init")}
 `);
-  const specialistsDir = join8(cwd, "specialists");
+  const specialistsDir = join9(cwd, "specialists");
   if (existsSync5(specialistsDir)) {
     skip("specialists/ already exists");
   } else {
     mkdirSync2(specialistsDir, { recursive: true });
     ok("created specialists/");
   }
-  const runtimeDir = join8(cwd, ".specialists");
+  copyCanonicalSpecialists(cwd);
+  const runtimeDir = join9(cwd, ".specialists");
   if (existsSync5(runtimeDir)) {
     skip(".specialists/ already exists");
   } else {
-    mkdirSync2(join8(runtimeDir, "jobs"), { recursive: true });
-    mkdirSync2(join8(runtimeDir, "ready"), { recursive: true });
+    mkdirSync2(join9(runtimeDir, "jobs"), { recursive: true });
+    mkdirSync2(join9(runtimeDir, "ready"), { recursive: true });
     ok("created .specialists/ (jobs/, ready/)");
   }
-  const gitignorePath = join8(cwd, ".gitignore");
+  const gitignorePath = join9(cwd, ".gitignore");
   if (existsSync5(gitignorePath)) {
     const existing = readFileSync2(gitignorePath, "utf-8");
     if (existing.includes(GITIGNORE_ENTRY)) {
@@ -19051,38 +19212,39 @@ ${bold3("specialists init")}
       const separator = existing.endsWith(`
 `) ? "" : `
 `;
-      writeFileSync3(gitignorePath, existing + separator + GITIGNORE_ENTRY + `
+      writeFileSync4(gitignorePath, existing + separator + GITIGNORE_ENTRY + `
 `, "utf-8");
       ok("added .specialists/ to .gitignore");
     }
   } else {
-    writeFileSync3(gitignorePath, GITIGNORE_ENTRY + `
+    writeFileSync4(gitignorePath, GITIGNORE_ENTRY + `
 `, "utf-8");
     ok("created .gitignore with .specialists/ entry");
   }
-  const agentsPath = join8(cwd, "AGENTS.md");
+  const agentsPath = join9(cwd, "AGENTS.md");
   if (existsSync5(agentsPath)) {
     const existing = readFileSync2(agentsPath, "utf-8");
     if (existing.includes(AGENTS_MARKER)) {
       skip("AGENTS.md already has Specialists section");
     } else {
-      writeFileSync3(agentsPath, existing.trimEnd() + `
+      writeFileSync4(agentsPath, existing.trimEnd() + `
 
 ` + AGENTS_BLOCK, "utf-8");
       ok("appended Specialists section to AGENTS.md");
     }
   } else {
-    writeFileSync3(agentsPath, AGENTS_BLOCK, "utf-8");
+    writeFileSync4(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
   }
   ensureProjectMcp(cwd);
   ensureProjectHooks(cwd);
+  copyCanonicalSkills(cwd);
   console.log(`
 ${bold3("Done!")}
 `);
   console.log(`  ${dim3("Next steps:")}`);
-  console.log(`  1. Add your specialists to ${yellow3("specialists/")}`);
-  console.log(`  2. Run ${yellow3("specialists list")} to verify they are discovered`);
+  console.log(`  1. Run ${yellow3("specialists list")} to see available specialists`);
+  console.log(`  2. Add custom specialists to ${yellow3("specialists/")} as needed`);
   console.log(`  3. Restart Claude Code to pick up AGENTS.md / .mcp.json / hooks changes
 `);
 }
@@ -19104,7 +19266,7 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run6
 });
-import { readFileSync as readFileSync3, writeFileSync as writeFileSync4 } from "node:fs";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync5 } from "node:fs";
 function parseArgs3(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -19210,7 +19372,7 @@ ${bold4(`[dry-run] ${match.filePath}`)}
     console.log();
     return;
   }
-  writeFileSync4(match.filePath, updated, "utf-8");
+  writeFileSync5(match.filePath, updated, "utf-8");
   const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
   console.log(`${green3("✓")} ${bold4(name)}: ${yellow4(field)} = ${displayValue}` + dim4(` (${match.filePath})`));
 }
@@ -19234,7 +19396,7 @@ var exports_run = {};
 __export(exports_run, {
   run: () => run7
 });
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 async function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -19246,6 +19408,7 @@ async function parseArgs4(argv) {
   let model;
   let noBeads = false;
   let background = false;
+  let keepAlive = false;
   let contextDepth = 1;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
@@ -19273,6 +19436,10 @@ async function parseArgs4(argv) {
       background = true;
       continue;
     }
+    if (token === "--keep-alive") {
+      keepAlive = true;
+      continue;
+    }
   }
   if (prompt && beadId) {
     console.error("Error: use either --prompt or --bead, not both.");
@@ -19292,13 +19459,13 @@ async function parseArgs4(argv) {
     console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
     process.exit(1);
   }
-  return { name, prompt, beadId, model, noBeads, background, contextDepth };
+  return { name, prompt, beadId, model, noBeads, background, keepAlive, contextDepth };
 }
 async function run7() {
   const args = await parseArgs4(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join9(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join10(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -19328,7 +19495,7 @@ async function run7() {
     beadsClient
   });
   if (args.background) {
-    const jobsDir = join9(process.cwd(), ".specialists", "jobs");
+    const jobsDir = join10(process.cwd(), ".specialists", "jobs");
     const supervisor = new Supervisor({
       runner,
       runOptions: {
@@ -19336,7 +19503,8 @@ async function run7() {
         prompt,
         variables,
         backendOverride: args.model,
-        inputBeadId: args.beadId
+        inputBeadId: args.beadId,
+        keepAlive: args.keepAlive
       },
       jobsDir,
       beadsClient
@@ -19502,7 +19670,7 @@ __export(exports_status, {
 });
 import { spawnSync as spawnSync5 } from "node:child_process";
 import { existsSync as existsSync6 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 function ok2(msg) {
   console.log(`  ${green5("✓")} ${msg}`);
 }
@@ -19564,9 +19732,9 @@ async function run8() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync6(join10(process.cwd(), ".beads"));
+  const beadsPresent = existsSync6(join11(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = join10(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
   let jobs = [];
   if (existsSync6(jobsDir)) {
     const supervisor = new Supervisor({
@@ -19690,14 +19858,14 @@ __export(exports_result, {
   run: () => run9
 });
 import { existsSync as existsSync7, readFileSync as readFileSync4 } from "node:fs";
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 async function run9() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists result <job-id>");
     process.exit(1);
   }
-  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -19714,7 +19882,7 @@ async function run9() {
 `);
     process.exit(1);
   }
-  const resultPath = join11(jobsDir, jobId, "result.txt");
+  const resultPath = join12(jobsDir, jobId, "result.txt");
   if (!existsSync7(resultPath)) {
     console.error(`Result file not found for job ${jobId}`);
     process.exit(1);
@@ -19727,10 +19895,10 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync8, readdirSync as readdirSync2, readFileSync as readFileSync5 } from "node:fs";
-import { join as join12 } from "node:path";
+import { existsSync as existsSync8, readdirSync as readdirSync3, readFileSync as readFileSync5 } from "node:fs";
+import { join as join13 } from "node:path";
 function readJobEvents(jobDir) {
-  const eventsPath = join12(jobDir, "events.jsonl");
+  const eventsPath = join13(jobDir, "events.jsonl");
   if (!existsSync8(eventsPath))
     return [];
   const content = readFileSync5(eventsPath, "utf-8");
@@ -19749,9 +19917,9 @@ function readAllJobEvents(jobsDir) {
   if (!existsSync8(jobsDir))
     return [];
   const batches = [];
-  const entries = readdirSync2(jobsDir);
+  const entries = readdirSync3(jobsDir);
   for (const entry of entries) {
-    const jobDir = join12(jobsDir, entry);
+    const jobDir = join13(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -19760,7 +19928,7 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join12(jobDir, "status.json");
+    const statusPath = join13(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
     if (existsSync8(statusPath)) {
@@ -19829,7 +19997,7 @@ __export(exports_feed, {
   run: () => run10
 });
 import { existsSync as existsSync9 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -20023,7 +20191,7 @@ async function followMerged(jobsDir, options) {
 }
 async function run10() {
   const options = parseArgs5(process.argv.slice(3));
-  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
   if (!existsSync9(jobsDir)) {
     console.log(dim6("No jobs directory found."));
     return;
@@ -20051,8 +20219,8 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run11
 });
-import { join as join14 } from "node:path";
-import { writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join15 } from "node:path";
+import { writeFileSync as writeFileSync6 } from "node:fs";
 async function run11() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -20060,7 +20228,7 @@ async function run11() {
     console.error('Usage: specialists steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20082,7 +20250,7 @@ async function run11() {
   try {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-    writeFileSync5(status.fifo_path, payload, { flag: "a" });
+    writeFileSync6(status.fifo_path, payload, { flag: "a" });
     process.stdout.write(`${green7("✓")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
@@ -20096,19 +20264,71 @@ var init_steer = __esm(() => {
   init_supervisor();
 });
 
+// src/cli/follow-up.ts
+var exports_follow_up = {};
+__export(exports_follow_up, {
+  run: () => run12
+});
+import { join as join16 } from "node:path";
+import { writeFileSync as writeFileSync7 } from "node:fs";
+async function run12() {
+  const jobId = process.argv[3];
+  const message = process.argv[4];
+  if (!jobId || !message) {
+    console.error('Usage: specialists follow-up <job-id> "<message>"');
+    process.exit(1);
+  }
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
+  const status = supervisor.readStatus(jobId);
+  if (!status) {
+    console.error(`No job found: ${jobId}`);
+    process.exit(1);
+  }
+  if (status.status !== "waiting") {
+    process.stderr.write(`${red6("Error:")} Job ${jobId} is not in waiting state (status: ${status.status}).
+`);
+    process.stderr.write(`Only jobs started with --keep-alive and --background support follow-up prompts.
+`);
+    process.exit(1);
+  }
+  if (!status.fifo_path) {
+    process.stderr.write(`${red6("Error:")} Job ${jobId} has no steer pipe.
+`);
+    process.exit(1);
+  }
+  try {
+    const payload = JSON.stringify({ type: "prompt", message }) + `
+`;
+    writeFileSync7(status.fifo_path, payload, { flag: "a" });
+    process.stdout.write(`${green8("✓")} Follow-up sent to job ${jobId}
+`);
+    process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
+`);
+  } catch (err) {
+    process.stderr.write(`${red6("Error:")} Failed to write to steer pipe: ${err?.message}
+`);
+    process.exit(1);
+  }
+}
+var green8 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`;
+var init_follow_up = __esm(() => {
+  init_supervisor();
+});
+
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run12
+  run: () => run13
 });
-import { join as join15 } from "node:path";
-async function run12() {
+import { join as join17 } from "node:path";
+async function run13() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20121,26 +20341,26 @@ async function run12() {
     return;
   }
   if (!status.pid) {
-    process.stderr.write(`${red6(`No PID recorded for job ${jobId}.`)}
+    process.stderr.write(`${red7(`No PID recorded for job ${jobId}.`)}
 `);
     process.exit(1);
   }
   try {
     process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green8("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
+    process.stdout.write(`${green9("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
   } catch (err) {
     if (err.code === "ESRCH") {
-      process.stderr.write(`${red6(`Process ${status.pid} not found.`)} Job may have already completed.
+      process.stderr.write(`${red7(`Process ${status.pid} not found.`)} Job may have already completed.
 `);
     } else {
-      process.stderr.write(`${red6("Error:")} ${err.message}
+      process.stderr.write(`${red7("Error:")} ${err.message}
 `);
       process.exit(1);
     }
   }
 }
-var green8 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
 });
@@ -20148,7 +20368,7 @@ var init_stop = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run13
+  run: () => run14
 });
 function section2(title) {
   const bar = "─".repeat(60);
@@ -20160,9 +20380,9 @@ function cmd2(s) {
   return yellow6(s);
 }
 function flag(s) {
-  return green9(s);
+  return green10(s);
 }
-async function run13() {
+async function run14() {
   const lines = [
     "",
     bold7("specialists  ·  Quick Start Guide"),
@@ -20231,6 +20451,13 @@ async function run13() {
   lines.push(`  ${bold7("Steer a running job")} — redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim9("  # delivered after current tool calls finish, before the next LLM call")}`);
+  lines.push("");
+  lines.push(`  ${bold7("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${cmd2("specialists run bug-hunt")} ${flag("--bead unitAI-abc --keep-alive --background")}`);
+  lines.push(`  ${dim9("  # → Job started: a1b2c3  (status: waiting after first turn)")}`);
+  lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
+  lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
+  lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
   lines.push("");
   lines.push(`  ${bold7("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
@@ -20327,8 +20554,9 @@ async function run13() {
   lines.push(`  ${bold7("run_parallel")}       — concurrent or pipeline execution`);
   lines.push(`  ${bold7("start_specialist")}   — async job start, returns job ID`);
   lines.push(`  ${bold7("poll_specialist")}    — poll job status/output by ID`);
-  lines.push(`  ${bold7("steer_specialist")}   — send a mid-run message to a running job`);
-  lines.push(`  ${bold7("stop_specialist")}    — cancel a running job by ID`);
+  lines.push(`  ${bold7("steer_specialist")}      — send a mid-run message to a running job`);
+  lines.push(`  ${bold7("follow_up_specialist")} — send a next-turn prompt to a keep-alive session`);
+  lines.push(`  ${bold7("stop_specialist")}      — cancel a running job by ID`);
   lines.push(`  ${bold7("specialist_status")}  — circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
@@ -20346,6 +20574,12 @@ async function run13() {
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
+  lines.push(`  ${bold7("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${cmd2("specialists run bug-hunt --bead unitAI-abc --keep-alive --background")}`);
+  lines.push(`  ${cmd2("specialists result <job-id>")}`);
+  lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
+  lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
+  lines.push("");
   lines.push(`  ${bold7("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
@@ -20356,24 +20590,24 @@ async function run13() {
   console.log(lines.join(`
 `));
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run14
+  run: () => run15
 });
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync6, readdirSync as readdirSync4 } from "node:fs";
+import { join as join18 } from "node:path";
 function ok3(msg) {
-  console.log(`  ${green10("✓")} ${msg}`);
+  console.log(`  ${green11("✓")} ${msg}`);
 }
 function warn2(msg) {
   console.log(`  ${yellow7("○")} ${msg}`);
 }
 function fail2(msg) {
-  console.log(`  ${red7("✗")} ${msg}`);
+  console.log(`  ${red8("✗")} ${msg}`);
 }
 function fix(msg) {
   console.log(`    ${dim10("→ fix:")} ${yellow7(msg)}`);
@@ -20430,7 +20664,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim10(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync10(join16(CWD, ".beads")))
+  if (existsSync10(join18(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -20450,9 +20684,9 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join16(HOOKS_DIR, name);
+    const dest = join18(HOOKS_DIR, name);
     if (!existsSync10(dest)) {
-      fail2(`${name}  ${red7("missing")}`);
+      fail2(`${name}  ${red8("missing")}`);
       fix("specialists install");
       allPresent = false;
     } else {
@@ -20471,7 +20705,7 @@ function checkHooks() {
     ...hooks.SessionStart ?? []
   ].flatMap((entry) => (entry.hooks ?? []).map((h) => h.command ?? "")));
   for (const name of HOOK_NAMES) {
-    const expected = join16(HOOKS_DIR, name);
+    const expected = join18(HOOKS_DIR, name);
     if (!wiredCommands.has(expected)) {
       warn2(`${name} not wired in settings.json`);
       fix("specialists install");
@@ -20496,9 +20730,9 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join16(CWD, ".specialists");
-  const jobsDir = join16(rootDir, "jobs");
-  const readyDir = join16(rootDir, "ready");
+  const rootDir = join18(CWD, ".specialists");
+  const jobsDir = join18(rootDir, "jobs");
+  const readyDir = join18(rootDir, "ready");
   let allOk = true;
   if (!existsSync10(rootDir)) {
     warn2(".specialists/ not found in current project");
@@ -20520,14 +20754,14 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join16(CWD, ".specialists", "jobs");
+  const jobsDir = join18(CWD, ".specialists", "jobs");
   if (!existsSync10(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
   let entries;
   try {
-    entries = readdirSync3(jobsDir);
+    entries = readdirSync4(jobsDir);
   } catch {
     entries = [];
   }
@@ -20539,7 +20773,7 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join16(jobsDir, jobId, "status.json");
+    const statusPath = join18(jobsDir, jobId, "status.json");
     if (!existsSync10(statusPath))
       continue;
     try {
@@ -20570,7 +20804,7 @@ function checkZombieJobs() {
   }
   return zombies === 0;
 }
-async function run14() {
+async function run15() {
   console.log(`
 ${bold8("specialists doctor")}
 `);
@@ -20584,20 +20818,20 @@ ${bold8("specialists doctor")}
   const allOk = piOk && bdOk && xtOk && hooksOk && mcpOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green10("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
+    console.log(`  ${green11("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
   } else {
     console.log(`  ${yellow7("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
     console.log(`  ${dim10("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red8 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join16(CWD, ".claude");
-  HOOKS_DIR = join16(CLAUDE_DIR, "hooks");
-  SETTINGS_FILE = join16(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join16(CWD, ".mcp.json");
+  CLAUDE_DIR = join18(CWD, ".claude");
+  HOOKS_DIR = join18(CLAUDE_DIR, "hooks");
+  SETTINGS_FILE = join18(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join18(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -20607,13 +20841,13 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run15
+  run: () => run16
 });
-import { existsSync as existsSync11, readFileSync as readFileSync7, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync7, writeFileSync as writeFileSync8 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join17, resolve } from "node:path";
+import { join as join19, resolve } from "node:path";
 function ok4(msg) {
-  console.log(`  ${green11("✓")} ${msg}`);
+  console.log(`  ${green12("✓")} ${msg}`);
 }
 function skip2(msg) {
   console.log(`  ${yellow8("○")} ${msg}`);
@@ -20621,12 +20855,12 @@ function skip2(msg) {
 function resolveTarget(target) {
   switch (target) {
     case "global":
-      return join17(homedir3(), ".claude", "CLAUDE.md");
+      return join19(homedir3(), ".claude", "CLAUDE.md");
     case "agents":
-      return join17(process.cwd(), "AGENTS.md");
+      return join19(process.cwd(), "AGENTS.md");
     case "project":
     default:
-      return join17(process.cwd(), "CLAUDE.md");
+      return join19(process.cwd(), "CLAUDE.md");
   }
 }
 function parseArgs6() {
@@ -20654,7 +20888,7 @@ function parseArgs6() {
   }
   return { target, dryRun };
 }
-async function run15() {
+async function run16() {
   const { target, dryRun } = parseArgs6();
   const filePath = resolve(resolveTarget(target));
   const label = target === "global" ? "~/.claude/CLAUDE.md" : filePath.replace(process.cwd() + "/", "");
@@ -20685,7 +20919,7 @@ ${bold9("specialists setup")}
 ` : `
 
 `;
-    writeFileSync6(filePath, existing.trimEnd() + separator + WORKFLOW_BLOCK, "utf8");
+    writeFileSync8(filePath, existing.trimEnd() + separator + WORKFLOW_BLOCK, "utf8");
     ok4(`Appended Specialists Workflow section to ${label}`);
   } else {
     if (dryRun) {
@@ -20696,7 +20930,7 @@ ${bold9("specialists setup")}
       console.log(dim11("─".repeat(60)));
       return;
     }
-    writeFileSync6(filePath, WORKFLOW_BLOCK, "utf8");
+    writeFileSync8(filePath, WORKFLOW_BLOCK, "utf8");
     ok4(`Created ${label} with Specialists Workflow section`);
   }
   console.log("");
@@ -20706,7 +20940,7 @@ ${bold9("specialists setup")}
   console.log(`  • Run ${yellow8("specialist_init")} in a new session to bootstrap context`);
   console.log("");
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
 
 > Injected by \`specialists setup\`. Keep this section — agents use it for context.
 
@@ -20774,13 +21008,13 @@ var init_setup = () => {};
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run16
+  run: () => run17
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run16() {
+async function run17() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -20822,14 +21056,16 @@ async function run16() {
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
     "  specialists feed -f",
     '  specialists steer <job-id> "focus only on supervisor.ts"',
+    '  specialists follow-up <job-id> "now write the fix"',
     "  specialists result <job-id>",
     "",
     bold10("More help:"),
-    "  specialists quickstart      Full guide and workflow reference",
-    "  specialists run --help      Run command details and flags",
-    "  specialists steer --help    Mid-run steering details",
-    "  specialists init --help     Bootstrap behavior and workflow injection",
-    "  specialists feed --help     Background job monitoring details",
+    "  specialists quickstart         Full guide and workflow reference",
+    "  specialists run --help         Run command details and flags",
+    "  specialists steer --help       Mid-run steering details",
+    "  specialists follow-up --help   Multi-turn keep-alive details",
+    "  specialists init --help        Bootstrap behavior and workflow injection",
+    "  specialists feed --help        Background job monitoring details",
     "",
     dim12("Project model: specialists are project-only; user-scope discovery is deprecated."),
     ""
@@ -20846,6 +21082,7 @@ var init_help = __esm(() => {
     ["feed", "Tail job events; use -f to follow all jobs"],
     ["result", "Print final output of a completed background job"],
     ["steer", "Send a mid-run message to a running background job"],
+    ["follow-up", "Send a next-turn prompt to a keep-alive session (retains full context)"],
     ["stop", "Stop a running background job"],
     ["status", "Show health, MCP state, and active jobs"],
     ["doctor", "Diagnose installation/runtime problems"],
@@ -28138,7 +28375,7 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -28470,6 +28707,53 @@ class JobRegistry {
       return;
     job.steerFn = steerFn;
   }
+  setResumeFn(id, resumeFn, closeFn) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return;
+    job.resumeFn = resumeFn;
+    job.closeFn = closeFn;
+    job.status = "waiting";
+    job.currentEvent = "waiting";
+  }
+  async followUp(id, message) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return { ok: false, error: `Job not found: ${id}` };
+    if (job.status !== "waiting")
+      return { ok: false, error: `Job is not waiting (status: ${job.status})` };
+    if (!job.resumeFn)
+      return { ok: false, error: "Job has no resume function" };
+    job.status = "running";
+    job.currentEvent = "starting";
+    try {
+      const output = await job.resumeFn(message);
+      job.outputBuffer = output;
+      job.status = "waiting";
+      job.currentEvent = "waiting";
+      return { ok: true, output };
+    } catch (err) {
+      job.status = "error";
+      job.error = err?.message ?? String(err);
+      return { ok: false, error: job.error };
+    }
+  }
+  async closeSession(id) {
+    const job = this.jobs.get(id);
+    if (!job)
+      return { ok: false, error: `Job not found: ${id}` };
+    if (job.status !== "waiting")
+      return { ok: false, error: `Job is not in waiting state` };
+    try {
+      await job.closeFn?.();
+      job.status = "done";
+      job.currentEvent = "done";
+      job.endedAtMs = Date.now();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
+  }
   async steer(id, message) {
     const job = this.jobs.get(id);
     if (!job)
@@ -28656,6 +28940,56 @@ function createSteerSpecialistTool(registry2) {
   };
 }
 
+// src/tools/specialist/follow_up_specialist.tool.ts
+init_zod();
+init_supervisor();
+import { writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join5 } from "node:path";
+var followUpSpecialistSchema = exports_external.object({
+  job_id: exports_external.string().describe("Job ID of a waiting keep-alive specialist session"),
+  message: exports_external.string().describe("Next prompt to send to the specialist (conversation history is retained)")
+});
+function createFollowUpSpecialistTool(registry2) {
+  return {
+    name: "follow_up_specialist",
+    description: "Send a follow-up prompt to a waiting keep-alive specialist session. The Pi session retains full conversation history between turns. Only works for jobs started with keepAlive=true (CLI: --keep-alive --background).",
+    inputSchema: followUpSpecialistSchema,
+    async execute(input) {
+      const snap = registry2.snapshot(input.job_id);
+      if (snap) {
+        if (snap.status !== "waiting") {
+          return { status: "error", error: `Job is not waiting (status: ${snap.status})`, job_id: input.job_id };
+        }
+        const result = await registry2.followUp(input.job_id, input.message);
+        if (result.ok) {
+          return { status: "resumed", job_id: input.job_id, output: result.output };
+        }
+        return { status: "error", error: result.error, job_id: input.job_id };
+      }
+      const jobsDir = join5(process.cwd(), ".specialists", "jobs");
+      const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
+      const status = supervisor.readStatus(input.job_id);
+      if (!status) {
+        return { status: "error", error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+      }
+      if (status.status !== "waiting") {
+        return { status: "error", error: `Job is not waiting (status: ${status.status})`, job_id: input.job_id };
+      }
+      if (!status.fifo_path) {
+        return { status: "error", error: "Job has no steer pipe", job_id: input.job_id };
+      }
+      try {
+        const payload = JSON.stringify({ type: "prompt", message: input.message }) + `
+`;
+        writeFileSync3(status.fifo_path, payload, { flag: "a" });
+        return { status: "sent", job_id: input.job_id, message: input.message };
+      } catch (err) {
+        return { status: "error", error: `Failed to write to steer pipe: ${err?.message}`, job_id: input.job_id };
+      }
+    }
+  };
+}
+
 // src/server.ts
 init_zod();
 
@@ -28663,12 +28997,12 @@ init_zod();
 init_zod();
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { existsSync as existsSync4 } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 var specialistInitSchema = objectType({});
 function createSpecialistInitTool(loader, deps) {
   const resolved = deps ?? {
     bdAvailable: () => spawnSync3("bd", ["--version"], { stdio: "ignore" }).status === 0,
-    beadsExists: () => existsSync4(join5(process.cwd(), ".beads")),
+    beadsExists: () => existsSync4(join6(process.cwd(), ".beads")),
     bdInit: () => spawnSync3("bd", ["init"], { stdio: "ignore" })
   };
   return {
@@ -28703,7 +29037,7 @@ class SpecialistsServer {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
     const hooks = new HookEmitter({
-      tracePath: join6(process.cwd(), ".specialists", "trace.jsonl")
+      tracePath: join7(process.cwd(), ".specialists", "trace.jsonl")
     });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
@@ -28717,6 +29051,7 @@ class SpecialistsServer {
       createPollSpecialistTool(registry2),
       createStopSpecialistTool(registry2),
       createSteerSpecialistTool(registry2),
+      createFollowUpSpecialistTool(registry2),
       createSpecialistInitTool(loader)
     ];
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
@@ -28733,6 +29068,7 @@ class SpecialistsServer {
       poll_specialist: pollSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
       steer_specialist: steerSpecialistSchema,
+      follow_up_specialist: followUpSpecialistSchema,
       specialist_init: specialistInitSchema
     };
     this.toolSchemas = schemaMap;
@@ -28805,7 +29141,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run17() {
+async function run18() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -29091,6 +29427,37 @@ async function run17() {
     const { run: handler } = await Promise.resolve().then(() => (init_steer(), exports_steer));
     return handler();
   }
+  if (sub === "follow-up") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        'Usage: specialists follow-up <job-id> "<message>"',
+        "",
+        "Send a follow-up prompt to a waiting keep-alive specialist session.",
+        "The Pi session retains full conversation history between turns.",
+        "",
+        "Requires: job started with --keep-alive --background.",
+        "",
+        "Examples:",
+        '  specialists follow-up a1b2c3 "Now write the fix for the bug you found"',
+        '  specialists follow-up a1b2c3 "Focus only on the auth module"',
+        "",
+        "Workflow:",
+        "  specialists run bug-hunt --bead <id> --keep-alive --background",
+        "  # → Job started: a1b2c3  (status: waiting after first turn)",
+        "  specialists result a1b2c3            # read first turn output",
+        '  specialists follow-up a1b2c3 "..."   # send next prompt',
+        "  specialists feed a1b2c3 --follow      # watch response",
+        "",
+        "See also: specialists steer (mid-run redirect)",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_follow_up(), exports_follow_up));
+    return handler();
+  }
   if (sub === "stop") {
     if (wantsHelp()) {
       console.log([
@@ -29186,7 +29553,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run17().catch((error2) => {
+run18().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

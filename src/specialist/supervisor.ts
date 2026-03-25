@@ -34,7 +34,7 @@ const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 export interface SupervisorStatus {
   id: string;
   specialist: string;
-  status: 'starting' | 'running' | 'done' | 'error';
+  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
   current_event?: string;
   current_tool?: string;
   model?: string;
@@ -218,6 +218,8 @@ export class Supervisor {
     let currentToolCallId = '';
     let killFn: (() => void) | undefined;
     let steerFn: ((msg: string) => Promise<void>) | undefined;
+    let resumeFn: ((msg: string) => Promise<string>) | undefined;
+    let closeFn: (() => Promise<void>) | undefined;
 
     const sigtermHandler = () => killFn?.();
     process.once('SIGTERM', sigtermHandler);
@@ -281,11 +283,37 @@ export class Supervisor {
                 const parsed = JSON.parse(line);
                 if (parsed?.type === 'steer' && typeof parsed.message === 'string') {
                   steerFn?.(parsed.message).catch(() => {});
+                } else if (parsed?.type === 'prompt' && typeof parsed.message === 'string') {
+                  // follow-up: resume the session with a new prompt
+                  if (resumeFn) {
+                    this.updateStatus(id, { status: 'running', current_event: 'starting' });
+                    resumeFn(parsed.message)
+                      .then((output) => {
+                        writeFileSync(this.resultPath(id), output, 'utf-8');
+                        this.updateStatus(id, {
+                          status: 'waiting',
+                          current_event: 'waiting',
+                          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+                          last_event_at_ms: Date.now(),
+                        });
+                      })
+                      .catch((err: any) => {
+                        this.updateStatus(id, { status: 'error', error: err?.message ?? String(err) });
+                      });
+                  }
+                } else if (parsed?.type === 'close') {
+                  closeFn?.().catch(() => {});
                 }
               } catch { /* ignore malformed lines */ }
             });
             rl.on('error', () => {}); // ignore FIFO errors
           }
+        },
+        // onResumeReady — keep-alive: session stays alive after first agent_end
+        (rFn, cFn) => {
+          resumeFn = rFn;
+          closeFn = cFn;
+          this.updateStatus(id, { status: 'waiting', current_event: 'waiting' });
         },
       );
 

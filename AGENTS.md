@@ -1,63 +1,223 @@
-<!-- gitnexus:start -->
-# GitNexus MCP
+<!-- xtrm:start -->
+# XTRM Agent Workflow
 
-This project is indexed by GitNexus as **unitAI** (626 symbols, 1239 relationships, 41 execution flows).
+> Full reference: [XTRM-GUIDE.md](XTRM-GUIDE.md)
+> Run `bd prime` at session start (or after context reset) for live beads workflow context.
 
-GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
+## Session Start
 
-## Always Start Here
+1. `bd prime` — load workflow context and active claims
+2. `bd memories <keyword>` — retrieve memories relevant to today's task
+3. `bd recall <key>` — retrieve a specific memory by key if needed
+4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
+5. `bd update <id> --claim` — claim before any file edit
 
-For any task involving code understanding, debugging, impact analysis, or refactoring, you must:
+## Active Gates (extensions enforce these — not optional)
 
-1. **Read `gitnexus://repo/{name}/context`** — codebase overview + check index freshness
-2. **Match your task to a skill below** and **read that skill file**
-3. **Follow the skill's workflow and checklist**
+| Gate | Trigger | Required action |
+|------|---------|-----------------|
+| **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
+| **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
+| **Stop** | Session end with unclosed claim | `bd close <id>` |
+| **Memory** | Auto-fires at session end if issue closed | `bd remember "<insight>"` then run the `bd kv set` command shown in the gate message |
 
-> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
+> `bd close` auto-commits via `git commit -am`. Do not double-commit after closing.
 
-## Skills
+## bd Command Reference
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/refactoring/SKILL.md` |
+```bash
+# Work discovery
+bd ready                               # Unblocked open issues
+bd show <id>                           # Full detail + deps + blockers
+bd list --status=in_progress           # Your active claims
+bd query "status=in_progress AND assignee=me"  # Complex filter
+bd search <text>                       # Full-text search across issues
 
-## Tools Reference
+# Claiming & updating
+bd update <id> --claim                 # Claim (sets you as owner, status→in_progress)
+bd update <id> --notes "..."           # Append notes inline
+bd update <id> --status=blocked        # Mark blocked
+bd update                              # Update last-touched issue (no ID needed)
 
-| Tool | What it gives you |
-|------|-------------------|
-| `query` | Process-grouped code intelligence — execution flows related to a concept |
-| `context` | 360-degree symbol view — categorized refs, processes it participates in |
-| `impact` | Symbol blast radius — what breaks at depth 1/2/3 with confidence |
-| `detect_changes` | Git-diff impact — what do your current changes affect |
-| `rename` | Multi-file coordinated rename with confidence-tagged edits |
-| `cypher` | Raw graph queries (read `gitnexus://repo/{name}/schema` first) |
-| `list_repos` | Discover indexed repos |
+# Creating
+bd create --title="..." --description="..." --type=task --priority=2
+# --deps "discovered-from:<parent-id>"  link follow-ups to source
+# priority: 0=critical  1=high  2=medium  3=low  4=backlog
+# types: task | bug | feature | epic | chore | decision
 
-## Resources Reference
+# Closing
+bd close <id>                          # Close + auto-commit
+bd close <id> --reason="Done: ..."     # Close with context
+bd close <id1> <id2> <id3>            # Batch close
 
-Lightweight reads (~100-500 tokens) for navigation:
+# Dependencies
+bd dep add <issue> <depends-on>        # issue depends on depends-on (depends-on blocks issue)
+bd dep <blocker> --blocks <blocked>    # shorthand: blocker blocks blocked
+bd dep relate <a> <b>                  # non-blocking "relates to" link
+bd dep tree <id>                       # visualise dependency tree
+bd blocked                             # show all currently blocked issues
 
-| Resource | Content |
-|----------|---------|
-| `gitnexus://repo/{name}/context` | Stats, staleness check |
-| `gitnexus://repo/{name}/clusters` | All functional areas with cohesion scores |
-| `gitnexus://repo/{name}/cluster/{clusterName}` | Area members |
-| `gitnexus://repo/{name}/processes` | All execution flows |
-| `gitnexus://repo/{name}/process/{processName}` | Step-by-step trace |
-| `gitnexus://repo/{name}/schema` | Graph schema for Cypher |
+# Persistent memory
+bd remember "<insight>"                # Store across sessions (project-scoped)
+bd memories <keyword>                  # Search stored memories
+bd recall <key>                        # Retrieve full memory by key
+bd forget <key>                        # Remove a memory
 
-## Graph Schema
-
-**Nodes:** File, Function, Class, Interface, Method, Community, Process
-**Edges (via CodeRelation.type):** CALLS, IMPORTS, EXTENDS, IMPLEMENTS, DEFINES, MEMBER_OF, STEP_IN_PROCESS
-
-```cypher
-MATCH (caller)-[:CodeRelation {type: 'CALLS'}]->(f:Function {name: "myFunc"})
-RETURN caller.name, caller.filePath
+# Health & pre-flight
+bd stats                               # Open/closed/blocked counts
+bd preflight --check                   # Pre-PR readiness (lint, tests, beads)
+bd doctor                              # Diagnose installation issues
 ```
+
+## Git Workflow (strict: one branch per issue)
+
+```bash
+git checkout -b feature/<issue-id>-<slug>   # or fix/... chore/...
+bd update <id> --claim                       # claim before any edit
+# ... write code ...
+bd close <id> --reason="..."                 # closes issue + auto-commits
+xt end                                       # push, PR, merge, worktree cleanup
+```
+
+**Never** continue new work on a previously used branch.
+
+## Quality Gates (automatic)
+
+Run on every file edit via PostToolUse extension:
+- **TypeScript/JS**: ESLint + tsc
+- **Python**: ruff + mypy
+
+Gate output appears as extension context. Fix failures before proceeding — do not commit with lint errors.
+
+## bv — Graph-Aware Triage
+
+bv is a graph-aware triage engine for the beads issue board. Use it instead of `bd ready` when you need ranked picks, dependency-aware scheduling, or project health signals.
+
+> **CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
+
+```bash
+bv --robot-triage             # THE entry point — ranked picks, quick wins, blockers, health
+bv --robot-next               # Single top pick + claim command (minimal output)
+bv --robot-triage --format toon  # Token-optimized output for lower context usage
+```
+
+**Scope boundary:** bv = *what to work on*. `bd` = creating, claiming, closing issues.
+
+### Planning & Analysis
+
+| Command | Returns |
+|---------|---------|
+| `--robot-plan` | Parallel execution tracks with unblocks lists |
+| `--robot-priority` | Priority misalignment detection |
+| `--robot-insights` | Full graph metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles |
+| `--robot-forecast <id\|all>` | ETA predictions with dependency-aware scheduling |
+| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
+| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified, cycles introduced/resolved |
+
+### Scoping & Filtering
+
+```bash
+bv --robot-plan --label backend        # Scope to label's subgraph
+bv --recipe actionable --robot-plan    # Pre-filter: ready to work (no blockers)
+bv --recipe high-impact --robot-triage # Pre-filter: top PageRank scores
+bv --robot-triage --robot-triage-by-track  # Group by parallel work streams
+```
+
+### Understanding Output
+
+- `data_hash` — fingerprint of beads state (verify consistency across calls)
+- Phase 1 (instant): degree, topo sort, density
+- Phase 2 (async, 500ms): PageRank, betweenness, HITS, cycles — check `status` flags
+
+```bash
+bv --robot-triage | jq '.quick_ref'              # At-a-glance summary
+bv --robot-triage | jq '.recommendations[0]'     # Top recommendation
+bv --robot-plan | jq '.plan.summary.highest_impact'
+bv --robot-insights | jq '.Cycles'               # Circular deps — must fix
+```
+
+## Worktree Sessions
+
+- `xt pi` — launch Pi in a sandboxed worktree
+- `xt end` — close session: commit / push / PR / cleanup
+<!-- xtrm:end -->
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **specialists** (682 symbols, 1426 relationships, 48 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+
+## When Debugging
+
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/specialists/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+
+## When Refactoring
+
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Tools Quick Reference
+
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+
+## Impact Risk Levels
+
+| Depth | Meaning | Action |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/specialists/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/specialists/clusters` | All functional areas |
+| `gitnexus://repo/specialists/processes` | All execution flows |
+| `gitnexus://repo/specialists/process/{name}` | Step-by-step execution trace |
+
+## Self-Check Before Finishing
+
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
+
+## CLI
+
+- Re-index: `npx gitnexus analyze`
+- Check freshness: `npx gitnexus status`
+- Generate docs: `npx gitnexus wiki`
 
 <!-- gitnexus:end -->
 

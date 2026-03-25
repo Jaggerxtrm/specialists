@@ -2,7 +2,7 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.2.0
+version: 1.3.0
 updated: 2026-03-25
 description: Command and flag reference for the Specialists CLI.
 source_of_truth_for:
@@ -26,6 +26,7 @@ domain:
 | `specialists feed` | Tail job events |
 | `specialists result` | Print final job output |
 | `specialists steer` | Send a mid-run message to a running job |
+| `specialists follow-up` | Send a next-turn prompt to a keep-alive session |
 | `specialists stop` | Stop a running job |
 | `specialists status` | Show health and active jobs |
 | `specialists doctor` | Diagnose installation/runtime issues |
@@ -57,6 +58,7 @@ Flags:
 | `--no-beads` | Do not create a new tracking bead |
 | `--background` | Start async and return a job id |
 | `--model <model>` | Override the configured model for a run |
+| `--keep-alive` | Keep the Pi session alive after completion for follow-up turns |
 
 ## `specialists feed`
 
@@ -86,6 +88,35 @@ Notes:
 - Only works for jobs started with `--background`.
 - Uses a named FIFO at `.specialists/jobs/<id>/steer.pipe` for cross-process delivery.
 - The MCP tool `steer_specialist` covers the same action for in-process `start_specialist` jobs.
+
+## `specialists follow-up`
+
+Send a next-turn prompt to a keep-alive session. The Pi session retains full conversation history between turns — no re-reading, no context loss.
+
+```bash
+specialists follow-up <job-id> "<message>"
+```
+
+Requires the job to have been started with `--keep-alive --background`. The job status will be `waiting` between turns.
+
+Examples:
+
+```bash
+# Start a keep-alive session
+specialists run bug-hunt --bead unitAI-abc --keep-alive --background
+# → Job started: 49adda  (transitions to status: waiting after first turn)
+
+specialists result 49adda                           # read first turn output
+specialists follow-up 49adda "now write the fix"    # start second turn
+specialists feed 49adda --follow                    # watch the response
+specialists follow-up 49adda "add a test for it"    # third turn, still same context
+```
+
+Notes:
+- Status cycles: `running` → `waiting` → `running` → `waiting` → …
+- Uses the same FIFO (`steer.pipe`) as `steer`. Writes `{"type":"prompt","message":"..."}`.
+- Contrast with `steer`: steer redirects mid-turn, follow-up starts a new turn.
+- The MCP tool `follow_up_specialist` covers the same action for in-process `start_specialist` jobs.
 
 ## `specialists models`
 

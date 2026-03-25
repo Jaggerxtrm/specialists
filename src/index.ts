@@ -304,6 +304,37 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'follow-up') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists follow-up <job-id> "<message>"',
+        '',
+        'Send a follow-up prompt to a waiting keep-alive specialist session.',
+        'The Pi session retains full conversation history between turns.',
+        '',
+        'Requires: job started with --keep-alive --background.',
+        '',
+        'Examples:',
+        '  specialists follow-up a1b2c3 "Now write the fix for the bug you found"',
+        '  specialists follow-up a1b2c3 "Focus only on the auth module"',
+        '',
+        'Workflow:',
+        '  specialists run bug-hunt --bead <id> --keep-alive --background',
+        '  # → Job started: a1b2c3  (status: waiting after first turn)',
+        '  specialists result a1b2c3            # read first turn output',
+        '  specialists follow-up a1b2c3 "..."   # send next prompt',
+        '  specialists feed a1b2c3 --follow      # watch response',
+        '',
+        'See also: specialists steer (mid-run redirect)',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/follow-up.js');
+    return handler();
+  }
+
   if (sub === 'stop') {
     if (wantsHelp()) {
       console.log([
