@@ -226,6 +226,38 @@ communication:
   subscribes: [session_context]
 ```
 
+### `specialist.validation` (optional)
+
+Drives the staleness detection shown in `specialists status` and `specialists list`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `files_to_watch` | string[] | Paths to monitor. If any file's mtime is newer than `metadata.updated`, the specialist is marked **STALE** |
+| `stale_threshold_days` | number | If the specialist has been STALE for more than N days, escalates to **AGED** |
+| `references` | array | Accepted, currently unused |
+
+**Staleness states:**
+
+| State | Condition |
+|-------|-----------|
+| `OK` | No watched files changed, or no `files_to_watch` / `updated` set |
+| `STALE` | A watched file's mtime > `metadata.updated` |
+| `AGED` | STALE + days since `updated` > `stale_threshold_days` |
+
+```yaml
+specialist:
+  metadata:
+    updated: "2026-03-01"
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+    stale_threshold_days: 30
+```
+
+This specialist goes STALE the moment `schema.ts` or `runner.ts` is modified after March 1st, and AGED if that condition persists for more than 30 days.
+
 ### `specialist.beads_integration` (optional)
 
 | Value | Behavior |

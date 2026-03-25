@@ -70,6 +70,7 @@ specialist:
 | `skills` | extra skill paths |
 | `capabilities` | tool capability toggles |
 | `beads_integration` | bead defaults when applicable |
+| `validation` | staleness detection via file watches |
 
 ## Skills
 
@@ -121,6 +122,29 @@ Recommended loop:
 - user-scope specialist discovery is deprecated
 - **default specialists** live in `.specialists/default/specialists/` — copied by `specialists init`, do not edit
 - **custom specialists** go in `.specialists/user/specialists/` — add yours here, they take precedence on name collision
+
+## Validation (staleness detection)
+
+The `validation` section tells specialists to watch source files and flag themselves as out-of-date when those files change.
+
+```yaml
+specialist:
+  metadata:
+    updated: "2026-03-01"   # ISO date — compared against watched file mtimes
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+    stale_threshold_days: 30  # STALE for >30 days → AGED
+```
+
+| State | Condition |
+|-------|-----------|
+| `OK` | No watched file changed, or `files_to_watch` / `updated` not set |
+| `STALE` | A watched file's mtime is newer than `metadata.updated` |
+| `AGED` | STALE + days since `updated` exceeds `stale_threshold_days` |
+
+STALE and AGED warnings appear in `specialists status` and `specialists list`.
 
 ## See also
 
