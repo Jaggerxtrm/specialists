@@ -81,9 +81,21 @@ specialists result <job-id>
 specialists stop <job-id>
 ```
 
-## Project-only scope
+## Directory structure
 
-Specialists are project-only. Put definitions in `specialists/` in the project root.
+Specialists live in `.specialists/` in the project root:
+
+```
+.specialists/
+├── default/     # canonical specialists (from init)
+│   └── specialists/
+├── user/        # custom specialists
+│   └── specialists/
+├── jobs/        # runtime (gitignored)
+└── ready/       # runtime (gitignored)
+```
+
+Add custom specialists to `.specialists/user/specialists/`. Run `specialists list` to see all available.
 
 ## See also
 

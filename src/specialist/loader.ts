@@ -56,10 +56,6 @@ export class SpecialistLoader {
       // User specialists take precedence over defaults
       { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
       { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
-      // Legacy paths for backwards compatibility
-      { path: join(this.projectDir, 'specialists'), scope: 'user' },
-      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'user' },
-      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'user' },
     ];
     return dirs.filter(d => existsSync(d.path));
   }

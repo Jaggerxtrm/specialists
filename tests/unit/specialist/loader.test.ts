@@ -147,38 +147,6 @@ describe('SpecialistLoader', () => {
     expect(stderrChunks.join('')).toMatch(/skipping.*bad\.specialist\.yaml/);
   });
 
-  // --- Legacy path support ---
-
-  it('discovers specialists in legacy specialists/ dir with user scope', async () => {
-    const dir = join(tempDir, 'specialists');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'my-spec.specialist.yaml'), MINIMAL_YAML('my-spec'));
-    const list = await loader.list();
-    expect(list).toHaveLength(1);
-    expect(list[0].name).toBe('my-spec');
-    expect(list[0].scope).toBe('user');
-  });
-
-  it('discovers specialists in legacy .claude/specialists/ dir with user scope', async () => {
-    const dir = join(tempDir, '.claude', 'specialists');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'claude-spec.specialist.yaml'), MINIMAL_YAML('claude-spec'));
-    const list = await loader.list();
-    expect(list).toHaveLength(1);
-    expect(list[0].name).toBe('claude-spec');
-    expect(list[0].scope).toBe('user');
-  });
-
-  it('discovers specialists in legacy .agent-forge/specialists/ dir with user scope', async () => {
-    const dir = join(tempDir, '.agent-forge', 'specialists');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'forge-spec.specialist.yaml'), MINIMAL_YAML('forge-spec'));
-    const list = await loader.list();
-    expect(list).toHaveLength(1);
-    expect(list[0].name).toBe('forge-spec');
-    expect(list[0].scope).toBe('user');
-  });
-
   // --- Other functionality ---
 
   it('filters list() by category', async () => {

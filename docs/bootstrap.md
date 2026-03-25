@@ -60,23 +60,21 @@ Managed markers:
 <!-- specialists:end -->
 ```
 
-## Project-only scope
+## Directory structure
 
-Specialists are project-scoped.
+Specialists live in `.specialists/` in the project root:
 
-Canonical project path:
-
-```text
-./specialists/*.specialist.yaml
+```
+.specialists/
+├── default/     # canonical specialists (from init)
+│   └── specialists/
+├── user/        # custom specialists
+│   └── specialists/
+├── jobs/        # runtime (gitignored)
+└── ready/       # runtime (gitignored)
 ```
 
-Alternative project path still scanned for compatibility:
-
-```text
-./.claude/specialists/*.specialist.yaml
-```
-
-User-scope discovery is deprecated.
+Add custom specialists to `.specialists/user/specialists/`.
 
 ## Verify bootstrap
 

@@ -17532,10 +17532,7 @@ class SpecialistLoader {
   getScanDirs() {
     const dirs = [
       { path: join(this.projectDir, ".specialists", "user", "specialists"), scope: "user" },
-      { path: join(this.projectDir, ".specialists", "default", "specialists"), scope: "default" },
-      { path: join(this.projectDir, "specialists"), scope: "user" },
-      { path: join(this.projectDir, ".claude", "specialists"), scope: "user" },
-      { path: join(this.projectDir, ".agent-forge", "specialists"), scope: "user" }
+      { path: join(this.projectDir, ".specialists", "default", "specialists"), scope: "default" }
     ];
     return dirs.filter((d) => existsSync(d.path));
   }
