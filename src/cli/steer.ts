@@ -13,7 +13,7 @@ export async function run(): Promise<void> {
   const message = process.argv[4];
 
   if (!jobId || !message) {
-    console.error('Usage: specialists steer <job-id> "<message>"');
+    console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
 

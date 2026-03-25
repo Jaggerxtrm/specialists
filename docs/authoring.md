@@ -15,6 +15,8 @@ domain:
 
 # Specialist Authoring
 
+> **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
+
 Project specialists live in:
 
 ```text

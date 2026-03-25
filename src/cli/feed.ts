@@ -3,7 +3,7 @@
  * Feed v2: unified chronological timeline for specialists jobs.
  *
  * Usage:
- *   specialists feed [options]
+ *   specialists|sp feed [options]
  *
  * Options:
  *   --job <id>         Filter to a specific job

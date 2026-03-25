@@ -13,7 +13,7 @@ export async function run(): Promise<void> {
   const message = process.argv[4];
 
   if (!jobId || !message) {
-    console.error('Usage: specialists follow-up <job-id> "<message>"');
+    console.error('Usage: specialists|sp follow-up <job-id> "<message>"');
     process.exit(1);
   }
 

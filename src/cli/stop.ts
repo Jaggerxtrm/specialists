@@ -11,7 +11,7 @@ const dim   = (s: string) => `\x1b[2m${s}\x1b[0m`;
 export async function run(): Promise<void> {
   const jobId = process.argv[3];
   if (!jobId) {
-    console.error('Usage: specialists stop <job-id>');
+    console.error('Usage: specialists|sp stop <job-id>');
     process.exit(1);
   }
 

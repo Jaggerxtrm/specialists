@@ -22,6 +22,7 @@ export async function run(): Promise<void> {
     '',
     bold('specialists  ·  Quick Start Guide'),
     dim('One MCP server. Multiple AI backends. Intelligent orchestration.'),
+    dim('Tip: sp is a shorter alias — sp run, sp list, sp feed etc. work identically.'),
     '',
   ];
 

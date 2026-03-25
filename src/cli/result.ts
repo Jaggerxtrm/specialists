@@ -11,7 +11,7 @@ const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 export async function run(): Promise<void> {
   const jobId = process.argv[3];
   if (!jobId) {
-    console.error('Usage: specialists result <job-id>');
+    console.error('Usage: specialists|sp result <job-id>');
     process.exit(1);
   }
 
