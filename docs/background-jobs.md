@@ -2,11 +2,12 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.1.0
+version: 1.2.0
 updated: 2026-03-25
 description: Background execution model, job files, and monitoring commands.
 source_of_truth_for:
   - "src/cli/feed.ts"
+  - "src/cli/follow-up.ts"
   - "src/cli/result.ts"
   - "src/cli/steer.ts"
   - "src/cli/stop.ts"
@@ -17,13 +18,20 @@ domain:
 
 # Background Jobs
 
-Use background mode when a specialist run will take longer or you want to keep working.
+Use background mode when a specialist run will take longer or you want to keep working. Add `--keep-alive` for multi-turn sessions where the Pi session stays alive between turns.
 
 ## Start a background job
 
 ```bash
 specialists run sync-docs --bead unitAI-26s --background
 # → Job started: 49adda
+```
+
+## Start a keep-alive session (multi-turn)
+
+```bash
+specialists run bug-hunt --bead unitAI-abc --keep-alive --background
+# → Job started: 49adda  (status: waiting after first turn completes)
 ```
 
 ## Observe progress
@@ -49,6 +57,19 @@ specialists steer 49adda "skip the test suite, just fix the bug"
 ```
 
 Under the hood this writes `{"type":"steer","message":"..."}` to a named FIFO at `.specialists/jobs/<id>/steer.pipe`. The Pi RPC protocol picks it up on the next turn.
+
+## Send a follow-up prompt (keep-alive sessions)
+
+Resume a waiting keep-alive session with a new prompt. The Pi session retains full conversation history — no re-reading, no context loss.
+
+```bash
+specialists result 49adda                              # read first turn output
+specialists follow-up 49adda "now write the fix"       # start second turn
+specialists feed 49adda --follow                        # watch the response
+specialists follow-up 49adda "add a test for it"        # third turn, same context
+```
+
+Status cycles: `running` → `waiting` → `running` → `waiting` between turns.
 
 ## Stop a job
 

@@ -20343,6 +20343,13 @@ async function run14() {
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim9("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
+  lines.push(`  ${bold7("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${cmd2("specialists run bug-hunt")} ${flag("--bead unitAI-abc --keep-alive --background")}`);
+  lines.push(`  ${dim9("  # → Job started: a1b2c3  (status: waiting after first turn)")}`);
+  lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
+  lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
+  lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
+  lines.push("");
   lines.push(`  ${bold7("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
@@ -20438,8 +20445,9 @@ async function run14() {
   lines.push(`  ${bold7("run_parallel")}       — concurrent or pipeline execution`);
   lines.push(`  ${bold7("start_specialist")}   — async job start, returns job ID`);
   lines.push(`  ${bold7("poll_specialist")}    — poll job status/output by ID`);
-  lines.push(`  ${bold7("steer_specialist")}   — send a mid-run message to a running job`);
-  lines.push(`  ${bold7("stop_specialist")}    — cancel a running job by ID`);
+  lines.push(`  ${bold7("steer_specialist")}      — send a mid-run message to a running job`);
+  lines.push(`  ${bold7("follow_up_specialist")} — send a next-turn prompt to a keep-alive session`);
+  lines.push(`  ${bold7("stop_specialist")}      — cancel a running job by ID`);
   lines.push(`  ${bold7("specialist_status")}  — circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
@@ -20456,6 +20464,12 @@ async function run14() {
   lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
+  lines.push("");
+  lines.push(`  ${bold7("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${cmd2("specialists run bug-hunt --bead unitAI-abc --keep-alive --background")}`);
+  lines.push(`  ${cmd2("specialists result <job-id>")}`);
+  lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
+  lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push("");
   lines.push(`  ${bold7("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
@@ -20933,14 +20947,16 @@ async function run17() {
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
     "  specialists feed -f",
     '  specialists steer <job-id> "focus only on supervisor.ts"',
+    '  specialists follow-up <job-id> "now write the fix"',
     "  specialists result <job-id>",
     "",
     bold10("More help:"),
-    "  specialists quickstart      Full guide and workflow reference",
-    "  specialists run --help      Run command details and flags",
-    "  specialists steer --help    Mid-run steering details",
-    "  specialists init --help     Bootstrap behavior and workflow injection",
-    "  specialists feed --help     Background job monitoring details",
+    "  specialists quickstart         Full guide and workflow reference",
+    "  specialists run --help         Run command details and flags",
+    "  specialists steer --help       Mid-run steering details",
+    "  specialists follow-up --help   Multi-turn keep-alive details",
+    "  specialists init --help        Bootstrap behavior and workflow injection",
+    "  specialists feed --help        Background job monitoring details",
     "",
     dim12("Project model: specialists are project-only; user-scope discovery is deprecated."),
     ""
@@ -20957,6 +20973,7 @@ var init_help = __esm(() => {
     ["feed", "Tail job events; use -f to follow all jobs"],
     ["result", "Print final output of a completed background job"],
     ["steer", "Send a mid-run message to a running background job"],
+    ["follow-up", "Send a next-turn prompt to a keep-alive session (retains full context)"],
     ["stop", "Stop a running background job"],
     ["status", "Show health, MCP state, and active jobs"],
     ["doctor", "Diagnose installation/runtime problems"],

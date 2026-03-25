@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Keep-alive multi-turn sessions (unitAI-xpxw)**
+- `specialists run --keep-alive --background` — keeps the Pi session alive after `agent_end`; job transitions to `status: waiting` instead of `done`
+- `specialists follow-up <job-id> "<message>"` — send a next-turn prompt to a waiting session; Pi retains full conversation history (no re-reading, no context loss)
+- `follow_up_specialist` MCP tool — same for in-process `start_specialist` jobs and background Supervisor jobs
+- `PiAgentSession.resume(task, timeout?)` — resets `_donePromise`, sends new prompt, waits for `agent_end`; proven working via test b7hdsxm9r
+- `RunOptions.keepAlive` + `onResumeReady` callback in `SpecialistRunner.run()` — session ownership handed to caller after first turn; finally-block kill skipped
+- `JobRegistry.followUp/closeSession` + `'waiting'` status
+- Supervisor: FIFO reader handles `{"type":"prompt","message":"..."}` for cross-process follow-up delivery; `{"type":"close"}` for graceful shutdown
+
 **Mid-run steering (unitAI-qhpc)**
 - `specialists steer <job-id> "<message>"` — send a steering instruction to a running background job; delivered by Pi RPC after the current tool calls finish, before the next LLM call
 - `steer_specialist` MCP tool — same capability for in-process `start_specialist` jobs and background Supervisor jobs
