@@ -56,3 +56,5 @@ venv/
 
 # bv transient lock
 .beads/.bv.lock
+
+.specialists/ready/

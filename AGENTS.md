@@ -333,3 +333,12 @@ For more details, see README.md and docs/QUICKSTART.md.
 - If push fails, resolve and retry until it succeeds
 
 <!-- END BEADS INTEGRATION -->
+
+## Specialists
+
+Call `specialist_init` at the start of every session to bootstrap context and
+see available specialists. Use `use_specialist` or `start_specialist` to
+delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
+specialist without user intervention.
+
+Add custom specialists to `.specialists/user/specialists/` to extend the defaults.
