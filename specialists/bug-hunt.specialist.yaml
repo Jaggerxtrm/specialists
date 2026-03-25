@@ -2,16 +2,18 @@ specialist:
   metadata:
     name: bug-hunt
     version: 1.1.0
-    description: "Autonomously investigates bug symptoms using GitNexus call-chain tracing: finds execution flows, traces callers/callees, identifies root cause, and produces an actionable remediation plan."
+    description: "Autonomously investigates bug symptoms using GitNexus call-chain
+      tracing: finds execution flows, traces callers/callees, identifies root
+      cause, and produces an actionable remediation plan."
     category: workflow
-    tags: [debugging, bug-hunt, root-cause, investigation, remediation, gitnexus]
+    tags: [ debugging, bug-hunt, root-cause, investigation, remediation, gitnexus ]
     updated: "2026-03-11"
 
   execution:
     mode: tool
     model: anthropic/claude-sonnet-4-6
     fallback_model: google-gemini-cli/gemini-3.1-pro-preview
-    timeout_ms: 300000
+    timeout_ms: 600000
     response_format: markdown
     permission_required: LOW
 
@@ -91,4 +93,4 @@ specialist:
       Fall back to grep/find if GitNexus is unavailable. Produce a full Bug Hunt Report.
 
   communication:
-    publishes: [bug_report, root_cause_analysis, remediation_plan]
+    publishes: [ bug_report, root_cause_analysis, remediation_plan ]
