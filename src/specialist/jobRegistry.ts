@@ -7,7 +7,7 @@ import type { RunResult } from './runner.js';
 
 export interface JobSnapshot {
   job_id: string;
-  status: 'running' | 'done' | 'error' | 'cancelled';
+  status: 'running' | 'done' | 'error' | 'cancelled' | 'waiting';
   /** Full output — populated only when status === 'done'. Empty string while running or on error/cancel. */
   output: string;
   /** New content since the provided cursor (for incremental mid-run polling). */
@@ -27,7 +27,7 @@ export interface JobSnapshot {
 
 interface JobState {
   id: string;
-  status: 'running' | 'done' | 'error' | 'cancelled';
+  status: 'running' | 'done' | 'error' | 'cancelled' | 'waiting';
   outputBuffer: string;
   currentEvent: string;
   backend: string;
@@ -38,6 +38,8 @@ interface JobState {
   error?: string;
   killFn?: () => void;
   steerFn?: (msg: string) => Promise<void>;
+  resumeFn?: (msg: string) => Promise<string>;
+  closeFn?: () => Promise<void>;
   beadId?: string;
 }
 
@@ -98,6 +100,57 @@ export class JobRegistry {
     const job = this.jobs.get(id);
     if (!job) return;
     job.steerFn = steerFn;
+  }
+
+  /** Register resume/close functions for a keep-alive job. Sets status to 'waiting'. */
+  setResumeFn(
+    id: string,
+    resumeFn: (msg: string) => Promise<string>,
+    closeFn: () => Promise<void>,
+  ): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.resumeFn = resumeFn;
+    job.closeFn = closeFn;
+    job.status = 'waiting';
+    job.currentEvent = 'waiting';
+  }
+
+  /** Send a follow-up prompt to a waiting keep-alive job. */
+  async followUp(id: string, message: string): Promise<{ ok: boolean; output?: string; error?: string }> {
+    const job = this.jobs.get(id);
+    if (!job) return { ok: false, error: `Job not found: ${id}` };
+    if (job.status !== 'waiting') return { ok: false, error: `Job is not waiting (status: ${job.status})` };
+    if (!job.resumeFn) return { ok: false, error: 'Job has no resume function' };
+    job.status = 'running';
+    job.currentEvent = 'starting';
+    try {
+      const output = await job.resumeFn(message);
+      job.outputBuffer = output;
+      job.status = 'waiting';
+      job.currentEvent = 'waiting';
+      return { ok: true, output };
+    } catch (err: any) {
+      job.status = 'error';
+      job.error = err?.message ?? String(err);
+      return { ok: false, error: job.error };
+    }
+  }
+
+  /** Close a keep-alive session and mark the job done. */
+  async closeSession(id: string): Promise<{ ok: boolean; error?: string }> {
+    const job = this.jobs.get(id);
+    if (!job) return { ok: false, error: `Job not found: ${id}` };
+    if (job.status !== 'waiting') return { ok: false, error: `Job is not in waiting state` };
+    try {
+      await job.closeFn?.();
+      job.status = 'done';
+      job.currentEvent = 'done';
+      job.endedAtMs = Date.now();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
   }
 
   /** Send a mid-run steering message to the Pi agent for this job. */

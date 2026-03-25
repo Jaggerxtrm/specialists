@@ -30,6 +30,7 @@ import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specia
 import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/specialist/poll_specialist.tool.js";
 import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { createSteerSpecialistTool, steerSpecialistSchema } from "./tools/specialist/steer_specialist.tool.js";
+import { createFollowUpSpecialistTool, followUpSpecialistSchema } from "./tools/specialist/follow_up_specialist.tool.js";
 import { z } from "zod";
 
 import { createSpecialistInitTool, specialistInitSchema } from "./tools/specialist/specialist_init.tool.js";
@@ -63,6 +64,7 @@ export class SpecialistsServer {
       createPollSpecialistTool(registry),
       createStopSpecialistTool(registry),
       createSteerSpecialistTool(registry),
+      createFollowUpSpecialistTool(registry),
       createSpecialistInitTool(loader),
     ];
 
@@ -86,6 +88,7 @@ export class SpecialistsServer {
       poll_specialist: pollSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
       steer_specialist: steerSpecialistSchema,
+      follow_up_specialist: followUpSpecialistSchema,
       specialist_init: specialistInitSchema,
     };
     this.toolSchemas = schemaMap;
