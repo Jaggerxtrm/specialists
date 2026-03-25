@@ -4,7 +4,7 @@ scope: specialists-catalog
 category: overview
 version: 1.0.0
 updated: 2026-03-25
-synced_at: 8105541
+synced_at: 7dd164a
 description: Current project specialists and what each one is for.
 source_of_truth_for:
   - "specialists/*.specialist.yaml"
