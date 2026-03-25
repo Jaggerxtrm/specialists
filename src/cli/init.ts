@@ -1,6 +1,6 @@
 // src/cli/init.ts
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,18 +41,26 @@ function saveJson(path: string, value: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf-8');
 }
 
+/**
+ * Resolve a path relative to this package's installed location.
+ * Handles both bundled (dist/index.js) and source (src/cli/init.ts) modes.
+ */
+function resolvePackagePath(relativePath: string): string | null {
+  // Try from bundled location (dist/index.js -> ../relativePath)
+  let resolved = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
+  if (existsSync(resolved)) return resolved;
+  
+  // Try from source location (src/cli/init.ts -> ../../relativePath)
+  resolved = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
+  if (existsSync(resolved)) return resolved;
+  
+  return null;
+}
+
 function copyCanonicalSpecialists(cwd: string): void {
-  // Resolve canonical specialists directory relative to this package's installed location
-  // When bundled (dist/index.js): ../specialists -> specialists/
-  // When running from source (src/cli/init.ts): ../../specialists -> specialists/
-  let canonicalDir = fileURLToPath(new URL('../specialists', import.meta.url));
+  const canonicalDir = resolvePackagePath('specialists');
   
-  if (!existsSync(canonicalDir)) {
-    // Try one level up (source mode)
-    canonicalDir = fileURLToPath(new URL('../../specialists', import.meta.url));
-  }
-  
-  if (!existsSync(canonicalDir)) {
+  if (!canonicalDir) {
     skip('no canonical specialists found in package');
     return;
   }
@@ -104,42 +112,145 @@ function ensureProjectMcp(cwd: string): void {
   ok('registered specialists in project .mcp.json');
 }
 
+function copyCanonicalHooks(cwd: string): string | null {
+  const sourceDir = resolvePackagePath('hooks');
+  
+  if (!sourceDir) {
+    skip('no canonical hooks found in package');
+    return null;
+  }
+
+  const targetDir = join(cwd, '.claude', 'hooks');
+  
+  // Count hooks to copy
+  const hooks = readdirSync(sourceDir).filter(f => f.endsWith('.mjs'));
+  if (hooks.length === 0) {
+    skip('no hook files found in package');
+    return null;
+  }
+
+  // Create target directory
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  let copied = 0;
+  let skipped = 0;
+
+  for (const file of hooks) {
+    const src = join(sourceDir, file);
+    const dest = join(targetDir, file);
+    
+    if (existsSync(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    ok(`copied ${copied} hook${copied === 1 ? '' : 's'} to .claude/hooks/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} hook${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
+
+  return targetDir;
+}
+
 function ensureProjectHooks(cwd: string): void {
-  // Resolve hooks directory relative to this package's installed location
-  const hooksDir = fileURLToPath(new URL('../hooks', import.meta.url));
-  const completeHook   = join(hooksDir, 'specialists-complete.mjs');
-  const sessionHook    = join(hooksDir, 'specialists-session-start.mjs');
+  // First, copy hooks to .claude/hooks/
+  const hooksDir = copyCanonicalHooks(cwd);
+  if (!hooksDir) return;
 
-  const settingsDir  = join(cwd, '.claude');
-  const settingsPath = join(settingsDir, 'settings.json');
-
-  if (!existsSync(settingsDir)) mkdirSync(settingsDir, { recursive: true });
-
+  // Now wire them in settings.json
+  const settingsPath = join(cwd, '.claude', 'settings.json');
   const settings = loadJson(settingsPath, {});
-  settings.hooks ??= {} as Record<string, unknown[]>;
 
   let changed = false;
 
+  // Helper to add hook with correct settings.json format (events at top level)
   function addHook(event: string, command: string): void {
-    const list = (settings.hooks as Record<string, any[]>);
-    list[event] ??= [];
-    const alreadyWired = list[event].some((entry: any) =>
+    // Get or create the event array (direct on settings, not nested in 'hooks')
+    const eventList = (settings as Record<string, any[]>)[event] ?? [];
+    (settings as Record<string, any[]>)[event] = eventList;
+    
+    // Check if already wired
+    const alreadyWired = eventList.some((entry: any) =>
       entry?.hooks?.some?.((h: any) => h?.command === command)
     );
+    
     if (!alreadyWired) {
-      list[event].push({ matcher: '', hooks: [{ type: 'command', command }] });
+      eventList.push({ matcher: '', hooks: [{ type: 'command', command }] });
       changed = true;
     }
   }
 
-  addHook('UserPromptSubmit', `node ${completeHook}`);
-  addHook('SessionStart',     `node ${sessionHook}`);
+  // Wire hooks with relative paths (portable across machines)
+  addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
+  addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {
     saveJson(settingsPath, settings);
-    ok('installed specialists hooks into .claude/settings.json');
+    ok('wired specialists hooks in .claude/settings.json');
   } else {
     skip('.claude/settings.json already has specialists hooks');
+  }
+}
+
+function copyCanonicalSkills(cwd: string): void {
+  const sourceDir = resolvePackagePath('skills');
+  
+  if (!sourceDir) {
+    skip('no canonical skills found in package');
+    return;
+  }
+
+  // Get skill directories (not files, each skill is a directory with SKILL.md)
+  const skills = readdirSync(sourceDir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name);
+  
+  if (skills.length === 0) {
+    skip('no skill directories found in package');
+    return;
+  }
+
+  // Copy to both locations
+  const targets = [
+    { path: join(cwd, '.claude', 'skills'), label: '.claude/skills/' },
+    { path: join(cwd, '.agents', 'skills'), label: '.agents/skills/' },
+  ];
+
+  for (const target of targets) {
+    let copied = 0;
+    let skipped = 0;
+
+    // Ensure parent directory exists
+    const parentDir = join(target.path, '..');
+    if (!existsSync(parentDir)) {
+      mkdirSync(parentDir, { recursive: true });
+    }
+
+    for (const skill of skills) {
+      const src = join(sourceDir, skill);
+      const dest = join(target.path, skill);
+      
+      if (existsSync(dest)) {
+        skipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        copied++;
+      }
+    }
+
+    if (copied > 0) {
+      ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to ${target.label}`);
+    }
+    if (skipped > 0) {
+      skip(`${skipped} skill${skipped === 1 ? '' : 's'} already exist in ${target.label} (not overwritten)`);
+    }
   }
 }
 
@@ -204,8 +315,11 @@ export async function run(): Promise<void> {
   // ── 5. Register MCP at project scope ──────────────────────────────────────
   ensureProjectMcp(cwd);
 
-  // ── 6. Install hooks into .claude/settings.json ───────────────────────────
+  // ── 6. Install hooks into .claude/hooks/ and wire in settings.json ───────
   ensureProjectHooks(cwd);
+
+  // ── 7. Copy canonical skills ─────────────────────────────────────────────
+  copyCanonicalSkills(cwd);
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);

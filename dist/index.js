@@ -19011,7 +19011,7 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run5
 });
-import { copyFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { copyFileSync, cpSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
@@ -19033,12 +19033,18 @@ function saveJson(path, value) {
   writeFileSync4(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
+function resolvePackagePath(relativePath) {
+  let resolved = fileURLToPath2(new URL(`../${relativePath}`, import.meta.url));
+  if (existsSync5(resolved))
+    return resolved;
+  resolved = fileURLToPath2(new URL(`../../${relativePath}`, import.meta.url));
+  if (existsSync5(resolved))
+    return resolved;
+  return null;
+}
 function copyCanonicalSpecialists(cwd) {
-  let canonicalDir = fileURLToPath2(new URL("../specialists", import.meta.url));
-  if (!existsSync5(canonicalDir)) {
-    canonicalDir = fileURLToPath2(new URL("../../specialists", import.meta.url));
-  }
-  if (!existsSync5(canonicalDir)) {
+  const canonicalDir = resolvePackagePath("specialists");
+  if (!canonicalDir) {
     skip("no canonical specialists found in package");
     return;
   }
@@ -19076,33 +19082,104 @@ function ensureProjectMcp(cwd) {
   saveJson(mcpPath, mcp);
   ok("registered specialists in project .mcp.json");
 }
+function copyCanonicalHooks(cwd) {
+  const sourceDir = resolvePackagePath("hooks");
+  if (!sourceDir) {
+    skip("no canonical hooks found in package");
+    return null;
+  }
+  const targetDir = join9(cwd, ".claude", "hooks");
+  const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
+  if (hooks.length === 0) {
+    skip("no hook files found in package");
+    return null;
+  }
+  if (!existsSync5(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
+  let copied = 0;
+  let skipped = 0;
+  for (const file of hooks) {
+    const src = join9(sourceDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync5(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} hook${copied === 1 ? "" : "s"} to .claude/hooks/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} hook${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
+  return targetDir;
+}
 function ensureProjectHooks(cwd) {
-  const hooksDir = fileURLToPath2(new URL("../hooks", import.meta.url));
-  const completeHook = join9(hooksDir, "specialists-complete.mjs");
-  const sessionHook = join9(hooksDir, "specialists-session-start.mjs");
-  const settingsDir = join9(cwd, ".claude");
-  const settingsPath = join9(settingsDir, "settings.json");
-  if (!existsSync5(settingsDir))
-    mkdirSync2(settingsDir, { recursive: true });
+  const hooksDir = copyCanonicalHooks(cwd);
+  if (!hooksDir)
+    return;
+  const settingsPath = join9(cwd, ".claude", "settings.json");
   const settings = loadJson(settingsPath, {});
-  settings.hooks ??= {};
   let changed = false;
   function addHook(event, command) {
-    const list = settings.hooks;
-    list[event] ??= [];
-    const alreadyWired = list[event].some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
+    const eventList = settings[event] ?? [];
+    settings[event] = eventList;
+    const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
     if (!alreadyWired) {
-      list[event].push({ matcher: "", hooks: [{ type: "command", command }] });
+      eventList.push({ matcher: "", hooks: [{ type: "command", command }] });
       changed = true;
     }
   }
-  addHook("UserPromptSubmit", `node ${completeHook}`);
-  addHook("SessionStart", `node ${sessionHook}`);
+  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
+  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
-    ok("installed specialists hooks into .claude/settings.json");
+    ok("wired specialists hooks in .claude/settings.json");
   } else {
     skip(".claude/settings.json already has specialists hooks");
+  }
+}
+function copyCanonicalSkills(cwd) {
+  const sourceDir = resolvePackagePath("skills");
+  if (!sourceDir) {
+    skip("no canonical skills found in package");
+    return;
+  }
+  const skills = readdirSync2(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  if (skills.length === 0) {
+    skip("no skill directories found in package");
+    return;
+  }
+  const targets = [
+    { path: join9(cwd, ".claude", "skills"), label: ".claude/skills/" },
+    { path: join9(cwd, ".agents", "skills"), label: ".agents/skills/" }
+  ];
+  for (const target of targets) {
+    let copied = 0;
+    let skipped = 0;
+    const parentDir = join9(target.path, "..");
+    if (!existsSync5(parentDir)) {
+      mkdirSync2(parentDir, { recursive: true });
+    }
+    for (const skill of skills) {
+      const src = join9(sourceDir, skill);
+      const dest = join9(target.path, skill);
+      if (existsSync5(dest)) {
+        skipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        copied++;
+      }
+    }
+    if (copied > 0) {
+      ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to ${target.label}`);
+    }
+    if (skipped > 0) {
+      skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist in ${target.label} (not overwritten)`);
+    }
   }
 }
 async function run5() {
@@ -19161,6 +19238,7 @@ ${bold3("specialists init")}
   }
   ensureProjectMcp(cwd);
   ensureProjectHooks(cwd);
+  copyCanonicalSkills(cwd);
   console.log(`
 ${bold3("Done!")}
 `);

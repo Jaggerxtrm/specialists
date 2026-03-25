@@ -144,4 +144,75 @@ describe('init CLI — run()', () => {
     expect(content).toContain('99.0.0');
     expect(content).toContain('Custom bug hunt');
   });
+
+  it('copies canonical hooks to .claude/hooks/', async () => {
+    await runInit(tempDir);
+    const hooksDir = join(tempDir, '.claude', 'hooks');
+    const files = await readdir(hooksDir).catch(() => []);
+    const mjsFiles = files.filter(f => f.endsWith('.mjs'));
+    
+    expect(mjsFiles.length).toBeGreaterThan(0);
+    expect(mjsFiles).toContain('specialists-complete.mjs');
+    expect(mjsFiles).toContain('specialists-session-start.mjs');
+  });
+
+  it('wires hooks in settings.json with relative paths (not absolute)', async () => {
+    await runInit(tempDir);
+    const settingsPath = join(tempDir, '.claude', 'settings.json');
+    const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
+    
+    // Check correct format: events at top level (not nested in 'hooks')
+    expect(settings.UserPromptSubmit).toBeDefined();
+    expect(settings.SessionStart).toBeDefined();
+    
+    // Check relative paths (portable across machines)
+    const submitCommand = settings.UserPromptSubmit[0].hooks[0].command;
+    expect(submitCommand).toContain('.claude/hooks/specialists-complete.mjs');
+    expect(submitCommand).not.toContain('/home/');
+    expect(submitCommand).not.toContain('/Users/');
+  });
+
+  it('copies canonical skills to .claude/skills/', async () => {
+    await runInit(tempDir);
+    const skillsDir = join(tempDir, '.claude', 'skills');
+    const dirs = await readdir(skillsDir).catch(() => []);
+    
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(dirs).toContain('specialist-author');
+    expect(dirs).toContain('specialists-usage');
+  });
+
+  it('copies canonical skills to .agents/skills/', async () => {
+    await runInit(tempDir);
+    const skillsDir = join(tempDir, '.agents', 'skills');
+    const dirs = await readdir(skillsDir).catch(() => []);
+    
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(dirs).toContain('specialist-author');
+    expect(dirs).toContain('specialists-usage');
+  });
+
+  it('does not overwrite existing hook files', async () => {
+    // Create a custom hook with the same name
+    const hooksDir = join(tempDir, '.claude', 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// custom hook', 'utf-8');
+    
+    await runInit(tempDir);
+    
+    const content = await readFile(join(hooksDir, 'specialists-complete.mjs'), 'utf-8');
+    expect(content).toBe('// custom hook');
+  });
+
+  it('does not overwrite existing skill directories', async () => {
+    // Create a custom skill with the same name
+    const skillsDir = join(tempDir, '.claude', 'skills', 'specialist-author');
+    await mkdir(skillsDir, { recursive: true });
+    await writeFile(join(skillsDir, 'SKILL.md'), '# Custom skill', 'utf-8');
+    
+    await runInit(tempDir);
+    
+    const content = await readFile(join(skillsDir, 'SKILL.md'), 'utf-8');
+    expect(content).toBe('# Custom skill');
+  });
 });
