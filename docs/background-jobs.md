@@ -2,12 +2,13 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.0.0
-updated: 2026-03-23
+version: 1.1.0
+updated: 2026-03-25
 description: Background execution model, job files, and monitoring commands.
 source_of_truth_for:
   - "src/cli/feed.ts"
   - "src/cli/result.ts"
+  - "src/cli/steer.ts"
   - "src/cli/stop.ts"
   - "src/specialist/supervisor.ts"
 domain:
@@ -38,6 +39,17 @@ specialists feed -f
 specialists result 49adda
 ```
 
+## Steer a running job
+
+Send a mid-run message to redirect the agent without cancelling it. The message is delivered after the current tool calls finish, before the next LLM call.
+
+```bash
+specialists steer 49adda "focus only on supervisor.ts"
+specialists steer 49adda "skip the test suite, just fix the bug"
+```
+
+Under the hood this writes `{"type":"steer","message":"..."}` to a named FIFO at `.specialists/jobs/<id>/steer.pipe`. The Pi RPC protocol picks it up on the next turn.
+
 ## Stop a job
 
 ```bash
@@ -56,9 +68,10 @@ Important files:
 
 | File | Purpose |
 |---|---|
-| `status.json` | current job state, pid, elapsed time |
+| `status.json` | current job state, pid, elapsed time, fifo_path |
 | `events.jsonl` | streamed events emitted during the run |
 | `result.txt` | final output when the job completes |
+| `steer.pipe` | named FIFO for mid-run steering (removed on job completion) |
 
 Completion markers are stored under:
 

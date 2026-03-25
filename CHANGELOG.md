@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Mid-run steering (unitAI-qhpc)**
+- `specialists steer <job-id> "<message>"` — send a steering instruction to a running background job; delivered by Pi RPC after the current tool calls finish, before the next LLM call
+- `steer_specialist` MCP tool — same capability for in-process `start_specialist` jobs and background Supervisor jobs
+- Named FIFO at `.specialists/jobs/<id>/steer.pipe` used as cross-process IPC bridge; path written to `status.json` as `fifo_path`; cleaned up on job completion
+- `PiAgentSession.steer(message)` — writes `{"type":"steer","message":"..."}` to Pi's stdin
+- `JobRegistry.steer(id, message)` — in-process steer for `start_specialist` jobs via registered `steerFn`
+
 **Context injection (Phase 4, unitAI-750)**
 - `specialists run --context-depth <n>` — dependency-aware context injection; walks the bd dep tree up to depth `n` (default 1 with `--bead`), reads closed blocker notes, and prepends them as `## Context from completed dependencies:` in the specialist prompt
 - `getCompletedBlockers(id, depth)` in runner — recursive dep traversal via `bd dep list --json`; reads bead notes from each closed blocker

@@ -20228,6 +20228,10 @@ async function run13() {
   lines.push(`  ${bold7("Read results")} — print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
+  lines.push(`  ${bold7("Steer a running job")} — redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
+  lines.push(`  ${dim9("  # delivered after current tool calls finish, before the next LLM call")}`);
+  lines.push("");
   lines.push(`  ${bold7("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
@@ -20235,6 +20239,7 @@ async function run13() {
   lines.push(`  ${dim9("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
   lines.push(`  ${dim9("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
   lines.push(`  ${dim9("result.txt")}    — final output (written when status=done)`);
+  lines.push(`  ${dim9("steer.pipe")}    — named FIFO for mid-run steering (removed on job completion)`);
   lines.push("");
   lines.push(section2("6. Editing Specialists"));
   lines.push("");
@@ -20322,6 +20327,7 @@ async function run13() {
   lines.push(`  ${bold7("run_parallel")}       — concurrent or pipeline execution`);
   lines.push(`  ${bold7("start_specialist")}   — async job start, returns job ID`);
   lines.push(`  ${bold7("poll_specialist")}    — poll job status/output by ID`);
+  lines.push(`  ${bold7("steer_specialist")}   — send a mid-run message to a running job`);
   lines.push(`  ${bold7("stop_specialist")}    — cancel a running job by ID`);
   lines.push(`  ${bold7("specialist_status")}  — circuit breaker health + staleness`);
   lines.push("");
@@ -20334,6 +20340,11 @@ async function run13() {
   lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push(`  ${cmd2("specialists result <job-id> > analysis.md")}`);
+  lines.push("");
+  lines.push(`  ${bold7("Steer a job mid-run:")}`);
+  lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
+  lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
+  lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
   lines.push(`  ${bold7("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
