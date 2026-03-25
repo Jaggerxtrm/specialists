@@ -2,8 +2,8 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.1.0
-updated: 2026-03-23
+version: 1.2.0
+updated: 2026-03-25
 description: Command and flag reference for the Specialists CLI.
 source_of_truth_for:
   - "src/index.ts"
@@ -25,6 +25,7 @@ domain:
 | `specialists run` | Run a specialist |
 | `specialists feed` | Tail job events |
 | `specialists result` | Print final job output |
+| `specialists steer` | Send a mid-run message to a running job |
 | `specialists stop` | Stop a running job |
 | `specialists status` | Show health and active jobs |
 | `specialists doctor` | Diagnose installation/runtime issues |
@@ -65,6 +66,26 @@ specialists feed <job-id> --follow
 specialists feed -f
 specialists feed -f --forever
 ```
+
+## `specialists steer`
+
+Send a mid-run steering message to a running background job. The agent receives it after its current tool calls finish, before the next LLM call.
+
+```bash
+specialists steer <job-id> "<message>"
+```
+
+Examples:
+
+```bash
+specialists steer a1b2c3 "focus only on supervisor.ts"
+specialists steer a1b2c3 "skip tests, just fix the bug"
+```
+
+Notes:
+- Only works for jobs started with `--background`.
+- Uses a named FIFO at `.specialists/jobs/<id>/steer.pipe` for cross-process delivery.
+- The MCP tool `steer_specialist` covers the same action for in-process `start_specialist` jobs.
 
 ## `specialists models`
 

@@ -89,6 +89,7 @@ export class SpecialistRunner {
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
     onBeadCreated?: (beadId: string) => void,
+    onSteerRegistered?: (steerFn: (msg: string) => Promise<void>) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -202,6 +203,8 @@ export class SpecialistRunner {
 
       // Register kill function with the caller (e.g. JobRegistry for stop_specialist)
       onKillRegistered?.(session.kill.bind(session));
+      // Register steer function so callers can send mid-run messages to the Pi agent
+      onSteerRegistered?.((msg) => session.steer(msg));
 
       await session.prompt(renderedTask);
       await session.waitForDone(execution.timeout_ms);
@@ -295,6 +298,7 @@ export class SpecialistRunner {
       (meta)      => registry.setMeta(jobId, meta),
       (killFn)    => registry.setKillFn(jobId, killFn),
       (beadId)    => registry.setBeadId(jobId, beadId),
+      (steerFn)   => registry.setSteerFn(jobId, steerFn),
     )
       .then(result => registry.complete(jobId, result))
       .catch(err   => registry.fail(jobId, err));

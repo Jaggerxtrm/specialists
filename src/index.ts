@@ -276,6 +276,34 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'steer') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists steer <job-id> "<message>"',
+        '',
+        'Send a mid-run steering message to a running background specialist job.',
+        'The agent receives the message after its current tool calls finish,',
+        'before the next LLM call.',
+        '',
+        'Pi RPC steer command: {"type":"steer","message":"..."}',
+        'Response: {"type":"response","command":"steer","success":true}',
+        '',
+        'Examples:',
+        '  specialists steer a1b2c3 "focus only on supervisor.ts"',
+        '  specialists steer a1b2c3 "skip tests, just fix the bug"',
+        '',
+        'Notes:',
+        '  - Only works for jobs started with --background.',
+        '  - Delivery is best-effort: the agent processes it on its next turn.',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/steer.js');
+    return handler();
+  }
+
   if (sub === 'stop') {
     if (wantsHelp()) {
       console.log([

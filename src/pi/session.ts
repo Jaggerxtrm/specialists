@@ -368,4 +368,19 @@ export class PiAgentSession {
     // Reject so waitForDone() throws SessionKilledError, distinguishable from real failures
     this._doneReject?.(new SessionKilledError());
   }
+
+  /**
+   * Send a mid-run steering message to the Pi agent.
+   * Writes {"type":"steer","message":"..."} to the agent's stdin.
+   * Pi delivers it after the current assistant turn finishes tool calls.
+   */
+  async steer(message: string): Promise<void> {
+    if (this._killed || !this.proc?.stdin) {
+      throw new Error('Session is not active');
+    }
+    const cmd = JSON.stringify({ type: 'steer', message }) + '\n';
+    await new Promise<void>((resolve, reject) => {
+      this.proc!.stdin!.write(cmd, (err) => (err ? reject(err) : resolve()));
+    });
+  }
 }
