@@ -12,6 +12,7 @@
   ],
   "bin": {
     "specialists": "dist/index.js",
+    "sp": "dist/index.js",
     "install": "bin/install.js"
   },
   "scripts": {

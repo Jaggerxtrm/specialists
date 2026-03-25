@@ -24,6 +24,13 @@ specialists init
 specialists list
 ```
 
+`sp` is a shorter alias for `specialists` — both commands are identical:
+
+```bash
+sp list
+sp run bug-hunt --bead <id> --background
+```
+
 Tracked work:
 
 ```bash
