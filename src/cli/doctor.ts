@@ -32,7 +32,8 @@ function isInstalled(bin: string): boolean {
 
 const CWD = process.cwd();
 const CLAUDE_DIR = join(CWD, '.claude');
-const HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
+const SPECIALISTS_DIR = join(CWD, '.specialists');
+const HOOKS_DIR = join(SPECIALISTS_DIR, 'default', 'hooks');
 const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
 const MCP_FILE = join(CWD, '.mcp.json');
 const HOOK_NAMES = [
@@ -112,17 +113,18 @@ function checkHooks(): boolean {
     return false;
   }
 
-  const hooks = (settings.hooks ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+  // Settings.json format: events at top level (UserPromptSubmit, SessionStart)
   const wiredCommands = new Set(
     [
-      ...(hooks.UserPromptSubmit ?? []),
-      ...(hooks.SessionStart ?? []),
+      ...((settings.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }>) ?? []),
+      ...((settings.SessionStart as Array<{ hooks?: Array<{ command?: string }> }>) ?? []),
     ].flatMap(entry => (entry.hooks ?? []).map(h => h.command ?? '')),
   );
 
   for (const name of HOOK_NAMES) {
-    const expected = join(HOOKS_DIR, name);
-    if (!wiredCommands.has(expected)) {
+    // Check for relative path (portable across machines)
+    const expectedRelative = `node .specialists/default/hooks/${name}`;
+    if (!wiredCommands.has(expectedRelative)) {
       warn(`${name} not wired in settings.json`);
       fix('specialists install');
       allPresent = false;

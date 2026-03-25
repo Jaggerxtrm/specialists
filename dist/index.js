@@ -20739,14 +20739,13 @@ function checkHooks() {
     fix("specialists install");
     return false;
   }
-  const hooks = settings.hooks ?? {};
   const wiredCommands = new Set([
-    ...hooks.UserPromptSubmit ?? [],
-    ...hooks.SessionStart ?? []
+    ...settings.UserPromptSubmit ?? [],
+    ...settings.SessionStart ?? []
   ].flatMap((entry) => (entry.hooks ?? []).map((h) => h.command ?? "")));
   for (const name of HOOK_NAMES) {
-    const expected = join18(HOOKS_DIR, name);
-    if (!wiredCommands.has(expected)) {
+    const expectedRelative = `node .specialists/default/hooks/${name}`;
+    if (!wiredCommands.has(expectedRelative)) {
       warn2(`${name} not wired in settings.json`);
       fix("specialists install");
       allPresent = false;
@@ -20865,11 +20864,12 @@ ${bold8("specialists doctor")}
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red8 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red8 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join18(CWD, ".claude");
-  HOOKS_DIR = join18(CLAUDE_DIR, "hooks");
+  SPECIALISTS_DIR = join18(CWD, ".specialists");
+  HOOKS_DIR = join18(SPECIALISTS_DIR, "default", "hooks");
   SETTINGS_FILE = join18(CLAUDE_DIR, "settings.json");
   MCP_FILE2 = join18(CWD, ".mcp.json");
   HOOK_NAMES = [
