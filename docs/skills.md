@@ -6,7 +6,7 @@ version: 1.2.0
 updated: 2026-03-23
 description: Skills shipped in this repo and what they are for.
 source_of_truth_for:
-  - "skills/**/*.md"
+  - "config/skills/**/*.md"
 domain:
   - skills
 ---
@@ -19,7 +19,7 @@ Skills are prompt packages that add focused guidance to specialist runs.
 
 ### `specialists-usage`
 
-Location: `skills/specialists-usage/SKILL.md`
+Location: `config/skills/specialists-usage/SKILL.md`
 
 Purpose:
 
@@ -32,7 +32,7 @@ Note: a dedicated skill/doc synchronization follow-up is tracked separately.
 
 ### `specialist-author`
 
-Location: `skills/specialist-author/SKILL.md`
+Location: `config/skills/specialist-author/SKILL.md`
 
 Purpose:
 

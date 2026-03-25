@@ -46,12 +46,15 @@ function saveJson(path: string, value: Record<string, unknown>): void {
  * Handles both bundled (dist/index.js) and source (src/cli/init.ts) modes.
  */
 function resolvePackagePath(relativePath: string): string | null {
-  // Try from bundled location (dist/index.js -> ../relativePath)
-  let resolved = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
+  // All canonical assets now live in config/ directory
+  const configPath = `config/${relativePath}`;
+  
+  // Try from bundled location (dist/index.js -> ../config/relativePath)
+  let resolved = fileURLToPath(new URL(`../${configPath}`, import.meta.url));
   if (existsSync(resolved)) return resolved;
   
-  // Try from source location (src/cli/init.ts -> ../../relativePath)
-  resolved = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
+  // Try from source location (src/cli/init.ts -> ../../config/relativePath)
+  resolved = fileURLToPath(new URL(`../../${configPath}`, import.meta.url));
   if (existsSync(resolved)) return resolved;
   
   return null;

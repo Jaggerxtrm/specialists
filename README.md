@@ -75,10 +75,13 @@ specialists doctor
 ## Project structure
 
 ```text
-specialists/        project specialist definitions (.specialist.yaml)
+config/
+├── specialists/    canonical specialist definitions (.specialist.yaml)
+├── hooks/          bundled hook scripts
+├── skills/         repo-local skills used by specialists
+└── extensions/     pi extensions (future)
+specialists/        project specialist definitions (after init)
 .specialists/       runtime data (jobs/, ready/) — gitignored
-hooks/              bundled hook scripts
-skills/             repo-local skills used by specialists
 src/                CLI, server, loader, runner, tools
 ```
 

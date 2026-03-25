@@ -19034,10 +19034,11 @@ function saveJson(path, value) {
 `, "utf-8");
 }
 function resolvePackagePath(relativePath) {
-  let resolved = fileURLToPath2(new URL(`../${relativePath}`, import.meta.url));
+  const configPath = `config/${relativePath}`;
+  let resolved = fileURLToPath2(new URL(`../${configPath}`, import.meta.url));
   if (existsSync5(resolved))
     return resolved;
-  resolved = fileURLToPath2(new URL(`../../${relativePath}`, import.meta.url));
+  resolved = fileURLToPath2(new URL(`../../${configPath}`, import.meta.url));
   if (existsSync5(resolved))
     return resolved;
   return null;

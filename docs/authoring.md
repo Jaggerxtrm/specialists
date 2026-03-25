@@ -7,8 +7,8 @@ updated: 2026-03-23
 description: How to write, place, and maintain project specialists.
 source_of_truth_for:
   - "src/specialist/schema.ts"
-  - "skills/specialist-author/SKILL.md"
-  - "specialists/*.specialist.yaml"
+  - "config/skills/specialist-author/SKILL.md"
+  - "config/specialists/*.specialist.yaml"
 domain:
   - authoring
 ---
@@ -57,11 +57,11 @@ specialist:
 
 ## Skills
 
-Repo-local skills:
+Repo-local skills (in config/):
 
 ```text
-skills/specialist-author/SKILL.md
-skills/specialists-usage/SKILL.md
+config/skills/specialist-author/SKILL.md
+config/skills/specialists-usage/SKILL.md
 ```
 
 Example:
@@ -89,7 +89,7 @@ specialists edit <name> --model <v> --dry-run    # preview before writing
 pi --model anthropic/claude-sonnet-4-6 --print "ping"   # must return "pong"
 ```
 
-For a full model rebalancing workflow, see the `specialist-author` skill (`skills/specialist-author/SKILL.md`).
+For a full model rebalancing workflow, see the `specialist-author` skill (`config/skills/specialist-author/SKILL.md`).
 
 ## Validation approach
 
