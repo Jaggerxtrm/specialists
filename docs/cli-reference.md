@@ -4,7 +4,7 @@ scope: cli
 category: reference
 version: 1.3.0
 updated: 2026-03-25
-synced_at: 7dd164a
+synced_at: 266f65b
 description: Command and flag reference for the Specialists CLI.
 source_of_truth_for:
   - "src/index.ts"
