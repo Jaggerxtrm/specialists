@@ -78,8 +78,6 @@ const CapabilitiesSchema = z.object({
 }).optional();
 
 const CommunicationSchema = z.object({
-  /** Write final output to this file path after the session completes */
-  output_to: z.string().optional(),
   /** Specialist(s) to run next, receiving this output as $previous_result */
   next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
 }).optional();
@@ -101,6 +99,8 @@ export const SpecialistSchema = z.object({
     capabilities: CapabilitiesSchema,
     communication: CommunicationSchema,
     validation: ValidationSchema,
+    /** Write the final output to this file path after the session completes */
+    output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
     heartbeat: z.unknown().optional(), // future — accepted, ignored
   }),

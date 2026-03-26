@@ -232,11 +232,18 @@ capabilities:
 
 `external_commands` causes a hard failure if any binary is not found on `PATH` — the session will not start.
 
+### `specialist.output_file` (optional, top-level)
+
+```yaml
+output_file: .specialists/my-specialist-result.md
+```
+
+Writes the final session output to this file path after the session completes. Relative to the working directory.
+
 ### `specialist.communication` (optional)
 
 ```yaml
 communication:
-  output_to: .specialists/output.md     # write final output to this file
   next_specialists: planner             # single specialist to chain after completion
   # or an array:
   next_specialists: [planner, test-runner]
@@ -407,8 +414,9 @@ specialist:
     external_commands: [git]
 
   communication:
-    output_to: .specialists/review.md
+    next_specialists: [sync-docs]
 
+  output_file: .specialists/review.md
   beads_integration: auto
 ```
 

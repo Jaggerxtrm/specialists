@@ -69,7 +69,8 @@ specialist:
 | `prompt` | system prompt, task_template, skill_inherit |
 | `skills` | skill paths (--skill) and pre/post scripts/commands |
 | `capabilities` | required_tools, external_commands (validated at run-time) |
-| `communication` | output_to, next_specialists |
+| `output_file` | write final output to a file (top-level) |
+| `communication` | next_specialists |
 | `validation` | staleness detection via file watches |
 | `beads_integration` | bead defaults when applicable |
 

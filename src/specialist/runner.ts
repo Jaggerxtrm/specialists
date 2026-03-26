@@ -182,7 +182,7 @@ export class SpecialistRunner {
     const start = Date.now();
 
     const spec = await loader.get(options.name);
-    const { metadata, execution, prompt, communication } = spec.specialist;
+    const { metadata, execution, prompt, output_file } = spec.specialist;
 
     // Backend resolution: override → primary → fallback
     const primaryModel = options.backendOverride ?? execution.model;
@@ -355,8 +355,8 @@ export class SpecialistRunner {
 
     const durationMs = Date.now() - start;
 
-    if (communication?.output_to) {
-      await writeFile(communication.output_to, output, 'utf-8').catch(() => {});
+    if (output_file) {
+      await writeFile(output_file, output, 'utf-8').catch(() => {});
     }
 
     await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
