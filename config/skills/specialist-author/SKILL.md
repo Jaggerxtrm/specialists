@@ -5,6 +5,31 @@
 
 ---
 
+## ⛔ MANDATORY FIRST STEP — Verify models before writing any YAML
+
+**Never hardcode a model string from memory. Always discover and ping before writing.**
+
+```bash
+# 1. Discover what's actually available
+pi --list-models
+
+# 2. Pick highest version in the right tier (see tier table below)
+#    heavy: Opus / Pro / GLM-5  |  standard: Sonnet / Flash-Pro  |  light: Haiku / Flash
+
+# 3. Ping BOTH primary and fallback — must return "pong"
+pi --model <provider>/<primary-model-id>  --print "ping"
+pi --model <provider>/<fallback-model-id> --print "ping"
+
+# 4. Only now write the YAML
+```
+
+**Rules:**
+- If ping fails → try next best in that tier; do not write the model anyway.
+- `model` and `fallback_model` must be **different providers**.
+- Pick the **highest version** in each family (`claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`, `glm-5` not `glm-4.7`).
+
+---
+
 ## Model Setup (for a new specialist OR "setup my specialists models")
 
 ### Quick Reference: Specialists CLI
@@ -104,17 +129,15 @@ specialists models  # confirm assignments look balanced
 
 ### For a new specialist (single model selection)
 
+> **See [⛔ MANDATORY FIRST STEP](#-mandatory-first-step--verify-models-before-writing-any-yaml) at the top of this skill.**
+> Use `pi --list-models` (not `specialists models`) to discover models, ping both before writing YAML.
+
 ```bash
-# 1. See what's available
-specialists models
-
-# 2. Pick highest version in the right tier family (see tier table above)
-
-# 3. Ping both primary and fallback
-pi --model anthropic/claude-sonnet-4-6 --print "ping"      # must return "pong"
-pi --model google-gemini-cli/gemini-3-flash-preview --print "ping"  # must return "pong"
-
-# 4. Write to YAML
+# 1. pi --list-models            — see exactly what's available on pi right now
+# 2. Pick tier + pick highest version in family
+# 3. pi --model <primary>  --print "ping"   — must return "pong"
+# 4. pi --model <fallback> --print "ping"   — must return "pong"
+# 5. Write YAML with verified model strings
 ```
 
 **Rule:** Never hardcode a model without pinging it. If ping fails, try the next best in that tier.
@@ -457,19 +480,20 @@ Name your file `<metadata.name>.specialist.yaml`.
 A bundled validator is included with this skill so the agent does not need to reconstruct the `bun -e` one-liner from memory. It prints `OK <file>` on success and a field-by-field error list on failure.
 
 ```bash
-# 0. Select and verify model (REQUIRED before writing YAML)
+# 1. MANDATORY: discover + ping models (see top of this skill)
 pi --list-models
-pi --model <provider>/<model-id> --print "ping"   # must return "pong"
+pi --model <provider>/<primary-model-id>  --print "ping"   # must return "pong"
+pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 
-# 1. Write the YAML with the verified model
+# 2. Write the YAML with the verified model
 
-# 2. Validate schema with the bundled helper
+# 3. Validate schema with the bundled helper
 bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
 
-# 3. List to confirm discovery
+# 4. List to confirm discovery
 specialists list
 
-# 4. Smoke test
+# 5. Smoke test
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
