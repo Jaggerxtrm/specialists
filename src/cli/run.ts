@@ -1,13 +1,11 @@
 // src/cli/run.ts
 
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
-import { Supervisor } from '../specialist/supervisor.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -22,8 +20,6 @@ interface RunArgs {
   beadId?: string;
   model?: string;
   noBeads: boolean;
-  background: boolean;
-  follow: boolean;
   keepAlive: boolean;
   contextDepth: number;
 }
@@ -31,7 +27,7 @@ interface RunArgs {
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background] [--follow]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive]');
     process.exit(1);
   }
 
@@ -39,8 +35,6 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let beadId: string | undefined;
   let model: string | undefined;
   let noBeads = false;
-  let background = false;
-  let follow = false;
   let keepAlive = false;
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
@@ -51,8 +45,6 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--model'          && argv[i + 1]) { model        = argv[++i]; continue; }
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
     if (token === '--no-beads')    { noBeads    = true; continue; }
-    if (token === '--background')  { background = true; continue; }
-    if (token === '--follow')      { follow     = true; continue; }
     if (token === '--keep-alive')  { keepAlive  = true; continue; }
   }
 
@@ -75,7 +67,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, background, follow, keepAlive, contextDepth };
+  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -122,62 +114,7 @@ export async function run(): Promise<void> {
     beadsClient,
   });
 
-  // ── Background mode ─────────────────────────────────────────────────────────
-  if (args.background || args.follow) {
-    const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-    const supervisor = new Supervisor({
-      runner,
-      runOptions: {
-        name: args.name,
-        prompt,
-        variables,
-        backendOverride: args.model,
-        inputBeadId: args.beadId,
-        keepAlive: args.keepAlive,
-      },
-      jobsDir,
-      beadsClient,
-    });
-    
-    let jobId: string;
-    try {
-      jobId = await supervisor.run();
-      if (!args.follow) {
-        process.stdout.write(`Job started: ${jobId}\n`);
-      }
-    } catch (err: any) {
-      process.stderr.write(`Error: ${err?.message ?? err}\n`);
-      process.exit(1);
-    }
-
-    // If --follow, stream output until completion
-    if (args.follow) {
-      await new Promise<void>((resolve, reject) => {
-        const feed = spawn('specialists', ['feed', '--job', jobId, '--follow'], {
-          cwd: process.cwd(),
-          stdio: 'inherit',
-        });
-
-        feed.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`Feed exited with code ${code}`));
-          }
-        });
-
-        feed.on('error', (err) => {
-          reject(err);
-        });
-      }).catch((err) => {
-        process.stderr.write(`Error: ${err.message}\n`);
-        process.exit(1);
-      });
-    }
-    return;
-  }
-
-  // ── Foreground mode (existing behavior) ─────────────────────────────────────
+  // ── Foreground mode ─────────────────────────────────────────────────────────
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
   let trackingBeadId: string | undefined;

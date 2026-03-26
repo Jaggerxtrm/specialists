@@ -8531,7 +8531,6 @@ var require_limitLength = __commonJS((exports) => {
 var require_pattern = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
-  var util_1 = require_util();
   var codegen_1 = require_codegen();
   var error2 = {
     message: ({ schemaCode }) => (0, codegen_1.str)`must match pattern "${schemaCode}"`,
@@ -8544,18 +8543,10 @@ var require_pattern = __commonJS((exports) => {
     $data: true,
     error: error2,
     code(cxt) {
-      const { gen, data, $data, schema, schemaCode, it } = cxt;
+      const { data, $data, schema, schemaCode, it } = cxt;
       const u = it.opts.unicodeRegExp ? "u" : "";
-      if ($data) {
-        const { regExp } = it.opts.code;
-        const regExpCode = regExp.code === "new RegExp" ? (0, codegen_1._)`new RegExp` : (0, util_1.useFunc)(gen, regExp);
-        const valid = gen.let("valid");
-        gen.try(() => gen.assign(valid, (0, codegen_1._)`${regExpCode}(${schemaCode}, ${u}).test(${data})`), () => gen.assign(valid, false));
-        cxt.fail$data((0, codegen_1._)`!${valid}`);
-      } else {
-        const regExp = (0, code_1.usePattern)(cxt, schema);
-        cxt.fail$data((0, codegen_1._)`!${regExp}.test(${data})`);
-      }
+      const regExp = $data ? (0, codegen_1._)`(new RegExp(${schemaCode}, ${u}))` : (0, code_1.usePattern)(cxt, schema);
+      cxt.fail$data((0, codegen_1._)`!${regExp}.test(${data})`);
     }
   };
   exports.default = def;
@@ -18571,6 +18562,7 @@ var init_timeline_events = __esm(() => {
 import {
   closeSync,
   existsSync as existsSync4,
+  fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -18727,7 +18719,9 @@ class Supervisor {
       try {
         writeSync(eventsFd, JSON.stringify(event) + `
 `);
-      } catch {}
+      } catch (err) {
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
     };
     appendTimelineEvent(createRunStartEvent(runOptions.name));
     const fifoPath = join3(dir, "steer.pipe");
@@ -18846,6 +18840,9 @@ class Supervisor {
       throw err;
     } finally {
       process.removeListener("SIGTERM", sigtermHandler);
+      try {
+        fsyncSync(eventsFd);
+      } catch {}
       closeSync(eventsFd);
       try {
         if (existsSync4(fifoPath))
@@ -19511,20 +19508,17 @@ var exports_run = {};
 __export(exports_run, {
   run: () => run7
 });
-import { spawn as spawn2 } from "node:child_process";
 import { join as join10 } from "node:path";
 async function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background] [--follow]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive]');
     process.exit(1);
   }
   let prompt = "";
   let beadId;
   let model;
   let noBeads = false;
-  let background = false;
-  let follow = false;
   let keepAlive = false;
   let contextDepth = 1;
   for (let i = 1;i < argv.length; i++) {
@@ -19547,14 +19541,6 @@ async function parseArgs4(argv) {
     }
     if (token === "--no-beads") {
       noBeads = true;
-      continue;
-    }
-    if (token === "--background") {
-      background = true;
-      continue;
-    }
-    if (token === "--follow") {
-      follow = true;
       continue;
     }
     if (token === "--keep-alive") {
@@ -19580,7 +19566,7 @@ async function parseArgs4(argv) {
     console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
     process.exit(1);
   }
-  return { name, prompt, beadId, model, noBeads, background, follow, keepAlive, contextDepth };
+  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth };
 }
 async function run7() {
   const args = await parseArgs4(process.argv.slice(3));
@@ -19615,57 +19601,6 @@ async function run7() {
     circuitBreaker,
     beadsClient
   });
-  if (args.background || args.follow) {
-    const jobsDir = join10(process.cwd(), ".specialists", "jobs");
-    const supervisor = new Supervisor({
-      runner,
-      runOptions: {
-        name: args.name,
-        prompt,
-        variables,
-        backendOverride: args.model,
-        inputBeadId: args.beadId,
-        keepAlive: args.keepAlive
-      },
-      jobsDir,
-      beadsClient
-    });
-    let jobId;
-    try {
-      jobId = await supervisor.run();
-      if (!args.follow) {
-        process.stdout.write(`Job started: ${jobId}
-`);
-      }
-    } catch (err) {
-      process.stderr.write(`Error: ${err?.message ?? err}
-`);
-      process.exit(1);
-    }
-    if (args.follow) {
-      await new Promise((resolve2, reject) => {
-        const feed = spawn2("specialists", ["feed", "--job", jobId, "--follow"], {
-          cwd: process.cwd(),
-          stdio: "inherit"
-        });
-        feed.on("close", (code) => {
-          if (code === 0) {
-            resolve2();
-          } else {
-            reject(new Error(`Feed exited with code ${code}`));
-          }
-        });
-        feed.on("error", (err) => {
-          reject(err);
-        });
-      }).catch((err) => {
-        process.stderr.write(`Error: ${err.message}
-`);
-        process.exit(1);
-      });
-    }
-    return;
-  }
   process.stderr.write(`
 ${bold5(`Running ${cyan3(args.name)}`)}
 
@@ -19717,7 +19652,6 @@ var init_run = __esm(() => {
   init_runner();
   init_hooks();
   init_beads();
-  init_supervisor();
 });
 
 // src/cli/format-helpers.ts
@@ -20058,6 +19992,9 @@ function readJobEvents(jobDir) {
   events.sort(compareTimelineEvents);
   return events;
 }
+function readJobEventsById(jobsDir, jobId) {
+  return readJobEvents(join13(jobsDir, jobId));
+}
 function readAllJobEvents(jobsDir) {
   if (!existsSync9(jobsDir))
     return [];
@@ -20359,21 +20296,132 @@ var init_feed = __esm(() => {
   init_format_helpers();
 });
 
+// src/cli/poll.ts
+var exports_poll = {};
+__export(exports_poll, {
+  run: () => run11
+});
+import { existsSync as existsSync11, readFileSync as readFileSync7 } from "node:fs";
+import { join as join15 } from "node:path";
+function parseArgs6(argv) {
+  let jobId;
+  let cursor = 0;
+  let json = false;
+  for (let i = 0;i < argv.length; i++) {
+    if (argv[i] === "--cursor" && argv[i + 1]) {
+      cursor = parseInt(argv[++i], 10);
+      if (isNaN(cursor) || cursor < 0)
+        cursor = 0;
+      continue;
+    }
+    if (argv[i] === "--json") {
+      json = true;
+      continue;
+    }
+    if (!argv[i].startsWith("--")) {
+      jobId = argv[i];
+    }
+  }
+  if (!jobId) {
+    console.error("Usage: specialists poll <job-id> [--cursor N] [--json]");
+    process.exit(1);
+  }
+  return { jobId, cursor, json };
+}
+async function run11() {
+  const { jobId, cursor, json } = parseArgs6(process.argv.slice(3));
+  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
+  const jobDir = join15(jobsDir, jobId);
+  if (!existsSync11(jobDir)) {
+    const result2 = {
+      job_id: jobId,
+      status: "error",
+      elapsed_ms: 0,
+      cursor: 0,
+      output: "",
+      output_delta: "",
+      events: [],
+      error: `Job not found: ${jobId}`
+    };
+    console.log(JSON.stringify(result2));
+    process.exit(1);
+  }
+  const statusPath = join15(jobDir, "status.json");
+  let status = null;
+  if (existsSync11(statusPath)) {
+    try {
+      status = JSON.parse(readFileSync7(statusPath, "utf-8"));
+    } catch {}
+  }
+  const resultPath = join15(jobDir, "result.txt");
+  let output = "";
+  if (existsSync11(resultPath)) {
+    try {
+      output = readFileSync7(resultPath, "utf-8");
+    } catch {}
+  }
+  const events = readJobEventsById(jobsDir, jobId);
+  const newEvents = events.slice(cursor);
+  const nextCursor = events.length;
+  const startedAt = status?.started_at_ms ?? Date.now();
+  const lastEvent = status?.last_event_at_ms ?? Date.now();
+  const elapsedMs = status?.status === "done" || status?.status === "error" ? lastEvent - startedAt : Date.now() - startedAt;
+  const result = {
+    job_id: jobId,
+    status: status?.status ?? "starting",
+    elapsed_ms: elapsedMs,
+    cursor: nextCursor,
+    output: status?.status === "done" ? output : "",
+    output_delta: "",
+    events: newEvents,
+    current_event: status?.current_event,
+    current_tool: status?.current_tool,
+    model: status?.model,
+    backend: status?.backend,
+    bead_id: status?.bead_id,
+    error: status?.error
+  };
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`Job:      ${jobId}`);
+    console.log(`Status:   ${result.status}`);
+    console.log(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
+    if (result.model)
+      console.log(`Model:    ${result.backend}/${result.model}`);
+    if (result.bead_id)
+      console.log(`Bead:     ${result.bead_id}`);
+    if (result.current_tool)
+      console.log(`Tool:     ${result.current_tool}`);
+    if (result.error)
+      console.log(`Error:    ${result.error}`);
+    console.log(`Events:   ${newEvents.length} new (cursor: ${cursor} → ${nextCursor})`);
+    if (result.status === "done" && result.output) {
+      console.log(`
+--- Output ---`);
+      console.log(result.output.slice(0, 500) + (result.output.length > 500 ? "..." : ""));
+    }
+  }
+}
+var init_poll = __esm(() => {
+  init_timeline_query();
+});
+
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run11
+  run: () => run12
 });
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 import { writeFileSync as writeFileSync6 } from "node:fs";
-async function run11() {
+async function run12() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
     console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20412,18 +20460,18 @@ var init_steer = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run12
+  run: () => run13
 });
-import { join as join16 } from "node:path";
+import { join as join17 } from "node:path";
 import { writeFileSync as writeFileSync7 } from "node:fs";
-async function run12() {
+async function run13() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
     console.error('Usage: specialists|sp follow-up <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20464,16 +20512,16 @@ var init_follow_up = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run13
+  run: () => run14
 });
-import { join as join17 } from "node:path";
-async function run13() {
+import { join as join18 } from "node:path";
+async function run14() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20513,7 +20561,7 @@ var init_stop = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run14
+  run: () => run15
 });
 function section2(title) {
   const bar = "─".repeat(60);
@@ -20527,7 +20575,7 @@ function cmd2(s) {
 function flag(s) {
   return green10(s);
 }
-async function run14() {
+async function run15() {
   const lines = [
     "",
     bold7("specialists  ·  Quick Start Guide"),
@@ -20744,11 +20792,11 @@ var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yel
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run15
+  run: () => run16
 });
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { existsSync as existsSync11, mkdirSync as mkdirSync3, readFileSync as readFileSync7, readdirSync as readdirSync4 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync12, mkdirSync as mkdirSync3, readFileSync as readFileSync8, readdirSync as readdirSync4 } from "node:fs";
+import { join as join19 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green11("✓")} ${msg}`);
 }
@@ -20777,10 +20825,10 @@ function isInstalled2(bin) {
   return spawnSync7("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync11(path))
+  if (!existsSync12(path))
     return null;
   try {
-    return JSON.parse(readFileSync7(path, "utf8"));
+    return JSON.parse(readFileSync8(path, "utf8"));
   } catch {
     return null;
   }
@@ -20813,7 +20861,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim10(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync11(join18(CWD, ".beads")))
+  if (existsSync12(join19(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -20833,8 +20881,8 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join18(HOOKS_DIR, name);
-    if (!existsSync11(dest)) {
+    const dest = join19(HOOKS_DIR, name);
+    if (!existsSync12(dest)) {
       fail2(`${name}  ${red6("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -20878,18 +20926,18 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join18(CWD, ".specialists");
-  const jobsDir = join18(rootDir, "jobs");
-  const readyDir = join18(rootDir, "ready");
+  const rootDir = join19(CWD, ".specialists");
+  const jobsDir = join19(rootDir, "jobs");
+  const readyDir = join19(rootDir, "ready");
   let allOk = true;
-  if (!existsSync11(rootDir)) {
+  if (!existsSync12(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync11(subDir)) {
+      if (!existsSync12(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
         mkdirSync3(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
@@ -20902,8 +20950,8 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join18(CWD, ".specialists", "jobs");
-  if (!existsSync11(jobsDir)) {
+  const jobsDir = join19(CWD, ".specialists", "jobs");
+  if (!existsSync12(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -20921,11 +20969,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join18(jobsDir, jobId, "status.json");
-    if (!existsSync11(statusPath))
+    const statusPath = join19(jobsDir, jobId, "status.json");
+    if (!existsSync12(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync7(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync8(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -20952,7 +21000,7 @@ function checkZombieJobs() {
   }
   return zombies === 0;
 }
-async function run15() {
+async function run16() {
   console.log(`
 ${bold8("specialists doctor")}
 `);
@@ -20976,11 +21024,11 @@ ${bold8("specialists doctor")}
 var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join18(CWD, ".claude");
-  SPECIALISTS_DIR = join18(CWD, ".specialists");
-  HOOKS_DIR = join18(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join18(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join18(CWD, ".mcp.json");
+  CLAUDE_DIR = join19(CWD, ".claude");
+  SPECIALISTS_DIR = join19(CWD, ".specialists");
+  HOOKS_DIR = join19(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join19(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join19(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -20990,11 +21038,11 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run16
+  run: () => run17
 });
-import { existsSync as existsSync12, readFileSync as readFileSync8, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync13, readFileSync as readFileSync9, writeFileSync as writeFileSync8 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join19, resolve as resolve2 } from "node:path";
+import { join as join20, resolve as resolve2 } from "node:path";
 function ok4(msg) {
   console.log(`  ${green12("✓")} ${msg}`);
 }
@@ -21004,15 +21052,15 @@ function skip2(msg) {
 function resolveTarget(target) {
   switch (target) {
     case "global":
-      return join19(homedir3(), ".claude", "CLAUDE.md");
+      return join20(homedir3(), ".claude", "CLAUDE.md");
     case "agents":
-      return join19(process.cwd(), "AGENTS.md");
+      return join20(process.cwd(), "AGENTS.md");
     case "project":
     default:
-      return join19(process.cwd(), "CLAUDE.md");
+      return join20(process.cwd(), "CLAUDE.md");
   }
 }
-function parseArgs6() {
+function parseArgs7() {
   const argv = process.argv.slice(3);
   let target = "project";
   let dryRun = false;
@@ -21037,8 +21085,8 @@ function parseArgs6() {
   }
   return { target, dryRun };
 }
-async function run16() {
-  const { target, dryRun } = parseArgs6();
+async function run17() {
+  const { target, dryRun } = parseArgs7();
   const filePath = resolve2(resolveTarget(target));
   const label = target === "global" ? "~/.claude/CLAUDE.md" : filePath.replace(process.cwd() + "/", "");
   console.log(`
@@ -21046,8 +21094,8 @@ ${bold9("specialists setup")}
 `);
   console.log(`  Target: ${yellow8(label)}${dryRun ? dim11("  (dry-run)") : ""}
 `);
-  if (existsSync12(filePath)) {
-    const existing = readFileSync8(filePath, "utf8");
+  if (existsSync13(filePath)) {
+    const existing = readFileSync9(filePath, "utf8");
     if (existing.includes(MARKER)) {
       skip2(`${label} already contains Specialists Workflow section`);
       console.log(`
@@ -21157,13 +21205,13 @@ var init_setup = () => {};
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run17
+  run: () => run18
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run17() {
+async function run18() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -21178,8 +21226,8 @@ async function run17() {
     "",
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
-    "    specialists run <name> --bead <id> [--context-depth N] [--background] [--follow]",
-    "    specialists feed -f",
+    "    specialists run <name> --bead <id> [--context-depth N]",
+    "    specialists poll <job-id> --json   # check status",
     '    bd close <id> --reason "Done"',
     "",
     "  Ad-hoc work",
@@ -21190,7 +21238,11 @@ async function run17() {
     "    --prompt is for quick untracked work",
     "    --context-depth defaults to 1 with --bead",
     "    --no-beads does not disable bead reading",
-    "    --follow runs in background and streams output live",
+    "",
+    "  Background execution",
+    "    Use Claude Code's native backgrounding (run_in_background: true)",
+    "    or run in a separate terminal and poll with:",
+    "      specialists poll <job-id> --json",
     "",
     bold10("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
@@ -21204,10 +21256,10 @@ async function run17() {
     bold10("Examples:"),
     "  specialists init",
     "  specialists list",
-    "  specialists run bug-hunt --bead unitAI-123 --background",
-    "  specialists run sync-docs --follow                 # run + stream live output",
+    "  specialists run bug-hunt --bead unitAI-123",
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
-    "  specialists feed -f",
+    "  specialists poll abc123 --json                  # check job status",
+    "  specialists feed -f                             # stream all job events",
     '  specialists steer <job-id> "focus only on supervisor.ts"',
     '  specialists follow-up <job-id> "now write the fix"',
     "  specialists result <job-id>",
@@ -21215,10 +21267,11 @@ async function run17() {
     bold10("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
     "  specialists run --help         Run command details and flags",
+    "  specialists poll --help        Job status polling details",
     "  specialists steer --help       Mid-run steering details",
     "  specialists follow-up --help   Multi-turn keep-alive details",
     "  specialists init --help        Bootstrap behavior and workflow injection",
-    "  specialists feed --help        Background job monitoring details",
+    "  specialists feed --help        Job event streaming details",
     "",
     dim12("Project model: specialists are project-only; user-scope discovery is deprecated."),
     ""
@@ -21233,10 +21286,11 @@ var init_help = __esm(() => {
     ["list", "List specialists in this project"],
     ["run", "Run a specialist with --bead for tracked work or --prompt for ad-hoc work"],
     ["feed", "Tail job events; use -f to follow all jobs"],
-    ["result", "Print final output of a completed background job"],
-    ["steer", "Send a mid-run message to a running background job"],
+    ["poll", "Machine-readable job status polling (for scripts/Claude Code)"],
+    ["result", "Print final output of a completed job"],
+    ["steer", "Send a mid-run message to a running job"],
     ["follow-up", "Send a next-turn prompt to a keep-alive session (retains full context)"],
-    ["stop", "Stop a running background job"],
+    ["stop", "Stop a running job"],
     ["status", "Show health, MCP state, and active jobs"],
     ["doctor", "Diagnose installation/runtime problems"],
     ["quickstart", "Full getting-started guide"],
@@ -27284,9 +27338,6 @@ class Protocol {
     }
   }
   async connect(transport) {
-    if (this._transport) {
-      throw new Error("Already connected to a transport. Call close() before connecting to a new transport, or use a separate Protocol instance per connection.");
-    }
     this._transport = transport;
     const _onclose = this.transport?.onclose;
     this._transport.onclose = () => {
@@ -27319,10 +27370,6 @@ class Protocol {
     this._progressHandlers.clear();
     this._taskProgressTokens.clear();
     this._pendingDebouncedNotifications.clear();
-    for (const controller of this._requestHandlerAbortControllers.values()) {
-      controller.abort();
-    }
-    this._requestHandlerAbortControllers.clear();
     const error2 = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
     this._transport = undefined;
     this.onclose?.();
@@ -27373,8 +27420,6 @@ class Protocol {
       sessionId: capturedTransport?.sessionId,
       _meta: request.params?._meta,
       sendNotification: async (notification) => {
-        if (abortController.signal.aborted)
-          return;
         const notificationOptions = { relatedRequestId: request.id };
         if (relatedTaskId) {
           notificationOptions.relatedTask = { taskId: relatedTaskId };
@@ -27382,9 +27427,6 @@ class Protocol {
         await this.notification(notification, notificationOptions);
       },
       sendRequest: async (r, resultSchema, options) => {
-        if (abortController.signal.aborted) {
-          throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
-        }
         const requestOptions = { ...options, relatedRequestId: request.id };
         if (relatedTaskId && !requestOptions.relatedTask) {
           requestOptions.relatedTask = { taskId: relatedTaskId };
@@ -27997,62 +28039,6 @@ class ExperimentalServerTasks {
   }
   requestStream(request, resultSchema, options) {
     return this._server.requestStream(request, resultSchema, options);
-  }
-  createMessageStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
-      throw new Error("Client does not support sampling tools capability.");
-    }
-    if (params.messages.length > 0) {
-      const lastMessage = params.messages[params.messages.length - 1];
-      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
-      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
-      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : undefined;
-      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
-      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
-      if (hasToolResults) {
-        if (lastContent.some((c) => c.type !== "tool_result")) {
-          throw new Error("The last message must contain only tool_result content if any is present");
-        }
-        if (!hasPreviousToolUse) {
-          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
-        }
-      }
-      if (hasPreviousToolUse) {
-        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
-        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
-          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
-        }
-      }
-    }
-    return this.requestStream({
-      method: "sampling/createMessage",
-      params
-    }, CreateMessageResultSchema, options);
-  }
-  elicitInputStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    const mode = params.mode ?? "form";
-    switch (mode) {
-      case "url": {
-        if (!clientCapabilities?.elicitation?.url) {
-          throw new Error("Client does not support url elicitation.");
-        }
-        break;
-      }
-      case "form": {
-        if (!clientCapabilities?.elicitation?.form) {
-          throw new Error("Client does not support form elicitation.");
-        }
-        break;
-      }
-    }
-    const normalizedParams = mode === "form" && params.mode === undefined ? { ...params, mode: "form" } : params;
-    return this.requestStream({
-      method: "elicitation/create",
-      params: normalizedParams
-    }, ElicitResultSchema, options);
   }
   async getTask(taskId, options) {
     return this._server.getTask({ taskId }, options);
@@ -29293,7 +29279,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run18() {
+async function run19() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -29436,7 +29422,7 @@ async function run18() {
         "",
         "Usage: specialists run <name> [options]",
         "",
-        "Run a specialist in foreground or background.",
+        "Run a specialist. Streams output to stdout until completion.",
         "",
         "Primary modes:",
         "  tracked:  specialists run <name> --bead <id>",
@@ -29447,20 +29433,23 @@ async function run18() {
         "  --prompt <text>      Ad-hoc prompt for untracked work",
         "  --context-depth <n>  Dependency context depth when using --bead (default: 1)",
         "  --no-beads           Do not create a new tracking bead (does not disable bead reading)",
-        "  --background         Start async and return a job id",
-        "  --follow             Run in background and stream output live",
         "  --model <model>      Override the configured model for this run",
+        "  --keep-alive         Keep session alive for follow-up prompts",
         "",
         "Examples:",
         "  specialists run bug-hunt --bead unitAI-55d",
-        "  specialists run bug-hunt --bead unitAI-55d --context-depth 2 --background",
-        "  specialists run sync-docs --follow",
+        "  specialists run bug-hunt --bead unitAI-55d --context-depth 2",
         '  specialists run code-review --prompt "Audit src/api.ts"',
         "  cat brief.md | specialists run report-generator",
         "",
         "Rules:",
         "  Use --bead for tracked work.",
         "  Use --prompt for quick ad-hoc work.",
+        "",
+        "Background execution:",
+        "  Use Claude Code's native backgrounding (run_in_background: true)",
+        "  or run in a separate terminal and poll with:",
+        "    specialists poll <job-id> --json",
         ""
       ].join(`
 `));
@@ -29552,6 +29541,49 @@ async function run18() {
     }
     const { run: handler } = await Promise.resolve().then(() => (init_feed(), exports_feed));
     return handler();
+  }
+  if (sub === "poll") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists poll <job-id> [--cursor N] [--json]",
+        "",
+        "Machine-readable job status polling for scripts and Claude Code.",
+        "Reads from .specialists/jobs/<id>/ files.",
+        "",
+        "Output (JSON mode):",
+        "  {",
+        '    "job_id": "abc123",',
+        '    "status": "running" | "done" | "error" | "waiting",',
+        '    "elapsed_ms": 45000,',
+        '    "cursor": 15,',
+        '    "events": [...],          // new events since cursor',
+        '    "output": "...",           // full output when done',
+        '    "model": "claude-sonnet-4-6",',
+        '    "bead_id": "unitAI-123"',
+        "  }",
+        "",
+        "Options:",
+        "  --cursor N   Event index to start from (default: 0)",
+        "  --json       Output as JSON (machine-readable)",
+        "",
+        "Examples:",
+        "  specialists poll abc123 --json",
+        "  specialists poll abc123 --cursor 5 --json",
+        "",
+        "Polling pattern in Claude Code:",
+        "  1. Start job (blocks until done):",
+        "     specialists run planner --bead xtrm-p38n.1",
+        "  2. Or use Claude Code native backgrounding",
+        "  3. Poll for incremental status:",
+        "     specialists poll <job-id> --json",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: pollHandler } = await Promise.resolve().then(() => (init_poll(), exports_poll));
+    return pollHandler();
   }
   if (sub === "steer") {
     if (wantsHelp()) {
@@ -29707,7 +29739,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run18().catch((error2) => {
+run19().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

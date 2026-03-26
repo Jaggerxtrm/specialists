@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, models, init, edit, run, status,
- *              result, feed, stop, quickstart, help
+ *              result, feed, poll, stop, quickstart, help
  */
 
 import { SpecialistsServer } from "./server.js";
@@ -161,7 +161,7 @@ async function run() {
         '',
         'Usage: specialists run <name> [options]',
         '',
-        'Run a specialist in foreground or background.',
+        'Run a specialist. Streams output to stdout until completion.',
         '',
         'Primary modes:',
         '  tracked:  specialists run <name> --bead <id>',
@@ -172,20 +172,23 @@ async function run() {
         '  --prompt <text>      Ad-hoc prompt for untracked work',
         '  --context-depth <n>  Dependency context depth when using --bead (default: 1)',
         '  --no-beads           Do not create a new tracking bead (does not disable bead reading)',
-        '  --background         Start async and return a job id',
-        '  --follow             Run in background and stream output live',
         '  --model <model>      Override the configured model for this run',
+        '  --keep-alive         Keep session alive for follow-up prompts',
         '',
         'Examples:',
         '  specialists run bug-hunt --bead unitAI-55d',
-        '  specialists run bug-hunt --bead unitAI-55d --context-depth 2 --background',
-        '  specialists run sync-docs --follow',
+        '  specialists run bug-hunt --bead unitAI-55d --context-depth 2',
         '  specialists run code-review --prompt "Audit src/api.ts"',
         '  cat brief.md | specialists run report-generator',
         '',
         'Rules:',
         '  Use --bead for tracked work.',
         '  Use --prompt for quick ad-hoc work.',
+        '',
+        'Background execution:',
+        '  Use Claude Code\'s native backgrounding (run_in_background: true)',
+        '  or run in a separate terminal and poll with:',
+        '    specialists poll <job-id> --json',
         '',
       ].join('\n'));
       return;
@@ -276,6 +279,49 @@ async function run() {
     }
     const { run: handler } = await import('./cli/feed.js');
     return handler();
+  }
+
+  if (sub === 'poll') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists poll <job-id> [--cursor N] [--json]',
+        '',
+        'Machine-readable job status polling for scripts and Claude Code.',
+        'Reads from .specialists/jobs/<id>/ files.',
+        '',
+        'Output (JSON mode):',
+        '  {',
+        '    "job_id": "abc123",',
+        '    "status": "running" | "done" | "error" | "waiting",',
+        '    "elapsed_ms": 45000,',
+        '    "cursor": 15,',
+        '    "events": [...],          // new events since cursor',
+        '    "output": "...",           // full output when done',
+        '    "model": "claude-sonnet-4-6",',
+        '    "bead_id": "unitAI-123"',
+        '  }',
+        '',
+        'Options:',
+        '  --cursor N   Event index to start from (default: 0)',
+        '  --json       Output as JSON (machine-readable)',
+        '',
+        'Examples:',
+        '  specialists poll abc123 --json',
+        '  specialists poll abc123 --cursor 5 --json',
+        '',
+        'Polling pattern in Claude Code:',
+        '  1. Start job (blocks until done):',
+        '     specialists run planner --bead xtrm-p38n.1',
+        '  2. Or use Claude Code native backgrounding',
+        '  3. Poll for incremental status:',
+        '     specialists poll <job-id> --json',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: pollHandler } = await import('./cli/poll.js');
+    return pollHandler();
   }
 
   if (sub === 'steer') {

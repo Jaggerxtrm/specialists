@@ -4,6 +4,7 @@
 import {
   closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -198,7 +199,12 @@ export class Supervisor {
     // Keep events.jsonl fd open for the job lifetime
     const eventsFd = openSync(this.eventsPath(id), 'a');
     const appendTimelineEvent = (event: TimelineEvent): void => {
-      try { writeSync(eventsFd, JSON.stringify(event) + '\n'); } catch { /* ignore */ }
+      try {
+        writeSync(eventsFd, JSON.stringify(event) + '\n');
+      } catch (err: any) {
+        // Log but don't crash — event logging is best-effort
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
     };
 
     // Emit run_start event
@@ -358,6 +364,8 @@ export class Supervisor {
       throw err;
     } finally {
       process.removeListener('SIGTERM', sigtermHandler);
+      // Ensure events are flushed to disk before closing
+      try { fsyncSync(eventsFd); } catch { /* ignore */ }
       closeSync(eventsFd);
       // Remove the FIFO on job completion (best effort)
       try { if (existsSync(fifoPath)) rmSync(fifoPath); } catch { /* ignore */ }
