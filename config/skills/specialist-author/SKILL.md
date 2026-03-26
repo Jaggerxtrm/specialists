@@ -90,14 +90,15 @@ Example distribution (based on current `specialists models` output):
 
 If anthropic is not available, use `zai/glm-5` (heavy), `google-gemini-cli/gemini-3.1-pro-preview` (standard), `google-gemini-cli/gemini-3-flash-preview` (light).
 
-#### Step 4 — Ping each chosen model before assigning
+#### Step 4 — ⛔ Ping each chosen model before assigning
 
 ```bash
-pi --model <provider>/<model-id> --print "ping"
-# Must output "pong" — if it errors, try next best in that tier
+# REQUIRED — do not skip, do not assume a model works without pinging
+pi --model <provider>/<primary-model-id>  --print "ping"   # must return "pong"
+pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 ```
 
-Ping **both** the primary and fallback before using them.
+Ping **both** primary and fallback. If ping fails → pick next best in that tier and ping again. Do not assign a model that did not respond.
 
 #### Step 5 — Apply with `specialists edit`
 
