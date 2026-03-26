@@ -20562,10 +20562,9 @@ async function run14() {
   lines.push(`  ${cmd2("specialists list")} ${flag("--category analysis")}        # filter by category`);
   lines.push(`  ${cmd2("specialists list")} ${flag("--json")}                     # machine-readable JSON`);
   lines.push("");
-  lines.push(`  Scopes (searched in order):`);
-  lines.push(`  ${blue2("project")}   ./specialists/*.specialist.yaml`);
-  lines.push(`  ${blue2("user")}      ~/.specialists/*.specialist.yaml`);
-  lines.push(`  ${blue2("system")}    bundled specialists (shipped with the package)`);
+  lines.push(`  Scopes (searched in order, user wins on name collision):`);
+  lines.push(`  ${blue2("user")}      .specialists/user/specialists/*.specialist.yaml`);
+  lines.push(`  ${blue2("default")}   .specialists/default/specialists/*.specialist.yaml`);
   lines.push("");
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
@@ -20575,6 +20574,10 @@ async function run14() {
   lines.push(`  ${bold7("Background")} (returns a job ID immediately):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"..."')} ${flag("--background")}`);
   lines.push(`  ${dim9("  # → Job started: job_a1b2c3d4")}`);
+  lines.push("");
+  lines.push(`  ${bold7("Follow")} (background + stream live output in one command):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"..."')} ${flag("--follow")}`);
+  lines.push(`  ${dim9("  # starts in background, streams output live, exits when complete")}`);
   lines.push("");
   lines.push(`  Override model for one run:`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim9("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim9('"..."')}`);

@@ -58,10 +58,9 @@ export async function run(): Promise<void> {
   lines.push(`  ${cmd('specialists list')} ${flag('--category analysis')}        # filter by category`);
   lines.push(`  ${cmd('specialists list')} ${flag('--json')}                     # machine-readable JSON`);
   lines.push('');
-  lines.push(`  Scopes (searched in order):`);
-  lines.push(`  ${blue('project')}   ./specialists/*.specialist.yaml`);
-  lines.push(`  ${blue('user')}      ~/.specialists/*.specialist.yaml`);
-  lines.push(`  ${blue('system')}    bundled specialists (shipped with the package)`);
+  lines.push(`  Scopes (searched in order, user wins on name collision):`);
+  lines.push(`  ${blue('user')}      .specialists/user/specialists/*.specialist.yaml`);
+  lines.push(`  ${blue('default')}   .specialists/default/specialists/*.specialist.yaml`);
   lines.push('');
 
   // ── 4. Running a specialist ────────────────────────────────────────────────
@@ -73,6 +72,10 @@ export async function run(): Promise<void> {
   lines.push(`  ${bold('Background')} (returns a job ID immediately):`);
   lines.push(`  ${cmd('specialists run code-review')} ${flag('--prompt')} ${dim('"..."')} ${flag('--background')}`);
   lines.push(`  ${dim('  # → Job started: job_a1b2c3d4')}`);
+  lines.push('');
+  lines.push(`  ${bold('Follow')} (background + stream live output in one command):`);
+  lines.push(`  ${cmd('specialists run code-review')} ${flag('--prompt')} ${dim('"..."')} ${flag('--follow')}`);
+  lines.push(`  ${dim('  # starts in background, streams output live, exits when complete')}`);
   lines.push('');
   lines.push(`  Override model for one run:`);
   lines.push(`  ${cmd('specialists run code-review')} ${flag('--model')} ${dim('anthropic/claude-opus-4-6')} ${flag('--prompt')} ${dim('"..."')}`);
