@@ -21,11 +21,18 @@ const ExecutionSchema = z.object({
   model: z.string(),
   fallback_model: z.string().optional(),
   timeout_ms: z.number().default(120_000),
-  /** Stall timeout: kill if no event received for this many ms */
   stall_timeout_ms: z.number().optional(),
   response_format: z.enum(['text', 'json', 'markdown']).default('text'),
+  /** Controls which pi tools are available to the agent.
+   *  READ_ONLY : read, grep, find, ls        (no bash, no writes)
+   *  LOW       : + bash                       (inspect/run, no file edits)
+   *  MEDIUM    : + edit                       (can edit existing files)
+   *  HIGH      : + write                      (full access — create new files)
+   */
   permission_required: z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']).default('READ_ONLY'),
-  // Agent Forge fields — accepted but ignored by specialists
+  /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
+  thinking_level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+  // Agent Forge compat — accepted but ignored by specialists
   preferred_profile: z.string().optional(),
   approval_mode: z.string().optional(),
 });
@@ -33,41 +40,55 @@ const ExecutionSchema = z.object({
 const PromptSchema = z.object({
   system: z.string().optional(),
   task_template: z.string(),
-  normalize_template: z.string().optional(),  // Mercury — ignored by specialists
+  normalize_template: z.string().optional(),   // Mercury compat — ignored
   output_schema: z.record(z.unknown()).optional(),
   examples: z.array(z.unknown()).optional(),
-  skill_inherit: z.string().optional(),        // Agent Forge — appended to agents.md
+  skill_inherit: z.string().optional(),         // Agent Forge compat — injected via --skill
 });
 
+/** Script/command entry for pre/post execution hooks.
+ *  `run` accepts either a file path (./scripts/check.sh) or a shell command (bd ready).
+ *  `path` is a deprecated alias for `run` — prefer `run`.
+ */
+const ScriptEntrySchema = z.object({
+  run: z.string().optional(),
+  path: z.string().optional(),   // deprecated: use run
+  phase: z.enum(['pre', 'post']),
+  inject_output: z.boolean().default(false),
+}).transform(s => ({
+  run: s.run ?? s.path ?? '',
+  phase: s.phase,
+  inject_output: s.inject_output,
+}));
+
 const SkillsSchema = z.object({
-  scripts: z.array(z.object({
-    path: z.string(),
-    phase: z.enum(['pre', 'post']),
-    inject_output: z.boolean().default(false),
-  })).optional(),
+  /** Skill/context files injected into the system prompt via pi --skill */
+  paths: z.array(z.string()).optional(),
+  /** Pre/post scripts or commands run locally (not inside the agent session) */
+  scripts: z.array(ScriptEntrySchema).optional(),
   references: z.array(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
-  /** Paths to skill/context files to inject into system prompt */
-  paths: z.array(z.string()).optional(),
 }).optional();
 
 const CapabilitiesSchema = z.object({
-  file_scope: z.array(z.string()).optional(),
-  blocked_tools: z.array(z.string()).optional(),
-  can_spawn: z.boolean().optional(),
-  tools: z.array(z.object({ name: z.string(), purpose: z.string() })).optional(),
-  diagnostic_scripts: z.array(z.string()).optional(), // appended to agents.md
+  /** Tool names the agent is expected to use (informational / future doctor check) */
+  required_tools: z.array(z.string()).optional(),
+  /** CLI binaries the agent depends on (validated at run-time before session starts) */
+  external_commands: z.array(z.string()).optional(),
 }).optional();
 
 const CommunicationSchema = z.object({
-  publishes: z.array(z.string()).optional(),
-  subscribes: z.array(z.string()).optional(),
+  /** Write final output to this file path after the session completes */
   output_to: z.string().optional(),
+  /** Specialist(s) to run next, receiving this output as $previous_result */
+  next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
 }).optional();
 
 const ValidationSchema = z.object({
+  /** File paths to watch — if any mtime > metadata.updated, specialist is marked STALE */
   files_to_watch: z.array(z.string()).optional(),
   references: z.array(z.unknown()).optional(),
+  /** Days before STALE escalates to AGED */
   stale_threshold_days: z.number().optional(),
 }).optional();
 
@@ -86,6 +107,7 @@ export const SpecialistSchema = z.object({
 });
 
 export type Specialist = z.infer<typeof SpecialistSchema>;
+export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
 
 export async function parseSpecialist(yamlContent: string): Promise<Specialist> {
   const raw = parseYaml(yamlContent);

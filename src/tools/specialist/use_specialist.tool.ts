@@ -40,11 +40,7 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
         if (!bead) {
           throw new Error(`Unable to read bead '${input.bead_id}' via bd show --json`);
         }
-        // Get blocker context if depth is specified
-        const blockers = input.context_depth && input.context_depth > 0
-          ? beadsClient.getBlockers(input.bead_id, input.context_depth)
-          : [];
-        const beadContext = buildBeadContext(bead, { blockers, depth: input.context_depth ?? 0 });
+        const beadContext = buildBeadContext(bead);
         prompt = beadContext;
         variables = {
           ...(input.variables ?? {}),

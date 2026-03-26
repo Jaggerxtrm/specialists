@@ -34,12 +34,14 @@ export interface RunResult {
   beadId?: string;
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta'>>;
+export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>>;
 
 import { type BeadsClient, shouldCreateBead } from './beads.js';
 
-import { execSync } from 'node:child_process';
-import { basename } from 'node:path';
+import { execSync, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
+import { homedir } from 'node:os';
 
 interface RunnerDeps {
   loader: SpecialistLoader;
@@ -59,12 +61,12 @@ interface ScriptResult {
   exitCode: number;
 }
 
-function runScript(scriptPath: string): ScriptResult {
+function runScript(run: string): ScriptResult {
   try {
-    const output = execSync(scriptPath, { encoding: 'utf8', timeout: 30_000 });
-    return { name: basename(scriptPath), output, exitCode: 0 };
+    const output = execSync(run, { encoding: 'utf8', timeout: 30_000 });
+    return { name: basename(run.split(' ')[0]), output, exitCode: 0 };
   } catch (e: any) {
-    return { name: basename(scriptPath), output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
+    return { name: basename(run.split(' ')[0]), output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
   }
 }
 
@@ -78,6 +80,81 @@ function formatScriptOutput(results: ScriptResult[]): string {
     })
     .join('\n');
   return `<pre_flight_context>\n${blocks}\n</pre_flight_context>`;
+}
+
+// ── Pre-run validator ─────────────────────────────────────────────────────────
+
+function resolvePath(p: string): string {
+  return p.startsWith('~/') ? resolve(homedir(), p.slice(2)) : resolve(p);
+}
+
+function commandExists(cmd: string): boolean {
+  const result = spawnSync('which', [cmd], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+function validateShebang(filePath: string, errors: string[]): void {
+  try {
+    const head = readFileSync(filePath, 'utf-8').slice(0, 120);
+    if (!head.startsWith('#!')) return;
+    const shebang = head.split('\n')[0].toLowerCase();
+    const typos: [RegExp, string][] = [
+      [/pytho[^n]|pyton|pyhon/, 'python'],
+      [/nod[^e]b/, 'node'],
+      [/bsh$|bas$/, 'bash'],
+      [/rub[^y]/, 'ruby'],
+    ];
+    for (const [pattern, correct] of typos) {
+      if (pattern.test(shebang)) {
+        errors.push(`  ✗ ${filePath}: shebang looks wrong — did you mean '${correct}'? (got: ${shebang})`);
+      }
+    }
+  } catch { /* unreadable — caught by exists check */ }
+}
+
+function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[] } } }): void {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Validate skills.paths files exist
+  for (const p of spec.specialist.skills?.paths ?? []) {
+    const abs = resolvePath(p);
+    if (!existsSync(abs)) warnings.push(`  ⚠ skills.paths: file not found: ${p}`);
+  }
+
+  // Validate scripts/commands
+  for (const script of spec.specialist.skills?.scripts ?? []) {
+    const { run } = script;
+    if (!run) continue;
+    const isFilePath = run.startsWith('./') || run.startsWith('../') || run.startsWith('/') || run.startsWith('~/');
+    if (isFilePath) {
+      const abs = resolvePath(run);
+      if (!existsSync(abs)) {
+        errors.push(`  ✗ skills.scripts: script not found: ${run}`);
+      } else {
+        validateShebang(abs, errors);
+      }
+    } else {
+      const binary = run.split(' ')[0];
+      if (!commandExists(binary)) {
+        errors.push(`  ✗ skills.scripts: command not found on PATH: ${binary}`);
+      }
+    }
+  }
+
+  // Validate external_commands exist on PATH
+  for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
+    if (!commandExists(cmd)) {
+      errors.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
+    }
+  }
+
+  if (warnings.length > 0) {
+    process.stderr.write(`[specialists] pre-run warnings:\n${warnings.join('\n')}\n`);
+  }
+  if (errors.length > 0) {
+    throw new Error(`Specialist pre-run validation failed:\n${errors.join('\n')}`);
+  }
 }
 
 export class SpecialistRunner {
@@ -122,19 +199,22 @@ export class SpecialistRunner {
       scope: 'project',
     });
 
-    // Pre-phase scripts run locally before the pi session starts.
+    // Pre-run validation: check scripts exist, commands are on PATH, shebang typos
+    validateBeforeRun(spec);
+
+    // Pre-phase scripts/commands run locally before the pi session starts.
     // Their stdout is captured and injected into the task via $pre_script_output.
     const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
     const preResults = preScripts
-      .map(s => runScript(s.path))
+      .map(s => runScript(s.run))
       .filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
 
     // Render task template (pre_script_output is '' when no scripts ran)
-    const beadVariables = options.inputBeadId
+    const beadVariables: Record<string, string> = options.inputBeadId
       ? { bead_context: options.prompt, bead_id: options.inputBeadId }
       : {};
-    const variables = {
+    const variables: Record<string, string> = {
       prompt: options.prompt,
       cwd: process.cwd(),
       pre_script_output: preScriptOutput,
@@ -151,24 +231,24 @@ export class SpecialistRunner {
       system_prompt_present: !!prompt.system,
     });
 
-    // Build system prompt: system + skill_inherit + skills.paths + diagnostic_scripts
-    const { readFile } = await import('node:fs/promises');
-    let agentsMd = prompt.system ?? '';
-    if (prompt.skill_inherit) {
-      const skillContent = await readFile(prompt.skill_inherit, 'utf-8').catch(() => '');
-      if (skillContent) agentsMd += `\n\n---\n# Service Knowledge\n\n${skillContent}`;
-    }
-    // Inject resolved skills.paths files (Phase 4)
-    const skillPaths = spec.specialist.skills?.paths ?? [];
-    for (const skillPath of skillPaths) {
-      const skillContent = await readFile(skillPath, 'utf-8').catch(() => '');
-      if (skillContent) agentsMd += `\n\n---\n# Skill: ${skillPath}\n\n${skillContent}`;
-    }
-    if (spec.specialist.capabilities?.diagnostic_scripts?.length) {
-      agentsMd += '\n\n---\n# Diagnostic Scripts\nYou have access via Bash:\n';
-      for (const s of spec.specialist.capabilities.diagnostic_scripts) {
-        agentsMd += `- \`${s}\`\n`;
+    // Build system prompt from prompt.system only.
+    // skill_inherit and skills.paths are injected via pi --skill (native).
+    const agentsMd = prompt.system ?? '';
+    const skillPaths: string[] = [];
+    if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);
+    skillPaths.push(...(spec.specialist.skills?.paths ?? []));
+
+    // AUTO INJECTED banner — printed before session starts so the user can see what was loaded
+    if (skillPaths.length > 0 || preScripts.length > 0) {
+      const line = '━'.repeat(56);
+      onProgress?.(`\n${line}\n◆ AUTO INJECTED\n`);
+      if (skillPaths.length > 0) {
+        onProgress?.(`  skills (--skill):\n${skillPaths.map(p => `    • ${p}`).join('\n')}\n`);
       }
+      if (preScripts.length > 0) {
+        onProgress?.(`  pre scripts/commands:\n${preScripts.map(s => `    • ${s.run}${s.inject_output ? ' → $pre_script_output' : ''}`).join('\n')}\n`);
+      }
+      onProgress?.(`${line}\n\n`);
     }
 
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
@@ -200,6 +280,8 @@ export class SpecialistRunner {
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
+        skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
+        thinkingLevel: execution.thinking_level,
         permissionLevel,
         cwd: process.cwd(),
         onToken:     (delta) => onProgress?.(delta),
@@ -214,7 +296,7 @@ export class SpecialistRunner {
       // Register kill function with the caller (e.g. JobRegistry for stop_specialist)
       onKillRegistered?.(session.kill.bind(session));
       // Register steer function so callers can send mid-run messages to the Pi agent
-      onSteerRegistered?.((msg) => session.steer(msg));
+      onSteerRegistered?.((msg) => session!.steer(msg));
 
       await session.prompt(renderedTask);
       await session.waitForDone(execution.timeout_ms);
@@ -227,12 +309,12 @@ export class SpecialistRunner {
         // Don't close here — caller owns the lifecycle via closeFn.
         keepAliveActive = true;
         const resumeFn = async (msg: string): Promise<string> => {
-          await session.resume(msg, execution.timeout_ms);
-          return session.getLastOutput();
+          await session!.resume(msg, execution.timeout_ms);
+          return session!.getLastOutput();
         };
         const closeFn = async (): Promise<void> => {
           keepAliveActive = false;
-          await session.close();
+          await session!.close();
         };
         onResumeReady(resumeFn, closeFn);
       } else {
@@ -240,9 +322,9 @@ export class SpecialistRunner {
         await session.close();
       }
 
-      // Post-phase scripts run locally after the pi session completes (cleanup, notifications, etc.)
+      // Post-phase scripts/commands run locally after the pi session completes
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
-      for (const script of postScripts) runScript(script.path);
+      for (const script of postScripts) runScript(script.run);
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {

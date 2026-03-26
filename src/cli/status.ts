@@ -13,13 +13,7 @@ import {
   yellow,
   red,
   cyan,
-  formatDateTime,
-  formatElapsed,
-  getStatusLabel,
-  statusColorizer,
 } from './format-helpers.js';
-const red    = (s: string) => `\x1b[31m${s}\x1b[0m`;
-const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
 
 function ok(msg: string)   { console.log(`  ${green('✓')} ${msg}`); }
 function warn(msg: string) { console.log(`  ${yellow('○')} ${msg}`); }

@@ -27,10 +27,6 @@ import {
 } from '../specialist/timeline-query.js';
 import {
   dim,
-  cyan,
-  red,
-  green,
-  type Colorizer,
   JobColorMap,
   formatEventLine,
 } from './format-helpers.js';
@@ -67,7 +63,7 @@ function getHumanEventKey(event: TimelineEvent): string {
     case 'agent_end':
       return `complete:${event.type}`;
     default:
-      return event.type;
+      return (event as any).type;
   }
 }
 

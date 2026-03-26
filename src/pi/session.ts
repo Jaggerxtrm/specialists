@@ -48,6 +48,10 @@ export interface PiSessionOptions {
   systemPrompt?: string;
   /** Permission level from specialist YAML — controls which pi tools are enabled */
   permissionLevel?: string;
+  /** Skill files loaded via pi --skill (injected into system prompt natively) */
+  skillPaths?: string[];
+  /** Thinking level passed as pi --thinking <level> */
+  thinkingLevel?: string;
   /** Working directory for the pi process — defaults to process.cwd() if not set */
   cwd?: string;
   /** Called with each text token as it arrives */
@@ -64,15 +68,20 @@ export interface PiSessionOptions {
   onMeta?: (meta: { backend: string; model: string }) => void;
 }
 
-/** Maps specialist permission_required to pi --tools argument. */
+/** Maps specialist permission_required to pi --tools argument.
+ *
+ *  READ_ONLY : read, grep, find, ls           — no bash, no writes
+ *  LOW       : + bash                          — inspect/run commands, no file edits
+ *  MEDIUM    : + edit                          — can edit existing files
+ *  HIGH      : + write                         — full access, can create new files
+ */
 function mapPermissionToTools(level?: string): string | undefined {
   switch (level?.toUpperCase()) {
-    case 'READ_ONLY': return 'read,bash,grep,find,ls';
-    case 'BASH_ONLY': return 'bash';
-    case 'LOW':
-    case 'MEDIUM':
-    case 'HIGH':    return 'read,bash,edit,write,grep,find,ls';
-    default:        return undefined;
+    case 'READ_ONLY': return 'read,grep,find,ls';
+    case 'LOW':       return 'read,bash,grep,find,ls';
+    case 'MEDIUM':    return 'read,bash,edit,grep,find,ls';
+    case 'HIGH':      return 'read,bash,edit,write,grep,find,ls';
+    default:          return undefined;
   }
 }
 
@@ -126,6 +135,16 @@ export class PiAgentSession {
     // Enforce permission level via --tools flag
     const toolsFlag = mapPermissionToTools(this.options.permissionLevel);
     if (toolsFlag) args.push('--tools', toolsFlag);
+
+    // Thinking level (models that don't support it ignore the flag)
+    if (this.options.thinkingLevel) {
+      args.push('--thinking', this.options.thinkingLevel);
+    }
+
+    // Skill files injected natively via pi --skill
+    for (const skillPath of this.options.skillPaths ?? []) {
+      args.push('--skill', skillPath);
+    }
 
     // Selectively re-enable useful Pi extensions if installed
     const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
