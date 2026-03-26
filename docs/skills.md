@@ -27,9 +27,9 @@ Skills are prompt packages that add focused guidance to specialist runs.
 
 ## Repo-local skills
 
-### `specialists-usage`
+### `using-specialists`
 
-Location: `config/skills/specialists-usage/SKILL.md`
+Location: `config/skills/using-specialists/SKILL.md`
 
 Purpose:
 
@@ -40,9 +40,9 @@ Purpose:
 
 Note: a dedicated skill/doc synchronization follow-up is tracked separately.
 
-### `specialist-author`
+### `specialists-creator`
 
-Location: `config/skills/specialist-author/SKILL.md`
+Location: `config/skills/specialists-creator/SKILL.md`
 
 Purpose:
 

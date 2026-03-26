@@ -1,7 +1,37 @@
 # Specialist Author Guide
 
-> Write a valid `.specialist.yaml` on the first attempt.
 > Source of truth: `src/specialist/schema.ts` | Runtime: `src/specialist/runner.ts`
+
+---
+
+## ACTION REQUIRED BEFORE ANYTHING ELSE
+
+Run these commands **right now**, before reading further, before writing any YAML, before doing anything else:
+
+```bash
+pi --list-models
+```
+
+Read the output. Pick one primary model and one fallback from **different providers**. Then ping both:
+
+```bash
+pi --model <chosen-primary>  --print "ping"    # must print: pong
+pi --model <chosen-fallback> --print "ping"    # must print: pong
+```
+
+If a ping fails, pick the next best model in that tier and ping again. **Do not proceed until both return "pong".**
+
+Model tiers:
+- **Heavy** (deep reasoning, multi-phase): Opus / Pro / GLM-5
+- **Standard** (authoring, review, codegen): Sonnet / Flash-Pro
+- **Light** (fast context, reports, tests): Haiku / Flash
+
+Rules:
+- Always pick the **highest version** in a family (`claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`)
+- `model` and `fallback_model` must be **different providers**
+- Never write a model string you have not pinged in this session
+
+---
 
 ---
 
@@ -65,14 +95,15 @@ Example distribution (based on current `specialists models` output):
 
 If anthropic is not available, use `zai/glm-5` (heavy), `google-gemini-cli/gemini-3.1-pro-preview` (standard), `google-gemini-cli/gemini-3-flash-preview` (light).
 
-#### Step 4 — Ping each chosen model before assigning
+#### Step 4 — ⛔ Ping each chosen model before assigning
 
 ```bash
-pi --model <provider>/<model-id> --print "ping"
-# Must output "pong" — if it errors, try next best in that tier
+# REQUIRED — do not skip, do not assume a model works without pinging
+pi --model <provider>/<primary-model-id>  --print "ping"   # must return "pong"
+pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 ```
 
-Ping **both** the primary and fallback before using them.
+Ping **both** primary and fallback. If ping fails → pick next best in that tier and ping again. Do not assign a model that did not respond.
 
 #### Step 5 — Apply with `specialists edit`
 
@@ -104,17 +135,15 @@ specialists models  # confirm assignments look balanced
 
 ### For a new specialist (single model selection)
 
+> **See [⛔ MANDATORY FIRST STEP](#-mandatory-first-step--verify-models-before-writing-any-yaml) at the top of this skill.**
+> Use `pi --list-models` (not `specialists models`) to discover models, ping both before writing YAML.
+
 ```bash
-# 1. See what's available
-specialists models
-
-# 2. Pick highest version in the right tier family (see tier table above)
-
-# 3. Ping both primary and fallback
-pi --model anthropic/claude-sonnet-4-6 --print "ping"      # must return "pong"
-pi --model google-gemini-cli/gemini-3-flash-preview --print "ping"  # must return "pong"
-
-# 4. Write to YAML
+# 1. pi --list-models            — see exactly what's available on pi right now
+# 2. Pick tier + pick highest version in family
+# 3. pi --model <primary>  --print "ping"   — must return "pong"
+# 4. pi --model <fallback> --print "ping"   — must return "pong"
+# 5. Write YAML with verified model strings
 ```
 
 **Rule:** Never hardcode a model without pinging it. If ping fails, try the next best in that tier.
@@ -166,15 +195,25 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 
 ### `specialist.execution` (required)
 
-| Field | Type | Default | Valid Values |
-|-------|------|---------|-------------|
-| `model` | string | — | Any pi-compatible model string (required) |
-| `fallback_model` | string | — | Optional fallback |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `model` | string | — | required — ping before using |
+| `fallback_model` | string | — | must be a different provider |
 | `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
-| `timeout_ms` | number | `120000` | Milliseconds |
-| `stall_timeout_ms` | number | — | Kill if no event for N ms |
+| `timeout_ms` | number | `120000` | ms |
+| `stall_timeout_ms` | number | — | kill if no event for N ms |
 | `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
-| `permission_required` | enum | `READ_ONLY` | `READ_ONLY` \| `LOW` \| `MEDIUM` \| `HIGH` |
+| `permission_required` | enum | `READ_ONLY` | see tier table below |
+| `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
+
+**Permission tiers** — controls which pi tools are available:
+
+| Level | pi --tools | Use when |
+|-------|-----------|----------|
+| `READ_ONLY` | `read,grep,find,ls` | Read-only analysis, no bash |
+| `LOW` | `+bash` | Inspect/run commands, no file edits |
+| `MEDIUM` | `+edit` | Can edit existing files |
+| `HIGH` | `+write` | Full access — can create new files |
 
 **Common pitfall:** `READ_WRITE` is **not** a valid value — use `LOW` or higher.
 
@@ -184,7 +223,7 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 |-------|------|----------|-------|
 | `task_template` | string | yes | Template string with `$variable` substitution |
 | `system` | string | no | System prompt / agents.md content |
-| `skill_inherit` | string | no | Path to a file appended to system prompt |
+| `skill_inherit` | string | no | Single skill folder/file injected via `pi --skill` (Agent Forge compat) |
 | `output_schema` | object | no | JSON schema for structured output |
 | `examples` | array | no | Few-shot examples |
 
@@ -192,39 +231,87 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 
 ```yaml
 skills:
-  paths:                          # Files injected into system prompt
-    - skills/my-skill/SKILL.md
+  paths:                          # passed as pi --skill; folder (reads SKILL.md inside) or direct file
+    - skills/my-skill/            # folder — pi loads SKILL.md from inside
+    - ~/.agents/skills/domain/    # same
+    - skills/notes.md             # direct file also accepted
   scripts:
-    - path: scripts/pre-check.sh
+    - run: ./scripts/pre-check.sh # file path OR shell command
       phase: pre                  # "pre" or "post"
-      inject_output: true         # true = $pre_script_output populated
-  tools:
-    - bash
-    - read
+      inject_output: true         # true = stdout available as $pre_script_output
+    - run: "bd ready"             # inline command — runs via shell
+      phase: pre
+      inject_output: true
+    - run: ./scripts/cleanup.sh
+      phase: post
 ```
+
+`run` accepts either a **file path** (`./scripts/foo.sh`, `~/scripts/foo.sh`) or a **shell command** (`bd ready`, `git status`). Pre-run validation checks that file paths exist and shell commands are on `PATH`. Shebang typos (e.g. `pytho` instead of `python`) are caught and reported as errors before the session starts.
+
+`path` is accepted as a deprecated alias for `run`.
 
 ### `specialist.capabilities` (optional)
 
+Informational declarations used by pre-run validation and future tooling (e.g. `specialists doctor`).
+
 ```yaml
 capabilities:
-  file_scope: [src/, tests/]
-  blocked_tools: [Write, Edit]
-  can_spawn: false
-  tools:
-    - name: bash
-      purpose: Read-only inspection
-  diagnostic_scripts:
-    - scripts/health-check.sh     # Listed in system prompt as available Bash commands
+  required_tools: [bash, read, grep, glob]   # pi tools this specialist needs
+  external_commands: [bd, git, gh]           # CLI binaries validated on PATH before run
 ```
+
+`external_commands` causes a hard failure if any binary is not found on `PATH` — the session will not start.
+
+### `specialist.output_file` (optional, top-level)
+
+```yaml
+output_file: .specialists/my-specialist-result.md
+```
+
+Writes the final session output to this file path after the session completes. Relative to the working directory.
 
 ### `specialist.communication` (optional)
 
 ```yaml
 communication:
-  output_to: .specialists/output.md   # Write final output to this file
-  publishes: [report, analysis]
-  subscribes: [session_context]
+  next_specialists: planner             # single specialist to chain after completion
+  # or an array:
+  next_specialists: [planner, test-runner]
 ```
+
+`next_specialists` declares which specialist(s) should receive this specialist's output as `$previous_result`. Chaining is executed by the caller (e.g. `run_parallel` pipeline) — this field is declarative metadata.
+
+### `specialist.validation` (optional)
+
+Drives the staleness detection shown in `specialists status` and `specialists list`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `files_to_watch` | string[] | Paths to monitor. If any file's mtime is newer than `metadata.updated`, the specialist is marked **STALE** |
+| `stale_threshold_days` | number | If the specialist has been STALE for more than N days, escalates to **AGED** |
+| `references` | array | Accepted, currently unused |
+
+**Staleness states:**
+
+| State | Condition |
+|-------|-----------|
+| `OK` | No watched files changed, or no `files_to_watch` / `updated` set |
+| `STALE` | A watched file's mtime > `metadata.updated` |
+| `AGED` | STALE + days since `updated` > `stale_threshold_days` |
+
+```yaml
+specialist:
+  metadata:
+    updated: "2026-03-01"
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+    stale_threshold_days: 30
+```
+
+This specialist goes STALE the moment `schema.ts` or `runner.ts` is modified after March 1st, and AGED if that condition persists for more than 30 days.
 
 ### `specialist.beads_integration` (optional)
 
@@ -346,20 +433,20 @@ specialist:
 
   skills:
     paths:
-      - skills/code-review/SKILL.md
+      - skills/code-review/
     scripts:
-      - path: scripts/get-diff.sh
+      - run: scripts/get-diff.sh
         phase: pre
         inject_output: true
 
   capabilities:
-    file_scope: [src/, tests/]
-    blocked_tools: [Write, Edit, Bash]
+    required_tools: [bash, read]
+    external_commands: [git]
 
   communication:
-    output_to: .specialists/review.md
-    publishes: [code_review]
+    next_specialists: [sync-docs]
 
+  output_file: .specialists/review.md
   beads_integration: auto
 ```
 
@@ -399,19 +486,20 @@ Name your file `<metadata.name>.specialist.yaml`.
 A bundled validator is included with this skill so the agent does not need to reconstruct the `bun -e` one-liner from memory. It prints `OK <file>` on success and a field-by-field error list on failure.
 
 ```bash
-# 0. Select and verify model (REQUIRED before writing YAML)
+# 1. MANDATORY: discover + ping models (see top of this skill)
 pi --list-models
-pi --model <provider>/<model-id> --print "ping"   # must return "pong"
+pi --model <provider>/<primary-model-id>  --print "ping"   # must return "pong"
+pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 
-# 1. Write the YAML with the verified model
+# 2. Write the YAML with the verified model
 
-# 2. Validate schema with the bundled helper
+# 3. Validate schema with the bundled helper
 bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
 
-# 3. List to confirm discovery
+# 4. List to confirm discovery
 specialists list
 
-# 4. Smoke test
+# 5. Smoke test
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 

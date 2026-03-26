@@ -44,7 +44,7 @@ Current project specialists are loaded from two directories:
 | `parallel-review` | concurrent review across backends |
 | `planner` | structured planning for work items |
 | `report-generator` | markdown reports from outputs/data |
-| `specialist-author` | authoring valid `.specialist.yaml` files |
+| `specialists-creator` | authoring valid `.specialist.yaml` files |
 | `sync-docs` | docs audit and synchronization |
 | `test-runner` | run tests and summarize failures |
 | `xt-merge` | merge queued xt worktree PRs |

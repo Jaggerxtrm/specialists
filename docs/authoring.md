@@ -8,7 +8,7 @@ synced_at: 8778a78
 description: How to write, place, and maintain project specialists.
 source_of_truth_for:
   - "src/specialist/schema.ts"
-  - "config/skills/specialist-author/SKILL.md"
+  - "config/skills/specialists-creator/SKILL.md"
   - ".specialists/user/specialists/*.specialist.yaml"
 domain:
   - authoring
@@ -264,7 +264,7 @@ specialists edit <name> --model <v> --dry-run    # preview before writing
 pi --model anthropic/claude-sonnet-4-6 --print "ping"   # must return "pong"
 ```
 
-For full model rebalancing workflow, see `config/skills/specialist-author/SKILL.md`.
+For full model rebalancing workflow, see `config/skills/specialists-creator/SKILL.md`.
 
 ---
 
