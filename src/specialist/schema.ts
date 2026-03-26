@@ -62,12 +62,10 @@ const ScriptEntrySchema = z.object({
 }));
 
 const SkillsSchema = z.object({
-  /** Skill/context files injected into the system prompt via pi --skill */
+  /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
   paths: z.array(z.string()).optional(),
   /** Pre/post scripts or commands run locally (not inside the agent session) */
   scripts: z.array(ScriptEntrySchema).optional(),
-  references: z.array(z.unknown()).optional(),
-  tools: z.array(z.string()).optional(),
 }).optional();
 
 const CapabilitiesSchema = z.object({

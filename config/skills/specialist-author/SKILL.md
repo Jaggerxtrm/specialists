@@ -202,9 +202,10 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 
 ```yaml
 skills:
-  paths:                          # Skill files injected via pi --skill
-    - skills/my-skill/SKILL.md
-    - ~/.agents/skills/domain/SKILL.md
+  paths:                          # passed as pi --skill; folder (reads SKILL.md inside) or direct file
+    - skills/my-skill/            # folder — pi loads SKILL.md from inside
+    - ~/.agents/skills/domain/    # same
+    - skills/notes.md             # direct file also accepted
   scripts:
     - run: ./scripts/pre-check.sh # file path OR shell command
       phase: pre                  # "pre" or "post"
@@ -403,7 +404,7 @@ specialist:
 
   skills:
     paths:
-      - skills/code-review/SKILL.md
+      - skills/code-review/
     scripts:
       - run: scripts/get-diff.sh
         phase: pre
