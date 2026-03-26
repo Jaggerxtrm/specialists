@@ -1,21 +1,34 @@
 #!/usr/bin/env node
 // specialists-session-start — Claude Code SessionStart hook
 // Injects specialists context at the start of every session:
+//   • using-specialists skill (behavioral delegation guide)
 //   • Active background jobs (if any)
 //   • Available specialists list
 //   • Key CLI commands reminder
 //
-// Installed by: specialists install
+// Installed by: specialists init
 // Hook type: SessionStart
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+
 
 const cwd     = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-const HOME    = homedir();
 const jobsDir = join(cwd, '.specialists', 'jobs');
 const lines   = [];
+
+// ── 0. using-specialists skill ─────────────────────────────────────────────
+// Inject the behavioral delegation guide so Claude knows when and how to
+// use specialists without waiting for the user to ask.
+const skillPath = join(cwd, '.specialists', 'default', 'skills', 'using-specialists', 'SKILL.md');
+if (existsSync(skillPath)) {
+  const raw = readFileSync(skillPath, 'utf-8');
+  // Strip YAML frontmatter (--- ... ---) if present
+  const content = raw.startsWith('---')
+    ? raw.replace(/^---[\s\S]*?---\n?/, '').trimStart()
+    : raw;
+  lines.push(content);
+}
 
 // ── 1. Active background jobs ──────────────────────────────────────────────
 if (existsSync(jobsDir)) {
@@ -59,21 +72,20 @@ function readSpecialistNames(dir) {
   }
 }
 
-const projectNames = readSpecialistNames(join(cwd, 'specialists'));
-const userNames    = readSpecialistNames(join(HOME, '.agents', 'specialists'));
+const defaultNames = readSpecialistNames(join(cwd, '.specialists', 'default', 'specialists'));
+const userNames    = readSpecialistNames(join(cwd, '.specialists', 'user', 'specialists'));
 
-// Merge, deduplicate, sort
-const allNames = [...new Set([...projectNames, ...userNames])].sort();
+// User takes precedence on name collision; merge and sort
+const allNames = [...new Set([...userNames, ...defaultNames])].sort();
 
 if (allNames.length > 0) {
   lines.push('## Specialists — Available');
   lines.push('');
-  if (projectNames.length > 0) {
-    lines.push(`project (${projectNames.length}): ${projectNames.join(', ')}`);
+  if (defaultNames.length > 0) {
+    lines.push(`default (${defaultNames.length}): ${defaultNames.join(', ')}`);
   }
   if (userNames.length > 0) {
-    // Only show user-scope names not already in project
-    const extraUser = userNames.filter(n => !projectNames.includes(n));
+    const extraUser = userNames.filter(n => !defaultNames.includes(n));
     if (extraUser.length > 0) {
       lines.push(`user    (${extraUser.length}): ${extraUser.join(', ')}`);
     }
@@ -88,6 +100,7 @@ lines.push('```');
 lines.push('specialists list                                   # discover available specialists');
 lines.push('specialists run <name> --prompt "..."              # run foreground (streams output)');
 lines.push('specialists run <name> --prompt "..." --background # run async → returns job ID');
+lines.push('specialists run <name> --follow                    # background + stream live output');
 lines.push('specialists feed <job-id> --follow                 # tail live events');
 lines.push('specialists result <job-id>                        # read final output');
 lines.push('specialists status                                 # system health');
