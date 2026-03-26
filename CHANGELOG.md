@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-03-26
+
+### Added
+
+**`--follow` flag for `specialists run`**
+- `specialists run <name> --follow` — starts the specialist in background and streams output live; equivalent to `--background` + `specialists feed <id> --follow` in one command
+- Documented in `docs/cli-reference.md` and `docs/background-jobs.md`
+
+**`using-specialists` skill injected at session start**
+- `specialists-session-start.mjs` hook now reads `.specialists/default/skills/using-specialists/SKILL.md` and injects the full content as `additionalSystemPrompt` on every Claude Code session start
+- Frontmatter is stripped before injection; gracefully skipped if not yet installed
+- Specialist list scan corrected to read from `.specialists/default/` and `.specialists/user/` (actual loader paths)
+- Quick reference updated with `--follow` example
+
+**`specialists init` copies skills at install time**
+- `copyCanonicalSkills()` already present in `init.ts` — copies all `config/skills/*/` to `.specialists/default/skills/*/` including `using-specialists`
+
+### Changed
+
+**Skill and specialist renames (consistency with Anthropic naming guidelines)**
+- `config/skills/specialist-author/` → `config/skills/specialists-creator/`
+- `config/skills/specialists-usage/` → `config/skills/using-specialists/`
+- `config/specialists/specialist-author.specialist.yaml` → `config/specialists/specialists-creator.specialist.yaml`; `metadata.name` updated to `specialists-creator`; `skills.paths` updated to `config/skills/specialists-creator/`
+
+**`specialists-creator` specialist improvements**
+- `permission_required`: `LOW` → `HIGH` (specialist needs to create new files)
+- `timeout_ms`: 180 000 → 300 000 (previous default caused timeout in testing)
+- `skills.paths`: corrected from `skills/specialist-author/SKILL.md` (wrong path) to `config/skills/specialists-creator/` (correct folder)
+- Pre-script `pi --list-models` added with `inject_output: true` — model list injected into `$pre_script_output` so agent cannot skip model discovery
+- System prompt: mandatory ping protocol (steps 1–5) + `ABSOLUTE RULES` block (DO NOT delete/move/rename files)
+- Removed dead fields: `capabilities.diagnostic_scripts`, `communication.publishes`
+
+**`specialists-creator` SKILL.md**
+- Opening section rewritten as imperative `ACTION REQUIRED BEFORE ANYTHING ELSE` block — `pi --list-models` + ping appears before any other content
+- Model rebalancing scenario Step 4 hardened with `⛔` marker and explicit fail-fast rule
+
 ## [3.2.2] - 2026-03-25
 
 ### Changed
