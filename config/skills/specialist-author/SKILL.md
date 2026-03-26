@@ -166,15 +166,25 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 
 ### `specialist.execution` (required)
 
-| Field | Type | Default | Valid Values |
-|-------|------|---------|-------------|
-| `model` | string | — | Any pi-compatible model string (required) |
-| `fallback_model` | string | — | Optional fallback |
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `model` | string | — | required — ping before using |
+| `fallback_model` | string | — | must be a different provider |
 | `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
-| `timeout_ms` | number | `120000` | Milliseconds |
-| `stall_timeout_ms` | number | — | Kill if no event for N ms |
+| `timeout_ms` | number | `120000` | ms |
+| `stall_timeout_ms` | number | — | kill if no event for N ms |
 | `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
-| `permission_required` | enum | `READ_ONLY` | `READ_ONLY` \| `LOW` \| `MEDIUM` \| `HIGH` |
+| `permission_required` | enum | `READ_ONLY` | see tier table below |
+| `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
+
+**Permission tiers** — controls which pi tools are available:
+
+| Level | pi --tools | Use when |
+|-------|-----------|----------|
+| `READ_ONLY` | `read,grep,find,ls` | Read-only analysis, no bash |
+| `LOW` | `+bash` | Inspect/run commands, no file edits |
+| `MEDIUM` | `+edit` | Can edit existing files |
+| `HIGH` | `+write` | Full access — can create new files |
 
 **Common pitfall:** `READ_WRITE` is **not** a valid value — use `LOW` or higher.
 
@@ -192,39 +202,47 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 
 ```yaml
 skills:
-  paths:                          # Files injected into system prompt
+  paths:                          # Skill files injected via pi --skill
     - skills/my-skill/SKILL.md
+    - ~/.agents/skills/domain/SKILL.md
   scripts:
-    - path: scripts/pre-check.sh
+    - run: ./scripts/pre-check.sh # file path OR shell command
       phase: pre                  # "pre" or "post"
-      inject_output: true         # true = $pre_script_output populated
-  tools:
-    - bash
-    - read
+      inject_output: true         # true = stdout available as $pre_script_output
+    - run: "bd ready"             # inline command — runs via shell
+      phase: pre
+      inject_output: true
+    - run: ./scripts/cleanup.sh
+      phase: post
 ```
+
+`run` accepts either a **file path** (`./scripts/foo.sh`, `~/scripts/foo.sh`) or a **shell command** (`bd ready`, `git status`). Pre-run validation checks that file paths exist and shell commands are on `PATH`. Shebang typos (e.g. `pytho` instead of `python`) are caught and reported as errors before the session starts.
+
+`path` is accepted as a deprecated alias for `run`.
 
 ### `specialist.capabilities` (optional)
 
+Informational declarations used by pre-run validation and future tooling (e.g. `specialists doctor`).
+
 ```yaml
 capabilities:
-  file_scope: [src/, tests/]
-  blocked_tools: [Write, Edit]
-  can_spawn: false
-  tools:
-    - name: bash
-      purpose: Read-only inspection
-  diagnostic_scripts:
-    - scripts/health-check.sh     # Listed in system prompt as available Bash commands
+  required_tools: [bash, read, grep, glob]   # pi tools this specialist needs
+  external_commands: [bd, git, gh]           # CLI binaries validated on PATH before run
 ```
+
+`external_commands` causes a hard failure if any binary is not found on `PATH` — the session will not start.
 
 ### `specialist.communication` (optional)
 
 ```yaml
 communication:
-  output_to: .specialists/output.md   # Write final output to this file
-  publishes: [report, analysis]
-  subscribes: [session_context]
+  output_to: .specialists/output.md     # write final output to this file
+  next_specialists: planner             # single specialist to chain after completion
+  # or an array:
+  next_specialists: [planner, test-runner]
 ```
+
+`next_specialists` declares which specialist(s) should receive this specialist's output as `$previous_result`. Chaining is executed by the caller (e.g. `run_parallel` pipeline) — this field is declarative metadata.
 
 ### `specialist.validation` (optional)
 
@@ -380,17 +398,16 @@ specialist:
     paths:
       - skills/code-review/SKILL.md
     scripts:
-      - path: scripts/get-diff.sh
+      - run: scripts/get-diff.sh
         phase: pre
         inject_output: true
 
   capabilities:
-    file_scope: [src/, tests/]
-    blocked_tools: [Write, Edit, Bash]
+    required_tools: [bash, read]
+    external_commands: [git]
 
   communication:
     output_to: .specialists/review.md
-    publishes: [code_review]
 
   beads_integration: auto
 ```

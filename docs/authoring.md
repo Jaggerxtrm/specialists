@@ -64,13 +64,14 @@ specialist:
 
 | Section | Purpose |
 |---|---|
-| `metadata` | name, version, description, category |
-| `execution` | mode, model, timeout, permissions |
-| `prompt` | system prompt and optional user template |
-| `skills` | extra skill paths |
-| `capabilities` | tool capability toggles |
-| `beads_integration` | bead defaults when applicable |
+| `metadata` | name, version, description, category, tags, updated |
+| `execution` | mode, model, fallback, timeout, permissions, thinking_level |
+| `prompt` | system prompt, task_template, skill_inherit |
+| `skills` | skill paths (--skill) and pre/post scripts/commands |
+| `capabilities` | required_tools, external_commands (validated at run-time) |
+| `communication` | output_to, next_specialists |
 | `validation` | staleness detection via file watches |
+| `beads_integration` | bead defaults when applicable |
 
 ## Skills
 
