@@ -194,7 +194,7 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 |-------|------|----------|-------|
 | `task_template` | string | yes | Template string with `$variable` substitution |
 | `system` | string | no | System prompt / agents.md content |
-| `skill_inherit` | string | no | Path to a file appended to system prompt |
+| `skill_inherit` | string | no | Single skill folder/file injected via `pi --skill` (Agent Forge compat) |
 | `output_schema` | object | no | JSON schema for structured output |
 | `examples` | array | no | Few-shot examples |
 
