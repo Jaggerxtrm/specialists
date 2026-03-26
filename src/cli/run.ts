@@ -6,6 +6,7 @@ import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
+import { Supervisor } from '../specialist/supervisor.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -114,51 +115,50 @@ export async function run(): Promise<void> {
     beadsClient,
   });
 
-  // ── Foreground mode ─────────────────────────────────────────────────────────
-  process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
-
-  let trackingBeadId: string | undefined;
-
-  const result = await runner.run(
-    {
+  // ── Run with Supervisor (creates job files for poll command) ───────────────
+  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  const supervisor = new Supervisor({
+    runner,
+    runOptions: {
       name: args.name,
       prompt,
       variables,
       backendOverride: args.model,
       inputBeadId: args.beadId,
+      keepAlive: args.keepAlive,
     },
-    // onProgress — stream tokens to stdout as they arrive
-    (delta) => process.stdout.write(delta),
-    // onEvent
-    undefined,
-    // onMeta
-    (meta) => process.stderr.write(dim(`\n[${meta.backend} / ${meta.model}]\n\n`)),
-    // onKillRegistered — wire Ctrl+C to kill the session cleanly
-    (killFn) => {
-      process.on('SIGINT', () => {
-        process.stderr.write('\n\nInterrupted.\n');
-        killFn();
-        process.exit(130);
-      });
-    },
-    // onBeadCreated
-    (beadId) => {
-      trackingBeadId = beadId;
-      process.stderr.write(dim(`\n[bead: ${beadId}]\n`));
-    },
-  );
+    jobsDir,
+    beadsClient,
+    // Stream output to stdout while Supervisor handles file writing
+    onProgress: (delta) => process.stdout.write(delta),
+    onMeta: (meta) => process.stderr.write(dim(`\n[${meta.backend} / ${meta.model}]\n\n`)),
+  });
 
-  // Ensure output ends with newline
-  if (result.output && !result.output.endsWith('\n')) process.stdout.write('\n');
+  process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
+
+  let jobId: string;
+  try {
+    jobId = await supervisor.run();
+  } catch (err: any) {
+    process.stderr.write(`Error: ${err?.message ?? err}\n`);
+    process.exit(1);
+  }
+
+  // Read the result from the job file
+  const status = supervisor.readStatus(jobId);
 
   // Footer
-  const secs = (result.durationMs / 1000).toFixed(1);
-  const effectiveBeadId = args.beadId ?? trackingBeadId;
+  const secs = ((status?.last_event_at_ms ?? Date.now()) - (status?.started_at_ms ?? Date.now())) / 1000;
   const footer = [
-    effectiveBeadId ? `bead ${effectiveBeadId}` : '',
-    `${secs}s`,
-    dim(result.model),
+    `job ${jobId}`,
+    status?.bead_id ? `bead ${status.bead_id}` : '',
+    `${secs.toFixed(1)}s`,
+    status?.model ? dim(`${status.backend}/${status.model}`) : '',
   ].filter(Boolean).join('  ');
 
   process.stderr.write(`\n${green('✓')} ${footer}\n\n`);
+  process.stderr.write(dim(`Poll: specialists poll ${jobId} --json\n\n`));
+  
+  // Exit immediately - all work is done
+  process.exit(0);
 }

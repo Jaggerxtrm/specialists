@@ -276,6 +276,7 @@ export class SpecialistRunner {
     let sessionBackend: string = model; // captured before kill() can destroy meta
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     let keepAliveActive = false; // set true when keepAlive hands session ownership to caller
+    let sessionClosed = false; // track if we closed cleanly (to avoid kill in finally)
     try {
       session = await this.sessionFactory({
         model,
@@ -320,6 +321,7 @@ export class SpecialistRunner {
       } else {
         // Clean shutdown: send EOF to stdin, await process exit
         await session.close();
+        sessionClosed = true;
       }
 
       // Post-phase scripts/commands run locally after the pi session completes
@@ -348,8 +350,9 @@ export class SpecialistRunner {
       });
       throw err;
     } finally {
-      if (!keepAliveActive) {
-        session?.kill(); // idempotent safety net; no-op if close() already succeeded
+      // Only kill if we didn't close cleanly AND not in keepAlive mode
+      if (!keepAliveActive && !sessionClosed) {
+        session?.kill(); // idempotent safety net
       }
     }
 

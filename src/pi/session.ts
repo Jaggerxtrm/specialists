@@ -371,9 +371,21 @@ export class PiAgentSession {
    */
   async close(): Promise<void> {
     if (this._killed) return;
+    // Send EOF to stdin - pi should exit after this
     this.proc?.stdin?.end();
-    // Wait for the process to exit (reuse done promise which resolves on close)
-    await this._donePromise?.catch(() => {});
+    // Wait for the process to actually exit
+    if (this.proc) {
+      await new Promise<void>((resolve) => {
+        this.proc!.on('close', () => resolve());
+        // Fallback: force kill after 2s if process doesn't exit
+        setTimeout(() => {
+          if (this.proc && !this._killed) {
+            this.proc.kill();
+          }
+          resolve();
+        }, 2000);
+      });
+    }
   }
 
   // executeBash removed — pre/post scripts run locally in runner.ts via execSync,

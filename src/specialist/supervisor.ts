@@ -55,6 +55,10 @@ export interface SupervisorOptions {
   runOptions: RunOptions;
   jobsDir: string; // absolute path to .specialists/jobs/
   beadsClient?: BeadsClient;
+  /** Optional callback to stream progress deltas to stdout/elsewhere */
+  onProgress?: (delta: string) => void;
+  /** Optional callback for meta events (backend/model) */
+  onMeta?: (meta: { backend: string; model: string }) => void;
 }
 
 
@@ -211,12 +215,16 @@ export class Supervisor {
     appendTimelineEvent(createRunStartEvent(runOptions.name));
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
+    // Only create if keepAlive is enabled - foreground runs don't need steering
     const fifoPath = join(dir, 'steer.pipe');
-    try {
-      execFileSync('mkfifo', [fifoPath]);
-      this.updateStatus(id, { fifo_path: fifoPath });
-    } catch {
-      // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
+    const needsFifo = runOptions.keepAlive;
+    if (needsFifo) {
+      try {
+        execFileSync('mkfifo', [fifoPath]);
+        this.updateStatus(id, { fifo_path: fifoPath });
+      } catch {
+        // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
+      }
     }
 
     let textLogged = false;
@@ -226,6 +234,8 @@ export class Supervisor {
     let steerFn: ((msg: string) => Promise<void>) | undefined;
     let resumeFn: ((msg: string) => Promise<string>) | undefined;
     let closeFn: (() => Promise<void>) | undefined;
+    let fifoReadStream: ReturnType<typeof createReadStream> | undefined;
+    let fifoReadline: ReturnType<typeof createInterface> | undefined;
 
     const sigtermHandler = () => killFn?.();
     process.once('SIGTERM', sigtermHandler);
@@ -233,13 +243,15 @@ export class Supervisor {
     try {
       const result = await runner.run(
         runOptions,
-        // onProgress — parse tool names from the formatted progress messages
+        // onProgress — parse tool names, update status, and stream to caller
         (delta) => {
           const toolMatch = delta.match(/⚙ (.+?)…/);
           if (toolMatch) {
             currentTool = toolMatch[1];
             this.updateStatus(id, { current_tool: currentTool });
           }
+          // Stream to caller if callback provided
+          this.opts.onProgress?.(delta);
         },
         // onEvent — map callback events to timeline events
         (eventType) => {
@@ -269,6 +281,8 @@ export class Supervisor {
         (meta) => {
           this.updateStatus(id, { model: meta.model, backend: meta.backend });
           appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
+          // Stream to caller if callback provided
+          this.opts.onMeta?.(meta);
         },
         // onKillRegistered — capture so SIGTERM can kill the Pi session cleanly
         (fn) => { killFn = fn; },
@@ -279,12 +293,14 @@ export class Supervisor {
         // onSteerRegistered — wire FIFO reader to forward steer messages into the session
         (fn) => {
           steerFn = fn;
+          // Skip FIFO setup for foreground runs (keepAlive=false)
+          if (!needsFifo || !existsSync(fifoPath)) return;
           // Start a background reader loop on the FIFO.
           // Opening with 'r+' (O_RDWR) prevents blocking on open when there's no writer yet.
           // Each line received is forwarded as a steer message to the Pi session.
-          if (existsSync(fifoPath)) {
-            const rl = createInterface({ input: createReadStream(fifoPath, { flags: 'r+' }) });
-            rl.on('line', (line) => {
+          fifoReadStream = createReadStream(fifoPath, { flags: 'r+' });
+          fifoReadline = createInterface({ input: fifoReadStream });
+          fifoReadline.on('line', (line) => {
               try {
                 const parsed = JSON.parse(line);
                 if (parsed?.type === 'steer' && typeof parsed.message === 'string') {
@@ -312,8 +328,7 @@ export class Supervisor {
                 }
               } catch { /* ignore malformed lines */ }
             });
-            rl.on('error', () => {}); // ignore FIFO errors
-          }
+          fifoReadline.on('error', () => {}); // ignore FIFO errors
         },
         // onResumeReady — keep-alive: session stays alive after first agent_end
         (rFn, cFn) => {
@@ -364,6 +379,9 @@ export class Supervisor {
       throw err;
     } finally {
       process.removeListener('SIGTERM', sigtermHandler);
+      // Close the FIFO readline interface and destroy the stream to release event loop
+      try { fifoReadline?.close(); } catch { /* ignore */ }
+      try { fifoReadStream?.destroy(); } catch { /* ignore */ }
       // Ensure events are flushed to disk before closing
       try { fsyncSync(eventsFd); } catch { /* ignore */ }
       closeSync(eventsFd);

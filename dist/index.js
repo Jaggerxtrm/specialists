@@ -17888,7 +17888,17 @@ class PiAgentSession {
     if (this._killed)
       return;
     this.proc?.stdin?.end();
-    await this._donePromise?.catch(() => {});
+    if (this.proc) {
+      await new Promise((resolve) => {
+        this.proc.on("close", () => resolve());
+        setTimeout(() => {
+          if (this.proc && !this._killed) {
+            this.proc.kill();
+          }
+          resolve();
+        }, 2000);
+      });
+    }
   }
   kill() {
     if (this._killed)
@@ -18267,6 +18277,7 @@ ${preScripts.map((s) => `    • ${s.run}${s.inject_output ? " → $pre_script_o
     let sessionBackend = model;
     let session;
     let keepAliveActive = false;
+    let sessionClosed = false;
     try {
       session = await this.sessionFactory({
         model,
@@ -18305,6 +18316,7 @@ ${preScripts.map((s) => `    • ${s.run}${s.inject_output ? " → $pre_script_o
         onResumeReady(resumeFn, closeFn);
       } else {
         await session.close();
+        sessionClosed = true;
       }
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
       for (const script of postScripts)
@@ -18329,7 +18341,7 @@ ${preScripts.map((s) => `    • ${s.run}${s.inject_output ? " → $pre_script_o
       });
       throw err;
     } finally {
-      if (!keepAliveActive) {
+      if (!keepAliveActive && !sessionClosed) {
         session?.kill();
       }
     }
@@ -18725,10 +18737,13 @@ class Supervisor {
     };
     appendTimelineEvent(createRunStartEvent(runOptions.name));
     const fifoPath = join3(dir, "steer.pipe");
-    try {
-      execFileSync("mkfifo", [fifoPath]);
-      this.updateStatus(id, { fifo_path: fifoPath });
-    } catch {}
+    const needsFifo = runOptions.keepAlive;
+    if (needsFifo) {
+      try {
+        execFileSync("mkfifo", [fifoPath]);
+        this.updateStatus(id, { fifo_path: fifoPath });
+      } catch {}
+    }
     let textLogged = false;
     let currentTool = "";
     let currentToolCallId = "";
@@ -18736,6 +18751,8 @@ class Supervisor {
     let steerFn;
     let resumeFn;
     let closeFn;
+    let fifoReadStream;
+    let fifoReadline;
     const sigtermHandler = () => killFn?.();
     process.once("SIGTERM", sigtermHandler);
     try {
@@ -18745,6 +18762,7 @@ class Supervisor {
           currentTool = toolMatch[1];
           this.updateStatus(id, { current_tool: currentTool });
         }
+        this.opts.onProgress?.(delta);
       }, (eventType) => {
         const now = Date.now();
         this.updateStatus(id, {
@@ -18766,41 +18784,43 @@ class Supervisor {
       }, (meta) => {
         this.updateStatus(id, { model: meta.model, backend: meta.backend });
         appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
+        this.opts.onMeta?.(meta);
       }, (fn) => {
         killFn = fn;
       }, (beadId) => {
         this.updateStatus(id, { bead_id: beadId });
       }, (fn) => {
         steerFn = fn;
-        if (existsSync4(fifoPath)) {
-          const rl = createInterface({ input: createReadStream(fifoPath, { flags: "r+" }) });
-          rl.on("line", (line) => {
-            try {
-              const parsed = JSON.parse(line);
-              if (parsed?.type === "steer" && typeof parsed.message === "string") {
-                steerFn?.(parsed.message).catch(() => {});
-              } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
-                if (resumeFn) {
-                  this.updateStatus(id, { status: "running", current_event: "starting" });
-                  resumeFn(parsed.message).then((output) => {
-                    writeFileSync(this.resultPath(id), output, "utf-8");
-                    this.updateStatus(id, {
-                      status: "waiting",
-                      current_event: "waiting",
-                      elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-                      last_event_at_ms: Date.now()
-                    });
-                  }).catch((err) => {
-                    this.updateStatus(id, { status: "error", error: err?.message ?? String(err) });
+        if (!needsFifo || !existsSync4(fifoPath))
+          return;
+        fifoReadStream = createReadStream(fifoPath, { flags: "r+" });
+        fifoReadline = createInterface({ input: fifoReadStream });
+        fifoReadline.on("line", (line) => {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed?.type === "steer" && typeof parsed.message === "string") {
+              steerFn?.(parsed.message).catch(() => {});
+            } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
+              if (resumeFn) {
+                this.updateStatus(id, { status: "running", current_event: "starting" });
+                resumeFn(parsed.message).then((output) => {
+                  writeFileSync(this.resultPath(id), output, "utf-8");
+                  this.updateStatus(id, {
+                    status: "waiting",
+                    current_event: "waiting",
+                    elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+                    last_event_at_ms: Date.now()
                   });
-                }
-              } else if (parsed?.type === "close") {
-                closeFn?.().catch(() => {});
+                }).catch((err) => {
+                  this.updateStatus(id, { status: "error", error: err?.message ?? String(err) });
+                });
               }
-            } catch {}
-          });
-          rl.on("error", () => {});
-        }
+            } else if (parsed?.type === "close") {
+              closeFn?.().catch(() => {});
+            }
+          } catch {}
+        });
+        fifoReadline.on("error", () => {});
       }, (rFn, cFn) => {
         resumeFn = rFn;
         closeFn = cFn;
@@ -18840,6 +18860,12 @@ class Supervisor {
       throw err;
     } finally {
       process.removeListener("SIGTERM", sigtermHandler);
+      try {
+        fifoReadline?.close();
+      } catch {}
+      try {
+        fifoReadStream?.destroy();
+      } catch {}
       try {
         fsyncSync(eventsFd);
       } catch {}
@@ -19601,50 +19627,52 @@ async function run7() {
     circuitBreaker,
     beadsClient
   });
+  const jobsDir = join10(process.cwd(), ".specialists", "jobs");
+  const supervisor = new Supervisor({
+    runner,
+    runOptions: {
+      name: args.name,
+      prompt,
+      variables,
+      backendOverride: args.model,
+      inputBeadId: args.beadId,
+      keepAlive: args.keepAlive
+    },
+    jobsDir,
+    beadsClient,
+    onProgress: (delta) => process.stdout.write(delta),
+    onMeta: (meta) => process.stderr.write(dim5(`
+[${meta.backend} / ${meta.model}]
+
+`))
+  });
   process.stderr.write(`
 ${bold5(`Running ${cyan3(args.name)}`)}
 
 `);
-  let trackingBeadId;
-  const result = await runner.run({
-    name: args.name,
-    prompt,
-    variables,
-    backendOverride: args.model,
-    inputBeadId: args.beadId
-  }, (delta) => process.stdout.write(delta), undefined, (meta) => process.stderr.write(dim5(`
-[${meta.backend} / ${meta.model}]
-
-`)), (killFn) => {
-    process.on("SIGINT", () => {
-      process.stderr.write(`
-
-Interrupted.
+  let jobId;
+  try {
+    jobId = await supervisor.run();
+  } catch (err) {
+    process.stderr.write(`Error: ${err?.message ?? err}
 `);
-      killFn();
-      process.exit(130);
-    });
-  }, (beadId) => {
-    trackingBeadId = beadId;
-    process.stderr.write(dim5(`
-[bead: ${beadId}]
-`));
-  });
-  if (result.output && !result.output.endsWith(`
-`))
-    process.stdout.write(`
-`);
-  const secs = (result.durationMs / 1000).toFixed(1);
-  const effectiveBeadId = args.beadId ?? trackingBeadId;
+    process.exit(1);
+  }
+  const status = supervisor.readStatus(jobId);
+  const secs = ((status?.last_event_at_ms ?? Date.now()) - (status?.started_at_ms ?? Date.now())) / 1000;
   const footer = [
-    effectiveBeadId ? `bead ${effectiveBeadId}` : "",
-    `${secs}s`,
-    dim5(result.model)
+    `job ${jobId}`,
+    status?.bead_id ? `bead ${status.bead_id}` : "",
+    `${secs.toFixed(1)}s`,
+    status?.model ? dim5(`${status.backend}/${status.model}`) : ""
   ].filter(Boolean).join("  ");
   process.stderr.write(`
 ${green5("✓")} ${footer}
 
 `);
+  process.stderr.write(dim5(`Poll: specialists poll ${jobId} --json
+
+`));
 }
 var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_run = __esm(() => {
@@ -19652,6 +19680,7 @@ var init_run = __esm(() => {
   init_runner();
   init_hooks();
   init_beads();
+  init_supervisor();
 });
 
 // src/cli/format-helpers.ts
