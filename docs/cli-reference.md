@@ -2,8 +2,8 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.3.0
-updated: 2026-03-25
+version: 1.4.0
+updated: 2026-03-26
 synced_at: 266f65b
 description: Command and flag reference for the Specialists CLI.
 source_of_truth_for:
@@ -76,6 +76,7 @@ Flags:
 | `--context-depth <n>` | Dependency context depth for tracked work |
 | `--no-beads` | Do not create a new tracking bead |
 | `--background` | Start async and return a job id |
+| `--follow` | Start in background and stream output live (combines `--background` + `feed --follow`) |
 | `--model <model>` | Override the configured model for a run |
 | `--keep-alive` | Keep the Pi session alive after completion for follow-up turns |
 

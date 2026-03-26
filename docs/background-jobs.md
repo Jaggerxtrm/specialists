@@ -2,8 +2,8 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.2.0
-updated: 2026-03-25
+version: 1.3.0
+updated: 2026-03-26
 description: Background execution model, job files, and monitoring commands.
 source_of_truth_for:
   - "src/cli/feed.ts"
@@ -43,6 +43,15 @@ Use background mode when a specialist run will take longer or you want to keep w
 specialists run sync-docs --bead unitAI-26s --background
 # → Job started: 49adda
 ```
+
+Use `--follow` to start in the background and stream output live — no need to run `feed` separately:
+
+```bash
+specialists run sync-docs --follow
+# streams output live, exits when complete
+```
+
+`--follow` is equivalent to `--background` + `specialists feed <job-id> --follow` in one command.
 
 ## Start a keep-alive session (multi-turn)
 

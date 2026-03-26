@@ -1,5 +1,6 @@
 // src/cli/run.ts
 
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
@@ -22,6 +23,7 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   background: boolean;
+  follow: boolean;
   keepAlive: boolean;
   contextDepth: number;
 }
@@ -29,7 +31,7 @@ interface RunArgs {
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--background] [--follow]');
     process.exit(1);
   }
 
@@ -38,6 +40,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let background = false;
+  let follow = false;
   let keepAlive = false;
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
@@ -49,6 +52,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
     if (token === '--no-beads')    { noBeads    = true; continue; }
     if (token === '--background')  { background = true; continue; }
+    if (token === '--follow')      { follow     = true; continue; }
     if (token === '--keep-alive')  { keepAlive  = true; continue; }
   }
 
@@ -71,7 +75,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, background, keepAlive, contextDepth };
+  return { name, prompt, beadId, model, noBeads, background, follow, keepAlive, contextDepth };
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -119,7 +123,7 @@ export async function run(): Promise<void> {
   });
 
   // ── Background mode ─────────────────────────────────────────────────────────
-  if (args.background) {
+  if (args.background || args.follow) {
     const jobsDir = join(process.cwd(), '.specialists', 'jobs');
     const supervisor = new Supervisor({
       runner,
@@ -134,12 +138,41 @@ export async function run(): Promise<void> {
       jobsDir,
       beadsClient,
     });
+    
+    let jobId: string;
     try {
-      const jobId = await supervisor.run();
-      process.stdout.write(`Job started: ${jobId}\n`);
+      jobId = await supervisor.run();
+      if (!args.follow) {
+        process.stdout.write(`Job started: ${jobId}\n`);
+      }
     } catch (err: any) {
       process.stderr.write(`Error: ${err?.message ?? err}\n`);
       process.exit(1);
+    }
+
+    // If --follow, stream output until completion
+    if (args.follow) {
+      await new Promise<void>((resolve, reject) => {
+        const feed = spawn('specialists', ['feed', '--job', jobId, '--follow'], {
+          cwd: process.cwd(),
+          stdio: 'inherit',
+        });
+
+        feed.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Feed exited with code ${code}`));
+          }
+        });
+
+        feed.on('error', (err) => {
+          reject(err);
+        });
+      }).catch((err) => {
+        process.stderr.write(`Error: ${err.message}\n`);
+        process.exit(1);
+      });
     }
     return;
   }
