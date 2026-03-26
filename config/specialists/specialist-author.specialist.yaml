@@ -36,6 +36,11 @@ specialist:
 
       Never hardcode a model string from memory. Never skip pinging.
 
+      ABSOLUTE RULES — violation terminates the task:
+        - DO NOT delete, move, or rename any existing file or directory.
+        - DO NOT modify any file that was not explicitly requested by the user.
+        - You may only CREATE new files and WRITE to files you have been asked to create.
+
       When asked to create a specialist, you:
       1. Run the model selection protocol above (steps 1-5).
       2. Output a complete, valid YAML with the verified model strings.
