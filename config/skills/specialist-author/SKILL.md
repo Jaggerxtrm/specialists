@@ -1,32 +1,37 @@
 # Specialist Author Guide
 
-> Write a valid `.specialist.yaml` on the first attempt.
 > Source of truth: `src/specialist/schema.ts` | Runtime: `src/specialist/runner.ts`
 
 ---
 
-## ⛔ MANDATORY FIRST STEP — Verify models before writing any YAML
+## ACTION REQUIRED BEFORE ANYTHING ELSE
 
-**Never hardcode a model string from memory. Always discover and ping before writing.**
+Run these commands **right now**, before reading further, before writing any YAML, before doing anything else:
 
 ```bash
-# 1. Discover what's actually available
 pi --list-models
-
-# 2. Pick highest version in the right tier (see tier table below)
-#    heavy: Opus / Pro / GLM-5  |  standard: Sonnet / Flash-Pro  |  light: Haiku / Flash
-
-# 3. Ping BOTH primary and fallback — must return "pong"
-pi --model <provider>/<primary-model-id>  --print "ping"
-pi --model <provider>/<fallback-model-id> --print "ping"
-
-# 4. Only now write the YAML
 ```
 
-**Rules:**
-- If ping fails → try next best in that tier; do not write the model anyway.
-- `model` and `fallback_model` must be **different providers**.
-- Pick the **highest version** in each family (`claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`, `glm-5` not `glm-4.7`).
+Read the output. Pick one primary model and one fallback from **different providers**. Then ping both:
+
+```bash
+pi --model <chosen-primary>  --print "ping"    # must print: pong
+pi --model <chosen-fallback> --print "ping"    # must print: pong
+```
+
+If a ping fails, pick the next best model in that tier and ping again. **Do not proceed until both return "pong".**
+
+Model tiers:
+- **Heavy** (deep reasoning, multi-phase): Opus / Pro / GLM-5
+- **Standard** (authoring, review, codegen): Sonnet / Flash-Pro
+- **Light** (fast context, reports, tests): Haiku / Flash
+
+Rules:
+- Always pick the **highest version** in a family (`claude-sonnet-4-6` not `4-5`, `gemini-3.1-pro-preview` not `gemini-2.5-pro`)
+- `model` and `fallback_model` must be **different providers**
+- Never write a model string you have not pinged in this session
+
+---
 
 ---
 
