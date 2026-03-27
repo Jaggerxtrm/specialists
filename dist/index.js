@@ -19424,8 +19424,8 @@ function parseArgs3(argv) {
     }
     if (token === "--scope") {
       const v = argv[++i];
-      if (v !== "project" && v !== "user") {
-        console.error(`Error: --scope must be "project" or "user", got: "${v ?? ""}"`);
+      if (v !== "default" && v !== "user") {
+        console.error(`Error: --scope must be "default" or "user", got: "${v ?? ""}"`);
         process.exit(1);
       }
       scope = v;
@@ -29443,7 +29443,7 @@ async function run19() {
         "",
         "Options:",
         "  --dry-run                Preview the change without writing",
-        "  --scope <project|user>   Disambiguate if same name exists in multiple scopes",
+        "  --scope <default|user>   Disambiguate if same name exists in multiple scopes",
         "",
         "Examples:",
         "  specialists edit code-review --model anthropic/claude-opus-4-6",

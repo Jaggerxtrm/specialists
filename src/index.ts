@@ -141,7 +141,7 @@ async function run() {
         '',
         'Options:',
         '  --dry-run                Preview the change without writing',
-        '  --scope <project|user>   Disambiguate if same name exists in multiple scopes',
+        '  --scope <default|user>   Disambiguate if same name exists in multiple scopes',
         '',
         'Examples:',
         '  specialists edit code-review --model anthropic/claude-opus-4-6',
