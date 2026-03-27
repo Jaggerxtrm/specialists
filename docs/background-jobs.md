@@ -56,7 +56,7 @@ specialists run sync-docs --follow
 ## Start a keep-alive session (multi-turn)
 
 ```bash
-specialists run bug-hunt --bead unitAI-abc --keep-alive --background
+specialists run debugger --bead unitAI-abc --keep-alive --background
 # → Job started: 49adda  (status: waiting after first turn completes)
 ```
 

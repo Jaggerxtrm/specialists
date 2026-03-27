@@ -28,7 +28,7 @@ Use `mcp__unitAI__list_workflows` to display all available workflows with their 
 - `init-session` - Initialize development session
 - `validate-last-commit` - Analyze recent commit
 - `feature-design` - Design new features
-- `bug-hunt` - Find and analyze bugs
+- `debugger` - Find and analyze bugs
 - `triangulated-review` - 3-way cross-check
 - `auto-remediation` - Generate fix plans
 - `refactor-sprint` - Plan complex refactors

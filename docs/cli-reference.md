@@ -123,7 +123,7 @@ Examples:
 
 ```bash
 # Start a keep-alive session
-specialists run bug-hunt --bead unitAI-abc --keep-alive --background
+specialists run debugger --bead unitAI-abc --keep-alive --background
 # → Job started: 49adda  (transitions to status: waiting after first turn)
 
 specialists result 49adda                           # read first turn output

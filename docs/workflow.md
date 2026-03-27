@@ -73,7 +73,7 @@ specialists run <name> --prompt "..."
 Example:
 
 ```bash
-specialists run bug-hunt --bead unitAI-abc --context-depth 2
+specialists run debugger --bead unitAI-abc --context-depth 2
 ```
 
 ## `--no-beads`
