@@ -47,6 +47,8 @@ specialists edit <name> --fallback-model <v> # change fallback model
 specialists edit <name> --model <v> --dry-run # preview without writing
 specialists edit <name> --permission HIGH     # change permission level
 specialists status                            # system health
+specialists validate <name>               # validate specialist YAML schema
+specialists validate <name> --json          # machine-readable output
 specialists doctor                            # prereq + hook diagnostics
 ```
 
@@ -173,7 +175,7 @@ specialist:
 
 Validate before committing:
 ```bash
-bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
+specialists validate my-specialist
 ```
 
 ---
@@ -483,7 +485,7 @@ Name your file `<metadata.name>.specialist.yaml`.
 
 ## Validation Workflow
 
-A bundled validator is included with this skill so the agent does not need to reconstruct the `bun -e` one-liner from memory. It prints `OK <file>` on success and a field-by-field error list on failure.
+The `specialists validate` command checks your specialist YAML against the schema before you run it. It prints friendly error messages with field paths on failure, and exits 0 on success.
 
 ```bash
 # 1. MANDATORY: discover + ping models (see top of this skill)
@@ -493,8 +495,8 @@ pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 
 # 2. Write the YAML with the verified model
 
-# 3. Validate schema with the bundled helper
-bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
+# 3. Validate schema
+specialists validate my-specialist
 
 # 4. List to confirm discovery
 specialists list
@@ -503,4 +505,4 @@ specialists list
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
-If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.
+The `specialists validate` command is the canonical validation interface. It checks YAML syntax, required fields, format constraints (kebab-case names, semver versions), and enum values. Use `--json` for machine-readable output. The underlying implementation lives in `src/specialist/schema.ts` (`validateSpecialist()` function).
