@@ -290,6 +290,7 @@ export class SpecialistRunner {
         skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
         thinkingLevel: execution.thinking_level,
         permissionLevel,
+        stallTimeoutMs: execution.stall_timeout_ms,
         cwd: process.cwd(),
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),

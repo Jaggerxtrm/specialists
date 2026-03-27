@@ -88,6 +88,22 @@ describe('SpecialistRunner', () => {
     expect(mockSession.kill).not.toHaveBeenCalled();
   });
 
+  it('passes execution.stall_timeout_ms through to PiAgentSession options', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ stall_timeout_ms: 1234 }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
+      stallTimeoutMs: 1234,
+    }));
+  });
+
   it('returns correct backend even when kill() destroys meta', async () => {
     // Simulate kill() nullifying the meta property (the bug scenario)
     mockSession.kill = vi.fn().mockImplementation(() => {
