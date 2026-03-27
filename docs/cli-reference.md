@@ -58,7 +58,7 @@ Tracked work:
 
 ```bash
 specialists run <name> --bead <id>
-specialists run <name> --bead <id> --context-depth 2 --background
+specialists run <name> --bead <id> --context-depth 2
 ```
 
 Ad-hoc work:
@@ -75,10 +75,10 @@ Flags:
 | `--prompt "..."` | Ad-hoc prompt for untracked work |
 | `--context-depth <n>` | Dependency context depth for tracked work |
 | `--no-beads` | Do not create a new tracking bead |
-| `--background` | Start async and return a job id |
-| `--follow` | Start in background and stream output live (combines `--background` + `feed --follow`) |
 | `--model <model>` | Override the configured model for a run |
 | `--keep-alive` | Keep the Pi session alive after completion for follow-up turns |
+
+Background execution note: use native shell/agent backgrounding, then monitor with `specialists poll <job-id> --json` or `specialists feed <job-id> --follow`.
 
 ## `specialists feed`
 
@@ -105,7 +105,7 @@ specialists steer a1b2c3 "skip tests, just fix the bug"
 ```
 
 Notes:
-- Only works for jobs started with `--background`.
+- Only works for running jobs.
 - Uses a named FIFO at `.specialists/jobs/<id>/steer.pipe` for cross-process delivery.
 - The MCP tool `steer_specialist` covers the same action for in-process `start_specialist` jobs.
 
@@ -117,13 +117,13 @@ Send a next-turn prompt to a keep-alive session. The Pi session retains full con
 specialists follow-up <job-id> "<message>"
 ```
 
-Requires the job to have been started with `--keep-alive --background`. The job status will be `waiting` between turns.
+Requires the job to have been started with `--keep-alive`. The job status will be `waiting` between turns.
 
 Examples:
 
 ```bash
 # Start a keep-alive session
-specialists run debugger --bead unitAI-abc --keep-alive --background
+specialists run debugger --bead unitAI-abc --keep-alive
 # → Job started: 49adda  (transitions to status: waiting after first turn)
 
 specialists result 49adda                           # read first turn output
