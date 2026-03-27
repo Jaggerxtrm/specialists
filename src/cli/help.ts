@@ -10,6 +10,7 @@ type CommandEntry = [string, string];
 const CORE_COMMANDS: CommandEntry[] = [
   ['init', 'Bootstrap a project: dirs, workflow injection, project MCP registration'],
   ['list', 'List specialists in this project'],
+  ['validate', 'Validate a specialist YAML against the schema'],
   ['run', 'Run a specialist with --bead for tracked work or --prompt for ad-hoc work'],
   ['feed', 'Tail job events; use -f to follow all jobs'],
   ['poll', 'Machine-readable job status polling (for scripts/Claude Code)'],
