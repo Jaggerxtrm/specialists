@@ -39,8 +39,9 @@ Use tracked mode when the work belongs to a bead.
 ```bash
 bd create "Investigate X" -t task -p 1 --json
 bd dep add <this-id> <blocker-id>   # if dependencies exist
-specialists run <name> --bead <id> [--context-depth N] [--background]
-specialists feed -f
+specialists run <name> --bead <id> [--context-depth N]
+# if you need async execution, run this with native shell/agent backgrounding
+specialists poll <job-id> --json
 bd close <id> --reason "Done"
 ```
 

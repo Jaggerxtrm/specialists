@@ -35,29 +35,32 @@ domain:
 
 > **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
 
-Use background mode when a specialist run will take longer or you want to keep working. Add `--keep-alive` for multi-turn sessions where the Pi session stays alive between turns.
+Use native shell/agent backgrounding when a specialist run will take longer or you want to keep working. Add `--keep-alive` for multi-turn sessions where the Pi session stays alive between turns.
 
 ## Start a background job
 
 ```bash
-specialists run sync-docs --bead unitAI-26s --background
-# → Job started: 49adda
+specialists run sync-docs --bead unitAI-26s
+# foreground by default; use your shell/agent background execution mode when needed
 ```
 
-Use `--follow` to start in the background and stream output live — no need to run `feed` separately:
+Use `specialists feed <job-id> --follow` to stream output live while the run is active.
 
 ```bash
-specialists run sync-docs --follow
-# streams output live, exits when complete
+specialists feed <job-id> --follow
 ```
 
-`--follow` is equivalent to `--background` + `specialists feed <job-id> --follow` in one command.
+For machine-readable status polling, use:
+
+```bash
+specialists poll <job-id> --json
+```
 
 ## Start a keep-alive session (multi-turn)
 
 ```bash
-specialists run debugger --bead unitAI-abc --keep-alive --background
-# → Job started: 49adda  (status: waiting after first turn completes)
+specialists run debugger --bead unitAI-abc --keep-alive
+# status transitions to waiting after the first turn completes
 ```
 
 ## Observe progress
