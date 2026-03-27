@@ -3,6 +3,7 @@ import { mkdtemp, rm, readFile, mkdir, writeFile, readdir } from 'node:fs/promis
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 
 async function importInitModule() {
   return import('../../../src/cli/init.js');
@@ -24,7 +25,6 @@ describe('init CLI — run()', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    vi.resetModules();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -141,9 +141,9 @@ describe('init CLI — run()', () => {
     expect(content).toContain('Custom bug hunt');
   });
 
-  it('copies canonical hooks to .specialists/default/hooks/', async () => {
+  it('installs hooks to .claude/hooks/ (project-local for Claude)', async () => {
     await runInit(tempDir);
-    const hooksDir = join(tempDir, '.specialists', 'default', 'hooks');
+    const hooksDir = join(tempDir, '.claude', 'hooks');
     const files = await readdir(hooksDir).catch(() => []);
     const mjsFiles = files.filter(f => f.endsWith('.mjs'));
     
@@ -152,7 +152,7 @@ describe('init CLI — run()', () => {
     expect(mjsFiles).toContain('specialists-session-start.mjs');
   });
 
-  it('wires hooks in settings.json with paths to .specialists/default/hooks/', async () => {
+  it('wires hooks in .claude/settings.json with paths to .claude/hooks/', async () => {
     await runInit(tempDir);
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
@@ -161,28 +161,26 @@ describe('init CLI — run()', () => {
     expect(settings.UserPromptSubmit).toBeDefined();
     expect(settings.SessionStart).toBeDefined();
     
-    // Check paths point to .specialists/default/hooks/
+    // Check paths point to .claude/hooks/
     const submitCommand = settings.UserPromptSubmit[0].hooks[0].command;
-    expect(submitCommand).toContain('.specialists/default/hooks/specialists-complete.mjs');
+    expect(submitCommand).toContain('.claude/hooks/specialists-complete.mjs');
     expect(submitCommand).not.toContain('/home/');
     expect(submitCommand).not.toContain('/Users/');
   });
 
-  it('copies canonical skills to .specialists/default/skills/', async () => {
+  it('installs skills to ~/.pi/skills/ (user-global for pi)', async () => {
     await runInit(tempDir);
-    const skillsDir = join(tempDir, '.specialists', 'default', 'skills');
+    const skillsDir = join(homedir(), '.pi', 'skills');
     const dirs = await readdir(skillsDir).catch(() => []);
     
-    expect(dirs.length).toBeGreaterThan(0);
-    expect(dirs).toContain('specialist-author');
-    expect(dirs).toContain('specialists-usage');
+    // Should have installed our skills
+    expect(dirs).toContain('specialists-creator');
+    expect(dirs).toContain('using-specialists');
   });
 
-  it('creates user directories for custom assets', async () => {
+  it('creates user specialists directory for custom assets', async () => {
     await runInit(tempDir);
     expect(existsSync(join(tempDir, '.specialists', 'user', 'specialists'))).toBe(true);
-    expect(existsSync(join(tempDir, '.specialists', 'user', 'hooks'))).toBe(true);
-    expect(existsSync(join(tempDir, '.specialists', 'user', 'skills'))).toBe(true);
   });
 
   it('creates runtime directories (jobs, ready)', async () => {
@@ -200,7 +198,7 @@ describe('init CLI — run()', () => {
 
   it('does not overwrite existing hook files', async () => {
     // Create a custom hook with the same name
-    const hooksDir = join(tempDir, '.specialists', 'default', 'hooks');
+    const hooksDir = join(tempDir, '.claude', 'hooks');
     await mkdir(hooksDir, { recursive: true });
     await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// custom hook', 'utf-8');
     
@@ -210,15 +208,17 @@ describe('init CLI — run()', () => {
     expect(content).toBe('// custom hook');
   });
 
-  it('does not overwrite existing skill directories', async () => {
-    // Create a custom skill with the same name
-    const skillsDir = join(tempDir, '.specialists', 'default', 'skills', 'specialist-author');
-    await mkdir(skillsDir, { recursive: true });
-    await writeFile(join(skillsDir, 'SKILL.md'), '# Custom skill', 'utf-8');
-    
+  it('does not install skills to .specialists/default/skills/ (deprecated location)', async () => {
     await runInit(tempDir);
-    
-    const content = await readFile(join(skillsDir, 'SKILL.md'), 'utf-8');
-    expect(content).toBe('# Custom skill');
+    // Skills should NOT be in .specialists/default/skills/
+    const oldSkillsDir = join(tempDir, '.specialists', 'default', 'skills');
+    expect(existsSync(oldSkillsDir)).toBe(false);
+  });
+
+  it('does not install hooks to .specialists/default/hooks/ (deprecated location)', async () => {
+    await runInit(tempDir);
+    // Hooks should NOT be in .specialists/default/hooks/
+    const oldHooksDir = join(tempDir, '.specialists', 'default', 'hooks');
+    expect(existsSync(oldHooksDir)).toBe(false);
   });
 });

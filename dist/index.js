@@ -19127,6 +19127,7 @@ __export(exports_init, {
 import { copyFileSync, cpSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { homedir as homedir3 } from "node:os";
 function ok(msg) {
   console.log(`  ${green3("✓")} ${msg}`);
 }
@@ -19190,13 +19191,13 @@ function copyCanonicalSpecialists(cwd) {
     skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
-function copyCanonicalHooks(cwd) {
+function installProjectHooks(cwd) {
   const sourceDir = resolvePackagePath("hooks");
   if (!sourceDir) {
     skip("no canonical hooks found in package");
     return;
   }
-  const targetDir = join9(cwd, ".specialists", "default", "hooks");
+  const targetDir = join9(cwd, ".claude", "hooks");
   const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
@@ -19218,13 +19219,13 @@ function copyCanonicalHooks(cwd) {
     }
   }
   if (copied > 0) {
-    ok(`copied ${copied} hook${copied === 1 ? "" : "s"} to .specialists/default/hooks/`);
+    ok(`installed ${copied} hook${copied === 1 ? "" : "s"} to .claude/hooks/`);
   }
   if (skipped > 0) {
     skip(`${skipped} hook${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
-function ensureProjectHooks(cwd) {
+function ensureProjectHookWiring(cwd) {
   const settingsPath = join9(cwd, ".claude", "settings.json");
   const settingsDir = join9(cwd, ".claude");
   if (!existsSync7(settingsDir)) {
@@ -19241,8 +19242,8 @@ function ensureProjectHooks(cwd) {
       changed = true;
     }
   }
-  addHook("UserPromptSubmit", "node .specialists/default/hooks/specialists-complete.mjs");
-  addHook("SessionStart", "node .specialists/default/hooks/specialists-session-start.mjs");
+  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
+  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
     ok("wired specialists hooks in .claude/settings.json");
@@ -19250,7 +19251,7 @@ function ensureProjectHooks(cwd) {
     skip(".claude/settings.json already has specialists hooks");
   }
 }
-function copyCanonicalSkills(cwd) {
+function installGlobalSkills() {
   const sourceDir = resolvePackagePath("skills");
   if (!sourceDir) {
     skip("no canonical skills found in package");
@@ -19261,15 +19262,14 @@ function copyCanonicalSkills(cwd) {
     skip("no skill directories found in package");
     return;
   }
-  const targetDir = join9(cwd, ".specialists", "default", "skills");
-  if (!existsSync7(targetDir)) {
-    mkdirSync2(targetDir, { recursive: true });
+  if (!existsSync7(PI_SKILLS_DIR)) {
+    mkdirSync2(PI_SKILLS_DIR, { recursive: true });
   }
   let copied = 0;
   let skipped = 0;
   for (const skill of skills) {
     const src = join9(sourceDir, skill);
-    const dest = join9(targetDir, skill);
+    const dest = join9(PI_SKILLS_DIR, skill);
     if (existsSync7(dest)) {
       skipped++;
     } else {
@@ -19278,27 +19278,17 @@ function copyCanonicalSkills(cwd) {
     }
   }
   if (copied > 0) {
-    ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .specialists/default/skills/`);
+    ok(`installed ${copied} skill${copied === 1 ? "" : "s"} to ~/.pi/skills/`);
   }
   if (skipped > 0) {
     skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
 function createUserDirs(cwd) {
-  const userDirs = [
-    join9(cwd, ".specialists", "user", "specialists"),
-    join9(cwd, ".specialists", "user", "hooks"),
-    join9(cwd, ".specialists", "user", "skills")
-  ];
-  let created = 0;
-  for (const dir of userDirs) {
-    if (!existsSync7(dir)) {
-      mkdirSync2(dir, { recursive: true });
-      created++;
-    }
-  }
-  if (created > 0) {
-    ok("created .specialists/user/ directories for custom assets");
+  const userDir = join9(cwd, ".specialists", "user", "specialists");
+  if (!existsSync7(userDir)) {
+    mkdirSync2(userDir, { recursive: true });
+    ok("created .specialists/user/specialists/ for custom specialists");
   }
 }
 function createRuntimeDirs(cwd) {
@@ -19373,30 +19363,31 @@ async function run5() {
   console.log(`
 ${bold4("specialists init")}
 `);
+  installGlobalSkills();
   copyCanonicalSpecialists(cwd);
-  copyCanonicalHooks(cwd);
-  copyCanonicalSkills(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
   ensureGitignore(cwd);
   ensureAgentsMd(cwd);
   ensureProjectMcp(cwd);
-  ensureProjectHooks(cwd);
+  installProjectHooks(cwd);
+  ensureProjectHookWiring(cwd);
   console.log(`
 ${bold4("Done!")}
 `);
-  console.log(`  ${dim4("Directory structure:")}`);
+  console.log(`  ${dim4("Installation targets:")}`);
+  console.log(`  ~/.pi/skills/          ${dim4("# skills (pi reads from here)")}`);
+  console.log(`  .claude/hooks/         ${dim4("# hooks (Claude Code project-local)")}`);
+  console.log(`  .claude/settings.json  ${dim4("# hook wiring")}`);
+  console.log("");
+  console.log(`  ${dim4(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
-  console.log(`  ├── default/      ${dim4("# canonical assets (from init)")}`);
-  console.log(`  │   ├── specialists/`);
-  console.log(`  │   ├── hooks/`);
-  console.log(`  │   └── skills/`);
-  console.log(`  ├── user/         ${dim4("# your custom additions")}`);
-  console.log(`  │   ├── specialists/`);
-  console.log(`  │   ├── hooks/`);
-  console.log(`  │   └── skills/`);
-  console.log(`  ├── jobs/         ${dim4("# runtime (gitignored)")}`);
-  console.log(`  └── ready/        ${dim4("# runtime (gitignored)")}`);
+  console.log(`  ├── default/           ${dim4("# canonical specialists (from init)")}`);
+  console.log(`  │   └── specialists/`);
+  console.log(`  ├── user/              ${dim4("# your custom specialists")}`);
+  console.log(`  │   └── specialists/`);
+  console.log(`  ├── jobs/              ${dim4("# runtime (gitignored)")}`);
+  console.log(`  └── ready/             ${dim4("# runtime (gitignored)")}`);
   console.log(`
   ${dim4("Next steps:")}`);
   console.log(`  1. Run ${yellow4("specialists list")} to see available specialists`);
@@ -19404,7 +19395,7 @@ ${bold4("Done!")}
   console.log(`  3. Restart Claude Code to pick up changes
 `);
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG, PI_SKILLS_DIR;
 var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
@@ -19418,6 +19409,7 @@ Add custom specialists to \`.specialists/user/specialists/\` to extend the defau
 `.trimStart();
   GITIGNORE_ENTRIES = [".specialists/jobs/", ".specialists/ready/"];
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
+  PI_SKILLS_DIR = join9(homedir3(), ".pi", "skills");
 });
 
 // src/cli/edit.ts
