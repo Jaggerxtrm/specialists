@@ -59,6 +59,8 @@ export interface SupervisorOptions {
   onProgress?: (delta: string) => void;
   /** Optional callback for meta events (backend/model) */
   onMeta?: (meta: { backend: string; model: string }) => void;
+  /** Optional callback fired as soon as a job id is allocated and persisted */
+  onJobStarted?: (job: { id: string }) => void;
 }
 
 
@@ -127,6 +129,7 @@ export class Supervisor {
   }
 
   private writeStatusFile(id: string, data: SupervisorStatus): void {
+    mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + '.tmp';
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
@@ -199,6 +202,15 @@ export class Supervisor {
       pid: process.pid,
     };
     this.writeStatusFile(id, initialStatus);
+    // Persist a latest marker so other processes can discover the active job id immediately
+    writeFileSync(join(this.opts.jobsDir, 'latest'), `${id}\n`, 'utf-8');
+    this.opts.onJobStarted?.({ id });
+
+    let statusSnapshot: SupervisorStatus = initialStatus;
+    const setStatus = (updates: Partial<SupervisorStatus>): void => {
+      statusSnapshot = { ...statusSnapshot, ...updates };
+      this.writeStatusFile(id, statusSnapshot);
+    };
 
     // Keep events.jsonl fd open for the job lifetime
     const eventsFd = openSync(this.eventsPath(id), 'a');
@@ -221,7 +233,7 @@ export class Supervisor {
     if (needsFifo) {
       try {
         execFileSync('mkfifo', [fifoPath]);
-        this.updateStatus(id, { fifo_path: fifoPath });
+        setStatus({ fifo_path: fifoPath });
       } catch {
         // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
       }
@@ -248,7 +260,7 @@ export class Supervisor {
           const toolMatch = delta.match(/⚙ (.+?)…/);
           if (toolMatch) {
             currentTool = toolMatch[1];
-            this.updateStatus(id, { current_tool: currentTool });
+            setStatus({ current_tool: currentTool });
           }
           // Stream to caller if callback provided
           this.opts.onProgress?.(delta);
@@ -256,7 +268,7 @@ export class Supervisor {
         // onEvent — map callback events to timeline events
         (eventType) => {
           const now = Date.now();
-          this.updateStatus(id, {
+          setStatus({
             status: 'running',
             current_event: eventType,
             last_event_at_ms: now,
@@ -279,7 +291,7 @@ export class Supervisor {
         },
         // onMeta — model/backend metadata
         (meta) => {
-          this.updateStatus(id, { model: meta.model, backend: meta.backend });
+          setStatus({ model: meta.model, backend: meta.backend });
           appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
           // Stream to caller if callback provided
           this.opts.onMeta?.(meta);
@@ -288,7 +300,7 @@ export class Supervisor {
         (fn) => { killFn = fn; },
         // onBeadCreated
         (beadId) => {
-          this.updateStatus(id, { bead_id: beadId });
+          setStatus({ bead_id: beadId });
         },
         // onSteerRegistered — wire FIFO reader to forward steer messages into the session
         (fn) => {
@@ -308,11 +320,12 @@ export class Supervisor {
                 } else if (parsed?.type === 'prompt' && typeof parsed.message === 'string') {
                   // follow-up: resume the session with a new prompt
                   if (resumeFn) {
-                    this.updateStatus(id, { status: 'running', current_event: 'starting' });
+                    setStatus({ status: 'running', current_event: 'starting' });
                     resumeFn(parsed.message)
                       .then((output) => {
+                        mkdirSync(this.jobDir(id), { recursive: true });
                         writeFileSync(this.resultPath(id), output, 'utf-8');
-                        this.updateStatus(id, {
+                        setStatus({
                           status: 'waiting',
                           current_event: 'waiting',
                           elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
@@ -320,7 +333,7 @@ export class Supervisor {
                         });
                       })
                       .catch((err: any) => {
-                        this.updateStatus(id, { status: 'error', error: err?.message ?? String(err) });
+                        setStatus({ status: 'error', error: err?.message ?? String(err) });
                       });
                   }
                 } else if (parsed?.type === 'close') {
@@ -334,16 +347,17 @@ export class Supervisor {
         (rFn, cFn) => {
           resumeFn = rFn;
           closeFn = cFn;
-          this.updateStatus(id, { status: 'waiting', current_event: 'waiting' });
+          setStatus({ status: 'waiting', current_event: 'waiting' });
         },
       );
 
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), result.output, 'utf-8');
       if (result.beadId) {
         this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
       }
-      this.updateStatus(id, {
+      setStatus({
         status: 'done',
         elapsed_s: elapsed,
         last_event_at_ms: Date.now(),
@@ -360,13 +374,14 @@ export class Supervisor {
       }));
 
       // Touch ready marker so the hook can surface completion banners
+      mkdirSync(this.readyDir(), { recursive: true });
       writeFileSync(join(this.readyDir(), id), '', 'utf-8');
 
       return id;
     } catch (err: any) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const errorMsg = err?.message ?? String(err);
-      this.updateStatus(id, {
+      setStatus({
         status: 'error',
         elapsed_s: elapsed,
         error: errorMsg,

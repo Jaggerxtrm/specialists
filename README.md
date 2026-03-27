@@ -28,17 +28,19 @@ specialists list
 
 ```bash
 sp list
-sp run bug-hunt --bead <id> --background
+sp run bug-hunt --bead <id>
 ```
 
 Tracked work:
 
 ```bash
 bd create "Investigate auth bug" -t bug -p 1 --json
-specialists run bug-hunt --bead <id> --background
+specialists run bug-hunt --bead <id>
 specialists feed -f
 bd close <id> --reason "Done"
 ```
+
+`specialists run` prints `[job started: <id>]` early and also writes the id to `.specialists/jobs/latest`.
 
 Ad-hoc work:
 

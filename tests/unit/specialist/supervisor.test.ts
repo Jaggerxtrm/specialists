@@ -110,6 +110,15 @@ describe('Supervisor', () => {
     expect(existsSync(readyMarker)).toBe(true);
   });
 
+  it('writes jobs/latest and fires onJobStarted callback with the allocated id', async () => {
+    const onJobStarted = vi.fn();
+    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions(), onJobStarted });
+    const id = await sup.run();
+
+    expect(onJobStarted).toHaveBeenCalledWith({ id });
+    expect(readFileSync(join(jobsDir, 'latest'), 'utf-8').trim()).toBe(id);
+  });
+
 
   it('pins result output and metadata to bead notes when beadId is present', async () => {
     const beadsClient = { updateBeadNotes: vi.fn() } as any;
@@ -149,8 +158,8 @@ describe('Supervisor', () => {
 
     await expect(sup.run()).rejects.toThrow('backend exploded');
 
-    // Find the single job directory that was created
-    const entries = readdirSync(jobsDir);
+    // Find the single job directory that was created (ignore jobs/latest marker file)
+    const entries = readdirSync(jobsDir).filter((entry) => entry !== 'latest');
     expect(entries).toHaveLength(1);
     const id = entries[0];
 
@@ -206,6 +215,32 @@ describe('Supervisor', () => {
     );
     expect(recovered.status).toBe('error');
     expect(recovered.error).toBe('Process crashed or was killed');
+  });
+
+  it('recreates job artifacts if the jobs directory is deleted mid-run', async () => {
+    const runner = {
+      run: vi.fn().mockImplementation(async (_runOptions: any, _onProgress: any, onEvent: any) => {
+        onEvent?.('text');
+        rmSync(tmpDir, { recursive: true, force: true });
+        return {
+          output: 'recovered output',
+          model: 'haiku',
+          backend: 'anthropic',
+          durationMs: 100,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123def4567890',
+          beadId: undefined,
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const id = await sup.run();
+
+    expect(existsSync(join(jobsDir, id, 'status.json'))).toBe(true);
+    expect(existsSync(join(jobsDir, id, 'result.txt'))).toBe(true);
+    expect(existsSync(join(jobsDir, '..', 'ready', id))).toBe(true);
+    expect(readFileSync(join(jobsDir, id, 'result.txt'), 'utf-8')).toBe('recovered output');
   });
 
   it('listJobs() returns all jobs sorted newest-first', () => {

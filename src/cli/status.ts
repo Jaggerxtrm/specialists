@@ -202,8 +202,10 @@ export async function run(): Promise<void> {
   }
 
   // 5. Active Jobs
-  if (jobs.length > 0) {
-    section('Active Jobs');
+  section('Active Jobs');
+  if (jobs.length === 0) {
+    info('  (none)');
+  } else {
     for (const job of jobs) {
       const elapsed = formatElapsed(job);
       const detail = job.status === 'error'

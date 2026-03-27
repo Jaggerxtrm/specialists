@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.5] - 2026-03-27
+
+### Fixed
+
+- **`specialists status` always shows Active Jobs** — the section now renders even when there are no jobs, with an explicit `(none)` placeholder
+- **Supervisor is resilient to mid-run jobs dir deletion** — status/result/ready persistence now recreates required directories and keeps an in-memory status snapshot during run updates
+- **Job id is emitted at run start** — Supervisor writes `.specialists/jobs/latest` immediately and `specialists run` prints an early `[job started: <id>]` line before completion
+
 ## [3.3.4] - 2026-03-27
 
 ### Fixed
