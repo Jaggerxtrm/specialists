@@ -20,3 +20,5 @@
 {"id":"int-8a1d6ff4","kind":"tool_call","created_at":"2026-03-26T09:39:39.810753876Z","actor":"you@example.com","issue_id":"unitAI-vidk","model":"anthropic/claude-sonnet-4-6","tool_name":"specialist-author","exit_code":0}
 {"id":"int-7e1fbb89","kind":"tool_call","created_at":"2026-03-26T10:05:55.291851084Z","actor":"you@example.com","issue_id":"unitAI-x05w","model":"anthropic/claude-sonnet-4-6","tool_name":"specialist-author","exit_code":1}
 {"id":"int-5b7cf843","kind":"tool_call","created_at":"2026-03-26T10:07:35.045857149Z","actor":"you@example.com","issue_id":"unitAI-vnmq","model":"anthropic/claude-sonnet-4-6","tool_name":"specialist-author","exit_code":0}
+{"id":"int-eec17a7e","kind":"tool_call","created_at":"2026-03-27T13:23:51.581641035Z","actor":"you@example.com","issue_id":"unitAI-vypf","model":"anthropic/claude-haiku-4-5","tool_name":"test-runner","exit_code":0}
+{"id":"int-93efaae4","kind":"tool_call","created_at":"2026-03-27T13:24:52.948221632Z","actor":"you@example.com","issue_id":"unitAI-03pg","model":"anthropic/claude-sonnet-4-6","tool_name":"specialists-creator","exit_code":0}
