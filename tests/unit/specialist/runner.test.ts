@@ -84,7 +84,8 @@ describe('SpecialistRunner', () => {
     expect(mockSession.prompt).toHaveBeenCalledWith('Do do thing');
     expect(mockSession.waitForDone).toHaveBeenCalledOnce();
     expect(mockSession.getLastOutput).toHaveBeenCalledOnce();
-    expect(mockSession.kill).toHaveBeenCalledOnce();
+    expect(mockSession.close).toHaveBeenCalledOnce();
+    expect(mockSession.kill).not.toHaveBeenCalled();
   });
 
   it('returns correct backend even when kill() destroys meta', async () => {

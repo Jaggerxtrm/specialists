@@ -303,12 +303,6 @@ Examples:
 export async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(3));
 
-  // Require either a job-id or -f flag
-  if (!options.jobId && !options.follow) {
-    showUsage();
-    process.exit(1);
-  }
-
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
   if (!existsSync(jobsDir)) {

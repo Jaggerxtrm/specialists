@@ -61,12 +61,18 @@ interface ScriptResult {
   exitCode: number;
 }
 
-function runScript(run: string): ScriptResult {
+function runScript(command: string | undefined): ScriptResult {
+  const run = (command ?? '').trim();
+  if (!run) {
+    return { name: 'unknown', output: 'Missing script command (expected `run` or legacy `path`).', exitCode: 1 };
+  }
+
+  const scriptName = basename(run.split(' ')[0]);
   try {
     const output = execSync(run, { encoding: 'utf8', timeout: 30_000 });
-    return { name: basename(run.split(' ')[0]), output, exitCode: 0 };
+    return { name: scriptName, output, exitCode: 0 };
   } catch (e: any) {
-    return { name: basename(run.split(' ')[0]), output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
+    return { name: scriptName, output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
   }
 }
 
@@ -112,7 +118,7 @@ function validateShebang(filePath: string, errors: string[]): void {
   } catch { /* unreadable — caught by exists check */ }
 }
 
-function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[] } } }): void {
+function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[] } } }): void {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -124,7 +130,7 @@ function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; sc
 
   // Validate scripts/commands
   for (const script of spec.specialist.skills?.scripts ?? []) {
-    const { run } = script;
+    const run = script.run ?? script.path;
     if (!run) continue;
     const isFilePath = run.startsWith('./') || run.startsWith('../') || run.startsWith('/') || run.startsWith('~/');
     if (isFilePath) {
@@ -206,7 +212,7 @@ export class SpecialistRunner {
     // Their stdout is captured and injected into the task via $pre_script_output.
     const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
     const preResults = preScripts
-      .map(s => runScript(s.run))
+      .map(s => runScript(s.run ?? (s as any).path))
       .filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
 
@@ -246,7 +252,7 @@ export class SpecialistRunner {
         onProgress?.(`  skills (--skill):\n${skillPaths.map(p => `    • ${p}`).join('\n')}\n`);
       }
       if (preScripts.length > 0) {
-        onProgress?.(`  pre scripts/commands:\n${preScripts.map(s => `    • ${s.run}${s.inject_output ? ' → $pre_script_output' : ''}`).join('\n')}\n`);
+        onProgress?.(`  pre scripts/commands:\n${preScripts.map(s => `    • ${(s.run ?? (s as any).path ?? '<missing>')}${s.inject_output ? ' → $pre_script_output' : ''}`).join('\n')}\n`);
       }
       onProgress?.(`${line}\n\n`);
     }
@@ -326,7 +332,7 @@ export class SpecialistRunner {
 
       // Post-phase scripts/commands run locally after the pi session completes
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
-      for (const script of postScripts) runScript(script.run);
+      for (const script of postScripts) runScript(script.run ?? (script as any).path);
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {

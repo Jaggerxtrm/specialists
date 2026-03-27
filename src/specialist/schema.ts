@@ -160,10 +160,6 @@ function getFriendlyMessage(issue: z.ZodIssue): string {
     return `Invalid value at "${path}": expected "${issue.expected}"`;
   }
   
-  if (issue.code === 'missing_key') {
-    return `Missing required field: "${formatPath(issue.path)}"`;
-  }
-  
   // Fallback to Zod's message
   return issue.message;
 }
@@ -224,9 +220,6 @@ export async function validateSpecialist(yamlContent: string): Promise<Validatio
   
   return { valid: errors.length === 0, errors, warnings };
 }
-export type Specialist = z.infer<typeof SpecialistSchema>;
-export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
-
 export async function parseSpecialist(yamlContent: string): Promise<Specialist> {
   const result = await validateSpecialist(yamlContent);
   

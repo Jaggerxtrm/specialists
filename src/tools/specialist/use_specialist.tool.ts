@@ -1,5 +1,5 @@
 // src/tools/specialist/use_specialist.tool.ts
-import { z } from 'zod';
+import * as z from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
 import { BeadsClient, buildBeadContext } from '../../specialist/beads.js';
 

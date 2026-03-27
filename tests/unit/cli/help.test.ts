@@ -12,7 +12,7 @@ describe('help CLI — run()', () => {
   it('prints usage section', () => {
     const combined = captureTopLevelHelp();
     expect(combined).toContain('Usage:');
-    expect(combined).toContain('specialists [command]');
+    expect(combined).toContain('specialists|sp [command]');
   });
 
   it('teaches bead-first workflow', () => {

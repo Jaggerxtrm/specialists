@@ -55,7 +55,12 @@ export class SpecialistLoader {
     const dirs: Array<{ path: string; scope: 'default' | 'user' }> = [
       // User specialists take precedence over defaults
       { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
+      // Canonical project-local location
+      { path: join(this.projectDir, 'specialists'), scope: 'default' },
+      // Back-compat locations still used in tests and older repos
       { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
+      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'default' },
+      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'default' },
     ];
     return dirs.filter(d => existsSync(d.path));
   }

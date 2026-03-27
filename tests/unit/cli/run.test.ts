@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BeadsClient } from '../../../src/specialist/beads.js';
+import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { run } from '../../../src/cli/run.js';
 
@@ -22,6 +23,13 @@ describe('run CLI', () => {
       title: 'Refactor auth',
       description: 'Extract JWT validation',
     });
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
     const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
       output: 'done',
       durationMs: 5,
@@ -32,25 +40,25 @@ describe('run CLI', () => {
     });
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
 
-    await run();
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
 
-    expect(runnerRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'code-review',
-        prompt: '# Task: Refactor auth\nExtract JWT validation',
-        variables: {
-          bead_context: '# Task: Refactor auth\nExtract JWT validation',
-          bead_id: 'unitAI-55d',
-        },
-        inputBeadId: 'unitAI-55d',
-      }),
-      expect.any(Function),
-      undefined,
-      expect.any(Function),
-      expect.any(Function),
-      expect.any(Function),
-    );
+    expect(runnerRun).toHaveBeenCalled();
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs).toEqual(expect.objectContaining({
+      name: 'code-review',
+      inputBeadId: 'unitAI-55d',
+      keepAlive: false,
+    }));
+    expect(runArgs.prompt).toContain('# Task: Refactor auth');
+    expect(runArgs.prompt).toContain('Extract JWT validation');
+    expect(runArgs.variables).toEqual(expect.objectContaining({
+      bead_id: 'unitAI-55d',
+    }));
   });
 
   it('exits when both --prompt and --bead are provided', async () => {

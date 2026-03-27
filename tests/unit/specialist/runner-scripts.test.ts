@@ -8,6 +8,7 @@ import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
 vi.mock('node:child_process', () => ({
   execSync: vi.fn().mockReturnValue('script output\n'),
   spawn: vi.fn(),
+  spawnSync: vi.fn().mockReturnValue({ status: 0 }),
 }));
 
 import { execSync } from 'node:child_process';
