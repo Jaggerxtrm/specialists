@@ -110,9 +110,9 @@ function copyCanonicalSpecialists(cwd: string): void {
 }
 
 /**
- * Copy canonical hooks to .specialists/default/hooks/
+ * Install hooks to .claude/hooks/ (Claude Code project-local)
  */
-function copyCanonicalHooks(cwd: string): void {
+function installProjectHooks(cwd: string): void {
   const sourceDir = resolvePackagePath('hooks');
   
   if (!sourceDir) {
@@ -120,7 +120,7 @@ function copyCanonicalHooks(cwd: string): void {
     return;
   }
 
-  const targetDir = join(cwd, '.specialists', 'default', 'hooks');
+  const targetDir = join(cwd, '.claude', 'hooks');
   const hooks = readdirSync(sourceDir).filter(f => f.endsWith('.mjs'));
   
   if (hooks.length === 0) {
@@ -149,7 +149,7 @@ function copyCanonicalHooks(cwd: string): void {
   }
 
   if (copied > 0) {
-    ok(`copied ${copied} hook${copied === 1 ? '' : 's'} to .specialists/default/hooks/`);
+    ok(`installed ${copied} hook${copied === 1 ? '' : 's'} to .claude/hooks/`);
   }
   if (skipped > 0) {
     skip(`${skipped} hook${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
@@ -159,7 +159,7 @@ function copyCanonicalHooks(cwd: string): void {
 /**
  * Wire hooks in .claude/settings.json
  */
-function ensureProjectHooks(cwd: string): void {
+function ensureProjectHookWiring(cwd: string): void {
   const settingsPath = join(cwd, '.claude', 'settings.json');
   
   // Ensure .claude directory exists
@@ -186,9 +186,9 @@ function ensureProjectHooks(cwd: string): void {
     }
   }
 
-  // Wire hooks with paths to .specialists/default/hooks/
-  addHook('UserPromptSubmit', 'node .specialists/default/hooks/specialists-complete.mjs');
-  addHook('SessionStart',     'node .specialists/default/hooks/specialists-session-start.mjs');
+  // Wire hooks with paths to .claude/hooks/
+  addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
+  addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {
     saveJson(settingsPath, settings);
@@ -199,9 +199,9 @@ function ensureProjectHooks(cwd: string): void {
 }
 
 /**
- * Copy canonical skills to .specialists/default/skills/
+ * Install skills to .claude/skills/ and .pi/skills/ (project-local for both agents)
  */
-function copyCanonicalSkills(cwd: string): void {
+function installProjectSkills(cwd: string): void {
   const sourceDir = resolvePackagePath('skills');
   
   if (!sourceDir) {
@@ -218,56 +218,51 @@ function copyCanonicalSkills(cwd: string): void {
     return;
   }
 
-  const targetDir = join(cwd, '.specialists', 'default', 'skills');
-  
-  // Create target directory
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
+  // Install to both .claude/skills/ and .pi/skills/
+  const targetDirs = [
+    join(cwd, '.claude', 'skills'),
+    join(cwd, '.pi', 'skills'),
+  ];
 
-  let copied = 0;
-  let skipped = 0;
+  let totalCopied = 0;
+  let totalSkipped = 0;
 
-  for (const skill of skills) {
-    const src = join(sourceDir, skill);
-    const dest = join(targetDir, skill);
-    
-    if (existsSync(dest)) {
-      skipped++;
-    } else {
-      cpSync(src, dest, { recursive: true });
-      copied++;
+  for (const targetDir of targetDirs) {
+    // Create target directory
+    if (!existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true });
+    }
+
+    for (const skill of skills) {
+      const src = join(sourceDir, skill);
+      const dest = join(targetDir, skill);
+      
+      if (existsSync(dest)) {
+        totalSkipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        totalCopied++;
+      }
     }
   }
 
-  if (copied > 0) {
-    ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .specialists/default/skills/`);
+  if (totalCopied > 0) {
+    ok(`installed ${skills.length} skill${skills.length === 1 ? '' : 's'} to .claude/skills/ and .pi/skills/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} skill${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  if (totalSkipped > 0) {
+    skip(`${totalSkipped} skill location${totalSkipped === 1 ? '' : 's'} already exist (not overwritten)`);
   }
 }
 
 /**
- * Create user directories for custom specialists, hooks, skills
+ * Create user directories for custom specialists
  */
 function createUserDirs(cwd: string): void {
-  const userDirs = [
-    join(cwd, '.specialists', 'user', 'specialists'),
-    join(cwd, '.specialists', 'user', 'hooks'),
-    join(cwd, '.specialists', 'user', 'skills'),
-  ];
+  const userDir = join(cwd, '.specialists', 'user', 'specialists');
 
-  let created = 0;
-  for (const dir of userDirs) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      created++;
-    }
-  }
-
-  if (created > 0) {
-    ok('created .specialists/user/ directories for custom assets');
+  if (!existsSync(userDir)) {
+    mkdirSync(userDir, { recursive: true });
+    ok('created .specialists/user/specialists/ for custom specialists');
   }
 }
 
@@ -359,8 +354,6 @@ export async function run(): Promise<void> {
 
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
   copyCanonicalSpecialists(cwd);
-  copyCanonicalHooks(cwd);
-  copyCanonicalSkills(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
 
@@ -373,25 +366,31 @@ export async function run(): Promise<void> {
   // ── 4. Register MCP at project scope ──────────────────────────────────────
   ensureProjectMcp(cwd);
 
-  // ── 5. Wire hooks in .claude/settings.json ────────────────────────────────
-  ensureProjectHooks(cwd);
+  // ── 5. Install hooks to .claude/hooks/ ────────────────────────────────────
+  installProjectHooks(cwd);
+  ensureProjectHookWiring(cwd);
+
+  // ── 6. Install skills to .claude/skills/ and .pi/skills/ ──────────────────
+  installProjectSkills(cwd);
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
-  console.log(`  ${dim('Directory structure:')}`);
+  console.log(`  ${dim('Project-local installation:')}`);
+  console.log(`  .claude/hooks/         ${dim('# hooks (Claude Code)')}`);
+  console.log(`  .claude/settings.json  ${dim('# hook wiring')}`);
+  console.log(`  .claude/skills/        ${dim('# skills (Claude Code)')}`);
+  console.log(`  .pi/skills/            ${dim('# skills (pi)')}`);
+  console.log('');
+  console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);
-  console.log(`  ├── default/      ${dim('# canonical assets (from init)')}`);
-  console.log(`  │   ├── specialists/`);
-  console.log(`  │   ├── hooks/`);
-  console.log(`  │   └── skills/`);
-  console.log(`  ├── user/         ${dim('# your custom additions')}`);
-  console.log(`  │   ├── specialists/`);
-  console.log(`  │   ├── hooks/`);
-  console.log(`  │   └── skills/`);
-  console.log(`  ├── jobs/         ${dim('# runtime (gitignored)')}`);
-  console.log(`  └── ready/        ${dim('# runtime (gitignored)')}`);
+  console.log(`  ├── default/           ${dim('# canonical specialists (from init)')}`);
+  console.log(`  │   └── specialists/`);
+  console.log(`  ├── user/              ${dim('# your custom specialists')}`);
+  console.log(`  │   └── specialists/`);
+  console.log(`  ├── jobs/              ${dim('# runtime (gitignored)')}`);
+  console.log(`  └── ready/             ${dim('# runtime (gitignored)')}`);
   console.log(`\n  ${dim('Next steps:')}`);
   console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
   console.log(`  2. Add custom specialists to ${yellow('.specialists/user/specialists/')}`);
-  console.log(`  3. Restart Claude Code to pick up changes\n`);
+  console.log(`  3. Restart Claude Code or pi to pick up changes\n`);
 }

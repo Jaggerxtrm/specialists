@@ -22,12 +22,9 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists install',
+        '⚠ DEPRECATED: Use `specialists init` instead.',
         '',
-        'Project setup: checks pi/bd/xt prerequisites, registers the MCP server,',
-        'and installs specialists-specific project hooks.',
-        '',
-        'No flags — just run it.',
+        'The install command is deprecated. Run `specialists init` for project setup.',
         '',
       ].join('\n'));
       return;
@@ -474,22 +471,9 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists setup [options]',
+        '⚠ DEPRECATED: Use `specialists init` instead.',
         '',
-        'Inject the Specialists Workflow context block into AGENTS.md or CLAUDE.md.',
-        'This teaches agents in that project how to use specialists.',
-        '',
-        'Options:',
-        '  --project, -p   Write to ./CLAUDE.md (default)',
-        '  --agents,  -a   Write to ./AGENTS.md',
-        '  --global,  -g   Write to ~/.claude/CLAUDE.md',
-        '  --dry-run       Preview the block without writing',
-        '',
-        'Examples:',
-        '  specialists setup                  # → ./CLAUDE.md',
-        '  specialists setup --agents         # → ./AGENTS.md',
-        '  specialists setup --global         # → ~/.claude/CLAUDE.md',
-        '  specialists setup --dry-run        # preview only',
+        'The setup command is deprecated. Run `specialists init` for project setup.',
         '',
       ].join('\n'));
       return;
