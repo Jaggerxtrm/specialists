@@ -2,7 +2,7 @@
 
 /**
  * Specialists MCP Server — entry point
- * Subcommands: install, version, list, models, init, edit, run, status,
+ * Subcommands: install, version, list, models, init, validate, edit, run, status,
  *              result, feed, poll, stop, quickstart, help
  */
 
@@ -120,6 +120,38 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/init.js');
+    return handler();
+  }
+
+  if (sub === 'validate') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists validate <name> [--json]',
+        '',
+        'Validate a specialist YAML file against the schema.',
+        '',
+        'What it checks:',
+        '  - YAML syntax is valid',
+        '  - Required fields are present (name, version, description, category, model)',
+        '  - Field values match expected formats (kebab-case names, semver versions)',
+        '  - Enum values are valid (permission_required, mode, beads_integration)',
+        '',
+        'Options:',
+        '  --json   Output validation result as JSON',
+        '',
+        'Examples:',
+        '  specialists validate my-specialist',
+        '  specialists validate my-specialist --json',
+        '',
+        'Exit codes:',
+        '  0 — validation passed',
+        '  1 — validation failed (errors) or specialist not found',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/validate.js');
     return handler();
   }
 

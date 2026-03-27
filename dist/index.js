@@ -17410,7 +17410,98 @@ var init_dist = __esm(() => {
 });
 
 // src/specialist/schema.ts
+function formatPath(path) {
+  return path.map((p) => typeof p === "number" ? `[${p}]` : p).join(".");
+}
+function getFriendlyMessage(issue2) {
+  const path = formatPath(issue2.path);
+  if (issue2.code === "invalid_string" && issue2.validation === "regex") {
+    if (path.includes("name")) {
+      return `Invalid specialist name: must be kebab-case (lowercase letters, numbers, hyphens). Got: "${issue2.path.at(-1) === "name" ? "invalid value" : "see schema"}"`;
+    }
+    if (path.includes("version")) {
+      return `Invalid version: must be semver format (e.g., "1.0.0"). Got value that doesn't match pattern.`;
+    }
+  }
+  if (issue2.code === "invalid_enum_value") {
+    const allowed = issue2.options.map((o) => `"${o}"`).join(", ");
+    if (path.includes("permission_required")) {
+      return `Invalid permission_required: must be one of ${allowed}. This controls which pi tools are available.`;
+    }
+    if (path.includes("mode")) {
+      return `Invalid execution.mode: must be one of ${allowed}.`;
+    }
+    if (path.includes("beads_integration")) {
+      return `Invalid beads_integration: must be one of ${allowed}.`;
+    }
+    return `Invalid value at "${path}": expected one of ${allowed}, got "${issue2.received}"`;
+  }
+  if (issue2.code === "invalid_type") {
+    return `Invalid type at "${path}": expected ${issue2.expected}, got ${issue2.received}`;
+  }
+  if (issue2.code === "invalid_literal") {
+    return `Invalid value at "${path}": expected "${issue2.expected}"`;
+  }
+  if (issue2.code === "missing_key") {
+    return `Missing required field: "${formatPath(issue2.path)}"`;
+  }
+  return issue2.message;
+}
+async function validateSpecialist(yamlContent) {
+  const errors5 = [];
+  const warnings = [];
+  let raw;
+  try {
+    raw = $parse(yamlContent);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors5.push({
+      path: "yaml",
+      message: `YAML parse error: ${msg}`,
+      code: "yaml_parse_error"
+    });
+    return { valid: false, errors: errors5, warnings };
+  }
+  const result = SpecialistSchema.safeParse(raw);
+  if (!result.success) {
+    for (const issue2 of result.error.issues) {
+      errors5.push({
+        path: formatPath(issue2.path),
+        message: getFriendlyMessage(issue2),
+        code: issue2.code
+      });
+    }
+  } else {
+    const spec = result.data;
+    if (spec.specialist.prompt.normalize_template) {
+      warnings.push("prompt.normalize_template is deprecated (Mercury compat) and will be ignored");
+    }
+    if (spec.specialist.execution.preferred_profile) {
+      warnings.push("execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored");
+    }
+    if (spec.specialist.execution.approval_mode) {
+      warnings.push("execution.approval_mode is deprecated (Agent Forge compat) and will be ignored");
+    }
+    if (!spec.specialist.execution.model.includes("/")) {
+      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    }
+  }
+  return { valid: errors5.length === 0, errors: errors5, warnings };
+}
 async function parseSpecialist(yamlContent) {
+  const result = await validateSpecialist(yamlContent);
+  if (!result.valid) {
+    const errorList = result.errors.map((e) => `  • ${e.message}`).join(`
+`);
+    throw new Error(`Schema validation failed:
+${errorList}`);
+  }
+  if (result.warnings.length > 0) {
+    process.stderr.write(`[specialists] warnings:
+${result.warnings.map((w) => `  ⚠ ${w}`).join(`
+`)}
+`);
+  }
   const raw = $parse(yamlContent);
   return SpecialistSchema.parseAsync(raw);
 }
@@ -19399,13 +19490,126 @@ Add custom specialists to \`.specialists/user/specialists/\` to extend the defau
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
+// src/cli/validate.ts
+var exports_validate = {};
+__export(exports_validate, {
+  run: () => run6,
+  parseArgs: () => parseArgs3,
+  ArgParseError: () => ArgParseError2
+});
+import { readFile as readFile2 } from "node:fs/promises";
+import { existsSync as existsSync7 } from "node:fs";
+import { join as join10 } from "node:path";
+function parseArgs3(argv) {
+  const name = argv[0];
+  if (!name || name.startsWith("--")) {
+    throw new ArgParseError2("Usage: specialists validate <name> [--json]");
+  }
+  const json = argv.includes("--json");
+  return { name, json };
+}
+function findSpecialistFile(name) {
+  const scanDirs = [
+    join10(process.cwd(), ".specialists", "user", "specialists"),
+    join10(process.cwd(), ".specialists", "default", "specialists"),
+    join10(process.cwd(), "specialists")
+  ];
+  for (const dir of scanDirs) {
+    const candidate = join10(dir, `${name}.specialist.yaml`);
+    if (existsSync7(candidate)) {
+      return candidate;
+    }
+  }
+  return;
+}
+async function run6() {
+  let args;
+  try {
+    args = parseArgs3(process.argv.slice(3));
+  } catch (err) {
+    if (err instanceof ArgParseError2) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const { name, json } = args;
+  const filePath = findSpecialistFile(name);
+  if (!filePath) {
+    if (json) {
+      console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${name}`, code: "not_found" }] }));
+    } else {
+      console.error(`${red("✗")} Specialist not found: ${cyan3(name)}`);
+    }
+    process.exit(1);
+  }
+  let content;
+  try {
+    content = await readFile2(filePath, "utf-8");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (json) {
+      console.log(JSON.stringify({ valid: false, errors: [{ path: "file", message: `Failed to read file: ${msg}`, code: "read_error" }] }));
+    } else {
+      console.error(`${red("✗")} Failed to read file: ${msg}`);
+    }
+    process.exit(1);
+  }
+  const result = await validateSpecialist(content);
+  if (json) {
+    console.log(JSON.stringify({
+      valid: result.valid,
+      errors: result.errors,
+      warnings: result.warnings,
+      file: filePath
+    }, null, 2));
+    process.exit(result.valid ? 0 : 1);
+  }
+  console.log(`
+${bold4("Validating")} ${cyan3(name)} ${dim4(`(${filePath})`)}
+`);
+  if (result.valid) {
+    console.log(`${green4("✓")} Schema validation passed
+`);
+  } else {
+    console.log(`${red("✗")} Schema validation failed:
+`);
+    for (const error2 of result.errors) {
+      console.log(`  ${red("•")} ${error2.message}`);
+      if (error2.path && error2.path !== "yaml") {
+        console.log(`    ${dim4(`path: ${error2.path}`)}`);
+      }
+    }
+    console.log();
+  }
+  if (result.warnings.length > 0) {
+    console.log(`${yellow4("Warnings")}:
+`);
+    for (const warning of result.warnings) {
+      console.log(`  ${yellow4("⚠")} ${warning}`);
+    }
+    console.log();
+  }
+  process.exit(result.valid ? 0 : 1);
+}
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError2;
+var init_validate = __esm(() => {
+  init_schema();
+  ArgParseError2 = class ArgParseError2 extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "ArgParseError";
+    }
+  };
+});
+
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run6
+  run: () => run7
 });
 import { readFileSync as readFileSync4, writeFileSync as writeFileSync5 } from "node:fs";
-function parseArgs3(argv) {
+function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
     console.error("Usage: specialists|sp edit <name> --<field> <value> [--dry-run]");
@@ -19467,8 +19671,8 @@ function setIn(doc2, path, value) {
     node.set(leaf, value);
   }
 }
-async function run6() {
-  const args = parseArgs3(process.argv.slice(3));
+async function run7() {
+  const args = parseArgs4(process.argv.slice(3));
   const { name, field, value, dryRun, scope } = args;
   const loader = new SpecialistLoader;
   const all = await loader.list();
@@ -19476,7 +19680,7 @@ async function run6() {
   if (!match) {
     const hint = scope ? ` (scope: ${scope})` : "";
     console.error(`Error: specialist "${name}" not found${hint}`);
-    console.error(`  Run ${yellow4("specialists list")} to see available specialists`);
+    console.error(`  Run ${yellow5("specialists list")} to see available specialists`);
     process.exit(1);
   }
   const raw = readFileSync4(match.filePath, "utf-8");
@@ -19492,10 +19696,10 @@ async function run6() {
   const updated = doc2.toString();
   if (dryRun) {
     console.log(`
-${bold4(`[dry-run] ${match.filePath}`)}
+${bold5(`[dry-run] ${match.filePath}`)}
 `);
-    console.log(dim4("--- current"));
-    console.log(dim4(`+++ updated`));
+    console.log(dim5("--- current"));
+    console.log(dim5(`+++ updated`));
     const oldLines = raw.split(`
 `);
     const newLines = updated.split(`
@@ -19503,8 +19707,8 @@ ${bold4(`[dry-run] ${match.filePath}`)}
     newLines.forEach((line, i) => {
       if (line !== oldLines[i]) {
         if (oldLines[i] !== undefined)
-          console.log(dim4(`- ${oldLines[i]}`));
-        console.log(green4(`+ ${line}`));
+          console.log(dim5(`- ${oldLines[i]}`));
+        console.log(green5(`+ ${line}`));
       }
     });
     console.log();
@@ -19512,9 +19716,9 @@ ${bold4(`[dry-run] ${match.filePath}`)}
   }
   writeFileSync5(match.filePath, updated, "utf-8");
   const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
-  console.log(`${green4("✓")} ${bold4(name)}: ${yellow4(field)} = ${displayValue}` + dim4(` (${match.filePath})`));
+  console.log(`${green5("✓")} ${bold5(name)}: ${yellow5(field)} = ${displayValue}` + dim5(` (${match.filePath})`));
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
 var init_edit = __esm(() => {
   init_dist();
   init_loader();
@@ -19532,10 +19736,10 @@ var init_edit = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run7
+  run: () => run8
 });
-import { join as join10 } from "node:path";
-async function parseArgs4(argv) {
+import { join as join11 } from "node:path";
+async function parseArgs5(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
     console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive]');
@@ -19594,11 +19798,11 @@ async function parseArgs4(argv) {
   }
   return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth };
 }
-async function run7() {
-  const args = await parseArgs4(process.argv.slice(3));
+async function run8() {
+  const args = await parseArgs5(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join10(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join11(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -19610,7 +19814,7 @@ async function run7() {
     }
     const blockers = args.contextDepth > 0 ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth) : [];
     if (blockers.length > 0) {
-      process.stderr.write(dim5(`
+      process.stderr.write(dim6(`
 [context: ${blockers.length} completed dep${blockers.length > 1 ? "s" : ""} injected]
 `));
     }
@@ -19627,7 +19831,7 @@ async function run7() {
     circuitBreaker,
     beadsClient
   });
-  const jobsDir = join10(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({
     runner,
     runOptions: {
@@ -19641,7 +19845,7 @@ async function run7() {
     jobsDir,
     beadsClient,
     onProgress: (delta) => process.stdout.write(delta),
-    onMeta: (meta) => process.stderr.write(dim5(`
+    onMeta: (meta) => process.stderr.write(dim6(`
 [${meta.backend} / ${meta.model}]
 
 `))
@@ -19654,7 +19858,7 @@ async function run7() {
     process.exit(1);
   }
   process.stderr.write(`
-${bold5(`Running ${cyan3(args.name)}`)}
+${bold6(`Running ${cyan4(args.name)}`)}
 
 `);
   let jobId;
@@ -19671,18 +19875,18 @@ ${bold5(`Running ${cyan3(args.name)}`)}
     `job ${jobId}`,
     status?.bead_id ? `bead ${status.bead_id}` : "",
     `${secs.toFixed(1)}s`,
-    status?.model ? dim5(`${status.backend}/${status.model}`) : ""
+    status?.model ? dim6(`${status.backend}/${status.model}`) : ""
   ].filter(Boolean).join("  ");
   process.stderr.write(`
-${green5("✓")} ${footer}
+${green6("✓")} ${footer}
 
 `);
-  process.stderr.write(dim5(`Poll: specialists poll ${jobId} --json
+  process.stderr.write(dim6(`Poll: specialists poll ${jobId} --json
 
 `));
   process.exit(0);
 }
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -19729,9 +19933,9 @@ class JobColorMap {
   }
 }
 function formatEventLine(event, options) {
-  const ts = dim6(formatTime(event.t));
-  const label = options.colorize(bold6(getEventLabel(event.type).padEnd(5)));
-  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim6(`[${options.beadId}]`)}` : ""}`;
+  const ts = dim7(formatTime(event.t));
+  const label = options.colorize(bold7(getEventLabel(event.type).padEnd(5)));
+  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim7(`[${options.beadId}]`)}` : ""}`;
   const detailParts = [];
   if (event.type === "meta") {
     detailParts.push(`model=${event.model}`);
@@ -19761,12 +19965,12 @@ function formatEventLine(event, options) {
   } else if (event.type === "thinking") {
     detailParts.push("kind=model");
   }
-  const detail = detailParts.length > 0 ? dim6(detailParts.join(" ")) : "";
+  const detail = detailParts.length > 0 ? dim7(detailParts.join(" ")) : "";
   return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ""}`.trimEnd();
 }
-var dim6 = (s) => `\x1B[2m${s}\x1B[0m`, bold6 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
-  JOB_COLORS = [cyan4, yellow5, magenta, green6, blue, red];
+  JOB_COLORS = [cyan5, yellow6, magenta, green7, blue, red2];
   EVENT_LABELS = {
     run_start: "START",
     meta: "META",
@@ -19783,27 +19987,27 @@ var init_format_helpers = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run8
+  run: () => run9
 });
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync7 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync8 } from "node:fs";
+import { join as join12 } from "node:path";
 function ok2(msg) {
-  console.log(`  ${green6("✓")} ${msg}`);
+  console.log(`  ${green7("✓")} ${msg}`);
 }
 function warn(msg) {
-  console.log(`  ${yellow5("○")} ${msg}`);
+  console.log(`  ${yellow6("○")} ${msg}`);
 }
 function fail(msg) {
-  console.log(`  ${red("✗")} ${msg}`);
+  console.log(`  ${red2("✗")} ${msg}`);
 }
 function info(msg) {
-  console.log(`  ${dim6(msg)}`);
+  console.log(`  ${dim7(msg)}`);
 }
 function section(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold6(`── ${label} ${line}`)}`);
+${bold7(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
   const r = spawnSync6(bin, args, {
@@ -19826,18 +20030,18 @@ function formatElapsed2(s) {
 function statusColor(status) {
   switch (status) {
     case "running":
-      return cyan4(status);
+      return cyan5(status);
     case "done":
-      return green6(status);
+      return green7(status);
     case "error":
-      return red(status);
+      return red2(status);
     case "starting":
-      return yellow5(status);
+      return yellow6(status);
     default:
       return status;
   }
 }
-async function run8() {
+async function run9() {
   const argv = process.argv.slice(3);
   const jsonMode = argv.includes("--json");
   const loader = new SpecialistLoader;
@@ -19849,11 +20053,11 @@ async function run8() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync7(join11(process.cwd(), ".beads"));
+  const beadsPresent = existsSync8(join12(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
   let jobs = [];
-  if (existsSync7(jobsDir)) {
+  if (existsSync8(jobsDir)) {
     const supervisor = new Supervisor({
       runner: null,
       runOptions: null,
@@ -19904,51 +20108,51 @@ async function run8() {
     return;
   }
   console.log(`
-${bold6("specialists status")}
+${bold7("specialists status")}
 `);
   section("Specialists");
   if (allSpecialists.length === 0) {
-    warn(`no specialists found — run ${yellow5("specialists init")} to scaffold`);
+    warn(`no specialists found — run ${yellow6("specialists init")} to scaffold`);
   } else {
     const byScope = allSpecialists.reduce((acc, s) => {
       acc[s.scope] = (acc[s.scope] ?? 0) + 1;
       return acc;
     }, {});
     const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
-    ok2(`${allSpecialists.length} found  ${dim6(`(${scopeSummary})`)}`);
+    ok2(`${allSpecialists.length} found  ${dim7(`(${scopeSummary})`)}`);
     for (const s of allSpecialists) {
       const staleness = stalenessMap[s.name];
       if (staleness === "AGED") {
-        warn(`${s.name}  ${red("AGED")}  ${dim6(s.scope)}`);
+        warn(`${s.name}  ${red2("AGED")}  ${dim7(s.scope)}`);
       } else if (staleness === "STALE") {
-        warn(`${s.name}  ${yellow5("STALE")}  ${dim6(s.scope)}`);
+        warn(`${s.name}  ${yellow6("STALE")}  ${dim7(s.scope)}`);
       }
     }
   }
   section("pi  (coding agent runtime)");
   if (!piInstalled) {
-    fail(`pi not installed — install ${yellow5("pi")} first`);
+    fail(`pi not installed — install ${yellow6("pi")} first`);
   } else {
     const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
-    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim6(`(${[...piProviders].join(", ")})`)} ` : yellow5("no providers configured — run pi config");
+    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim7(`(${[...piProviders].join(", ")})`)} ` : yellow6("no providers configured — run pi config");
     ok2(`${vStr}  —  ${pStr}`);
   }
   section("beads  (issue tracker)");
   if (!bdInstalled) {
-    fail(`bd not installed — install ${yellow5("bd")} first`);
+    fail(`bd not installed — install ${yellow6("bd")} first`);
   } else {
-    ok2(`bd installed${bdVersion?.ok ? `  ${dim6(bdVersion.stdout)}` : ""}`);
+    ok2(`bd installed${bdVersion?.ok ? `  ${dim7(bdVersion.stdout)}` : ""}`);
     if (beadsPresent) {
       ok2(".beads/ present in project");
     } else {
-      warn(`.beads/ not found — run ${yellow5("bd init")} to enable issue tracking`);
+      warn(`.beads/ not found — run ${yellow6("bd init")} to enable issue tracking`);
     }
   }
   section("MCP");
   if (!specialistsBin.ok) {
-    fail(`specialists not installed globally — run ${yellow5("npm install -g @jaggerxtrm/specialists")}`);
+    fail(`specialists not installed globally — run ${yellow6("npm install -g @jaggerxtrm/specialists")}`);
   } else {
-    ok2(`specialists binary installed  ${dim6(specialistsBin.stdout)}`);
+    ok2(`specialists binary installed  ${dim7(specialistsBin.stdout)}`);
     info(`verify registration: claude mcp get specialists`);
     info(`re-register:         specialists install`);
   }
@@ -19956,8 +20160,8 @@ ${bold6("specialists status")}
     section("Active Jobs");
     for (const job of jobs) {
       const elapsed = formatElapsed2(job);
-      const detail = job.status === "error" ? red(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim6(`tool: ${job.current_tool}`) : dim6(job.current_event ?? "");
-      console.log(`  ${dim6(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
+      const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : dim7(job.current_event ?? "");
+      console.log(`  ${dim7(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
     }
   }
   console.log();
@@ -19971,17 +20175,17 @@ var init_status = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run9
+  run: () => run10
 });
-import { existsSync as existsSync8, readFileSync as readFileSync5 } from "node:fs";
-import { join as join12 } from "node:path";
-async function run9() {
+import { existsSync as existsSync9, readFileSync as readFileSync5 } from "node:fs";
+import { join as join13 } from "node:path";
+async function run10() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp result <job-id>");
     process.exit(1);
   }
-  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -19989,33 +20193,33 @@ async function run9() {
     process.exit(1);
   }
   if (status.status === "running" || status.status === "starting") {
-    process.stderr.write(`${dim7(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}
+    process.stderr.write(`${dim8(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}
 `);
     process.exit(1);
   }
   if (status.status === "error") {
-    process.stderr.write(`${red2(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
+    process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
 `);
     process.exit(1);
   }
-  const resultPath = join12(jobsDir, jobId, "result.txt");
-  if (!existsSync8(resultPath)) {
+  const resultPath = join13(jobsDir, jobId, "result.txt");
+  if (!existsSync9(resultPath)) {
     console.error(`Result file not found for job ${jobId}`);
     process.exit(1);
   }
   process.stdout.write(readFileSync5(resultPath, "utf-8"));
 }
-var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`;
+var dim8 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync9, readdirSync as readdirSync3, readFileSync as readFileSync6 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync6 } from "node:fs";
+import { join as join14 } from "node:path";
 function readJobEvents(jobDir) {
-  const eventsPath = join13(jobDir, "events.jsonl");
-  if (!existsSync9(eventsPath))
+  const eventsPath = join14(jobDir, "events.jsonl");
+  if (!existsSync10(eventsPath))
     return [];
   const content = readFileSync6(eventsPath, "utf-8");
   const lines = content.split(`
@@ -20030,15 +20234,15 @@ function readJobEvents(jobDir) {
   return events;
 }
 function readJobEventsById(jobsDir, jobId) {
-  return readJobEvents(join13(jobsDir, jobId));
+  return readJobEvents(join14(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  if (!existsSync9(jobsDir))
+  if (!existsSync10(jobsDir))
     return [];
   const batches = [];
   const entries = readdirSync3(jobsDir);
   for (const entry of entries) {
-    const jobDir = join13(jobsDir, entry);
+    const jobDir = join14(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -20047,10 +20251,10 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join13(jobDir, "status.json");
+    const statusPath = join14(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync9(statusPath)) {
+    if (existsSync10(statusPath)) {
       try {
         const status = JSON.parse(readFileSync6(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
@@ -20113,10 +20317,10 @@ var init_timeline_query = __esm(() => {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run10
+  run: () => run11
 });
-import { existsSync as existsSync10 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join15 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -20164,7 +20368,7 @@ function parseSince(value) {
   }
   return;
 }
-function parseArgs5(argv) {
+function parseArgs6(argv) {
   let jobId;
   let specialist;
   let since;
@@ -20209,7 +20413,7 @@ function parseArgs5(argv) {
 function printSnapshot(merged, options) {
   if (merged.length === 0) {
     if (!options.json)
-      console.log(dim6("No events found."));
+      console.log(dim7("No events found."));
     return;
   }
   const colorMap = new JobColorMap;
@@ -20255,13 +20459,13 @@ async function followMerged(jobsDir, options) {
   const initialBatchCount = filteredBatches().length;
   if (!options.forever && initialBatchCount > 0 && completedJobs.size === initialBatchCount) {
     if (!options.json) {
-      process.stderr.write(dim6(`All jobs complete.
+      process.stderr.write(dim7(`All jobs complete.
 `));
     }
     return;
   }
   if (!options.json) {
-    process.stderr.write(dim6(`Following... (Ctrl+C to stop)
+    process.stderr.write(dim7(`Following... (Ctrl+C to stop)
 `));
   }
   const lastPrintedEventKey = new Map;
@@ -20330,15 +20534,15 @@ Examples:
   specialists feed -f --forever
 `);
 }
-async function run10() {
-  const options = parseArgs5(process.argv.slice(3));
+async function run11() {
+  const options = parseArgs6(process.argv.slice(3));
   if (!options.jobId && !options.follow) {
     showUsage();
     process.exit(1);
   }
-  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
-  if (!existsSync10(jobsDir)) {
-    console.log(dim6("No jobs directory found."));
+  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
+  if (!existsSync11(jobsDir)) {
+    console.log(dim7("No jobs directory found."));
     return;
   }
   if (options.follow) {
@@ -20362,11 +20566,11 @@ var init_feed = __esm(() => {
 // src/cli/poll.ts
 var exports_poll = {};
 __export(exports_poll, {
-  run: () => run11
+  run: () => run12
 });
-import { existsSync as existsSync11, readFileSync as readFileSync7 } from "node:fs";
-import { join as join15 } from "node:path";
-function parseArgs6(argv) {
+import { existsSync as existsSync12, readFileSync as readFileSync7 } from "node:fs";
+import { join as join16 } from "node:path";
+function parseArgs7(argv) {
   let jobId;
   let cursor = 0;
   let json = false;
@@ -20391,11 +20595,11 @@ function parseArgs6(argv) {
   }
   return { jobId, cursor, json };
 }
-async function run11() {
-  const { jobId, cursor, json } = parseArgs6(process.argv.slice(3));
-  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
-  const jobDir = join15(jobsDir, jobId);
-  if (!existsSync11(jobDir)) {
+async function run12() {
+  const { jobId, cursor, json } = parseArgs7(process.argv.slice(3));
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobDir = join16(jobsDir, jobId);
+  if (!existsSync12(jobDir)) {
     const result2 = {
       job_id: jobId,
       status: "error",
@@ -20409,16 +20613,16 @@ async function run11() {
     console.log(JSON.stringify(result2));
     process.exit(1);
   }
-  const statusPath = join15(jobDir, "status.json");
+  const statusPath = join16(jobDir, "status.json");
   let status = null;
-  if (existsSync11(statusPath)) {
+  if (existsSync12(statusPath)) {
     try {
       status = JSON.parse(readFileSync7(statusPath, "utf-8"));
     } catch {}
   }
-  const resultPath = join15(jobDir, "result.txt");
+  const resultPath = join16(jobDir, "result.txt");
   let output = "";
-  if (existsSync11(resultPath)) {
+  if (existsSync12(resultPath)) {
     try {
       output = readFileSync7(resultPath, "utf-8");
     } catch {}
@@ -20473,18 +20677,18 @@ var init_poll = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run12
+  run: () => run13
 });
-import { join as join16 } from "node:path";
+import { join as join17 } from "node:path";
 import { writeFileSync as writeFileSync6 } from "node:fs";
-async function run12() {
+async function run13() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
     console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -20497,7 +20701,7 @@ async function run12() {
     process.exit(1);
   }
   if (!status.fifo_path) {
-    process.stderr.write(`${red3("Error:")} Job ${jobId} has no steer pipe.
+    process.stderr.write(`${red4("Error:")} Job ${jobId} has no steer pipe.
 `);
     process.stderr.write(`Only jobs started with --background support mid-run steering.
 `);
@@ -20507,59 +20711,7 @@ async function run12() {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
     writeFileSync6(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green7("✓")} Steer message sent to job ${jobId}
-`);
-  } catch (err) {
-    process.stderr.write(`${red3("Error:")} Failed to write to steer pipe: ${err?.message}
-`);
-    process.exit(1);
-  }
-}
-var green7 = (s) => `\x1B[32m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
-var init_steer = __esm(() => {
-  init_supervisor();
-});
-
-// src/cli/follow-up.ts
-var exports_follow_up = {};
-__export(exports_follow_up, {
-  run: () => run13
-});
-import { join as join17 } from "node:path";
-import { writeFileSync as writeFileSync7 } from "node:fs";
-async function run13() {
-  const jobId = process.argv[3];
-  const message = process.argv[4];
-  if (!jobId || !message) {
-    console.error('Usage: specialists|sp follow-up <job-id> "<message>"');
-    process.exit(1);
-  }
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
-  const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const status = supervisor.readStatus(jobId);
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
-  if (status.status !== "waiting") {
-    process.stderr.write(`${red4("Error:")} Job ${jobId} is not in waiting state (status: ${status.status}).
-`);
-    process.stderr.write(`Only jobs started with --keep-alive and --background support follow-up prompts.
-`);
-    process.exit(1);
-  }
-  if (!status.fifo_path) {
-    process.stderr.write(`${red4("Error:")} Job ${jobId} has no steer pipe.
-`);
-    process.exit(1);
-  }
-  try {
-    const payload = JSON.stringify({ type: "prompt", message }) + `
-`;
-    writeFileSync7(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green8("✓")} Follow-up sent to job ${jobId}
-`);
-    process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
+    process.stdout.write(`${green8("✓")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
     process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
@@ -20568,20 +20720,22 @@ async function run13() {
   }
 }
 var green8 = (s) => `\x1B[32m${s}\x1B[0m`, red4 = (s) => `\x1B[31m${s}\x1B[0m`;
-var init_follow_up = __esm(() => {
+var init_steer = __esm(() => {
   init_supervisor();
 });
 
-// src/cli/stop.ts
-var exports_stop = {};
-__export(exports_stop, {
+// src/cli/follow-up.ts
+var exports_follow_up = {};
+__export(exports_follow_up, {
   run: () => run14
 });
 import { join as join18 } from "node:path";
+import { writeFileSync as writeFileSync7 } from "node:fs";
 async function run14() {
   const jobId = process.argv[3];
-  if (!jobId) {
-    console.error("Usage: specialists|sp stop <job-id>");
+  const message = process.argv[4];
+  if (!jobId || !message) {
+    console.error('Usage: specialists|sp follow-up <job-id> "<message>"');
     process.exit(1);
   }
   const jobsDir = join18(process.cwd(), ".specialists", "jobs");
@@ -20591,32 +20745,82 @@ async function run14() {
     console.error(`No job found: ${jobId}`);
     process.exit(1);
   }
+  if (status.status !== "waiting") {
+    process.stderr.write(`${red5("Error:")} Job ${jobId} is not in waiting state (status: ${status.status}).
+`);
+    process.stderr.write(`Only jobs started with --keep-alive and --background support follow-up prompts.
+`);
+    process.exit(1);
+  }
+  if (!status.fifo_path) {
+    process.stderr.write(`${red5("Error:")} Job ${jobId} has no steer pipe.
+`);
+    process.exit(1);
+  }
+  try {
+    const payload = JSON.stringify({ type: "prompt", message }) + `
+`;
+    writeFileSync7(status.fifo_path, payload, { flag: "a" });
+    process.stdout.write(`${green9("✓")} Follow-up sent to job ${jobId}
+`);
+    process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
+`);
+  } catch (err) {
+    process.stderr.write(`${red5("Error:")} Failed to write to steer pipe: ${err?.message}
+`);
+    process.exit(1);
+  }
+}
+var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
+var init_follow_up = __esm(() => {
+  init_supervisor();
+});
+
+// src/cli/stop.ts
+var exports_stop = {};
+__export(exports_stop, {
+  run: () => run15
+});
+import { join as join19 } from "node:path";
+async function run15() {
+  const jobId = process.argv[3];
+  if (!jobId) {
+    console.error("Usage: specialists|sp stop <job-id>");
+    process.exit(1);
+  }
+  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
+  const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
+  const status = supervisor.readStatus(jobId);
+  if (!status) {
+    console.error(`No job found: ${jobId}`);
+    process.exit(1);
+  }
   if (status.status === "done" || status.status === "error") {
-    process.stderr.write(`${dim8(`Job ${jobId} is already ${status.status}.`)}
+    process.stderr.write(`${dim9(`Job ${jobId} is already ${status.status}.`)}
 `);
     return;
   }
   if (!status.pid) {
-    process.stderr.write(`${red5(`No PID recorded for job ${jobId}.`)}
+    process.stderr.write(`${red6(`No PID recorded for job ${jobId}.`)}
 `);
     process.exit(1);
   }
   try {
     process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green9("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
+    process.stdout.write(`${green10("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
   } catch (err) {
     if (err.code === "ESRCH") {
-      process.stderr.write(`${red5(`Process ${status.pid} not found.`)} Job may have already completed.
+      process.stderr.write(`${red6(`Process ${status.pid} not found.`)} Job may have already completed.
 `);
     } else {
-      process.stderr.write(`${red5("Error:")} ${err.message}
+      process.stderr.write(`${red6("Error:")} ${err.message}
 `);
       process.exit(1);
     }
   }
 }
-var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
 });
@@ -20624,33 +20828,33 @@ var init_stop = __esm(() => {
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run15
+  run: () => run16
 });
 function section2(title) {
   const bar = "─".repeat(60);
   return `
-${bold7(cyan5(title))}
-${dim9(bar)}`;
+${bold8(cyan6(title))}
+${dim10(bar)}`;
 }
 function cmd2(s) {
-  return yellow6(s);
+  return yellow7(s);
 }
 function flag(s) {
-  return green10(s);
+  return green11(s);
 }
-async function run15() {
+async function run16() {
   const lines = [
     "",
-    bold7("specialists  ·  Quick Start Guide"),
-    dim9("One MCP server. Multiple AI backends. Intelligent orchestration."),
-    dim9("Tip: sp is a shorter alias — sp run, sp list, sp feed etc. work identically."),
+    bold8("specialists  ·  Quick Start Guide"),
+    dim10("One MCP server. Multiple AI backends. Intelligent orchestration."),
+    dim10("Tip: sp is a shorter alias — sp run, sp list, sp feed etc. work identically."),
     ""
   ];
   lines.push(section2("1. Installation"));
   lines.push("");
   lines.push(`  ${cmd2("npm install -g @jaggerxtrm/specialists")}    # install globally`);
   lines.push(`  ${cmd2("specialists install")}                       # project setup:`);
-  lines.push(`  ${dim9("                                            #   checks pi · bd · xt, then wires MCP + hooks")}`);
+  lines.push(`  ${dim10("                                            #   checks pi · bd · xt, then wires MCP + hooks")}`);
   lines.push("");
   lines.push(`  Verify everything is healthy:`);
   lines.push(`  ${cmd2("specialists status")}                        # shows pi, beads, MCP, active jobs`);
@@ -20661,9 +20865,9 @@ async function run15() {
   lines.push(`  ${cmd2("specialists init")}                          # creates specialists/, .specialists/, AGENTS.md`);
   lines.push("");
   lines.push(`  What this creates:`);
-  lines.push(`  ${dim9("specialists/")}       — put your .specialist.yaml files here`);
-  lines.push(`  ${dim9(".specialists/")}      — runtime data (jobs/, ready/) — gitignored`);
-  lines.push(`  ${dim9("AGENTS.md")}          — context block injected into Claude sessions`);
+  lines.push(`  ${dim10("specialists/")}       — put your .specialist.yaml files here`);
+  lines.push(`  ${dim10(".specialists/")}      — runtime data (jobs/, ready/) — gitignored`);
+  lines.push(`  ${dim10("AGENTS.md")}          — context block injected into Claude sessions`);
   lines.push("");
   lines.push(section2("3. Discover Specialists"));
   lines.push("");
@@ -20679,66 +20883,66 @@ async function run15() {
   lines.push("");
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
-  lines.push(`  ${bold7("Foreground")} (streams output to stdout):`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"Review src/api.ts for security issues"')}`);
+  lines.push(`  ${bold8("Foreground")} (streams output to stdout):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"Review src/api.ts for security issues"')}`);
   lines.push("");
-  lines.push(`  ${bold7("Background")} (returns a job ID immediately):`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"..."')} ${flag("--background")}`);
-  lines.push(`  ${dim9("  # → Job started: job_a1b2c3d4")}`);
+  lines.push(`  ${bold8("Background")} (returns a job ID immediately):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"..."')} ${flag("--background")}`);
+  lines.push(`  ${dim10("  # → Job started: job_a1b2c3d4")}`);
   lines.push("");
-  lines.push(`  ${bold7("Follow")} (background + stream live output in one command):`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim9('"..."')} ${flag("--follow")}`);
-  lines.push(`  ${dim9("  # starts in background, streams output live, exits when complete")}`);
+  lines.push(`  ${bold8("Follow")} (background + stream live output in one command):`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim10('"..."')} ${flag("--follow")}`);
+  lines.push(`  ${dim10("  # starts in background, streams output live, exits when complete")}`);
   lines.push("");
   lines.push(`  Override model for one run:`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim9("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim9('"..."')}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--model")} ${dim10("anthropic/claude-opus-4-6")} ${flag("--prompt")} ${dim10('"..."')}`);
   lines.push("");
   lines.push(`  Run without beads issue tracking:`);
-  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--no-beads")} ${flag("--prompt")} ${dim9('"..."')}`);
+  lines.push(`  ${cmd2("specialists run code-review")} ${flag("--no-beads")} ${flag("--prompt")} ${dim10('"..."')}`);
   lines.push("");
   lines.push(`  Pipe a prompt from stdin:`);
   lines.push(`  ${cmd2("cat my-brief.md | specialists run code-review")}`);
   lines.push("");
   lines.push(section2("5. Background Job Lifecycle"));
   lines.push("");
-  lines.push(`  ${bold7("Watch progress")} — stream events as they arrive:`);
+  lines.push(`  ${bold8("Watch progress")} — stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
   lines.push("");
-  lines.push(`  ${bold7("Read results")} — print the final output:`);
+  lines.push(`  ${bold8("Read results")} — print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
-  lines.push(`  ${bold7("Steer a running job")} — redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${bold8("Steer a running job")} — redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
-  lines.push(`  ${dim9("  # delivered after current tool calls finish, before the next LLM call")}`);
+  lines.push(`  ${dim10("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
-  lines.push(`  ${bold7("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${bold8("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
   lines.push(`  ${cmd2("specialists run bug-hunt")} ${flag("--bead unitAI-abc --keep-alive --background")}`);
-  lines.push(`  ${dim9("  # → Job started: a1b2c3  (status: waiting after first turn)")}`);
+  lines.push(`  ${dim10("  # → Job started: a1b2c3  (status: waiting after first turn)")}`);
   lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
   lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
   lines.push("");
-  lines.push(`  ${bold7("Cancel a job")}:`);
+  lines.push(`  ${bold8("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
-  lines.push(`  ${bold7("Job files")} in ${dim9(".specialists/jobs/<job-id>/")}:`);
-  lines.push(`  ${dim9("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
-  lines.push(`  ${dim9("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
-  lines.push(`  ${dim9("result.txt")}    — final output (written when status=done)`);
-  lines.push(`  ${dim9("steer.pipe")}    — named FIFO for mid-run steering (removed on job completion)`);
+  lines.push(`  ${bold8("Job files")} in ${dim10(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${dim10("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
+  lines.push(`  ${dim10("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
+  lines.push(`  ${dim10("result.txt")}    — final output (written when status=done)`);
+  lines.push(`  ${dim10("steer.pipe")}    — named FIFO for mid-run steering (removed on job completion)`);
   lines.push("");
   lines.push(section2("6. Editing Specialists"));
   lines.push("");
   lines.push(`  Change a field without opening the YAML manually:`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim9("anthropic/claude-sonnet-4-6")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--description")} ${dim9('"Updated description"')}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--timeout")} ${dim9("120000")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--permission")} ${dim9("HIGH")}`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--tags")} ${dim9("analysis,security,review")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("anthropic/claude-sonnet-4-6")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--description")} ${dim10('"Updated description"')}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--timeout")} ${dim10("120000")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--permission")} ${dim10("HIGH")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--tags")} ${dim10("analysis,security,review")}`);
   lines.push("");
   lines.push(`  Preview without writing:`);
-  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim9("...")} ${flag("--dry-run")}`);
+  lines.push(`  ${cmd2("specialists edit code-review")} ${flag("--model")} ${dim10("...")} ${flag("--dry-run")}`);
   lines.push("");
   lines.push(section2("7. .specialist.yaml Schema"));
   lines.push("");
@@ -20785,21 +20989,21 @@ async function run15() {
     "    priority: 2                  # 0=critical … 4=backlog"
   ];
   for (const l of schemaLines) {
-    lines.push(`  ${dim9(l)}`);
+    lines.push(`  ${dim10(l)}`);
   }
   lines.push("");
   lines.push(section2("8. Hook System"));
   lines.push("");
-  lines.push(`  Specialists emits lifecycle events to ${dim9(".specialists/trace.jsonl")}:`);
+  lines.push(`  Specialists emits lifecycle events to ${dim10(".specialists/trace.jsonl")}:`);
   lines.push("");
-  lines.push(`  ${bold7("Hook point")}              ${bold7("When fired")}`);
-  lines.push(`  ${yellow6("specialist:start")}       before the agent session begins`);
-  lines.push(`  ${yellow6("specialist:token")}       on each streamed token (delta)`);
-  lines.push(`  ${yellow6("specialist:done")}        after successful completion`);
-  lines.push(`  ${yellow6("specialist:error")}       on failure or timeout`);
+  lines.push(`  ${bold8("Hook point")}              ${bold8("When fired")}`);
+  lines.push(`  ${yellow7("specialist:start")}       before the agent session begins`);
+  lines.push(`  ${yellow7("specialist:token")}       on each streamed token (delta)`);
+  lines.push(`  ${yellow7("specialist:done")}        after successful completion`);
+  lines.push(`  ${yellow7("specialist:error")}       on failure or timeout`);
   lines.push("");
   lines.push(`  Each event line in trace.jsonl:`);
-  lines.push(`  ${dim9('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
+  lines.push(`  ${dim10('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
   lines.push("");
   lines.push(`  Tail the trace file to observe all activity:`);
   lines.push(`  ${cmd2("tail -f .specialists/trace.jsonl | jq .")}`);
@@ -20808,77 +21012,77 @@ async function run15() {
   lines.push("");
   lines.push(`  After ${cmd2("specialists install")}, these MCP tools are available to Claude:`);
   lines.push("");
-  lines.push(`  ${bold7("specialist_init")}    — bootstrap: bd init + list specialists`);
-  lines.push(`  ${bold7("list_specialists")}   — discover specialists (project/user/system)`);
-  lines.push(`  ${bold7("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
-  lines.push(`  ${bold7("run_parallel")}       — concurrent or pipeline execution`);
-  lines.push(`  ${bold7("start_specialist")}   — async job start, returns job ID`);
-  lines.push(`  ${bold7("poll_specialist")}    — poll job status/output by ID`);
-  lines.push(`  ${bold7("steer_specialist")}      — send a mid-run message to a running job`);
-  lines.push(`  ${bold7("follow_up_specialist")} — send a next-turn prompt to a keep-alive session`);
-  lines.push(`  ${bold7("stop_specialist")}      — cancel a running job by ID`);
-  lines.push(`  ${bold7("specialist_status")}  — circuit breaker health + staleness`);
+  lines.push(`  ${bold8("specialist_init")}    — bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold8("list_specialists")}   — discover specialists (project/user/system)`);
+  lines.push(`  ${bold8("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
+  lines.push(`  ${bold8("run_parallel")}       — concurrent or pipeline execution`);
+  lines.push(`  ${bold8("start_specialist")}   — async job start, returns job ID`);
+  lines.push(`  ${bold8("poll_specialist")}    — poll job status/output by ID`);
+  lines.push(`  ${bold8("steer_specialist")}      — send a mid-run message to a running job`);
+  lines.push(`  ${bold8("follow_up_specialist")} — send a next-turn prompt to a keep-alive session`);
+  lines.push(`  ${bold8("stop_specialist")}      — cancel a running job by ID`);
+  lines.push(`  ${bold8("specialist_status")}  — circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
   lines.push("");
-  lines.push(`  ${bold7("Foreground review, save to file:")}`);
+  lines.push(`  ${bold8("Foreground review, save to file:")}`);
   lines.push(`  ${cmd2('specialists run code-review --prompt "Audit src/" > review.md')}`);
   lines.push("");
-  lines.push(`  ${bold7("Fire-and-forget, check later:")}`);
+  lines.push(`  ${bold8("Fire-and-forget, check later:")}`);
   lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push(`  ${cmd2("specialists result <job-id> > analysis.md")}`);
   lines.push("");
-  lines.push(`  ${bold7("Steer a job mid-run:")}`);
+  lines.push(`  ${bold8("Steer a job mid-run:")}`);
   lines.push(`  ${cmd2('specialists run deep-analysis --prompt "..." --background')}`);
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
-  lines.push(`  ${bold7("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${bold8("Multi-turn keep-alive (iterative work):")}`);
   lines.push(`  ${cmd2("specialists run bug-hunt --bead unitAI-abc --keep-alive --background")}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push("");
-  lines.push(`  ${bold7("Override model for a single run:")}`);
+  lines.push(`  ${bold8("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
-  lines.push(dim9("─".repeat(62)));
-  lines.push(`  ${dim9("specialists help")}     command list         ${dim9("specialists <cmd> --help")}   per-command flags`);
-  lines.push(`  ${dim9("specialists status")}   health check         ${dim9("specialists models")}         available models`);
+  lines.push(dim10("─".repeat(62)));
+  lines.push(`  ${dim10("specialists help")}     command list         ${dim10("specialists <cmd> --help")}   per-command flags`);
+  lines.push(`  ${dim10("specialists status")}   health check         ${dim10("specialists models")}         available models`);
   lines.push("");
   console.log(lines.join(`
 `));
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green10 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run16
+  run: () => run17
 });
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { existsSync as existsSync12, mkdirSync as mkdirSync3, readFileSync as readFileSync8, readdirSync as readdirSync4 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync13, mkdirSync as mkdirSync3, readFileSync as readFileSync8, readdirSync as readdirSync4 } from "node:fs";
+import { join as join20 } from "node:path";
 function ok3(msg) {
-  console.log(`  ${green11("✓")} ${msg}`);
+  console.log(`  ${green12("✓")} ${msg}`);
 }
 function warn2(msg) {
-  console.log(`  ${yellow7("○")} ${msg}`);
+  console.log(`  ${yellow8("○")} ${msg}`);
 }
 function fail2(msg) {
-  console.log(`  ${red6("✗")} ${msg}`);
+  console.log(`  ${red7("✗")} ${msg}`);
 }
 function fix(msg) {
-  console.log(`    ${dim10("→ fix:")} ${yellow7(msg)}`);
+  console.log(`    ${dim11("→ fix:")} ${yellow8(msg)}`);
 }
 function hint(msg) {
-  console.log(`    ${dim10(msg)}`);
+  console.log(`    ${dim11(msg)}`);
 }
 function section3(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold8(`── ${label} ${line}`)}`);
+${bold9(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
   const r = spawnSync7(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
@@ -20888,7 +21092,7 @@ function isInstalled2(bin) {
   return spawnSync7("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync12(path))
+  if (!existsSync13(path))
     return null;
   try {
     return JSON.parse(readFileSync8(path, "utf8"));
@@ -20913,7 +21117,7 @@ function checkPi() {
     fix("pi config   (add at least one API key)");
     return false;
   }
-  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim10(`(${[...providers].join(", ")})`)}`);
+  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim11(`(${[...providers].join(", ")})`)}`);
   return true;
 }
 function checkSpAlias() {
@@ -20933,8 +21137,8 @@ function checkBd() {
     fix("install beads (bd) first");
     return false;
   }
-  ok3(`bd installed  ${dim10(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync12(join19(CWD, ".beads")))
+  ok3(`bd installed  ${dim11(sp("bd", ["--version"]).stdout || "")}`);
+  if (existsSync13(join20(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -20947,16 +21151,16 @@ function checkXt() {
     fix("install xtrm-tools first");
     return false;
   }
-  ok3(`xt installed  ${dim10(sp("xt", ["--version"]).stdout || "")}`);
+  ok3(`xt installed  ${dim11(sp("xt", ["--version"]).stdout || "")}`);
   return true;
 }
 function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join19(HOOKS_DIR, name);
-    if (!existsSync12(dest)) {
-      fail2(`${name}  ${red6("missing")}`);
+    const dest = join20(HOOKS_DIR, name);
+    if (!existsSync13(dest)) {
+      fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
     } else {
@@ -20999,18 +21203,18 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join19(CWD, ".specialists");
-  const jobsDir = join19(rootDir, "jobs");
-  const readyDir = join19(rootDir, "ready");
+  const rootDir = join20(CWD, ".specialists");
+  const jobsDir = join20(rootDir, "jobs");
+  const readyDir = join20(rootDir, "ready");
   let allOk = true;
-  if (!existsSync12(rootDir)) {
+  if (!existsSync13(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync12(subDir)) {
+      if (!existsSync13(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
         mkdirSync3(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
@@ -21023,8 +21227,8 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join19(CWD, ".specialists", "jobs");
-  if (!existsSync12(jobsDir)) {
+  const jobsDir = join20(CWD, ".specialists", "jobs");
+  if (!existsSync13(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -21042,8 +21246,8 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join19(jobsDir, jobId, "status.json");
-    if (!existsSync12(statusPath))
+    const statusPath = join20(jobsDir, jobId, "status.json");
+    if (!existsSync13(statusPath))
       continue;
     try {
       const status = JSON.parse(readFileSync8(statusPath, "utf8"));
@@ -21060,7 +21264,7 @@ function checkZombieJobs() {
             running++;
           else {
             zombies++;
-            warn2(`${jobId}  ${yellow7("ZOMBIE")}  ${dim10(`pid ${pid} not found, status=${status.status}`)}`);
+            warn2(`${jobId}  ${yellow8("ZOMBIE")}  ${dim11(`pid ${pid} not found, status=${status.status}`)}`);
             fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
           }
         }
@@ -21073,9 +21277,9 @@ function checkZombieJobs() {
   }
   return zombies === 0;
 }
-async function run16() {
+async function run17() {
   console.log(`
-${bold8("specialists doctor")}
+${bold9("specialists doctor")}
 `);
   const piOk = checkPi();
   const spOk = checkSpAlias();
@@ -21088,21 +21292,21 @@ ${bold8("specialists doctor")}
   const allOk = piOk && bdOk && xtOk && hooksOk && mcpOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green11("✓")} ${bold8("All checks passed")}  — specialists is healthy`);
+    console.log(`  ${green12("✓")} ${bold9("All checks passed")}  — specialists is healthy`);
   } else {
-    console.log(`  ${yellow7("○")} ${bold8("Some checks failed")}  — follow the fix hints above`);
-    console.log(`  ${dim10("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
+    console.log(`  ${yellow8("○")} ${bold9("Some checks failed")}  — follow the fix hints above`);
+    console.log(`  ${dim11("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
   }
   console.log("");
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, green11 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join19(CWD, ".claude");
-  SPECIALISTS_DIR = join19(CWD, ".specialists");
-  HOOKS_DIR = join19(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join19(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join19(CWD, ".mcp.json");
+  CLAUDE_DIR = join20(CWD, ".claude");
+  SPECIALISTS_DIR = join20(CWD, ".specialists");
+  HOOKS_DIR = join20(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join20(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join20(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -21112,29 +21316,29 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run17
+  run: () => run18
 });
-import { existsSync as existsSync13, readFileSync as readFileSync9, writeFileSync as writeFileSync8 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync9, writeFileSync as writeFileSync8 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join20, resolve as resolve2 } from "node:path";
+import { join as join21, resolve as resolve2 } from "node:path";
 function ok4(msg) {
-  console.log(`  ${green12("✓")} ${msg}`);
+  console.log(`  ${green13("✓")} ${msg}`);
 }
 function skip2(msg) {
-  console.log(`  ${yellow8("○")} ${msg}`);
+  console.log(`  ${yellow9("○")} ${msg}`);
 }
 function resolveTarget(target) {
   switch (target) {
     case "global":
-      return join20(homedir3(), ".claude", "CLAUDE.md");
+      return join21(homedir3(), ".claude", "CLAUDE.md");
     case "agents":
-      return join20(process.cwd(), "AGENTS.md");
+      return join21(process.cwd(), "AGENTS.md");
     case "project":
     default:
-      return join20(process.cwd(), "CLAUDE.md");
+      return join21(process.cwd(), "CLAUDE.md");
   }
 }
-function parseArgs7() {
+function parseArgs8() {
   const argv = process.argv.slice(3);
   let target = "project";
   let dryRun = false;
@@ -21159,30 +21363,30 @@ function parseArgs7() {
   }
   return { target, dryRun };
 }
-async function run17() {
-  const { target, dryRun } = parseArgs7();
+async function run18() {
+  const { target, dryRun } = parseArgs8();
   const filePath = resolve2(resolveTarget(target));
   const label = target === "global" ? "~/.claude/CLAUDE.md" : filePath.replace(process.cwd() + "/", "");
   console.log(`
-${bold9("specialists setup")}
+${bold10("specialists setup")}
 `);
-  console.log(`  Target: ${yellow8(label)}${dryRun ? dim11("  (dry-run)") : ""}
+  console.log(`  Target: ${yellow9(label)}${dryRun ? dim12("  (dry-run)") : ""}
 `);
-  if (existsSync13(filePath)) {
+  if (existsSync14(filePath)) {
     const existing = readFileSync9(filePath, "utf8");
     if (existing.includes(MARKER)) {
       skip2(`${label} already contains Specialists Workflow section`);
       console.log(`
-  ${dim11("To force-update, remove the ## Specialists Workflow section and re-run.")}
+  ${dim12("To force-update, remove the ## Specialists Workflow section and re-run.")}
 `);
       return;
     }
     if (dryRun) {
-      console.log(dim11("─".repeat(60)));
-      console.log(dim11("Would append to existing file:"));
+      console.log(dim12("─".repeat(60)));
+      console.log(dim12("Would append to existing file:"));
       console.log("");
       console.log(WORKFLOW_BLOCK);
-      console.log(dim11("─".repeat(60)));
+      console.log(dim12("─".repeat(60)));
       return;
     }
     const separator = existing.trimEnd().endsWith(`
@@ -21194,24 +21398,24 @@ ${bold9("specialists setup")}
     ok4(`Appended Specialists Workflow section to ${label}`);
   } else {
     if (dryRun) {
-      console.log(dim11("─".repeat(60)));
-      console.log(dim11(`Would create ${label}:`));
+      console.log(dim12("─".repeat(60)));
+      console.log(dim12(`Would create ${label}:`));
       console.log("");
       console.log(WORKFLOW_BLOCK);
-      console.log(dim11("─".repeat(60)));
+      console.log(dim12("─".repeat(60)));
       return;
     }
     writeFileSync8(filePath, WORKFLOW_BLOCK, "utf8");
     ok4(`Created ${label} with Specialists Workflow section`);
   }
   console.log("");
-  console.log(`  ${dim11("Next steps:")}`);
+  console.log(`  ${dim12("Next steps:")}`);
   console.log(`  • Restart Claude Code to pick up the new context`);
-  console.log(`  • Run ${yellow8("specialists list")} to see available specialists`);
-  console.log(`  • Run ${yellow8("specialist_init")} in a new session to bootstrap context`);
+  console.log(`  • Run ${yellow9("specialists list")} to see available specialists`);
+  console.log(`  • Run ${yellow9("specialist_init")} in a new session to bootstrap context`);
   console.log("");
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, MARKER = "## Specialists Workflow", WORKFLOW_BLOCK = `## Specialists Workflow
 
 > Injected by \`specialists setup\`. Keep this section — agents use it for context.
 
@@ -21279,24 +21483,24 @@ var init_setup = () => {};
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run18
+  run: () => run19
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run18() {
+async function run19() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
     "",
-    bold10("Usage:"),
+    bold11("Usage:"),
     "  specialists|sp [command]",
     "  specialists|sp [command] --help",
     "",
-    dim12("  sp is a shorter alias — sp run, sp list, sp feed etc. all work identically."),
+    dim13("  sp is a shorter alias — sp run, sp list, sp feed etc. all work identically."),
     "",
-    bold10("Common flows:"),
+    bold11("Common flows:"),
     "",
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
@@ -21318,16 +21522,16 @@ async function run18() {
     "    or run in a separate terminal and poll with:",
     "      specialists poll <job-id> --json",
     "",
-    bold10("Core commands:"),
+    bold11("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
     "",
-    bold10("Extended commands:"),
+    bold11("Extended commands:"),
     ...formatCommands(EXTENDED_COMMANDS),
     "",
-    bold10("xtrm worktree commands:"),
+    bold11("xtrm worktree commands:"),
     ...formatCommands(WORKTREE_COMMANDS),
     "",
-    bold10("Examples:"),
+    bold11("Examples:"),
     "  specialists init",
     "  specialists list",
     "  specialists run bug-hunt --bead unitAI-123",
@@ -21338,7 +21542,7 @@ async function run18() {
     '  specialists follow-up <job-id> "now write the fix"',
     "  specialists result <job-id>",
     "",
-    bold10("More help:"),
+    bold11("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
     "  specialists run --help         Run command details and flags",
     "  specialists poll --help        Job status polling details",
@@ -21347,17 +21551,18 @@ async function run18() {
     "  specialists init --help        Bootstrap behavior and workflow injection",
     "  specialists feed --help        Job event streaming details",
     "",
-    dim12("Project model: specialists are project-only; user-scope discovery is deprecated."),
+    dim13("Project model: specialists are project-only; user-scope discovery is deprecated."),
     ""
   ];
   console.log(lines.join(`
 `));
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
+var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
 var init_help = __esm(() => {
   CORE_COMMANDS = [
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
     ["list", "List specialists in this project"],
+    ["validate", "Validate a specialist YAML against the schema"],
     ["run", "Run a specialist with --bead for tracked work or --prompt for ad-hoc work"],
     ["feed", "Tail job events; use -f to follow all jobs"],
     ["poll", "Machine-readable job status polling (for scripts/Claude Code)"],
@@ -29353,7 +29558,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run19() {
+async function run20() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -29456,6 +29661,38 @@ async function run19() {
       return;
     }
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
+    return handler();
+  }
+  if (sub === "validate") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists validate <name> [--json]",
+        "",
+        "Validate a specialist YAML file against the schema.",
+        "",
+        "What it checks:",
+        "  - YAML syntax is valid",
+        "  - Required fields are present (name, version, description, category, model)",
+        "  - Field values match expected formats (kebab-case names, semver versions)",
+        "  - Enum values are valid (permission_required, mode, beads_integration)",
+        "",
+        "Options:",
+        "  --json   Output validation result as JSON",
+        "",
+        "Examples:",
+        "  specialists validate my-specialist",
+        "  specialists validate my-specialist --json",
+        "",
+        "Exit codes:",
+        "  0 — validation passed",
+        "  1 — validation failed (errors) or specialist not found",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_validate(), exports_validate));
     return handler();
   }
   if (sub === "edit") {
@@ -29813,7 +30050,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run19().catch((error2) => {
+run20().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
