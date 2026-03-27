@@ -90,7 +90,7 @@ export async function run(): Promise<void> {
     bold('Examples:'),
     '  specialists init',
     '  specialists list',
-    '  specialists run bug-hunt --bead unitAI-123',
+    '  specialists run debugger --bead unitAI-123',
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
     '  specialists poll abc123 --json                  # check job status',
     '  specialists feed -f                             # stream all job events',

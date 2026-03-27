@@ -73,7 +73,7 @@ Run `specialists list` to see what's available. Match by task type:
 
 | Task type | Look for |
 |-----------|----------|
-| Bug / regression investigation | `bug-hunt`, `overthinker` |
+| Bug / regression investigation | `debugger`, `overthinker` |
 | Code review | `parallel-review`, `codebase-explorer` |
 | Test generation | `test-runner` |
 | Architecture / exploration | `codebase-explorer`, `feature-design` |

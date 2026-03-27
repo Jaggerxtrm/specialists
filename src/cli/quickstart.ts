@@ -100,7 +100,7 @@ export async function run(): Promise<void> {
   lines.push(`  ${dim('  # delivered after current tool calls finish, before the next LLM call')}`);
   lines.push('');
   lines.push(`  ${bold('Keep-alive multi-turn')} — start with ${flag('--keep-alive')}, then follow up:`);
-  lines.push(`  ${cmd('specialists run bug-hunt')} ${flag('--bead unitAI-abc --keep-alive')}`);
+  lines.push(`  ${cmd('specialists run debugger')} ${flag('--bead unitAI-abc --keep-alive')}`);
   lines.push(`  ${dim('  # → status: waiting after first turn')}`);
   lines.push(`  ${cmd('specialists result a1b2c3')}                   # read first turn`);
   lines.push(`  ${cmd('specialists follow-up a1b2c3')} ${flag('"now write the fix"')}    # next turn, same Pi context`);
@@ -230,7 +230,7 @@ export async function run(): Promise<void> {
   lines.push(`  ${cmd('specialists result <job-id>')}`);
   lines.push('');
   lines.push(`  ${bold('Multi-turn keep-alive (iterative work):')}`);
-  lines.push(`  ${cmd('specialists run bug-hunt --bead unitAI-abc --keep-alive')}`);
+  lines.push(`  ${cmd('specialists run debugger --bead unitAI-abc --keep-alive')}`);
   lines.push(`  ${cmd('specialists result <job-id>')}`);
   lines.push(`  ${cmd('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd('specialists feed <job-id> --follow')}`);

@@ -110,7 +110,7 @@ describe('init CLI — run()', () => {
     
     // Should have copied at least the known canonical specialists
     expect(yamlFiles.length).toBeGreaterThan(0);
-    expect(yamlFiles).toContain('bug-hunt.specialist.yaml');
+    expect(yamlFiles).toContain('debugger.specialist.yaml');
     expect(yamlFiles).toContain('explorer.specialist.yaml');
     expect(yamlFiles).toContain('overthinker.specialist.yaml');
   });
@@ -121,7 +121,7 @@ describe('init CLI — run()', () => {
     await mkdir(specialistsDir, { recursive: true });
     const customContent = `specialist:
   metadata:
-    name: bug-hunt
+    name: debugger
     version: 99.0.0
     description: "Custom bug hunt"
     category: test
@@ -130,12 +130,12 @@ describe('init CLI — run()', () => {
   prompt:
     task_template: "custom"
 `;
-    await writeFile(join(specialistsDir, 'bug-hunt.specialist.yaml'), customContent, 'utf-8');
+    await writeFile(join(specialistsDir, 'debugger.specialist.yaml'), customContent, 'utf-8');
     
     await runInit(tempDir);
     
     // The custom file should NOT be overwritten
-    const content = await readFile(join(specialistsDir, 'bug-hunt.specialist.yaml'), 'utf-8');
+    const content = await readFile(join(specialistsDir, 'debugger.specialist.yaml'), 'utf-8');
     expect(content).toContain('99.0.0');
     expect(content).toContain('Custom bug hunt');
   });

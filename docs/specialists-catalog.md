@@ -35,7 +35,7 @@ Current project specialists are loaded from two directories:
 | Name | Typical use |
 |---|---|
 | `auto-remediation` | self-healing workflow for diagnosis → fix → verify |
-| `bug-hunt` | deep bug investigation with call-chain tracing |
+| `debugger` | deep bug investigation with call-chain tracing |
 | `codebase-explorer` | codebase mapping and architecture questions |
 | `feature-design` | design and impact analysis for new features |
 | `init-session` | session context gathering |
