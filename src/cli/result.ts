@@ -24,17 +24,23 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
+  const resultPath = join(jobsDir, jobId, 'result.txt');
+
   if (status.status === 'running' || status.status === 'starting') {
-    process.stderr.write(`${dim(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}\n`);
-    process.exit(1);
+    if (!existsSync(resultPath)) {
+      process.stderr.write(`${dim(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}\n`);
+      process.exit(1);
+    }
+
+    process.stderr.write(`${dim(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}\n`);
+    process.stdout.write(readFileSync(resultPath, 'utf-8'));
+    return;
   }
 
   if (status.status === 'error') {
     process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? 'unknown error'}\n`);
     process.exit(1);
   }
-
-  const resultPath = join(jobsDir, jobId, 'result.txt');
   if (!existsSync(resultPath)) {
     console.error(`Result file not found for job ${jobId}`);
     process.exit(1);
