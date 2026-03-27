@@ -81,6 +81,8 @@ export const EVENT_LABELS: Record<string, string> = {
   thinking: 'THINK',
   tool: 'TOOL',
   text: 'TEXT',
+  message: 'MSG',
+  turn: 'TURN',
   run_complete: 'DONE',
   done: 'DONE',
   agent_end: 'DONE',
@@ -244,6 +246,11 @@ export function formatEventLine(
     detailParts.push('kind=assistant');
   } else if (event.type === 'thinking') {
     detailParts.push('kind=model');
+  } else if (event.type === 'message') {
+    detailParts.push(`phase=${event.phase}`);
+    detailParts.push(`role=${event.role}`);
+  } else if (event.type === 'turn') {
+    detailParts.push(`phase=${event.phase}`);
   }
 
   const detail = detailParts.length > 0 ? dim(detailParts.join(' ')) : '';

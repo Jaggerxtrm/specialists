@@ -95,6 +95,43 @@ describe('timeline-events', () => {
       }
     });
 
+    it('maps tool_execution_update to tool event with phase update', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_update', {
+        tool: 'bash',
+      });
+      expect(event).not.toBeNull();
+      expect(event!.type).toBe('tool');
+      if (event!.type === 'tool') {
+        expect(event.phase).toBe('update');
+      }
+    });
+
+    it('maps assistant message boundaries', () => {
+      const start = mapCallbackEventToTimelineEvent('message_start_assistant', {});
+      const end = mapCallbackEventToTimelineEvent('message_end_assistant', {});
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      expect(start!.type).toBe('message');
+      expect(end!.type).toBe('message');
+      if (start!.type === 'message') {
+        expect(start.role).toBe('assistant');
+        expect(start.phase).toBe('start');
+      }
+      if (end!.type === 'message') {
+        expect(end.role).toBe('assistant');
+        expect(end.phase).toBe('end');
+      }
+    });
+
+    it('maps turn boundaries', () => {
+      const start = mapCallbackEventToTimelineEvent('turn_start', {});
+      const end = mapCallbackEventToTimelineEvent('turn_end', {});
+      expect(start).not.toBeNull();
+      expect(end).not.toBeNull();
+      expect(start!.type).toBe('turn');
+      expect(end!.type).toBe('turn');
+    });
+
     it('maps text to text event', () => {
       const event = mapCallbackEventToTimelineEvent('text', {});
       expect(event).not.toBeNull();

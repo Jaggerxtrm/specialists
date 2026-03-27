@@ -55,6 +55,10 @@ function getHumanEventKey(event: TimelineEvent): string {
       return 'text';
     case 'thinking':
       return 'thinking';
+    case 'message':
+      return `message:${event.role}:${event.phase}`;
+    case 'turn':
+      return `turn:${event.phase}`;
     case 'run_start':
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':

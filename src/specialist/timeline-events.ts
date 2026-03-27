@@ -121,7 +121,7 @@ export interface TimelineEventTool extends TimelineEventBase {
   /** Tool name (e.g., 'bash', 'read', 'ls') */
   tool: string;
   /** Execution phase */
-  phase: 'start' | 'end';
+  phase: 'start' | 'update' | 'end';
   /** Tool call ID for correlation */
   tool_call_id?: string;
   /** Whether execution resulted in error */
@@ -135,6 +135,25 @@ export interface TimelineEventTool extends TimelineEventBase {
  */
 export interface TimelineEventText extends TimelineEventBase {
   type: 'text';
+}
+
+/**
+ * Message boundary event.
+ * Captures assistant/toolResult message lifecycle boundaries.
+ */
+export interface TimelineEventMessage extends TimelineEventBase {
+  type: 'message';
+  phase: 'start' | 'end';
+  role: 'assistant' | 'toolResult';
+}
+
+/**
+ * Turn boundary event.
+ * Captures RPC turn_start / turn_end lifecycle phases.
+ */
+export interface TimelineEventTurn extends TimelineEventBase {
+  type: 'turn';
+  phase: 'start' | 'end';
 }
 
 /**
@@ -179,6 +198,8 @@ export type TimelineEvent =
   | TimelineEventThinking
   | TimelineEventTool
   | TimelineEventText
+  | TimelineEventMessage
+  | TimelineEventTurn
   | TimelineEventRunComplete
   | TimelineEventLegacyComplete;
 
@@ -192,6 +213,8 @@ export const TIMELINE_EVENT_TYPES = {
   THINKING: 'thinking',
   TOOL: 'tool',
   TEXT: 'text',
+  MESSAGE: 'message',
+  TURN: 'turn',
   RUN_COMPLETE: 'run_complete',
   DONE: 'done',
   AGENT_END: 'agent_end',
@@ -205,13 +228,18 @@ export const TIMELINE_EVENT_TYPES = {
  * Maps PiAgentSession callback event types to timeline event types.
  *
  * Canonical callback events (post unitAI-4rn fix):
- * - 'thinking'         -> TIMELINE_EVENT_TYPES.THINKING
- * - 'toolcall'         -> TIMELINE_EVENT_TYPES.TOOL (phase: start) — fired from nested toolcall_start
- * - 'tool_execution_end' -> TIMELINE_EVENT_TYPES.TOOL (phase: end)
- * - 'text'             -> TIMELINE_EVENT_TYPES.TEXT
- * - 'agent_end'        -> IGNORED (run-level completion handled as run_complete by supervisor)
- * - 'message_done'     -> IGNORED (message-level completion, not persisted to timeline)
- * - 'done'             -> IGNORED (legacy name for agent_end, kept for safety)
+ * - 'thinking'              -> TIMELINE_EVENT_TYPES.THINKING
+ * - 'toolcall'              -> TIMELINE_EVENT_TYPES.TOOL (phase: start)
+ * - 'tool_execution_start'  -> TIMELINE_EVENT_TYPES.TOOL (phase: start)
+ * - 'tool_execution_update' -> TIMELINE_EVENT_TYPES.TOOL (phase: update)
+ * - 'tool_execution_end'    -> TIMELINE_EVENT_TYPES.TOOL (phase: end)
+ * - 'text'                  -> TIMELINE_EVENT_TYPES.TEXT
+ * - 'message_start_*'       -> TIMELINE_EVENT_TYPES.MESSAGE
+ * - 'message_end_*'         -> TIMELINE_EVENT_TYPES.MESSAGE
+ * - 'turn_start/turn_end'   -> TIMELINE_EVENT_TYPES.TURN
+ * - 'agent_end'             -> IGNORED (run-level completion handled as run_complete by supervisor)
+ * - 'message_done'          -> IGNORED (message-level completion, not persisted to timeline)
+ * - 'done'                  -> IGNORED (legacy name for agent_end, kept for safety)
  */
 export function mapCallbackEventToTimelineEvent(
   callbackEvent: string,
@@ -237,6 +265,25 @@ export function mapCallbackEventToTimelineEvent(
         tool_call_id: context.toolCallId,
       };
 
+    case 'tool_execution_start':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? 'unknown',
+        phase: 'start',
+        tool_call_id: context.toolCallId,
+      };
+
+    case 'tool_execution_update':
+    case 'tool_execution':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? 'unknown',
+        phase: 'update',
+        tool_call_id: context.toolCallId,
+      };
+
     case 'tool_execution_end':
       // Tool execution completed
       return {
@@ -247,6 +294,24 @@ export function mapCallbackEventToTimelineEvent(
         tool_call_id: context.toolCallId,
         is_error: context.isError,
       };
+
+    case 'message_start_assistant':
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: 'start', role: 'assistant' };
+
+    case 'message_end_assistant':
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: 'end', role: 'assistant' };
+
+    case 'message_start_tool_result':
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: 'start', role: 'toolResult' };
+
+    case 'message_end_tool_result':
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: 'end', role: 'toolResult' };
+
+    case 'turn_start':
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: 'start' };
+
+    case 'turn_end':
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: 'end' };
 
     case 'text':
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
