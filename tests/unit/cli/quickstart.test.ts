@@ -4,7 +4,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 describe('quickstart CLI — run()', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
   });
 
   async function captureOutput(): Promise<string> {
@@ -41,9 +40,15 @@ describe('quickstart CLI — run()', () => {
     }
   });
 
-  it('documents --background flag', async () => {
+  it('references specialists init (not deprecated install)', async () => {
     const out = await captureOutput();
-    expect(out).toContain('--background');
+    expect(out).toContain('specialists init');
+    expect(out).not.toContain('specialists install');
+  });
+
+  it('documents --bead flag for tracked runs', async () => {
+    const out = await captureOutput();
+    expect(out).toContain('--bead');
   });
 
   it('documents stall_timeout_ms in YAML schema', async () => {

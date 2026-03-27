@@ -30,8 +30,8 @@ export async function run(): Promise<void> {
   lines.push(section('1. Installation'));
   lines.push('');
   lines.push(`  ${cmd('npm install -g @jaggerxtrm/specialists')}    # install globally`);
-  lines.push(`  ${cmd('specialists install')}                       # project setup:`);
-  lines.push(`  ${dim('                                            #   checks pi · bd · xt, then wires MCP + hooks')}`);
+  lines.push(`  ${cmd('specialists init')}                         # project setup:`);
+  lines.push(`  ${dim('                                            #   creates dirs, wires MCP + hooks, injects context')}`);
   lines.push('');
   lines.push(`  Verify everything is healthy:`);
   lines.push(`  ${cmd('specialists status')}                        # shows pi, beads, MCP, active jobs`);
@@ -69,13 +69,9 @@ export async function run(): Promise<void> {
   lines.push(`  ${bold('Foreground')} (streams output to stdout):`);
   lines.push(`  ${cmd('specialists run code-review')} ${flag('--prompt')} ${dim('"Review src/api.ts for security issues"')}`);
   lines.push('');
-  lines.push(`  ${bold('Background')} (returns a job ID immediately):`);
-  lines.push(`  ${cmd('specialists run code-review')} ${flag('--prompt')} ${dim('"..."')} ${flag('--background')}`);
-  lines.push(`  ${dim('  # → Job started: job_a1b2c3d4')}`);
-  lines.push('');
-  lines.push(`  ${bold('Follow')} (background + stream live output in one command):`);
-  lines.push(`  ${cmd('specialists run code-review')} ${flag('--prompt')} ${dim('"..."')} ${flag('--follow')}`);
-  lines.push(`  ${dim('  # starts in background, streams output live, exits when complete')}`);
+  lines.push(`  ${bold('Tracked run')} (linked to a beads issue for workflow integration):`);
+  lines.push(`  ${cmd('specialists run code-review')} ${flag('--bead')} ${dim('unitAI-abc')}`);
+  lines.push(`  ${dim('  # uses bead description as prompt, tracks result in issue')}`);
   lines.push('');
   lines.push(`  Override model for one run:`);
   lines.push(`  ${cmd('specialists run code-review')} ${flag('--model')} ${dim('anthropic/claude-opus-4-6')} ${flag('--prompt')} ${dim('"..."')}`);
@@ -90,6 +86,8 @@ export async function run(): Promise<void> {
   // ── 5. Background job lifecycle ────────────────────────────────────────────
   lines.push(section('5. Background Job Lifecycle'));
   lines.push('');
+  lines.push(`  Use Claude Code's native backgrounding or run in a separate terminal.`);
+  lines.push('');
   lines.push(`  ${bold('Watch progress')} — stream events as they arrive:`);
   lines.push(`  ${cmd('specialists feed job_a1b2c3d4')}            # print events so far`);
   lines.push(`  ${cmd('specialists feed job_a1b2c3d4')} ${flag('--follow')}      # tail and stream live updates`);
@@ -102,8 +100,8 @@ export async function run(): Promise<void> {
   lines.push(`  ${dim('  # delivered after current tool calls finish, before the next LLM call')}`);
   lines.push('');
   lines.push(`  ${bold('Keep-alive multi-turn')} — start with ${flag('--keep-alive')}, then follow up:`);
-  lines.push(`  ${cmd('specialists run bug-hunt')} ${flag('--bead unitAI-abc --keep-alive --background')}`);
-  lines.push(`  ${dim('  # → Job started: a1b2c3  (status: waiting after first turn)')}`);
+  lines.push(`  ${cmd('specialists run bug-hunt')} ${flag('--bead unitAI-abc --keep-alive')}`);
+  lines.push(`  ${dim('  # → status: waiting after first turn')}`);
   lines.push(`  ${cmd('specialists result a1b2c3')}                   # read first turn`);
   lines.push(`  ${cmd('specialists follow-up a1b2c3')} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd('specialists feed a1b2c3')} ${flag('--follow')}               # watch response`);
@@ -203,7 +201,7 @@ export async function run(): Promise<void> {
   // ── 9. MCP integration ────────────────────────────────────────────────────
   lines.push(section('9. MCP Integration (Claude Code)'));
   lines.push('');
-  lines.push(`  After ${cmd('specialists install')}, these MCP tools are available to Claude:`);
+  lines.push(`  After ${cmd('specialists init')}, these MCP tools are available to Claude:`);
   lines.push('');
   lines.push(`  ${bold('specialist_init')}    — bootstrap: bd init + list specialists`);
   lines.push(`  ${bold('list_specialists')}   — discover specialists (project/user/system)`);
@@ -223,18 +221,16 @@ export async function run(): Promise<void> {
   lines.push(`  ${bold('Foreground review, save to file:')}`);
   lines.push(`  ${cmd('specialists run code-review --prompt "Audit src/" > review.md')}`);
   lines.push('');
-  lines.push(`  ${bold('Fire-and-forget, check later:')}`);
-  lines.push(`  ${cmd('specialists run deep-analysis --prompt "..." --background')}`);
-  lines.push(`  ${cmd('specialists feed <job-id> --follow')}`);
-  lines.push(`  ${cmd('specialists result <job-id> > analysis.md')}`);
+  lines.push(`  ${bold('Tracked run with beads integration:')}`);
+  lines.push(`  ${cmd('specialists run deep-analysis --bead unitAI-abc')}`);
+  lines.push(`  ${dim('  # prompt from bead, result tracked in bead')}`);
   lines.push('');
   lines.push(`  ${bold('Steer a job mid-run:')}`);
-  lines.push(`  ${cmd('specialists run deep-analysis --prompt "..." --background')}`);
   lines.push(`  ${cmd('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd('specialists result <job-id>')}`);
   lines.push('');
   lines.push(`  ${bold('Multi-turn keep-alive (iterative work):')}`);
-  lines.push(`  ${cmd('specialists run bug-hunt --bead unitAI-abc --keep-alive --background')}`);
+  lines.push(`  ${cmd('specialists run bug-hunt --bead unitAI-abc --keep-alive')}`);
   lines.push(`  ${cmd('specialists result <job-id>')}`);
   lines.push(`  ${cmd('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd('specialists feed <job-id> --follow')}`);
