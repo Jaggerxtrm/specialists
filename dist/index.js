@@ -19646,6 +19646,13 @@ async function run7() {
 
 `))
   });
+  try {
+    await loader.get(args.name);
+  } catch (err) {
+    process.stderr.write(`Error: ${err?.message ?? err}
+`);
+    process.exit(1);
+  }
   process.stderr.write(`
 ${bold5(`Running ${cyan3(args.name)}`)}
 
