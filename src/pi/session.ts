@@ -6,6 +6,13 @@ export class SessionKilledError extends Error {
   }
 }
 
+export class StallTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Session stalled: no activity for ${timeoutMs}ms`);
+    this.name = 'StallTimeoutError';
+  }
+}
+
 //
 // PiAgentSession wraps the `pi` CLI (global binary) in --mode rpc.
 // Events are emitted per the pi RPC protocol over stdout (NDJSON).
@@ -66,6 +73,8 @@ export interface PiSessionOptions {
   onEvent?: (type: string) => void;
   /** Called once with actual backend/model from the first assistant message_start */
   onMeta?: (meta: { backend: string; model: string }) => void;
+  /** Kill and fail if no streaming/protocol activity occurs within this window */
+  stallTimeoutMs?: number;
 }
 
 /** Maps specialist permission_required to pi --tools argument.
@@ -95,6 +104,8 @@ export class PiAgentSession {
   private _killed = false;
   private _lineBuffer = '';   // accumulates partial lines split across stdout chunks
   private _pendingCommand?: (response: unknown) => void;
+  private _stallTimer?: ReturnType<typeof setTimeout>;
+  private _stallError?: Error;
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -194,6 +205,7 @@ export class PiAgentSession {
     });
 
     this.proc.on('close', (code) => {
+      this._clearStallTimer();
       if (this._agentEndReceived || this._killed) {
         this._doneResolve?.();
       } else if (code === 0 || code === null) {
@@ -204,10 +216,31 @@ export class PiAgentSession {
     });
   }
 
+  private _clearStallTimer(): void {
+    if (this._stallTimer) {
+      clearTimeout(this._stallTimer);
+      this._stallTimer = undefined;
+    }
+  }
+
+  private _markActivity(): void {
+    const timeoutMs = this.options.stallTimeoutMs;
+    if (!timeoutMs || timeoutMs <= 0 || this._killed || this._agentEndReceived) return;
+
+    this._clearStallTimer();
+    this._stallTimer = setTimeout(() => {
+      if (this._killed || this._agentEndReceived) return;
+      const err = new StallTimeoutError(timeoutMs);
+      this._stallError = err;
+      this.kill(err);
+    }, timeoutMs);
+  }
+
   private _handleEvent(line: string): void {
     let event: Record<string, any>;
     try { event = JSON.parse(line); } catch { return; }
 
+    this._markActivity();
     const { type } = event;
 
     // ── RPC response (reply to a sendCommand call) ──────────────────────────
@@ -264,6 +297,7 @@ export class PiAgentSession {
           .join('');
       }
       this._agentEndReceived = true;
+      this._clearStallTimer();
       this.options.onEvent?.('agent_end');
       this._doneResolve?.();
       return;
@@ -342,6 +376,8 @@ export class PiAgentSession {
    * Call waitForDone() to block until agent_end, then close() to terminate.
    */
   async prompt(task: string): Promise<void> {
+    this._stallError = undefined;
+    this._markActivity();
     const msg = JSON.stringify({ type: 'prompt', message: task }) + '\n';
     this.proc?.stdin?.write(msg);
     // NOTE: stdin is intentionally NOT closed here. Call close() after waitForDone()
@@ -400,6 +436,7 @@ export class PiAgentSession {
    */
   async close(): Promise<void> {
     if (this._killed) return;
+    this._clearStallTimer();
     // Send EOF to stdin - pi should exit after this
     this.proc?.stdin?.end();
     // Wait for the process to actually exit
@@ -420,13 +457,14 @@ export class PiAgentSession {
   // executeBash removed — pre/post scripts run locally in runner.ts via execSync,
   // not via pi RPC (pi has no bash command in its protocol).
 
-  kill(): void {
+  kill(reason?: Error): void {
     if (this._killed) return; // idempotent – second call (e.g. from finally) is a no-op
     this._killed = true;
+    this._clearStallTimer();
     this.proc?.kill();
     this.proc = undefined;
-    // Reject so waitForDone() throws SessionKilledError, distinguishable from real failures
-    this._doneReject?.(new SessionKilledError());
+    // Reject so waitForDone() can distinguish cancelled vs stalled vs backend failures
+    this._doneReject?.(reason ?? this._stallError ?? new SessionKilledError());
   }
 
   /**

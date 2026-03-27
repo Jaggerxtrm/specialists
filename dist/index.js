@@ -17760,6 +17760,8 @@ class PiAgentSession {
   _killed = false;
   _lineBuffer = "";
   _pendingCommand;
+  _stallTimer;
+  _stallError;
   meta;
   constructor(options, meta) {
     this.options = options;
@@ -17835,6 +17837,7 @@ class PiAgentSession {
       }
     });
     this.proc.on("close", (code) => {
+      this._clearStallTimer();
       if (this._agentEndReceived || this._killed) {
         this._doneResolve?.();
       } else if (code === 0 || code === null) {
@@ -17844,6 +17847,25 @@ class PiAgentSession {
       }
     });
   }
+  _clearStallTimer() {
+    if (this._stallTimer) {
+      clearTimeout(this._stallTimer);
+      this._stallTimer = undefined;
+    }
+  }
+  _markActivity() {
+    const timeoutMs = this.options.stallTimeoutMs;
+    if (!timeoutMs || timeoutMs <= 0 || this._killed || this._agentEndReceived)
+      return;
+    this._clearStallTimer();
+    this._stallTimer = setTimeout(() => {
+      if (this._killed || this._agentEndReceived)
+        return;
+      const err = new StallTimeoutError(timeoutMs);
+      this._stallError = err;
+      this.kill(err);
+    }, timeoutMs);
+  }
   _handleEvent(line) {
     let event;
     try {
@@ -17851,6 +17873,7 @@ class PiAgentSession {
     } catch {
       return;
     }
+    this._markActivity();
     const { type } = event;
     if (type === "response") {
       const handler = this._pendingCommand;
@@ -17895,6 +17918,7 @@ class PiAgentSession {
         this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
       }
       this._agentEndReceived = true;
+      this._clearStallTimer();
       this.options.onEvent?.("agent_end");
       this._doneResolve?.();
       return;
@@ -17960,6 +17984,8 @@ class PiAgentSession {
     });
   }
   async prompt(task) {
+    this._stallError = undefined;
+    this._markActivity();
     const msg = JSON.stringify({ type: "prompt", message: task }) + `
 `;
     this.proc?.stdin?.write(msg);
@@ -18001,6 +18027,7 @@ class PiAgentSession {
   async close() {
     if (this._killed)
       return;
+    this._clearStallTimer();
     this.proc?.stdin?.end();
     if (this.proc) {
       await new Promise((resolve) => {
@@ -18014,13 +18041,14 @@ class PiAgentSession {
       });
     }
   }
-  kill() {
+  kill(reason) {
     if (this._killed)
       return;
     this._killed = true;
+    this._clearStallTimer();
     this.proc?.kill();
     this.proc = undefined;
-    this._doneReject?.(new SessionKilledError);
+    this._doneReject?.(reason ?? this._stallError ?? new SessionKilledError);
   }
   async steer(message) {
     if (this._killed || !this.proc?.stdin) {
@@ -18047,13 +18075,19 @@ class PiAgentSession {
     await this.waitForDone(timeout);
   }
 }
-var SessionKilledError;
+var SessionKilledError, StallTimeoutError;
 var init_session = __esm(() => {
   init_backendMap();
   SessionKilledError = class SessionKilledError extends Error {
     constructor() {
       super("Session was killed");
       this.name = "SessionKilledError";
+    }
+  };
+  StallTimeoutError = class StallTimeoutError extends Error {
+    constructor(timeoutMs) {
+      super(`Session stalled: no activity for ${timeoutMs}ms`);
+      this.name = "StallTimeoutError";
     }
   };
 });
@@ -18404,6 +18438,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
         skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
         thinkingLevel: execution.thinking_level,
         permissionLevel,
+        stallTimeoutMs: execution.stall_timeout_ms,
         cwd: process.cwd(),
         onToken: (delta) => onProgress?.(delta),
         onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),

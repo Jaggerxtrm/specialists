@@ -8,7 +8,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { spawn } from 'node:child_process';
-import { PiAgentSession } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 
@@ -213,6 +213,61 @@ describe('PiAgentSession', () => {
     const session = await PiAgentSession.create({ model: 'gemini' });
     await session.start();
     await expect(session.waitForDone(100)).rejects.toThrow(/timed out after 100ms/i);
+  });
+
+  it('stall timeout kills stalled session and rejects with StallTimeoutError', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
+      await session.start();
+      await session.prompt('do work');
+
+      const done = session.waitForDone().catch((err) => err);
+      await vi.advanceTimersByTimeAsync(60);
+
+      const err = await done;
+      expect(err).toBeInstanceOf(StallTimeoutError);
+      expect(fake.proc.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stall timeout resets when activity arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
+      await session.start();
+      await session.prompt('do work');
+
+      await vi.advanceTimersByTimeAsync(40);
+      emitLine(fake, { type: 'turn_start' });
+      await vi.advanceTimersByTimeAsync(40);
+      expect(fake.proc.kill).not.toHaveBeenCalled();
+
+      emitLine(fake, { type: 'agent_end', messages: [] });
+      await expect(session.waitForDone()).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('close clears stall watchdog timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
+      await session.start();
+      await session.prompt('do work');
+
+      const closePromise = session.close();
+      fake.procHandlers['close']?.(0);
+      await closePromise;
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fake.proc.kill).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('close() calls stdin.end() and resolves when process exits', async () => {
