@@ -2,9 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.1.0
-updated: 2026-03-25
-synced_at: 5d9ab40
+version: 1.2.0
+updated: 2026-03-27
+synced_at: 18c5327
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -54,14 +54,13 @@ specialists init
 What it does:
 
 1. copies canonical specialists to `.specialists/default/specialists/`
-2. copies canonical hooks to `.specialists/default/hooks/`
-3. copies canonical skills to `.specialists/default/skills/`
-4. creates `.specialists/user/` directories for custom specialists, hooks, and skills
-5. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
-6. wires hooks into `.claude/settings.json`
-7. registers Specialists in `.mcp.json`
-8. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
-9. injects the canonical workflow block into `AGENTS.md` and `CLAUDE.md`
+2. creates `.specialists/user/specialists/` for custom specialists
+3. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
+4. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
+5. injects the canonical workflow block into `AGENTS.md`
+6. registers Specialists in `.mcp.json`
+7. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`
+8. installs skills to `.claude/skills/` (Claude Code) and `.pi/skills/` (pi)
 
 ## Force-refresh workflow instructions
 
@@ -82,16 +81,24 @@ Managed markers:
 
 ## Directory structure
 
-Specialists live in `.specialists/` in the project root:
+Specialists live in `.specialists/` in the project root. Skills and hooks are project-local for Claude Code and pi.
 
 ```
+.claude/
+├── hooks/         # Claude Code hooks
+├── settings.json  # hook wiring
+└── skills/        # skills for Claude
+
+.pi/
+└── skills/        # skills for pi
+
 .specialists/
-├── default/     # canonical specialists (from init)
+├── default/       # canonical specialists (from init)
 │   └── specialists/
-├── user/        # custom specialists
+├── user/          # custom specialists
 │   └── specialists/
-├── jobs/        # runtime (gitignored)
-└── ready/       # runtime (gitignored)
+├── jobs/          # runtime (gitignored)
+└── ready/         # runtime (gitignored)
 ```
 
 Add custom specialists to `.specialists/user/specialists/`.
@@ -111,7 +118,7 @@ These commands are migration shims only:
 - `specialists setup`
 - `specialists install`
 
-They should redirect users to `specialists init`.
+They show deprecation warnings and redirect users to `specialists init`.
 
 ## See also
 

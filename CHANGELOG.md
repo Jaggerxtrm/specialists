@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.4] - 2026-03-27
+
+### Fixed
+
+- **`specialists run` uses Supervisor for all runs** — foreground runs now create job files in `.specialists/jobs/`, enabling `specialists poll` and `specialists feed` to work consistently
+- **`specialists poll` command works correctly** — reads job status and events from `.specialists/jobs/<id>/` files
+- **Fixed hanging on session close** — (1) FIFO creation skipped for foreground runs, (2) proper session close with process exit wait, (3) `process.exit(0)` at end of run
+- **Deprecated commands redirect to init** — `specialists install` and `specialists setup` now show deprecation warning pointing to `specialists init`
+- **`specialists version` exits with code 0** — was exiting with code 1 due to path resolution issue in bundled mode
+- **`specialists quickstart` uses current commands** — removed references to deprecated `--background`/`--follow` flags and `specialists install`
+- **Removed stale skill** — deleted `config/skills/specialists-usage-workspace/` (superseded by `using-specialists`)
+
+### Changed
+
+- **Skills installed project-local** — `specialists init` now installs skills to `.claude/skills/` and `.pi/skills/` (project-local), not `~/.pi/skills/` (global)
+- **Hooks installed project-local** — hooks installed to `.claude/hooks/` with correct `settings.json` wiring
+
+## [3.3.3] - 2026-03-26
+
+### Changed
+
+- **Removed `--background` and `--follow` flags from `specialists run`** — these flags were broken; use Claude Code's native backgrounding or run in a separate terminal instead
+- **Added `specialists poll` command** — machine-readable job status polling for scripts; reads from `.specialists/jobs/<id>/` files
+
+### Fixed
+
+- **Hardened file writing** — atomic writes with tmp+rename for `status.json`, defensive error handling
+
+## [3.3.2] - 2026-03-26
+
+### Fixed
+
+- **npm package includes config/** — added `config/` to `package.json` files array; hooks, skills, and specialists now included in published package
+
 ## [3.3.1] - 2026-03-26
 
 ### Fixed
