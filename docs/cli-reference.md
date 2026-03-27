@@ -2,8 +2,8 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.4.0
-updated: 2026-03-26
+version: 1.4.1
+updated: 2026-03-27
 synced_at: 18c5327
 description: Command and flag reference for the Specialists CLI.
 source_of_truth_for:
@@ -78,7 +78,10 @@ Flags:
 | `--model <model>` | Override the configured model for a run |
 | `--keep-alive` | Keep the Pi session alive after completion for follow-up turns |
 
-Background execution note: use native shell/agent backgrounding, then monitor with `specialists poll <job-id> --json` or `specialists feed <job-id> --follow`.
+Notes:
+
+- `specialists run` is supervised and persists job artifacts under `.specialists/jobs/<id>/` for polling/feed tooling.
+- The job id is emitted at run start as `[job started: <id>]` and written to `.specialists/jobs/latest` for cross-process discovery.
 
 ## `specialists feed`
 
@@ -91,7 +94,7 @@ specialists feed -f --forever
 
 ## `specialists steer`
 
-Send a mid-run steering message to a running background job. The agent receives it after its current tool calls finish, before the next LLM call.
+Send a mid-run steering message to a running job. The agent receives it after its current tool calls finish, before the next LLM call.
 
 ```bash
 specialists steer <job-id> "<message>"
@@ -105,7 +108,7 @@ specialists steer a1b2c3 "skip tests, just fix the bug"
 ```
 
 Notes:
-- Only works for running jobs.
+- Works while the target job is still running.
 - Uses a named FIFO at `.specialists/jobs/<id>/steer.pipe` for cross-process delivery.
 - The MCP tool `steer_specialist` covers the same action for in-process `start_specialist` jobs.
 
@@ -124,7 +127,7 @@ Examples:
 ```bash
 # Start a keep-alive session
 specialists run debugger --bead unitAI-abc --keep-alive
-# → Job started: 49adda  (transitions to status: waiting after first turn)
+# stderr includes: [job started: 49adda]  (transitions to status: waiting after first turn)
 
 specialists result 49adda                           # read first turn output
 specialists follow-up 49adda "now write the fix"    # start second turn

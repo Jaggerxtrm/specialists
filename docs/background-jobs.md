@@ -2,8 +2,8 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.3.0
-updated: 2026-03-26
+version: 1.3.1
+updated: 2026-03-27
 description: Background execution model, job files, and monitoring commands.
 source_of_truth_for:
   - "src/cli/feed.ts"
@@ -35,32 +35,27 @@ domain:
 
 > **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
 
-Use native shell/agent backgrounding when a specialist run will take longer or you want to keep working. Add `--keep-alive` for multi-turn sessions where the Pi session stays alive between turns.
+Every `specialists run` is supervised and creates job artifacts under `.specialists/jobs/<id>/`. For long runs, you can inspect progress from another terminal using the emitted job id.
 
-## Start a background job
+## Start a supervised run
 
 ```bash
 specialists run sync-docs --bead unitAI-26s
-# foreground by default; use your shell/agent background execution mode when needed
+# stderr includes: [job started: 49adda]
 ```
 
-Use `specialists feed <job-id> --follow` to stream output live while the run is active.
+The same id is also written to:
 
-```bash
-specialists feed <job-id> --follow
-```
-
-For machine-readable status polling, use:
-
-```bash
-specialists poll <job-id> --json
+```text
+.specialists/jobs/latest
 ```
 
 ## Start a keep-alive session (multi-turn)
 
 ```bash
 specialists run debugger --bead unitAI-abc --keep-alive
-# status transitions to waiting after the first turn completes
+# stderr includes: [job started: 49adda]
+# status transitions to waiting after first turn completes
 ```
 
 ## Observe progress

@@ -2,11 +2,11 @@
 title: Bead-First Workflow
 scope: workflow
 category: guide
-version: 1.0.0
-updated: 2026-03-23
+version: 1.0.1
+updated: 2026-03-27
 description: Canonical tracked and ad-hoc workflow for Specialists.
 source_of_truth_for:
-  - "src/specialist/workflow.ts"
+  - "src/cli/run.ts"
   - "src/cli/help.ts"
   - "src/cli/quickstart.ts"
 domain:
@@ -40,14 +40,14 @@ Use tracked mode when the work belongs to a bead.
 bd create "Investigate X" -t task -p 1 --json
 bd dep add <this-id> <blocker-id>   # if dependencies exist
 specialists run <name> --bead <id> [--context-depth N]
-# if you need async execution, run this with native shell/agent backgrounding
-specialists poll <job-id> --json
+specialists feed -f
 bd close <id> --reason "Done"
 ```
 
 Key points:
 
 - `--bead` makes the bead the prompt source
+- each run emits a job id at start (`[job started: <id>]`) and writes `.specialists/jobs/latest`
 - the orchestrator owns the bead lifecycle
 - the runner does **not** create a second bead
 - the runner does **not** close the bead on completion

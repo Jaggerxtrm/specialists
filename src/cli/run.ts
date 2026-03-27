@@ -132,6 +132,7 @@ export async function run(): Promise<void> {
     // Stream output to stdout while Supervisor handles file writing
     onProgress: (delta) => process.stdout.write(delta),
     onMeta: (meta) => process.stderr.write(dim(`\n[${meta.backend} / ${meta.model}]\n\n`)),
+    onJobStarted: ({ id }) => process.stderr.write(dim(`[job started: ${id}]\n`)),
   });
 
   // Validate specialist exists before printing header
