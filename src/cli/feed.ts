@@ -273,8 +273,38 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
 // Main Entry Point
 // ============================================================================
 
+function showUsage(): void {
+  console.log(`Usage: specialists feed <job-id> [options]
+       specialists feed -f [--forever]
+
+Read background job events.
+
+Modes:
+  specialists feed <job-id>        Replay events for one job
+  specialists feed <job-id> -f     Follow one job until completion
+  specialists feed -f              Follow all jobs globally
+
+Options:
+  -f, --follow   Follow live updates
+  --forever      Keep following in global mode even when all jobs complete
+
+Examples:
+  specialists feed 49adda
+  specialists feed 49adda --follow
+  specialists feed -f
+  specialists feed -f --forever
+`);
+}
+
 export async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(3));
+
+  // Require either a job-id or -f flag
+  if (!options.jobId && !options.follow) {
+    showUsage();
+    process.exit(1);
+  }
+
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
   if (!existsSync(jobsDir)) {

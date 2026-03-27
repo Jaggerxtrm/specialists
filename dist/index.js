@@ -20301,8 +20301,34 @@ async function followMerged(jobsDir, options) {
     }, 500);
   });
 }
+function showUsage() {
+  console.log(`Usage: specialists feed <job-id> [options]
+       specialists feed -f [--forever]
+
+Read background job events.
+
+Modes:
+  specialists feed <job-id>        Replay events for one job
+  specialists feed <job-id> -f     Follow one job until completion
+  specialists feed -f              Follow all jobs globally
+
+Options:
+  -f, --follow   Follow live updates
+  --forever      Keep following in global mode even when all jobs complete
+
+Examples:
+  specialists feed 49adda
+  specialists feed 49adda --follow
+  specialists feed -f
+  specialists feed -f --forever
+`);
+}
 async function run10() {
   const options = parseArgs5(process.argv.slice(3));
+  if (!options.jobId && !options.follow) {
+    showUsage();
+    process.exit(1);
+  }
   const jobsDir = join14(process.cwd(), ".specialists", "jobs");
   if (!existsSync10(jobsDir)) {
     console.log(dim6("No jobs directory found."));
