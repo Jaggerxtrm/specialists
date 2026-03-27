@@ -107,7 +107,140 @@ export const SpecialistSchema = z.object({
 export type Specialist = z.infer<typeof SpecialistSchema>;
 export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
 
+export interface ValidationError {
+  path: string;
+  message: string;
+  code: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings: string[];
+}
+
+/** Format a Zod error path array into a dot-notation string */
+function formatPath(path: (string | number)[]): string {
+  return path.map(p => (typeof p === 'number' ? `[${p}]` : p)).join('.');
+}
+
+/** Convert Zod error codes to user-friendly messages */
+function getFriendlyMessage(issue: z.ZodIssue): string {
+  const path = formatPath(issue.path);
+  
+  // Custom messages for specific validation rules
+  if (issue.code === 'invalid_string' && issue.validation === 'regex') {
+    if (path.includes('name')) {
+      return `Invalid specialist name: must be kebab-case (lowercase letters, numbers, hyphens). Got: "${issue.path.at(-1) === 'name' ? 'invalid value' : 'see schema'}"`;
+    }
+    if (path.includes('version')) {
+      return `Invalid version: must be semver format (e.g., "1.0.0"). Got value that doesn't match pattern.`;
+    }
+  }
+  
+  if (issue.code === 'invalid_enum_value') {
+    const allowed = issue.options.map(o => `"${o}"`).join(', ');
+    if (path.includes('permission_required')) {
+      return `Invalid permission_required: must be one of ${allowed}. This controls which pi tools are available.`;
+    }
+    if (path.includes('mode')) {
+      return `Invalid execution.mode: must be one of ${allowed}.`;
+    }
+    if (path.includes('beads_integration')) {
+      return `Invalid beads_integration: must be one of ${allowed}.`;
+    }
+    return `Invalid value at "${path}": expected one of ${allowed}, got "${issue.received}"`;
+  }
+  
+  if (issue.code === 'invalid_type') {
+    return `Invalid type at "${path}": expected ${issue.expected}, got ${issue.received}`;
+  }
+  
+  if (issue.code === 'invalid_literal') {
+    return `Invalid value at "${path}": expected "${issue.expected}"`;
+  }
+  
+  if (issue.code === 'missing_key') {
+    return `Missing required field: "${formatPath(issue.path)}"`;
+  }
+  
+  // Fallback to Zod's message
+  return issue.message;
+}
+
+/**
+ * Validate a specialist YAML content and return structured results.
+ * Use this for CLI validation and friendly error messages.
+ */
+export async function validateSpecialist(yamlContent: string): Promise<ValidationResult> {
+  const errors: ValidationError[] = [];
+  const warnings: string[] = [];
+  
+  // Try to parse YAML first
+  let raw: unknown;
+  try {
+    raw = parseYaml(yamlContent);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push({
+      path: 'yaml',
+      message: `YAML parse error: ${msg}`,
+      code: 'yaml_parse_error',
+    });
+    return { valid: false, errors, warnings };
+  }
+  
+  // Validate against schema
+  const result = SpecialistSchema.safeParse(raw);
+  
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      errors.push({
+        path: formatPath(issue.path),
+        message: getFriendlyMessage(issue),
+        code: issue.code,
+      });
+    }
+  } else {
+    // Additional semantic validations (warnings, not errors)
+    const spec = result.data;
+    
+    // Check for deprecated fields
+    if (spec.specialist.prompt.normalize_template) {
+      warnings.push('prompt.normalize_template is deprecated (Mercury compat) and will be ignored');
+    }
+    if (spec.specialist.execution.preferred_profile) {
+      warnings.push('execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored');
+    }
+    if (spec.specialist.execution.approval_mode) {
+      warnings.push('execution.approval_mode is deprecated (Agent Forge compat) and will be ignored');
+    }
+    
+    // Check for common mistakes
+    if (!spec.specialist.execution.model.includes('/')) {
+      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    }
+  }
+  
+  return { valid: errors.length === 0, errors, warnings };
+}
+export type Specialist = z.infer<typeof SpecialistSchema>;
+export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
+
 export async function parseSpecialist(yamlContent: string): Promise<Specialist> {
+  const result = await validateSpecialist(yamlContent);
+  
+  if (!result.valid) {
+    const errorList = result.errors.map(e => `  • ${e.message}`).join('\n');
+    throw new Error(`Schema validation failed:\n${errorList}`);
+  }
+  
+  // Warnings are printed but don't block parsing
+  if (result.warnings.length > 0) {
+    process.stderr.write(`[specialists] warnings:\n${result.warnings.map(w => `  ⚠ ${w}`).join('\n')}\n`);
+  }
+  
+  // Safe to parse now (we know it's valid)
   const raw = parseYaml(yamlContent);
   return SpecialistSchema.parseAsync(raw);
 }

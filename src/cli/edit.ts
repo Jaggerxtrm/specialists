@@ -29,7 +29,7 @@ interface EditArgs {
   field: string;
   value: string;
   dryRun: boolean;
-  scope?: 'project' | 'user';
+  scope?: 'default' | 'user';
 }
 
 function parseArgs(argv: string[]): EditArgs {
@@ -43,7 +43,7 @@ function parseArgs(argv: string[]): EditArgs {
   let field: string | undefined;
   let value: string | undefined;
   let dryRun = false;
-  let scope: 'project' | 'user' | undefined;
+  let scope: 'default' | 'user' | undefined;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -52,11 +52,11 @@ function parseArgs(argv: string[]): EditArgs {
 
     if (token === '--scope') {
       const v = argv[++i];
-      if (v !== 'project' && v !== 'user') {
-        console.error(`Error: --scope must be "project" or "user", got: "${v ?? ''}"`);
+      if (v !== 'default' && v !== 'user') {
+        console.error(`Error: --scope must be "default" or "user", got: "${v ?? ''}"`);
         process.exit(1);
       }
-      scope = v;
+      scope = v as 'default' | 'user';
       continue;
     }
 

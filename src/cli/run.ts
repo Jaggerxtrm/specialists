@@ -134,6 +134,14 @@ export async function run(): Promise<void> {
     onMeta: (meta) => process.stderr.write(dim(`\n[${meta.backend} / ${meta.model}]\n\n`)),
   });
 
+  // Validate specialist exists before printing header
+  try {
+    await loader.get(args.name);
+  } catch (err: any) {
+    process.stderr.write(`Error: ${err?.message ?? err}\n`);
+    process.exit(1);
+  }
+
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
   let jobId: string;

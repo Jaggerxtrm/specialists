@@ -68,6 +68,17 @@ function checkPi(): boolean {
   return true;
 }
 
+function checkSpAlias(): boolean {
+  section('sp alias  (specialists shortcut)');
+  if (isInstalled('sp')) {
+    ok('sp alias installed');
+    return true;
+  }
+  fail('sp alias not found in PATH');
+  fix('npm install -g @jaggerxtrm/specialists@latest   (reinstall to create symlink)');
+  return false;
+}
+
 function checkBd(): boolean {
   section('beads  (issue tracker)');
   if (!isInstalled('bd')) {
@@ -224,6 +235,7 @@ function checkZombieJobs(): boolean {
 export async function run(): Promise<void> {
   console.log(`\n${bold('specialists doctor')}\n`);
   const piOk = checkPi();
+  const spOk = checkSpAlias();
   const bdOk = checkBd();
   const xtOk = checkXt();
   const hooksOk = checkHooks();
