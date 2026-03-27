@@ -231,24 +231,24 @@ describe('PiAgentSession', () => {
     await expect(closePromise).resolves.toBeUndefined();
   });
 
-  it("mapPermissionToTools('LOW') passes 'read,bash,edit,write,grep,find,ls' to --tools", async () => {
+  it("mapPermissionToTools('LOW') passes 'read,bash,grep,find,ls' to --tools", async () => {
     const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'LOW' });
     await session.start();
 
     const args: string[] = mockSpawn.mock.calls[0][1];
     const toolsIdx = args.indexOf('--tools');
     expect(toolsIdx).toBeGreaterThan(-1);
-    expect(args[toolsIdx + 1]).toBe('read,bash,edit,write,grep,find,ls');
+    expect(args[toolsIdx + 1]).toBe('read,bash,grep,find,ls');
   });
 
-  it("mapPermissionToTools('READ_ONLY') passes 'read,bash,grep,find,ls' to --tools", async () => {
+  it("mapPermissionToTools('READ_ONLY') passes 'read,grep,find,ls' to --tools", async () => {
     const session = await PiAgentSession.create({ model: 'gemini', permissionLevel: 'READ_ONLY' });
     await session.start();
 
     const args: string[] = mockSpawn.mock.calls[0][1];
     const toolsIdx = args.indexOf('--tools');
     expect(toolsIdx).toBeGreaterThan(-1);
-    expect(args[toolsIdx + 1]).toBe('read,bash,grep,find,ls');
+    expect(args[toolsIdx + 1]).toBe('read,grep,find,ls');
   });
 
   it("mapPermissionToTools('HIGH') passes 'read,bash,edit,write,grep,find,ls' to --tools", async () => {
