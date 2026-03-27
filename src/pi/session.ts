@@ -218,12 +218,38 @@ export class PiAgentSession {
       return;
     }
 
-    // ── Backend/model metadata (first assistant message) ───────────────────
-    if (type === 'message_start' && event.message?.role === 'assistant') {
-      const { provider, model } = event.message ?? {};
-      if (provider || model) {
-        this.options.onMeta?.({ backend: provider ?? '', model: model ?? '' });
+    // ── Message boundaries (assistant/toolResult) + metadata ───────────────
+    if (type === 'message_start') {
+      const role = event.message?.role;
+      if (role === 'assistant') {
+        this.options.onEvent?.('message_start_assistant');
+        const { provider, model } = event.message ?? {};
+        if (provider || model) {
+          this.options.onMeta?.({ backend: provider ?? '', model: model ?? '' });
+        }
+      } else if (role === 'toolResult') {
+        this.options.onEvent?.('message_start_tool_result');
       }
+      return;
+    }
+
+    if (type === 'message_end') {
+      const role = event.message?.role;
+      if (role === 'assistant') {
+        this.options.onEvent?.('message_end_assistant');
+      } else if (role === 'toolResult') {
+        this.options.onEvent?.('message_end_tool_result');
+      }
+      return;
+    }
+
+    // ── Turn boundaries ─────────────────────────────────────────────────────
+    if (type === 'turn_start') {
+      this.options.onEvent?.('turn_start');
+      return;
+    }
+    if (type === 'turn_end') {
+      this.options.onEvent?.('turn_end');
       return;
     }
 
@@ -246,10 +272,13 @@ export class PiAgentSession {
     // ── Tool execution (top-level per RPC docs) ────────────────────────────────
     if (type === 'tool_execution_start') {
       // NOTE: onToolStart fires from nested toolcall_start inside message_update
-      this.options.onEvent?.('tool_execution');
+      this.options.onEvent?.('tool_execution_start');
       return;
     }
-    if (type === 'tool_execution_update') { this.options.onEvent?.('tool_execution'); return; }
+    if (type === 'tool_execution_update') {
+      this.options.onEvent?.('tool_execution_update');
+      return;
+    }
     if (type === 'tool_execution_end') {
       this.options.onToolEnd?.(event.toolName ?? event.name ?? 'tool');
       this.options.onEvent?.('tool_execution_end');
