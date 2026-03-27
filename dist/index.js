@@ -19127,7 +19127,6 @@ __export(exports_init, {
 import { copyFileSync, cpSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-import { homedir as homedir3 } from "node:os";
 function ok(msg) {
   console.log(`  ${green3("✓")} ${msg}`);
 }
@@ -19251,7 +19250,7 @@ function ensureProjectHookWiring(cwd) {
     skip(".claude/settings.json already has specialists hooks");
   }
 }
-function installGlobalSkills() {
+function installProjectSkills(cwd) {
   const sourceDir = resolvePackagePath("skills");
   if (!sourceDir) {
     skip("no canonical skills found in package");
@@ -19262,26 +19261,32 @@ function installGlobalSkills() {
     skip("no skill directories found in package");
     return;
   }
-  if (!existsSync7(PI_SKILLS_DIR)) {
-    mkdirSync2(PI_SKILLS_DIR, { recursive: true });
-  }
-  let copied = 0;
-  let skipped = 0;
-  for (const skill of skills) {
-    const src = join9(sourceDir, skill);
-    const dest = join9(PI_SKILLS_DIR, skill);
-    if (existsSync7(dest)) {
-      skipped++;
-    } else {
-      cpSync(src, dest, { recursive: true });
-      copied++;
+  const targetDirs = [
+    join9(cwd, ".claude", "skills"),
+    join9(cwd, ".pi", "skills")
+  ];
+  let totalCopied = 0;
+  let totalSkipped = 0;
+  for (const targetDir of targetDirs) {
+    if (!existsSync7(targetDir)) {
+      mkdirSync2(targetDir, { recursive: true });
+    }
+    for (const skill of skills) {
+      const src = join9(sourceDir, skill);
+      const dest = join9(targetDir, skill);
+      if (existsSync7(dest)) {
+        totalSkipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        totalCopied++;
+      }
     }
   }
-  if (copied > 0) {
-    ok(`installed ${copied} skill${copied === 1 ? "" : "s"} to ~/.pi/skills/`);
+  if (totalCopied > 0) {
+    ok(`installed ${skills.length} skill${skills.length === 1 ? "" : "s"} to .claude/skills/ and .pi/skills/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} skill${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  if (totalSkipped > 0) {
+    skip(`${totalSkipped} skill location${totalSkipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
 function createUserDirs(cwd) {
@@ -19363,7 +19368,6 @@ async function run5() {
   console.log(`
 ${bold4("specialists init")}
 `);
-  installGlobalSkills();
   copyCanonicalSpecialists(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
@@ -19372,13 +19376,15 @@ ${bold4("specialists init")}
   ensureProjectMcp(cwd);
   installProjectHooks(cwd);
   ensureProjectHookWiring(cwd);
+  installProjectSkills(cwd);
   console.log(`
 ${bold4("Done!")}
 `);
-  console.log(`  ${dim4("Installation targets:")}`);
-  console.log(`  ~/.pi/skills/          ${dim4("# skills (pi reads from here)")}`);
-  console.log(`  .claude/hooks/         ${dim4("# hooks (Claude Code project-local)")}`);
+  console.log(`  ${dim4("Project-local installation:")}`);
+  console.log(`  .claude/hooks/         ${dim4("# hooks (Claude Code)")}`);
   console.log(`  .claude/settings.json  ${dim4("# hook wiring")}`);
+  console.log(`  .claude/skills/        ${dim4("# skills (Claude Code)")}`);
+  console.log(`  .pi/skills/            ${dim4("# skills (pi)")}`);
   console.log("");
   console.log(`  ${dim4(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
@@ -19392,10 +19398,10 @@ ${bold4("Done!")}
   ${dim4("Next steps:")}`);
   console.log(`  1. Run ${yellow4("specialists list")} to see available specialists`);
   console.log(`  2. Add custom specialists to ${yellow4(".specialists/user/specialists/")}`);
-  console.log(`  3. Restart Claude Code to pick up changes
+  console.log(`  3. Restart Claude Code or pi to pick up changes
 `);
 }
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG, PI_SKILLS_DIR;
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
 var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
@@ -19409,7 +19415,6 @@ Add custom specialists to \`.specialists/user/specialists/\` to extend the defau
 `.trimStart();
   GITIGNORE_ENTRIES = [".specialists/jobs/", ".specialists/ready/"];
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
-  PI_SKILLS_DIR = join9(homedir3(), ".pi", "skills");
 });
 
 // src/cli/edit.ts

@@ -3,7 +3,6 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -30,9 +29,6 @@ const GITIGNORE_ENTRIES = ['.specialists/jobs/', '.specialists/ready/'];
 const MCP_FILE = '.mcp.json';
 const MCP_SERVER_NAME = 'specialists';
 const MCP_SERVER_CONFIG = { command: 'specialists', args: [] };
-
-// Installation targets
-const PI_SKILLS_DIR = join(homedir(), '.pi', 'skills');
 
 function loadJson(path: string, fallback: Record<string, unknown>): Record<string, any> {
   if (!existsSync(path)) return structuredClone(fallback);
@@ -203,9 +199,9 @@ function ensureProjectHookWiring(cwd: string): void {
 }
 
 /**
- * Install skills to ~/.pi/skills/ (user-global for pi)
+ * Install skills to .claude/skills/ and .pi/skills/ (project-local for both agents)
  */
-function installGlobalSkills(): void {
+function installProjectSkills(cwd: string): void {
   const sourceDir = resolvePackagePath('skills');
   
   if (!sourceDir) {
@@ -222,31 +218,39 @@ function installGlobalSkills(): void {
     return;
   }
 
-  // Create target directory
-  if (!existsSync(PI_SKILLS_DIR)) {
-    mkdirSync(PI_SKILLS_DIR, { recursive: true });
-  }
+  // Install to both .claude/skills/ and .pi/skills/
+  const targetDirs = [
+    join(cwd, '.claude', 'skills'),
+    join(cwd, '.pi', 'skills'),
+  ];
 
-  let copied = 0;
-  let skipped = 0;
+  let totalCopied = 0;
+  let totalSkipped = 0;
 
-  for (const skill of skills) {
-    const src = join(sourceDir, skill);
-    const dest = join(PI_SKILLS_DIR, skill);
-    
-    if (existsSync(dest)) {
-      skipped++;
-    } else {
-      cpSync(src, dest, { recursive: true });
-      copied++;
+  for (const targetDir of targetDirs) {
+    // Create target directory
+    if (!existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true });
+    }
+
+    for (const skill of skills) {
+      const src = join(sourceDir, skill);
+      const dest = join(targetDir, skill);
+      
+      if (existsSync(dest)) {
+        totalSkipped++;
+      } else {
+        cpSync(src, dest, { recursive: true });
+        totalCopied++;
+      }
     }
   }
 
-  if (copied > 0) {
-    ok(`installed ${copied} skill${copied === 1 ? '' : 's'} to ~/.pi/skills/`);
+  if (totalCopied > 0) {
+    ok(`installed ${skills.length} skill${skills.length === 1 ? '' : 's'} to .claude/skills/ and .pi/skills/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} skill${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  if (totalSkipped > 0) {
+    skip(`${totalSkipped} skill location${totalSkipped === 1 ? '' : 's'} already exist (not overwritten)`);
   }
 }
 
@@ -348,33 +352,34 @@ export async function run(): Promise<void> {
 
   console.log(`\n${bold('specialists init')}\n`);
 
-  // ── 1. Install global assets (skills) ─────────────────────────────────────
-  installGlobalSkills();
-
-  // ── 2. Create .specialists/ structure ─────────────────────────────────────
+  // ── 1. Create .specialists/ structure ─────────────────────────────────────
   copyCanonicalSpecialists(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
 
-  // ── 3. Update .gitignore (only runtime dirs) ──────────────────────────────
+  // ── 2. Update .gitignore (only runtime dirs) ──────────────────────────────
   ensureGitignore(cwd);
 
-  // ── 4. Scaffold AGENTS.md ─────────────────────────────────────────────────
+  // ── 3. Scaffold AGENTS.md ─────────────────────────────────────────────────
   ensureAgentsMd(cwd);
 
-  // ── 5. Register MCP at project scope ──────────────────────────────────────
+  // ── 4. Register MCP at project scope ──────────────────────────────────────
   ensureProjectMcp(cwd);
 
-  // ── 6. Install hooks to .claude/hooks/ ────────────────────────────────────
+  // ── 5. Install hooks to .claude/hooks/ ────────────────────────────────────
   installProjectHooks(cwd);
   ensureProjectHookWiring(cwd);
 
+  // ── 6. Install skills to .claude/skills/ and .pi/skills/ ──────────────────
+  installProjectSkills(cwd);
+
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
-  console.log(`  ${dim('Installation targets:')}`);
-  console.log(`  ~/.pi/skills/          ${dim('# skills (pi reads from here)')}`);
-  console.log(`  .claude/hooks/         ${dim('# hooks (Claude Code project-local)')}`);
+  console.log(`  ${dim('Project-local installation:')}`);
+  console.log(`  .claude/hooks/         ${dim('# hooks (Claude Code)')}`);
   console.log(`  .claude/settings.json  ${dim('# hook wiring')}`);
+  console.log(`  .claude/skills/        ${dim('# skills (Claude Code)')}`);
+  console.log(`  .pi/skills/            ${dim('# skills (pi)')}`);
   console.log('');
   console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);
@@ -387,5 +392,5 @@ export async function run(): Promise<void> {
   console.log(`\n  ${dim('Next steps:')}`);
   console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
   console.log(`  2. Add custom specialists to ${yellow('.specialists/user/specialists/')}`);
-  console.log(`  3. Restart Claude Code to pick up changes\n`);
+  console.log(`  3. Restart Claude Code or pi to pick up changes\n`);
 }

@@ -3,7 +3,6 @@ import { mkdtemp, rm, readFile, mkdir, writeFile, readdir } from 'node:fs/promis
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { homedir } from 'node:os';
 
 async function importInitModule() {
   return import('../../../src/cli/init.js');
@@ -168,12 +167,22 @@ describe('init CLI — run()', () => {
     expect(submitCommand).not.toContain('/Users/');
   });
 
-  it('installs skills to ~/.pi/skills/ (user-global for pi)', async () => {
+  it('installs skills to .claude/skills/ (project-local for Claude)', async () => {
     await runInit(tempDir);
-    const skillsDir = join(homedir(), '.pi', 'skills');
+    const skillsDir = join(tempDir, '.claude', 'skills');
     const dirs = await readdir(skillsDir).catch(() => []);
     
-    // Should have installed our skills
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(dirs).toContain('specialists-creator');
+    expect(dirs).toContain('using-specialists');
+  });
+
+  it('installs skills to .pi/skills/ (project-local for pi)', async () => {
+    await runInit(tempDir);
+    const skillsDir = join(tempDir, '.pi', 'skills');
+    const dirs = await readdir(skillsDir).catch(() => []);
+    
+    expect(dirs.length).toBeGreaterThan(0);
     expect(dirs).toContain('specialists-creator');
     expect(dirs).toContain('using-specialists');
   });
