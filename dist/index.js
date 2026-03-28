@@ -20693,6 +20693,7 @@ function parseArgs7(argv) {
   let jobId;
   let cursor = 0;
   let json = false;
+  let follow = false;
   for (let i = 0;i < argv.length; i++) {
     if (argv[i] === "--cursor" && argv[i + 1]) {
       cursor = parseInt(argv[++i], 10);
@@ -20704,34 +20705,22 @@ function parseArgs7(argv) {
       json = true;
       continue;
     }
-    if (!argv[i].startsWith("--")) {
+    if (argv[i] === "--follow" || argv[i] === "-f" || argv[i] === "--f") {
+      follow = true;
+      continue;
+    }
+    if (!argv[i].startsWith("-")) {
       jobId = argv[i];
     }
   }
   if (!jobId) {
-    console.error("Usage: specialists poll <job-id> [--cursor N] [--json]");
+    console.error("Usage: specialists poll <job-id> [--cursor N] [--json] [--follow]");
     process.exit(1);
   }
-  return { jobId, cursor, json };
+  return { jobId, cursor, json, follow };
 }
-async function run12() {
-  const { jobId, cursor, json } = parseArgs7(process.argv.slice(3));
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+function readJobState(jobsDir, jobId, cursor) {
   const jobDir = join16(jobsDir, jobId);
-  if (!existsSync13(jobDir)) {
-    const result2 = {
-      job_id: jobId,
-      status: "error",
-      elapsed_ms: 0,
-      cursor: 0,
-      output: "",
-      output_delta: "",
-      events: [],
-      error: `Job not found: ${jobId}`
-    };
-    console.log(JSON.stringify(result2));
-    process.exit(1);
-  }
   const statusPath = join16(jobDir, "status.json");
   let status = null;
   if (existsSync13(statusPath)) {
@@ -20752,7 +20741,7 @@ async function run12() {
   const startedAt = status?.started_at_ms ?? Date.now();
   const lastEvent = status?.last_event_at_ms ?? Date.now();
   const elapsedMs = status?.status === "done" || status?.status === "error" ? lastEvent - startedAt : Date.now() - startedAt;
-  const result = {
+  return {
     job_id: jobId,
     status: status?.status ?? "starting",
     elapsed_ms: elapsedMs,
@@ -20767,25 +20756,75 @@ async function run12() {
     bead_id: status?.bead_id,
     error: status?.error
   };
+}
+function renderHeader(result, fromCursor) {
+  const lines = [];
+  lines.push(`Job:      ${result.job_id}`);
+  lines.push(`Status:   ${result.status}`);
+  lines.push(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
+  if (result.model)
+    lines.push(`Model:    ${result.backend}/${result.model}`);
+  if (result.bead_id)
+    lines.push(`Bead:     ${result.bead_id}`);
+  if (result.current_tool)
+    lines.push(`Tool:     ${result.current_tool}`);
+  if (result.error)
+    lines.push(`Error:    ${result.error}`);
+  lines.push(`Events:   ${result.events.length} new (cursor: ${fromCursor} → ${result.cursor})`);
+  return lines;
+}
+async function run12() {
+  const { jobId, cursor, json, follow } = parseArgs7(process.argv.slice(3));
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobDir = join16(jobsDir, jobId);
+  if (!existsSync13(jobDir)) {
+    const result2 = {
+      job_id: jobId,
+      status: "error",
+      elapsed_ms: 0,
+      cursor: 0,
+      output: "",
+      output_delta: "",
+      events: [],
+      error: `Job not found: ${jobId}`
+    };
+    console.log(json ? JSON.stringify(result2) : `Job not found: ${jobId}`);
+    process.exit(1);
+  }
+  if (follow) {
+    let lastLineCount = 0;
+    while (true) {
+      const result2 = readJobState(jobsDir, jobId, cursor);
+      const headerLines = renderHeader(result2, cursor);
+      if (lastLineCount > 0) {
+        process.stdout.write(`\x1B[${lastLineCount}A\x1B[0J`);
+      }
+      process.stdout.write(headerLines.join(`
+`) + `
+`);
+      lastLineCount = headerLines.length;
+      if (result2.status === "done" || result2.status === "error") {
+        if (result2.status === "done" && result2.output) {
+          console.log(`
+--- Output ---`);
+          console.log(result2.output);
+        }
+        process.exit(result2.status === "done" ? 0 : 1);
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  const result = readJobState(jobsDir, jobId, cursor);
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`Job:      ${jobId}`);
-    console.log(`Status:   ${result.status}`);
-    console.log(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
-    if (result.model)
-      console.log(`Model:    ${result.backend}/${result.model}`);
-    if (result.bead_id)
-      console.log(`Bead:     ${result.bead_id}`);
-    if (result.current_tool)
-      console.log(`Tool:     ${result.current_tool}`);
-    if (result.error)
-      console.log(`Error:    ${result.error}`);
-    console.log(`Events:   ${newEvents.length} new (cursor: ${cursor} → ${nextCursor})`);
+    const headerLines = renderHeader(result, cursor);
+    console.log(headerLines.join(`
+`));
     if (result.status === "done" && result.output) {
       console.log(`
 --- Output ---`);
-      console.log(result.output.slice(0, 500) + (result.output.length > 500 ? "..." : ""));
+      console.log(result.output);
     }
   }
 }

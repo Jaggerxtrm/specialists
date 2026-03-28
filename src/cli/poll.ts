@@ -56,10 +56,11 @@ interface JobStatus {
   last_event_at_ms?: number;
 }
 
-function parseArgs(argv: string[]): { jobId: string; cursor: number; json: boolean } {
+function parseArgs(argv: string[]): { jobId: string; cursor: number; json: boolean; follow: boolean } {
   let jobId: string | undefined;
   let cursor = 0;
   let json = false;
+  let follow = false;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--cursor' && argv[i + 1]) {
@@ -67,84 +68,51 @@ function parseArgs(argv: string[]): { jobId: string; cursor: number; json: boole
       if (isNaN(cursor) || cursor < 0) cursor = 0;
       continue;
     }
-    if (argv[i] === '--json') {
-      json = true;
-      continue;
-    }
-    if (!argv[i].startsWith('--')) {
-      jobId = argv[i];
-    }
+    if (argv[i] === '--json') { json = true; continue; }
+    if (argv[i] === '--follow' || argv[i] === '-f' || argv[i] === '--f') { follow = true; continue; }
+    if (!argv[i].startsWith('-')) { jobId = argv[i]; }
   }
 
   if (!jobId) {
-    console.error('Usage: specialists poll <job-id> [--cursor N] [--json]');
+    console.error('Usage: specialists poll <job-id> [--cursor N] [--json] [--follow]');
     process.exit(1);
   }
 
-  return { jobId, cursor, json };
+  return { jobId, cursor, json, follow };
 }
 
-export async function run(): Promise<void> {
-  const { jobId, cursor, json } = parseArgs(process.argv.slice(3));
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+function readJobState(jobsDir: string, jobId: string, cursor: number): PollResult {
   const jobDir = join(jobsDir, jobId);
 
-  if (!existsSync(jobDir)) {
-    const result: PollResult = {
-      job_id: jobId,
-      status: 'error',
-      elapsed_ms: 0,
-      cursor: 0,
-      output: '',
-      output_delta: '',
-      events: [],
-      error: `Job not found: ${jobId}`,
-    };
-    console.log(JSON.stringify(result));
-    process.exit(1);
-  }
-
-  // Read status.json
   const statusPath = join(jobDir, 'status.json');
   let status: JobStatus | null = null;
   if (existsSync(statusPath)) {
-    try {
-      status = JSON.parse(readFileSync(statusPath, 'utf-8'));
-    } catch {
-      // ignore
-    }
+    try { status = JSON.parse(readFileSync(statusPath, 'utf-8')); } catch { /* ignore */ }
   }
 
-  // Read result.txt for output (only populated when done)
   const resultPath = join(jobDir, 'result.txt');
   let output = '';
   if (existsSync(resultPath)) {
-    try {
-      output = readFileSync(resultPath, 'utf-8');
-    } catch {
-      // ignore
-    }
+    try { output = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
   }
 
-  // Read events since cursor
   const events = readJobEventsById(jobsDir, jobId);
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
 
-  // Calculate elapsed time
   const startedAt = status?.started_at_ms ?? Date.now();
   const lastEvent = status?.last_event_at_ms ?? Date.now();
   const elapsedMs = (status?.status === 'done' || status?.status === 'error')
     ? (lastEvent - startedAt)
     : (Date.now() - startedAt);
 
-  const result: PollResult = {
+  return {
     job_id: jobId,
     status: status?.status ?? 'starting',
     elapsed_ms: elapsedMs,
     cursor: nextCursor,
     output: status?.status === 'done' ? output : '',
-    output_delta: '',  // Will compute below
+    output_delta: '',
     events: newEvents,
     current_event: status?.current_event,
     current_tool: status?.current_tool,
@@ -153,28 +121,72 @@ export async function run(): Promise<void> {
     bead_id: status?.bead_id,
     error: status?.error,
   };
+}
 
-  // Compute output delta from events (text events)
-  // For now, this is a placeholder - full output delta would require
-  // capturing text tokens in events, which we don't currently do.
-  // The output field is populated on completion.
+function renderHeader(result: PollResult, fromCursor: number): string[] {
+  const lines: string[] = [];
+  lines.push(`Job:      ${result.job_id}`);
+  lines.push(`Status:   ${result.status}`);
+  lines.push(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
+  if (result.model) lines.push(`Model:    ${result.backend}/${result.model}`);
+  if (result.bead_id) lines.push(`Bead:     ${result.bead_id}`);
+  if (result.current_tool) lines.push(`Tool:     ${result.current_tool}`);
+  if (result.error) lines.push(`Error:    ${result.error}`);
+  lines.push(`Events:   ${result.events.length} new (cursor: ${fromCursor} → ${result.cursor})`);
+  return lines;
+}
+
+export async function run(): Promise<void> {
+  const { jobId, cursor, json, follow } = parseArgs(process.argv.slice(3));
+  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  const jobDir = join(jobsDir, jobId);
+
+  if (!existsSync(jobDir)) {
+    const result: PollResult = {
+      job_id: jobId, status: 'error', elapsed_ms: 0, cursor: 0,
+      output: '', output_delta: '', events: [], error: `Job not found: ${jobId}`,
+    };
+    console.log(json ? JSON.stringify(result) : `Job not found: ${jobId}`);
+    process.exit(1);
+  }
+
+  // --follow: redraw header in-place every second until done/error, then show output
+  if (follow) {
+    let lastLineCount = 0;
+    while (true) {
+      const result = readJobState(jobsDir, jobId, cursor);
+      const headerLines = renderHeader(result, cursor);
+
+      // Move cursor up and clear to redraw in-place (skip on first render)
+      if (lastLineCount > 0) {
+        process.stdout.write(`\x1b[${lastLineCount}A\x1b[0J`);
+      }
+      process.stdout.write(headerLines.join('\n') + '\n');
+      lastLineCount = headerLines.length;
+
+      if (result.status === 'done' || result.status === 'error') {
+        if (result.status === 'done' && result.output) {
+          console.log('\n--- Output ---');
+          console.log(result.output);
+        }
+        process.exit(result.status === 'done' ? 0 : 1);
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+
+  // One-shot (default)
+  const result = readJobState(jobsDir, jobId, cursor);
 
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    // Human-readable output
-    console.log(`Job:      ${jobId}`);
-    console.log(`Status:   ${result.status}`);
-    console.log(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
-    if (result.model) console.log(`Model:    ${result.backend}/${result.model}`);
-    if (result.bead_id) console.log(`Bead:     ${result.bead_id}`);
-    if (result.current_tool) console.log(`Tool:     ${result.current_tool}`);
-    if (result.error) console.log(`Error:    ${result.error}`);
-    console.log(`Events:   ${newEvents.length} new (cursor: ${cursor} → ${nextCursor})`);
-
+    const headerLines = renderHeader(result, cursor);
+    console.log(headerLines.join('\n'));
     if (result.status === 'done' && result.output) {
       console.log('\n--- Output ---');
-      console.log(result.output.slice(0, 500) + (result.output.length > 500 ? '...' : ''));
+      console.log(result.output);
     }
   }
 }
