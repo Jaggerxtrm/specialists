@@ -11,7 +11,7 @@ import { HookEmitter } from '../specialist/hooks.js';
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
-import { formatEventInline } from './format-helpers.js';
+import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -170,6 +170,7 @@ function startEventTailer(
 ): () => void {
   const eventsPath = join(jobsDir, jobId, 'events.jsonl');
   let linesRead = 0;
+  let activeInlinePhase: InlineIndicatorPhase = null;
 
   const drain = () => {
     let content: string;
@@ -192,11 +193,13 @@ function startEventTailer(
       if (mode === 'json') {
         process.stdout.write(JSON.stringify({ jobId, specialist, beadId, ...event }) + '\n');
       } else {
-        // human mode: print output text from run_complete, format other events
+        // human mode: print output text from run_complete, debounce noisy phase indicators
         if (event.type === 'run_complete' && (event as any).output) {
+          activeInlinePhase = null;
           process.stdout.write('\n' + (event as any).output + '\n');
         } else {
-          const line = formatEventInline(event);
+          const { line, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
+          activeInlinePhase = nextPhase;
           if (line) process.stdout.write(line + '\n');
         }
       }

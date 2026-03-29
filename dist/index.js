@@ -20292,6 +20292,18 @@ function formatEventInline(event) {
       return null;
   }
 }
+function formatEventInlineDebounced(event, activePhase) {
+  if (event.type === "thinking" || event.type === "text") {
+    if (activePhase === event.type) {
+      return { line: null, nextPhase: activePhase };
+    }
+    return { line: formatEventInline(event), nextPhase: event.type };
+  }
+  return {
+    line: formatEventInline(event),
+    nextPhase: null
+  };
+}
 var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
   JOB_COLORS = [cyan4, yellow7, magenta, green6, blue, red2];
@@ -20447,6 +20459,7 @@ async function runBackground(args) {
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
   const eventsPath = join13(jobsDir, jobId, "events.jsonl");
   let linesRead = 0;
+  let activeInlinePhase = null;
   const drain = () => {
     let content;
     try {
@@ -20479,11 +20492,13 @@ function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
 `);
       } else {
         if (event.type === "run_complete" && event.output) {
+          activeInlinePhase = null;
           process.stdout.write(`
 ` + event.output + `
 `);
         } else {
-          const line2 = formatEventInline(event);
+          const { line: line2, nextPhase } = formatEventInlineDebounced(event, activeInlinePhase);
+          activeInlinePhase = nextPhase;
           if (line2)
             process.stdout.write(line2 + `
 `);

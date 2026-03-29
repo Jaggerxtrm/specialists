@@ -294,3 +294,23 @@ export function formatEventInline(event: TimelineEvent): string | null {
       return null;
   }
 }
+
+export type InlineIndicatorPhase = 'thinking' | 'text' | null;
+
+export function formatEventInlineDebounced(
+  event: TimelineEvent,
+  activePhase: InlineIndicatorPhase,
+): { line: string | null; nextPhase: InlineIndicatorPhase } {
+  if (event.type === 'thinking' || event.type === 'text') {
+    if (activePhase === event.type) {
+      return { line: null, nextPhase: activePhase };
+    }
+
+    return { line: formatEventInline(event), nextPhase: event.type };
+  }
+
+  return {
+    line: formatEventInline(event),
+    nextPhase: null,
+  };
+}

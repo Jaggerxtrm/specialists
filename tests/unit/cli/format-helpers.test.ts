@@ -19,6 +19,7 @@ import {
   formatCompleteBanner,
   formatErrorBanner,
   formatDiscoveryBanner,
+  formatEventInlineDebounced,
 } from '../../../src/cli/format-helpers.js';
 
 describe('format-helpers', () => {
@@ -169,6 +170,49 @@ describe('format-helpers', () => {
       const banner = formatDiscoveryBanner('job1');
       expect(banner).toContain('discovered');
       expect(banner).toContain('job1');
+    });
+  });
+
+  describe('formatEventInlineDebounced', () => {
+    it('suppresses duplicate thinking indicators until phase changes', () => {
+      const thinking = { t: 1, type: 'thinking' } as const;
+      const tool = { t: 2, type: 'tool', tool: 'read', phase: 'start' } as const;
+
+      const first = formatEventInlineDebounced(thinking, null);
+      expect(first.line).toContain('[thinking...]');
+      expect(first.nextPhase).toBe('thinking');
+
+      const duplicate = formatEventInlineDebounced(thinking, first.nextPhase);
+      expect(duplicate.line).toBeNull();
+      expect(duplicate.nextPhase).toBe('thinking');
+
+      const phaseChange = formatEventInlineDebounced(tool, duplicate.nextPhase);
+      expect(phaseChange.line).toContain('[tool]');
+      expect(phaseChange.nextPhase).toBeNull();
+
+      const afterChange = formatEventInlineDebounced(thinking, phaseChange.nextPhase);
+      expect(afterChange.line).toContain('[thinking...]');
+      expect(afterChange.nextPhase).toBe('thinking');
+    });
+
+    it('suppresses duplicate response indicators until a non-text event', () => {
+      const text = { t: 1, type: 'text' } as const;
+      const turn = { t: 2, type: 'turn', phase: 'end' } as const;
+
+      const first = formatEventInlineDebounced(text, null);
+      expect(first.line).toContain('[response]');
+      expect(first.nextPhase).toBe('text');
+
+      const duplicate = formatEventInlineDebounced(text, first.nextPhase);
+      expect(duplicate.line).toBeNull();
+      expect(duplicate.nextPhase).toBe('text');
+
+      const reset = formatEventInlineDebounced(turn, duplicate.nextPhase);
+      expect(reset.nextPhase).toBeNull();
+
+      const afterReset = formatEventInlineDebounced(text, reset.nextPhase);
+      expect(afterReset.line).toContain('[response]');
+      expect(afterReset.nextPhase).toBe('text');
     });
   });
 });
