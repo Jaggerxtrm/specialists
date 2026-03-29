@@ -233,5 +233,30 @@ describe('timeline-query', () => {
       expect(activity[0].start_t).toBe(1000);
       expect(activity[0].end_t).toBe(2000);
     });
+
+    it('correlates start/end by tool_call_id when present', () => {
+      const events: TimelineEvent[] = [
+        { t: 1000, type: 'tool', tool: 'bash', phase: 'start', tool_call_id: 'call-1' },
+        { t: 1500, type: 'tool', tool: 'bash', phase: 'start', tool_call_id: 'call-2' },
+        { t: 2000, type: 'tool', tool: 'bash', phase: 'end', tool_call_id: 'call-1' },
+        { t: 2500, type: 'tool', tool: 'bash', phase: 'end', tool_call_id: 'call-2' },
+      ];
+
+      const activity = getToolActivity(events);
+      expect(activity).toHaveLength(2);
+      expect(activity[0]).toMatchObject({ tool: 'bash', start_t: 1000, end_t: 2000 });
+      expect(activity[1]).toMatchObject({ tool: 'bash', start_t: 1500, end_t: 2500 });
+    });
+
+    it('incomplete tools (no end event) show tool name not correlation key', () => {
+      const events: TimelineEvent[] = [
+        { t: 1000, type: 'tool', tool: 'bash', phase: 'start', tool_call_id: 'call-uuid-xyz' },
+      ];
+
+      const activity = getToolActivity(events);
+      expect(activity).toHaveLength(1);
+      expect(activity[0].tool).toBe('bash');
+      expect(activity[0].end_t).toBeUndefined();
+    });
   });
 });

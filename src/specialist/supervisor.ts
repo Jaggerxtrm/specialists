@@ -200,6 +200,7 @@ export class Supervisor {
       status: 'starting',
       started_at_ms: startedAtMs,
       pid: process.pid,
+      ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
     };
     this.writeStatusFile(id, initialStatus);
     // Persist a latest marker so other processes can discover the active job id immediately
@@ -224,7 +225,7 @@ export class Supervisor {
     };
 
     // Emit run_start event
-    appendTimelineEvent(createRunStartEvent(runOptions.name));
+    appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
     // Only create if keepAlive is enabled - foreground runs don't need steering
@@ -242,6 +243,8 @@ export class Supervisor {
     let textLogged = false;
     let currentTool = '';
     let currentToolCallId = '';
+    let currentToolArgs: Record<string, unknown> | undefined;
+    let currentToolIsError = false;
     let killFn: (() => void) | undefined;
     let steerFn: ((msg: string) => Promise<void>) | undefined;
     let resumeFn: ((msg: string) => Promise<string>) | undefined;
@@ -279,6 +282,8 @@ export class Supervisor {
           const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
             tool: currentTool,
             toolCallId: currentToolCallId || undefined,
+            args: currentToolArgs,
+            isError: currentToolIsError,
           });
 
           if (timelineEvent) {
@@ -349,6 +354,18 @@ export class Supervisor {
           closeFn = cFn;
           setStatus({ status: 'waiting', current_event: 'waiting' });
         },
+        // onToolStartCallback — capture tool name, args, and call ID for timeline event fidelity
+        (tool, args, toolCallId) => {
+          currentTool = tool;
+          currentToolArgs = args;
+          currentToolCallId = toolCallId ?? '';
+          currentToolIsError = false; // reset on new tool start
+          setStatus({ current_tool: tool });
+        },
+        // onToolEndCallback — capture isError for timeline event fidelity
+        (_tool, isError) => {
+          currentToolIsError = isError;
+        },
       );
 
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
@@ -371,6 +388,7 @@ export class Supervisor {
         model: result.model,
         backend: result.backend,
         bead_id: result.beadId,
+        output: result.output,
       }));
 
       // Touch ready marker so the hook can surface completion banners

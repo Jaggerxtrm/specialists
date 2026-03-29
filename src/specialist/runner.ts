@@ -182,6 +182,8 @@ export class SpecialistRunner {
       resumeFn: (msg: string) => Promise<string>,
       closeFn: () => Promise<void>,
     ) => void,
+    onToolStartCallback?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void,
+    onToolEndCallback?: (tool: string, isError: boolean) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -259,15 +261,10 @@ export class SpecialistRunner {
 
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
 
-    await hooks.emit('pre_execute', invocationId, metadata.name, metadata.version, {
-      backend: model,
-      model,
-      timeout_ms: execution.timeout_ms,
-      permission_level: permissionLevel,
-    });
-
     // Beads: use provided input bead OR create a new tracking bead.
     // When inputBeadId is present the orchestrator owns the lifecycle — do NOT create a second bead.
+    // Owned-bead creation is placed BEFORE pre_execute so onBeadCreated fires early and callers
+    // (e.g. Supervisor) can write bead_id into status.json before the session starts.
     const beadsIntegration = spec.specialist.beads_integration ?? 'auto';
     let beadId: string | undefined;
     let ownsBead = false; // true only when runner created the bead (not inherited from orchestrator)
@@ -277,6 +274,13 @@ export class SpecialistRunner {
       beadId = beadsClient.createBead(metadata.name) ?? undefined;
       if (beadId) { ownsBead = true; onBeadCreated?.(beadId); }
     }
+
+    await hooks.emit('pre_execute', invocationId, metadata.name, metadata.version, {
+      backend: model,
+      model,
+      timeout_ms: execution.timeout_ms,
+      permission_level: permissionLevel,
+    });
 
     let output: string;
     let sessionBackend: string = model; // captured before kill() can destroy meta
@@ -294,8 +298,8 @@ export class SpecialistRunner {
         cwd: process.cwd(),
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
-        onToolStart: (tool)  => onProgress?.(`\n⚙ ${tool}…`),
-        onToolEnd:   (_tool) => onProgress?.(`✓\n`),
+        onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
+        onToolEnd:   (tool, isError) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError); },
         onEvent:     (type)  => onEvent?.(type),
         onMeta:      (meta)  => onMeta?.(meta),
       });

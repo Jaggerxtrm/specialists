@@ -62,6 +62,18 @@ describe('timeline-events', () => {
       expect(event.backend).toBe('anthropic');
       expect(event.bead_id).toBe('unitAI-456');
     });
+
+    it('includes output field when provided', () => {
+      const event = createRunCompleteEvent('COMPLETE', 15, {
+        output: 'Final assistant output text',
+      });
+      expect(event.output).toBe('Final assistant output text');
+    });
+
+    it('does not include output when not provided', () => {
+      const event = createRunCompleteEvent('COMPLETE', 5);
+      expect(event.output).toBeUndefined();
+    });
   });
 
   describe('mapCallbackEventToTimelineEvent', () => {
@@ -71,14 +83,9 @@ describe('timeline-events', () => {
       expect(event!.type).toBe('thinking');
     });
 
-    it('maps toolcall to tool event with phase start', () => {
+    it('toolcall returns null (removed — tool_execution_start is authoritative)', () => {
       const event = mapCallbackEventToTimelineEvent('toolcall', { tool: 'bash' });
-      expect(event).not.toBeNull();
-      expect(event!.type).toBe('tool');
-      if (event!.type === 'tool') {
-        expect(event.phase).toBe('start');
-        expect(event.tool).toBe('bash');
-      }
+      expect(event).toBeNull();
     });
 
     it('maps tool_execution_end to tool event with phase end', () => {
@@ -92,6 +99,65 @@ describe('timeline-events', () => {
         expect(event.phase).toBe('end');
         expect(event.tool).toBe('read');
         expect(event.is_error).toBe(false);
+      }
+    });
+
+    it('maps tool_execution_end with isError=true to tool event with is_error=true', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_end', {
+        tool: 'bash',
+        isError: true,
+      });
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.phase).toBe('end');
+        expect(event.is_error).toBe(true);
+      }
+    });
+
+    it('maps tool_execution_start with args to tool event with args field', () => {
+      const args = { command: 'ls -la', timeout: 5000 };
+      const event = mapCallbackEventToTimelineEvent('tool_execution_start', {
+        tool: 'bash',
+        args,
+      });
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.phase).toBe('start');
+        expect(event.tool).toBe('bash');
+        expect(event.args).toEqual(args);
+      }
+    });
+
+    it('maps tool_execution_start without args — args field is undefined', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_start', {
+        tool: 'read',
+      });
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.args).toBeUndefined();
+      }
+    });
+
+    it('maps tool_execution_start with toolCallId — populates tool_call_id', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_start', {
+        tool: 'bash',
+        toolCallId: 'call-abc-123',
+      });
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.tool_call_id).toBe('call-abc-123');
+      }
+    });
+
+    it('maps tool_execution_start — includes started_at ISO timestamp', () => {
+      const before = new Date().toISOString();
+      const event = mapCallbackEventToTimelineEvent('tool_execution_start', { tool: 'read' });
+      const after = new Date().toISOString();
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.started_at).toBeDefined();
+        expect(event.started_at! >= before).toBe(true);
+        expect(event.started_at! <= after).toBe(true);
       }
     });
 

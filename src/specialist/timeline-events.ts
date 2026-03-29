@@ -122,10 +122,14 @@ export interface TimelineEventTool extends TimelineEventBase {
   tool: string;
   /** Execution phase */
   phase: 'start' | 'update' | 'end';
-  /** Tool call ID for correlation */
+  /** Tool call ID for correlation across start/end events */
   tool_call_id?: string;
   /** Whether execution resulted in error */
   is_error?: boolean;
+  /** tool_use.input payload forwarded from tool_execution_start */
+  args?: Record<string, unknown>;
+  /** ISO timestamp of tool start — present on phase=start events for duration computation */
+  started_at?: string;
 }
 
 /**
@@ -177,6 +181,8 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
   bead_id?: string;
   /** Error message if status is ERROR */
   error?: string;
+  /** Final assistant output text */
+  output?: string;
 }
 
 /**
@@ -247,6 +253,7 @@ export function mapCallbackEventToTimelineEvent(
     tool?: string;
     toolCallId?: string;
     isError?: boolean;
+    args?: Record<string, unknown>;
   }
 ): TimelineEvent | null {
   const t = Date.now();
@@ -255,16 +262,6 @@ export function mapCallbackEventToTimelineEvent(
     case 'thinking':
       return { t, type: TIMELINE_EVENT_TYPES.THINKING };
 
-    case 'toolcall':
-      // Tool construction phase (assistant deciding to call tool)
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? 'unknown',
-        phase: 'start',
-        tool_call_id: context.toolCallId,
-      };
-
     case 'tool_execution_start':
       return {
         t,
@@ -272,6 +269,8 @@ export function mapCallbackEventToTimelineEvent(
         tool: context.tool ?? 'unknown',
         phase: 'start',
         tool_call_id: context.toolCallId,
+        args: context.args,
+        started_at: new Date(t).toISOString(),
       };
 
     case 'tool_execution_update':
@@ -375,6 +374,7 @@ export function createRunCompleteEvent(
     backend?: string;
     bead_id?: string;
     error?: string;
+    output?: string;
   }
 ): TimelineEventRunComplete {
   return {

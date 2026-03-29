@@ -65,10 +65,10 @@ export interface PiSessionOptions {
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
   onThinking?: (delta: string) => void;
-  /** Called with tool name when a tool starts executing */
-  onToolStart?: (tool: string) => void;
-  /** Called with tool name when a tool result arrives */
-  onToolEnd?: (tool: string) => void;
+  /** Called with tool name, optional args payload, and optional tool call ID when a tool starts executing */
+  onToolStart?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void;
+  /** Called with tool name and error flag when a tool result arrives */
+  onToolEnd?: (tool: string, isError: boolean) => void;
   /** Called with the raw pi event type (for job status tracking) */
   onEvent?: (type: string) => void;
   /** Called once with actual backend/model from the first assistant message_start */
@@ -305,7 +305,11 @@ export class PiAgentSession {
 
     // ── Tool execution (top-level per RPC docs) ────────────────────────────────
     if (type === 'tool_execution_start') {
-      // NOTE: onToolStart fires from nested toolcall_start inside message_update
+      this.options.onToolStart?.(
+        event.toolName ?? event.name ?? 'tool',
+        event.args as Record<string, unknown> | undefined,
+        event.toolCallId as string | undefined,
+      );
       this.options.onEvent?.('tool_execution_start');
       return;
     }
@@ -314,7 +318,7 @@ export class PiAgentSession {
       return;
     }
     if (type === 'tool_execution_end') {
-      this.options.onToolEnd?.(event.toolName ?? event.name ?? 'tool');
+      this.options.onToolEnd?.(event.toolName ?? event.name ?? 'tool', event.isError ?? false);
       this.options.onEvent?.('tool_execution_end');
       return;
     }

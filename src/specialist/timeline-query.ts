@@ -276,7 +276,7 @@ export function getJobCompletionStatus(
 export function getToolActivity(
   events: TimelineEvent[]
 ): Array<{ tool: string; start_t: number; end_t?: number }> {
-  const toolStarts = new Map<string, number>();
+  const toolStarts = new Map<string, { start_t: number; tool: string }>();
   const activity: Array<{ tool: string; start_t: number; end_t?: number }> = [];
 
   for (const event of events) {
@@ -284,12 +284,12 @@ export function getToolActivity(
 
     const key = event.tool_call_id ?? event.tool;
     if (event.phase === 'start') {
-      toolStarts.set(key, event.t);
+      toolStarts.set(key, { start_t: event.t, tool: event.tool });
     } else if (event.phase === 'end') {
-      const start_t = toolStarts.get(key);
+      const entry = toolStarts.get(key);
       activity.push({
         tool: event.tool,
-        start_t: start_t ?? event.t,
+        start_t: entry?.start_t ?? event.t,
         end_t: event.t,
       });
       toolStarts.delete(key);
@@ -297,8 +297,8 @@ export function getToolActivity(
   }
 
   // Add incomplete tool calls (started but not ended)
-  for (const [key, start_t] of toolStarts) {
-    activity.push({ tool: key, start_t });
+  for (const { start_t, tool } of toolStarts.values()) {
+    activity.push({ tool, start_t });
   }
 
   return activity;

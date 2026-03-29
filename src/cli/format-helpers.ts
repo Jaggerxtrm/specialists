@@ -225,6 +225,12 @@ export function formatEventLine(
   } else if (event.type === 'tool') {
     detailParts.push(`tool=${event.tool}`);
     detailParts.push(`phase=${event.phase}`);
+    if (event.phase === 'start' && event.args) {
+      const argStr = Object.entries(event.args)
+        .map(([k, v]) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return `${k}=${s.length > 40 ? s.slice(0, 37) + '...' : s}`; })
+        .join(' ');
+      if (argStr) detailParts.push(`args=${argStr}`);
+    }
     if (event.phase === 'end') {
       detailParts.push(`ok=${event.is_error ? 'false' : 'true'}`);
     }
