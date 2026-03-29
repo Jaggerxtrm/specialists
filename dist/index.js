@@ -19930,12 +19930,29 @@ var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
 
-Call \`specialist_init\` at the start of every session to bootstrap context and
-see available specialists. Use \`use_specialist\` or \`start_specialist\` to
-delegate heavy tasks (code review, bug hunting, deep reasoning) to the right
-specialist without user intervention.
+Call \`specialists init\` once per project, then use CLI commands via Bash.
 
-Add custom specialists to \`.specialists/user/specialists/\` to extend the defaults.
+Core specialist commands (CLI-first in pi):
+- \`specialists list\`
+- \`specialists run <name> --bead <id>\`
+- \`specialists run <name> --prompt "..."\`
+- \`specialists feed -f\` / \`specialists feed <job-id>\`
+- \`specialists result <job-id>\`
+- \`specialists resume <job-id> "next task"\` (for keep-alive jobs in waiting)
+- \`specialists stop <job-id>\`
+
+For background specialists in pi, prefer the process extension:
+- \`process start\`, \`process list\`, \`process output\`, \`process logs\`, \`process kill\`, \`process clear\`
+- TUI: \`/ps\`, \`/ps:pin\`, \`/ps:logs\`, \`/ps:kill\`, \`/ps:clear\`, \`/ps:dock\`, \`/ps:settings\`
+
+Canonical tracked flow:
+1. Create/claim bead issue
+2. Run specialist with \`--bead <id>\` (for long work, launch via \`process start\`)
+3. Observe progress (\`process output\` / \`process logs\` or \`specialists feed\`)
+4. Read final output (\`specialists result <job-id>\`)
+5. Close/update bead with outcome
+
+Add custom specialists to \`.specialists/user/specialists/\` to extend defaults.
 `.trimStart();
   GITIGNORE_ENTRIES = [".specialists/jobs/", ".specialists/ready/"];
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
