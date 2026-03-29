@@ -5,10 +5,10 @@ description: >
   ask whether to delegate. Consult before any: code review, security audit, deep bug
   investigation, test generation, multi-file refactor, or architecture analysis. Also
   use for the mechanics of delegation: --bead workflow, --context-depth, background
-  jobs, MCP tools (use_specialist, start_specialist, poll_specialist), specialists init,
+  jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.1
+version: 3.2
 ---
 
 # Specialists Usage
@@ -51,7 +51,7 @@ bd create --title "Audit authentication module for security issues" --type task 
 
 # 2. Find and run the right specialist
 specialists list
-specialists run security-audit --bead unitAI-abc --background
+specialists run debugger --bead unitAI-abc --background
 
 # 3. Keep working; check in when ready
 specialists feed -f
@@ -74,9 +74,10 @@ Run `specialists list` to see what's available. Match by task type:
 | Task type | Look for |
 |-----------|----------|
 | Bug / regression investigation | `debugger`, `overthinker` |
-| Code review | `parallel-review`, `codebase-explorer` |
+| Implementation / heavy coding | `executor` |
+| Code review | `parallel-review`, `explorer` |
 | Test generation | `test-runner` |
-| Architecture / exploration | `codebase-explorer`, `feature-design` |
+| Architecture / exploration | `explorer`, `planner` |
 | Planning / scoping | `planner` |
 | Documentation sync | `sync-docs` |
 
@@ -103,7 +104,7 @@ it failed before doing the work yourself.
 ## Ad-Hoc (No Tracking)
 
 ```bash
-specialists run codebase-explorer --prompt "Map the feed command architecture"
+specialists run explorer --prompt "Map the feed command architecture"
 ```
 
 Use `--prompt` only for throwaway exploration. For anything worth remembering, use `--bead`.
@@ -118,8 +119,8 @@ every file and write findings yourself — 15+ minutes, your full attention.
 With a specialist:
 ```bash
 bd create --title "Security review: src/auth/" --type task --priority 1  # → unitAI-xyz
-specialists list --category security
-specialists run security-audit --bead unitAI-xyz --background             # → job_4a2b1c
+specialists list
+specialists run debugger --bead unitAI-xyz --background                   # → job_4a2b1c
 # go do other work
 specialists result job_4a2b1c
 bd close unitAI-xyz --reason "Found 2 issues, filed unitAI-abc, unitAI-def"
@@ -138,17 +139,41 @@ Available after `specialists init` and session restart.
 | `specialist_init` | Bootstrap once per session |
 | `use_specialist` | Foreground run; pass `bead_id` for tracked work |
 | `start_specialist` | Async: returns job ID immediately |
-| `poll_specialist` | Check status + delta output |
+| `feed_specialist` | Cursor-paginated run events (status + deltas) |
+| `resume_specialist` | Next-turn prompt for keep-alive jobs in `waiting` |
+| `steer_specialist` | Mid-run steering message for active jobs |
 | `stop_specialist` | Cancel |
 | `run_parallel` | Concurrent or pipeline execution |
 | `specialist_status` | Circuit breaker health + staleness |
 
 ---
 
+## feed_specialist Observation Pattern
+
+Use cursor-based polling for structured progress when you run in background:
+
+```bash
+# first read
+feed_specialist({job_id: "abc123"})
+# => {events:[...], next_cursor: 12, has_more: true, is_complete: false}
+
+# continue from cursor
+feed_specialist({job_id: "abc123", cursor: 12})
+# => {events:[...], next_cursor: 25, has_more: false, is_complete: true}
+```
+
+When `is_complete: true` and `has_more: false`, fetch final text with:
+
+```bash
+specialists result <job-id>
+```
+
+---
+
 ## Setup and Troubleshooting
 
 ```bash
-specialists init        # first-time setup: creates specialists/, wires AGENTS.md
+specialists init        # first-time setup: creates .specialists/, wires AGENTS.md/CLAUDE.md
 specialists doctor      # health check: hooks, MCP, zombie jobs
 ```
 
