@@ -9,7 +9,7 @@ export const stopSpecialistSchema = z.object({
 export function createStopSpecialistTool(registry: JobRegistry) {
   return {
     name: 'stop_specialist' as const,
-    description: '[DEPRECATED v3] Cancel a running specialist job. Prefer CLI: `specialists stop <id>`. Kills the pi process immediately and sets status to cancelled. Subsequent poll_specialist calls return status: cancelled with output buffered up to that point.',
+    description: '[DEPRECATED v3] Cancel a running specialist job. Prefer CLI: `specialists stop <id>`. Kills the pi process immediately and sets status to cancelled. Subsequent feed_specialist calls will show status: cancelled with output buffered up to that point.',
     inputSchema: stopSpecialistSchema,
     async execute(input: z.infer<typeof stopSpecialistSchema>) {
       const result = registry.cancel(input.job_id);

@@ -1,7 +1,7 @@
 // src/specialist/jobRegistry.ts
 //
 // In-memory registry for async specialist jobs started via start_specialist.
-// Jobs accumulate streaming output from pi token events and are read by poll_specialist.
+// Jobs accumulate streaming output from pi token events.
 //
 import type { RunResult } from './runner.js';
 

@@ -1,9 +1,9 @@
 /**
  * Specialists MCP Server — v2 Specialist System
  *
- * 8-tool orchestration layer: list_specialists, use_specialist,
- * run_parallel, specialist_status, start_specialist, poll_specialist,
- * stop_specialist, specialist_init. All workflow logic lives in .specialist.yaml
+ * 9-tool orchestration layer: list_specialists, use_specialist,
+ * run_parallel, specialist_status, start_specialist, feed_specialist,
+ * stop_specialist, specialist_init, steer_specialist. All workflow logic lives in .specialist.yaml
  * files discovered across 3 scopes.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -27,10 +27,10 @@ import { createRunParallelTool, runParallelSchema } from "./tools/specialist/run
 import { createSpecialistStatusTool } from "./tools/specialist/specialist_status.tool.js";
 import { JobRegistry } from "./specialist/jobRegistry.js";
 import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specialist/start_specialist.tool.js";
-import { createPollSpecialistTool, pollSpecialistSchema } from "./tools/specialist/poll_specialist.tool.js";
 import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { createSteerSpecialistTool, steerSpecialistSchema } from "./tools/specialist/steer_specialist.tool.js";
 import { createFollowUpSpecialistTool, followUpSpecialistSchema } from "./tools/specialist/follow_up_specialist.tool.js";
+import { createFeedSpecialistTool, feedSpecialistSchema } from "./tools/specialist/feed_specialist.tool.js";
 import { z } from "zod";
 
 import { createSpecialistInitTool, specialistInitSchema } from "./tools/specialist/specialist_init.tool.js";
@@ -54,6 +54,7 @@ export class SpecialistsServer {
     const beadsClient = new BeadsClient();
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     const registry = new JobRegistry();
+    const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
     this.tools = [
       createListSpecialistsTool(loader),
@@ -61,11 +62,11 @@ export class SpecialistsServer {
       createRunParallelTool(runner),
       createSpecialistStatusTool(loader, circuitBreaker),
       createStartSpecialistTool(runner, registry),
-      createPollSpecialistTool(registry),
       createStopSpecialistTool(registry),
       createSteerSpecialistTool(registry),
       createFollowUpSpecialistTool(registry),
       createSpecialistInitTool(loader),
+      createFeedSpecialistTool(jobsDir),
     ];
 
     this.server = new Server(
@@ -85,11 +86,11 @@ export class SpecialistsServer {
       run_parallel: runParallelSchema,
       specialist_status: z.object({}),
       start_specialist: startSpecialistSchema,
-      poll_specialist: pollSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
       steer_specialist: steerSpecialistSchema,
       follow_up_specialist: followUpSpecialistSchema,
       specialist_init: specialistInitSchema,
+      feed_specialist: feedSpecialistSchema,
     };
     this.toolSchemas = schemaMap;
 

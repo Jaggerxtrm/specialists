@@ -208,7 +208,7 @@ export async function run(): Promise<void> {
   lines.push(`  ${bold('use_specialist')}     — full lifecycle: load → agents.md → run → output`);
   lines.push(`  ${bold('run_parallel')}       — concurrent or pipeline execution`);
   lines.push(`  ${bold('start_specialist')}   — async job start, returns job ID`);
-  lines.push(`  ${bold('poll_specialist')}    — poll job status/output by ID`);
+  lines.push(`  ${bold('feed_specialist')}    — stream events/output by job ID`);
   lines.push(`  ${bold('steer_specialist')}      — send a mid-run message to a running job`);
   lines.push(`  ${bold('follow_up_specialist')} — send a next-turn prompt to a keep-alive session`);
   lines.push(`  ${bold('stop_specialist')}      — cancel a running job by ID`);

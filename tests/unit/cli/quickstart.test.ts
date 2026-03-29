@@ -76,7 +76,7 @@ describe('quickstart CLI — run()', () => {
 
   it('lists all MCP tools', async () => {
     const out = await captureOutput();
-    const tools = ['specialist_init', 'list_specialists', 'use_specialist', 'start_specialist', 'poll_specialist'];
+    const tools = ['specialist_init', 'list_specialists', 'use_specialist', 'start_specialist', 'feed_specialist'];
     for (const tool of tools) {
       expect(out, `missing MCP tool: ${tool}`).toContain(tool);
     }
