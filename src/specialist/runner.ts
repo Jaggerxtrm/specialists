@@ -118,18 +118,18 @@ function validateShebang(filePath: string, errors: string[]): void {
   } catch { /* unreadable — caught by exists check */ }
 }
 
-const CORE_TOOLS_BY_PERMISSION = {
-  READ_ONLY: ['read', 'grep', 'find', 'ls'],
-  LOW: ['read', 'bash', 'grep', 'find', 'ls'],
-  MEDIUM: ['read', 'bash', 'edit', 'grep', 'find', 'ls'],
-  HIGH: ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'],
-} as const;
+/** Pi tools known to be gated by permission level. Tools not in this map are assumed available at all levels. */
+const PERMISSION_GATED_TOOLS: Record<string, string[]> = {
+  bash:  ['LOW', 'MEDIUM', 'HIGH'],
+  edit:  ['MEDIUM', 'HIGH'],
+  write: ['HIGH'],
+};
 
-type PermissionLevel = keyof typeof CORE_TOOLS_BY_PERMISSION;
-
-function getAllowedTools(permissionLevel: string): Set<string> {
-  const normalized = permissionLevel.toUpperCase() as PermissionLevel;
-  return new Set(CORE_TOOLS_BY_PERMISSION[normalized] ?? CORE_TOOLS_BY_PERMISSION.READ_ONLY);
+function isToolAvailable(tool: string, permissionLevel: string): boolean {
+  const normalized = permissionLevel.toUpperCase();
+  const gatedLevels = PERMISSION_GATED_TOOLS[tool.toLowerCase()];
+  if (!gatedLevels) return true; // not gated — available at all levels (read, grep, find, ls, glob, notebook, etc.)
+  return gatedLevels.includes(normalized);
 }
 
 function validateBeforeRun(
@@ -173,12 +173,10 @@ function validateBeforeRun(
   }
 
   // Validate required_tools are enabled by the selected permission level
-  const allowedTools = getAllowedTools(permissionLevel);
   for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
-    const normalizedTool = tool.trim().toLowerCase();
-    if (!allowedTools.has(normalizedTool)) {
+    if (!isToolAvailable(tool, permissionLevel)) {
       errors.push(
-        `  ✗ capabilities.required_tools: tool "${tool}" not available at permission "${permissionLevel}" (allowed: ${Array.from(allowedTools).join(', ')})`,
+        `  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`,
       );
     }
   }

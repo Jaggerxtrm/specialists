@@ -17561,7 +17561,6 @@ var init_schema = __esm(() => {
   }).optional();
   ValidationSchema = objectType({
     files_to_watch: arrayType(stringType()).optional(),
-    references: arrayType(unknownType()).optional(),
     stale_threshold_days: numberType().optional()
   }).optional();
   StallDetectionSchema = objectType({
@@ -18347,7 +18346,14 @@ function validateShebang(filePath, errors5) {
     }
   } catch {}
 }
-function validateBeforeRun(spec) {
+function isToolAvailable(tool, permissionLevel) {
+  const normalized = permissionLevel.toUpperCase();
+  const gatedLevels = PERMISSION_GATED_TOOLS[tool.toLowerCase()];
+  if (!gatedLevels)
+    return true;
+  return gatedLevels.includes(normalized);
+}
+function validateBeforeRun(spec, permissionLevel) {
   const errors5 = [];
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
@@ -18377,6 +18383,11 @@ function validateBeforeRun(spec) {
   for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
     if (!commandExists(cmd)) {
       errors5.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
+    }
+  }
+  for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
+    if (!isToolAvailable(tool, permissionLevel)) {
+      errors5.push(`  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
     }
   }
   if (warnings.length > 0) {
@@ -18415,7 +18426,8 @@ class SpecialistRunner {
       circuit_breaker_state: circuitBreaker.getState(model),
       scope: "project"
     });
-    validateBeforeRun(spec);
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    validateBeforeRun(spec, permissionLevel);
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
     const preResults = preScripts.map((s) => runScript(s.run ?? s.path)).filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
@@ -18462,7 +18474,6 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
 
 `);
     }
-    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
     const beadsIntegration = spec.specialist.beads_integration ?? "auto";
     let beadId;
     let ownsBead = false;
@@ -18598,9 +18609,15 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
     return jobId;
   }
 }
+var PERMISSION_GATED_TOOLS;
 var init_runner = __esm(() => {
   init_session();
   init_beads();
+  PERMISSION_GATED_TOOLS = {
+    bash: ["LOW", "MEDIUM", "HIGH"],
+    edit: ["MEDIUM", "HIGH"],
+    write: ["HIGH"]
+  };
 });
 
 // src/specialist/hooks.ts
