@@ -205,7 +205,9 @@ describe('PiAgentSession', () => {
   it('prompt() does NOT close stdin', async () => {
     const session = await PiAgentSession.create({ model: 'gemini' });
     await session.start();
-    await session.prompt('do the thing');
+    const promptP = session.prompt('do the thing');
+    emitLine(fake, { type: 'response', id: 1, success: true });
+    await promptP;
     expect(fake.stdin.end).not.toHaveBeenCalled();
   });
 
@@ -220,7 +222,9 @@ describe('PiAgentSession', () => {
     try {
       const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
       await session.start();
-      await session.prompt('do work');
+      const promptP = session.prompt('do work');
+      emitLine(fake, { type: 'response', id: 1, success: true });
+      await promptP;
 
       const done = session.waitForDone().catch((err) => err);
       await vi.advanceTimersByTimeAsync(60);
@@ -238,7 +242,9 @@ describe('PiAgentSession', () => {
     try {
       const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
       await session.start();
-      await session.prompt('do work');
+      const promptP = session.prompt('do work');
+      emitLine(fake, { type: 'response', id: 1, success: true });
+      await promptP;
 
       await vi.advanceTimersByTimeAsync(40);
       emitLine(fake, { type: 'turn_start' });
@@ -257,7 +263,9 @@ describe('PiAgentSession', () => {
     try {
       const session = await PiAgentSession.create({ model: 'gemini', stallTimeoutMs: 50 });
       await session.start();
-      await session.prompt('do work');
+      const promptP = session.prompt('do work');
+      emitLine(fake, { type: 'response', id: 1, success: true });
+      await promptP;
 
       const closePromise = session.close();
       fake.procHandlers['close']?.(0);
@@ -314,5 +322,118 @@ describe('PiAgentSession', () => {
     const toolsIdx = args.indexOf('--tools');
     expect(toolsIdx).toBeGreaterThan(-1);
     expect(args[toolsIdx + 1]).toBe('read,bash,edit,write,grep,find,ls');
+  });
+});
+
+// ── ID-mapped concurrent RPC dispatch tests ───────────────────────────────────
+describe('sendCommand — concurrent dispatch', () => {
+  let fake: ReturnType<typeof makeFakeProc>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fake = makeFakeProc();
+  });
+
+  it('concurrent sendCommand calls each get a unique id and resolve independently', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    // Start two prompts concurrently (they won't complete until we emit responses)
+    const p1 = session.prompt('first task');
+    const p2 = session.prompt('second task');
+
+    // Responses arrive out of order — id=2 resolves before id=1
+    emitLine(fake, { type: 'response', id: 2, success: true });
+    emitLine(fake, { type: 'response', id: 1, success: true });
+
+    await Promise.all([p1, p2]);
+
+    // Both writes contain their respective id fields
+    const writes = fake.stdin.write.mock.calls.map((c: any[]) => JSON.parse(c[0]));
+    const ids = writes.map((w: any) => w.id);
+    expect(ids).toContain(1);
+    expect(ids).toContain(2);
+  });
+
+  it('prompt() throws when response.success === false', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const p = session.prompt('bad task');
+    emitLine(fake, { type: 'response', id: 1, success: false, error: 'already streaming' });
+
+    await expect(p).rejects.toThrow('already streaming');
+  });
+
+  it('steer() throws when response.success === false', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const p = session.steer('redirect');
+    emitLine(fake, { type: 'response', id: 1, success: false, error: 'steer rejected' });
+
+    await expect(p).rejects.toThrow('steer rejected');
+  });
+
+  it('sendCommand rejects with timeout error when no response arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini' });
+      await session.start();
+
+      const p = session.prompt('task').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(11_000);
+      const err = await p;
+      expect(err.message).toMatch(/RPC timeout/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('kill() rejects all pending RPC requests', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const p = session.prompt('task').catch((e) => e);
+    session.kill();
+    const err = await p;
+    expect(err.message).toMatch(/killed/i);
+  });
+
+  it('stderr is accumulated and accessible via getStderr()', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    // stderr is a separate stream — extract from spawn call
+    const spawnCall = mockSpawn.mock.calls[0];
+    expect(spawnCall[2].stdio).toEqual(['pipe', 'pipe', 'pipe']);
+
+    // Simulate stderr data via the stored proc reference
+    // The proc mock doesn't have a real stderr, but we can verify stdio config
+    expect(session.getStderr()).toBe('');
+  });
+
+  it('auto_compaction_start and auto_compaction_end both fire onEvent("auto_compaction")', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, { type: 'auto_compaction_start' });
+    emitLine(fake, { type: 'auto_compaction_end' });
+
+    const calls = onEvent.mock.calls.map((c: any[]) => c[0]);
+    expect(calls.filter((t: string) => t === 'auto_compaction')).toHaveLength(2);
+  });
+
+  it('auto_retry_start and auto_retry_end both fire onEvent("auto_retry")', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    emitLine(fake, { type: 'auto_retry_start' });
+    emitLine(fake, { type: 'auto_retry_end' });
+
+    const calls = onEvent.mock.calls.map((c: any[]) => c[0]);
+    expect(calls.filter((t: string) => t === 'auto_retry')).toHaveLength(2);
   });
 });

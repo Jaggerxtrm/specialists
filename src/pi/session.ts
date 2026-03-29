@@ -103,7 +103,9 @@ export class PiAgentSession {
   private _agentEndReceived = false;
   private _killed = false;
   private _lineBuffer = '';   // accumulates partial lines split across stdout chunks
-  private _pendingCommand?: (response: unknown) => void;
+  private _pendingRequests = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  private _nextRequestId = 1;
+  private _stderrBuffer = '';
   private _stallTimer?: ReturnType<typeof setTimeout>;
   private _stallError?: Error;
   readonly meta: AgentSessionMeta;
@@ -172,7 +174,7 @@ export class PiAgentSession {
     }
 
     this.proc = spawn('pi', args, {
-      stdio: ['pipe', 'pipe', 'inherit'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.options.cwd,
     });
 
@@ -183,6 +185,10 @@ export class PiAgentSession {
     // Prevent unhandled rejection warnings when kill() is called before waitForDone() is awaited
     donePromise.catch(() => {});
     this._donePromise = donePromise;
+
+    this.proc.stderr?.on('data', (chunk: Buffer) => {
+      this._stderrBuffer += chunk.toString();
+    });
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
       // Accumulate into the line buffer — agent_end JSON can be 100KB+,
@@ -245,9 +251,15 @@ export class PiAgentSession {
 
     // ── RPC response (reply to a sendCommand call) ──────────────────────────
     if (type === 'response') {
-      const handler = this._pendingCommand;
-      this._pendingCommand = undefined;
-      handler?.(event);
+      const id = event.id as number | undefined;
+      if (id !== undefined) {
+        const entry = this._pendingRequests.get(id);
+        if (entry) {
+          clearTimeout(entry.timer);
+          this._pendingRequests.delete(id);
+          entry.resolve(event);
+        }
+      }
       return;
     }
 
@@ -323,6 +335,16 @@ export class PiAgentSession {
       return;
     }
 
+    // ── Auto-compaction / auto-retry lifecycle events ──────────────────────────
+    if (type === 'auto_compaction_start' || type === 'auto_compaction_end') {
+      this.options.onEvent?.('auto_compaction');
+      return;
+    }
+    if (type === 'auto_retry_start' || type === 'auto_retry_end') {
+      this.options.onEvent?.('auto_retry');
+      return;
+    }
+
     // ── message_update — all streaming deltas are nested here ─────────────────
     if (type === 'message_update') {
       const ae = event.assistantMessageEvent;
@@ -357,18 +379,27 @@ export class PiAgentSession {
 
   /**
    * Send a JSON command to pi's stdin and return a promise for the response.
-   * There can only be one pending command at a time.
+   * Each call is assigned a unique ID; concurrent calls are supported.
    */
-  private sendCommand(cmd: Record<string, any>): Promise<any> {
+  private sendCommand(cmd: Record<string, any>, timeoutMs = 10_000): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.proc?.stdin) {
         reject(new Error('No stdin available'));
         return;
       }
-      this._pendingCommand = resolve;
-      this.proc.stdin.write(JSON.stringify(cmd) + '\n', (err) => {
+      const id = this._nextRequestId++;
+      const timer = setTimeout(() => {
+        this._pendingRequests.delete(id);
+        reject(new Error(`RPC timeout: no response for command id=${id} after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this._pendingRequests.set(id, { resolve, reject, timer });
+      this.proc.stdin.write(JSON.stringify({ ...cmd, id }) + '\n', (err) => {
         if (err) {
-          this._pendingCommand = undefined;
+          const entry = this._pendingRequests.get(id);
+          if (entry) {
+            clearTimeout(entry.timer);
+            this._pendingRequests.delete(id);
+          }
           reject(err);
         }
       });
@@ -376,14 +407,17 @@ export class PiAgentSession {
   }
 
   /**
-   * Write the prompt to pi's stdin. Stdin is kept open for subsequent RPC commands.
+   * Write the prompt to pi's stdin and await the RPC ack.
+   * Stdin is kept open for subsequent RPC commands.
    * Call waitForDone() to block until agent_end, then close() to terminate.
    */
   async prompt(task: string): Promise<void> {
     this._stallError = undefined;
     this._markActivity();
-    const msg = JSON.stringify({ type: 'prompt', message: task }) + '\n';
-    this.proc?.stdin?.write(msg);
+    const response = await this.sendCommand({ type: 'prompt', message: task });
+    if (response?.success === false) {
+      throw new Error(`Prompt rejected by pi: ${response.error ?? 'already streaming'}`);
+    }
     // NOTE: stdin is intentionally NOT closed here. Call close() after waitForDone()
     // to allow sendCommand() RPC calls between prompt completion and teardown.
   }
@@ -465,30 +499,40 @@ export class PiAgentSession {
     if (this._killed) return; // idempotent – second call (e.g. from finally) is a no-op
     this._killed = true;
     this._clearStallTimer();
+    // Best-effort abort signal before SIGKILL
+    if (this.proc?.stdin?.writable) {
+      try { this.proc.stdin.write(JSON.stringify({ type: 'abort' }) + '\n'); } catch { /* ignore */ }
+    }
+    // Reject all pending RPC requests
+    const killError = reason ?? this._stallError ?? new SessionKilledError();
+    for (const [, entry] of this._pendingRequests) {
+      clearTimeout(entry.timer);
+      entry.reject(killError);
+    }
+    this._pendingRequests.clear();
     this.proc?.kill();
     this.proc = undefined;
     // Reject so waitForDone() can distinguish cancelled vs stalled vs backend failures
-    this._doneReject?.(reason ?? this._stallError ?? new SessionKilledError());
+    this._doneReject?.(killError);
+  }
+
+  /** Returns accumulated stderr output from the pi process. */
+  getStderr(): string {
+    return this._stderrBuffer;
   }
 
   /**
-   * Send a mid-run steering message to the Pi agent.
-   * Writes {"type":"steer","message":"..."} to the agent's stdin.
-   * Pi delivers it after the current assistant turn finishes tool calls.
-   */
-  /**
-   * Send a mid-run steering message to the Pi agent.
-   * Writes {"type":"steer","message":"..."} to the agent's stdin.
+   * Send a mid-run steering message to the Pi agent and await the RPC ack.
    * Pi delivers it after the current assistant turn finishes tool calls.
    */
   async steer(message: string): Promise<void> {
     if (this._killed || !this.proc?.stdin) {
       throw new Error('Session is not active');
     }
-    const cmd = JSON.stringify({ type: 'steer', message }) + '\n';
-    await new Promise<void>((resolve, reject) => {
-      this.proc!.stdin!.write(cmd, (err) => (err ? reject(err) : resolve()));
-    });
+    const response = await this.sendCommand({ type: 'steer', message });
+    if (response?.success === false) {
+      throw new Error(`Steer rejected by pi: ${response.error ?? 'steer failed'}`);
+    }
   }
 
   /**
