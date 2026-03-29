@@ -69,7 +69,7 @@ specialist:
 
   skills:
     paths:
-      - config/skills/specialists-creator/
+      - config/skills/specialists-creator/SKILL.md
     scripts:
       - run: "pi --list-models"
         phase: pre

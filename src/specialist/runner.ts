@@ -118,7 +118,24 @@ function validateShebang(filePath: string, errors: string[]): void {
   } catch { /* unreadable — caught by exists check */ }
 }
 
-function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[] } } }): void {
+const CORE_TOOLS_BY_PERMISSION = {
+  READ_ONLY: ['read', 'grep', 'find', 'ls'],
+  LOW: ['read', 'bash', 'grep', 'find', 'ls'],
+  MEDIUM: ['read', 'bash', 'edit', 'grep', 'find', 'ls'],
+  HIGH: ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'],
+} as const;
+
+type PermissionLevel = keyof typeof CORE_TOOLS_BY_PERMISSION;
+
+function getAllowedTools(permissionLevel: string): Set<string> {
+  const normalized = permissionLevel.toUpperCase() as PermissionLevel;
+  return new Set(CORE_TOOLS_BY_PERMISSION[normalized] ?? CORE_TOOLS_BY_PERMISSION.READ_ONLY);
+}
+
+function validateBeforeRun(
+  spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[]; required_tools?: string[] } } },
+  permissionLevel: string,
+): void {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -152,6 +169,17 @@ function validateBeforeRun(spec: { specialist: { skills?: { paths?: string[]; sc
   for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
     if (!commandExists(cmd)) {
       errors.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
+    }
+  }
+
+  // Validate required_tools are enabled by the selected permission level
+  const allowedTools = getAllowedTools(permissionLevel);
+  for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
+    const normalizedTool = tool.trim().toLowerCase();
+    if (!allowedTools.has(normalizedTool)) {
+      errors.push(
+        `  ✗ capabilities.required_tools: tool "${tool}" not available at permission "${permissionLevel}" (allowed: ${Array.from(allowedTools).join(', ')})`,
+      );
     }
   }
 
@@ -207,8 +235,10 @@ export class SpecialistRunner {
       scope: 'project',
     });
 
-    // Pre-run validation: check scripts exist, commands are on PATH, shebang typos
-    validateBeforeRun(spec);
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+
+    // Pre-run validation: check scripts exist, commands/tools are available, shebang typos
+    validateBeforeRun(spec, permissionLevel);
 
     // Pre-phase scripts/commands run locally before the pi session starts.
     // Their stdout is captured and injected into the task via $pre_script_output.
@@ -258,8 +288,6 @@ export class SpecialistRunner {
       }
       onProgress?.(`${line}\n\n`);
     }
-
-    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
 
     // Beads: use provided input bead OR create a new tracking bead.
     // When inputBeadId is present the orchestrator owns the lifecycle — do NOT create a second bead.

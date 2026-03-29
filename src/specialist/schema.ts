@@ -69,21 +69,23 @@ const SkillsSchema = z.object({
 }).optional();
 
 const CapabilitiesSchema = z.object({
-  /** Tool names the agent is expected to use (informational / future doctor check) */
+  /** Pi tool names required by this specialist (validated pre-run against permission level). */
   required_tools: z.array(z.string()).optional(),
-  /** CLI binaries the agent depends on (validated at run-time before session starts) */
+  /** CLI binaries the agent depends on (validated at run-time before session starts). */
   external_commands: z.array(z.string()).optional(),
 }).optional();
 
 const CommunicationSchema = z.object({
-  /** Specialist(s) to run next, receiving this output as $previous_result */
+  /**
+   * Declarative pipeline metadata only.
+   * Runner does not auto-chain specialists; orchestrators may consume this field.
+   */
   next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
 }).optional();
 
 const ValidationSchema = z.object({
   /** File paths to watch — if any mtime > metadata.updated, specialist is marked STALE */
   files_to_watch: z.array(z.string()).optional(),
-  references: z.array(z.unknown()).optional(),
   /** Days before STALE escalates to AGED */
   stale_threshold_days: z.number().optional(),
 }).optional();
@@ -112,7 +114,7 @@ export const SpecialistSchema = z.object({
     /** Write the final output to this file path after the session completes */
     output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
-    heartbeat: z.unknown().optional(), // future — accepted, ignored
+    heartbeat: z.unknown().optional(), // intentional placeholder for future liveness metadata (accepted, ignored)
   }),
 });
 
