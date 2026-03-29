@@ -44,6 +44,18 @@ When in doubt, delegate. Specialists run in parallel — you don't have to wait.
 For tracked work, always use `--bead`. This gives the specialist your issue as context,
 links results back to the tracker, and creates an audit trail.
 
+### CLI commands surfaced from runtime exploration
+
+- `specialists init`
+- `specialists list`
+- `specialists run <name> --bead <id>`
+- `specialists run <name> --prompt "..."`
+- `specialists run <name> --background`
+- `specialists feed -f` / `specialists feed <job-id>`
+- `specialists result <job-id>`
+- `specialists resume <job-id> "next task"`
+- `specialists stop <job-id>`
+
 ```bash
 # 1. Create a bead describing what you need
 bd create --title "Audit authentication module for security issues" --type task --priority 2
@@ -64,6 +76,22 @@ bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
 **`--background`** — returns immediately; use for anything that will take more than ~30 seconds.
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
+
+### Background runs in pi: use process extension
+
+Prefer process-managed background runs over ad-hoc polling:
+
+```bash
+process start "specialists run explorer --bead unitAI-abc --background" name="sp-explorer"
+process list
+process output id="sp-explorer"
+process logs id="sp-explorer"
+process kill id="sp-explorer"
+process clear
+```
+
+Process extension features to rely on: unified log dock, follow mode, focus mode,
+file-based logs (temp files, not memory), friendly process names, and auto-cleanup.
 
 ---
 

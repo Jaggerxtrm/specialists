@@ -38,7 +38,7 @@ describe('init CLI — run()', () => {
     await runInit(tempDir);
     const content = await readFile(join(tempDir, 'AGENTS.md'), 'utf-8');
     expect(content).toContain('## Specialists');
-    expect(content).toContain('specialist_init');
+    expect(content).toContain('specialists run <name> --bead <id>');
   });
 
   it('appends Specialists section to existing AGENTS.md without marker', async () => {

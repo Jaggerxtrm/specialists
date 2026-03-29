@@ -364,22 +364,28 @@ For more details, see README.md and docs/QUICKSTART.md.
 
 ## Specialists
 
-Call `specialist_init` at the start of every session to bootstrap context and
-see available specialists. Prefer delegation for substantial tasks (deep debugging,
-reviews, multi-file implementation, long-running test/investigation work).
+Call `specialists init` once per project, then use CLI commands via Bash.
 
-**Primary MCP tools**
-- `use_specialist` — foreground specialist run (can pass `bead_id`)
-- `start_specialist` — background run, returns `job_id`
-- `feed_specialist` — cursor-paginated event stream for observation
-- `resume_specialist` — next-turn prompt for keep-alive jobs in `waiting`
-- `steer_specialist` — mid-run steering for active jobs
-- `stop_specialist` — terminate running jobs
+**Core specialist commands (CLI-first in pi):**
+- `specialists list`
+- `specialists run <name> --bead <id>`
+- `specialists run <name> --prompt "..."`
+- `specialists run <name> --background`
+- `specialists feed -f` / `specialists feed <job-id>`
+- `specialists result <job-id>`
+- `specialists resume <job-id> "next task"` (for keep-alive jobs in `waiting`)
+- `specialists stop <job-id>`
+
+**Running specialists in background (recommended): use the process extension**
+- Tool actions: `process start`, `list`, `output`, `logs`, `kill`, `clear`
+- Example: `process start "specialists run explorer --bead unitAI-123 --background" name="sp-explorer"`
+- Useful commands: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`
+- Benefits: unified log dock, follow mode, focus mode, file-based logs, friendly names, auto-cleanup
 
 **Canonical tracked flow**
 1. Create/claim bead issue
-2. Run specialist with `--bead <id>` (or MCP `bead_id`)
-3. Observe via `feed_specialist` or `specialists feed -f`
+2. Run specialist with `--bead <id>` (prefer background for long work)
+3. Observe progress (`process output`/`process logs` or `specialists feed`)
 4. Read final output (`specialists result <job-id>`)
 5. Close/update bead with outcome
 

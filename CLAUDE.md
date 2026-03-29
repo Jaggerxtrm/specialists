@@ -159,6 +159,15 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - **MCP tools**: `specialist_init`, `list_specialists`, `use_specialist`, `start_specialist`, `feed_specialist`, `stop_specialist`, `steer_specialist`, `resume_specialist`, `run_parallel`, `specialist_status`
 - **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt}`
 
+### pi usage (preferred)
+
+In pi sessions, run specialists through CLI/bash and monitor long jobs via the process extension.
+
+- Start: `process start "specialists run <name> --bead <id> --background" name="sp-<name>"`
+- Monitor: `process list`, `process output id="sp-<name>"`, `process logs id="sp-<name>"`
+- Control: `process kill id="sp-<name>"`, `process clear`
+- TUI shortcuts: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`
+
 ### Current execution semantics
 
 1. `run --bead <id>` / `use_specialist({bead_id})`
