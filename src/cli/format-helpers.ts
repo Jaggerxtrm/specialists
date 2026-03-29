@@ -84,6 +84,8 @@ export const EVENT_LABELS: Record<string, string> = {
   message: 'MSG',
   turn: 'TURN',
   run_complete: 'DONE',
+  // TODO(deprecated): 'done' and 'agent_end' are legacy completion events from pre-feed-v2.
+  // New jobs emit 'run_complete' instead. These remain for backward compatibility with older events.jsonl files.
   done: 'DONE',
   agent_end: 'DONE',
   error: 'ERR',
@@ -241,6 +243,7 @@ export function formatEventLine(
       detailParts.push(`error=${event.error}`);
     }
   } else if (event.type === 'done' || event.type === 'agent_end') {
+    // TODO(deprecated): Legacy completion events from pre-feed-v2. New jobs emit 'run_complete'.
     detailParts.push('status=COMPLETE');
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s ?? 0)}`);
   } else if (event.type === 'run_start') {

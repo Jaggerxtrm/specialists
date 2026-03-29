@@ -1,5 +1,5 @@
 // src/tools/specialist/start_specialist.tool.ts
-import { z } from 'zod';
+import * as z from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
 import type { JobRegistry } from '../../specialist/jobRegistry.js';
 

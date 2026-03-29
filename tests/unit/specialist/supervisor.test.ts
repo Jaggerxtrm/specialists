@@ -217,6 +217,33 @@ describe('Supervisor', () => {
     expect(recovered.error).toBe('Process crashed or was killed');
   });
 
+  it('crash recovery: waiting job idle beyond waiting_stale_ms gets stale_warning event', async () => {
+    const waitingId = 'wait01';
+    const waitingDir = join(jobsDir, waitingId);
+    mkdirSync(waitingDir, { recursive: true });
+
+    const now = Date.now();
+    const waitingStatus: SupervisorStatus = {
+      id: waitingId,
+      specialist: 'test',
+      status: 'waiting',
+      started_at_ms: now - 4_000_000,
+      last_event_at_ms: now - 4_000_000, // 4000s ago, well over 3600s default
+    };
+    writeFileSync(join(waitingDir, 'status.json'), JSON.stringify(waitingStatus));
+
+    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    await sup.run();
+
+    const eventsPath = join(waitingDir, 'events.jsonl');
+    expect(existsSync(eventsPath)).toBe(true);
+    const lines = readFileSync(eventsPath, 'utf-8')
+      .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+    const warning = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'waiting_stale');
+    expect(warning).toBeDefined();
+    expect(warning.threshold_ms).toBe(3_600_000);
+  });
+
   it('recreates job artifacts if the jobs directory is deleted mid-run', async () => {
     const runner = {
       run: vi.fn().mockImplementation(async (_runOptions: any, _onProgress: any, onEvent: any) => {
@@ -273,5 +300,495 @@ describe('Supervisor', () => {
   it('readStatus() returns null for unknown id', () => {
     const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     expect(sup.readStatus('nonexistent')).toBeNull();
+  });
+
+  describe('bead_id propagation (auto-bead path)', () => {
+    it('status.json is updated with bead_id when onBeadCreated callback fires', async () => {
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, _onEvt: any, _onMeta: any, _onKill: any,
+          onBeadCreated: any,
+        ) => {
+          onBeadCreated('unitAI-auto-99');
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 10, specialistVersion: '1.0.0', promptHash: 'abc123',
+            beadId: 'unitAI-auto-99',
+          };
+        }),
+      } as any;
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
+      expect(status.bead_id).toBe('unitAI-auto-99');
+    });
+
+    it('run_complete event contains bead_id when runner returns beadId', async () => {
+      const runner = makeMockRunner('out', 'haiku', 'anthropic');
+      runner.run.mockResolvedValueOnce({
+        output: 'done', model: 'haiku', backend: 'anthropic',
+        durationMs: 10, specialistVersion: '1.0.0', promptHash: 'abc123',
+        beadId: 'unitAI-auto-88',
+      });
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const runComplete = lines.find((e: any) => e.type === 'run_complete');
+      expect(runComplete).toBeDefined();
+      expect(runComplete.bead_id).toBe('unitAI-auto-88');
+    });
+
+    it('run_complete event has no bead_id when no bead is associated', async () => {
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const runComplete = lines.find((e: any) => e.type === 'run_complete');
+      expect(runComplete).toBeDefined();
+      expect(runComplete.bead_id).toBeUndefined();
+    });
+  });
+
+  describe('stuck detection', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('emits running_silence stale_warning after silence exceeds warn threshold', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start'); // sets status to 'running' and records lastActivityMs
+          vi.advanceTimersByTime(70_000); // 70s > 60s default warn threshold
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 70_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const warn = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'running_silence');
+      expect(warn).toBeDefined();
+      expect(warn.threshold_ms).toBe(60_000);
+      expect(warn.silence_ms).toBeGreaterThan(60_000);
+    });
+
+    it('does not emit running_silence warning before threshold', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          vi.advanceTimersByTime(50_000); // only 50s — below 60s threshold
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 50_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const warn = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'running_silence');
+      expect(warn).toBeUndefined();
+    });
+
+    it('resets silence timer on activity — no warning when silence resets below threshold', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          vi.advanceTimersByTime(50_000); // 50s — below threshold
+          onEvent?.('auto_retry');        // resets silence timer to now (50s mark)
+          vi.advanceTimersByTime(50_000); // another 50s from reset — still below 60s
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 100_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const silenceWarnings = lines.filter((e: any) =>
+        e.type === 'stale_warning' && e.reason === 'running_silence',
+      );
+      expect(silenceWarnings).toHaveLength(0);
+    });
+
+    it('emits tool_duration stale_warning when tool exceeds threshold', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+          _onMeta: any, _onKill: any, _onBead: any, _onSteer: any, _onResume: any,
+          onToolStart: any,
+        ) => {
+          onEvent?.('turn_start');
+          onToolStart?.('bash', { command: 'sleep 999' }, 'call-1');
+          vi.advanceTimersByTime(130_000); // 130s > 120s default tool_duration_warn_ms
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 130_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const toolWarn = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'tool_duration');
+      expect(toolWarn).toBeDefined();
+      expect(toolWarn.tool).toBe('bash');
+      expect(toolWarn.threshold_ms).toBe(120_000);
+      expect(toolWarn.silence_ms).toBeGreaterThan(120_000);
+    });
+
+    it('respects custom stallDetection thresholds', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          vi.advanceTimersByTime(35_000); // 35s → interval fires at 30s, silenceMs=30s > 20s threshold
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 35_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({
+        jobsDir,
+        runner,
+        runOptions: makeRunOptions(),
+        stallDetection: { running_silence_warn_ms: 20_000 },
+      });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const warn = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'running_silence');
+      expect(warn).toBeDefined();
+      expect(warn.threshold_ms).toBe(20_000);
+    });
+
+    it('emits running_silence_error event and transitions to error when silence exceeds error threshold', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          vi.advanceTimersByTime(90_000); // 90s > 80s custom error threshold
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 90_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({
+        jobsDir,
+        runner,
+        runOptions: makeRunOptions(),
+        stallDetection: { running_silence_warn_ms: 50_000, running_silence_error_ms: 80_000 },
+      });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const errorEvent = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'running_silence_error');
+      expect(errorEvent).toBeDefined();
+      expect(errorEvent.threshold_ms).toBe(80_000);
+      expect(errorEvent.silence_ms).toBeGreaterThan(80_000);
+    });
+
+    it('auto_compaction resets silence timer — no false positive warning', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          vi.advanceTimersByTime(50_000); // below 60s threshold
+          onEvent?.('auto_compaction'); // resets silence timer
+          vi.advanceTimersByTime(50_000); // another 50s from reset — still below 60s
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 100_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const silenceWarnings = lines.filter((e: any) =>
+        e.type === 'stale_warning' && e.reason === 'running_silence',
+      );
+      expect(silenceWarnings).toHaveLength(0);
+    });
+
+    it('silence timer at exactly threshold boundary does not trigger warning (strict >)', async () => {
+      vi.useFakeTimers();
+
+      const runner = {
+        run: vi.fn().mockImplementation(async (
+          _opts: any, _onProg: any, onEvent: any,
+        ) => {
+          onEvent?.('turn_start');
+          // advance to exactly the threshold — interval fires but silenceMs === threshold, not >
+          vi.advanceTimersByTime(60_000);
+          return {
+            output: 'done', model: 'haiku', backend: 'anthropic',
+            durationMs: 60_000, specialistVersion: '1.0.0', promptHash: 'abc',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const warn = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'running_silence');
+      // At exactly the threshold, the interval may not have fired yet (interval is 10s),
+      // so this is a boundary check — no warning should be emitted spuriously
+      if (warn) {
+        expect(warn.silence_ms).toBeGreaterThan(60_000);
+      }
+    });
+  });
+
+  describe('stale job scanning (crashRecovery)', () => {
+    it('jobs in done/error state are not scanned — no stale_warning emitted', async () => {
+      const doneId = 'done01';
+      const errorId = 'err01';
+
+      for (const [jobId, status] of [[doneId, 'done'], [errorId, 'error']] as const) {
+        const dir = join(jobsDir, jobId);
+        mkdirSync(dir, { recursive: true });
+        const s: SupervisorStatus = {
+          id: jobId,
+          specialist: 'test',
+          status,
+          started_at_ms: Date.now() - 10_000_000, // very old
+          last_event_at_ms: Date.now() - 10_000_000,
+        };
+        writeFileSync(join(dir, 'status.json'), JSON.stringify(s));
+        writeFileSync(join(dir, 'events.jsonl'), ''); // empty
+      }
+
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      await sup.run();
+
+      for (const jobId of [doneId, errorId]) {
+        const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+        const content = readFileSync(eventsPath, 'utf-8');
+        const lines = content.trim().split('\n').filter(Boolean);
+        const hasWarning = lines.some(l => {
+          try { return JSON.parse(l).type === 'stale_warning'; } catch { return false; }
+        });
+        expect(hasWarning).toBe(false);
+      }
+    });
+
+    it('multiple stale waiting jobs each get an independent stale_warning event', async () => {
+      const now = Date.now();
+      const jobIds = ['wait01', 'wait02', 'wait03'];
+
+      for (const jobId of jobIds) {
+        const dir = join(jobsDir, jobId);
+        mkdirSync(dir, { recursive: true });
+        const s: SupervisorStatus = {
+          id: jobId,
+          specialist: 'test',
+          status: 'waiting',
+          started_at_ms: now - 5_000_000,
+          last_event_at_ms: now - 5_000_000, // well past 3600s default
+        };
+        writeFileSync(join(dir, 'status.json'), JSON.stringify(s));
+      }
+
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      await sup.run();
+
+      for (const jobId of jobIds) {
+        const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+        expect(existsSync(eventsPath)).toBe(true);
+        const lines = readFileSync(eventsPath, 'utf-8')
+          .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+        const warning = lines.find((e: any) => e.type === 'stale_warning' && e.reason === 'waiting_stale');
+        expect(warning).toBeDefined();
+      }
+    });
+
+    it('waiting job at exactly threshold boundary does not get stale_warning (strict >)', async () => {
+      const now = Date.now();
+      const waitingId = 'waitbnd';
+      const waitingDir = join(jobsDir, waitingId);
+      mkdirSync(waitingDir, { recursive: true });
+
+      // last_event_at_ms exactly at the threshold boundary (3_600_000ms ago)
+      const waitingStatus: SupervisorStatus = {
+        id: waitingId,
+        specialist: 'test',
+        status: 'waiting',
+        started_at_ms: now - 3_600_000,
+        last_event_at_ms: now - 3_600_000, // exactly at threshold — not strictly >
+      };
+      writeFileSync(join(waitingDir, 'status.json'), JSON.stringify(waitingStatus));
+
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      await sup.run();
+
+      const eventsPath = join(waitingDir, 'events.jsonl');
+      if (existsSync(eventsPath)) {
+        const lines = readFileSync(eventsPath, 'utf-8')
+          .trim().split('\n').filter(Boolean);
+        const hasWarning = lines.some(l => {
+          try { return JSON.parse(l).type === 'stale_warning'; } catch { return false; }
+        });
+        expect(hasWarning).toBe(false);
+      }
+    });
+  });
+
+  describe('bead_id propagation (external-bead path)', () => {
+    it('initial status.json has bead_id when inputBeadId is provided', async () => {
+      const capturedStatuses: SupervisorStatus[] = [];
+      const runner = {
+        run: vi.fn().mockImplementation(async (_opts: any, _onProgress: any) => {
+          // Capture what was in status.json at job start (before run returns)
+          const entries = readdirSync(jobsDir).filter(e => e !== 'latest');
+          if (entries.length > 0) {
+            const id = entries[0];
+            const statusPath = join(jobsDir, id, 'status.json');
+            try {
+              capturedStatuses.push(JSON.parse(readFileSync(statusPath, 'utf-8')));
+            } catch { /* ignore */ }
+          }
+          return {
+            output: 'done',
+            model: 'haiku',
+            backend: 'anthropic',
+            durationMs: 10,
+            specialistVersion: '1.0.0',
+            promptHash: 'abc123',
+            beadId: 'unitAI-ext-42',
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({
+        jobsDir,
+        runner,
+        runOptions: { name: 'test', prompt: 'go', inputBeadId: 'unitAI-ext-42' },
+      });
+      await sup.run();
+
+      expect(capturedStatuses).toHaveLength(1);
+      expect(capturedStatuses[0].bead_id).toBe('unitAI-ext-42');
+    });
+
+    it('initial status.json has no bead_id when inputBeadId is absent', async () => {
+      const capturedStatuses: SupervisorStatus[] = [];
+      const runner = {
+        run: vi.fn().mockImplementation(async () => {
+          const entries = readdirSync(jobsDir).filter(e => e !== 'latest');
+          if (entries.length > 0) {
+            const id = entries[0];
+            try {
+              capturedStatuses.push(JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8')));
+            } catch { /* ignore */ }
+          }
+          return {
+            output: 'done',
+            model: 'haiku',
+            backend: 'anthropic',
+            durationMs: 10,
+            specialistVersion: '1.0.0',
+            promptHash: 'abc123',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      await sup.run();
+
+      expect(capturedStatuses).toHaveLength(1);
+      expect(capturedStatuses[0].bead_id).toBeUndefined();
+    });
+
+    it('run_start event in events.jsonl has bead_id when inputBeadId is provided', async () => {
+      const runner = makeMockRunner('out', 'haiku', 'anthropic');
+      const sup = new Supervisor({
+        jobsDir,
+        runner,
+        runOptions: { name: 'test', prompt: 'go', inputBeadId: 'unitAI-ext-99' },
+      });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const runStart = lines.find((e: any) => e.type === 'run_start');
+
+      expect(runStart).toBeDefined();
+      expect(runStart.bead_id).toBe('unitAI-ext-99');
+    });
+
+    it('run_start event has no bead_id when no inputBeadId provided', async () => {
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const id = await sup.run();
+
+      const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+        .trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+      const runStart = lines.find((e: any) => e.type === 'run_start');
+
+      expect(runStart).toBeDefined();
+      expect(runStart.bead_id).toBeUndefined();
+    });
   });
 });

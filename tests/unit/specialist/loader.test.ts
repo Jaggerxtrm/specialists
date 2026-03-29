@@ -379,3 +379,99 @@ describe('checkStaleness', () => {
     expect(await checkStaleness(summary)).toBe('STALE');
   });
 });
+
+describe('SpecialistLoader — stall_detection YAML parsing', () => {
+  let tempDir: string;
+  let specsDir: string;
+  let loader: SpecialistLoader;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'loader-stall-test-'));
+    specsDir = join(tempDir, 'specialists');
+    await mkdir(specsDir, { recursive: true });
+    loader = new SpecialistLoader({ projectDir: tempDir });
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('parses stall_detection config from YAML and exposes it on SpecialistSummary', async () => {
+    const yaml = `
+specialist:
+  metadata:
+    name: stall-aware
+    version: 1.0.0
+    description: Has stall detection
+    category: test
+  execution:
+    model: gemini
+  prompt:
+    task_template: Do $prompt
+  stall_detection:
+    running_silence_warn_ms: 30000
+    running_silence_error_ms: 120000
+    waiting_stale_ms: 1800000
+    tool_duration_warn_ms: 60000`;
+
+    await writeFile(join(specsDir, 'stall-aware.specialist.yaml'), yaml);
+    const results = await loader.list();
+    const spec = results.find(s => s.name === 'stall-aware');
+
+    expect(spec).toBeDefined();
+    expect(spec!.stallDetection).toEqual({
+      running_silence_warn_ms: 30_000,
+      running_silence_error_ms: 120_000,
+      waiting_stale_ms: 1_800_000,
+      tool_duration_warn_ms: 60_000,
+    });
+  });
+
+  it('stallDetection is undefined when stall_detection is absent from YAML', async () => {
+    const yaml = `
+specialist:
+  metadata:
+    name: no-stall-config
+    version: 1.0.0
+    description: No stall detection
+    category: test
+  execution:
+    model: gemini
+  prompt:
+    task_template: Do $prompt`;
+
+    await writeFile(join(specsDir, 'no-stall-config.specialist.yaml'), yaml);
+    const results = await loader.list();
+    const spec = results.find(s => s.name === 'no-stall-config');
+
+    expect(spec).toBeDefined();
+    expect(spec!.stallDetection).toBeUndefined();
+  });
+
+  it('partial stall_detection config — only specified fields are present, others absent', async () => {
+    const yaml = `
+specialist:
+  metadata:
+    name: partial-stall
+    version: 1.0.0
+    description: Partial stall detection
+    category: test
+  execution:
+    model: gemini
+  prompt:
+    task_template: Do $prompt
+  stall_detection:
+    running_silence_warn_ms: 45000`;
+
+    await writeFile(join(specsDir, 'partial-stall.specialist.yaml'), yaml);
+    const results = await loader.list();
+    const spec = results.find(s => s.name === 'partial-stall');
+
+    expect(spec).toBeDefined();
+    expect(spec!.stallDetection?.running_silence_warn_ms).toBe(45_000);
+    // Unspecified fields are absent — Supervisor merges with STALL_DETECTION_DEFAULTS at runtime
+    expect(spec!.stallDetection?.running_silence_error_ms).toBeUndefined();
+    expect(spec!.stallDetection?.waiting_stale_ms).toBeUndefined();
+    expect(spec!.stallDetection?.tool_duration_warn_ms).toBeUndefined();
+  });
+});

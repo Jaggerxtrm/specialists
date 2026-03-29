@@ -1,3 +1,13 @@
+---
+name: specialists-creator
+description: >
+  Use this skill when creating or fixing a specialist definition. It guides the
+  agent through writing a valid `.specialist.yaml`, choosing supported models,
+  validating against the schema, and avoiding common specialist authoring
+  mistakes.
+version: 1.0
+---
+
 # Specialist Author Guide
 
 > Source of truth: `src/specialist/schema.ts` | Runtime: `src/specialist/runner.ts`

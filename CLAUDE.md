@@ -21,8 +21,6 @@
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
 | **Memory** | Auto-fires at Stop if issue closed this session | `bd remember "<insight>"` then run the `bd kv set` command shown in the gate message |
 
-> `bd close` auto-commits via `git commit -am`. Do not double-commit after closing.
-
 ## bd Command Reference
 
 ```bash
@@ -46,7 +44,7 @@ bd create --title="..." --description="..." --type=task --priority=2
 # types: task | bug | feature | epic | chore | decision
 
 # Closing
-bd close <id>                          # Close + auto-commit
+bd close <id>                          # Close issue
 bd close <id> --reason="Done: ..."     # Close with context
 bd close <id1> <id2> <id3>            # Batch close
 
@@ -75,7 +73,7 @@ bd doctor                              # Diagnose installation issues
 git checkout -b feature/<issue-id>-<slug>   # or fix/... chore/...
 bd update <id> --claim                       # claim before any edit
 # ... write code ...
-bd close <id> --reason="..."                 # closes issue + auto-commits
+bd close <id> --reason="..."                 # closes issue
 xt end                                       # push, PR, merge, worktree cleanup
 ```
 
@@ -156,15 +154,17 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ```
 OmniSpecialist MCP Server v2
-├── MCP Surface (8 tools)
+├── MCP Surface (11 tools)
 │   ├── specialist_init    — session bootstrap: bd init + list specialists
 │   ├── list_specialists   — discover .specialist.yaml across 3 scopes
 │   ├── use_specialist     — full lifecycle: load → agents.md → pi → output
 │   ├── run_parallel       — concurrent or pipeline execution
 │   ├── specialist_status  — circuit breaker health + staleness detection
 │   ├── start_specialist   — async job start, returns job ID
-│   ├── poll_specialist    — poll job status/output by ID + beadId
-│   └── stop_specialist    — cancel a running job by ID
+│   ├── feed_specialist    — poll job status/delta events by ID (replaces poll_specialist)
+│   ├── stop_specialist    — cancel a running job by ID
+│   ├── steer_specialist   — send mid-run message to a running job
+│   └── resume_specialist  — resume a waiting keep-alive session with next-turn prompt
 ├── Specialist System
 │   ├── SpecialistLoader   — 3-scope discovery (project/user/system), caching
 │   ├── SpecialistRunner   — agents.md injection, pre/post scripts, circuit breaker
@@ -605,7 +605,7 @@ For development questions or contributions:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (682 symbols, 1426 relationships, 48 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (702 symbols, 1583 relationships, 51 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

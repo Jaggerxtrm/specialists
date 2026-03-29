@@ -63,6 +63,7 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':
       return `run_complete:${event.status}:${event.error ?? ''}`;
+    // TODO(deprecated): 'done' and 'agent_end' are legacy completion events. New jobs emit 'run_complete'.
     case 'done':
     case 'agent_end':
       return `complete:${event.type}`;
@@ -168,6 +169,7 @@ function printSnapshot(
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
 function isCompletionEvent(event: TimelineEvent): boolean {
+  // TODO(deprecated): 'done' and 'agent_end' are legacy fallbacks for pre-feed-v2 jobs.
   return isRunCompleteEvent(event) || event.type === 'done' || event.type === 'agent_end';
 }
 

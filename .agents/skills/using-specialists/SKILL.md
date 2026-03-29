@@ -1,5 +1,5 @@
 ---
-name: specialists-usage
+name: using-specialists
 description: >
   Use this skill whenever you're about to start a substantial task — pause first and
   ask whether to delegate. Consult before any: code review, security audit, deep bug

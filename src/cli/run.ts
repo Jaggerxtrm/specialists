@@ -1,6 +1,8 @@
 // src/cli/run.ts
 
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -23,12 +25,15 @@ interface RunArgs {
   noBeads: boolean;
   keepAlive: boolean;
   contextDepth: number;
+  background: boolean;
+  /** true if prompt was read from stdin (not supplied via --prompt flag) */
+  promptFromStdin: boolean;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive] [--background]');
     process.exit(1);
   }
 
@@ -37,6 +42,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let keepAlive = false;
+  let background = false;
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
   for (let i = 1; i < argv.length; i++) {
@@ -47,6 +53,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
     if (token === '--no-beads')    { noBeads    = true; continue; }
     if (token === '--keep-alive')  { keepAlive  = true; continue; }
+    if (token === '--background')  { background = true; continue; }
   }
 
   if (prompt && beadId) {
@@ -54,6 +61,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
+  let promptFromStdin = false;
   if (!prompt && !beadId && !process.stdin.isTTY) {
     prompt = await new Promise<string>(resolve => {
       let buf = '';
@@ -61,6 +69,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
       process.stdin.on('data', chunk => { buf += chunk; });
       process.stdin.on('end', () => resolve(buf.trim()));
     });
+    promptFromStdin = true;
   }
 
   if (!prompt && !beadId) {
@@ -68,12 +77,79 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth };
+  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth, background, promptFromStdin };
+}
+
+// ── Background spawner ─────────────────────────────────────────────────────────
+async function runBackground(args: RunArgs): Promise<void> {
+  // Build child argv: same command minus --background; if prompt came from stdin, inject as --prompt
+  const childArgv = process.argv.slice(1).filter(a => a !== '--background');
+  if (args.promptFromStdin && args.prompt) {
+    childArgv.push('--prompt', args.prompt);
+  }
+
+  const child = spawn(process.execPath, childArgv, {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+
+  let resolved = false;
+  const rl = createInterface({ input: child.stderr! });
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Timeout waiting for job ID from background process'));
+      }
+    }, 15_000);
+
+    rl.on('line', (line) => {
+      if (resolved) return;
+      const match = line.match(/\[job started: ([^\]]+)\]/);
+      if (match) {
+        resolved = true;
+        clearTimeout(timeout);
+        process.stdout.write(`${match[1]}\n`);
+        resolve();
+      }
+    });
+
+    child.on('error', (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
+
+    child.on('exit', (code) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(new Error(`Background process exited with code ${code} before emitting job ID`));
+      }
+    });
+  });
+
+  rl.close();
+  try { child.stderr!.destroy(); } catch { /* ignore */ }
+  child.unref();
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
+
+  if (args.background) {
+    try {
+      await runBackground(args);
+      process.exit(0);
+    } catch (err: any) {
+      process.stderr.write(`Error: ${err?.message ?? err}\n`);
+      process.exit(1);
+    }
+  }
 
   const loader         = new SpecialistLoader();
   const circuitBreaker = new CircuitBreaker();

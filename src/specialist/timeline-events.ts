@@ -186,6 +186,28 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
 }
 
 /**
+ * Stale warning event.
+ * Emitted when a job has been silent (no activity) beyond a configured threshold,
+ * or when a single tool execution exceeds its duration threshold.
+ *
+ * `reason` discriminates the type of staleness:
+ * - `running_silence`       — job running, no events for > running_silence_warn_ms
+ * - `running_silence_error` — job running, no events for > running_silence_error_ms
+ * - `waiting_stale`         — job waiting for follow-up for > waiting_stale_ms
+ * - `tool_duration`         — single tool execution running for > tool_duration_warn_ms
+ */
+export interface TimelineEventStaleWarning extends TimelineEventBase {
+  type: 'stale_warning';
+  reason: 'running_silence' | 'running_silence_error' | 'waiting_stale' | 'tool_duration';
+  /** How many ms have elapsed without activity */
+  silence_ms: number;
+  /** The threshold that was crossed */
+  threshold_ms: number;
+  /** Tool name, present for tool_duration reason */
+  tool?: string;
+}
+
+/**
  * Legacy completion events that still exist in older jobs.
  * These are accepted for backward compatibility while feed v2 migrates history.
  */
@@ -207,6 +229,7 @@ export type TimelineEvent =
   | TimelineEventMessage
   | TimelineEventTurn
   | TimelineEventRunComplete
+  | TimelineEventStaleWarning
   | TimelineEventLegacyComplete;
 
 // ============================================================================
@@ -222,6 +245,7 @@ export const TIMELINE_EVENT_TYPES = {
   MESSAGE: 'message',
   TURN: 'turn',
   RUN_COMPLETE: 'run_complete',
+  STALE_WARNING: 'stale_warning',
   DONE: 'done',
   AGENT_END: 'agent_end',
 } as const;
@@ -359,6 +383,24 @@ export function createMetaEvent(
     type: TIMELINE_EVENT_TYPES.META,
     model,
     backend,
+  };
+}
+
+/**
+ * Create a stale_warning event.
+ * Emitted when stuck detection thresholds are crossed.
+ */
+export function createStaleWarningEvent(
+  reason: TimelineEventStaleWarning['reason'],
+  options: { silence_ms: number; threshold_ms: number; tool?: string }
+): TimelineEventStaleWarning {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STALE_WARNING,
+    reason,
+    silence_ms: options.silence_ms,
+    threshold_ms: options.threshold_ms,
+    ...(options.tool !== undefined ? { tool: options.tool } : {}),
   };
 }
 

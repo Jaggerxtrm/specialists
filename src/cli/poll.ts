@@ -32,6 +32,7 @@ interface PollResult {
   status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
   elapsed_ms: number;
   cursor: number;
+  output_cursor: number;
   output: string;
   output_delta: string;
   events: TimelineEvent[];
@@ -56,11 +57,10 @@ interface JobStatus {
   last_event_at_ms?: number;
 }
 
-function parseArgs(argv: string[]): { jobId: string; cursor: number; json: boolean; follow: boolean } {
+function parseArgs(argv: string[]): { jobId: string; cursor: number; outputCursor: number } {
   let jobId: string | undefined;
   let cursor = 0;
-  let json = false;
-  let follow = false;
+  let outputCursor = 0;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--cursor' && argv[i + 1]) {
@@ -68,20 +68,30 @@ function parseArgs(argv: string[]): { jobId: string; cursor: number; json: boole
       if (isNaN(cursor) || cursor < 0) cursor = 0;
       continue;
     }
-    if (argv[i] === '--json') { json = true; continue; }
-    if (argv[i] === '--follow' || argv[i] === '-f' || argv[i] === '--f') { follow = true; continue; }
+    if (argv[i] === '--output-cursor' && argv[i + 1]) {
+      outputCursor = parseInt(argv[++i], 10);
+      if (isNaN(outputCursor) || outputCursor < 0) outputCursor = 0;
+      continue;
+    }
+    // Silently ignore --json (was explicit before; JSON is now always the output)
+    if (argv[i] === '--json') { continue; }
+    // --follow removed: redirect to feed
+    if (argv[i] === '--follow' || argv[i] === '-f') {
+      process.stderr.write("--follow removed from poll. Use 'specialists feed --follow' for live human-readable output.\n");
+      process.exit(1);
+    }
     if (!argv[i].startsWith('-')) { jobId = argv[i]; }
   }
 
   if (!jobId) {
-    console.error('Usage: specialists poll <job-id> [--cursor N] [--json] [--follow]');
+    console.error('Usage: specialists poll <job-id> [--cursor N] [--output-cursor N]');
     process.exit(1);
   }
 
-  return { jobId, cursor, json, follow };
+  return { jobId, cursor, outputCursor };
 }
 
-function readJobState(jobsDir: string, jobId: string, cursor: number): PollResult {
+function readJobState(jobsDir: string, jobId: string, cursor: number, outputCursor: number): PollResult {
   const jobDir = join(jobsDir, jobId);
 
   const statusPath = join(jobDir, 'status.json');
@@ -91,9 +101,9 @@ function readJobState(jobsDir: string, jobId: string, cursor: number): PollResul
   }
 
   const resultPath = join(jobDir, 'result.txt');
-  let output = '';
+  let fullOutput = '';
   if (existsSync(resultPath)) {
-    try { output = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
+    try { fullOutput = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
   }
 
   const events = readJobEventsById(jobsDir, jobId);
@@ -106,13 +116,19 @@ function readJobState(jobsDir: string, jobId: string, cursor: number): PollResul
     ? (lastEvent - startedAt)
     : (Date.now() - startedAt);
 
+  const isDone = status?.status === 'done';
+  const output = isDone ? fullOutput : '';
+  const outputDelta = fullOutput.length > outputCursor ? fullOutput.slice(outputCursor) : '';
+  const nextOutputCursor = fullOutput.length;
+
   return {
     job_id: jobId,
     status: status?.status ?? 'starting',
     elapsed_ms: elapsedMs,
     cursor: nextCursor,
-    output: status?.status === 'done' ? output : '',
-    output_delta: '',
+    output_cursor: nextOutputCursor,
+    output,
+    output_delta: outputDelta,
     events: newEvents,
     current_event: status?.current_event,
     current_tool: status?.current_tool,
@@ -123,70 +139,27 @@ function readJobState(jobsDir: string, jobId: string, cursor: number): PollResul
   };
 }
 
-function renderHeader(result: PollResult, fromCursor: number): string[] {
-  const lines: string[] = [];
-  lines.push(`Job:      ${result.job_id}`);
-  lines.push(`Status:   ${result.status}`);
-  lines.push(`Elapsed:  ${Math.round(result.elapsed_ms / 1000)}s`);
-  if (result.model) lines.push(`Model:    ${result.backend}/${result.model}`);
-  if (result.bead_id) lines.push(`Bead:     ${result.bead_id}`);
-  if (result.current_tool) lines.push(`Tool:     ${result.current_tool}`);
-  if (result.error) lines.push(`Error:    ${result.error}`);
-  lines.push(`Events:   ${result.events.length} new (cursor: ${fromCursor} → ${result.cursor})`);
-  return lines;
-}
-
 export async function run(): Promise<void> {
-  const { jobId, cursor, json, follow } = parseArgs(process.argv.slice(3));
+  const { jobId, cursor, outputCursor } = parseArgs(process.argv.slice(3));
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const jobDir = join(jobsDir, jobId);
 
   if (!existsSync(jobDir)) {
     const result: PollResult = {
-      job_id: jobId, status: 'error', elapsed_ms: 0, cursor: 0,
+      job_id: jobId, status: 'error', elapsed_ms: 0,
+      cursor: 0, output_cursor: 0,
       output: '', output_delta: '', events: [], error: `Job not found: ${jobId}`,
     };
-    console.log(json ? JSON.stringify(result) : `Job not found: ${jobId}`);
+    console.log(JSON.stringify(result));
     process.exit(1);
   }
 
-  // --follow: redraw header in-place every second until done/error, then show output
-  if (follow) {
-    let lastLineCount = 0;
-    while (true) {
-      const result = readJobState(jobsDir, jobId, cursor);
-      const headerLines = renderHeader(result, cursor);
+  const result = readJobState(jobsDir, jobId, cursor, outputCursor);
 
-      // Move cursor up and clear to redraw in-place (skip on first render)
-      if (lastLineCount > 0) {
-        process.stdout.write(`\x1b[${lastLineCount}A\x1b[0J`);
-      }
-      process.stdout.write(headerLines.join('\n') + '\n');
-      lastLineCount = headerLines.length;
-
-      if (result.status === 'done' || result.status === 'error') {
-        if (result.status === 'done' && result.output) {
-          console.log('\n--- Output ---');
-          console.log(result.output);
-        }
-        process.exit(result.status === 'done' ? 0 : 1);
-      }
-
-      await new Promise(r => setTimeout(r, 1000));
-    }
+  // Tip for callers expecting live output while job is still running
+  if (result.status !== 'done' && result.status !== 'error' && !result.output_delta) {
+    process.stderr.write("Tip: use 'specialists feed --follow' for live human-readable output.\n");
   }
 
-  // One-shot (default)
-  const result = readJobState(jobsDir, jobId, cursor);
-
-  if (json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    const headerLines = renderHeader(result, cursor);
-    console.log(headerLines.join('\n'));
-    if (result.status === 'done' && result.output) {
-      console.log('\n--- Output ---');
-      console.log(result.output);
-    }
-  }
+  console.log(JSON.stringify(result));
 }

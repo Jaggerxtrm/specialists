@@ -88,6 +88,17 @@ const ValidationSchema = z.object({
   stale_threshold_days: z.number().optional(),
 }).optional();
 
+const StallDetectionSchema = z.object({
+  /** ms of silence while running before warn (default 60_000) */
+  running_silence_warn_ms: z.number().optional(),
+  /** ms of silence while running before marking stale (default 300_000) */
+  running_silence_error_ms: z.number().optional(),
+  /** ms in waiting state before emitting warning (default 3_600_000) */
+  waiting_stale_ms: z.number().optional(),
+  /** ms a single tool execution may run before warning (default 120_000) */
+  tool_duration_warn_ms: z.number().optional(),
+}).optional();
+
 export const SpecialistSchema = z.object({
   specialist: z.object({
     metadata: MetadataSchema,
@@ -97,6 +108,7 @@ export const SpecialistSchema = z.object({
     capabilities: CapabilitiesSchema,
     communication: CommunicationSchema,
     validation: ValidationSchema,
+    stall_detection: StallDetectionSchema,
     /** Write the final output to this file path after the session completes */
     output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),

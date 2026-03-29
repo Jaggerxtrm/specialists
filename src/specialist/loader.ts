@@ -4,6 +4,13 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { parseSpecialist, type Specialist } from './schema.js';
 
+export interface StallDetectionConfig {
+  running_silence_warn_ms?: number;
+  running_silence_error_ms?: number;
+  waiting_stale_ms?: number;
+  tool_duration_warn_ms?: number;
+}
+
 export interface SpecialistSummary {
   name: string;
   description: string;
@@ -15,6 +22,7 @@ export interface SpecialistSummary {
   updated?: string;
   filestoWatch?: string[];
   staleThresholdDays?: number;
+  stallDetection?: StallDetectionConfig;
 }
 
 /** Returns STALE, AGED, or OK based on file mtimes vs metadata.updated */
@@ -88,6 +96,7 @@ export class SpecialistLoader {
             updated,
             filestoWatch: spec.specialist.validation?.files_to_watch,
             staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
+            stallDetection: spec.specialist.stall_detection ?? undefined,
           });
         } catch (e: unknown) {
           const reason = e instanceof Error ? e.message : String(e);

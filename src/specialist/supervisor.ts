@@ -71,6 +71,8 @@ export interface SupervisorOptions {
   onMeta?: (meta: { backend: string; model: string }) => void;
   /** Optional callback fired as soon as a job id is allocated and persisted */
   onJobStarted?: (job: { id: string }) => void;
+  /** Stall detection thresholds — merged with STALL_DETECTION_DEFAULTS */
+  stallDetection?: StallDetectionConfig;
 }
 
 
@@ -166,22 +168,59 @@ export class Supervisor {
     }
   }
 
-  /** Crash recovery: mark running jobs with dead PID as error. */
+  /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
     if (!existsSync(this.opts.jobsDir)) return;
+    const thresholds: Required<StallDetectionConfig> = {
+      ...STALL_DETECTION_DEFAULTS,
+      ...this.opts.stallDetection,
+    };
+    const now = Date.now();
     for (const entry of readdirSync(this.opts.jobsDir)) {
       const statusPath = join(this.opts.jobsDir, entry, 'status.json');
       if (!existsSync(statusPath)) continue;
       try {
         const s: SupervisorStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
-        if (s.status !== 'running' && s.status !== 'starting') continue;
-        if (!s.pid) continue;
-        try { process.kill(s.pid, 0); } catch {
-          // PID is dead — mark as crashed
-          const tmp = statusPath + '.tmp';
-          const updated: SupervisorStatus = { ...s, status: 'error', error: 'Process crashed or was killed' };
-          writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
-          renameSync(tmp, statusPath);
+
+        if (s.status === 'running' || s.status === 'starting') {
+          if (!s.pid) continue;
+          let pidAlive = true;
+          try { process.kill(s.pid, 0); } catch {
+            pidAlive = false;
+          }
+          if (!pidAlive) {
+            // PID is dead — mark as crashed
+            const tmp = statusPath + '.tmp';
+            const updated: SupervisorStatus = { ...s, status: 'error', error: 'Process crashed or was killed' };
+            writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
+            renameSync(tmp, statusPath);
+          } else if (s.status === 'running') {
+            // PID alive but check age-based staleness for running jobs
+            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+            const silenceMs = now - lastEventAt;
+            if (silenceMs > thresholds.running_silence_error_ms) {
+              const tmp = statusPath + '.tmp';
+              const updated: SupervisorStatus = {
+                ...s,
+                status: 'error',
+                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`,
+              };
+              writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
+              renameSync(tmp, statusPath);
+            }
+          }
+        } else if (s.status === 'waiting') {
+          // Waiting jobs: emit stale_warning if idle too long (do NOT auto-close)
+          const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+          const silenceMs = now - lastEventAt;
+          if (silenceMs > thresholds.waiting_stale_ms) {
+            const eventsPath = join(this.opts.jobsDir, entry, 'events.jsonl');
+            const event = createStaleWarningEvent('waiting_stale', {
+              silence_ms: silenceMs,
+              threshold_ms: thresholds.waiting_stale_ms,
+            });
+            try { appendFileSync(eventsPath, JSON.stringify(event) + '\n'); } catch { /* best effort */ }
+          }
         }
       } catch { /* ignore */ }
     }
@@ -262,6 +301,54 @@ export class Supervisor {
     let fifoReadStream: ReturnType<typeof createReadStream> | undefined;
     let fifoReadline: ReturnType<typeof createInterface> | undefined;
 
+    // Stuck detection: thresholds, local tracking state, and periodic checker
+    const thresholds: Required<StallDetectionConfig> = {
+      ...STALL_DETECTION_DEFAULTS,
+      ...this.opts.stallDetection,
+    };
+    let lastActivityMs = startedAtMs;
+    let silenceWarnEmitted = false;
+    let toolStartMs: number | undefined;
+    let toolDurationWarnEmitted = false;
+    let stuckIntervalId: ReturnType<typeof setInterval> | undefined;
+
+    stuckIntervalId = setInterval(() => {
+      const now = Date.now();
+      if (statusSnapshot.status === 'running') {
+        const silenceMs = now - lastActivityMs;
+        if (!silenceWarnEmitted && silenceMs > thresholds.running_silence_warn_ms) {
+          silenceWarnEmitted = true;
+          appendTimelineEvent(createStaleWarningEvent('running_silence', {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.running_silence_warn_ms,
+          }));
+        }
+        if (silenceMs > thresholds.running_silence_error_ms) {
+          appendTimelineEvent(createStaleWarningEvent('running_silence_error', {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.running_silence_error_ms,
+          }));
+          setStatus({
+            status: 'error',
+            error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`,
+          });
+          killFn?.();
+          clearInterval(stuckIntervalId);
+        }
+      }
+      if (toolStartMs !== undefined && !toolDurationWarnEmitted) {
+        const toolDurationMs = now - toolStartMs;
+        if (toolDurationMs > thresholds.tool_duration_warn_ms) {
+          toolDurationWarnEmitted = true;
+          appendTimelineEvent(createStaleWarningEvent('tool_duration', {
+            silence_ms: toolDurationMs,
+            threshold_ms: thresholds.tool_duration_warn_ms,
+            tool: currentTool,
+          }));
+        }
+      }
+    }, 10_000);
+
     const sigtermHandler = () => killFn?.();
     process.once('SIGTERM', sigtermHandler);
 
@@ -281,6 +368,9 @@ export class Supervisor {
         // onEvent — map callback events to timeline events
         (eventType) => {
           const now = Date.now();
+          // Reset silence timer on any activity
+          lastActivityMs = now;
+          silenceWarnEmitted = false;
           setStatus({
             status: 'running',
             current_event: eventType,
@@ -393,11 +483,15 @@ export class Supervisor {
           currentToolArgs = args;
           currentToolCallId = toolCallId ?? '';
           currentToolIsError = false; // reset on new tool start
+          toolStartMs = Date.now();
+          toolDurationWarnEmitted = false;
           setStatus({ current_tool: tool });
         },
         // onToolEndCallback — capture isError for timeline event fidelity
         (_tool, isError) => {
           currentToolIsError = isError;
+          toolStartMs = undefined;
+          toolDurationWarnEmitted = false;
         },
       );
 
@@ -444,6 +538,7 @@ export class Supervisor {
       }));
       throw err;
     } finally {
+      if (stuckIntervalId !== undefined) clearInterval(stuckIntervalId);
       process.removeListener('SIGTERM', sigtermHandler);
       // Close the FIFO readline interface and destroy the stream to release event loop
       try { fifoReadline?.close(); } catch { /* ignore */ }

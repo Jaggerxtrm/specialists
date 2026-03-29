@@ -43,6 +43,7 @@ describe('backendMap', () => {
 /** Build a fresh fake ChildProcess and wire it up to mockSpawn. */
 function makeFakeProc() {
   const stdoutHandlers: Record<string, Function> = {};
+  const stderrHandlers: Record<string, Function> = {};
   const procHandlers: Record<string, Function> = {};
 
   const stdin = {
@@ -57,9 +58,16 @@ function makeFakeProc() {
     }),
   };
 
+  const stderr = {
+    on: vi.fn().mockImplementation((evt: string, h: Function) => {
+      stderrHandlers[evt] = h;
+    }),
+  };
+
   const proc = {
     stdin,
     stdout,
+    stderr,
     on: vi.fn().mockImplementation((evt: string, h: Function) => {
       procHandlers[evt] = h;
     }),
@@ -68,7 +76,7 @@ function makeFakeProc() {
 
   mockSpawn.mockReturnValue(proc);
 
-  return { proc, stdin, stdout, stdoutHandlers, procHandlers };
+  return { proc, stdin, stdout, stderr, stdoutHandlers, stderrHandlers, procHandlers };
 }
 
 // ── Protocol event injection helper ──────────────────────────────────────────
@@ -404,12 +412,15 @@ describe('sendCommand — concurrent dispatch', () => {
     const session = await PiAgentSession.create({ model: 'gemini' });
     await session.start();
 
-    // stderr is a separate stream — extract from spawn call
-    const spawnCall = mockSpawn.mock.calls[0];
-    expect(spawnCall[2].stdio).toEqual(['pipe', 'pipe', 'pipe']);
+    fake.stderrHandlers['data']?.(Buffer.from('warning: something\n'));
+    fake.stderrHandlers['data']?.(Buffer.from('error: details\n'));
 
-    // Simulate stderr data via the stored proc reference
-    // The proc mock doesn't have a real stderr, but we can verify stdio config
+    expect(session.getStderr()).toBe('warning: something\nerror: details\n');
+  });
+
+  it('getStderr() returns empty string when no stderr emitted', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
     expect(session.getStderr()).toBe('');
   });
 
@@ -435,5 +446,161 @@ describe('sendCommand — concurrent dispatch', () => {
 
     const calls = onEvent.mock.calls.map((c: any[]) => c[0]);
     expect(calls.filter((t: string) => t === 'auto_retry')).toHaveLength(2);
+  });
+});
+
+// ── ID dispatch edge cases ─────────────────────────────────────────────────────
+describe('sendCommand — ID dispatch edge cases', () => {
+  let fake: ReturnType<typeof makeFakeProc>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fake = makeFakeProc();
+  });
+
+  it('response with unknown ID is ignored — no crash', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    // No pending request with id=999 — must not throw
+    expect(() => {
+      emitLine(fake, { type: 'response', id: 999, success: true });
+    }).not.toThrow();
+  });
+
+  it('steer() resolves when pi responds with success=true', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const p = session.steer('redirect please');
+    emitLine(fake, { type: 'response', id: 1, success: true });
+
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it('non-timed-out concurrent request resolves despite sibling timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini' });
+      await session.start();
+
+      // p1 will time out (id=1), p2 resolves before the timeout
+      const p1 = session.prompt('first').catch((e) => e);
+      const p2 = session.prompt('second');
+
+      // Respond to p2 immediately — it should be done before the timeout fires
+      emitLine(fake, { type: 'response', id: 2, success: true });
+      await expect(p2).resolves.toBeUndefined();
+
+      // Advance past the 10s default timeout — only p1 should have timed out
+      await vi.advanceTimersByTimeAsync(11_000);
+      const err1 = await p1;
+      expect(err1.message).toMatch(/RPC timeout/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('timed-out request is cleaned from the pending map (late response causes no crash)', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({ model: 'gemini' });
+      await session.start();
+
+      const p = session.prompt('task').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(11_000);
+      await p; // request has already rejected
+
+      // Emit a response for the now-deleted entry — must not crash or double-resolve
+      expect(() => {
+        emitLine(fake, { type: 'response', id: 1, success: true });
+      }).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('malformed JSONL line is silently skipped — no crash', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    expect(() => {
+      fake.stdoutHandlers['data']?.(Buffer.from('not valid json\n'));
+    }).not.toThrow();
+  });
+
+  it('unknown event type is silently ignored — no crash', async () => {
+    const onEvent = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onEvent });
+    await session.start();
+
+    expect(() => {
+      emitLine(fake, { type: 'completely_unknown_event_xyz', payload: 42 });
+    }).not.toThrow();
+
+    // onEvent must not have been called with the unknown type
+    expect(onEvent).not.toHaveBeenCalledWith('completely_unknown_event_xyz');
+  });
+});
+
+// ── kill() behaviour ──────────────────────────────────────────────────────────
+describe('kill()', () => {
+  let fake: ReturnType<typeof makeFakeProc>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fake = makeFakeProc();
+  });
+
+  it('sends {type:"abort"} to stdin before calling proc.kill()', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const callOrder: string[] = [];
+    fake.stdin.write.mockImplementation((_data: any, cb?: any) => {
+      callOrder.push('write');
+      cb?.();
+      return true;
+    });
+    fake.proc.kill.mockImplementation(() => { callOrder.push('kill'); });
+
+    session.kill();
+
+    expect(callOrder).toEqual(['write', 'kill']);
+    const writtenPayload = JSON.parse(fake.stdin.write.mock.calls[0][0]);
+    expect(writtenPayload).toMatchObject({ type: 'abort' });
+  });
+
+  it('is idempotent — second call is a no-op', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    session.kill();
+    expect(() => session.kill()).not.toThrow();
+    // proc.kill should only have been called once
+    expect(fake.proc.kill).toHaveBeenCalledOnce();
+  });
+
+  it('kill() completes even when stdin write throws', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    fake.stdin.write.mockImplementation(() => { throw new Error('pipe broken'); });
+
+    expect(() => session.kill()).not.toThrow();
+    expect(fake.proc.kill).toHaveBeenCalledOnce();
+  });
+
+  it('process close while requests are pending — pending requests are rejected by kill()', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const p = session.prompt('task').catch((e) => e);
+
+    // Simulate the process dying abruptly via kill()
+    session.kill();
+
+    const err = await p;
+    expect(err.message).toMatch(/killed/i);
   });
 });

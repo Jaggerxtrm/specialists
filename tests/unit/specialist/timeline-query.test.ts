@@ -258,5 +258,17 @@ describe('timeline-query', () => {
       expect(activity[0].tool).toBe('bash');
       expect(activity[0].end_t).toBeUndefined();
     });
+
+    it('tool:end without matching start — uses end event t as start_t fallback', () => {
+      const events: TimelineEvent[] = [
+        { t: 5000, type: 'tool', tool: 'bash', phase: 'end', tool_call_id: 'call-orphan' },
+      ];
+
+      const activity = getToolActivity(events);
+      expect(activity).toHaveLength(1);
+      expect(activity[0].tool).toBe('bash');
+      expect(activity[0].start_t).toBe(5000);
+      expect(activity[0].end_t).toBe(5000);
+    });
   });
 });

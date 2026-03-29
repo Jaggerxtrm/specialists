@@ -138,6 +138,17 @@ describe('timeline-events', () => {
       }
     });
 
+    it('maps tool_execution_start with empty args {} — args field is {}', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_start', {
+        tool: 'bash',
+        args: {},
+      });
+      expect(event).not.toBeNull();
+      if (event!.type === 'tool') {
+        expect(event.args).toEqual({});
+      }
+    });
+
     it('maps tool_execution_start with toolCallId — populates tool_call_id', () => {
       const event = mapCallbackEventToTimelineEvent('tool_execution_start', {
         tool: 'bash',
