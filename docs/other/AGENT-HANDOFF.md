@@ -153,7 +153,6 @@ See `docs/xtrm-specialists-analysis.md` for full classification, sprint history,
 | \`bug-hunt\` | Sonnet | Bug investigation |
 | \`feature-design\` | Sonnet | Feature → implementation plans |
 | \`parallel-review\` | Sonnet | Multi-focus code review |
-| \`auto-remediation\` | Gemini Flash | Apply fixes automatically |
 | \`report-generator\` | Haiku | Synthesize markdown reports |
 | \`test-runner\` | Haiku | Run tests, surface failures |
 

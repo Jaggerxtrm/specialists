@@ -83,7 +83,7 @@ Read both outputs carefully:
 |------|-----------------------|------------------------|
 | **Heavy** — deep reasoning, multi-phase, architecture | `overthinker`, `feature-design`, `bug-hunt`, `planner`, `parallel-review` | Opus / Pro / GLM-5 |
 | **Standard** — code generation, review, authoring, docs | `codebase-explorer`, `specialist-author`, `sync-docs`, `xt-merge` | Sonnet / Flash-Pro |
-| **Light** — fast context, reporting, test runs | `init-session`, `report-generator`, `test-runner`, `auto-remediation` | Haiku / Flash |
+| **Light** — fast context, reporting, test runs | `init-session`, `report-generator`, `test-runner` | Haiku / Flash |
 
 Adjust tiers based on what the user actually has installed. Custom specialists: read their `description` and `permission_required` to infer tier.
 

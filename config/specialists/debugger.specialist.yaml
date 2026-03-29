@@ -107,5 +107,3 @@ specialist:
     required_tools: [bash, grep, find, read]
     external_commands: [grep]
 
-  communication:
-    next_specialists: auto-remediation
