@@ -33,7 +33,7 @@ export async function run(): Promise<void> {
 
   if (!status.fifo_path) {
     process.stderr.write(`${red('Error:')} Job ${jobId} has no steer pipe.\n`);
-    process.stderr.write('Only jobs started with --background support mid-run steering.\n');
+    process.stderr.write('Only jobs started with --keep-alive support mid-run steering.\n');
     process.exit(1);
   }
 

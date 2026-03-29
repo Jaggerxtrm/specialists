@@ -183,7 +183,7 @@ export class SpecialistRunner {
       closeFn: () => Promise<void>,
     ) => void,
     onToolStartCallback?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void,
-    onToolEndCallback?: (tool: string, isError: boolean) => void,
+    onToolEndCallback?: (tool: string, isError: boolean, toolCallId?: string) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -299,7 +299,7 @@ export class SpecialistRunner {
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
-        onToolEnd:   (tool, isError) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError); },
+        onToolEnd:   (tool, isError, toolCallId) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId); },
         onEvent:     (type)  => onEvent?.(type),
         onMeta:      (meta)  => onMeta?.(meta),
       });
@@ -379,10 +379,11 @@ export class SpecialistRunner {
       output_valid: true,
     });
 
-    // Beads: close with COMPLETE and emit audit record.
-    // Only close if runner owns the bead — input beads are closed by the orchestrator.
+    // Beads: emit audit record. Owned beads are closed by the Supervisor AFTER
+    // updateBeadNotes — do NOT call closeBead here on the success path.
+    // (Error/cancel paths close owned beads in the catch block above because
+    // Supervisor never reaches post-processing on failure.)
     if (beadId) {
-      if (ownsBead) beadsClient?.closeBead(beadId, 'COMPLETE', durationMs, model);
       beadsClient?.auditBead(beadId, metadata.name, model, 0);
     }
 

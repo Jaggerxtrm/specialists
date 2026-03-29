@@ -15,7 +15,7 @@
  *   --json             Output as NDJSON
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   type TimelineEvent,
@@ -106,6 +106,37 @@ function parseSince(value: string): number | undefined {
   return undefined;
 }
 
+// ============================================================================
+// Job metadata cache (status.json) — read once per job, merged into JSON envelope
+// ============================================================================
+
+interface JobMeta {
+  model?: string;
+  backend?: string;
+  beadId?: string;
+  startedAtMs: number;
+}
+
+function makeJobMetaReader(jobsDir: string): (jobId: string) => JobMeta {
+  const cache = new Map<string, JobMeta>();
+  return (jobId: string): JobMeta => {
+    if (cache.has(jobId)) return cache.get(jobId)!;
+    const statusPath = join(jobsDir, jobId, 'status.json');
+    let meta: JobMeta = { startedAtMs: Date.now() };
+    try {
+      const status = JSON.parse(readFileSync(statusPath, 'utf-8'));
+      meta = {
+        model: status.model,
+        backend: status.backend,
+        beadId: status.bead_id,
+        startedAtMs: status.started_at_ms ?? Date.now(),
+      };
+    } catch { /* status.json not yet available — use defaults */ }
+    cache.set(jobId, meta);
+    return meta;
+  };
+}
+
 function parseArgs(argv: string[]): FeedOptions {
   let jobId: string | undefined;
   let specialist: string | undefined;
@@ -135,7 +166,8 @@ function parseArgs(argv: string[]): FeedOptions {
 
 function printSnapshot(
   merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
-  options: FeedOptions
+  options: FeedOptions,
+  jobsDir?: string
 ): void {
   if (merged.length === 0) {
     if (!options.json) console.log(dim('No events found.'));
@@ -146,8 +178,18 @@ function printSnapshot(
   const colorMap = new JobColorMap();
 
   if (options.json) {
+    const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : (): JobMeta => ({ startedAtMs: Date.now() });
     for (const { jobId, specialist, beadId, event } of merged) {
-      console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
+      const meta = getJobMeta(jobId);
+      console.log(JSON.stringify({
+        jobId,
+        specialist,
+        model: meta.model,
+        backend: meta.backend,
+        beadId: meta.beadId ?? beadId,
+        elapsed_ms: Date.now() - meta.startedAtMs,
+        ...event,
+      }));
     }
     return;
   }
@@ -175,6 +217,7 @@ function isCompletionEvent(event: TimelineEvent): boolean {
 
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
   const colorMap = new JobColorMap();
+  const getJobMeta = makeJobMetaReader(jobsDir);
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
@@ -192,7 +235,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
     limit: options.limit,
   });
 
-  printSnapshot(initial, { ...options, json: options.json });
+  printSnapshot(initial, { ...options, json: options.json }, jobsDir);
 
   for (const batch of filteredBatches()) {
     if (batch.events.length > 0) {
@@ -258,7 +301,16 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
 
       for (const { jobId, specialist, beadId, event } of newEvents) {
         if (options.json) {
-          console.log(JSON.stringify({ jobId, specialist, beadId, ...event }));
+          const meta = getJobMeta(jobId);
+          console.log(JSON.stringify({
+            jobId,
+            specialist,
+            model: meta.model,
+            backend: meta.backend,
+            beadId: meta.beadId ?? beadId,
+            elapsed_ms: Date.now() - meta.startedAtMs,
+            ...event,
+          }));
         } else {
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
           const colorize = colorMap.get(jobId);
@@ -325,5 +377,5 @@ export async function run(): Promise<void> {
     limit: options.limit,
   });
 
-  printSnapshot(merged, options);
+  printSnapshot(merged, options, jobsDir);
 }

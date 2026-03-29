@@ -147,7 +147,7 @@ describe('SpecialistRunner', () => {
   });
 
   describe('beads integration', () => {
-    it('creates and closes bead on success when always', async () => {
+    it('creates bead and emits audit on success when always (closeBead delegated to Supervisor)', async () => {
       const beadsClient = makeBeadsClient();
       const runner = new SpecialistRunner({
         loader: makeLoader({}, 'always'),
@@ -158,7 +158,8 @@ describe('SpecialistRunner', () => {
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
       expect(beadsClient.createBead).toHaveBeenCalledWith('test-spec');
-      expect(beadsClient.closeBead).toHaveBeenCalledWith('specialists-test-1', 'COMPLETE', expect.any(Number), expect.any(String));
+      // Supervisor calls closeBead AFTER updateBeadNotes — runner must NOT close on success
+      expect(beadsClient.closeBead).not.toHaveBeenCalled();
       expect(beadsClient.auditBead).toHaveBeenCalledWith('specialists-test-1', 'test-spec', expect.any(String), 0);
       expect(result.beadId).toBe('specialists-test-1');
     });

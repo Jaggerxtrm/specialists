@@ -174,6 +174,39 @@ describe('feed CLI', () => {
     }
   });
 
+  it('--json envelope includes model, backend, beadId, elapsed_ms from status.json', async () => {
+    createJobDir('job1', 'my-spec', [
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
+    ], {
+      model: 'claude-haiku',
+      backend: 'anthropic',
+      bead_id: 'unitAI-abc',
+      started_at_ms: Date.now() - 5000,
+    });
+
+    process.argv = ['node', 'specialists', 'feed', '--json'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const line = logs.find((l) => l.trim());
+    expect(line).toBeDefined();
+    const parsed = JSON.parse(line!);
+    expect(parsed.jobId).toBe('job1');
+    expect(parsed.specialist).toBe('my-spec');
+    expect(parsed.model).toBe('claude-haiku');
+    expect(parsed.backend).toBe('anthropic');
+    expect(parsed.beadId).toBe('unitAI-abc');
+    expect(parsed.elapsed_ms).toBeGreaterThanOrEqual(0);
+    // Event fields still present
+    expect(parsed.type).toBe('run_complete');
+  });
+
   it('filters by --job id', async () => {
     createJobDir('job1', 'test1', [
       { t: Date.now() - 1000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },

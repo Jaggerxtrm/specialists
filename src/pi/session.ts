@@ -67,8 +67,8 @@ export interface PiSessionOptions {
   onThinking?: (delta: string) => void;
   /** Called with tool name, optional args payload, and optional tool call ID when a tool starts executing */
   onToolStart?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void;
-  /** Called with tool name and error flag when a tool result arrives */
-  onToolEnd?: (tool: string, isError: boolean) => void;
+  /** Called with tool name, error flag, and optional tool call ID when a tool result arrives */
+  onToolEnd?: (tool: string, isError: boolean, toolCallId?: string) => void;
   /** Called with the raw pi event type (for job status tracking) */
   onEvent?: (type: string) => void;
   /** Called once with actual backend/model from the first assistant message_start */
@@ -330,7 +330,11 @@ export class PiAgentSession {
       return;
     }
     if (type === 'tool_execution_end') {
-      this.options.onToolEnd?.(event.toolName ?? event.name ?? 'tool', event.isError ?? false);
+      this.options.onToolEnd?.(
+        event.toolName ?? event.name ?? 'tool',
+        event.isError ?? false,
+        event.toolCallId as string | undefined,
+      );
       this.options.onEvent?.('tool_execution_end');
       return;
     }

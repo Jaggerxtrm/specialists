@@ -265,3 +265,32 @@ export function formatEventLine(
   const detail = detailParts.length > 0 ? dim(detailParts.join(' ')) : '';
   return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ''}`.trimEnd();
 }
+
+/**
+ * Format a single timeline event as a compact inline line for run's human output mode.
+ * Returns null for events that should be suppressed (noisy internals).
+ */
+export function formatEventInline(event: TimelineEvent): string | null {
+  switch (event.type) {
+    case 'meta':
+      return dim(`[model] ${event.backend}/${event.model}`);
+    case 'thinking':
+      return dim('[thinking...]');
+    case 'text':
+      return dim('[response]');
+    case 'tool': {
+      if (event.phase !== 'start') return null;
+      const firstArgVal = event.args ? Object.values(event.args)[0] : undefined;
+      const argStr = firstArgVal !== undefined
+        ? ': ' + (typeof firstArgVal === 'string'
+            ? firstArgVal.split('\n')[0].slice(0, 80)
+            : JSON.stringify(firstArgVal).slice(0, 80))
+        : '';
+      return `${dim('[tool]')}  ${cyan(event.tool)}${dim(argStr)}`;
+    }
+    case 'stale_warning':
+      return yellow(`[warning] ${event.reason}: ${Math.round(event.silence_ms / 1000)}s silent`);
+    default:
+      return null;
+  }
+}

@@ -121,7 +121,7 @@ describe('Supervisor', () => {
 
 
   it('pins result output and metadata to bead notes when beadId is present', async () => {
-    const beadsClient = { updateBeadNotes: vi.fn() } as any;
+    const beadsClient = { updateBeadNotes: vi.fn(), closeBead: vi.fn() } as any;
     const runner = makeMockRunner('hello bead', 'claude-haiku', 'anthropic');
     runner.run.mockResolvedValueOnce({
       output: 'hello bead',
@@ -148,6 +148,55 @@ describe('Supervisor', () => {
       'specialists-123',
       expect.stringContaining('elapsed_ms=321'),
     );
+  });
+
+  it('closes owned bead AFTER updateBeadNotes on success', async () => {
+    const updateBeadNotes = vi.fn();
+    const closeBead = vi.fn();
+    const beadsClient = { updateBeadNotes, closeBead } as any;
+    const runner = makeMockRunner('output', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'output',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 100,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: 'specialists-abc',
+    });
+    // No inputBeadId → runner owns the bead
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
+    await sup.run();
+
+    expect(updateBeadNotes).toHaveBeenCalledOnce();
+    expect(closeBead).toHaveBeenCalledWith('specialists-abc', 'COMPLETE', 100, 'haiku');
+    // Verify ordering: updateBeadNotes must have been called before closeBead
+    const updateOrder = updateBeadNotes.mock.invocationCallOrder[0];
+    const closeOrder = closeBead.mock.invocationCallOrder[0];
+    expect(updateOrder).toBeLessThan(closeOrder);
+  });
+
+  it('does NOT close input bead (orchestrator owns lifecycle)', async () => {
+    const updateBeadNotes = vi.fn();
+    const closeBead = vi.fn();
+    const beadsClient = { updateBeadNotes, closeBead } as any;
+    const runner = makeMockRunner('output', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'output',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 100,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: 'unitAI-external',
+    });
+    // inputBeadId set → orchestrator owns the bead lifecycle
+    const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-external' };
+    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+    await sup.run();
+
+    expect(updateBeadNotes).toHaveBeenCalledOnce();
+    expect(closeBead).not.toHaveBeenCalled();
   });
 
   it('on runner error: status=error, error field set, no result.txt written', async () => {

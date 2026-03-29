@@ -294,6 +294,8 @@ export class Supervisor {
     let currentToolCallId = '';
     let currentToolArgs: Record<string, unknown> | undefined;
     let currentToolIsError = false;
+    // Map from toolCallId → {tool, args} for parallel tool call tracking
+    const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
     let killFn: (() => void) | undefined;
     let steerFn: ((msg: string) => Promise<void>) | undefined;
     let resumeFn: ((msg: string) => Promise<string>) | undefined;
@@ -486,9 +488,21 @@ export class Supervisor {
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
           setStatus({ current_tool: tool });
+          if (toolCallId) {
+            activeToolCalls.set(toolCallId, { tool, args });
+          }
         },
-        // onToolEndCallback — capture isError for timeline event fidelity
-        (_tool, isError) => {
+        // onToolEndCallback — restore correct per-call context before onEvent('tool_execution_end') fires
+        (tool, isError, toolCallId) => {
+          if (toolCallId && activeToolCalls.has(toolCallId)) {
+            const entry = activeToolCalls.get(toolCallId)!;
+            currentTool = entry.tool;
+            currentToolArgs = entry.args;
+            currentToolCallId = toolCallId;
+            activeToolCalls.delete(toolCallId);
+          } else {
+            currentTool = tool;
+          }
           currentToolIsError = isError;
           toolStartMs = undefined;
           toolDurationWarnEmitted = false;
@@ -500,6 +514,10 @@ export class Supervisor {
       writeFileSync(this.resultPath(id), result.output, 'utf-8');
       if (result.beadId) {
         this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+        // Close owned beads after notes are written. Never close input beads — orchestrator owns lifecycle.
+        if (!runOptions.inputBeadId) {
+          this.opts.beadsClient?.closeBead(result.beadId, 'COMPLETE', result.durationMs, result.model);
+        }
       }
       setStatus({
         status: 'done',
