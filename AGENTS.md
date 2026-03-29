@@ -370,7 +370,6 @@ Call `specialists init` once per project, then use CLI commands via Bash.
 - `specialists list`
 - `specialists run <name> --bead <id>`
 - `specialists run <name> --prompt "..."`
-- `specialists run <name> --background`
 - `specialists feed -f` / `specialists feed <job-id>`
 - `specialists result <job-id>`
 - `specialists resume <job-id> "next task"` (for keep-alive jobs in `waiting`)
@@ -378,13 +377,13 @@ Call `specialists init` once per project, then use CLI commands via Bash.
 
 **Running specialists in background (recommended): use the process extension**
 - Tool actions: `process start`, `list`, `output`, `logs`, `kill`, `clear`
-- Example: `process start "specialists run explorer --bead unitAI-123 --background" name="sp-explorer"`
+- Example: `process start "specialists run explorer --bead unitAI-123" name="sp-explorer"`
 - Useful commands: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`
 - Benefits: unified log dock, follow mode, focus mode, file-based logs, friendly names, auto-cleanup
 
 **Canonical tracked flow**
 1. Create/claim bead issue
-2. Run specialist with `--bead <id>` (prefer background for long work)
+2. Run specialist with `--bead <id>` (for long work, launch via `process start`)
 3. Observe progress (`process output`/`process logs` or `specialists feed`)
 4. Read final output (`specialists result <job-id>`)
 5. Close/update bead with outcome

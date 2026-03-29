@@ -99,15 +99,15 @@ lines.push('');
 lines.push('```');
 lines.push('specialists list                                   # discover available specialists');
 lines.push('specialists run <name> --prompt "..."              # run foreground (streams output)');
-lines.push('specialists run <name> --prompt "..." --background # run async → returns job ID');
-lines.push('specialists run <name> --follow                    # background + stream live output');
+lines.push('process start "specialists run <name> --prompt "..."" name="sp-<name>" # async via process extension');
+lines.push('specialists run <name> --prompt "..."              # foreground stream');
 lines.push('specialists feed <job-id> --follow                 # tail live events');
 lines.push('specialists result <job-id>                        # read final output');
 lines.push('specialists status                                 # system health');
 lines.push('specialists doctor                                 # troubleshoot issues');
 lines.push('```');
 lines.push('');
-lines.push('MCP tools: specialist_init · use_specialist · start_specialist · poll_specialist · run_parallel');
+lines.push('MCP tools: specialist_init · use_specialist · start_specialist · feed_specialist · run_parallel');
 
 // ── Output ─────────────────────────────────────────────────────────────────
 if (lines.length === 0) process.exit(0);

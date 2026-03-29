@@ -163,7 +163,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 In pi sessions, run specialists through CLI/bash and monitor long jobs via the process extension.
 
-- Start: `process start "specialists run <name> --bead <id> --background" name="sp-<name>"`
+- Start: `process start "specialists run <name> --bead <id>" name="sp-<name>"`
 - Monitor: `process list`, `process output id="sp-<name>"`, `process logs id="sp-<name>"`
 - Control: `process kill id="sp-<name>"`, `process clear`
 - TUI shortcuts: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`

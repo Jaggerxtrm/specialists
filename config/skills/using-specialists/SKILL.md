@@ -8,10 +8,12 @@ description: >
   jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.2
+version: 3.3
 ---
 
 # Specialists Usage
+
+When this skill is loaded, you are a **coordinator first**: delegate substantial work to specialists, monitor progress, and synthesize outcomes for the user.
 
 Specialists are autonomous AI agents that run independently — fresh context, different
 model, no prior bias. Delegate when a task would take you significant effort, spans
@@ -50,7 +52,6 @@ links results back to the tracker, and creates an audit trail.
 - `specialists list`
 - `specialists run <name> --bead <id>`
 - `specialists run <name> --prompt "..."`
-- `specialists run <name> --background`
 - `specialists feed -f` / `specialists feed <job-id>`
 - `specialists result <job-id>`
 - `specialists resume <job-id> "next task"`
@@ -63,17 +64,16 @@ bd create --title "Audit authentication module for security issues" --type task 
 
 # 2. Find and run the right specialist
 specialists list
-specialists run debugger --bead unitAI-abc --background
+process start "specialists run debugger --bead unitAI-abc" name="sp-debugger"
 
 # 3. Keep working; check in when ready
-specialists feed -f
+process output id="sp-debugger"
 
 # 4. Read results and close
 specialists result <job-id>
 bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
 ```
 
-**`--background`** — returns immediately; use for anything that will take more than ~30 seconds.
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
 
@@ -82,7 +82,7 @@ bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
 Prefer process-managed background runs over ad-hoc polling:
 
 ```bash
-process start "specialists run explorer --bead unitAI-abc --background" name="sp-explorer"
+process start "specialists run explorer --bead unitAI-abc" name="sp-explorer"
 process list
 process output id="sp-explorer"
 process logs id="sp-explorer"
@@ -123,9 +123,7 @@ specialists feed <job-id>          # see what happened
 specialists doctor                 # check for systemic issues
 ```
 
-If you need to retry: try foreground mode (no `--background`) for shorter timeout exposure,
-or try a different specialist. If all else fails, tell the user what you attempted and why
-it failed before doing the work yourself.
+If you need to retry: rerun with tighter prompt scope or try a different specialist. If all else fails, tell the user what you attempted and why it failed before doing the work yourself.
 
 ---
 
@@ -148,9 +146,9 @@ With a specialist:
 ```bash
 bd create --title "Security review: src/auth/" --type task --priority 1  # → unitAI-xyz
 specialists list
-specialists run debugger --bead unitAI-xyz --background                   # → job_4a2b1c
+process start "specialists run debugger --bead unitAI-xyz" name="sp-debugger"   # async via process extension
 # go do other work
-specialists result job_4a2b1c
+specialists result <job-id>
 bd close unitAI-xyz --reason "Found 2 issues, filed unitAI-abc, unitAI-def"
 ```
 
@@ -178,7 +176,7 @@ Available after `specialists init` and session restart.
 
 ## feed_specialist Observation Pattern
 
-Use cursor-based polling for structured progress when you run in background:
+Use cursor-based polling for structured progress when monitoring long specialist runs:
 
 ```bash
 # first read
