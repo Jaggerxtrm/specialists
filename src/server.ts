@@ -30,6 +30,7 @@ import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specia
 import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
 import { createSteerSpecialistTool, steerSpecialistSchema } from "./tools/specialist/steer_specialist.tool.js";
 import { createFollowUpSpecialistTool, followUpSpecialistSchema } from "./tools/specialist/follow_up_specialist.tool.js";
+import { createResumeSpecialistTool, resumeSpecialistSchema } from "./tools/specialist/resume_specialist.tool.js";
 import { createFeedSpecialistTool, feedSpecialistSchema } from "./tools/specialist/feed_specialist.tool.js";
 import { z } from "zod";
 
@@ -64,6 +65,7 @@ export class SpecialistsServer {
       createStartSpecialistTool(runner, registry),
       createStopSpecialistTool(registry),
       createSteerSpecialistTool(registry),
+      createResumeSpecialistTool(registry),
       createFollowUpSpecialistTool(registry),
       createSpecialistInitTool(loader),
       createFeedSpecialistTool(jobsDir),
@@ -88,6 +90,7 @@ export class SpecialistsServer {
       start_specialist: startSpecialistSchema,
       stop_specialist: stopSpecialistSchema,
       steer_specialist: steerSpecialistSchema,
+      resume_specialist: resumeSpecialistSchema,
       follow_up_specialist: followUpSpecialistSchema,
       specialist_init: specialistInitSchema,
       feed_specialist: feedSpecialistSchema,

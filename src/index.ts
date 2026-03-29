@@ -381,29 +381,46 @@ async function run() {
     return handler();
   }
 
-  if (sub === 'follow-up') {
+  if (sub === 'resume') {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists follow-up <job-id> "<message>"',
+        'Usage: specialists resume <job-id> "<task>"',
         '',
-        'Send a follow-up prompt to a waiting keep-alive specialist session.',
+        'Resume a waiting keep-alive specialist session with a next-turn prompt.',
         'The Pi session retains full conversation history between turns.',
         '',
         'Requires: job started with --keep-alive.',
         '',
         'Examples:',
-        '  specialists follow-up a1b2c3 "Now write the fix for the bug you found"',
-        '  specialists follow-up a1b2c3 "Focus only on the auth module"',
+        '  specialists resume a1b2c3 "Now write the fix for the bug you found"',
+        '  specialists resume a1b2c3 "Focus only on the auth module"',
         '',
         'Workflow:',
         '  specialists run debugger --bead <id> --keep-alive',
         '  # → Job started: a1b2c3  (status: waiting after first turn)',
-        '  specialists result a1b2c3            # read first turn output',
-        '  specialists follow-up a1b2c3 "..."   # send next prompt',
-        '  specialists feed a1b2c3 --follow      # watch response',
+        '  specialists result a1b2c3          # read first turn output',
+        '  specialists resume a1b2c3 "..."    # send next task',
+        '  specialists feed a1b2c3 --follow   # watch response',
         '',
-        'See also: specialists steer (mid-run redirect)',
+        'See also: specialists steer (mid-run redirect for running jobs)',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/resume.js');
+    return handler();
+  }
+
+  if (sub === 'follow-up') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        '⚠ DEPRECATED: Use `specialists resume` instead.',
+        '',
+        'Usage: specialists follow-up <job-id> "<task>"',
+        '',
+        'Delegates to `specialists resume`. This alias will be removed in a future release.',
         '',
       ].join('\n'));
       return;

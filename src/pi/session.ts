@@ -536,6 +536,17 @@ export class PiAgentSession {
   }
 
   /**
+   * Queue a follow_up on the Pi session using pi's native follow_up RPC command.
+   * This is distinct from resume(): follow_up queues work during a still-running turn,
+   * while resume() sends a next-turn prompt to a waiting (idle) session.
+   *
+   * Not yet implemented — reserved to prevent semantic drift with pi's native follow_up.
+   */
+  followUp(_task: string): never {
+    throw new Error('followUp() is not yet implemented. Use resume() to send a next-turn prompt to a waiting session.');
+  }
+
+  /**
    * Start a new turn on the same Pi session (keep-alive multi-turn).
    * Resets done state and sends a new prompt — Pi retains full conversation history.
    * Only valid after waitForDone() has resolved for the previous turn.

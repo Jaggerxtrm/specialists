@@ -2,6 +2,7 @@
 // Wraps SpecialistRunner to provide file-based job state for background execution.
 
 import {
+  appendFileSync,
   closeSync,
   existsSync,
   fsyncSync,
@@ -27,10 +28,19 @@ import {
   createRunStartEvent,
   createMetaEvent,
   createRunCompleteEvent,
+  createStaleWarningEvent,
   mapCallbackEventToTimelineEvent,
 } from './timeline-events.js';
+import type { StallDetectionConfig } from './loader.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
+
+export const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig> = {
+  running_silence_warn_ms: 60_000,
+  running_silence_error_ms: 300_000,
+  waiting_stale_ms: 3_600_000,
+  tool_duration_warn_ms: 120_000,
+};
 
 export interface SupervisorStatus {
   id: string;
@@ -321,9 +331,32 @@ export class Supervisor {
               try {
                 const parsed = JSON.parse(line);
                 if (parsed?.type === 'steer' && typeof parsed.message === 'string') {
+                  // steer is only valid while the session is running
                   steerFn?.(parsed.message).catch(() => {});
+                } else if (parsed?.type === 'resume' && typeof parsed.task === 'string') {
+                  // resume: send next-turn prompt to a waiting keep-alive session
+                  // waiting state: retained, non-streaming pi session awaiting explicit next-turn
+                  // action from orchestrator. Valid actions: resume, close. Invalid: steer.
+                  if (resumeFn) {
+                    setStatus({ status: 'running', current_event: 'starting' });
+                    resumeFn(parsed.task)
+                      .then((output) => {
+                        mkdirSync(this.jobDir(id), { recursive: true });
+                        writeFileSync(this.resultPath(id), output, 'utf-8');
+                        setStatus({
+                          status: 'waiting',
+                          current_event: 'waiting',
+                          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+                          last_event_at_ms: Date.now(),
+                        });
+                      })
+                      .catch((err: any) => {
+                        setStatus({ status: 'error', error: err?.message ?? String(err) });
+                      });
+                  }
                 } else if (parsed?.type === 'prompt' && typeof parsed.message === 'string') {
-                  // follow-up: resume the session with a new prompt
+                  // DEPRECATED: {type:"prompt"} → use {type:"resume", task:"..."} instead
+                  console.error('[specialists] DEPRECATED: FIFO message {type:"prompt"} is deprecated. Use {type:"resume", task:"..."} instead.');
                   if (resumeFn) {
                     setStatus({ status: 'running', current_event: 'starting' });
                     resumeFn(parsed.message)
