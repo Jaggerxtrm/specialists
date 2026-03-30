@@ -512,8 +512,20 @@ export class Supervisor {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), result.output, 'utf-8');
-      if (result.beadId) {
+      const inputBeadId = runOptions.inputBeadId;
+      const shouldAppendReadOnlyResultToInputBead = Boolean(
+        inputBeadId
+        && result.permissionRequired === 'READ_ONLY'
+        && this.opts.beadsClient,
+      );
+
+      if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
+        this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(result));
+      } else if (result.beadId) {
         this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+      }
+
+      if (result.beadId) {
         // Close owned beads after notes are written. Never close input beads — orchestrator owns lifecycle.
         if (!runOptions.inputBeadId) {
           this.opts.beadsClient?.closeBead(result.beadId, 'COMPLETE', result.durationMs, result.model);

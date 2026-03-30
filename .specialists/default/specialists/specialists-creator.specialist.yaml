@@ -11,7 +11,7 @@ specialist:
     mode: tool
     model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
-    stall_timeout_ms: 60000
+    stall_timeout_ms: 120000
     response_format: markdown
     permission_required: HIGH
 

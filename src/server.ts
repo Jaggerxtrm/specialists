@@ -62,7 +62,7 @@ export class SpecialistsServer {
       createUseSpecialistTool(runner),
       createRunParallelTool(runner),
       createSpecialistStatusTool(loader, circuitBreaker),
-      createStartSpecialistTool(runner),
+      createStartSpecialistTool(runner, beadsClient),
       createStopSpecialistTool(),
       createSteerSpecialistTool(registry),
       createResumeSpecialistTool(registry),

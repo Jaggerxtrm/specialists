@@ -17524,6 +17524,7 @@ var init_schema = __esm(() => {
     fallback_model: stringType().optional(),
     timeout_ms: numberType().default(120000),
     stall_timeout_ms: numberType().optional(),
+    max_retries: numberType().int().min(0).default(0),
     response_format: enumType(["text", "json", "markdown"]).default("text"),
     permission_required: enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]).default("READ_ONLY"),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
@@ -18146,12 +18147,77 @@ var init_session = __esm(() => {
   };
 });
 
+// src/utils/circuitBreaker.ts
+function isTransientError(error2) {
+  if (!error2)
+    return false;
+  const status = error2.status ?? error2.statusCode;
+  if (typeof status === "number" && status >= 500 && status < 600) {
+    return true;
+  }
+  const message = error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+class CircuitBreaker {
+  states = new Map;
+  threshold;
+  cooldownMs;
+  constructor(options = {}) {
+    this.threshold = options.failureThreshold ?? 3;
+    this.cooldownMs = options.cooldownMs ?? 60000;
+  }
+  getState(backend) {
+    const entry = this.states.get(backend);
+    if (!entry)
+      return "CLOSED";
+    if (entry.state === "OPEN" && Date.now() - entry.openedAt > this.cooldownMs) {
+      entry.state = "HALF_OPEN";
+    }
+    return entry.state;
+  }
+  isAvailable(backend) {
+    return this.getState(backend) !== "OPEN";
+  }
+  recordSuccess(backend) {
+    this.states.set(backend, { state: "CLOSED", failures: 0 });
+  }
+  recordFailure(backend) {
+    const entry = this.states.get(backend) ?? { state: "CLOSED", failures: 0 };
+    entry.failures++;
+    if (entry.failures >= this.threshold) {
+      entry.state = "OPEN";
+      entry.openedAt = Date.now();
+    }
+    this.states.set(backend, entry);
+  }
+}
+var TRANSIENT_ERROR_PATTERNS;
+var init_circuitBreaker = __esm(() => {
+  TRANSIENT_ERROR_PATTERNS = [
+    /\b5\d{2}\b/,
+    /timeout/i,
+    /timed out/i,
+    /econnreset/i,
+    /econnrefused/i,
+    /eai_again/i,
+    /etimedout/i,
+    /network error/i,
+    /service unavailable/i,
+    /bad gateway/i,
+    /gateway timeout/i
+  ];
+});
+
 // src/specialist/beads.ts
 import { spawnSync } from "node:child_process";
 function buildBeadContext(bead, completedBlockers = []) {
   const lines = [`# Task: ${bead.title}`];
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
+  }
+  if (bead.parent?.trim()) {
+    lines.push("", "## Parent epic", bead.parent.trim());
   }
   if (bead.notes?.trim()) {
     lines.push("", "## Notes", bead.notes.trim());
@@ -18402,6 +18468,18 @@ ${errors5.join(`
 `)}`);
   }
 }
+function sleep(ms) {
+  return new Promise((resolve2) => setTimeout(resolve2, ms));
+}
+function getRetryDelayMs(attemptNumber) {
+  const baseDelay = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
+  const jitterMultiplier = 1 + (Math.random() * 2 - 1) * RETRY_MAX_JITTER;
+  return Math.max(0, Math.round(baseDelay * jitterMultiplier));
+}
+function isAuthError(error2) {
+  const message = error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
+  return /\b(401|403|unauthorized|forbidden|authentication|auth|invalid api key|api key)\b/i.test(message);
+}
 
 class SpecialistRunner {
   deps;
@@ -18497,6 +18575,8 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
     let session;
     let keepAliveActive = false;
     let sessionClosed = false;
+    const maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? execution.max_retries ?? 0));
+    const maxAttempts = maxRetries + 1;
     try {
       session = await this.sessionFactory({
         model,
@@ -18524,11 +18604,29 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       await session.start();
       onKillRegistered?.(session.kill.bind(session));
       onSteerRegistered?.((msg) => session.steer(msg));
-      await session.prompt(renderedTask);
-      await session.waitForDone(execution.timeout_ms);
-      sessionBackend = session.meta.backend;
-      output = await session.getLastOutput();
-      sessionBackend = session.meta.backend;
+      for (let attempt = 1;attempt <= maxAttempts; attempt++) {
+        try {
+          await session.prompt(renderedTask);
+          await session.waitForDone(execution.timeout_ms);
+          output = await session.getLastOutput();
+          sessionBackend = session.meta.backend;
+          break;
+        } catch (err) {
+          const shouldRetry = attempt < maxAttempts && !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
+          if (!shouldRetry) {
+            throw err;
+          }
+          const delayMs = getRetryDelayMs(attempt);
+          onEvent?.("auto_retry");
+          onProgress?.(`
+↻ transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms
+`);
+          await sleep(delayMs);
+        }
+      }
+      if (output === undefined) {
+        throw new Error("Specialist run finished without output");
+      }
       if (options.keepAlive && onResumeReady) {
         keepAliveActive = true;
         const resumeFn = async (msg) => {
@@ -18590,7 +18688,8 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       durationMs,
       specialistVersion: metadata.version,
       promptHash,
-      beadId
+      beadId,
+      permissionRequired: execution.permission_required
     };
   }
   async startAsync(options, registry2) {
@@ -18609,9 +18708,10 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
     return jobId;
   }
 }
-var PERMISSION_GATED_TOOLS;
+var PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2;
 var init_runner = __esm(() => {
   init_session();
+  init_circuitBreaker();
   init_beads();
   PERMISSION_GATED_TOOLS = {
     bash: ["LOW", "MEDIUM", "HIGH"],
@@ -18655,41 +18755,6 @@ class HookEmitter {
   }
 }
 var init_hooks = () => {};
-
-// src/utils/circuitBreaker.ts
-class CircuitBreaker {
-  states = new Map;
-  threshold;
-  cooldownMs;
-  constructor(options = {}) {
-    this.threshold = options.failureThreshold ?? 3;
-    this.cooldownMs = options.cooldownMs ?? 60000;
-  }
-  getState(backend) {
-    const entry = this.states.get(backend);
-    if (!entry)
-      return "CLOSED";
-    if (entry.state === "OPEN" && Date.now() - entry.openedAt > this.cooldownMs) {
-      entry.state = "HALF_OPEN";
-    }
-    return entry.state;
-  }
-  isAvailable(backend) {
-    return this.getState(backend) !== "OPEN";
-  }
-  recordSuccess(backend) {
-    this.states.set(backend, { state: "CLOSED", failures: 0 });
-  }
-  recordFailure(backend) {
-    const entry = this.states.get(backend) ?? { state: "CLOSED", failures: 0 };
-    entry.failures++;
-    if (entry.failures >= this.threshold) {
-      entry.state = "OPEN";
-      entry.openedAt = Date.now();
-    }
-    this.states.set(backend, entry);
-  }
-}
 
 // src/specialist/timeline-events.ts
 function mapCallbackEventToTimelineEvent(callbackEvent, context) {
@@ -19236,8 +19301,14 @@ class Supervisor {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), result.output, "utf-8");
-      if (result.beadId) {
+      const inputBeadId = runOptions.inputBeadId;
+      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && result.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
+      if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
+        this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(result));
+      } else if (result.beadId) {
         this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+      }
+      if (result.beadId) {
         if (!runOptions.inputBeadId) {
           this.opts.beadsClient?.closeBead(result.beadId, "COMPLETE", result.durationMs, result.model);
         }
@@ -19306,9 +19377,9 @@ var init_supervisor = __esm(() => {
 
 // src/specialist/timeline-query.ts
 import { existsSync as existsSync5, readdirSync as readdirSync2, readFileSync as readFileSync3 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join8 } from "node:path";
 function readJobEvents(jobDir) {
-  const eventsPath = join6(jobDir, "events.jsonl");
+  const eventsPath = join8(jobDir, "events.jsonl");
   if (!existsSync5(eventsPath))
     return [];
   const content = readFileSync3(eventsPath, "utf-8");
@@ -19324,7 +19395,7 @@ function readJobEvents(jobDir) {
   return events;
 }
 function readJobEventsById(jobsDir, jobId) {
-  return readJobEvents(join6(jobsDir, jobId));
+  return readJobEvents(join8(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
   if (!existsSync5(jobsDir))
@@ -19332,7 +19403,7 @@ function readAllJobEvents(jobsDir) {
   const batches = [];
   const entries = readdirSync2(jobsDir);
   for (const entry of entries) {
-    const jobDir = join6(jobsDir, entry);
+    const jobDir = join8(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -19341,7 +19412,7 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join6(jobDir, "status.json");
+    const statusPath = join8(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
     if (existsSync5(statusPath)) {
@@ -19458,13 +19529,13 @@ __export(exports_version, {
 });
 import { createRequire as createRequire2 } from "node:module";
 import { fileURLToPath } from "node:url";
-import { dirname as dirname2, join as join10 } from "node:path";
+import { dirname as dirname2, join as join12 } from "node:path";
 import { existsSync as existsSync8 } from "node:fs";
 async function run2() {
   const req = createRequire2(import.meta.url);
   const here = dirname2(fileURLToPath(import.meta.url));
-  const bundlePkgPath = join10(here, "..", "package.json");
-  const sourcePkgPath = join10(here, "..", "..", "package.json");
+  const bundlePkgPath = join12(here, "..", "package.json");
+  const sourcePkgPath = join12(here, "..", "..", "package.json");
   let pkg;
   if (existsSync8(bundlePkgPath)) {
     pkg = req("../package.json");
@@ -19672,7 +19743,7 @@ __export(exports_init, {
   run: () => run5
 });
 import { copyFileSync, cpSync, existsSync as existsSync9, mkdirSync as mkdirSync2, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join11 } from "node:path";
+import { join as join13 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
   console.log(`  ${green3("✓")} ${msg}`);
@@ -19709,7 +19780,7 @@ function copyCanonicalSpecialists(cwd) {
     skip("no canonical specialists found in package");
     return;
   }
-  const targetDir = join11(cwd, ".specialists", "default", "specialists");
+  const targetDir = join13(cwd, ".specialists", "default", "specialists");
   const files = readdirSync3(sourceDir).filter((f) => f.endsWith(".specialist.yaml"));
   if (files.length === 0) {
     skip("no specialist files found in package");
@@ -19721,8 +19792,8 @@ function copyCanonicalSpecialists(cwd) {
   let copied = 0;
   let skipped = 0;
   for (const file of files) {
-    const src = join11(sourceDir, file);
-    const dest = join11(targetDir, file);
+    const src = join13(sourceDir, file);
+    const dest = join13(targetDir, file);
     if (existsSync9(dest)) {
       skipped++;
     } else {
@@ -19743,7 +19814,7 @@ function installProjectHooks(cwd) {
     skip("no canonical hooks found in package");
     return;
   }
-  const targetDir = join11(cwd, ".claude", "hooks");
+  const targetDir = join13(cwd, ".claude", "hooks");
   const hooks = readdirSync3(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
@@ -19755,8 +19826,8 @@ function installProjectHooks(cwd) {
   let copied = 0;
   let skipped = 0;
   for (const file of hooks) {
-    const src = join11(sourceDir, file);
-    const dest = join11(targetDir, file);
+    const src = join13(sourceDir, file);
+    const dest = join13(targetDir, file);
     if (existsSync9(dest)) {
       skipped++;
     } else {
@@ -19772,8 +19843,8 @@ function installProjectHooks(cwd) {
   }
 }
 function ensureProjectHookWiring(cwd) {
-  const settingsPath = join11(cwd, ".claude", "settings.json");
-  const settingsDir = join11(cwd, ".claude");
+  const settingsPath = join13(cwd, ".claude", "settings.json");
+  const settingsDir = join13(cwd, ".claude");
   if (!existsSync9(settingsDir)) {
     mkdirSync2(settingsDir, { recursive: true });
   }
@@ -19809,8 +19880,8 @@ function installProjectSkills(cwd) {
     return;
   }
   const targetDirs = [
-    join11(cwd, ".claude", "skills"),
-    join11(cwd, ".pi", "skills")
+    join13(cwd, ".claude", "skills"),
+    join13(cwd, ".pi", "skills")
   ];
   let totalCopied = 0;
   let totalSkipped = 0;
@@ -19819,8 +19890,8 @@ function installProjectSkills(cwd) {
       mkdirSync2(targetDir, { recursive: true });
     }
     for (const skill of skills) {
-      const src = join11(sourceDir, skill);
-      const dest = join11(targetDir, skill);
+      const src = join13(sourceDir, skill);
+      const dest = join13(targetDir, skill);
       if (existsSync9(dest)) {
         totalSkipped++;
       } else {
@@ -19837,7 +19908,7 @@ function installProjectSkills(cwd) {
   }
 }
 function createUserDirs(cwd) {
-  const userDir = join11(cwd, ".specialists", "user", "specialists");
+  const userDir = join13(cwd, ".specialists", "user", "specialists");
   if (!existsSync9(userDir)) {
     mkdirSync2(userDir, { recursive: true });
     ok("created .specialists/user/specialists/ for custom specialists");
@@ -19845,8 +19916,8 @@ function createUserDirs(cwd) {
 }
 function createRuntimeDirs(cwd) {
   const runtimeDirs = [
-    join11(cwd, ".specialists", "jobs"),
-    join11(cwd, ".specialists", "ready")
+    join13(cwd, ".specialists", "jobs"),
+    join13(cwd, ".specialists", "ready")
   ];
   let created = 0;
   for (const dir of runtimeDirs) {
@@ -19860,7 +19931,7 @@ function createRuntimeDirs(cwd) {
   }
 }
 function ensureProjectMcp(cwd) {
-  const mcpPath = join11(cwd, MCP_FILE);
+  const mcpPath = join13(cwd, MCP_FILE);
   const mcp = loadJson(mcpPath, { mcpServers: {} });
   mcp.mcpServers ??= {};
   const existing = mcp.mcpServers[MCP_SERVER_NAME];
@@ -19873,7 +19944,7 @@ function ensureProjectMcp(cwd) {
   ok("registered specialists in project .mcp.json");
 }
 function ensureGitignore(cwd) {
-  const gitignorePath = join11(cwd, ".gitignore");
+  const gitignorePath = join13(cwd, ".gitignore");
   const existing = existsSync9(gitignorePath) ? readFileSync5(gitignorePath, "utf-8") : "";
   let added = 0;
   const lines = existing.split(`
@@ -19894,7 +19965,7 @@ function ensureGitignore(cwd) {
   }
 }
 function ensureAgentsMd(cwd) {
-  const agentsPath = join11(cwd, "AGENTS.md");
+  const agentsPath = join13(cwd, "AGENTS.md");
   if (existsSync9(agentsPath)) {
     const existing = readFileSync5(agentsPath, "utf-8");
     if (existing.includes(AGENTS_MARKER)) {
@@ -19990,7 +20061,7 @@ __export(exports_validate, {
 });
 import { readFile as readFile2 } from "node:fs/promises";
 import { existsSync as existsSync10 } from "node:fs";
-import { join as join12 } from "node:path";
+import { join as join14 } from "node:path";
 function parseArgs3(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -20001,12 +20072,12 @@ function parseArgs3(argv) {
 }
 function findSpecialistFile(name) {
   const scanDirs = [
-    join12(process.cwd(), ".specialists", "user", "specialists"),
-    join12(process.cwd(), ".specialists", "default", "specialists"),
-    join12(process.cwd(), "specialists")
+    join14(process.cwd(), ".specialists", "user", "specialists"),
+    join14(process.cwd(), ".specialists", "default", "specialists"),
+    join14(process.cwd(), "specialists")
   ];
   for (const dir of scanDirs) {
-    const candidate = join12(dir, `${name}.specialist.yaml`);
+    const candidate = join14(dir, `${name}.specialist.yaml`);
     if (existsSync10(candidate)) {
       return candidate;
     }
@@ -20381,14 +20452,12 @@ var exports_run = {};
 __export(exports_run, {
   run: () => run8
 });
-import { join as join13 } from "node:path";
+import { join as join15 } from "node:path";
 import { readFileSync as readFileSync7 } from "node:fs";
-import { spawn as spawn2 } from "node:child_process";
-import { createInterface as createInterface2 } from "node:readline";
 async function parseArgs5(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive] [--background] [--json|--raw]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive] [--json|--raw]');
     process.exit(1);
   }
   let prompt = "";
@@ -20396,7 +20465,6 @@ async function parseArgs5(argv) {
   let model;
   let noBeads = false;
   let keepAlive = false;
-  let background = false;
   let outputMode = "human";
   let contextDepth = 1;
   for (let i = 1;i < argv.length; i++) {
@@ -20426,8 +20494,8 @@ async function parseArgs5(argv) {
       continue;
     }
     if (token === "--background") {
-      background = true;
-      continue;
+      console.error("Error: --background was removed. Use start_specialist/feed_specialist (MCP), run normally then feed/poll/result (CLI), or shell backgrounding (&).");
+      process.exit(1);
     }
     if (token === "--json") {
       outputMode = "json";
@@ -20442,7 +20510,6 @@ async function parseArgs5(argv) {
     console.error("Error: use either --prompt or --bead, not both.");
     process.exit(1);
   }
-  let promptFromStdin = false;
   if (!prompt && !beadId && !process.stdin.isTTY) {
     prompt = await new Promise((resolve2) => {
       let buf = "";
@@ -20452,66 +20519,15 @@ async function parseArgs5(argv) {
       });
       process.stdin.on("end", () => resolve2(buf.trim()));
     });
-    promptFromStdin = true;
   }
   if (!prompt && !beadId) {
     console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
     process.exit(1);
   }
-  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth, background, outputMode, promptFromStdin };
-}
-async function runBackground(args) {
-  const childArgv = process.argv.slice(1).filter((a) => a !== "--background");
-  if (args.promptFromStdin && args.prompt) {
-    childArgv.push("--prompt", args.prompt);
-  }
-  const child = spawn2(process.execPath, childArgv, {
-    detached: true,
-    stdio: ["ignore", "ignore", "pipe"]
-  });
-  let resolved = false;
-  const rl = createInterface2({ input: child.stderr });
-  await new Promise((resolve2, reject) => {
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        reject(new Error("Timeout waiting for job ID from background process"));
-      }
-    }, 15000);
-    rl.on("line", (line) => {
-      if (resolved)
-        return;
-      const match = line.match(/\[job started: ([^\]]+)\]/);
-      if (match) {
-        resolved = true;
-        clearTimeout(timeout);
-        process.stdout.write(`${match[1]}
-`);
-        resolve2();
-      }
-    });
-    child.on("error", (err) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        reject(err);
-      }
-    });
-    child.on("exit", (code) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        reject(new Error(`Background process exited with code ${code} before emitting job ID`));
-      }
-    });
-  });
-  rl.close();
-  child.stderr.removeAllListeners();
-  child.stderr.resume();
-  child.unref();
+  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth, outputMode };
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
-  const eventsPath = join13(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join15(jobsDir, jobId, "events.jsonl");
   let linesRead = 0;
   let activeInlinePhase = null;
   const drain = () => {
@@ -20566,21 +20582,18 @@ function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
     drain();
   };
 }
+function formatFooterModel(backend, model) {
+  if (!model)
+    return "";
+  if (!backend)
+    return model;
+  return model.startsWith(`${backend}/`) ? model : `${backend}/${model}`;
+}
 async function run8() {
   const args = await parseArgs5(process.argv.slice(3));
-  if (args.background) {
-    try {
-      await runBackground(args);
-      process.exit(0);
-    } catch (err) {
-      process.stderr.write(`Error: ${err?.message ?? err}
-`);
-      process.exit(1);
-    }
-  }
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join13(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join15(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -20614,7 +20627,7 @@ async function run8() {
     circuitBreaker,
     beadsClient
   });
-  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
   let stopTailer;
   const supervisor = new Supervisor({
     runner,
@@ -20658,11 +20671,12 @@ ${bold8(`Running ${cyan5(args.name)}`)}
   stopTailer?.();
   const status = supervisor.readStatus(jobId);
   const secs = ((status?.last_event_at_ms ?? Date.now()) - (status?.started_at_ms ?? Date.now())) / 1000;
+  const modelLabel = formatFooterModel(status?.backend, status?.model);
   const footer = [
     `job ${jobId}`,
     status?.bead_id ? `bead ${status.bead_id}` : "",
     `${secs.toFixed(1)}s`,
-    status?.model ? dim8(`${status.backend}/${status.model}`) : ""
+    modelLabel ? dim8(modelLabel) : ""
   ].filter(Boolean).join("  ");
   process.stderr.write(`
 ${green7("✓")} ${footer}
@@ -20677,6 +20691,7 @@ var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, gre
 var init_run = __esm(() => {
   init_loader();
   init_runner();
+  init_circuitBreaker();
   init_hooks();
   init_beads();
   init_supervisor();
@@ -20689,8 +20704,8 @@ __export(exports_status, {
   run: () => run9
 });
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync11 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync8 } from "node:fs";
+import { join as join16 } from "node:path";
 function ok2(msg) {
   console.log(`  ${green6("✓")} ${msg}`);
 }
@@ -20740,9 +20755,72 @@ function statusColor(status) {
       return status;
   }
 }
+function parseStatusArgs(argv) {
+  let jsonMode = false;
+  let jobId;
+  for (let i = 0;i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--json") {
+      jsonMode = true;
+      continue;
+    }
+    if (arg === "--job") {
+      const candidate = argv[i + 1];
+      if (!candidate || candidate.startsWith("--")) {
+        throw new Error("--job requires a value");
+      }
+      jobId = candidate;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--job=")) {
+      const candidate = arg.slice("--job=".length).trim();
+      if (!candidate) {
+        throw new Error("--job requires a value");
+      }
+      jobId = candidate;
+    }
+  }
+  return { jsonMode, jobId };
+}
+function countJobEvents(jobsDir, jobId) {
+  const eventsFile = join16(jobsDir, jobId, "events.jsonl");
+  if (!existsSync11(eventsFile))
+    return 0;
+  const raw = readFileSync8(eventsFile, "utf-8").trim();
+  if (!raw)
+    return 0;
+  return raw.split(`
+`).filter((line) => line.trim().length > 0).length;
+}
+function renderJobDetail(job, eventCount) {
+  console.log(`
+${bold7("specialists status")}
+`);
+  section(`Job ${job.id}`);
+  console.log(`  specialist   ${job.specialist}`);
+  console.log(`  status       ${statusColor(job.status)}`);
+  console.log(`  model        ${job.model ?? "n/a"}`);
+  console.log(`  backend      ${job.backend ?? "n/a"}`);
+  console.log(`  elapsed      ${formatElapsed2(job)}`);
+  console.log(`  bead_id      ${job.bead_id ?? "n/a"}`);
+  console.log(`  events       ${eventCount}`);
+  if (job.session_file)
+    console.log(`  session_file ${job.session_file}`);
+  if (job.error)
+    console.log(`  error        ${red2(job.error)}`);
+  console.log();
+}
 async function run9() {
   const argv = process.argv.slice(3);
-  const jsonMode = argv.includes("--json");
+  let parsedArgs;
+  try {
+    parsedArgs = parseStatusArgs(argv);
+  } catch (error2) {
+    console.error(red2(error2.message));
+    process.exit(1);
+  }
+  const { jsonMode, jobId } = parsedArgs;
   const loader = new SpecialistLoader;
   const allSpecialists = await loader.list();
   const piInstalled = isInstalled("pi");
@@ -20752,17 +20830,41 @@ async function run9() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync11(join14(process.cwd(), ".beads"));
+  const beadsPresent = existsSync11(join16(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
   let jobs = [];
+  let supervisor = null;
   if (existsSync11(jobsDir)) {
-    const supervisor = new Supervisor({
+    supervisor = new Supervisor({
       runner: null,
       runOptions: null,
       jobsDir
     });
     jobs = supervisor.listJobs();
+  }
+  if (jobId) {
+    const selectedJob = supervisor?.readStatus(jobId) ?? null;
+    if (!selectedJob) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
+      } else {
+        fail(`job not found: ${jobId}`);
+      }
+      process.exit(1);
+    }
+    const eventCount = countJobEvents(jobsDir, jobId);
+    if (jsonMode) {
+      console.log(JSON.stringify({
+        job: {
+          ...selectedJob,
+          event_count: eventCount
+        }
+      }, null, 2));
+      return;
+    }
+    renderJobDetail(selectedJob, eventCount);
+    return;
   }
   const stalenessMap = {};
   for (const s of allSpecialists) {
@@ -20878,8 +20980,8 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run10
 });
-import { existsSync as existsSync12, readFileSync as readFileSync8 } from "node:fs";
-import { join as join15 } from "node:path";
+import { existsSync as existsSync12, readFileSync as readFileSync9 } from "node:fs";
+import { join as join17 } from "node:path";
 function parseArgs6(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
@@ -20909,9 +21011,9 @@ function parseArgs6(argv) {
 async function run10() {
   const args = parseArgs6(process.argv.slice(3));
   const { jobId } = args;
-  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const resultPath = join15(jobsDir, jobId, "result.txt");
+  const resultPath = join17(jobsDir, jobId, "result.txt");
   if (args.wait) {
     const startMs = Date.now();
     while (true) {
@@ -20925,7 +21027,7 @@ async function run10() {
           console.error(`Result file not found for job ${jobId}`);
           process.exit(1);
         }
-        process.stdout.write(readFileSync8(resultPath, "utf-8"));
+        process.stdout.write(readFileSync9(resultPath, "utf-8"));
         return;
       }
       if (status2.status === "error") {
@@ -20957,7 +21059,7 @@ async function run10() {
     }
     process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
-    process.stdout.write(readFileSync8(resultPath, "utf-8"));
+    process.stdout.write(readFileSync9(resultPath, "utf-8"));
     return;
   }
   if (status.status === "error") {
@@ -20969,7 +21071,7 @@ async function run10() {
     console.error(`Result file not found for job ${jobId}`);
     process.exit(1);
   }
-  process.stdout.write(readFileSync8(resultPath, "utf-8"));
+  process.stdout.write(readFileSync9(resultPath, "utf-8"));
 }
 var dim9 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
@@ -20981,8 +21083,8 @@ var exports_feed = {};
 __export(exports_feed, {
   run: () => run11
 });
-import { existsSync as existsSync13, readFileSync as readFileSync9 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync13, readFileSync as readFileSync10 } from "node:fs";
+import { join as join18 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -21053,10 +21155,10 @@ function makeJobMetaReader(jobsDir) {
   return (jobId) => {
     if (cache.has(jobId))
       return cache.get(jobId);
-    const statusPath = join16(jobsDir, jobId, "status.json");
+    const statusPath = join18(jobsDir, jobId, "status.json");
     let meta = { startedAtMs: Date.now() };
     try {
-      const status = JSON.parse(readFileSync9(statusPath, "utf-8"));
+      const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
       meta = {
         model: status.model,
         backend: status.backend,
@@ -21248,7 +21350,7 @@ async function followMerged(jobsDir, options) {
 }
 async function run11() {
   const options = parseArgs7(process.argv.slice(3));
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
   if (!existsSync13(jobsDir)) {
     console.log(dim7("No jobs directory found."));
     return;
@@ -21276,8 +21378,8 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run12
 });
-import { existsSync as existsSync14, readFileSync as readFileSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { existsSync as existsSync14, readFileSync as readFileSync11 } from "node:fs";
+import { join as join19 } from "node:path";
 function parseArgs8(argv) {
   let jobId;
   let cursor = 0;
@@ -21314,19 +21416,19 @@ function parseArgs8(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
-  const jobDir = join17(jobsDir, jobId);
-  const statusPath = join17(jobDir, "status.json");
+  const jobDir = join19(jobsDir, jobId);
+  const statusPath = join19(jobDir, "status.json");
   let status = null;
   if (existsSync14(statusPath)) {
     try {
-      status = JSON.parse(readFileSync10(statusPath, "utf-8"));
+      status = JSON.parse(readFileSync11(statusPath, "utf-8"));
     } catch {}
   }
-  const resultPath = join17(jobDir, "result.txt");
+  const resultPath = join19(jobDir, "result.txt");
   let fullOutput = "";
   if (existsSync14(resultPath)) {
     try {
-      fullOutput = readFileSync10(resultPath, "utf-8");
+      fullOutput = readFileSync11(resultPath, "utf-8");
     } catch {}
   }
   const events = readJobEventsById(jobsDir, jobId);
@@ -21358,8 +21460,8 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
 }
 async function run12() {
   const { jobId, cursor, outputCursor } = parseArgs8(process.argv.slice(3));
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
-  const jobDir = join17(jobsDir, jobId);
+  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
+  const jobDir = join19(jobsDir, jobId);
   if (!existsSync14(jobDir)) {
     const result2 = {
       job_id: jobId,
@@ -21391,7 +21493,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run13
 });
-import { join as join18 } from "node:path";
+import { join as join20 } from "node:path";
 import { writeFileSync as writeFileSync6 } from "node:fs";
 async function run13() {
   const jobId = process.argv[3];
@@ -21400,7 +21502,7 @@ async function run13() {
     console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join20(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -21441,7 +21543,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run14
 });
-import { join as join19 } from "node:path";
+import { join as join21 } from "node:path";
 import { writeFileSync as writeFileSync7 } from "node:fs";
 async function run14() {
   const jobId = process.argv[3];
@@ -21450,7 +21552,7 @@ async function run14() {
     console.error('Usage: specialists|sp resume <job-id> "<task>"');
     process.exit(1);
   }
-  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join21(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -21504,14 +21606,14 @@ var exports_stop = {};
 __export(exports_stop, {
   run: () => run16
 });
-import { join as join20 } from "node:path";
+import { join as join22 } from "node:path";
 async function run16() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join20(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join22(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -21622,9 +21724,11 @@ async function run17() {
   lines.push(`  Pipe a prompt from stdin:`);
   lines.push(`  ${cmd2("cat my-brief.md | specialists run code-review")}`);
   lines.push("");
-  lines.push(section2("5. Background Job Lifecycle"));
+  lines.push(section2("5. Async Job Lifecycle"));
   lines.push("");
-  lines.push(`  Use Claude Code's native backgrounding or run in a separate terminal.`);
+  lines.push(`  ${bold9("MCP pattern")}: ${cmd2("start_specialist")} → ${cmd2("feed_specialist")} (returns job_id directly)`);
+  lines.push(`  ${bold9("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim11("[job started: <id>]")} to stderr`);
+  lines.push(`  ${bold9("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push("");
   lines.push(`  ${bold9("Watch progress")} — stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
@@ -21781,8 +21885,8 @@ __export(exports_doctor, {
   run: () => run18
 });
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { existsSync as existsSync15, mkdirSync as mkdirSync3, readFileSync as readFileSync11, readdirSync as readdirSync4 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync3, readFileSync as readFileSync12, readdirSync as readdirSync4 } from "node:fs";
+import { join as join23 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green12("✓")} ${msg}`);
 }
@@ -21814,7 +21918,7 @@ function loadJson2(path) {
   if (!existsSync15(path))
     return null;
   try {
-    return JSON.parse(readFileSync11(path, "utf8"));
+    return JSON.parse(readFileSync12(path, "utf8"));
   } catch {
     return null;
   }
@@ -21857,7 +21961,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync15(join21(CWD, ".beads")))
+  if (existsSync15(join23(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -21877,7 +21981,7 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join21(HOOKS_DIR, name);
+    const dest = join23(HOOKS_DIR, name);
     if (!existsSync15(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
@@ -21922,9 +22026,9 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join21(CWD, ".specialists");
-  const jobsDir = join21(rootDir, "jobs");
-  const readyDir = join21(rootDir, "ready");
+  const rootDir = join23(CWD, ".specialists");
+  const jobsDir = join23(rootDir, "jobs");
+  const readyDir = join23(rootDir, "ready");
   let allOk = true;
   if (!existsSync15(rootDir)) {
     warn2(".specialists/ not found in current project");
@@ -21946,7 +22050,7 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join21(CWD, ".specialists", "jobs");
+  const jobsDir = join23(CWD, ".specialists", "jobs");
   if (!existsSync15(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
@@ -21965,11 +22069,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join21(jobsDir, jobId, "status.json");
+    const statusPath = join23(jobsDir, jobId, "status.json");
     if (!existsSync15(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync11(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync12(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -22021,11 +22125,11 @@ ${bold10("specialists doctor")}
 var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join21(CWD, ".claude");
-  SPECIALISTS_DIR = join21(CWD, ".specialists");
-  HOOKS_DIR = join21(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join21(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join21(CWD, ".mcp.json");
+  CLAUDE_DIR = join23(CWD, ".claude");
+  SPECIALISTS_DIR = join23(CWD, ".specialists");
+  HOOKS_DIR = join23(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join23(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join23(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -22099,11 +22203,11 @@ async function run20() {
     '    specialists run <name> --prompt "..." --json   # NDJSON event stream to stdout',
     '    specialists run <name> --prompt "..." --raw    # legacy: raw LLM text deltas',
     "",
-    "  Background execution",
-    '    specialists run <name> --prompt "..." --background   # detach; prints job ID',
-    "    specialists result <job-id> --wait                   # block until done",
-    "    specialists result <job-id> --wait --timeout 30000   # with ms timeout",
-    "    specialists poll <job-id> --json                     # machine-readable status",
+    "  Async patterns",
+    "    MCP:   start_specialist + feed_specialist",
+    '    CLI:   specialists run <name> --prompt "..."       # job ID prints on stderr',
+    "           specialists feed|poll|result <job-id>         # observe/progress/final output",
+    '    Shell: specialists run <name> --prompt "..." &      # native shell backgrounding',
     "",
     bold12("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
@@ -22123,7 +22227,7 @@ async function run20() {
     "  specialists feed -f                             # stream all job events",
     '  specialists steer <job-id> "focus only on supervisor.ts"',
     '  specialists resume <job-id> "now write the fix"',
-    '  specialists run debugger --prompt "why does auth fail" --background',
+    '  specialists run debugger --prompt "why does auth fail"',
     "  specialists result <job-id> --wait",
     "",
     bold12("More help:"),
@@ -22147,7 +22251,7 @@ var init_help = __esm(() => {
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
     ["list", "List specialists in this project"],
     ["validate", "Validate a specialist YAML against the schema"],
-    ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text, --background to detach"],
+    ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
     ["feed", "Tail job events; use -f to follow all jobs"],
     ["poll", "Machine-readable job status polling (for scripts/Claude Code)"],
     ["result", "Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit"],
@@ -29378,7 +29482,7 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join9 } from "node:path";
+import { join as join11 } from "node:path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -29445,6 +29549,7 @@ var logger = {
 init_loader();
 init_runner();
 init_hooks();
+init_circuitBreaker();
 init_beads();
 
 // src/tools/specialist/list_specialists.tool.ts
@@ -29570,7 +29675,7 @@ var runParallelSchema = objectType({
 function createRunParallelTool(runner) {
   return {
     name: "run_parallel",
-    description: "[DEPRECATED v3] Execute multiple specialists concurrently. Returns aggregated results. Prefer CLI background jobs for async work.",
+    description: "[DEPRECATED v3] Execute multiple specialists concurrently. Returns aggregated results. Prefer start_specialist/feed_specialist for async orchestration.",
     inputSchema: runParallelSchema,
     async execute(input, onProgress) {
       if (input.merge_strategy === "pipeline") {
@@ -29831,6 +29936,8 @@ class JobRegistry {
 
 // src/tools/specialist/start_specialist.tool.ts
 init_zod();
+init_supervisor();
+import { join as join4 } from "node:path";
 var startSpecialistSchema = objectType({
   name: stringType().describe("Specialist identifier (e.g. codebase-explorer)"),
   prompt: stringType().describe("The task or question for the specialist"),
@@ -29838,19 +29945,33 @@ var startSpecialistSchema = objectType({
   backend_override: stringType().optional().describe("Force a specific backend (gemini, qwen, anthropic)"),
   bead_id: stringType().optional().describe("Existing bead ID to associate with this run (propagated into status.json and run_start event)")
 });
-function createStartSpecialistTool(runner, registry2) {
+function createStartSpecialistTool(runner, beadsClient) {
   return {
     name: "start_specialist",
-    description: "Start a specialist asynchronously. Returns job_id immediately. Prefer CLI: `specialists run <name> --background`. " + "Use feed_specialist to stream events and track progress (pass job_id and --follow for live output). " + "Use specialist_status for circuit breaker health checks. " + "Use stop_specialist to cancel. Enables true parallel execution of multiple specialists.",
+    description: "Start a specialist asynchronously. Returns job_id immediately. " + "Use feed_specialist to stream events and track progress (pass job_id and --follow for live output). " + "Use specialist_status for circuit breaker health checks. " + "Use stop_specialist to cancel. Enables true parallel execution of multiple specialists.",
     inputSchema: startSpecialistSchema,
     async execute(input) {
-      const jobId = await runner.startAsync({
-        name: input.name,
-        prompt: input.prompt,
-        variables: input.variables,
-        backendOverride: input.backend_override,
-        inputBeadId: input.bead_id
-      }, registry2);
+      const jobsDir = join4(process.cwd(), ".specialists", "jobs");
+      const jobStarted = new Promise((resolve2, reject) => {
+        const supervisor = new Supervisor({
+          runner,
+          runOptions: {
+            name: input.name,
+            prompt: input.prompt,
+            variables: input.variables,
+            backendOverride: input.backend_override,
+            inputBeadId: input.bead_id
+          },
+          jobsDir,
+          beadsClient,
+          onJobStarted: ({ id }) => resolve2(id)
+        });
+        supervisor.run().catch((error2) => {
+          logger.error(`start_specialist job failed: ${error2 instanceof Error ? error2.message : String(error2)}`);
+          reject(error2);
+        });
+      });
+      const jobId = await jobStarted;
       return { job_id: jobId };
     }
   };
@@ -29858,20 +29979,42 @@ function createStartSpecialistTool(runner, registry2) {
 
 // src/tools/specialist/stop_specialist.tool.ts
 init_zod();
-var stopSpecialistSchema = exports_external.object({
-  job_id: exports_external.string().describe("Job ID returned by start_specialist")
+init_supervisor();
+import { join as join5 } from "node:path";
+var stopSpecialistSchema = objectType({
+  job_id: stringType().describe("Job ID returned by start_specialist")
 });
-function createStopSpecialistTool(registry2) {
+function createStopSpecialistTool() {
   return {
     name: "stop_specialist",
-    description: "[DEPRECATED v3] Cancel a running specialist job. Prefer CLI: `specialists stop <id>`. Kills the pi process immediately and sets status to cancelled. Subsequent feed_specialist calls will show status: cancelled with output buffered up to that point.",
+    description: "Cancel a running specialist job by sending SIGTERM to its recorded process. Works for jobs started via start_specialist and CLI background runs.",
     inputSchema: stopSpecialistSchema,
     async execute(input) {
-      const result = registry2.cancel(input.job_id);
-      if (!result) {
+      const jobsDir = join5(process.cwd(), ".specialists", "jobs");
+      const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
+      const status = supervisor.readStatus(input.job_id);
+      if (!status) {
         return { status: "error", error: `Job not found: ${input.job_id}`, job_id: input.job_id };
       }
-      return { ...result, job_id: input.job_id };
+      if (status.status === "done" || status.status === "error") {
+        return {
+          status: "error",
+          error: `Job is already ${status.status}`,
+          job_id: input.job_id
+        };
+      }
+      if (!status.pid) {
+        return { status: "error", error: `No PID recorded for job ${input.job_id}`, job_id: input.job_id };
+      }
+      try {
+        process.kill(status.pid, "SIGTERM");
+        return { status: "cancelled", job_id: input.job_id, pid: status.pid };
+      } catch (err) {
+        if (err?.code === "ESRCH") {
+          return { status: "error", error: `Process ${status.pid} not found`, job_id: input.job_id };
+        }
+        return { status: "error", error: err?.message ?? String(err), job_id: input.job_id };
+      }
     }
   };
 }
@@ -29880,15 +30023,15 @@ function createStopSpecialistTool(registry2) {
 init_zod();
 init_supervisor();
 import { writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { join as join6 } from "node:path";
 var steerSpecialistSchema = exports_external.object({
-  job_id: exports_external.string().describe("Job ID returned by start_specialist or specialists run --background"),
+  job_id: exports_external.string().describe("Job ID returned by start_specialist or printed by specialists run"),
   message: exports_external.string().describe('Steering instruction to send to the running agent (e.g. "focus only on supervisor.ts")')
 });
 function createSteerSpecialistTool(registry2) {
   return {
     name: "steer_specialist",
-    description: "Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call. Works for both in-process jobs (start_specialist) and background CLI jobs (specialists run --background).",
+    description: "Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call. Works for both in-process jobs (start_specialist) and CLI-started jobs (specialists run).",
     inputSchema: steerSpecialistSchema,
     async execute(input) {
       const snap = registry2.snapshot(input.job_id);
@@ -29899,7 +30042,7 @@ function createSteerSpecialistTool(registry2) {
         }
         return { status: "error", error: result.error, job_id: input.job_id };
       }
-      const jobsDir = join4(process.cwd(), ".specialists", "jobs");
+      const jobsDir = join6(process.cwd(), ".specialists", "jobs");
       const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
       const status = supervisor.readStatus(input.job_id);
       if (!status) {
@@ -29930,7 +30073,7 @@ init_zod();
 init_zod();
 init_supervisor();
 import { writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join7 } from "node:path";
 var resumeSpecialistSchema = exports_external.object({
   job_id: exports_external.string().describe("Job ID of a waiting keep-alive specialist session"),
   task: exports_external.string().describe("Next task/prompt to send to the specialist (conversation history is retained)")
@@ -29938,7 +30081,7 @@ var resumeSpecialistSchema = exports_external.object({
 function createResumeSpecialistTool(registry2) {
   return {
     name: "resume_specialist",
-    description: "Resume a waiting keep-alive specialist session with a next-turn prompt. " + "The Pi session retains full conversation history between turns. " + "Only valid for jobs in waiting state (started with keepAlive=true, CLI: --keep-alive --background). " + "Use steer_specialist for mid-run steering of running jobs.",
+    description: "Resume a waiting keep-alive specialist session with a next-turn prompt. " + "The Pi session retains full conversation history between turns. " + "Only valid for jobs in waiting state (started with keepAlive=true, CLI: --keep-alive). " + "Use steer_specialist for mid-run steering of running jobs.",
     inputSchema: resumeSpecialistSchema,
     async execute(input) {
       const snap = registry2.snapshot(input.job_id);
@@ -29952,7 +30095,7 @@ function createResumeSpecialistTool(registry2) {
         }
         return { status: "error", error: result.error, job_id: input.job_id };
       }
-      const jobsDir = join5(process.cwd(), ".specialists", "jobs");
+      const jobsDir = join7(process.cwd(), ".specialists", "jobs");
       const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
       const status = supervisor.readStatus(input.job_id);
       if (!status) {
@@ -29998,9 +30141,9 @@ function createFollowUpSpecialistTool(registry2) {
 init_zod();
 init_timeline_query();
 import { existsSync as existsSync6, readFileSync as readFileSync4 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join9 } from "node:path";
 var feedSpecialistSchema = objectType({
-  job_id: stringType().describe("Job ID returned by start_specialist or specialists run --background"),
+  job_id: stringType().describe("Job ID returned by start_specialist or printed by specialists run"),
   cursor: numberType().int().min(0).optional().default(0).describe("Event index offset from previous call. Pass next_cursor from the last response to receive only new events. Omit (or pass 0) for the first call."),
   limit: numberType().int().min(1).max(100).optional().default(50).describe("Maximum number of events to return per call.")
 });
@@ -30011,7 +30154,7 @@ function createFeedSpecialistTool(jobsDir) {
     inputSchema: feedSpecialistSchema,
     async execute(input) {
       const { job_id, cursor = 0, limit = 50 } = input;
-      const statusPath = join7(jobsDir, job_id, "status.json");
+      const statusPath = join9(jobsDir, job_id, "status.json");
       if (!existsSync6(statusPath)) {
         return { error: `Job not found: ${job_id}`, job_id };
       }
@@ -30056,12 +30199,12 @@ init_zod();
 init_zod();
 import { spawnSync as spawnSync4 } from "node:child_process";
 import { existsSync as existsSync7 } from "node:fs";
-import { join as join8 } from "node:path";
+import { join as join10 } from "node:path";
 var specialistInitSchema = objectType({});
 function createSpecialistInitTool(loader, deps) {
   const resolved = deps ?? {
     bdAvailable: () => spawnSync4("bd", ["--version"], { stdio: "ignore" }).status === 0,
-    beadsExists: () => existsSync7(join8(process.cwd(), ".beads")),
+    beadsExists: () => existsSync7(join10(process.cwd(), ".beads")),
     bdInit: () => spawnSync4("bd", ["init"], { stdio: "ignore" })
   };
   return {
@@ -30096,19 +30239,19 @@ class SpecialistsServer {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
     const hooks = new HookEmitter({
-      tracePath: join9(process.cwd(), ".specialists", "trace.jsonl")
+      tracePath: join11(process.cwd(), ".specialists", "trace.jsonl")
     });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     const registry2 = new JobRegistry;
-    const jobsDir = join9(process.cwd(), ".specialists", "jobs");
+    const jobsDir = join11(process.cwd(), ".specialists", "jobs");
     this.tools = [
       createListSpecialistsTool(loader),
       createUseSpecialistTool(runner),
       createRunParallelTool(runner),
       createSpecialistStatusTool(loader, circuitBreaker),
-      createStartSpecialistTool(runner, registry2),
-      createStopSpecialistTool(registry2),
+      createStartSpecialistTool(runner, beadsClient),
+      createStopSpecialistTool(),
       createSteerSpecialistTool(registry2),
       createResumeSpecialistTool(registry2),
       createFollowUpSpecialistTool(registry2),
@@ -30399,10 +30542,10 @@ async function run21() {
         "  Use --bead for tracked work.",
         "  Use --prompt for quick ad-hoc work.",
         "",
-        "Background execution:",
-        "  Use Claude Code's native backgrounding (run_in_background: true)",
-        "  or run in a separate terminal and poll with:",
-        "    specialists poll <job-id> --json",
+        "Async execution patterns:",
+        "  MCP:   start_specialist + feed_specialist",
+        "  CLI:   run prints [job started: <id>] on stderr, then use feed/poll/result",
+        '  Shell: specialists run <name> --prompt "..." &',
         ""
       ].join(`
 `));
@@ -30446,7 +30589,7 @@ async function run21() {
         "",
         "Usage: specialists result <job-id>",
         "",
-        "Print the final output of a completed background job.",
+        "Print the final output of a completed job.",
         "Exits with code 1 if the job is still running or failed.",
         "",
         "Examples:",
@@ -30471,7 +30614,7 @@ async function run21() {
         "Usage: specialists feed <job-id> [options]",
         "       specialists feed -f [--forever]",
         "",
-        "Read background job events.",
+        "Read job events.",
         "",
         "Modes:",
         "  specialists feed <job-id>        Replay events for one job",

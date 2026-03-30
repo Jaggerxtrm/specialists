@@ -19,6 +19,7 @@ export interface BeadRecord {
   title: string;
   description?: string;
   notes?: string;
+  parent?: string;
   dependencies?: BeadDependency[];
 }
 
@@ -27,6 +28,10 @@ export function buildBeadContext(bead: BeadRecord, completedBlockers: BeadRecord
 
   if (bead.description?.trim()) {
     lines.push(bead.description.trim());
+  }
+
+  if (bead.parent?.trim()) {
+    lines.push('', '## Parent epic', bead.parent.trim());
   }
 
   if (bead.notes?.trim()) {

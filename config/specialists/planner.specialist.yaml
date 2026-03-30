@@ -17,7 +17,7 @@ specialist:
     model: anthropic/claude-sonnet-4-6
     fallback_model: google-gemini-cli/gemini-3.1-pro-preview
     timeout_ms: 0
-    stall_timeout_ms: 60000
+    stall_timeout_ms: 120000
     response_format: markdown
     permission_required: HIGH
 
@@ -43,6 +43,9 @@ specialist:
       - **Skip Phase 1 (clarification)**: the task prompt is fully specified —
         proceed directly to Phase 2
       - **Phase 4**: use `bd` CLI directly to create real issues — no approval step
+      - **Parent-epic routing (mandatory when `$bead_id` is present)**:
+        run `bd show $bead_id --json`; if the bead has a `parent`, reuse that
+        parent epic for all newly created children and do NOT create a new epic
       - **Phase 5**: apply test-planning logic inline; do NOT invoke /test-planning
         as a slash command
       - **Phase 6**: do NOT claim any issue — output the structured result and stop

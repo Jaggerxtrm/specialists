@@ -34,6 +34,7 @@ export interface RunResult {
   specialistVersion: string;
   promptHash: string;
   beadId?: string;
+  permissionRequired?: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>>;
@@ -471,6 +472,7 @@ export class SpecialistRunner {
       specialistVersion: metadata.version,
       promptHash,
       beadId,
+      permissionRequired: execution.permission_required,
     };
   }
 

@@ -177,10 +177,20 @@ Think through the plan before writing any bd commands. Use structured CoT:
 
 ### Determine epic scope
 
-If the work fits under an **existing open epic** (`bd ready` to check), create tasks
-under it with `--parent=<existing-epic-id>` and skip creating a new epic.
+If planning is started from `--bead <id>`, check whether that bead already belongs to an epic:
 
-If this is genuinely new work with no parent, create the epic first.
+```bash
+bd show <bead-id> --json
+```
+
+If the bead has `parent`, you MUST reuse that parent epic:
+- set `<epic-id> = <bead.parent>`
+- create all new implementation/test children with `--parent=<epic-id>`
+- do **not** create a new sub-epic under the child bead
+
+If there is no parent on the source bead, then use normal behavior:
+- reuse an existing open epic when appropriate (`bd ready`)
+- otherwise create a new epic first
 
 ### Create the epic (new work only)
 

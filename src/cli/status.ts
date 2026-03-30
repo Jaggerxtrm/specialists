@@ -1,7 +1,7 @@
 // src/cli/status.ts
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
 import { Supervisor } from '../specialist/supervisor.js';
@@ -55,10 +55,78 @@ function statusColor(status: string): string {
   }
 }
 
+interface ParsedStatusArgs {
+  jsonMode: boolean;
+  jobId?: string;
+}
+
+function parseStatusArgs(argv: string[]): ParsedStatusArgs {
+  let jsonMode = false;
+  let jobId: string | undefined;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--json') {
+      jsonMode = true;
+      continue;
+    }
+    if (arg === '--job') {
+      const candidate = argv[i + 1];
+      if (!candidate || candidate.startsWith('--')) {
+        throw new Error('--job requires a value');
+      }
+      jobId = candidate;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--job=')) {
+      const candidate = arg.slice('--job='.length).trim();
+      if (!candidate) {
+        throw new Error('--job requires a value');
+      }
+      jobId = candidate;
+    }
+  }
+
+  return { jsonMode, jobId };
+}
+
+function countJobEvents(jobsDir: string, jobId: string): number {
+  const eventsFile = join(jobsDir, jobId, 'events.jsonl');
+  if (!existsSync(eventsFile)) return 0;
+  const raw = readFileSync(eventsFile, 'utf-8').trim();
+  if (!raw) return 0;
+  return raw.split('\n').filter(line => line.trim().length > 0).length;
+}
+
+function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
+  console.log(`\n${bold('specialists status')}\n`);
+  section(`Job ${job.id}`);
+  console.log(`  specialist   ${job.specialist}`);
+  console.log(`  status       ${statusColor(job.status)}`);
+  console.log(`  model        ${job.model ?? 'n/a'}`);
+  console.log(`  backend      ${job.backend ?? 'n/a'}`);
+  console.log(`  elapsed      ${formatElapsed(job)}`);
+  console.log(`  bead_id      ${job.bead_id ?? 'n/a'}`);
+  console.log(`  events       ${eventCount}`);
+  if (job.session_file) console.log(`  session_file ${job.session_file}`);
+  if (job.error) console.log(`  error        ${red(job.error)}`);
+  console.log();
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const argv = process.argv.slice(3);
-  const jsonMode = argv.includes('--json');
+
+  let parsedArgs: ParsedStatusArgs;
+  try {
+    parsedArgs = parseStatusArgs(argv);
+  } catch (error) {
+    console.error(red((error as Error).message));
+    process.exit(1);
+  }
+
+  const { jsonMode, jobId } = parsedArgs;
 
   // ── Collect all data ────────────────────────────────────────────────────────
   const loader = new SpecialistLoader();
@@ -84,13 +152,41 @@ export async function run(): Promise<void> {
 
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   let jobs: SupervisorStatus[] = [];
+  let supervisor: Supervisor | null = null;
   if (existsSync(jobsDir)) {
-    const supervisor = new Supervisor({
+    supervisor = new Supervisor({
       runner: null as any,
       runOptions: null as any,
       jobsDir,
     });
     jobs = supervisor.listJobs();
+  }
+
+  if (jobId) {
+    const selectedJob = supervisor?.readStatus(jobId) ?? null;
+    if (!selectedJob) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
+      } else {
+        fail(`job not found: ${jobId}`);
+      }
+      process.exit(1);
+    }
+
+    const eventCount = countJobEvents(jobsDir, jobId);
+
+    if (jsonMode) {
+      console.log(JSON.stringify({
+        job: {
+          ...selectedJob,
+          event_count: eventCount,
+        },
+      }, null, 2));
+      return;
+    }
+
+    renderJobDetail(selectedJob, eventCount);
+    return;
   }
 
   // Collect staleness for specialists

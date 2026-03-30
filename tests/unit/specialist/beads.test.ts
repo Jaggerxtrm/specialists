@@ -81,6 +81,23 @@ describe('buildBeadContext', () => {
     ].join('\n'));
   });
 
+  it('includes parent epic when provided on the source bead', () => {
+    const context = buildBeadContext({
+      id: 'unitAI-55d',
+      title: 'Refactor auth module',
+      description: 'Extract JWT validation into AuthService.',
+      parent: 'xtrm-p38n',
+    });
+
+    expect(context).toBe([
+      '# Task: Refactor auth module',
+      'Extract JWT validation into AuthService.',
+      '',
+      '## Parent epic',
+      'xtrm-p38n',
+    ].join('\n'));
+  });
+
   it('omits context section when no blockers provided', () => {
     const context = buildBeadContext({
       id: 'unitAI-7fm',

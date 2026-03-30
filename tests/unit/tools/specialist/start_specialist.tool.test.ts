@@ -76,4 +76,32 @@ describe('start_specialist tool', () => {
       inputBeadId: 'unitAI-ext-42',
     }));
   });
+
+  it('writes READ_ONLY --bead output back to bead notes when beads client is provided', async () => {
+    const runner = {
+      run: vi.fn(async (_options, _onProgress, _onEvent, onMeta) => {
+        onMeta?.({ backend: 'anthropic', model: 'claude-haiku-4-5' });
+        return {
+          output: 'readonly finding',
+          backend: 'anthropic',
+          model: 'claude-haiku-4-5',
+          durationMs: 10,
+          specialistVersion: '1.0.0',
+          promptHash: 'hash',
+          beadId: undefined,
+          permissionRequired: 'READ_ONLY',
+        };
+      }),
+    } as any;
+    const beadsClient = { updateBeadNotes: vi.fn(), closeBead: vi.fn() } as any;
+    const tool = createStartSpecialistTool(runner, beadsClient);
+
+    await tool.execute({ name: 'explorer', prompt: 'inspect', bead_id: 'unitAI-ro-1' });
+
+    expect(beadsClient.updateBeadNotes).toHaveBeenCalledWith(
+      'unitAI-ro-1',
+      expect.stringContaining('readonly finding'),
+    );
+    expect(beadsClient.closeBead).not.toHaveBeenCalled();
+  });
 });

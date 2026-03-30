@@ -199,6 +199,33 @@ describe('Supervisor', () => {
     expect(closeBead).not.toHaveBeenCalled();
   });
 
+  it('appends READ_ONLY result to input bead notes after completion', async () => {
+    const updateBeadNotes = vi.fn();
+    const closeBead = vi.fn();
+    const beadsClient = { updateBeadNotes, closeBead } as any;
+    const runner = makeMockRunner('readonly output', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'readonly output',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 100,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: undefined,
+      permissionRequired: 'READ_ONLY',
+    });
+    const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-readonly-1' };
+    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+
+    await sup.run();
+
+    expect(updateBeadNotes).toHaveBeenCalledWith(
+      'unitAI-readonly-1',
+      expect.stringContaining('readonly output'),
+    );
+    expect(closeBead).not.toHaveBeenCalled();
+  });
+
   it('on runner error: status=error, error field set, no result.txt written', async () => {
     const runner = {
       run: vi.fn().mockRejectedValue(new Error('backend exploded')),

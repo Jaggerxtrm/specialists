@@ -12,7 +12,7 @@ specialist:
     model: anthropic/claude-sonnet-4-6
     fallback_model: google-gemini-cli/gemini-3.1-pro-preview
     timeout_ms: 0
-    stall_timeout_ms: 60000
+    stall_timeout_ms: 120000
     response_format: markdown
     permission_required: READ_ONLY
 

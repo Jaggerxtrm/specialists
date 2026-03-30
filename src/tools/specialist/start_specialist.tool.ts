@@ -2,6 +2,7 @@
 import * as z from 'zod';
 import type { SpecialistRunner } from '../../specialist/runner.js';
 import { Supervisor } from '../../specialist/supervisor.js';
+import type { BeadsClient } from '../../specialist/beads.js';
 import { join } from 'node:path';
 import { logger } from '../../utils/logger.js';
 
@@ -13,7 +14,7 @@ export const startSpecialistSchema = z.object({
   bead_id: z.string().optional().describe('Existing bead ID to associate with this run (propagated into status.json and run_start event)'),
 });
 
-export function createStartSpecialistTool(runner: SpecialistRunner) {
+export function createStartSpecialistTool(runner: SpecialistRunner, beadsClient?: BeadsClient) {
   return {
     name: 'start_specialist' as const,
     description:
@@ -36,6 +37,7 @@ export function createStartSpecialistTool(runner: SpecialistRunner) {
             inputBeadId: input.bead_id,
           },
           jobsDir,
+          beadsClient,
           onJobStarted: ({ id }) => resolve(id),
         });
 
