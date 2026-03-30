@@ -8,7 +8,7 @@ description: >
   jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.3
+version: 3.4
 ---
 
 # Specialists Usage
@@ -31,6 +31,7 @@ Before starting any substantial task, ask: is this worth delegating?
 - It spans multiple files or modules
 - A fresh perspective adds value (code review, security audit)
 - It can run in the background while you do other things
+- You have multiple independent tasks — dispatch them as a wave
 
 **Do it yourself when:**
 - It's a single-file edit or quick config change
@@ -46,52 +47,46 @@ When in doubt, delegate. Specialists run in parallel — you don't have to wait.
 For tracked work, always use `--bead`. This gives the specialist your issue as context,
 links results back to the tracker, and creates an audit trail.
 
-### CLI commands surfaced from runtime exploration
+### CLI commands
 
-- `specialists init`
-- `specialists list`
-- `specialists run <name> --bead <id>`
-- `specialists run <name> --prompt "..."`
-- `specialists feed -f` / `specialists feed <job-id>`
-- `specialists result <job-id>`
-- `specialists resume <job-id> "next task"`
-- `specialists stop <job-id>`
+```bash
+specialists init                              # first-time project setup
+specialists list                              # discover available specialists
+specialists run <name> --bead <id>            # foreground run (streams output)
+specialists run <name> --bead <id> --background  # returns job ID immediately
+specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
+specialists feed -f                           # tail merged feed (all jobs)
+specialists feed <job-id>                     # events for a specific job
+specialists result <job-id>                   # final output text
+specialists resume <job-id> "next task"       # resume a waiting keep-alive job
+specialists steer <job-id> "new direction"    # redirect a running job mid-run
+specialists stop <job-id>                     # cancel a job
+specialists edit <name>                       # edit a specialist's YAML config
+specialists doctor                            # health check
+```
+
+### Typical flow
 
 ```bash
 # 1. Create a bead describing what you need
-bd create --title "Audit authentication module for security issues" --type task --priority 2
-# → unitAI-abc
+bd create --title "Fix auth token refresh bug" --type bug --priority 2
+# -> unitAI-abc
 
-# 2. Find and run the right specialist
-specialists list
-process start "specialists run debugger --bead unitAI-abc" name="sp-debugger"
+# 2. Run the right specialist against the bead
+specialists run executor --bead unitAI-abc --background
+# -> Job started: a1b2c3
 
-# 3. Keep working; check in when ready
-process output id="sp-debugger"
+# 3. Monitor (pick one)
+specialists feed a1b2c3              # check events so far
+specialists feed -f                  # tail all active jobs
 
 # 4. Read results and close
-specialists result <job-id>
-bd close unitAI-abc --reason "2 issues found, filed as follow-ups"
+specialists result a1b2c3
+bd close unitAI-abc --reason "Fixed: token refresh now retries on 401"
 ```
 
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
-
-### Background runs in pi: use process extension
-
-Prefer process-managed background runs over ad-hoc polling:
-
-```bash
-process start "specialists run explorer --bead unitAI-abc" name="sp-explorer"
-process list
-process output id="sp-explorer"
-process logs id="sp-explorer"
-process kill id="sp-explorer"
-process clear
-```
-
-Process extension features to rely on: unified log dock, follow mode, focus mode,
-file-based logs (temp files, not memory), friendly process names, and auto-cleanup.
 
 ---
 
@@ -99,60 +94,107 @@ file-based logs (temp files, not memory), friendly process names, and auto-clean
 
 Run `specialists list` to see what's available. Match by task type:
 
-| Task type | Look for |
-|-----------|----------|
-| Bug / regression investigation | `debugger`, `overthinker` |
-| Implementation / heavy coding | `executor` |
-| Code review | `parallel-review`, `explorer` |
-| Test generation | `test-runner` |
-| Architecture / exploration | `explorer`, `planner` |
-| Planning / scoping | `planner` |
-| Documentation sync | `sync-docs` |
+| Task type | Best specialist | Why |
+|-----------|----------------|-----|
+| Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously |
+| Bug investigation | **debugger** (claude-sonnet-4-6) | Systematic root cause analysis |
+| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion |
+| Code review | **parallel-review** (claude-sonnet-4-6) | Multi-backend concurrent review |
+| Architecture exploration | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY |
+| Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
+| Planning / scoping | **planner** (claude-sonnet-4-6) | Structured issue breakdown with deps |
+| Doc drift / audit | **sync-docs** (claude-sonnet-4-6) | Detects stale docs, restructures content |
+| Test generation | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
+| Specialist authoring | **specialists-creator** (claude-sonnet-4-6) | Guides YAML creation against schema |
 
 When unsure, read descriptions: `specialists list --json | jq '.[].description'`
 
+### Specialist selection lessons
+
+- **sync-docs** excels at drift audits but can stall on dense reference tasks. If it stalls, switch to **explorer**.
+- **explorer** is fast and cheap (Haiku) but READ_ONLY — it produces content in its result output but cannot write files or update beads. The coordinator must pipe output back.
+- **executor** is the workhorse — HIGH permissions, writes code, runs tests, closes beads. But it may create unnecessary sub-beads (see Known Issues).
+- **overthinker** is READ_ONLY — use for design analysis, not implementation. Pipe its output to the bead yourself.
+
 ---
 
-## When a Specialist Fails
+## Wave Orchestration
 
-If a specialist times out or errors, **don't silently fall back to doing the work yourself**.
-Surface the failure — the user may want to fix the specialist config or switch to a different one.
+For multiple independent tasks, dispatch specialists in parallel waves.
 
+### Planning a wave
+
+Group tasks by dependency:
+1. **Wave 1**: Bug fixes and blockers (unblock downstream work)
+2. **Wave 2**: Features and design (now that the surface is stable)
+3. **Wave 3**: Documentation (after code changes land)
+
+### Dispatching a wave
+
+```bash
+# Fire multiple specialists in parallel
+specialists run executor --bead unitAI-abc --background   # -> job1
+specialists run executor --bead unitAI-def --background   # -> job2
+specialists run debugger --bead unitAI-ghi --background   # -> job3
+```
+
+### Monitoring a wave
+
+```bash
+# Merged feed — all jobs interleaved
+specialists feed -f
+
+# Per-job status check
+for job in job1 job2 job3; do
+  specialists feed $job | tail -5
+done
+```
+
+### Between waves
+
+After each wave completes:
+1. **Read results**: `specialists result <job-id>` for each
+2. **Validate**: run lint + tests on the combined output
+3. **Commit**: stage, commit, push — clean git before next wave
+4. **Close beads**: `bd close <id> --reason "..."`
+5. **Pipe READ_ONLY output**: for explorer/overthinker results, update the bead manually:
+   `bd update <id> --notes "$(specialists result <job-id>)"`
+
+---
+
+## Coordinator Responsibilities
+
+As the orchestrator, you own things specialists cannot do:
+
+### 1. Pipe READ_ONLY specialist output back to beads
+Explorer and overthinker cannot write to beads. After they complete:
+```bash
+bd update unitAI-abc --notes "$(specialists result <job-id>)"
+```
+
+### 2. Validate combined output across specialists
+Multiple specialists writing to the same worktree can conflict. After each wave:
+```bash
+npm run lint          # or project-specific quality gate
+bun test              # run affected tests
+git diff --stat       # review what changed
+```
+
+### 3. Handle failures — don't silently fall back
+If a specialist stalls or errors, surface it. Don't quietly do the work yourself.
 ```bash
 specialists feed <job-id>          # see what happened
 specialists doctor                 # check for systemic issues
 ```
 
-If you need to retry: rerun with tighter prompt scope or try a different specialist. If all else fails, tell the user what you attempted and why it failed before doing the work yourself.
+Options when a specialist fails:
+- **Retry** with tighter prompt scope
+- **Switch specialist** (e.g., sync-docs stalls → try explorer)
+- **Stop and report** to the user before doing it yourself
 
----
-
-## Ad-Hoc (No Tracking)
-
-```bash
-specialists run explorer --prompt "Map the feed command architecture"
-```
-
-Use `--prompt` only for throwaway exploration. For anything worth remembering, use `--bead`.
-
----
-
-## Example: Delegation in Practice
-
-You're asked to review `src/auth/` for security issues. Without delegation, you'd read
-every file and write findings yourself — 15+ minutes, your full attention.
-
-With a specialist:
-```bash
-bd create --title "Security review: src/auth/" --type task --priority 1  # → unitAI-xyz
-specialists list
-process start "specialists run debugger --bead unitAI-xyz" name="sp-debugger"   # async via process extension
-# go do other work
-specialists result <job-id>
-bd close unitAI-xyz --reason "Found 2 issues, filed unitAI-abc, unitAI-def"
-```
-
-The specialist runs with full bead context, on a model tuned for the task, while you stay unblocked.
+### 4. Close beads and commit between waves
+Keep git clean between waves. Specialists write to the same worktree, so stacking
+uncommitted changes from multiple waves creates merge pain.
 
 ---
 
@@ -164,13 +206,27 @@ Available after `specialists init` and session restart.
 |------|---------|
 | `specialist_init` | Bootstrap once per session |
 | `use_specialist` | Foreground run; pass `bead_id` for tracked work |
-| `start_specialist` | Async: returns job ID immediately |
+| `start_specialist` | Async: returns job ID immediately (Supervisor-backed) |
 | `feed_specialist` | Cursor-paginated run events (status + deltas) |
 | `resume_specialist` | Next-turn prompt for keep-alive jobs in `waiting` |
 | `steer_specialist` | Mid-run steering message for active jobs |
-| `stop_specialist` | Cancel |
-| `run_parallel` | Concurrent or pipeline execution |
+| `stop_specialist` | Cancel (sends SIGTERM to job PID) |
+| `run_parallel` | **Deprecated** — use CLI background jobs instead |
 | `specialist_status` | Circuit breaker health + staleness |
+
+### CLI vs MCP equivalences
+
+| Action | CLI | MCP |
+|--------|-----|-----|
+| Run foreground | `specialists run <name> --bead <id>` | `use_specialist({name, bead_id})` |
+| Run background | `specialists run <name> --bead <id> --background` | `start_specialist({name, bead_id})` |
+| Monitor events | `specialists feed <job-id>` | `feed_specialist({job_id, cursor})` |
+| Read result | `specialists result <job-id>` | — (CLI only) |
+| Steer mid-run | `specialists steer <job-id> "msg"` | `steer_specialist({job_id, message})` |
+| Resume waiting | `specialists resume <job-id> "task"` | `resume_specialist({job_id, task})` |
+| Cancel | `specialists stop <job-id>` | `stop_specialist({job_id})` |
+
+**Prefer CLI** for most orchestration work — it's simpler and output is easier to inspect.
 
 ---
 
@@ -196,14 +252,28 @@ specialists result <job-id>
 
 ---
 
+## Known Issues
+
+- **Executor creates sub-beads**: When given `--bead <id>`, the executor sometimes creates
+  a child bead instead of claiming the input bead directly. This is caused by the edit-gate
+  hook or CLAUDE.md workflow telling it to `bd create` before editing. Tracked as `unitAI-j6nc`.
+- **READ_ONLY output not piped to beads**: Explorer and overthinker output lives only in
+  `specialists result`. The coordinator must manually update the bead with notes.
+- **sync-docs stalls on reference tasks**: sync-docs can stall (60s timeout) on dense
+  schema/reference documentation. Explorer handles these better.
+
+---
+
 ## Setup and Troubleshooting
 
 ```bash
 specialists init        # first-time setup: creates .specialists/, wires AGENTS.md/CLAUDE.md
 specialists doctor      # health check: hooks, MCP, zombie jobs
+specialists edit <name> # edit a specialist's YAML config
 ```
 
 - **"specialist not found"** → `specialists list` (project-scope only)
-- **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel
+- **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel; try a different specialist
 - **MCP tools missing** → `specialists init` then restart Claude Code
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
+- **Stall timeout** → specialist hit 60s inactivity. Check `specialists feed <id>` for last event, then retry or switch specialist.
