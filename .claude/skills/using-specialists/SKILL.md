@@ -135,12 +135,12 @@ Run `specialists list` to see what's available. Match by task type:
 - **executor** is the workhorse — HIGH permissions, writes code and docs, runs tests, closes beads. Best for any task that needs files written.
 - **use_specialist MCP** is best for quick foreground runs where you need the result immediately in your context.
 
-### MCP tools availability (known gap)
+### Pi extensions availability (known gap)
 
-Specialists that reference GitNexus tools (debugger, planner) or would benefit from Serena LSP
-(explorer, executor) depend on the project's `.mcp.json` for MCP server availability. There is
-no explicit control in specialist YAML yet — tracked as `unitAI-4abv`. Verify your project has
-GitNexus and Serena configured in `.mcp.json` for best results.
+GitNexus and Serena are **pi extensions** (not MCP servers) at `~/.pi/agent/extensions/`.
+Specialists run with `--no-extensions` and only selectively re-enable `quality-gates` and
+`service-skills`. GitNexus (call-chain tracing for debugger/planner) and Serena LSP
+(token-efficient reads for explorer/executor) are NOT currently wired. Tracked as `unitAI-4abv`.
 
 ---
 
