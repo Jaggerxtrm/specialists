@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Steering for all running jobs** — FIFO steer pipe now created for every job, not just `--keep-alive`; `specialists steer <job-id> "msg"` works on any running job (unitAI-442b)
 - **Bead-aware system prompt override** — when `--bead` is provided, runner injects "Specialist Run Context" telling the agent to claim the provided bead directly and never `bd create` (unitAI-j6nc)
 - **Documentation overhaul** — `docs/cli-reference.md` rewritten (213→467 lines), new `docs/ARCHITECTURE.md`, `docs/features.md`, `docs/pi-rpc-boundary.md`, `docs/mcp-tools.md` (unitAI-icb9 epic, 6 children)
-- **`using-specialists` skill v3.4** — wave orchestration, coordinator responsibilities, CLI-vs-MCP equivalences, specialist selection lessons, known issues section (unitAI-e8kt)
+- **`using-specialists` skill v3.5** — wave orchestration, coordinator responsibilities, CLI-vs-MCP equivalences, specialist selection lessons, steer/resume real examples, known issues section (unitAI-e8kt, unitAI-83m4)
+- **`specialists clean`** — purge old job directories from `.specialists/jobs/` (unitAI-9xa)
+- **`specialists config get/set`** — batch YAML config operations with dot-path keys, `--name` filter, YAML-aware parsing (unitAI-ndd0)
 
 ### Changed
 
@@ -26,9 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planner reuses parent epic** — bead context now includes `parent` field; planner routes child issues under existing parent epic instead of creating sub-epics (unitAI-9o9z)
 - **Footer model display deduplication** — `formatFooterModel()` prevents `anthropic/anthropic/claude-haiku-4-5` doubling (unitAI-j8gj)
 
-### Removed
+### Changed (continued)
 
-- **`--background` flag from `specialists run`** — removed entirely; exits with migration message pointing to `start_specialist` MCP, foreground run + feed/result, or shell backgrounding (unitAI-dyll)
+- **`--background` flag restored with proper detach** — old implementation had EPIPE bugs and was removed (unitAI-dyll); new implementation uses `spawn({ detached: true }) + unref()`, waits for job ID via `.specialists/jobs/latest`, prints it to stdout. Shell `&` is fragile (SIGHUP on parent exit); `--background` is the reliable async path (unitAI-5752)
+- **sync-docs specialist defaults to execute mode on `--bead` runs** — previously defaulted to audit-only (unitAI-rnea)
+- **Legacy `done`/`agent_end` completion signals removed from feed.ts** — `run_complete` is the canonical signal (unitAI-2hk5)
 
 
 ## [3.4.0] - 2026-03-30

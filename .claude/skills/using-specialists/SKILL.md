@@ -8,7 +8,7 @@ description: >
   jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.5
+version: 3.6
 ---
 
 # Specialists Usage
@@ -190,10 +190,10 @@ Group tasks by dependency:
 ### Dispatching a wave
 
 ```bash
-# Fire multiple specialists in parallel (shell backgrounding)
-specialists run executor --bead unitAI-abc &
-specialists run executor --bead unitAI-def &
-specialists run overthinker --bead unitAI-ghi --keep-alive &
+# Fire multiple specialists in parallel (--background for reliable detach)
+specialists run executor --bead unitAI-abc --background
+specialists run executor --bead unitAI-def --background
+specialists run overthinker --bead unitAI-ghi --keep-alive --background
 ```
 
 ### Monitoring a wave
@@ -220,7 +220,7 @@ After each wave completes:
 ### Real wave example (from a 6-wave session)
 
 ```
-Wave 1: 2x executor → removed --background flag + migrated start_specialist to Supervisor
+Wave 1: 2x executor → fixed --background flag + migrated start_specialist to Supervisor
 Wave 2: overthinker + 2x executor → output contract design + retry logic + footer fix
 Wave 3: 4x sync-docs + 3x explorer → docs audit (produced reports, not files)
 Wave 4: 5x executor + 2x explorer → output contract impl + READ_ONLY auto-append + 4 fixes
@@ -290,7 +290,7 @@ Available after `specialists init` and session restart.
 | Action | CLI | MCP |
 |--------|-----|-----|
 | Run foreground | `specialists run <name> --bead <id>` | `use_specialist({name, bead_id})` |
-| Run background | `specialists run <name> --bead <id> &` | `start_specialist({name, bead_id})` |
+| Run background | `specialists run <name> --bead <id> --background` | `start_specialist({name, bead_id})` |
 | Monitor events | `specialists feed <job-id>` | `feed_specialist({job_id, cursor})` |
 | Read result | `specialists result <job-id>` | — (CLI only) |
 | Steer mid-run | `specialists steer <job-id> "msg"` | `steer_specialist({job_id, message})` |
