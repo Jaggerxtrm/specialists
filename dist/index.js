@@ -20243,29 +20243,35 @@ function formatToolArgValue(value, maxLen = 240) {
   const flat = raw.replace(/\s+/g, " ").trim();
   return flat.length > maxLen ? `${flat.slice(0, maxLen - 3)}...` : flat;
 }
+function formatToolDetail(event) {
+  const toolName = cyan4(event.tool);
+  if (event.phase === "start") {
+    if (typeof event.args?.command === "string") {
+      return `${toolName}: ${yellow7(formatToolArgValue(event.args.command))}`;
+    }
+    if (event.args && Object.keys(event.args).length > 0) {
+      const argStr = Object.entries(event.args).map(([k, v]) => `${k}=${formatToolArgValue(v)}`).join(" ");
+      return `${toolName}: ${dim7(argStr)}`;
+    }
+    return `${toolName}: ${dim7("start")}`;
+  }
+  if (event.phase === "end" && event.is_error) {
+    return `${toolName}: ${red2("error")}`;
+  }
+  return `${toolName}: ${dim7(event.phase)}`;
+}
 function formatEventLine(event, options) {
   const ts = dim7(formatTime(event.t));
+  const job = options.colorize(`[${options.jobId}]`);
+  const bead = dim7(`[${options.beadId ?? "-"}]`);
   const label = options.colorize(bold7(getEventLabel(event.type).padEnd(5)));
-  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim7(`[${options.beadId}]`)}` : ""}`;
   const detailParts = [];
+  let detail = "";
   if (event.type === "meta") {
     detailParts.push(`model=${event.model}`);
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === "tool") {
-    if (event.phase === "start") {
-      if (typeof event.args?.command === "string") {
-        detailParts.push(`${event.tool}: ${formatToolArgValue(event.args.command)}`);
-      } else if (event.args && Object.keys(event.args).length > 0) {
-        const argStr = Object.entries(event.args).map(([k, v]) => `${k}=${formatToolArgValue(v)}`).join(" ");
-        detailParts.push(argStr ? `${event.tool}: ${argStr}` : event.tool);
-      } else {
-        detailParts.push(`${event.tool}: start`);
-      }
-    } else if (event.phase === "end" && event.is_error) {
-      detailParts.push(`${event.tool}: error`);
-    } else {
-      detailParts.push(`${event.tool}: ${event.phase}`);
-    }
+    detail = formatToolDetail(event);
   } else if (event.type === "run_complete") {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
@@ -20290,8 +20296,10 @@ function formatEventLine(event, options) {
   } else if (event.type === "turn") {
     detailParts.push(`phase=${event.phase}`);
   }
-  const detail = detailParts.length > 0 ? dim7(detailParts.join(" ")) : "";
-  return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ""}`.trimEnd();
+  if (!detail && detailParts.length > 0) {
+    detail = dim7(detailParts.join(" "));
+  }
+  return `${ts} ${job} ${bead} ${label} ${options.specialist}${detail ? ` ${detail}` : ""}`.trimEnd();
 }
 function formatEventInline(event) {
   switch (event.type) {

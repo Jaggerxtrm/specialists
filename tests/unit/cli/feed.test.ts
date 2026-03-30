@@ -9,6 +9,8 @@ const jobsDir = join(specialistsDir, 'jobs');
 describe('feed CLI', () => {
   const originalArgv = process.argv;
 
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+
   beforeEach(() => {
     // Clean and recreate the jobs directory
     if (existsSync(jobsDir)) rmSync(jobsDir, { recursive: true, force: true });
@@ -121,13 +123,12 @@ describe('feed CLI', () => {
     expect(combined).toContain('[unitAI-123]');
   });
 
-  it('renders human-readable details with rich tool command context', async () => {
+  it('orders fixed segments and highlights tool details', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
-      { t: now - 2000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
-      { t: now - 1000, type: 'tool', tool: 'read', phase: 'start', args: { path: 'src/index.ts' } },
+      { t: now - 2000, type: 'tool', tool: 'bash', phase: 'start', args: { command: 'echo hi' } },
       { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
-    ]);
+    ], { bead_id: 'unitAI-777' });
 
     process.argv = ['node', 'specialists', 'feed'];
 
@@ -139,10 +140,14 @@ describe('feed CLI', () => {
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    const combined = logs.join('\n');
-    expect(combined).toContain('model=claude-haiku-4-5');
-    expect(combined).toContain('backend=anthropic');
-    expect(combined).toContain('read: path=src/index.ts');
+    const toolLine = logs.find((line) => line.includes('TOOL')) ?? '';
+    const plain = stripAnsi(toolLine);
+
+    expect(plain).toMatch(/\[job1\]\s+\[unitAI-777\]\s+TOOL\s+test\s+bash: echo hi/);
+    expect(toolLine).toContain('\x1b[36mbash\x1b[0m');
+    expect(toolLine).toContain('\x1b[33mecho hi\x1b[0m');
+
+    const combined = stripAnsi(logs.join('\n'));
     expect(combined).toContain('status=COMPLETE');
     expect(combined).toContain('elapsed=5s');
   });
