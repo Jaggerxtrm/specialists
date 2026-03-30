@@ -5,7 +5,7 @@ import { renderTemplate } from './templateEngine.js';
 import { PiAgentSession, SessionKilledError, type PiSessionOptions } from '../pi/session.js';
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
-import type { CircuitBreaker } from '../utils/circuitBreaker.js';
+import { isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 
 export interface RunOptions {
   name: string;
@@ -22,6 +22,8 @@ export interface RunOptions {
    * Enables multi-turn: callers receive resumeFn/closeFn via onResumeReady callback.
    */
   keepAlive?: boolean;
+  /** Additional retries after the initial attempt (default: 0). */
+  maxRetries?: number;
 }
 
 export interface RunResult {
@@ -189,6 +191,29 @@ function validateBeforeRun(
   }
 }
 
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_JITTER = 0.2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getRetryDelayMs(attemptNumber: number): number {
+  const baseDelay = RETRY_BASE_DELAY_MS * (2 ** Math.max(0, attemptNumber - 1));
+  const jitterMultiplier = 1 + ((Math.random() * 2 - 1) * RETRY_MAX_JITTER);
+  return Math.max(0, Math.round(baseDelay * jitterMultiplier));
+}
+
+function isAuthError(error: unknown): boolean {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : JSON.stringify(error);
+
+  return /\b(401|403|unauthorized|forbidden|authentication|auth|invalid api key|api key)\b/i.test(message);
+}
+
 export class SpecialistRunner {
   private sessionFactory: SessionFactory;
 
@@ -308,11 +333,14 @@ export class SpecialistRunner {
       permission_level: permissionLevel,
     });
 
-    let output: string;
+    let output: string | undefined;
     let sessionBackend: string = model; // captured before kill() can destroy meta
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     let keepAliveActive = false; // set true when keepAlive hands session ownership to caller
     let sessionClosed = false; // track if we closed cleanly (to avoid kill in finally)
+    const maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? execution.max_retries ?? 0));
+    const maxAttempts = maxRetries + 1;
+
     try {
       session = await this.sessionFactory({
         model,
@@ -336,11 +364,33 @@ export class SpecialistRunner {
       // Register steer function so callers can send mid-run messages to the Pi agent
       onSteerRegistered?.((msg) => session!.steer(msg));
 
-      await session.prompt(renderedTask);
-      await session.waitForDone(execution.timeout_ms);
-      sessionBackend = session.meta.backend;
-      output = await session.getLastOutput();
-      sessionBackend = session.meta.backend; // capture before finally calls kill()
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await session.prompt(renderedTask);
+          await session.waitForDone(execution.timeout_ms);
+          output = await session.getLastOutput();
+          sessionBackend = session.meta.backend; // capture before finally calls kill()
+          break;
+        } catch (err: any) {
+          const shouldRetry = attempt < maxAttempts
+            && !(err instanceof SessionKilledError)
+            && !isAuthError(err)
+            && isTransientError(err);
+
+          if (!shouldRetry) {
+            throw err;
+          }
+
+          const delayMs = getRetryDelayMs(attempt);
+          onEvent?.('auto_retry');
+          onProgress?.(`\n↻ transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms\n`);
+          await sleep(delayMs);
+        }
+      }
+
+      if (output === undefined) {
+        throw new Error('Specialist run finished without output');
+      }
 
       if (options.keepAlive && onResumeReady) {
         // Hand the session to the caller for multi-turn use.

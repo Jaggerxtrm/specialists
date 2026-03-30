@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
+import { Supervisor } from '../../../src/specialist/supervisor.js';
 import { run } from '../../../src/cli/run.js';
 
 describe('run CLI', () => {
@@ -59,6 +60,45 @@ describe('run CLI', () => {
     expect(runArgs.variables).toEqual(expect.objectContaining({
       bead_id: 'unitAI-55d',
     }));
+  });
+
+  it('does not duplicate backend prefix in completion footer when model is already provider-qualified', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--model', 'anthropic/claude-haiku-4-5'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-123');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockReturnValue({
+      id: 'job-123',
+      specialist: 'code-review',
+      status: 'done',
+      started_at_ms: 0,
+      last_event_at_ms: 1000,
+      backend: 'anthropic',
+      model: 'anthropic/claude-haiku-4-5',
+    });
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const stderrText = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    const plainText = stderrText.replace(/\x1b\[[0-9;]*m/g, '');
+
+    expect(plainText).toContain('anthropic/claude-haiku-4-5');
+    expect(plainText).not.toContain('anthropic/anthropic/claude-haiku-4-5');
   });
 
   it('exits when both --prompt and --bead are provided', async () => {

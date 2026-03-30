@@ -132,6 +132,66 @@ describe('SpecialistRunner', () => {
     expect(mockSession.kill).toHaveBeenCalledOnce();
   });
 
+  it('retries transient failures and succeeds on a later attempt', async () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      mockSession.waitForDone
+        .mockRejectedValueOnce(new Error('Specialist timed out after 5000ms'))
+        .mockResolvedValueOnce(undefined);
+
+      const runner = new SpecialistRunner({
+        loader: makeLoader(),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      const result = await runner.run({ name: 'test-spec', prompt: 'go', maxRetries: 1 });
+
+      expect(result.output).toBe('{"result": "ok"}');
+      expect(mockSession.prompt).toHaveBeenCalledTimes(2);
+      expect(mockSession.waitForDone).toHaveBeenCalledTimes(2);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('does not retry auth errors even when retries are configured', async () => {
+    mockSession.waitForDone.mockRejectedValueOnce(new Error('401 Unauthorized'));
+    const runner = new SpecialistRunner({
+      loader: makeLoader(),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'go', maxRetries: 3 })).rejects.toThrow('401 Unauthorized');
+    expect(mockSession.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('records circuit-breaker failure only once after final retry fails', async () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      mockSession.waitForDone.mockRejectedValue(new Error('Specialist timed out after 5000ms'));
+      const cb = new CircuitBreaker({ failureThreshold: 2 });
+      const recordFailure = vi.spyOn(cb, 'recordFailure');
+
+      const runner = new SpecialistRunner({
+        loader: makeLoader(),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: cb,
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await expect(runner.run({ name: 'test-spec', prompt: 'go', maxRetries: 2 })).rejects.toThrow('Specialist timed out after 5000ms');
+
+      expect(mockSession.prompt).toHaveBeenCalledTimes(3);
+      expect(recordFailure).toHaveBeenCalledTimes(1);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it('uses fallback backend when primary circuit is OPEN', async () => {
     const cb = new CircuitBreaker({ failureThreshold: 1 });
     cb.recordFailure('gemini');

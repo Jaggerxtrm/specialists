@@ -1,6 +1,6 @@
 // tests/unit/circuitBreaker.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CircuitBreaker } from '../../src/utils/circuitBreaker.js';
+import { CircuitBreaker, isTransientError } from '../../src/utils/circuitBreaker.js';
 
 describe('CircuitBreaker (3-state)', () => {
   let cb: CircuitBreaker;
@@ -47,5 +47,17 @@ describe('CircuitBreaker (3-state)', () => {
     expect(cb.getState('gemini')).toBe('HALF_OPEN');
     cb.recordFailure('gemini');
     expect(cb.getState('gemini')).toBe('OPEN');
+  });
+});
+
+describe('isTransientError', () => {
+  it('returns true for timeout and 5xx errors', () => {
+    expect(isTransientError(new Error('Specialist timed out after 5000ms'))).toBe(true);
+    expect(isTransientError({ status: 503, message: 'service unavailable' })).toBe(true);
+  });
+
+  it('returns false for non-transient errors', () => {
+    expect(isTransientError(new Error('401 Unauthorized'))).toBe(false);
+    expect(isTransientError(new Error('Validation failed'))).toBe(false);
   });
 });

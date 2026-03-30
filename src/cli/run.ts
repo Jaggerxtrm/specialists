@@ -149,6 +149,12 @@ function startEventTailer(
   };
 }
 
+function formatFooterModel(backend: string | undefined, model: string | undefined): string {
+  if (!model) return '';
+  if (!backend) return model;
+  return model.startsWith(`${backend}/`) ? model : `${backend}/${model}`;
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -249,11 +255,12 @@ export async function run(): Promise<void> {
 
   // Footer
   const secs = ((status?.last_event_at_ms ?? Date.now()) - (status?.started_at_ms ?? Date.now())) / 1000;
+  const modelLabel = formatFooterModel(status?.backend, status?.model);
   const footer = [
     `job ${jobId}`,
     status?.bead_id ? `bead ${status.bead_id}` : '',
     `${secs.toFixed(1)}s`,
-    status?.model ? dim(`${status.backend}/${status.model}`) : '',
+    modelLabel ? dim(modelLabel) : '',
   ].filter(Boolean).join('  ');
 
   process.stderr.write(`\n${green('✓')} ${footer}\n\n`);

@@ -12,6 +12,38 @@ interface CircuitBreakerOptions {
   cooldownMs?: number;         // OPEN → HALF_OPEN wait (default: 60_000)
 }
 
+const TRANSIENT_ERROR_PATTERNS = [
+  /\b5\d{2}\b/,           // HTTP 5xx
+  /timeout/i,
+  /timed out/i,
+  /econnreset/i,
+  /econnrefused/i,
+  /eai_again/i,
+  /etimedout/i,
+  /network error/i,
+  /service unavailable/i,
+  /bad gateway/i,
+  /gateway timeout/i,
+] as const;
+
+export function isTransientError(error: unknown): boolean {
+  if (!error) return false;
+
+  const status = (error as { status?: unknown; statusCode?: unknown }).status
+    ?? (error as { statusCode?: unknown }).statusCode;
+  if (typeof status === 'number' && status >= 500 && status < 600) {
+    return true;
+  }
+
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : JSON.stringify(error);
+
+  return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 export class CircuitBreaker {
   private states = new Map<string, Entry>();
   private threshold: number;

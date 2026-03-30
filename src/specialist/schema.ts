@@ -22,6 +22,7 @@ const ExecutionSchema = z.object({
   fallback_model: z.string().optional(),
   timeout_ms: z.number().default(120_000),
   stall_timeout_ms: z.number().optional(),
+  max_retries: z.number().int().min(0).default(0),
   response_format: z.enum(['text', 'json', 'markdown']).default('text'),
   /** Controls which pi tools are available to the agent.
    *  READ_ONLY : read, grep, find, ls        (no bash, no writes)

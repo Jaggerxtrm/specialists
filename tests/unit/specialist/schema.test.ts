@@ -45,6 +45,7 @@ specialist:
     const result = await parseSpecialist(minimal);
     expect(result.specialist.execution.timeout_ms).toBe(120_000);
     expect(result.specialist.execution.mode).toBe('auto');
+    expect(result.specialist.execution.max_retries).toBe(0);
   });
 
   it('rejects invalid name (not kebab-case)', async () => {
@@ -68,6 +69,12 @@ specialist:
   it('rejects missing required task_template', async () => {
     const bad = VALID_YAML.replace('task_template: "Analyze $project_name. Request: $prompt"', '');
     await expect(parseSpecialist(bad)).rejects.toThrow();
+  });
+
+  it('accepts execution.max_retries', async () => {
+    const withRetries = VALID_YAML.replace('permission_required: READ_ONLY', 'permission_required: READ_ONLY\n    max_retries: 2');
+    const result = await parseSpecialist(withRetries);
+    expect(result.specialist.execution.max_retries).toBe(2);
   });
 
   describe('beads_integration field', () => {
