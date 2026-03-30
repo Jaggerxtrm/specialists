@@ -1,0 +1,78 @@
+{
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py and cited its output",
+      "passed": false,
+      "evidence": "result.md explicitly states 'Method: Manual review of README.md sections against existing docs/ files.' There is no mention of doc_structure_analyzer.py anywhere in the output. The executor performed a manual audit rather than using the specified tool."
+    },
+    {
+      "text": "Named at least 2 specific README sections with their suggested docs/ destination",
+      "passed": true,
+      "evidence": "The report names 7 README sections with specific docs/ destinations. Examples: 'Hooks Reference' (lines 114-141) -> 'docs/hooks.md (exists)'; 'Policy System' (lines 66-86) -> 'docs/policies.md (stub, needs population)'; 'MCP Servers' (lines 143-158) -> 'docs/mcp.md (exists)'. The priority table at lines 103-111 clearly maps each section to a target file."
+    },
+    {
+      "text": "Did NOT run --fix or create/edit any files (audit-only mode respected)",
+      "passed": true,
+      "evidence": "The only output file is result.md (the report itself). No docs/ files were created or modified. All suggestions use language like 'Suggested action: Move to...' or 'Consider creating...' rather than performing the actions. The outputs directory contains only result.md."
+    },
+    {
+      "text": "Report is actionable with clear next steps",
+      "passed": true,
+      "evidence": "The report includes a priority ranking table (lines 103-111) with Priority (High/Medium/Low), Section, Action, and Target columns for all 7 sections. Each section analysis also ends with an explicit 'Suggested action:' line. The report concludes with a 'What README.md Should Retain' section describing the end-state goal."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 1,
+    "total": 4,
+    "pass_rate": 0.75
+  },
+  "execution_metrics": {},
+  "timing": {
+    "executor_duration_seconds": 95.9,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 95.9
+  },
+  "claims": [
+    {
+      "claim": "README.md is 193 lines and covers seven distinct topic areas",
+      "type": "factual",
+      "verified": false,
+      "evidence": "Cannot verify without reading the actual README.md. The executor claims this but the grader did not independently confirm the line count or section count."
+    },
+    {
+      "claim": "docs/policies.md is a stub with placeholder 'Describe what this document covers'",
+      "type": "factual",
+      "verified": false,
+      "evidence": "Cannot verify without reading docs/policies.md directly. This is a specific factual claim about file content that was not independently checked."
+    },
+    {
+      "claim": "The official Claude plugins list (serena, context7, github, ralph-loop) is NOT present in docs/mcp.md",
+      "type": "factual",
+      "verified": false,
+      "evidence": "Cannot verify without reading docs/mcp.md. This is an important claim driving the 'High' priority action item but was not independently confirmed."
+    },
+    {
+      "claim": "No dedicated docs/cli.md exists",
+      "type": "factual",
+      "verified": false,
+      "evidence": "Executor states 'No dedicated docs/cli.md file exists' but this was not independently verified by the grader."
+    }
+  ],
+  "user_notes_summary": {},
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Ran doc_structure_analyzer.py and cited its output",
+        "reason": "This is the most important assertion and it caught a real failure: the executor bypassed the required tooling entirely and did a manual audit. However, the assertion would benefit from being more specific about what 'cited its output' means \u2014 does it require quoting specific lines from the script output, or just referencing that it was run? Making this concrete (e.g., 'output includes at least 3 file paths emitted by the script') would prevent partial-credit ambiguity."
+      },
+      {
+        "reason": "No assertion checks whether the sections named are real README sections at the correct line numbers. The report cites specific line ranges (e.g., 'lines 114-141' for Hooks Reference) but no eval verifies these against the actual README. A hallucinated or misidentified section would pass expectation 2 unchallenged."
+      },
+      {
+        "reason": "Expectation 3 ('audit-only mode respected') is verifiable only by absence \u2014 it checks that nothing bad happened. Consider an affirmative version: 'Report contains explicit disclaimers that changes were not made' or 'All action items use conditional language (consider, suggest, move).' The current form passes trivially since we can only observe the outputs directory, not rule out side effects in other locations."
+      }
+    ],
+    "overall": "The evals caught the key failure (tool not used) but rely on the grader trusting the executor's factual claims about file contents and line numbers without a way to verify them. Adding assertions that spot-check at least one factual claim against the actual codebase would strengthen the suite."
+  }
+}

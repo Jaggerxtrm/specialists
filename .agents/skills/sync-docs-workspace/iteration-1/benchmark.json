@@ -1,0 +1,293 @@
+{
+  "metadata": {
+    "skill_name": "sync-docs",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-18T07:43:29Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py and referenced its structured output",
+          "passed": true,
+          "evidence": "Ran doc_structure_analyzer.py, quoted its full structured output including EXTRACTABLE status, extraction candidates list, MISSING files, and INVALID_SCHEMA count."
+        },
+        {
+          "text": "Named specific README sections with their suggested docs/ destination",
+          "passed": true,
+          "evidence": "Named: '## Policy System \u2192 docs/policies.md', '## MCP Servers \u2192 docs/mcp-servers.md', pi-extensions.md, plus context about CHANGELOG 6-day gap."
+        },
+        {
+          "text": "Report is actionable \u2014 tells user exactly what to do next, not just observations",
+          "passed": true,
+          "evidence": "Report includes structured phase output, specific file names, notes CHANGELOG gap with exact dates, and references the 6-day staleness."
+        },
+        {
+          "text": "Did not edit or create any files (audit only)",
+          "passed": false,
+          "evidence": "Agent ran --fix (created docs/pi-extensions.md, docs/mcp-servers.md, docs/policies.md) despite task being audit-only. Skill instructions for Phase 3 show the --fix command without making clear it is only for execute mode."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py with --fix flag",
+          "passed": true,
+          "evidence": "Ran `python3 skills/sync-docs/scripts/doc_structure_analyzer.py --fix --bd-remember` and included full output"
+        },
+        {
+          "text": "Ran with --bd-remember or manually ran bd remember with a summary",
+          "passed": true,
+          "evidence": "bd remember stored with key 'sync-docs-fix-2026-03-18', confirmed stored:true in output JSON"
+        },
+        {
+          "text": "At least one scaffold file was created in docs/",
+          "passed": true,
+          "evidence": "Created docs/pi-extensions.md, docs/mcp-servers.md, docs/policies.md with valid frontmatter"
+        },
+        {
+          "text": "Ran validate_doc.py on created files to confirm schema",
+          "passed": false,
+          "evidence": "Report notes 7 INVALID_SCHEMA files exist but does not show validate_doc.py being run explicitly to confirm the 3 new files pass. Only the JSON output showing valid frontmatter is evidence."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs from the output",
+          "passed": true,
+          "evidence": "Ran context_gatherer.py, reported 20 bd closed issues with IDs and titles, 3 merged PRs with SHAs and dates, 15 recent commits"
+        },
+        {
+          "text": "Ran doc_structure_analyzer.py and used its output to identify doc issues",
+          "passed": true,
+          "evidence": "Ran doc_structure_analyzer.py, referenced MISSING status for docs/pi-extensions.md, hooks.md, mcp-servers.md, policies.md, skills.md and EXTRACTABLE for README"
+        },
+        {
+          "text": "Produced at least one concrete recommendation or action (not just a vague summary)",
+          "passed": true,
+          "evidence": "Named specific files: docs/pi-extensions.md, docs/hooks.md, docs/mcp-servers.md, docs/policies.md with explicit next steps for each"
+        },
+        {
+          "text": "Used the skill scripts rather than just reading files manually",
+          "passed": true,
+          "evidence": "Ran 3 scripts (context_gatherer.py, drift_detector.py, doc_structure_analyzer.py) with explicit output included in report"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 72.5,
+        "tokens": 21934,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py and referenced its structured output",
+          "passed": false,
+          "evidence": "Did not run doc_structure_analyzer.py. All findings came from manual README.md reads with line numbers."
+        },
+        {
+          "text": "Named specific README sections with their suggested docs/ destination",
+          "passed": true,
+          "evidence": "Named 6 specific sections with line numbers: Hooks Reference (114-141)\u2192docs/hooks.md, Policy System (66-87)\u2192new docs/policies.md, MCP Servers (143-158)\u2192docs/mcp.md, CLI Commands (89-111)\u2192XTRM-GUIDE.md, Version History (179-188)\u2192remove, Plugin Structure (52-63)\u2192borderline."
+        },
+        {
+          "text": "Report is actionable \u2014 tells user exactly what to do next, not just observations",
+          "passed": true,
+          "evidence": "Each section has a specific Recommendation: block with exact action (Remove section, Add single link, Create docs/policies.md, etc.). Estimated README would shrink from 193 to 60-70 lines."
+        },
+        {
+          "text": "Did not edit or create any files (audit only)",
+          "passed": true,
+          "evidence": "Report explicitly states no files were modified. Audit-only as instructed."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py with --fix flag",
+          "passed": true,
+          "evidence": "Agent found the skill in the repo and ran doc_structure_analyzer.py --fix. However, found no MISSING gaps because with_skill run had already created those files (confounded test)."
+        },
+        {
+          "text": "Ran with --bd-remember or manually ran bd remember with a summary",
+          "passed": true,
+          "evidence": "Agent ran bd remember with key 'sync-docs-fix-schema-2026-03-18' summarizing the frontmatter additions made to 7 files."
+        },
+        {
+          "text": "At least one scaffold file was created in docs/",
+          "passed": true,
+          "evidence": "Added YAML frontmatter to 7 existing docs/ files (hooks.md, mcp.md, pre-install-cleanup.md, project-skills.md, skills.md, testing.md, todo.md). Different action than creating scaffolds but valid given scaffolds already existed."
+        },
+        {
+          "text": "Ran validate_doc.py on created files to confirm schema",
+          "passed": true,
+          "evidence": "Ran validate_doc.py docs/ \u2014 7/7 files passed after frontmatter additions."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.25,
+        "passed": 1,
+        "failed": 3,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs from the output",
+          "passed": false,
+          "evidence": "Did not run context_gatherer.py. Used git log manually. Reported 'No .beads/ DB was found' which is wrong \u2014 .beads/ exists. Missed all 20 closed bd issues."
+        },
+        {
+          "text": "Ran doc_structure_analyzer.py and used its output to identify doc issues",
+          "passed": false,
+          "evidence": "Did not run doc_structure_analyzer.py. Manually read README.md, package.json, and CHANGELOG.md."
+        },
+        {
+          "text": "Produced at least one concrete recommendation or action (not just a vague summary)",
+          "passed": true,
+          "evidence": "Found version mismatch (2.3.0 vs 2.4.1 in package.json), identified 7 undocumented branch commits in CHANGELOG, named specific line references."
+        },
+        {
+          "text": "Used the skill scripts rather than just reading files manually",
+          "passed": false,
+          "evidence": "No skill scripts were used. All findings came from manual git log, file reads, and README inspection."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 0.8333,
+        "stddev": 0.1443,
+        "min": 0.75,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.6667,
+        "stddev": 0.3819,
+        "min": 0.25,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 24.1667,
+        "stddev": 41.8579,
+        "min": 0.0,
+        "max": 72.5
+      },
+      "tokens": {
+        "mean": 7311.3333,
+        "stddev": 12663.6008,
+        "min": 0,
+        "max": 21934
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.17",
+      "time_seconds": "-24.2",
+      "tokens": "-7311"
+    }
+  },
+  "notes": []
+}

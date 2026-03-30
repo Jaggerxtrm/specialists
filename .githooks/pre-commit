@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+# [jaggers] doc-reminder
+if command -v python3 &>/dev/null && [ -f "/home/dawid/projects/specialists/.claude/git-hooks/doc_reminder.py" ]; then
+    python3 "/home/dawid/projects/specialists/.claude/git-hooks/doc_reminder.py" || true
+fi

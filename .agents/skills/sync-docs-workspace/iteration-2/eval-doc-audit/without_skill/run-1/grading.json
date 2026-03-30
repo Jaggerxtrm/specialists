@@ -1,0 +1,86 @@
+{
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py and cited its output",
+      "passed": false,
+      "evidence": "No mention of doc_structure_analyzer.py anywhere in result.md. The audit was performed by directly reading files rather than running any script. No script output is quoted or referenced."
+    },
+    {
+      "text": "Named at least 2 specific README sections with their suggested docs/ destination",
+      "passed": true,
+      "evidence": "result.md names six README sections with specific destinations: 'Hooks Reference' -> docs/hooks.md, 'Policy System' -> docs/policies.md, 'MCP Servers' -> docs/mcp.md, 'Plugin Structure' -> docs/plugin.md or XTRM-GUIDE.md, 'Skills table' -> docs/skills.md, 'Version History' -> CHANGELOG.md. The recommended moves table further enumerates these with priority levels."
+    },
+    {
+      "text": "Did NOT run --fix or create/edit any files (audit-only mode respected)",
+      "passed": true,
+      "evidence": "result.md is a read-only audit report. No --fix flag is mentioned, no files were edited, no docs/ files were created or modified. The report only analyzes and recommends."
+    },
+    {
+      "text": "Report is actionable with clear next steps",
+      "passed": true,
+      "evidence": "result.md includes a 'Recommended Moves (Prioritized)' table with Priority (High/Medium/Low), README Section, Action (Move/Remove/Add), and Target columns. Each section also has a specific Verdict with a concrete instruction (e.g., 'Move this content to docs/policies.md', 'Remove this table from the README and rely on the CHANGELOG.md link')."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 1,
+    "total": 4,
+    "pass_rate": 0.75
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 0,
+    "errors_encountered": 0,
+    "output_chars": 3847,
+    "transcript_chars": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "claims": [
+    {
+      "claim": "The README is 193 lines",
+      "type": "factual",
+      "verified": false,
+      "evidence": "No transcript or tool call log available to verify the README was actually read. The line count is plausible but cannot be confirmed from available outputs."
+    },
+    {
+      "claim": "docs/policies.md is currently a stub with only a placeholder 'Overview' section",
+      "type": "factual",
+      "verified": false,
+      "evidence": "No transcript available to confirm the file was read. The claim is specific and detailed, but cannot be verified from the available output alone."
+    },
+    {
+      "claim": "The official Claude plugins list (serena, context7, github, ralph-loop) is not captured anywhere in docs/",
+      "type": "factual",
+      "verified": false,
+      "evidence": "Without a transcript showing the docs/ directory was searched, this claim cannot be fully verified. It is a meaningful and specific claim, but unverifiable from result.md alone."
+    },
+    {
+      "claim": "The audit covered six substantive reference sections beyond quick-start and version history",
+      "type": "quality",
+      "verified": true,
+      "evidence": "result.md explicitly reviews six named sections with line references, verdicts, and recommendations for each."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Ran doc_structure_analyzer.py and cited its output",
+        "reason": "This is the most discriminating assertion and it failed \u2014 the run produced a high-quality audit without using the designated script at all. This reveals that a skilled agent can satisfy the other three expectations (section names, no-fix, actionable report) purely through manual file reading. The eval should add an assertion that verifies a specific artifact from the script's output (e.g., a section header or JSON field that only the script produces), making it impossible to pass by circumventing the tool."
+      },
+      {
+        "reason": "No assertion checks the accuracy of line number references or section names cited. The report references specific line ranges (e.g., 'lines 114-141' for Hooks Reference). An assertion verifying at least one cited line range matches actual README content would catch hallucinated citations."
+      }
+    ],
+    "overall": "The three passing assertions are satisfied by a well-written audit regardless of whether the prescribed script was used. Assertion 1 is the only one that distinguishes correct process from bypassed process \u2014 and it failed. The eval should strengthen the script-usage assertion with output-artifact verification to prevent this class of bypass."
+  }
+}

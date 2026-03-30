@@ -1,0 +1,28 @@
+{
+  "eval_id": 3,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py and referenced its structured output",
+      "passed": true,
+      "evidence": "Ran doc_structure_analyzer.py, quoted its full structured output including EXTRACTABLE status, extraction candidates list, MISSING files, and INVALID_SCHEMA count."
+    },
+    {
+      "text": "Named specific README sections with their suggested docs/ destination",
+      "passed": true,
+      "evidence": "Named: '## Policy System → docs/policies.md', '## MCP Servers → docs/mcp-servers.md', pi-extensions.md, plus context about CHANGELOG 6-day gap."
+    },
+    {
+      "text": "Report is actionable — tells user exactly what to do next, not just observations",
+      "passed": true,
+      "evidence": "Report includes structured phase output, specific file names, notes CHANGELOG gap with exact dates, and references the 6-day staleness."
+    },
+    {
+      "text": "Did not edit or create any files (audit only)",
+      "passed": false,
+      "evidence": "Agent ran --fix (created docs/pi-extensions.md, docs/mcp-servers.md, docs/policies.md) despite task being audit-only. Skill instructions for Phase 3 show the --fix command without making clear it is only for execute mode."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 1, "total": 4, "pass_rate": 0.75 },
+  "notes": "The audit ran --fix when it should not have — skill instructions need to separate analysis commands from fix commands more clearly. The structural analysis output is good but the no-edits constraint was violated."
+}

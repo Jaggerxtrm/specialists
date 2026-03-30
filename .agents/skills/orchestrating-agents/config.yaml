@@ -1,0 +1,45 @@
+# Orchestration Configuration
+# Version: 1.0.0
+
+# ----------------------------------------------------------------------------
+# Orchestration Workflows: Deep multi-turn agent interactions
+# ----------------------------------------------------------------------------
+orchestration_workflows:
+  collaborative-design:
+    patterns:
+      - "design.*feature"
+      - "architecture.*plan"
+      - "new.*component"
+    description: "Multi-turn design session: Proposal (Agent A) -> Critique (Agent B) -> Refinement (Agent A)"
+    turns: 3
+
+  adversarial-review:
+    patterns:
+      - "security.*audit"
+      - "break.*code"
+      - "find.*flaws"
+      - "red.*team"
+    description: "Skeptic review: Proposal (Agent A) -> Attack/Skepticism (Agent B) -> Defense/Fix (Agent A)"
+    turns: 3
+
+  troubleshoot-session:
+    patterns:
+      - "debug.*complex"
+      - "emergency"
+      - "out.*of.*trouble"
+      - "production.*error"
+    description: "Deep investigation: Hypothesis (Agent A) -> Verification (Agent B) -> Root Cause (Both)"
+    turns: 4
+
+# ----------------------------------------------------------------------------
+# Pattern Priority
+# ----------------------------------------------------------------------------
+priority:
+  - orchestration_workflows
+
+# ----------------------------------------------------------------------------
+# Auto-Selection Default
+# ----------------------------------------------------------------------------
+default:
+  workflow: collaborative-design
+  reason: "Standard multi-agent collaboration"

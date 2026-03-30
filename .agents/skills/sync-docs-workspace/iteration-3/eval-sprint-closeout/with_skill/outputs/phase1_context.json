@@ -1,0 +1,302 @@
+{
+  "generated_at": "2026-03-18T14:37:21.068931+00:00",
+  "project_root": "/home/dawid/projects/xtrm-tools/.claude/worktrees/agent-a667b46b",
+  "bd_available": true,
+  "bd_closed_issues": [
+    {
+      "id": "jaggers-agent-tools-1lc",
+      "title": "\u25cf P0 bug Remove dead code cli/index.js"
+    },
+    {
+      "id": "jaggers-agent-tools-7dwo",
+      "title": "\u25cf P0 bug Fix commit gate blocking when session claim is already closed"
+    },
+    {
+      "id": "jaggers-agent-tools-8dhs",
+      "title": "\u25cf P0 bug Wire quality gates PostToolUse hooks into project .claude/settings.json"
+    },
+    {
+      "id": "jaggers-agent-tools-9bl",
+      "title": "\u25cf P0 bug Fix hash-based drift detection misclassification"
+    },
+    {
+      "id": "jaggers-agent-tools-i8m",
+      "title": "\u25cf P0 bug main-guard: Serena edit tools bypass branch protection on main/master"
+    },
+    {
+      "id": "jaggers-agent-tools-ihgz",
+      "title": "\u25cf P0 task Clean up legacy hooks and config on current machine before fresh install"
+    },
+    {
+      "id": "jaggers-agent-tools-l1g",
+      "title": "\u25cf P0 bug Fix MCP sync guard placement"
+    },
+    {
+      "id": "jaggers-agent-tools-04pw",
+      "title": "\u25cf P1 task Retire hook injection machinery for Claude Code path"
+    },
+    {
+      "id": "jaggers-agent-tools-0ys",
+      "title": "\u25cf P1 task E2E audit: Pi extensions \u2014 verify all 2.2.0 Pi changes"
+    },
+    {
+      "id": "jaggers-agent-tools-1t7",
+      "title": "\u25cf P1 bug Bug: git reset --hard origin/main blocked on protected branch \u2014 breaks post-merge sync step"
+    },
+    {
+      "id": "jaggers-agent-tools-2sh",
+      "title": "\u25cf P1 task Fix hook blocking protocol: use decision/reason format"
+    },
+    {
+      "id": "jaggers-agent-tools-2xv",
+      "title": "\u25cf P1 task Update documentation with latest PRs and CLI changes"
+    },
+    {
+      "id": "jaggers-agent-tools-39u",
+      "title": "\u25cf P1 bug fix(beads): stale chip counter and missed claim display in Pi statusline"
+    },
+    {
+      "id": "jaggers-agent-tools-3k7",
+      "title": "\u25cf P1 bug Bug: main-guard.mjs Bash handler never fires \u2014 Bash missing from hooks.json matcher"
+    },
+    {
+      "id": "jaggers-agent-tools-4ov",
+      "title": "\u25cf P1 task Fix beads.ts Pi commit gate logic"
+    },
+    {
+      "id": "jaggers-agent-tools-4xr6",
+      "title": "\u25cf P1 epic Global-first plugin architecture: all hooks, skills, and Pi extensions become global; xtrm init replaces install project"
+    },
+    {
+      "id": "jaggers-agent-tools-6lo",
+      "title": "\u25cf P1 task Inject managed AGENTS/CLAUDE headers during xtrm project init"
+    },
+    {
+      "id": "jaggers-agent-tools-75g",
+      "title": "\u25cf P1 bug Fix tdd-guard-pretool-bridge double message output"
+    },
+    {
+      "id": "jaggers-agent-tools-7j3",
+      "title": "\u25cf P1 task 2.1.14 release"
+    },
+    {
+      "id": "jaggers-agent-tools-80t",
+      "title": "\u25cf P1 task Restore Pi dashscope API key in models.json"
+    }
+  ],
+  "bd_memories": [
+    {
+      "key": "memory.2-2-0-hooks-audit-source-config-hooks",
+      "value": "2.2.0 hooks audit: source config/hooks.json is correct. Installed ~/.claude/settings.json has 2 stale entries from pre-2.2.0: (1) serena-workflow-reminder.py is also wired as PreToolUse (should be SessionStart only), (2) gitnexus PostToolUse matcher includes Read|Grep|Glob (should be Bash|mcp__serena__ only). Fix: re-run xtrm install basic to sync."
+    },
+    {
+      "key": "memory.bd-kv-clear-not-bd-kv-delete-removes",
+      "value": "bd kv clear (not bd kv delete) removes kv entries. bd kv delete does not exist \u2014 it silently shows help and exits 0, so the key is never cleared. Always use bd kv clear \"claimed:<session_id>\" to release a stale session claim before committing."
+    },
+    {
+      "key": "memory.beads-claim-fix-bd-update-claim-exits-1",
+      "value": "beads claim fix: bd update --claim exits 1 when already in_progress \u2014 drop !event.isError guard from Pi extension tool_result intercept so KV claim fires regardless of exit code. Intent of --claim is to own the issue, not just change status."
+    },
+    {
+      "key": "memory.beads-claim-workflow-bd-update-id-claim-now",
+      "value": "beads claim workflow: bd update <id> --claim now auto-sets bd kv claimed:<sessionId> via Pi extension tool_result intercept. Block message includes session ID and exact kv set command for manual fallback. Hook context (beads-edit-gate.mjs) uses input.session_id; Pi extension uses ctx.sessionManager.sessionId \u2014 these are different sources."
+    },
+    {
+      "key": "memory.beads-commit-gate-never-chain-bd-kv-clear",
+      "value": "beads commit gate: NEVER chain 'bd kv clear' with 'git commit' in one Bash command \u2014 the commit gate blocks the entire chained command before bd kv clear runs. Always run bd kv clear as a standalone command first, then commit separately."
+    },
+    {
+      "key": "memory.beads-commit-gate-session-id-b716dc0b-5734-470b",
+      "value": "beads commit gate: session ID b716dc0b-5734-470b-a6e8-766b23029cd5 persists across /compact \u2014 same UUID reused in continued sessions. Stale kv claims from previous turns accumulate. Always check bd kv list | grep claimed before committing to spot stale entries."
+    },
+    {
+      "key": "memory.beads-commit-gate-workflow-close-issue-bd-kv",
+      "value": "beads commit gate workflow: close issue \u2192 bd kv clear 'claimed:<instanceID>' \u2192 git commit. Gate checks kv, not issue status. Instance ID is b00d1e4f-a4ab-4785-87fe-1643ae517296"
+    },
+    {
+      "key": "memory.beads-edit-gate-uses-instance-id-b00d1e4f-a4ab",
+      "value": "beads-edit-gate uses instance ID b00d1e4f-a4ab-4785-87fe-1643ae517296, not the project_id from metadata.json \u2014 always use the ID from the hook error message when claiming"
+    },
+    {
+      "key": "memory.beads-gate-hooks-claude-hooks-session-scoped-via",
+      "value": "beads gate hooks (~/.claude/hooks/): session-scoped via bd kv. Architecture: shared primitives in beads-gate-utils.mjs (resolveCwd, isBeadsProject, getSessionClaim, getInProgress, getTotalWork, clearSessionClaim, withSafeBdContext). Four hooks import from it: beads-edit-gate.mjs, beads-stop-gate.mjs, beads-commit-gate.mjs, beads-close-memory-prompt.mjs. Claim workflow: bd update <id> --status=in_progress && bd kv set \"claimed:<session_id>\" \"<id>\". Release: bd close auto-clears via beads-close-memory-prompt. Gates fail open if session_id absent (fallback: global in_progress check) or bd kv unavailable. bd kv get exits 1 for missing keys (catch err.status===1). Counting: parse 'Total: N issues (X open, Y in progress)' line \u2014 do NOT regex-count 'in_progress' tokens (fragile, accidentally matched status legend). bd list --json not supported. Bash tool writes bypass beads-edit-gate and main-guard (tracked in xyi). dolt.auto-commit=on already set; bd dolt commit shows nothing pending \u2014 Dolt inconsistency is transient read isolation, no config fix needed."
+    },
+    {
+      "key": "memory.beads-pi-session-key-use-process-pid-tostring",
+      "value": "beads Pi session key: use process.pid.toString() not ctx.sessionManager.sessionId \u2014 PID is stable for Pi process lifetime. KV key: claimed:<pid>. custom-footer busts cache (lastFetch=0) via tool_result on bd close/update/create/claim + 200ms delayed refresh. requestRender captured from tui in setFooter callback to trigger repaints from async refresh."
+    },
+    {
+      "key": "memory.bug-noted-branch-state-mjs-is-missing-from",
+      "value": "bug noted: branch-state.mjs is missing from CANONICAL_HOOKS in cli/src/commands/clean.ts \u2014 existing clean logic would incorrectly flag it as orphaned. Not yet fixed."
+    },
+    {
+      "key": "memory.claude-code-pretooluse-blocking-protocol-use-decision-block",
+      "value": "Claude Code PreToolUse blocking protocol: use {decision:'block',reason:'...'} on stdout + exit 0. Using systemMessage field or stderr+exit2 causes blocks to appear as generic errors which the LLM deprioritises. The reason field is what gets surfaced as a structured block signal."
+    },
+    {
+      "key": "memory.claude-plugin-marketplace-add-requires-marketplace-json-with",
+      "value": "claude plugin marketplace add requires marketplace.json with plugin source as a subdirectory path (not '.') \u2014 single-plugin-at-root repos cannot use the marketplace CLI. Use direct JSON registration instead: write to ~/.claude/plugins/installed_plugins.json and enable in settings.json enabledPlugins."
+    },
+    {
+      "key": "memory.claude-plugin-validate-path-is-the-correct-tool",
+      "value": "claude plugin validate <path> is the correct tool to check plugin structure before attempting install."
+    },
+    {
+      "key": "memory.continuous-learning-v2-affaan-m-everything-claude-code",
+      "value": "continuous-learning-v2 (affaan-m/everything-claude-code) is documentation-only: hooks/, scripts/, agents/ dirs are all empty. observe.sh and instinct-cli.py do not exist. The SKILL.md is a design spec, not an implementation. Useful as architecture reference only."
+    },
+    {
+      "key": "memory.continuous-learning-v2-full-architecture-observe-sh-pretoolu",
+      "value": "continuous-learning-v2 full architecture: observe.sh(PreToolUse/PostToolUse)\u2192observations.jsonl\u2192observer-loop.sh(daemon, SIGUSR1 or 5min)\u2192claude haiku headless(ECC_SKIP_OBSERVE=1)\u2192instinct .yaml files\u2192/evolve --generate\u2192SKILL.md\u2192next session. NO automatic context injection. instincts only become active after manual /evolve\u2192skill install. observer.enabled=false by default."
+    },
+    {
+      "key": "memory.corrected-pi-project-skills-reads-agents-skills-natively",
+      "value": "CORRECTED: Pi project skills: reads .agents/skills/ natively from cwd up to git root. Also reads .pi/skills/ but .agents/ is the right place. Architecture: install to .agents/skills/ (SSOT). Symlink .claude/skills -> ../.agents/skills for Claude Code. No .pi/skills symlink needed. Pi docs confirm: global=~/.pi/agent/skills/ and ~/.agents/skills/, project=.pi/skills/ and .agents/skills/ (walks to git root)."
+    },
+    {
+      "key": "memory.custom-footer-statusline-beads-chip-uses-async-refresh",
+      "value": "custom-footer statusline: beads chip uses async refresh with 5s TTL cache (fire-and-forget from sync render fn). bd list parses open count via /\\((\\d+)\\s+open/. bd show <id> --json gives .status. Auto-clears stale closed claims via bd kv clear. ANSI chip: \\x1b[48;5;238m gray, \\x1b[48;5;28m green (in_progress), \\x1b[48;5;88m red (blocked). Bold XTRM: \\x1b[1m + theme.fg + \\x1b[22m (not \\x1b[0m \u2014 avoids killing color)."
+    },
+    {
+      "key": "memory.decidecommitgate-bug-fixed-was-blocking-unconditionally-when",
+      "value": "decideCommitGate bug fixed: was blocking unconditionally when state.claimed=true even after the claimed issue was closed. Fix: added stale-claim check \u2014 allow when inProgress.count===0 (matching decideStopGate pattern). beads-gate-core.mjs."
+    },
+    {
+      "key": "memory.dist-rebuild-required-whenever-install-project-ts-or",
+      "value": "dist rebuild required: whenever install-project.ts or any CLI source is changed, cli/dist/ must be rebuilt (npm run build in cli/) and committed. CI checks 'Verify dist is up to date' and fails if dist is stale."
+    }
+  ],
+  "merged_prs": [
+    {
+      "sha": "a7507e6c",
+      "subject": "Merge pull request #15 from Jaggerxtrm/release/2.0.1",
+      "date": "2026-03-13 03:16:47 +0100"
+    },
+    {
+      "sha": "c1a41b5b",
+      "subject": "Merge pull request #14 from Jaggerxtrm/chore/update-status-doc",
+      "date": "2026-03-13 03:13:07 +0100"
+    },
+    {
+      "sha": "d24a2205",
+      "subject": "Merge pull request #13 from Jaggerxtrm/fix/agents-target",
+      "date": "2026-03-13 03:11:27 +0100"
+    },
+    {
+      "sha": "ffa6feb6",
+      "subject": "Merge pull request #12 from Jaggerxtrm/feat/project-install-all",
+      "date": "2026-03-13 03:02:48 +0100"
+    },
+    {
+      "sha": "972f56ae",
+      "subject": "Merge pull request #8 from Jaggerxtrm/phase2-cli-refactor",
+      "date": "2026-03-12 04:24:42 +0100"
+    },
+    {
+      "sha": "6aa09462",
+      "subject": "Merge pull request #7 from Rico1109/fix/mcp-banner-ux",
+      "date": "2026-03-09 01:00:16 +0100"
+    },
+    {
+      "sha": "41f7e132",
+      "subject": "Merge PR #4: feat(cli): config system overhaul \u2014 installer polish, UI, auto-detection, banner (Rico1109)",
+      "date": "2026-03-04 01:27:17 +0100"
+    },
+    {
+      "sha": "4bab8eeb",
+      "subject": "Merge remote-tracking branch 'origin/main' into pr-4",
+      "date": "2026-03-04 01:26:53 +0100"
+    },
+    {
+      "sha": "a02449e1",
+      "subject": "Merge pull request #2 from Jaggerxtrm/docs/update-service-skills-readme",
+      "date": "2026-02-23 22:51:16 +0100"
+    },
+    {
+      "sha": "04e266bb",
+      "subject": "Merge branch 'typescript-migration': CLI v1.2.0 TypeScript rewrite",
+      "date": "2026-02-21 16:34:40 +0100"
+    }
+  ],
+  "recent_commits": [
+    {
+      "sha": "6476a442",
+      "subject": "Install official Claude plugins and remove duplicate MCP servers (jaggers-agent-tools-p9wc) (#111)",
+      "date": "2026-03-18 04:54:28 +0100"
+    },
+    {
+      "sha": "10d6433d",
+      "subject": "chore: release v2.4.0 (#110)",
+      "date": "2026-03-18 04:19:27 +0100"
+    },
+    {
+      "sha": "e5384308",
+      "subject": "chore: eliminate tdd-guard completely (#109)",
+      "date": "2026-03-18 04:14:39 +0100"
+    },
+    {
+      "sha": "f2690668",
+      "subject": "fix(quality-gates): wire PostToolUse hooks into project settings.json (#108)",
+      "date": "2026-03-18 03:48:23 +0100"
+    },
+    {
+      "sha": "9f1b1c10",
+      "subject": "docs(xtrm-guide): fix skills catalog, Pi events, policy table, version history (#107)",
+      "date": "2026-03-18 03:11:50 +0100"
+    },
+    {
+      "sha": "0e0448f7",
+      "subject": "docs: pre-install cleanup guide for plugin migration (#106)",
+      "date": "2026-03-18 03:02:15 +0100"
+    },
+    {
+      "sha": "f671c390",
+      "subject": "fix: context7 free stdio + commit gate stale-claim bug (#105)",
+      "date": "2026-03-18 03:02:12 +0100"
+    },
+    {
+      "sha": "0bef466b",
+      "subject": "fix(p0): MCP sync guard cleanup, manifest hash drift detection, dead code removal (#104)",
+      "date": "2026-03-18 02:09:58 +0100"
+    },
+    {
+      "sha": "e70f44f2",
+      "subject": "docs: add comprehensive XTRM-GUIDE.md and update README.md (jaggers-agent-tools-jc8) (#103)",
+      "date": "2026-03-18 02:06:36 +0100"
+    },
+    {
+      "sha": "b856c3b0",
+      "subject": "feat(tests): cross-runtime policy parity test suite (79m) (#102)",
+      "date": "2026-03-18 00:41:42 +0100"
+    },
+    {
+      "sha": "2f74f20d",
+      "subject": "feat(policies): add quality-gates and service-skills policy definitions (76v) (#101)",
+      "date": "2026-03-18 00:13:28 +0100"
+    },
+    {
+      "sha": "020e1bec",
+      "subject": "feat(policies): add canonical policy schema + compiler (ei6, o52) (#100)",
+      "date": "2026-03-18 00:00:45 +0100"
+    },
+    {
+      "sha": "add12216",
+      "subject": "feat(pi): add memory gate to beads extension (#99)",
+      "date": "2026-03-17 23:50:47 +0100"
+    },
+    {
+      "sha": "38c868c7",
+      "subject": "fix(memory-gate): scope gate to session claim instead of all-time closed issues (#98)",
+      "date": "2026-03-17 21:53:57 +0100"
+    },
+    {
+      "sha": "3d76e07b",
+      "subject": "docs: update README for plugin-based Claude install (v2.3.0) (#97)",
+      "date": "2026-03-17 20:30:38 +0100"
+    }
+  ],
+  "serena_drift": {
+    "available": false,
+    "stale": []
+  }
+}

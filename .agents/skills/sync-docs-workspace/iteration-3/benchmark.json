@@ -1,0 +1,298 @@
+{
+  "metadata": {
+    "skill_name": "sync-docs",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-18T14:41:48Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 119.1,
+        "tokens": 4247,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py and cited its output",
+          "passed": true,
+          "evidence": "Audit scope section (result.md line 123) states: 'Phase 3 (structure analysis): Complete \u2014 doc_structure_analyzer.py ran successfully'. The README extraction table, missing docs/ list, and invalid-schema file list all derive directly from that tool's output."
+        },
+        {
+          "text": "Named at least 2 specific README sections with their suggested docs/ destination",
+          "passed": true,
+          "evidence": "The report names 4 README sections with explicit targets in a structured table: '### Skills' -> docs/skills.md, '## Policy System' -> docs/policies.md, '## Hooks Reference' -> docs/hooks.md, '## MCP Servers' -> docs/mcp-servers.md. Repeated in the Recommended Next Steps section."
+        },
+        {
+          "text": "Did NOT run --fix or create/edit any files (audit-only mode respected)",
+          "passed": true,
+          "evidence": "Report header states 'Mode: Audit only (no files modified)'. Audit scope section (lines 123-125) explicitly states Phase 4 (execute) and Phase 5 (validate) were 'NOT run'. Only one output file exists (result.md), which is the report itself."
+        },
+        {
+          "text": "Report is actionable with clear next steps",
+          "passed": true,
+          "evidence": "The 'Recommended Next Steps (when executing)' section lists 7 numbered, concrete actions with specific scripts, file paths, and targets \u2014 e.g., 'Cut entries for 2.1.x\u20132.4.0 using add_entry.py', 'Extract to docs/hooks.md (or promote hook-system-summary.md)', 'Consolidate with docs/mcp-servers-config.md \u2192 rename to docs/mcp-servers.md + add frontmatter'."
+        }
+      ],
+      "notes": [
+        "drift_detector.py skipped due to missing pyyaml \u2014 Phase 2 coverage is absent"
+      ]
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 105.3,
+        "tokens": 3011,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py with --fix flag",
+          "passed": true,
+          "evidence": "result.md Command Run section shows: 'python3 /home/dawid/projects/xtrm-tools/skills/sync-docs/scripts/doc_structure_analyzer.py --fix --bd-remember' executed from the worktree."
+        },
+        {
+          "text": "Handled both MISSING scaffolds AND INVALID_SCHEMA files (or correctly reported none found)",
+          "passed": true,
+          "evidence": "result.md shows 5 MISSING scaffold files created (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md) and 7 INVALID_SCHEMA files fixed with frontmatter injection (cleanup.md, delegation-architecture.md, hook-system-summary.md, mcp-servers-config.md, pi-extensions-migration.md, pre-install-cleanup.md, todo.md). Both categories were handled."
+        },
+        {
+          "text": "Ran bd remember and reported the memory key",
+          "passed": true,
+          "evidence": "result.md bd remember Outcome section shows 'stored: true' and 'key: sync-docs-fix-2026-03-18'. The script correctly resolved the main repo root from the worktree gitdir pointer chain."
+        },
+        {
+          "text": "Ran validate_doc.py docs/ after fixing to confirm results",
+          "passed": true,
+          "evidence": "result.md validate_doc.py Results section shows 'Result: 12/12 files passed'. All docs/ files passed schema validation after the fix run."
+        }
+      ],
+      "notes": [
+        "README extraction requires content judgment (Serena) \u2014 EXTRACTABLE flag not auto-resolved by --fix",
+        "CHANGELOG staleness (v2.0.0 last entry vs v2.4.0 current) requires manual entry for v2.1.0-v2.4.0 changes"
+      ]
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 203.6,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs with specific data",
+          "passed": true,
+          "evidence": "phase1_context.json contains 20 bd_closed_issues with specific IDs and titles (e.g., jaggers-agent-tools-1lc 'P0 bug Remove dead code cli/index.js', jaggers-agent-tools-7dwo 'P0 bug Fix commit gate blocking...') and 10 merged_prs with SHAs, branch names, and dates (e.g., sha a7507e6c, 'Merge pull request #15 from Jaggerxtrm/release/2.0.1', 2026-03-13). result.md Phase 1 section summarizes this data accurately."
+        },
+        {
+          "text": "Ran doc_structure_analyzer.py and cited its structured output (STALE, EXTRACTABLE, MISSING, etc.)",
+          "passed": true,
+          "evidence": "result.md Phase 3 section explicitly cites STALE (CHANGELOG), EXTRACTABLE (README.md, 5 extraction candidates), MISSING (5 docs/ gaps), and INVALID_SCHEMA (7 existing docs files) with specific file names and counts. phase3_analysis.json confirms STALE for CHANGELOG with structured fields. Caveat: the saved phase3_analysis.json appears to be post-fix state (all existing_docs show OK, docs_gaps empty), so the MISSING/EXTRACTABLE/INVALID_SCHEMA findings are only visible in the result.md narrative, not the raw JSON. The structured terminology is accurately cited, but the saved JSON does not independently corroborate the pre-fix MISSING and EXTRACTABLE counts."
+        },
+        {
+          "text": "Detected the CHANGELOG version gap (package.json v2.4.0 vs CHANGELOG v2.0.0)",
+          "passed": true,
+          "evidence": "phase3_analysis.json changelog section explicitly records: package_version '2.4.0', latest_changelog_version '2.0.0', status 'STALE', and issues array containing 'package.json is at v2.4.0 but latest CHANGELOG entry is v2.0.0 \u2014 release is undocumented'. result.md also states this in Phase 3 and lists it as remaining action item #1."
+        },
+        {
+          "text": "Named at least one concrete next step with a specific file or action",
+          "passed": true,
+          "evidence": "result.md Remaining action items lists four concrete steps: (1) 'Add entries for v2.1.x, v2.2.0, v2.3.0, v2.4.0 using changelog/add_entry.py or manually', (2) 'Use Serena to move Skills, Policy System, Hooks Reference, MCP Servers sections into their respective docs/ scaffolds', (3) 'Run /documenting to update the 5 stale SSOT memories', (4) 'fill them in with Serena' for the 5 named scaffold files (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md)."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 95.9,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py and cited its output",
+          "passed": false,
+          "evidence": "result.md explicitly states 'Method: Manual review of README.md sections against existing docs/ files.' There is no mention of doc_structure_analyzer.py anywhere in the output. The executor performed a manual audit rather than using the specified tool."
+        },
+        {
+          "text": "Named at least 2 specific README sections with their suggested docs/ destination",
+          "passed": true,
+          "evidence": "The report names 7 README sections with specific docs/ destinations. Examples: 'Hooks Reference' (lines 114-141) -> 'docs/hooks.md (exists)'; 'Policy System' (lines 66-86) -> 'docs/policies.md (stub, needs population)'; 'MCP Servers' (lines 143-158) -> 'docs/mcp.md (exists)'. The priority table at lines 103-111 clearly maps each section to a target file."
+        },
+        {
+          "text": "Did NOT run --fix or create/edit any files (audit-only mode respected)",
+          "passed": true,
+          "evidence": "The only output file is result.md (the report itself). No docs/ files were created or modified. All suggestions use language like 'Suggested action: Move to...' or 'Consider creating...' rather than performing the actions. The outputs directory contains only result.md."
+        },
+        {
+          "text": "Report is actionable with clear next steps",
+          "passed": true,
+          "evidence": "The report includes a priority ranking table (lines 103-111) with Priority (High/Medium/Low), Section, Action, and Target columns for all 7 sections. Each section analysis also ends with an explicit 'Suggested action:' line. The report concludes with a 'What README.md Should Retain' section describing the end-state goal."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 122.8,
+        "tokens": 2791,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran doc_structure_analyzer.py with --fix flag",
+          "passed": true,
+          "evidence": "Step 2 of result.md: 'Ran `doc_structure_analyzer.py --root=<worktree> --fix`' \u2014 explicitly confirms the --fix flag was used, with a detailed list of 5 scaffolded MISSING files and 7 INVALID_SCHEMA files with frontmatter injected."
+        },
+        {
+          "text": "Handled both MISSING scaffolds AND INVALID_SCHEMA files (or correctly reported none found)",
+          "passed": true,
+          "evidence": "Step 2 of result.md lists both categories: 5 MISSING files scaffolded (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md) and 7 INVALID_SCHEMA files with frontmatter injected (cleanup.md, delegation-architecture.md, hook-system-summary.md, mcp-servers-config.md, pi-extensions-migration.md, pre-install-cleanup.md, todo.md)."
+        },
+        {
+          "text": "Ran bd remember and reported the memory key",
+          "passed": true,
+          "evidence": "Step 4 of result.md shows the full `bd remember` command was run from the main repo root with `--key sync-docs-fix-2026-03-18`, and the outcome reported: 'Updated [sync-docs-fix-2026-03-18] \u2014 memory persisted successfully.'"
+        },
+        {
+          "text": "Ran validate_doc.py docs/ after fixing to confirm results",
+          "passed": true,
+          "evidence": "Step 3 of result.md: 'Ran `validate_doc.py docs/` on the worktree' with result 'Result: 12/12 files passed'. This was done after --fix, confirming validation as a post-fix confirmation step."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.25,
+        "passed": 1,
+        "failed": 3,
+        "total": 4,
+        "time_seconds": 217.1,
+        "tokens": 3172,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs with specific data",
+          "passed": false,
+          "evidence": "The agent never ran context_gatherer.py. It gathered context using raw git commands (git log --oneline --merges, git diff --stat 10d6433..HEAD). It did report specific merged PRs (#111, #110, #109) with descriptions, but the script was not used. The expectation requires the specific script to be invoked, not just the outcome data to be present."
+        },
+        {
+          "text": "Ran doc_structure_analyzer.py and cited its structured output (STALE, EXTRACTABLE, MISSING, etc.)",
+          "passed": false,
+          "evidence": "No mention of doc_structure_analyzer.py anywhere in the output. The structured output categories (STALE, EXTRACTABLE, MISSING) never appear. The agent assessed doc staleness manually by reading files and comparing with git history."
+        },
+        {
+          "text": "Detected the CHANGELOG version gap (package.json v2.4.0 vs CHANGELOG v2.0.0)",
+          "passed": false,
+          "evidence": "The output notes 'CHANGELOG.md (contains full history through v2.0.0)' and references the codebase being at v2.4.0, but the agent concluded CHANGELOG was 'accurate' and listed it under 'No Changes Needed'. It did not explicitly frame this as a version gap between package.json (v2.4.0) and CHANGELOG (v2.0.0), and it did not flag it as an issue requiring action. The gap was effectively missed because the agent treated the [Unreleased] section as sufficient coverage."
+        },
+        {
+          "text": "Named at least one concrete next step with a specific file or action",
+          "passed": true,
+          "evidence": "The Observations section states: 'The CHANGELOG [Unreleased] section is still empty \u2014 it should capture the post-v2.4.0 sprint work (global-first arch, guard-rules centralization, Pi drift checks, xtrm init project detection) before the next release.' This identifies a specific file (CHANGELOG.md), a specific section ([Unreleased]), and concrete content items to add."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 142.6667,
+        "stddev": 53.219,
+        "min": 105.3,
+        "max": 203.6
+      },
+      "tokens": {
+        "mean": 2419.3333,
+        "stddev": 2184.446,
+        "min": 0,
+        "max": 4247
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.6667,
+        "stddev": 0.3819,
+        "min": 0.25,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 145.2667,
+        "stddev": 63.6469,
+        "min": 95.9,
+        "max": 217.1
+      },
+      "tokens": {
+        "mean": 1987.6667,
+        "stddev": 1731.8788,
+        "min": 0,
+        "max": 3172
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.33",
+      "time_seconds": "-2.6",
+      "tokens": "+432"
+    }
+  },
+  "notes": []
+}

@@ -1,0 +1,28 @@
+{
+  "eval_id": 2,
+  "run": "without_skill",
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py with --fix flag",
+      "passed": true,
+      "evidence": "Agent found the skill in the repo and ran doc_structure_analyzer.py --fix. However, found no MISSING gaps because with_skill run had already created those files (confounded test)."
+    },
+    {
+      "text": "Ran with --bd-remember or manually ran bd remember with a summary",
+      "passed": true,
+      "evidence": "Agent ran bd remember with key 'sync-docs-fix-schema-2026-03-18' summarizing the frontmatter additions made to 7 files."
+    },
+    {
+      "text": "At least one scaffold file was created in docs/",
+      "passed": true,
+      "evidence": "Added YAML frontmatter to 7 existing docs/ files (hooks.md, mcp.md, pre-install-cleanup.md, project-skills.md, skills.md, testing.md, todo.md). Different action than creating scaffolds but valid given scaffolds already existed."
+    },
+    {
+      "text": "Ran validate_doc.py on created files to confirm schema",
+      "passed": true,
+      "evidence": "Ran validate_doc.py docs/ — 7/7 files passed after frontmatter additions."
+    }
+  ],
+  "summary": { "passed": 4, "failed": 0, "total": 4, "pass_rate": 1.0 },
+  "notes": "CONFOUNDED: this run was contaminated because with_skill created the scaffold files first, leaving without_skill nothing to scaffold. The agent adapted by fixing schema on existing files. The run should be discarded for comparison purposes and re-run in isolation."
+}

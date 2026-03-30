@@ -1,0 +1,91 @@
+{
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py with --fix flag",
+      "passed": true,
+      "evidence": "Step 2 of result.md shows the exact command run: 'python3 .../doc_structure_analyzer.py --root=... --fix' with stdout confirming 5 files created and 7 files fixed."
+    },
+    {
+      "text": "Handled both MISSING scaffolds AND INVALID_SCHEMA files (or correctly reported none found)",
+      "passed": true,
+      "evidence": "Step 2 shows 5 MISSING scaffold files were created (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md) and 7 INVALID_SCHEMA files had frontmatter injected (cleanup.md, delegation-architecture.md, hook-system-summary.md, mcp-servers-config.md, pi-extensions-migration.md, pre-install-cleanup.md, todo.md). Both categories were explicitly handled."
+    },
+    {
+      "text": "Ran bd remember and reported the memory key",
+      "passed": true,
+      "evidence": "Step 4 shows bd remember was attempted with key 'sync-docs-fix-2026-03-18'. It failed with 'database jaggers_agent_tools not found on Dolt server at 127.0.0.1:13800', but the key was explicitly reported ('## bd Memory Key (intended): sync-docs-fix-2026-03-18') and the attempt was fully documented. Per grading note, attempt + reported key satisfies this assertion."
+    },
+    {
+      "text": "Ran validate_doc.py docs/ after fixing to confirm results",
+      "passed": true,
+      "evidence": "Step 3 shows the command 'python3 .../validate_doc.py .../docs/' was run post-fix, with all 12 files showing [PASS] and final output 'Result: 12/12 files passed'."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 4,
+    "errors_encountered": 1,
+    "output_chars": 5843,
+    "transcript_chars": 5843
+  },
+  "timing": {
+    "executor_duration_seconds": 129.8,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 129.8
+  },
+  "claims": [
+    {
+      "claim": "All 12 docs/ files pass schema validation after the fix",
+      "type": "factual",
+      "verified": true,
+      "evidence": "validate_doc.py output in Step 3 shows 'Result: 12/12 files passed' with each file individually listed as [PASS]."
+    },
+    {
+      "claim": "The Dolt server is running but serving a different data directory \u2014 jaggers_agent_tools database is not present",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Error message quoted in Step 4: 'database jaggers_agent_tools not found on Dolt server at 127.0.0.1:13800'. bd doctor confirmed server running but wrong data directory."
+    },
+    {
+      "claim": "The JSON report's docs_gaps and existing_docs keys still show pre-fix state \u2014 this is expected",
+      "type": "quality",
+      "verified": true,
+      "evidence": "result.md notes this explicitly and explains fix_created and fix_schema_fixed keys confirm actual changes. Consistent with a script capturing state before applying fixes."
+    },
+    {
+      "claim": "README.md EXTRACTABLE and CHANGELOG.md STALE issues were not fixed",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Step 1 identifies these issues. The 'What Was NOT Fixed' table confirms they were left as requiring manual work \u2014 appropriate since they require content judgment, not automated fixes."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [
+      "README.md EXTRACTABLE \u2014 5 sections should move to docs/ but requires content judgment",
+      "CHANGELOG.md STALE \u2014 v2.4.0 undocumented; requires add_entry.py and human input"
+    ],
+    "workarounds": [
+      "bd remember failed due to Dolt server database mismatch; key was reported manually in result.md"
+    ]
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Ran validate_doc.py docs/ after fixing to confirm results",
+        "reason": "This assertion passes even if validate_doc.py reported failures. A stronger assertion would check that all files passed (e.g., 'validate_doc.py reported 0 failures after the fix'), which would only pass on a genuinely successful run."
+      },
+      {
+        "reason": "No assertion covers the quality of generated scaffold files \u2014 e.g., that docs/hooks.md contains meaningful scaffold content (title, frontmatter fields) rather than being empty or trivially minimal. The agent created 5 files and fixed 7, but scaffold content correctness is unchecked."
+      }
+    ],
+    "overall": "All four assertions were satisfied with clear evidence. The main gap is that assertions check process steps rather than outcome quality \u2014 specifically validate_doc.py pass rate and scaffold content correctness."
+  }
+}

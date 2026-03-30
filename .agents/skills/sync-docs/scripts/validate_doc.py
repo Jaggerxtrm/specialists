@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""
+Validate and generate schema-compliant docs/ files.
+
+Schema for docs/ files:
+  Required: title, scope, category, version, updated
+  Optional: description, source_of_truth_for (glob list), domain (tag list)
+
+Usage:
+  validate_doc.py <file_or_dir>           # validate one file or all *.md in dir
+  validate_doc.py --generate <path>       # generate scaffold + required flags below
+    --title="..."
+    --scope="..."
+    --category="reference|guide|architecture|api"
+    --source-for="glob1,glob2"            # optional
+    --description="..."                   # optional
+"""
+
+import sys
+import re
+import json
+from pathlib import Path
+from datetime import date
+
+# ── Schema ────────────────────────────────────────────────────────────────────
+
+REQUIRED_FIELDS = ["title", "scope", "category", "version", "updated"]
+VALID_CATEGORIES = ["reference", "guide", "architecture", "api", "plan", "overview"]
+
+CATEGORY_DESCRIPTIONS = {
+    "reference": "Look-up table, cheat sheet, or technical specification",
+    "guide": "How-to documentation with step-by-step instructions",
+    "architecture": "System design, component relationships, high-level overview",
+    "api": "API contracts, interfaces, or data schemas",
+    "plan": "Implementation plan or roadmap",
+    "overview": "Summary introduction to a subsystem",
+}
+
+
+# ── Frontmatter helpers ───────────────────────────────────────────────────────
+
+def extract_frontmatter(content: str) -> dict | None:
+    """Parse simple YAML frontmatter without external dependencies.
+
+    Handles scalar values, quoted strings, and list fields (- item syntax).
+    """
+    m = re.match(r"^---\n(.*?)\n---\n", content, re.DOTALL)
+    if not m:
+        return None
+
+    result: dict[str, object] = {}
+    current_key: str | None = None
+    current_list: list[str] | None = None
+
+    for line in m.group(1).splitlines():
+        # List item under current key
+        if current_list is not None and re.match(r"^\s+-\s+", line):
+            current_list.append(re.sub(r"^\s+-\s+", "", line).strip().strip('"\''))
+            continue
+
+        # New key: value line
+        kv = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)', line)
+        if kv:
+            # Flush previous list
+            if current_key is not None and current_list is not None:
+                result[current_key] = current_list
+
+            current_key = kv.group(1)
+            raw_val = kv.group(2).strip()
+
+            if raw_val == "" or raw_val == ">-":
+                # Value on following lines (list or multiline) — start list
+                current_list = []
+            elif raw_val.startswith("["):
+                # Inline list: [a, b, c]
+                current_list = None
+                inner = raw_val.strip("[]")
+                result[current_key] = [v.strip().strip('"\'') for v in inner.split(",") if v.strip()]
+            else:
+                current_list = None
+                result[current_key] = raw_val.strip('"\'')
+        else:
+            # Continuation line for multiline scalar — ignore for our purposes
+            pass
+
+    # Flush trailing list
+    if current_key is not None and current_list is not None:
+        result[current_key] = current_list
+
+    return result
+
+
+def extract_headings(content: str) -> list[tuple[str, str]]:
+    """Return (heading, first_sentence) for every ## section."""
+    results = []
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("## ") and not line.startswith("### "):
+            heading = line[3:].strip()
+            summary = ""
+            j = i + 1
+            in_code = False
+            while j < len(lines):
+                ln = lines[j].strip()
+                if ln.startswith("```"):
+                    in_code = not in_code
+                    j += 1
+                    continue
+                if not in_code and ln and not ln.startswith("#"):
+                    summary = ln.split(".")[0].strip()[:120]
+                    break
+                j += 1
+            results.append((heading, summary))
+        i += 1
+    return results
+
+
+def make_anchor(heading: str) -> str:
+    """Generate a GitHub-compatible anchor from a heading string."""
+    anchor = heading.lower()
+    anchor = re.sub(r"\s+", "-", anchor)          # spaces → hyphens
+    anchor = re.sub(r"[^a-z0-9\-]", "", anchor)   # strip non-alphanumeric (except -)
+    anchor = re.sub(r"-+", "-", anchor)            # collapse runs
+    return anchor.strip("-")
+
+
+def generate_index_table(headings: list[tuple[str, str]]) -> str:
+    rows = ["| Section | Summary |", "|---|---|"]
+    for heading, summary in headings:
+        rows.append(f"| [{heading}](#{make_anchor(heading)}) | {summary or '_no summary_'} |")
+    return "\n".join(rows) + "\n"
+
+
+def inject_index(content: str, table: str) -> str:
+    header = "<!-- INDEX: auto-generated by validate_doc.py — do not edit manually -->\n"
+    footer = "<!-- END INDEX -->"
+    block = f"{header}{table}{footer}"
+
+    existing = re.search(r"<!-- INDEX:.*?-->.*?<!-- END INDEX -->", content, re.DOTALL)
+    if existing:
+        return content[: existing.start()] + block + content[existing.end() :]
+
+    fm_match = re.match(r"^(---\n.*?\n---\n)(.*)", content, re.DOTALL)
+    if fm_match:
+        return fm_match.group(1) + "\n" + block + "\n" + fm_match.group(2)
+
+    return block + "\n" + content
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+
+def validate_file(path: Path) -> tuple[bool, list[str], list[str]]:
+    """Returns (passed, errors, warnings)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not path.exists():
+        return False, [f"File not found: {path}"], []
+
+    content = path.read_text(encoding="utf-8")
+    fm = extract_frontmatter(content)
+
+    if fm is None:
+        errors.append("Missing or invalid YAML frontmatter (wrap in --- markers)")
+        return False, errors, warnings
+
+    # Required fields
+    for field in REQUIRED_FIELDS:
+        if field not in fm:
+            errors.append(f"Missing required field: {field}")
+
+    # version format
+    if "version" in fm:
+        if not re.match(r"^\d+\.\d+\.\d+$", str(fm["version"])):
+            errors.append(f"version must be semver (x.y.z), got: {fm['version']}")
+
+    # updated format
+    if "updated" in fm:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}", str(fm["updated"])):
+            warnings.append(f"updated should be ISO date (YYYY-MM-DD), got: {fm['updated']}")
+
+    # category valid
+    if "category" in fm and fm["category"] not in VALID_CATEGORIES:
+        errors.append(
+            f"category '{fm['category']}' not valid. Choose from: {', '.join(VALID_CATEGORIES)}"
+        )
+
+    # domain is list
+    if "domain" in fm and not isinstance(fm["domain"], list):
+        errors.append("domain must be a list, e.g. [hooks, claude]")
+
+    # source_of_truth_for and tracks are lists of globs
+    if "source_of_truth_for" in fm and not isinstance(fm["source_of_truth_for"], list):
+        errors.append("source_of_truth_for must be a list of glob patterns")
+    if "tracks" in fm and not isinstance(fm["tracks"], list):
+        errors.append("tracks must be a list of glob patterns")
+
+    # Regenerate INDEX if valid
+    if not errors:
+        headings = extract_headings(content)
+        if headings:
+            table = generate_index_table(headings)
+            new_content = inject_index(content, table)
+            if new_content != content:
+                path.write_text(new_content, encoding="utf-8")
+                warnings.append("INDEX regenerated")
+
+    return len(errors) == 0, errors, warnings
+
+
+def validate_directory(docs_dir: Path) -> dict:
+    results = {}
+    for md_file in sorted(docs_dir.glob("*.md")):
+        passed, errors, warnings = validate_file(md_file)
+        results[str(md_file.relative_to(docs_dir.parent))] = {
+            "passed": passed,
+            "errors": errors,
+            "warnings": warnings,
+        }
+    return results
+
+
+def print_file_result(path: str, passed: bool, errors: list[str], warnings: list[str]) -> None:
+    status = "PASS" if passed else "FAIL"
+    mark = "" if passed else ""
+    print(f"\n{mark} {path} [{status}]")
+    for e in errors:
+        print(f"    ERROR: {e}")
+    for w in warnings:
+        print(f"    WARN:  {w}")
+    if passed and not warnings:
+        print("    All checks passed.")
+
+
+# ── Generator ─────────────────────────────────────────────────────────────────
+
+SCAFFOLD_TEMPLATE = """\
+---
+title: {title}
+scope: {scope}
+category: {category}
+version: 1.0.0
+updated: {today}
+{source_field}{tracks_field}{description_field}domain: []
+---
+
+<!-- INDEX: auto-generated by validate_doc.py — do not edit manually -->
+<!-- END INDEX -->
+
+# {title}
+
+> {category_desc}
+
+## Overview
+
+_Describe what this document covers._
+
+"""
+
+
+def generate_scaffold(output_path: Path, title: str, scope: str, category: str,
+                      source_for: list[str], description: str) -> None:
+    source_field = ""
+    tracks_field = ""
+    if source_for:
+        items = "\n".join(f'  - "{g}"' for g in source_for)
+        source_field = f"source_of_truth_for:\n{items}\n"
+        # tracks: mirrors source_of_truth_for so drift_detector.py picks up changes
+        tracks_field = f"tracks:\n{items}\n"
+
+    desc_field = f'description: "{description}"\n' if description else ""
+    category_desc = CATEGORY_DESCRIPTIONS.get(category, category)
+
+    content = SCAFFOLD_TEMPLATE.format(
+        title=title,
+        scope=scope,
+        category=category,
+        today=date.today().isoformat(),
+        source_field=source_field,
+        tracks_field=tracks_field,
+        description_field=desc_field,
+        category_desc=category_desc,
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content, encoding="utf-8")
+    print(f"Generated: {output_path}")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if not args:
+        print("Usage:")
+        print("  validate_doc.py <file_or_dir>")
+        print("  validate_doc.py --generate <path> --title=... --scope=... --category=...")
+        sys.exit(1)
+
+    # Generate mode
+    if "--generate" in args:
+        idx = args.index("--generate")
+        if idx + 1 >= len(args):
+            print("ERROR: --generate requires a path argument")
+            sys.exit(1)
+        output_path = Path(args[idx + 1])
+
+        kw: dict[str, str] = {}
+        source_for: list[str] = []
+        for arg in args:
+            if arg.startswith("--title="):
+                kw["title"] = arg.split("=", 1)[1]
+            elif arg.startswith("--scope="):
+                kw["scope"] = arg.split("=", 1)[1]
+            elif arg.startswith("--category="):
+                kw["category"] = arg.split("=", 1)[1]
+            elif arg.startswith("--source-for="):
+                source_for = [g.strip() for g in arg.split("=", 1)[1].split(",")]
+            elif arg.startswith("--description="):
+                kw["description"] = arg.split("=", 1)[1]
+
+        for req in ["title", "scope", "category"]:
+            if req not in kw:
+                print(f"ERROR: --{req} is required for --generate")
+                sys.exit(1)
+
+        generate_scaffold(
+            output_path,
+            title=kw["title"],
+            scope=kw["scope"],
+            category=kw["category"],
+            source_for=source_for,
+            description=kw.get("description", ""),
+        )
+        sys.exit(0)
+
+    # Validate mode
+    target = Path(args[0])
+    all_passed = True
+
+    if target.is_dir():
+        results = validate_directory(target)
+        for path_str, res in results.items():
+            print_file_result(path_str, res["passed"], res["errors"], res["warnings"])
+            if not res["passed"]:
+                all_passed = False
+        if results:
+            total = len(results)
+            passed = sum(1 for r in results.values() if r["passed"])
+            print(f"\nResult: {passed}/{total} files passed")
+        else:
+            print(f"No .md files found in {target}")
+    else:
+        passed, errors, warnings = validate_file(target)
+        print_file_result(str(target), passed, errors, warnings)
+        all_passed = passed
+
+    sys.exit(0 if all_passed else 1)
+
+
+if __name__ == "__main__":
+    main()

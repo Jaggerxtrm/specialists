@@ -1,0 +1,27 @@
+{
+  "eval_id": 3,
+  "eval_name": "doc-audit",
+  "prompt": "Do a doc audit. I think the README has sections that should be in docs/ but I'm not sure which ones.",
+  "assertions": [
+    {
+      "id": "ran-analyzer",
+      "description": "Ran doc_structure_analyzer.py and referenced its structured output",
+      "check": "result.md cites the analyzer output (EXTRACTABLE, BLOATED, line count, or specific section names from the report)"
+    },
+    {
+      "id": "named-specific-sections",
+      "description": "Named specific README sections with their suggested docs/ destination",
+      "check": "result.md lists at least 2 specific sections (e.g. '## Policy System → docs/policies.md') not just generic advice"
+    },
+    {
+      "id": "actionable-report",
+      "description": "Report is actionable — tells user exactly what to do next, not just observations",
+      "check": "result.md includes a prioritized list or clear next steps, not just 'the README could be shorter'"
+    },
+    {
+      "id": "no-edits-made",
+      "description": "Did not edit or create any files (audit only)",
+      "check": "result.md does not claim to have modified README.md or created docs/ files"
+    }
+  ]
+}

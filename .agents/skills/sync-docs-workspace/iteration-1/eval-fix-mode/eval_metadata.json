@@ -1,0 +1,27 @@
+{
+  "eval_id": 2,
+  "eval_name": "fix-mode",
+  "prompt": "Run sync-docs --fix on this project and remember what you did with bd.",
+  "assertions": [
+    {
+      "id": "ran-fix-flag",
+      "description": "Ran doc_structure_analyzer.py with --fix flag",
+      "check": "result.md shows the --fix command was executed"
+    },
+    {
+      "id": "ran-bd-remember",
+      "description": "Ran with --bd-remember or manually ran bd remember with a summary",
+      "check": "result.md shows bd remember was called and reports the memory key"
+    },
+    {
+      "id": "scaffold-created",
+      "description": "At least one scaffold file was created in docs/",
+      "check": "result.md lists a docs/*.md file created, OR reports no gaps found (valid outcome)"
+    },
+    {
+      "id": "validated-schema",
+      "description": "Ran validate_doc.py on created files to confirm schema",
+      "check": "result.md shows validate_doc.py was run and reports pass/fail for created files"
+    }
+  ]
+}

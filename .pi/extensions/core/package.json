@@ -1,0 +1,18 @@
+{
+  "name": "@xtrm/pi-core",
+  "version": "1.0.0",
+  "description": "Shared utilities for xtrm Pi extensions",
+  "type": "module",
+  "exports": {
+    ".": "./lib.ts",
+    "./lib": "./lib.ts",
+    "./logger": "./logger.ts",
+    "./runner": "./runner.ts",
+    "./adapter": "./adapter.ts",
+    "./guard-rules": "./guard-rules.ts",
+    "./session-state": "./session-state.ts"
+  },
+  "keywords": ["pi", "extension", "xtrm"],
+  "author": "xtrm",
+  "license": "MIT"
+}

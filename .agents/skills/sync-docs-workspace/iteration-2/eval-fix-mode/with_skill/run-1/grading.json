@@ -1,0 +1,72 @@
+{
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py with --fix flag",
+      "passed": true,
+      "evidence": "result.md Command Executed section shows: `python3 /home/dawid/projects/xtrm-tools/skills/sync-docs/scripts/doc_structure_analyzer.py --fix --bd-remember --root=/home/dawid/projects/xtrm-tools/.claude/worktrees/agent-ad500878`"
+    },
+    {
+      "text": "Handled both MISSING scaffolds AND INVALID_SCHEMA files (or correctly reported none found)",
+      "passed": true,
+      "evidence": "result.md shows 5 MISSING scaffold files created (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md) and 7 INVALID_SCHEMA files fixed by injecting frontmatter (cleanup.md, delegation-architecture.md, hook-system-summary.md, mcp-servers-config.md, pi-extensions-migration.md, pre-install-cleanup.md, todo.md). Both categories were handled."
+    },
+    {
+      "text": "Ran bd remember and reported the memory key",
+      "passed": true,
+      "evidence": "result.md bd Memory section reports key `sync-docs-fix-2026-03-18` and the full insight string. The script output JSON includes `bd_remember.key = 'sync-docs-fix-2026-03-18'`. Note: `stored: false` because no `.beads/` directory existed in the worktree, but the key was computed and reported, which satisfies the expectation."
+    },
+    {
+      "text": "Ran validate_doc.py docs/ after fixing to confirm results",
+      "passed": true,
+      "evidence": "result.md validate_doc.py docs/ Result section shows all 12 files passed (12/12) with exit code 0, covering both the 5 newly created scaffolds and the 7 schema-fixed files."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {},
+  "timing": {
+    "executor_duration_seconds": 120.0,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 120.0
+  },
+  "claims": [
+    {
+      "claim": "5 missing scaffold files were created",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Script output lists `fix_created` with 5 entries: hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md. validate_doc.py confirms these 5 files passed."
+    },
+    {
+      "claim": "7 INVALID_SCHEMA files had frontmatter injected",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Script output lists `fix_schema_fixed` with 7 entries. validate_doc.py confirms all 7 passed with exit code 0."
+    },
+    {
+      "claim": "bd memory could not be persisted because no .beads/ directory exists in the worktree",
+      "type": "factual",
+      "verified": true,
+      "evidence": "result.md states: 'Stored: false \u2014 bd could not persist because no .beads/ directory exists in the worktree (the script guards on (root / \".beads\").exists())'"
+    },
+    {
+      "claim": "All 12 docs/ files passed validation after fixes",
+      "type": "quality",
+      "verified": true,
+      "evidence": "validate_doc.py output shows 12/12 files passed with exit code 0."
+    }
+  ],
+  "user_notes_summary": {},
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Ran bd remember and reported the memory key",
+        "reason": "The assertion passes even though bd storage failed (`stored: false`). If the intent is to verify that the memory was actually persisted (not just that the key was computed), the assertion should check that `stored: true`. Consider splitting into 'reported the key' and 'successfully stored the memory' if persistence matters for the eval."
+      }
+    ],
+    "overall": "Three of the four assertions are well-targeted and discriminating. The bd remember assertion is ambiguous about whether successful storage is required \u2014 worth clarifying."
+  }
+}

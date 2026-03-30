@@ -1,0 +1,28 @@
+{
+  "eval_id": 1,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs from the output",
+      "passed": true,
+      "evidence": "Ran context_gatherer.py, reported 20 bd closed issues with IDs and titles, 3 merged PRs with SHAs and dates, 15 recent commits"
+    },
+    {
+      "text": "Ran doc_structure_analyzer.py and used its output to identify doc issues",
+      "passed": true,
+      "evidence": "Ran doc_structure_analyzer.py, referenced MISSING status for docs/pi-extensions.md, hooks.md, mcp-servers.md, policies.md, skills.md and EXTRACTABLE for README"
+    },
+    {
+      "text": "Produced at least one concrete recommendation or action (not just a vague summary)",
+      "passed": true,
+      "evidence": "Named specific files: docs/pi-extensions.md, docs/hooks.md, docs/mcp-servers.md, docs/policies.md with explicit next steps for each"
+    },
+    {
+      "text": "Used the skill scripts rather than just reading files manually",
+      "passed": true,
+      "evidence": "Ran 3 scripts (context_gatherer.py, drift_detector.py, doc_structure_analyzer.py) with explicit output included in report"
+    }
+  ],
+  "summary": { "passed": 4, "failed": 0, "total": 4, "pass_rate": 1.0 },
+  "notes": "Strong run. Correctly handled missing global install by using local path. Gracefully noted Serena unavailability. One issue: ran drift_detector.py but it required pyyaml pip install — skill should note this fallback."
+}

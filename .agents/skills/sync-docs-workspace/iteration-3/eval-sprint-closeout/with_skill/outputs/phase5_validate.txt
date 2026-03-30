@@ -1,0 +1,38 @@
+
+ docs/cleanup.md [PASS]
+    All checks passed.
+
+ docs/delegation-architecture.md [PASS]
+    All checks passed.
+
+ docs/hook-system-summary.md [PASS]
+    All checks passed.
+
+ docs/hooks.md [PASS]
+    All checks passed.
+
+ docs/mcp-servers-config.md [PASS]
+    All checks passed.
+
+ docs/mcp-servers.md [PASS]
+    All checks passed.
+
+ docs/pi-extensions-migration.md [PASS]
+    All checks passed.
+
+ docs/pi-extensions.md [PASS]
+    All checks passed.
+
+ docs/policies.md [PASS]
+    All checks passed.
+
+ docs/pre-install-cleanup.md [PASS]
+    All checks passed.
+
+ docs/skills.md [PASS]
+    All checks passed.
+
+ docs/todo.md [PASS]
+    All checks passed.
+
+Result: 12/12 files passed

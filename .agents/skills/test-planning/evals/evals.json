@@ -1,0 +1,23 @@
+{
+  "skill_name": "test-planning",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I've got an epic for a new notification service (notif-3a). I just created 8 child issues: .1 is the Postgres schema migration, .2 is the async message consumer (reads from RabbitMQ), .3 is the template renderer (Jinja2, pure python), .4 is the delivery client (calls Twilio/SendGrid APIs), .5 is the REST API for managing preferences, .6 is the CLI tool for ops to send test notifications, .7 is the retry/dead-letter handler, .8 is the rate limiter. Break down what testing each of these needs and create the bd issues.",
+      "expected_output": "Should detect layers: .1 (boundary/DB), .2 (boundary/MQ), .3 (core/pure), .4 (boundary/external API), .5 (boundary/API), .6 (shell/CLI), .7 (core/state machine), .8 (core/algorithm). Should batch into ~3 test issues: core tests (.3, .7, .8), boundary/contract tests (.1, .2, .4, .5), shell integration (.6). Should use property-based for rate limiter, contract tests for external APIs, characterization or spec-first for DB schema.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I just finished implementing the data ingestion pipeline (issue data-pipe-9f.4) — it reads CSVs from S3, validates schemas, transforms column types, and writes to Postgres. The parent epic is data-pipe-9f. Can you close it for me? bd close data-pipe-9f.4 --reason 'pipeline implemented and deployed'",
+      "expected_output": "Should trigger closure gate behavior: check bd children data-pipe-9f for existing test issues. Since none exist, should create a test issue covering all layers: unit tests for schema validation and column transforms (core), contract tests for S3 reads and Postgres writes (boundary), integration test for end-to-end pipeline (shell). Should NOT just close the issue without checking for test coverage.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "We have an epic tracker-7b with 5 implementation issues done and 1 test issue (tracker-7b.6) that was created during planning. But during implementation of .3 (the websocket price feed handler), we discovered the feed sometimes sends malformed JSON that the parser needs to handle gracefully, and .5 (the position calculator) ended up also doing margin calculations which weren't in the original plan. Can you review tracker-7b.6 and update it?",
+      "expected_output": "Should read tracker-7b.6, identify drift: (1) malformed JSON handling in websocket parser is a new edge case — add property-based tests for parser robustness, (2) margin calculations in position calculator are new core logic — add unit tests. Should update the existing test issue via bd update or bd comments, not create a new one. Should note that the parser needs characterization tests if there's existing behavior to preserve.",
+      "files": []
+    }
+  ]
+}

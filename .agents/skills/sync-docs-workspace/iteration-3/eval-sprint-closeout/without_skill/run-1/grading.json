@@ -1,0 +1,90 @@
+{
+  "expectations": [
+    {
+      "text": "Ran context_gatherer.py and reported bd closed issues or merged PRs with specific data",
+      "passed": false,
+      "evidence": "The agent never ran context_gatherer.py. It gathered context using raw git commands (git log --oneline --merges, git diff --stat 10d6433..HEAD). It did report specific merged PRs (#111, #110, #109) with descriptions, but the script was not used. The expectation requires the specific script to be invoked, not just the outcome data to be present."
+    },
+    {
+      "text": "Ran doc_structure_analyzer.py and cited its structured output (STALE, EXTRACTABLE, MISSING, etc.)",
+      "passed": false,
+      "evidence": "No mention of doc_structure_analyzer.py anywhere in the output. The structured output categories (STALE, EXTRACTABLE, MISSING) never appear. The agent assessed doc staleness manually by reading files and comparing with git history."
+    },
+    {
+      "text": "Detected the CHANGELOG version gap (package.json v2.4.0 vs CHANGELOG v2.0.0)",
+      "passed": false,
+      "evidence": "The output notes 'CHANGELOG.md (contains full history through v2.0.0)' and references the codebase being at v2.4.0, but the agent concluded CHANGELOG was 'accurate' and listed it under 'No Changes Needed'. It did not explicitly frame this as a version gap between package.json (v2.4.0) and CHANGELOG (v2.0.0), and it did not flag it as an issue requiring action. The gap was effectively missed because the agent treated the [Unreleased] section as sufficient coverage."
+    },
+    {
+      "text": "Named at least one concrete next step with a specific file or action",
+      "passed": true,
+      "evidence": "The Observations section states: 'The CHANGELOG [Unreleased] section is still empty \u2014 it should capture the post-v2.4.0 sprint work (global-first arch, guard-rules centralization, Pi drift checks, xtrm init project detection) before the next release.' This identifies a specific file (CHANGELOG.md), a specific section ([Unreleased]), and concrete content items to add."
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "failed": 3,
+    "total": 4,
+    "pass_rate": 0.25
+  },
+  "execution_metrics": {
+    "tool_calls": {},
+    "total_tool_calls": 0,
+    "total_steps": 0,
+    "errors_encountered": 0,
+    "output_chars": 3172,
+    "transcript_chars": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 217.1,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 217.1
+  },
+  "claims": [
+    {
+      "claim": "3 PRs merged in the most recent sprint: #111, #110, #109",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Consistent with git log output cited in the result and with the repo's commit history (PR #111 referenced in CLAUDE.md recent commits section)"
+    },
+    {
+      "claim": "CHANGELOG.md is accurate and no changes are needed to it",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The agent says CHANGELOG 'contains full history through v2.0.0' and the codebase is at v2.4.0. This means v2.1.0 through v2.4.0 entries are missing from CHANGELOG \u2014 a significant gap that contradicts the 'accurate' verdict. The [Unreleased] section does not substitute for missing versioned entries."
+    },
+    {
+      "claim": "XTRM-GUIDE.md required no changes as it was updated by sprint commits",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The claim is plausible given commit f8e37f9, but the agent did not run doc_structure_analyzer.py or any systematic staleness check against XTRM-GUIDE.md \u2014 it relied on reading the file and comparing manually. Cannot fully verify without the script output."
+    },
+    {
+      "claim": "README was 'about 1.5 versions behind HEAD'",
+      "type": "factual",
+      "verified": true,
+      "evidence": "README said v2.3.0 while codebase was at v2.4.0 with unreleased post-v2.4.0 work on top \u2014 the characterization is reasonable given the 8 changes fixed."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Ran context_gatherer.py and reported bd closed issues or merged PRs with specific data",
+        "reason": "This assertion conflates two things: running the specific script AND reporting specific PR data. An agent that skips the script but manually finds the same PR data would fail on process but produce similar outputs. The eval would be stronger if split: one assertion for script invocation (verifiable from transcript tool calls) and one for PR data quality (verifiable from output content)."
+      },
+      {
+        "assertion": "Detected the CHANGELOG version gap (package.json v2.4.0 vs CHANGELOG v2.0.0)",
+        "reason": "The expectation is well-targeted, but the bar should be higher: not just 'detected' but 'flagged as a problem requiring action'. The agent did notice CHANGELOG goes to v2.0.0 while the code is at v2.4.0, yet concluded it was accurate. An assertion that checks whether the gap was identified as a documentation deficiency (not just noted in passing) would be more discriminating."
+      },
+      {
+        "reason": "No assertion covers output quality for the README edits that were actually made \u2014 the primary work product of this run. The agent claims to have fixed 8 categories of README issues, but no expectation checks whether those changes are correct, complete, or even present in the file. This is the largest unguarded outcome."
+      }
+    ],
+    "overall": "The evals focus on process steps (run script X, detect gap Y) but miss the primary output (README changes). The CHANGELOG gap assertion is good but needs tighter framing. The script-invocation assertions are fragile without transcript access to verify tool calls."
+  }
+}

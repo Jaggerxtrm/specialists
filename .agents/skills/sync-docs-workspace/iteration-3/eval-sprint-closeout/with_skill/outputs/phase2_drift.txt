@@ -1,0 +1,33 @@
+[Drift Report] 5 memories stale:
+
+  ssot_cli_hooks_2026-02-03
+    Last updated: 2026-02-25
+    Modified: hooks/beads-gate-core.mjs
+    Modified: hooks/hooks.json
+    Modified: hooks/beads-memory-gate.mjs
+
+  ssot_cli_universal_hub_2026-02-19
+    Last updated: 2026-02-25
+    Modified: cli/src/commands/install.ts
+    Modified: cli/src/commands/install.ts
+    Modified: cli/src/core/diff.ts
+
+  ssot_cli_ux_improvements_2026-02-22
+    Last updated: 2026-02-25
+    Modified: cli/src/commands/install.ts
+    Modified: cli/src/commands/install.ts
+    Modified: cli/src/core/diff.ts
+
+  ssot_jaggers-agent-tools_installer_architecture_2026-02-03
+    Last updated: 2026-02-25
+    Modified: cli/dist/index.cjs
+    Modified: cli/dist/index.cjs.map
+    Modified: cli/src/commands/install.ts
+
+  ssot_jaggers-agent-tools_migration_2026-02-01
+    Last updated: 2026-02-01 05:15:00+00:00
+    Modified: cli/dist/index.cjs
+    Modified: cli/dist/index.cjs.map
+    Modified: cli/src/commands/install.ts
+
+Run /documenting to update.

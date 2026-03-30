@@ -1,0 +1,28 @@
+{
+  "eval_id": 2,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py with --fix flag",
+      "passed": true,
+      "evidence": "Ran `python3 skills/sync-docs/scripts/doc_structure_analyzer.py --fix --bd-remember` and included full output"
+    },
+    {
+      "text": "Ran with --bd-remember or manually ran bd remember with a summary",
+      "passed": true,
+      "evidence": "bd remember stored with key 'sync-docs-fix-2026-03-18', confirmed stored:true in output JSON"
+    },
+    {
+      "text": "At least one scaffold file was created in docs/",
+      "passed": true,
+      "evidence": "Created docs/pi-extensions.md, docs/mcp-servers.md, docs/policies.md with valid frontmatter"
+    },
+    {
+      "text": "Ran validate_doc.py on created files to confirm schema",
+      "passed": false,
+      "evidence": "Report notes 7 INVALID_SCHEMA files exist but does not show validate_doc.py being run explicitly to confirm the 3 new files pass. Only the JSON output showing valid frontmatter is evidence."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 1, "total": 4, "pass_rate": 0.75 },
+  "notes": "Excellent on core task. Missed explicit validate_doc.py run as final step. Also correctly noted global path issue. The report is detailed and actionable."
+}

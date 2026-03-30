@@ -1,0 +1,82 @@
+{
+  "expectations": [
+    {
+      "text": "Ran doc_structure_analyzer.py with --fix flag",
+      "passed": true,
+      "evidence": "Step 2 of result.md: 'Ran `doc_structure_analyzer.py --root=<worktree> --fix`' \u2014 explicitly confirms the --fix flag was used, with a detailed list of 5 scaffolded MISSING files and 7 INVALID_SCHEMA files with frontmatter injected."
+    },
+    {
+      "text": "Handled both MISSING scaffolds AND INVALID_SCHEMA files (or correctly reported none found)",
+      "passed": true,
+      "evidence": "Step 2 of result.md lists both categories: 5 MISSING files scaffolded (hooks.md, pi-extensions.md, mcp-servers.md, policies.md, skills.md) and 7 INVALID_SCHEMA files with frontmatter injected (cleanup.md, delegation-architecture.md, hook-system-summary.md, mcp-servers-config.md, pi-extensions-migration.md, pre-install-cleanup.md, todo.md)."
+    },
+    {
+      "text": "Ran bd remember and reported the memory key",
+      "passed": true,
+      "evidence": "Step 4 of result.md shows the full `bd remember` command was run from the main repo root with `--key sync-docs-fix-2026-03-18`, and the outcome reported: 'Updated [sync-docs-fix-2026-03-18] \u2014 memory persisted successfully.'"
+    },
+    {
+      "text": "Ran validate_doc.py docs/ after fixing to confirm results",
+      "passed": true,
+      "evidence": "Step 3 of result.md: 'Ran `validate_doc.py docs/` on the worktree' with result 'Result: 12/12 files passed'. This was done after --fix, confirming validation as a post-fix confirmation step."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "output_chars": 2791,
+    "transcript_chars": 2791
+  },
+  "timing": {
+    "executor_duration_seconds": 122.8,
+    "grader_duration_seconds": 0.0,
+    "total_duration_seconds": 122.8
+  },
+  "claims": [
+    {
+      "claim": "Pre-fix analysis found 14 total issues",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The transcript reports this in Step 1, but there are no raw script output files in outputs/ to independently verify the count. The claim is plausible given the breakdown (5 MISSING + 7 INVALID_SCHEMA + 2 non-fixable = 14), but cannot be confirmed from available evidence alone."
+    },
+    {
+      "claim": "12 of 14 issues were fixed, 2 remaining (CHANGELOG stale, README extractable)",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The transcript makes this claim and explains why the 2 remaining issues can't be auto-fixed. No raw output from the scripts is available to independently verify. The math is consistent: 5 + 7 = 12 fixed."
+    },
+    {
+      "claim": "All 12/12 docs/ files pass validate_doc.py",
+      "type": "quality",
+      "verified": false,
+      "evidence": "Result.md asserts this, but no validate_doc.py output file is present in outputs/. The claim cannot be independently confirmed from available artifacts."
+    },
+    {
+      "claim": "bd remember was run from main repo root, not worktree",
+      "type": "process",
+      "verified": true,
+      "evidence": "Step 4 explicitly states: 'Ran `bd remember` from the main repo root (`/home/dawid/projects/xtrm-tools`)' with an explanatory note about why worktree paths don't work with bd."
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "All four assertions are satisfied by a single well-structured result.md, but no raw script outputs (stdout/stderr of doc_structure_analyzer.py or validate_doc.py) are captured in the outputs directory. An agent could fabricate a plausible result.md without actually running the scripts. Consider requiring that actual script stdout be saved as an artifact (e.g., fix_output.txt, validation_output.txt) so assertions can be verified against real output rather than a self-reported summary."
+      },
+      {
+        "assertion": "Ran validate_doc.py docs/ after fixing to confirm results",
+        "reason": "This assertion passes based on the transcript's claim alone. Strengthening it to require 'validate_doc.py stdout showing N/N files passed is present in outputs/' would catch cases where the agent reports success without actually running the validator."
+      }
+    ],
+    "overall": "The assertions cover the right steps and all pass with clear evidence. The main gap is the lack of raw script output artifacts \u2014 the entire grade rests on a self-reported result.md, which makes it easy for an agent to satisfy expectations superficially without doing the real work."
+  }
+}

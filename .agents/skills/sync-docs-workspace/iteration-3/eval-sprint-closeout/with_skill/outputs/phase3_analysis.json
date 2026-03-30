@@ -1,0 +1,114 @@
+{
+  "project_root": "/home/dawid/projects/xtrm-tools/.claude/worktrees/agent-a667b46b",
+  "summary": {
+    "total_issues": 1,
+    "needs_attention": true
+  },
+  "readme": {
+    "status": "OK",
+    "path": "README.md",
+    "line_count": 192,
+    "section_count": 24,
+    "threshold": 200,
+    "extraction_candidates": [],
+    "issues": []
+  },
+  "changelog": {
+    "status": "STALE",
+    "path": "CHANGELOG.md",
+    "last_entry_date": "2026-03-12",
+    "last_commit_date": "2026-03-18",
+    "package_version": "2.4.0",
+    "latest_changelog_version": "2.0.0",
+    "issues": [
+      "package.json is at v2.4.0 but latest CHANGELOG entry is v2.0.0 \u2014 release is undocumented"
+    ]
+  },
+  "docs_gaps": [],
+  "existing_docs": [
+    {
+      "status": "OK",
+      "path": "docs/cleanup.md",
+      "line_count": 462,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/delegation-architecture.md",
+      "line_count": 206,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/hook-system-summary.md",
+      "line_count": 197,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/hooks.md",
+      "line_count": 26,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/mcp-servers-config.md",
+      "line_count": 389,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/mcp-servers.md",
+      "line_count": 25,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/pi-extensions-migration.md",
+      "line_count": 75,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/pi-extensions.md",
+      "line_count": 25,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/policies.md",
+      "line_count": 25,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/pre-install-cleanup.md",
+      "line_count": 127,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/skills.md",
+      "line_count": 25,
+      "has_frontmatter": true,
+      "issues": []
+    },
+    {
+      "status": "OK",
+      "path": "docs/todo.md",
+      "line_count": 13,
+      "has_frontmatter": true,
+      "issues": []
+    }
+  ]
+}
