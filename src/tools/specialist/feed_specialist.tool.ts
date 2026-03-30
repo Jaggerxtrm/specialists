@@ -6,7 +6,7 @@ import { readJobEventsById, isJobComplete } from '../../specialist/timeline-quer
 import { formatSpecialistModel } from '../../specialist/model-display.js';
 
 export const feedSpecialistSchema = z.object({
-  job_id: z.string().describe('Job ID returned by start_specialist or specialists run --background'),
+  job_id: z.string().describe('Job ID returned by start_specialist or printed by specialists run'),
   cursor: z.number().int().min(0).optional().default(0).describe(
     'Event index offset from previous call. Pass next_cursor from the last response to receive only new events. Omit (or pass 0) for the first call.',
   ),

@@ -16,7 +16,7 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
     description:
       'Resume a waiting keep-alive specialist session with a next-turn prompt. ' +
       'The Pi session retains full conversation history between turns. ' +
-      'Only valid for jobs in waiting state (started with keepAlive=true, CLI: --keep-alive --background). ' +
+      'Only valid for jobs in waiting state (started with keepAlive=true, CLI: --keep-alive). ' +
       'Use steer_specialist for mid-run steering of running jobs.',
     inputSchema: resumeSpecialistSchema,
     async execute(input: z.infer<typeof resumeSpecialistSchema>) {
@@ -33,7 +33,7 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
         return { status: 'error', error: result.error, job_id: input.job_id };
       }
 
-      // Fall back to FIFO for Supervisor-managed background jobs
+      // Fall back to FIFO for Supervisor-managed CLI-started jobs
       const jobsDir = join(process.cwd(), '.specialists', 'jobs');
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
       const status = supervisor.readStatus(input.job_id);

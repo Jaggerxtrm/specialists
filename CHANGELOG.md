@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **MCP `start_specialist` now uses Supervisor-backed jobs** — jobs started from MCP now write `status.json`, `events.jsonl`, and `result.txt` under `.specialists/jobs/<id>/`, making them visible to `feed_specialist` and `specialist_status`
+- **MCP `stop_specialist` now uses Supervisor status/PID state** — cancellation works for MCP-started and CLI-started jobs through the same file-based lifecycle
+- **`JobRegistry` marked legacy** — retained only for compatibility paths; no longer used by `start_specialist`
+
 ## [3.3.5] - 2026-03-27
 
 ### Fixed

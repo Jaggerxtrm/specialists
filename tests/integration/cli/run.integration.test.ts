@@ -63,27 +63,13 @@ describe('integration: specialists run', () => {
     expect(result.stderr).toContain("Unable to read bead 'unitAI-missing' via bd show --json");
   });
 
-  it('--background exits 1 when specialist does not exist', async () => {
+  it('rejects --background with a migration hint', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-'));
 
     const result = runCli(['run', 'nonexistent-specialist', '--prompt', 'hello', '--background'], tempDir);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/Error:/);
-  });
-
-  it('--background exits 1 before detaching when specialist YAML is invalid', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-invalid-'));
-    await mkdir(join(tempDir, '.specialists'), { recursive: true });
-    await mkdir(join(tempDir, 'specialists'), { recursive: true });
-    // Write an invalid YAML (missing required fields)
-    await writeFile(join(tempDir, 'specialists', 'bad-spec.yaml'), 'not: valid: specialist: yaml\n');
-
-    const result = runCli(['run', 'bad-spec', '--prompt', 'hello', '--background'], tempDir);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/Error:/i);
-    // stdout must be empty — no partial job id printed
+    expect(result.stderr).toContain('--background was removed');
     expect(result.stdout.trim()).toBe('');
   });
 });

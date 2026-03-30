@@ -6,14 +6,14 @@ import type { JobRegistry } from '../../specialist/jobRegistry.js';
 import { Supervisor } from '../../specialist/supervisor.js';
 
 export const steerSpecialistSchema = z.object({
-  job_id: z.string().describe('Job ID returned by start_specialist or specialists run --background'),
+  job_id: z.string().describe('Job ID returned by start_specialist or printed by specialists run'),
   message: z.string().describe('Steering instruction to send to the running agent (e.g. "focus only on supervisor.ts")'),
 });
 
 export function createSteerSpecialistTool(registry: JobRegistry) {
   return {
     name: 'steer_specialist' as const,
-    description: 'Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call. Works for both in-process jobs (start_specialist) and background CLI jobs (specialists run --background).',
+    description: 'Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call. Works for both in-process jobs (start_specialist) and CLI-started jobs (specialists run).',
     inputSchema: steerSpecialistSchema,
     async execute(input: z.infer<typeof steerSpecialistSchema>) {
       // Try in-process registry first (start_specialist jobs)
@@ -26,7 +26,7 @@ export function createSteerSpecialistTool(registry: JobRegistry) {
         return { status: 'error', error: result.error, job_id: input.job_id };
       }
 
-      // Fall back to FIFO for Supervisor-managed background jobs (specialists run --background)
+      // Fall back to FIFO for Supervisor-managed CLI-started jobs (specialists run)
       const jobsDir = join(process.cwd(), '.specialists', 'jobs');
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
       const status = supervisor.readStatus(input.job_id);

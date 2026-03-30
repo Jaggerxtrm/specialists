@@ -84,9 +84,11 @@ export async function run(): Promise<void> {
   lines.push('');
 
   // ── 5. Background job lifecycle ────────────────────────────────────────────
-  lines.push(section('5. Background Job Lifecycle'));
+  lines.push(section('5. Async Job Lifecycle'));
   lines.push('');
-  lines.push(`  Use Claude Code's native backgrounding or run in a separate terminal.`);
+  lines.push(`  ${bold('MCP pattern')}: ${cmd('start_specialist')} → ${cmd('feed_specialist')} (returns job_id directly)`);
+  lines.push(`  ${bold('CLI pattern')}: ${cmd('specialists run <name> --prompt "..."')} prints ${dim('[job started: <id>]')} to stderr`);
+  lines.push(`  ${bold('Shell pattern')}: ${cmd('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push('');
   lines.push(`  ${bold('Watch progress')} — stream events as they arrive:`);
   lines.push(`  ${cmd('specialists feed job_a1b2c3d4')}            # print events so far`);

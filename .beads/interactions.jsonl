@@ -34,3 +34,7 @@
 {"id":"int-ac64f81d","kind":"tool_call","created_at":"2026-03-29T19:12:27.177417492Z","actor":"you@example.com","issue_id":"unitAI-l0f5","model":"openai-codex/gpt-5.3-codex","tool_name":"specialists-creator","exit_code":0}
 {"id":"int-78d03981","kind":"tool_call","created_at":"2026-03-29T19:20:20.396715607Z","actor":"you@example.com","issue_id":"unitAI-08la.3","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
 {"id":"int-6861723a","kind":"tool_call","created_at":"2026-03-29T19:24:20.341313838Z","actor":"you@example.com","issue_id":"unitAI-bf1s","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-78402748","kind":"tool_call","created_at":"2026-03-30T15:05:17.544755753Z","actor":"you@example.com","issue_id":"unitAI-iugz","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
+{"id":"int-5384b451","kind":"tool_call","created_at":"2026-03-30T15:05:34.622117759Z","actor":"you@example.com","issue_id":"unitAI-iugz","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
+{"id":"int-659adfd6","kind":"tool_call","created_at":"2026-03-30T15:42:29.275279435Z","actor":"you@example.com","issue_id":"unitAI-dyll","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-05265960","kind":"tool_call","created_at":"2026-03-30T15:43:05.726490933Z","actor":"you@example.com","issue_id":"unitAI-jbhg","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}

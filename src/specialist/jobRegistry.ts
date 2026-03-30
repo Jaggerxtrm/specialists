@@ -1,7 +1,8 @@
 // src/specialist/jobRegistry.ts
 //
-// In-memory registry for async specialist jobs started via start_specialist.
-// Jobs accumulate streaming output from pi token events.
+// LEGACY: in-memory registry for async specialist sessions.
+// start_specialist now uses Supervisor-backed file jobs in .specialists/jobs.
+// This registry remains only as a compatibility layer for old in-process control paths.
 //
 import type { RunResult } from './runner.js';
 

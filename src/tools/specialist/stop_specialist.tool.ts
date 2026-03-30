@@ -1,22 +1,47 @@
 // src/tools/specialist/stop_specialist.tool.ts
-import { z } from 'zod';
-import type { JobRegistry } from '../../specialist/jobRegistry.js';
+import * as z from 'zod';
+import { join } from 'node:path';
+import { Supervisor } from '../../specialist/supervisor.js';
 
 export const stopSpecialistSchema = z.object({
   job_id: z.string().describe('Job ID returned by start_specialist'),
 });
 
-export function createStopSpecialistTool(registry: JobRegistry) {
+export function createStopSpecialistTool() {
   return {
     name: 'stop_specialist' as const,
-    description: '[DEPRECATED v3] Cancel a running specialist job. Prefer CLI: `specialists stop <id>`. Kills the pi process immediately and sets status to cancelled. Subsequent feed_specialist calls will show status: cancelled with output buffered up to that point.',
+    description: 'Cancel a running specialist job by sending SIGTERM to its recorded process. Works for jobs started via start_specialist and CLI background runs.',
     inputSchema: stopSpecialistSchema,
     async execute(input: z.infer<typeof stopSpecialistSchema>) {
-      const result = registry.cancel(input.job_id);
-      if (!result) {
+      const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+      const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
+      const status = supervisor.readStatus(input.job_id);
+
+      if (!status) {
         return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
       }
-      return { ...result, job_id: input.job_id };
+
+      if (status.status === 'done' || status.status === 'error') {
+        return {
+          status: 'error',
+          error: `Job is already ${status.status}`,
+          job_id: input.job_id,
+        };
+      }
+
+      if (!status.pid) {
+        return { status: 'error', error: `No PID recorded for job ${input.job_id}`, job_id: input.job_id };
+      }
+
+      try {
+        process.kill(status.pid, 'SIGTERM');
+        return { status: 'cancelled', job_id: input.job_id, pid: status.pid };
+      } catch (err: any) {
+        if (err?.code === 'ESRCH') {
+          return { status: 'error', error: `Process ${status.pid} not found`, job_id: input.job_id };
+        }
+        return { status: 'error', error: err?.message ?? String(err), job_id: input.job_id };
+      }
     },
   };
 }

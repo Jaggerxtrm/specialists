@@ -424,10 +424,10 @@ export class SpecialistRunner {
     };
   }
 
-  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
-  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
-  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
-  /** Fire-and-forget: registers job in registry, returns job_id immediately. */
+  /**
+   * @deprecated Legacy in-memory async path.
+   * start_specialist now uses Supervisor-backed jobs under .specialists/jobs.
+   */
   async startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): Promise<string> {
     const jobId = crypto.randomUUID();
     // Pre-load spec to capture version before the async run begins
