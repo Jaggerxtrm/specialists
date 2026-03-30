@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/mcp-tools.md` MCP tools reference** — complete reference for all 11 MCP tools with Zod schemas, return shapes, example I/O, and deprecation notes; covers `feed_specialist`, `resume_specialist`, `steer_specialist`, and the `run_parallel` deprecation path (unitAI-icb9.4)
+
+### Changed
+
+- **`using-specialists` skill v3.4** — adds wave orchestration section (planning, dispatching, monitoring across parallel specialist jobs), coordinator responsibilities (READ_ONLY output piping, inter-wave commit discipline), CLI-vs-MCP equivalences table, specialist selection lessons from 3-wave 11-dispatch session, and known issues (`sub-bead` creation gap, READ_ONLY output gap, sync-docs stalls on refs); marks `run_parallel` MCP as deprecated; removes pi-specific process extension examples (unitAI-e8kt)
 
 
 ## [3.4.0] - 2026-03-30
