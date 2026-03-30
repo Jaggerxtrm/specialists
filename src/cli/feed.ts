@@ -25,6 +25,7 @@ import {
   readAllJobEvents,
   queryTimeline,
 } from '../specialist/timeline-query.js';
+import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
   dim,
   JobColorMap,
@@ -202,11 +203,14 @@ function printSnapshot(
     const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : (): JobMeta => ({ startedAtMs: Date.now() });
     for (const { jobId, specialist, beadId, event } of merged) {
       const meta = getJobMeta(jobId);
+      const model = meta.model ?? (event.type === 'meta' ? event.model : undefined);
+      const backend = meta.backend ?? (event.type === 'meta' ? event.backend : undefined);
       console.log(JSON.stringify({
         jobId,
         specialist,
-        model: meta.model,
-        backend: meta.backend,
+        specialist_model: formatSpecialistModel(specialist, model),
+        model,
+        backend,
         beadId: meta.beadId ?? beadId,
         elapsed_ms: Date.now() - meta.startedAtMs,
         ...event,
@@ -217,12 +221,15 @@ function printSnapshot(
 
   const lastPrintedEventKey = new Map<string, string>();
   const seenMetaKey = new Map<string, string>();
+  const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : (): JobMeta => ({ startedAtMs: Date.now() });
 
   for (const { jobId, specialist, beadId, event } of merged) {
     if (!shouldRenderHumanEvent(event)) continue;
     if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
     const colorize = colorMap.get(jobId);
-    console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
+    const meta = getJobMeta(jobId);
+    const specialistDisplay = formatSpecialistModel(specialist, meta.model ?? (event.type === 'meta' ? event.model : undefined));
+    console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
   }
 }
 
@@ -322,13 +329,17 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       newEvents.sort((a, b) => a.event.t - b.event.t);
 
       for (const { jobId, specialist, beadId, event } of newEvents) {
+        const meta = getJobMeta(jobId);
+        const model = meta.model ?? (event.type === 'meta' ? event.model : undefined);
+        const backend = meta.backend ?? (event.type === 'meta' ? event.backend : undefined);
+
         if (options.json) {
-          const meta = getJobMeta(jobId);
           console.log(JSON.stringify({
             jobId,
             specialist,
-            model: meta.model,
-            backend: meta.backend,
+            specialist_model: formatSpecialistModel(specialist, model),
+            model,
+            backend,
             beadId: meta.beadId ?? beadId,
             elapsed_ms: Date.now() - meta.startedAtMs,
             ...event,
@@ -337,7 +348,8 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
           if (!shouldRenderHumanEvent(event)) continue;
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
           const colorize = colorMap.get(jobId);
-          console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
+          const specialistDisplay = formatSpecialistModel(specialist, model);
+          console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
         }
       }
 

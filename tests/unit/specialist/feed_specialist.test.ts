@@ -105,25 +105,28 @@ describe('feed_specialist tool', () => {
     expect(page3.has_more).toBe(false);
   });
 
-  it('includes model and bead_id from status.json when present', async () => {
+  it('includes model, specialist_model, and bead_id from status.json when present', async () => {
     const events = makeEvents(2);
     createJob('job3', events, {
-      model: 'claude-sonnet-4-6',
+      model: 'dashscope/glm-5',
       bead_id: 'unitAI-abc123',
+      specialist: 'executor',
     });
 
     const result = await tool.execute({ job_id: 'job3', cursor: 0, limit: 50 }) as any;
-    expect(result.model).toBe('claude-sonnet-4-6');
+    expect(result.model).toBe('dashscope/glm-5');
+    expect(result.specialist_model).toBe('executor/glm-5');
     expect(result.bead_id).toBe('unitAI-abc123');
   });
 
-  it('omits model and bead_id keys when absent from status.json', async () => {
+  it('omits model/bead_id keys but still includes specialist_model base when model is absent', async () => {
     const events = makeEvents(2);
     createJob('job4', events);
 
     const result = await tool.execute({ job_id: 'job4', cursor: 0, limit: 50 }) as any;
     expect(result).not.toHaveProperty('model');
     expect(result).not.toHaveProperty('bead_id');
+    expect(result.specialist_model).toBe('test-spec');
   });
 
   it('is_complete=false when no run_complete event', async () => {

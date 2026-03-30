@@ -123,6 +123,27 @@ describe('feed CLI', () => {
     expect(combined).toContain('[unitAI-123]');
   });
 
+  it('shows specialist/model alias in human output when model is known', async () => {
+    createJobDir('job1', 'explorer', [
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
+    ], {
+      model: 'anthropic/claude-sonnet-4-6',
+    });
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = stripAnsi(logs.join('\n'));
+    expect(combined).toContain('explorer/sonnet-4-6');
+  });
+
   it('orders fixed segments and highlights tool details', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
@@ -202,6 +223,7 @@ describe('feed CLI', () => {
     const parsed = JSON.parse(line!);
     expect(parsed.jobId).toBe('job1');
     expect(parsed.specialist).toBe('my-spec');
+    expect(parsed.specialist_model).toBe('my-spec/haiku');
     expect(parsed.model).toBe('claude-haiku');
     expect(parsed.backend).toBe('anthropic');
     expect(parsed.beadId).toBe('unitAI-abc');

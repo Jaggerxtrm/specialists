@@ -3,6 +3,7 @@ import * as z from 'zod';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJobEventsById, isJobComplete } from '../../specialist/timeline-query.js';
+import { formatSpecialistModel } from '../../specialist/model-display.js';
 
 export const feedSpecialistSchema = z.object({
   job_id: z.string().describe('Job ID returned by start_specialist or specialists run --background'),
@@ -61,6 +62,7 @@ export function createFeedSpecialistTool(jobsDir: string) {
       return {
         job_id,
         specialist,
+        specialist_model: formatSpecialistModel(specialist, model),
         ...(model !== undefined ? { model } : {}),
         status,
         ...(bead_id !== undefined ? { bead_id } : {}),

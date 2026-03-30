@@ -19407,6 +19407,29 @@ var init_timeline_query = __esm(() => {
   init_timeline_events();
 });
 
+// src/specialist/model-display.ts
+function extractModelId(model) {
+  if (!model)
+    return;
+  const trimmed = model.trim();
+  if (!trimmed)
+    return;
+  return trimmed.includes("/") ? trimmed.split("/").pop() : trimmed;
+}
+function toModelAlias(model) {
+  const modelId = extractModelId(model);
+  if (!modelId)
+    return;
+  if (modelId.startsWith("claude-")) {
+    return modelId.slice("claude-".length);
+  }
+  return modelId;
+}
+function formatSpecialistModel(specialist, model) {
+  const alias = toModelAlias(model);
+  return alias ? `${specialist}/${alias}` : specialist;
+}
+
 // src/cli/install.ts
 var exports_install = {};
 __export(exports_install, {
@@ -21095,14 +21118,17 @@ function printSnapshot(merged, options, jobsDir) {
   }
   const colorMap = new JobColorMap;
   if (options.json) {
-    const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : () => ({ startedAtMs: Date.now() });
+    const getJobMeta2 = jobsDir ? makeJobMetaReader(jobsDir) : () => ({ startedAtMs: Date.now() });
     for (const { jobId, specialist, beadId, event } of merged) {
-      const meta = getJobMeta(jobId);
+      const meta = getJobMeta2(jobId);
+      const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
+      const backend = meta.backend ?? (event.type === "meta" ? event.backend : undefined);
       console.log(JSON.stringify({
         jobId,
         specialist,
-        model: meta.model,
-        backend: meta.backend,
+        specialist_model: formatSpecialistModel(specialist, model),
+        model,
+        backend,
         beadId: meta.beadId ?? beadId,
         elapsed_ms: Date.now() - meta.startedAtMs,
         ...event
@@ -21112,13 +21138,16 @@ function printSnapshot(merged, options, jobsDir) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
+  const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : () => ({ startedAtMs: Date.now() });
   for (const { jobId, specialist, beadId, event } of merged) {
     if (!shouldRenderHumanEvent(event))
       continue;
     if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
       continue;
     const colorize = colorMap.get(jobId);
-    console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
+    const meta = getJobMeta(jobId);
+    const specialistDisplay = formatSpecialistModel(specialist, meta.model ?? (event.type === "meta" ? event.model : undefined));
+    console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
   }
 }
 function isCompletionEvent(event) {
@@ -21186,13 +21215,16 @@ async function followMerged(jobsDir, options) {
       }
       newEvents.sort((a, b) => a.event.t - b.event.t);
       for (const { jobId, specialist, beadId, event } of newEvents) {
+        const meta = getJobMeta(jobId);
+        const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
+        const backend = meta.backend ?? (event.type === "meta" ? event.backend : undefined);
         if (options.json) {
-          const meta = getJobMeta(jobId);
           console.log(JSON.stringify({
             jobId,
             specialist,
-            model: meta.model,
-            backend: meta.backend,
+            specialist_model: formatSpecialistModel(specialist, model),
+            model,
+            backend,
             beadId: meta.beadId ?? beadId,
             elapsed_ms: Date.now() - meta.startedAtMs,
             ...event
@@ -21203,7 +21235,8 @@ async function followMerged(jobsDir, options) {
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
             continue;
           const colorize = colorMap.get(jobId);
-          console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
+          const specialistDisplay = formatSpecialistModel(specialist, model);
+          console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
         }
       }
       if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {
@@ -30002,6 +30035,7 @@ function createFeedSpecialistTool(jobsDir) {
       return {
         job_id,
         specialist,
+        specialist_model: formatSpecialistModel(specialist, model),
         ...model !== undefined ? { model } : {},
         status,
         ...bead_id !== undefined ? { bead_id } : {},
