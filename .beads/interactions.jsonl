@@ -41,3 +41,11 @@
 {"id":"int-4678627b","kind":"tool_call","created_at":"2026-03-30T15:49:12.588738928Z","actor":"you@example.com","issue_id":"unitAI-93rt","model":"anthropic/claude-sonnet-4-6","tool_name":"overthinker","exit_code":0}
 {"id":"int-5070ae3a","kind":"tool_call","created_at":"2026-03-30T15:50:00.611742334Z","actor":"you@example.com","issue_id":"unitAI-j8gj","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
 {"id":"int-ce359855","kind":"tool_call","created_at":"2026-03-30T15:54:05.632272378Z","actor":"you@example.com","issue_id":"unitAI-xtn","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-2e58ae4b","kind":"tool_call","created_at":"2026-03-30T15:58:32.724712483Z","actor":"you@example.com","issue_id":"unitAI-icb9.6","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
+{"id":"int-6d19e045","kind":"tool_call","created_at":"2026-03-30T15:59:01.149062861Z","actor":"you@example.com","issue_id":"unitAI-icb9.1","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
+{"id":"int-91582f86","kind":"tool_call","created_at":"2026-03-30T15:59:02.896597631Z","actor":"you@example.com","issue_id":"unitAI-icb9.4","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":1}
+{"id":"int-d291c704","kind":"tool_call","created_at":"2026-03-30T16:00:00.42641927Z","actor":"you@example.com","issue_id":"unitAI-icb9.2","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
+{"id":"int-2e9f877a","kind":"tool_call","created_at":"2026-03-30T16:00:06.077457515Z","actor":"you@example.com","issue_id":"unitAI-icb9.3","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
+{"id":"int-81d794f2","kind":"tool_call","created_at":"2026-03-30T16:01:49.022305704Z","actor":"you@example.com","issue_id":"unitAI-icb9.5","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":0}
+{"id":"int-388450bf","kind":"tool_call","created_at":"2026-03-30T16:06:48.386533006Z","actor":"you@example.com","issue_id":"unitAI-icb9.4","model":"anthropic/claude-sonnet-4-6","tool_name":"sync-docs","exit_code":1}
+{"id":"int-192a39df","kind":"tool_call","created_at":"2026-03-30T16:08:17.372685794Z","actor":"you@example.com","issue_id":"unitAI-icb9.4","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
