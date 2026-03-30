@@ -218,35 +218,48 @@ function formatToolArgValue(value: unknown, maxLen = 240): string {
   return flat.length > maxLen ? `${flat.slice(0, maxLen - 3)}...` : flat;
 }
 
+function formatToolDetail(event: Extract<TimelineEvent, { type: 'tool' }>): string {
+  const toolName = cyan(event.tool);
+
+  if (event.phase === 'start') {
+    if (typeof event.args?.command === 'string') {
+      return `${toolName}: ${yellow(formatToolArgValue(event.args.command))}`;
+    }
+
+    if (event.args && Object.keys(event.args).length > 0) {
+      const argStr = Object.entries(event.args)
+        .map(([k, v]) => `${k}=${formatToolArgValue(v)}`)
+        .join(' ');
+      return `${toolName}: ${dim(argStr)}`;
+    }
+
+    return `${toolName}: ${dim('start')}`;
+  }
+
+  if (event.phase === 'end' && event.is_error) {
+    return `${toolName}: ${red('error')}`;
+  }
+
+  return `${toolName}: ${dim(event.phase)}`;
+}
+
 export function formatEventLine(
   event: TimelineEvent,
   options: { jobId: string; specialist: string; beadId?: string; colorize: Colorizer }
 ): string {
   const ts = dim(formatTime(event.t));
+  const job = options.colorize(`[${options.jobId}]`);
+  const bead = dim(`[${options.beadId ?? '-'}]`);
   const label = options.colorize(bold(getEventLabel(event.type).padEnd(5)));
-  const prefix = `${options.colorize(`[${options.jobId}]`)} ${options.specialist}${options.beadId ? ` ${dim(`[${options.beadId}]`)}` : ''}`;
 
   const detailParts: string[] = [];
+  let detail = '';
+
   if (event.type === 'meta') {
     detailParts.push(`model=${event.model}`);
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === 'tool') {
-    if (event.phase === 'start') {
-      if (typeof event.args?.command === 'string') {
-        detailParts.push(`${event.tool}: ${formatToolArgValue(event.args.command)}`);
-      } else if (event.args && Object.keys(event.args).length > 0) {
-        const argStr = Object.entries(event.args)
-          .map(([k, v]) => `${k}=${formatToolArgValue(v)}`)
-          .join(' ');
-        detailParts.push(argStr ? `${event.tool}: ${argStr}` : event.tool);
-      } else {
-        detailParts.push(`${event.tool}: start`);
-      }
-    } else if (event.phase === 'end' && event.is_error) {
-      detailParts.push(`${event.tool}: error`);
-    } else {
-      detailParts.push(`${event.tool}: ${event.phase}`);
-    }
+    detail = formatToolDetail(event);
   } else if (event.type === 'run_complete') {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
@@ -273,8 +286,11 @@ export function formatEventLine(
     detailParts.push(`phase=${event.phase}`);
   }
 
-  const detail = detailParts.length > 0 ? dim(detailParts.join(' ')) : '';
-  return `${ts} ${prefix}  ${label}${detail ? ` ${detail}` : ''}`.trimEnd();
+  if (!detail && detailParts.length > 0) {
+    detail = dim(detailParts.join(' '));
+  }
+
+  return `${ts} ${job} ${bead} ${label} ${options.specialist}${detail ? ` ${detail}` : ''}`.trimEnd();
 }
 
 /**
