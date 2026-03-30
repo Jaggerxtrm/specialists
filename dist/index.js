@@ -18525,7 +18525,20 @@ class SpecialistRunner {
       estimated_tokens: Math.ceil(renderedTask.length / 4),
       system_prompt_present: !!prompt.system
     });
-    const agentsMd = prompt.system ?? "";
+    let agentsMd = prompt.system ?? "";
+    if (options.inputBeadId) {
+      agentsMd += `
+
+---
+## Specialist Run Context
+You are running as a specialist with bead ${options.inputBeadId} as your task.
+- Claim this bead directly: \`bd update ${options.inputBeadId} --claim\`
+- Do NOT create new beads or sub-issues — this bead IS your task.
+- Do NOT run \`bd create\` — the orchestrator manages issue tracking.
+- Close the bead when done: \`bd close ${options.inputBeadId} --reason="..."\`
+---
+`;
+    }
     const skillPaths = [];
     if (prompt.skill_inherit)
       skillPaths.push(prompt.skill_inherit);
@@ -19115,13 +19128,10 @@ class Supervisor {
     };
     appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
     const fifoPath = join3(dir, "steer.pipe");
-    const needsFifo = runOptions.keepAlive;
-    if (needsFifo) {
-      try {
-        execFileSync("mkfifo", [fifoPath]);
-        setStatus({ fifo_path: fifoPath });
-      } catch {}
-    }
+    try {
+      execFileSync("mkfifo", [fifoPath]);
+      setStatus({ fifo_path: fifoPath });
+    } catch {}
     let textLogged = false;
     let currentTool = "";
     let currentToolCallId = "";
@@ -19221,7 +19231,7 @@ class Supervisor {
         setStatus({ bead_id: beadId });
       }, (fn) => {
         steerFn = fn;
-        if (!needsFifo || !existsSync4(fifoPath))
+        if (!existsSync4(fifoPath))
           return;
         fifoReadStream = createReadStream(fifoPath, { flags: "r+" });
         fifoReadline = createInterface({ input: fifoReadStream });
@@ -21517,7 +21527,7 @@ async function run13() {
   if (!status.fifo_path) {
     process.stderr.write(`${red4("Error:")} Job ${jobId} has no steer pipe.
 `);
-    process.stderr.write(`Only jobs started with --keep-alive support mid-run steering.
+    process.stderr.write(`FIFO support may not be available on this system (mkfifo failed at job start).
 `);
     process.exit(1);
   }

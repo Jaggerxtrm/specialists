@@ -277,16 +277,13 @@ export class Supervisor {
     appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
-    // Only create if keepAlive is enabled - foreground runs don't need steering
+    // Available for all jobs — steering is independent of keep-alive
     const fifoPath = join(dir, 'steer.pipe');
-    const needsFifo = runOptions.keepAlive;
-    if (needsFifo) {
-      try {
-        execFileSync('mkfifo', [fifoPath]);
-        setStatus({ fifo_path: fifoPath });
-      } catch {
-        // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
-      }
+    try {
+      execFileSync('mkfifo', [fifoPath]);
+      setStatus({ fifo_path: fifoPath });
+    } catch {
+      // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
     }
 
     let textLogged = false;
@@ -412,8 +409,7 @@ export class Supervisor {
         // onSteerRegistered — wire FIFO reader to forward steer messages into the session
         (fn) => {
           steerFn = fn;
-          // Skip FIFO setup for foreground runs (keepAlive=false)
-          if (!needsFifo || !existsSync(fifoPath)) return;
+          if (!existsSync(fifoPath)) return;
           // Start a background reader loop on the FIFO.
           // Opening with 'r+' (O_RDWR) prevents blocking on open when there's no writer yet.
           // Each line received is forwarded as a steer message to the Pi session.
