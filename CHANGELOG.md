@@ -7,11 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [3.4.0] - 2026-03-30
+
+### Added
+
+- **`feed_specialist` MCP tool** — cursor-paginated event stream over `events.jsonl`; replaces `poll_specialist` as the canonical agent-native observation path; supports `since_cursor` for incremental reads (z0mq.7)
+- **`specialists result --wait / --timeout`** — blocks until the job reaches `done` or `error`, polling `status.json` at 1-second intervals; `--timeout` sets a max wait in seconds (z0mq.5)
+- **`specialists run --background`** — detaches the run as a supervised background job and prints the job ID to stdout immediately, enabling mid-run polling (z0mq.5)
+- **`specialists poll --follow`** — in-place ANSI redraw mode for live job progress in a terminal (unitAI-8805004f)
+- **`specialists resume <job-id> "<prompt>"`** — new top-level command for sending follow-up turns to a running keep-alive session; replaces the ambiguous `follow_up` action name (z0mq.6)
+- **Executor specialist** — new default specialist for general task execution with access to all Pi tools (ylst)
+- **Stuck detection** — configurable per-specialist stall thresholds via `stall_detection` in specialist YAML (`warn_after_ms`, `error_after_ms`, `tool_duration_ms`); fires `stale_warning` events; `auto_retry` resets the silence timer (z0mq.9, jzg6)
+- **Pi session stall-timeout watchdog** — RPC sessions emit a warning and abort if the Pi process is silent beyond the configured threshold (unitAI-ba73f9da)
+- **`tool_call_id` correlation on all tool events** — every `tool_execution_start` and `tool_execution_end` event now carries a stable `tool_call_id` for request/response matching (z0mq.10)
+- **`auto_compaction` and `auto_retry` forwarding** — Pi RPC events for compaction and retry are now forwarded through the event pipeline to feed consumers (z0mq.2)
+
 ### Changed
 
-- **MCP `start_specialist` now uses Supervisor-backed jobs** — jobs started from MCP now write `status.json`, `events.jsonl`, and `result.txt` under `.specialists/jobs/<id>/`, making them visible to `feed_specialist` and `specialist_status`
-- **MCP `stop_specialist` now uses Supervisor status/PID state** — cancellation works for MCP-started and CLI-started jobs through the same file-based lifecycle
-- **`JobRegistry` marked legacy** — retained only for compatibility paths; no longer used by `start_specialist`
+- **`specialists run` output modes** — three explicit modes: default human (formatted event summaries + final output), `--json` (NDJSON event stream, same schema as `feed --json`), `--raw` (legacy plain text via `onProgress`); `--json` is the correct mode for agent consumption (ylst.1)
+- **`specialists poll` is machine-only** — human/ANSI mode removed; command always outputs JSON; use `specialists feed` for human-readable streaming (z0mq.4)
+- **Event envelope enriched on every event** — all timeline events now carry `model`, `backend`, and `elapsed_ms` inline; agents can reason about cost and latency per-event without joining job metadata (ylst.2)
+- **`closeBead` lifecycle wired** — runs started with `--bead <id>` now close the bead at completion; bead ownership is asserted at run start and released at run end (ylst.3)
+- **Feed columns reordered and tool details highlighted** — tool name and arguments are surfaced prominently in feed output; specialist name and model alias displayed on every row (unitAI-36abe9f5, unitAI-0dc671f3)
+- **Schema conformance pass** — all 12 built-in specialists validated against `SpecialistSchema`; 16 dead YAML fields identified and removed; `specialists-creator` output validated against current schema (08la)
+- **`parallel-review` renamed to `parallel-runner`** — aligns with actual function (parallel task dispatch, not review); update any workflows referencing the old name (08la.3)
+- **`required_tools` validation wired** — specialist YAML's `required_tools` list is now checked at load time and enforced before `specialists run` executes; validation is permission-gated (08la.3, rrnj)
+- **MCP `start_specialist` uses Supervisor-backed jobs** — jobs started from MCP write `status.json`, `events.jsonl`, and `result.txt` under `.specialists/jobs/<id>/`, making them visible to `feed_specialist` and `specialist_status`
+- **MCP `stop_specialist` uses Supervisor status/PID state** — cancellation now works uniformly for both MCP-started and CLI-started jobs through the shared file-based lifecycle
+- **`JobRegistry` marked legacy** — retained only for compatibility paths; no longer used by `start_specialist` or the run pipeline
+- **Per-specialist `stall_detection` config honored** — `stall_detection` block in specialist YAML is now passed to the Supervisor constructor; previously parsed but silently ignored (jzg6)
+- **`timeout_ms=0` and `stall_timeout_ms` set on all specialists** — unlimited wall-clock timeout by default; stall watchdog is the primary termination mechanism (unitAI-7a37068d)
+- **`.specialists/` removed from `.gitignore`** — default specialists, skills, and hooks in `.specialists/default/` are now tracked in the project repo (unitAI-0e35109)
+- **Wave 2 hardening** — RPC retry logic improved, run completion footer deduplication, overthinker specialist upgraded to latest model
+
+### Fixed
+
+- **Tool args and `isError` forwarded through pipeline** — `session.ts` now passes the full `input` map and `is_error` flag on every `tool_execution_start` / `tool_execution_end` event; `feed` and `feed_specialist` expose actual tool arguments (z0mq.1)
+- **Parallel tool call tracking** — replaced single `currentToolCallId` slot with a `Map`-based tracker; duplicate `tool:end` events and misattributed `tool_call_id` values during parallel tool execution eliminated (z0mq.10, unitAI-ahcr)
+- **RPC concurrent dispatch** — replaced single-slot command dispatch in `session.ts` with an ID-mapped request map; simultaneous RPC calls no longer race; each call gets independent ack checks and per-request timeout (z0mq.2)
+- **`bead_id` propagation** — `--bead <id>` runs now write `bead_id` into the initial `status.json` and emit it in the `run_start` event from job creation time; feed output shows the bead prefix consistently throughout (z0mq.3, unitAI-agkd)
+- **`run_complete` event is self-contained** — output text is included inline in the `run_complete` event; consumers no longer need to read `result.txt` separately to get the final answer (z0mq)
+- **`required_tools` validation no longer rejects valid Pi tools** — the allowlist was hardcoded to 7 tools; validation is now permission-gated against the actual Pi tool set, so `glob`, `notebook`, `subagent`, `lsp`, etc. pass correctly (rrnj)
+- **Human mode run output debounced** — `[response]` and `[thinking...]` lines are no longer emitted per text delta; shown once on transition with actual streamed content (unitAI-1ajm)
+- **Loader warns on invalid specialist YAML** — replaced silent `catch {}` with a `stderr` warning that includes the file path and parse error; invalid files are still skipped non-fatally (unitAI-vbl)
+- **Duplicate backend prefix in run completion footer** — footer now shows backend name exactly once (unitAI-894m)
+- **`steer` misleading error message** — error now correctly references `--keep-alive` instead of the removed `--background` flag (unitAI-iifp)
+- **`bead_id` not dropped from `run_parallel` results** — parallel run results now preserve `bead_id` through the aggregation step (unitAI-shg)
+
+### Removed
+
+- **`poll_specialist` MCP tool** — removed; use `feed_specialist` with cursor pagination for agent-native job observation (z0mq.8)
+- **Legacy auto-remediation specialist** — removed from default specialist set
+- **`--background` flag removed from `specialists run` (MCP path)** — `start_specialist` now always uses Supervisor-backed jobs; no separate flag needed
+
+
 
 ## [3.3.5] - 2026-03-27
 
