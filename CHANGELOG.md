@@ -9,11 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`docs/mcp-tools.md` MCP tools reference** — complete reference for all 11 MCP tools with Zod schemas, return shapes, example I/O, and deprecation notes; covers `feed_specialist`, `resume_specialist`, `steer_specialist`, and the `run_parallel` deprecation path (unitAI-icb9.4)
+- **Retry logic in SpecialistRunner** — exponential backoff with jitter, transient error detection via `isTransientError()`, new `execution.max_retries` schema field (default: 0); retries only on 5xx/timeout/network errors, never on auth errors (unitAI-xtn)
+- **Output contract: `response_format` + `output_schema` wiring** — runner now reads these schema fields and injects format instructions into the system prompt; `json` mode uses code-fence extraction convention; post-run validation is warn-only (unitAI-93rt)
+- **READ_ONLY specialist output auto-append** — Supervisor detects READ_ONLY permission + `inputBeadId` and auto-appends result to the input bead's notes after `run_complete` (unitAI-ts02)
+- **`specialists status --job <id>`** — single-job detail view with specialist, model, elapsed, events count, bead_id; supports `--json` (unitAI-tv3)
+- **Steering for all running jobs** — FIFO steer pipe now created for every job, not just `--keep-alive`; `specialists steer <job-id> "msg"` works on any running job (unitAI-442b)
+- **Bead-aware system prompt override** — when `--bead` is provided, runner injects "Specialist Run Context" telling the agent to claim the provided bead directly and never `bd create` (unitAI-j6nc)
+- **Documentation overhaul** — `docs/cli-reference.md` rewritten (213→467 lines), new `docs/ARCHITECTURE.md`, `docs/features.md`, `docs/pi-rpc-boundary.md`, `docs/mcp-tools.md` (unitAI-icb9 epic, 6 children)
+- **`using-specialists` skill v3.4** — wave orchestration, coordinator responsibilities, CLI-vs-MCP equivalences, specialist selection lessons, known issues section (unitAI-e8kt)
 
 ### Changed
 
-- **`using-specialists` skill v3.4** — adds wave orchestration section (planning, dispatching, monitoring across parallel specialist jobs), coordinator responsibilities (READ_ONLY output piping, inter-wave commit discipline), CLI-vs-MCP equivalences table, specialist selection lessons from 3-wave 11-dispatch session, and known issues (`sub-bead` creation gap, READ_ONLY output gap, sync-docs stalls on refs); marks `run_parallel` MCP as deprecated; removes pi-specific process extension examples (unitAI-e8kt)
+- **`start_specialist` / `stop_specialist` MCP tools migrated to Supervisor** — async MCP jobs now write `status.json`/`events.jsonl`/`result.txt`, visible to feed/status/stop; `JobRegistry` marked legacy (unitAI-jbhg)
+- **Overthinker specialist upgraded to `openai-codex/gpt-5.4`** — fallback changed to `anthropic/claude-sonnet-4-6`
+- **`stall_timeout_ms` standardized to 120000** across all 11 specialists (was 30s–60s for some)
+- **Planner reuses parent epic** — bead context now includes `parent` field; planner routes child issues under existing parent epic instead of creating sub-epics (unitAI-9o9z)
+- **Footer model display deduplication** — `formatFooterModel()` prevents `anthropic/anthropic/claude-haiku-4-5` doubling (unitAI-j8gj)
+
+### Removed
+
+- **`--background` flag from `specialists run`** — removed entirely; exits with migration message pointing to `start_specialist` MCP, foreground run + feed/result, or shell backgrounding (unitAI-dyll)
 
 
 ## [3.4.0] - 2026-03-30

@@ -155,64 +155,67 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ### Core surfaces
 
-- **CLI**: `specialists run|resume|feed|result|status|stop|list|init|doctor`
-- **MCP tools**: `specialist_init`, `list_specialists`, `use_specialist`, `start_specialist`, `feed_specialist`, `stop_specialist`, `steer_specialist`, `resume_specialist`, `run_parallel`, `specialist_status`
-- **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt}`
+- **CLI**: `specialists run|resume|steer|feed|result|status|stop|list|init|edit|doctor`
+- **MCP tools**: `specialist_init`, `list_specialists`, `use_specialist`, `start_specialist`, `feed_specialist`, `stop_specialist`, `steer_specialist`, `resume_specialist`, `specialist_status`
+- **MCP deprecated**: `run_parallel` (use CLI background jobs), `follow_up_specialist` (use `resume_specialist`)
+- **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
 
-### pi usage (preferred)
-
-In pi sessions, run specialists through CLI/bash and monitor long jobs via the process extension.
-
-- Start: `process start "specialists run <name> --bead <id>" name="sp-<name>"`
-- Monitor: `process list`, `process output id="sp-<name>"`, `process logs id="sp-<name>"`
-- Control: `process kill id="sp-<name>"`, `process clear`
-- TUI shortcuts: `/ps`, `/ps:pin`, `/ps:logs`, `/ps:kill`, `/ps:clear`, `/ps:dock`, `/ps:settings`
-
-### Current execution semantics
+### Execution semantics
 
 1. `run --bead <id>` / `use_specialist({bead_id})`
    - Reads bead via `bd show --json`
    - Builds prompt from bead context + optional completed blockers
+   - Injects "Specialist Run Context" override (claim provided bead, don't `bd create`)
    - Threads bead linkage as `inputBeadId`
 2. Supervisor writes `status.json` immediately (including `bead_id` when available)
-3. Timeline emits structured events (`run_start`, `meta`, `tool`, `text`, `thinking`, `run_complete`)
-4. Feed/observers expose the same run with event envelope metadata (`jobId`, `specialist`, `model`, `backend`, `beadId`, `elapsed_ms`)
+3. FIFO steer pipe created for all jobs (enables mid-run `specialists steer`)
+4. Timeline emits structured events (`run_start`, `meta`, `tool`, `text`, `thinking`, `run_complete`)
+5. Feed/observers expose the same run with event envelope metadata
+6. On completion: READ_ONLY specialists auto-append output to input bead notes
+7. Retry on transient errors: exponential backoff + jitter, controlled by `execution.max_retries`
 
-### Important behavioral updates
+### Key behavioral notes
 
-- `follow-up` is deprecated in favor of `resume` semantics
-- `--json` = NDJSON event stream; `--raw` = legacy raw progress deltas
+- `--background` is **removed** — use `start_specialist` MCP, foreground run + feed/result, or shell `&`
+- `steer` works for **all running jobs** (not just keep-alive) — sends message via FIFO pipe
+- `resume` is for **waiting keep-alive jobs** only — sends next-turn prompt
+- `response_format` + `output_schema` are injected into system prompt by runner
 - `required_tools` is validated against `permission_required` before run start
 - `feed_specialist` is the canonical MCP observation tool (cursor-paginated)
 
 ## Key Files Reference (current)
 
-- `src/cli/run.ts` — run command parsing, `--bead`, output modes (`human|json|raw`), event tailing
+- `src/cli/run.ts` — run command, `--bead`, output modes (`human|json|raw`), event tailing
 - `src/cli/resume.ts` — resume keep-alive jobs in `waiting`
-- `src/cli/follow-up.ts` — deprecated alias to `resume`
+- `src/cli/steer.ts` — mid-run steering via FIFO pipe (all running jobs)
 - `src/cli/feed.ts` — merged feed stream, envelope metadata, cursor behavior
-- `src/specialist/runner.ts` — specialist execution, `required_tools` validation vs permission
-- `src/specialist/supervisor.ts` — job lifecycle persistence (`status.json`, `events.jsonl`, `result.txt`)
-- `src/specialist/beads.ts` — bead prompt construction and blocker context
+- `src/cli/status.ts` — health check + `--job <id>` single-job detail view
+- `src/specialist/runner.ts` — execution, retry logic, output contract injection, bead-aware prompt
+- `src/specialist/supervisor.ts` — job lifecycle, FIFO creation, READ_ONLY output auto-append
+- `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
+- `src/specialist/schema.ts` — YAML schema incl. `max_retries`, `response_format`, `output_schema`
 - `src/tools/specialist/use_specialist.tool.ts` — foreground MCP run (`bead_id` aware)
-- `src/tools/specialist/start_specialist.tool.ts` — async MCP run returning `job_id`
+- `src/tools/specialist/start_specialist.tool.ts` — async MCP run (Supervisor-backed)
 - `src/tools/specialist/feed_specialist.tool.ts` — cursor-paginated MCP event observation
 
 ## Operator Notes
 
 - Prefer bead-linked runs for tracked work: `specialists run <name> --bead <id>`
-- Observe background jobs with `specialists feed -f` or MCP `feed_specialist`
+- Steer running specialists: `specialists steer <job-id> "new direction"`
+- Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
+- Observe jobs with `specialists feed -f` or MCP `feed_specialist`
 - Use `specialists result <job-id>` for final output text
-- `required_tools` is enforced pre-run against `permission_required`
-- `resume` is for waiting keep-alive jobs; `steer` is for running jobs
+- Edit specialist configs: `specialists edit <name>`
+- READ_ONLY specialist output auto-appends to input bead notes
+- `max_retries` in YAML controls transient error retry (default: 0)
 
-## Legacy
+## Documentation
 
-Historical architecture notes were removed from this section because they referenced pre-refactor runtime details and deprecated backend assumptions. Use:
-- `README.md` for user-facing workflow
-- `docs/workflow.md` for canonical run semantics
-- `docs/cli-reference.md` for CLI flags and behavior
-- `docs/background-jobs.md` for runtime file/state layout
+- `docs/cli-reference.md` — complete CLI command reference
+- `docs/ARCHITECTURE.md` — event pipeline, RPC adapter, Supervisor lifecycle
+- `docs/features.md` — structured output, observation, beads, resume, stuck detection
+- `docs/pi-rpc-boundary.md` — what pi owns vs what Specialists owns
+- `docs/mcp-tools.md` — all 11 MCP tools with schemas and examples
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
