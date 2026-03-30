@@ -4,7 +4,7 @@ scope: bootstrap
 category: guide
 version: 1.2.0
 updated: 2026-03-27
-synced_at: 18c5327
+synced_at: 047a28c3
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"

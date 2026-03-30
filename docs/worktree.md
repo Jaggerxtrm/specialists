@@ -4,6 +4,7 @@ scope: worktree
 category: guide
 version: 1.0.0
 updated: 2026-03-23
+synced_at: 047a28c3
 description: xtrm worktree usage alongside Specialists.
 source_of_truth_for:
   - "src/cli/help.ts"

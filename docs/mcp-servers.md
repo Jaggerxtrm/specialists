@@ -4,6 +4,7 @@ scope: mcp-servers
 category: reference
 version: 1.1.0
 updated: 2026-03-23
+synced_at: 047a28c3
 description: Project-scoped MCP registration for Specialists.
 source_of_truth_for:
   - ".mcp.json"

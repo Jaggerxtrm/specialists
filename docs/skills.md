@@ -4,6 +4,7 @@ scope: skills
 category: overview
 version: 1.2.0
 updated: 2026-03-23
+synced_at: 047a28c3
 description: Skills shipped in this repo and what they are for.
 source_of_truth_for:
   - "config/skills/**/*.md"

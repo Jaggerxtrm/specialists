@@ -4,6 +4,7 @@ scope: pi-session
 category: reference
 version: 1.0.0
 updated: 2026-03-25
+synced_at: 047a28c3
 description: Why specialists spawns Pi with --no-extensions and which extensions are selectively re-enabled.
 source_of_truth_for:
   - "src/pi/session.ts"
