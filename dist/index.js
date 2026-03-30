@@ -20238,6 +20238,11 @@ class JobColorMap {
     return this.colors.size;
   }
 }
+function formatToolArgValue(value, maxLen = 240) {
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  const flat = raw.replace(/\s+/g, " ").trim();
+  return flat.length > maxLen ? `${flat.slice(0, maxLen - 3)}...` : flat;
+}
 function formatEventLine(event, options) {
   const ts = dim7(formatTime(event.t));
   const label = options.colorize(bold7(getEventLabel(event.type).padEnd(5)));
@@ -20247,18 +20252,19 @@ function formatEventLine(event, options) {
     detailParts.push(`model=${event.model}`);
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === "tool") {
-    detailParts.push(`tool=${event.tool}`);
-    detailParts.push(`phase=${event.phase}`);
-    if (event.phase === "start" && event.args) {
-      const argStr = Object.entries(event.args).map(([k, v]) => {
-        const s = typeof v === "string" ? v : JSON.stringify(v);
-        return `${k}=${s.length > 40 ? s.slice(0, 37) + "..." : s}`;
-      }).join(" ");
-      if (argStr)
-        detailParts.push(`args=${argStr}`);
-    }
-    if (event.phase === "end") {
-      detailParts.push(`ok=${event.is_error ? "false" : "true"}`);
+    if (event.phase === "start") {
+      if (typeof event.args?.command === "string") {
+        detailParts.push(`${event.tool}: ${formatToolArgValue(event.args.command)}`);
+      } else if (event.args && Object.keys(event.args).length > 0) {
+        const argStr = Object.entries(event.args).map(([k, v]) => `${k}=${formatToolArgValue(v)}`).join(" ");
+        detailParts.push(argStr ? `${event.tool}: ${argStr}` : event.tool);
+      } else {
+        detailParts.push(`${event.tool}: start`);
+      }
+    } else if (event.phase === "end" && event.is_error) {
+      detailParts.push(`${event.tool}: error`);
+    } else {
+      detailParts.push(`${event.tool}: ${event.phase}`);
     }
   } else if (event.type === "run_complete") {
     detailParts.push(`status=${event.status}`);
@@ -20951,7 +20957,7 @@ function getHumanEventKey(event) {
     case "meta":
       return `meta:${event.backend}:${event.model}`;
     case "tool":
-      return `tool:${event.tool}:${event.phase}:${event.is_error ? "error" : "ok"}`;
+      return `tool:${event.tool}:${event.phase}:${event.tool_call_id ?? event.t}`;
     case "text":
       return "text";
     case "thinking":
@@ -20971,12 +20977,26 @@ function getHumanEventKey(event) {
       return event.type;
   }
 }
+function shouldRenderHumanEvent(event) {
+  if (event.type === "message" || event.type === "turn")
+    return false;
+  if (event.type === "tool") {
+    if (event.phase === "update")
+      return false;
+    if (event.phase === "end" && !event.is_error)
+      return false;
+  }
+  return true;
+}
 function shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey) {
   if (event.type === "meta") {
     const metaKey = `${event.backend}:${event.model}`;
     if (seenMetaKey.get(jobId) === metaKey)
       return true;
     seenMetaKey.set(jobId, metaKey);
+  }
+  if (event.type === "tool") {
+    return false;
   }
   const key = getHumanEventKey(event);
   if (lastPrintedEventKey.get(jobId) === key)
@@ -21085,6 +21105,8 @@ function printSnapshot(merged, options, jobsDir) {
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
   for (const { jobId, specialist, beadId, event } of merged) {
+    if (!shouldRenderHumanEvent(event))
+      continue;
     if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
       continue;
     const colorize = colorMap.get(jobId);
@@ -21168,6 +21190,8 @@ async function followMerged(jobsDir, options) {
             ...event
           }));
         } else {
+          if (!shouldRenderHumanEvent(event))
+            continue;
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey))
             continue;
           const colorize = colorMap.get(jobId);

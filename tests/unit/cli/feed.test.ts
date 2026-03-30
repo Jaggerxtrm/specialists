@@ -121,11 +121,11 @@ describe('feed CLI', () => {
     expect(combined).toContain('[unitAI-123]');
   });
 
-  it('renders human-readable details as key=value pairs', async () => {
+  it('renders human-readable details with rich tool command context', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
       { t: now - 2000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
-      { t: now - 1000, type: 'tool', tool: 'read', phase: 'end', is_error: false },
+      { t: now - 1000, type: 'tool', tool: 'read', phase: 'start', args: { path: 'src/index.ts' } },
       { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
     ]);
 
@@ -142,9 +142,7 @@ describe('feed CLI', () => {
     const combined = logs.join('\n');
     expect(combined).toContain('model=claude-haiku-4-5');
     expect(combined).toContain('backend=anthropic');
-    expect(combined).toContain('tool=read');
-    expect(combined).toContain('phase=end');
-    expect(combined).toContain('ok=true');
+    expect(combined).toContain('read: path=src/index.ts');
     expect(combined).toContain('status=COMPLETE');
     expect(combined).toContain('elapsed=5s');
   });
@@ -396,6 +394,34 @@ describe('feed CLI', () => {
     await run();
 
     expect(logs.length).toBe(2);
+  });
+
+  it('suppresses turn/message noise and successful tool end events', async () => {
+    const now = Date.now();
+    createJobDir('job1', 'test', [
+      { t: now - 5000, type: 'turn', phase: 'start' },
+      { t: now - 4500, type: 'message', phase: 'start', role: 'assistant' },
+      { t: now - 4000, type: 'tool', tool: 'bash', phase: 'start', args: { command: 'echo hi' } },
+      { t: now - 3000, type: 'tool', tool: 'bash', phase: 'end', is_error: false },
+      { t: now - 2000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 2 },
+    ]);
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const joined = logs.join('\n');
+    expect(joined).not.toContain('TURN');
+    expect(joined).not.toContain('MSG');
+    expect(joined).toContain('TOOL');
+    expect(joined).toContain('echo hi');
+    expect(joined).not.toContain('bash: end');
   });
 
   // ── Edge cases ─────────────────────────────────────────────────────────────
