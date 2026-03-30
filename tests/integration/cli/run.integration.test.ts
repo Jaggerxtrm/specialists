@@ -63,14 +63,15 @@ describe('integration: specialists run', () => {
     expect(result.stderr).toContain("Unable to read bead 'unitAI-missing' via bd show --json");
   });
 
-  it('rejects --background with a migration hint', async () => {
+  it('accepts --background and spawns a detached child', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-'));
 
+    // --background with a nonexistent specialist will still spawn, but the child
+    // will fail to find the specialist. The parent exits 0 regardless (detached).
     const result = runCli(['run', 'nonexistent-specialist', '--prompt', 'hello', '--background'], tempDir);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('--background was removed');
-    expect(result.stdout.trim()).toBe('');
+    // Parent should exit 0 (it spawned and detached)
+    expect(result.status).toBe(0);
   });
 });
 

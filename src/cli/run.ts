@@ -2,6 +2,7 @@
 
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { spawn as cpSpawn } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -33,6 +34,7 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   keepAlive: boolean;
+  background: boolean;
   contextDepth: number;
   outputMode: OutputMode;
 }
@@ -49,6 +51,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let keepAlive = false;
+  let background = false;
   let outputMode: OutputMode = 'human';
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
 
@@ -60,10 +63,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
     if (token === '--no-beads')    { noBeads    = true; continue; }
     if (token === '--keep-alive')  { keepAlive  = true; continue; }
-    if (token === '--background') {
-      console.error('Error: --background was removed. Use start_specialist/feed_specialist (MCP), run normally then feed/poll/result (CLI), or shell backgrounding (&).');
-      process.exit(1);
-    }
+    if (token === '--background')  { background = true; continue; }
     if (token === '--json')        { outputMode = 'json'; continue; }
     if (token === '--raw')         { outputMode = 'raw';  continue; }
   }
@@ -87,7 +87,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth, outputMode };
+  return { name, prompt, beadId, model, noBeads, keepAlive, background, contextDepth, outputMode };
 }
 
 // ── Event tailer ───────────────────────────────────────────────────────────────
@@ -158,6 +158,41 @@ function formatFooterModel(backend: string | undefined, model: string | undefine
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
+
+  // ── Background mode: spawn detached child and exit ──────────────────────────
+  if (args.background) {
+    const latestPath = join(process.cwd(), '.specialists', 'jobs', 'latest');
+    const oldLatest = (() => { try { return readFileSync(latestPath, 'utf-8').trim(); } catch { return ''; } })();
+
+    // Re-invoke ourselves without --background, fully detached
+    const childArgs = process.argv.slice(2).filter(a => a !== '--background');
+    const child = cpSpawn(process.execPath, [process.argv[1], ...childArgs], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: process.cwd(),
+      env: process.env,
+    });
+    child.unref();
+
+    // Wait up to 5s for the child to write a new job ID to .specialists/jobs/latest
+    const deadline = Date.now() + 5000;
+    let jobId = '';
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100));
+      try {
+        const current = readFileSync(latestPath, 'utf-8').trim();
+        if (current && current !== oldLatest) { jobId = current; break; }
+      } catch { /* not yet */ }
+    }
+
+    if (jobId) {
+      process.stdout.write(`${jobId}\n`);
+    } else {
+      process.stderr.write('Warning: job started but ID not yet available. Check specialists status.\n');
+      process.stdout.write(`${child.pid}\n`);
+    }
+    process.exit(0);
+  }
 
   const loader         = new SpecialistLoader();
   const circuitBreaker = new CircuitBreaker();

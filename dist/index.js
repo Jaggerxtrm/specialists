@@ -20657,6 +20657,7 @@ __export(exports_run, {
 });
 import { join as join17 } from "node:path";
 import { readFileSync as readFileSync7 } from "node:fs";
+import { spawn as cpSpawn } from "node:child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -20668,6 +20669,7 @@ async function parseArgs6(argv) {
   let model;
   let noBeads = false;
   let keepAlive = false;
+  let background = false;
   let outputMode = "human";
   let contextDepth = 1;
   for (let i = 1;i < argv.length; i++) {
@@ -20697,8 +20699,8 @@ async function parseArgs6(argv) {
       continue;
     }
     if (token === "--background") {
-      console.error("Error: --background was removed. Use start_specialist/feed_specialist (MCP), run normally then feed/poll/result (CLI), or shell backgrounding (&).");
-      process.exit(1);
+      background = true;
+      continue;
     }
     if (token === "--json") {
       outputMode = "json";
@@ -20727,7 +20729,7 @@ async function parseArgs6(argv) {
     console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
     process.exit(1);
   }
-  return { name, prompt, beadId, model, noBeads, keepAlive, contextDepth, outputMode };
+  return { name, prompt, beadId, model, noBeads, keepAlive, background, contextDepth, outputMode };
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
   const eventsPath = join17(jobsDir, jobId, "events.jsonl");
@@ -20794,6 +20796,46 @@ function formatFooterModel(backend, model) {
 }
 async function run9() {
   const args = await parseArgs6(process.argv.slice(3));
+  if (args.background) {
+    const latestPath = join17(process.cwd(), ".specialists", "jobs", "latest");
+    const oldLatest = (() => {
+      try {
+        return readFileSync7(latestPath, "utf-8").trim();
+      } catch {
+        return "";
+      }
+    })();
+    const childArgs = process.argv.slice(2).filter((a) => a !== "--background");
+    const child = cpSpawn(process.execPath, [process.argv[1], ...childArgs], {
+      detached: true,
+      stdio: "ignore",
+      cwd: process.cwd(),
+      env: process.env
+    });
+    child.unref();
+    const deadline = Date.now() + 5000;
+    let jobId2 = "";
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+      try {
+        const current = readFileSync7(latestPath, "utf-8").trim();
+        if (current && current !== oldLatest) {
+          jobId2 = current;
+          break;
+        }
+      } catch {}
+    }
+    if (jobId2) {
+      process.stdout.write(`${jobId2}
+`);
+    } else {
+      process.stderr.write(`Warning: job started but ID not yet available. Check specialists status.
+`);
+      process.stdout.write(`${child.pid}
+`);
+    }
+    process.exit(0);
+  }
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
   const hooks = new HookEmitter({ tracePath: join17(process.cwd(), ".specialists", "trace.jsonl") });

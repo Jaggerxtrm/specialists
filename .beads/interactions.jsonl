@@ -64,3 +64,5 @@
 {"id":"int-b685c5bd","kind":"tool_call","created_at":"2026-03-30T17:27:03.219547624Z","actor":"you@example.com","issue_id":"unitAI-gzrx","model":"anthropic/claude-sonnet-4-6","tool_name":"overthinker","exit_code":0}
 {"id":"int-1f24fd95","kind":"tool_call","created_at":"2026-03-30T17:28:14.895752626Z","actor":"you@example.com","issue_id":"unitAI-9xa","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
 {"id":"int-996c0482","kind":"tool_call","created_at":"2026-03-30T17:28:56.181529812Z","actor":"you@example.com","issue_id":"unitAI-ndd0","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-8042ee79","kind":"tool_call","created_at":"2026-03-30T17:34:26.077334275Z","actor":"you@example.com","issue_id":"unitAI-gzrx","model":"openai-codex/gpt-5.4","tool_name":"overthinker","exit_code":0}
+{"id":"int-f0d4518f","kind":"tool_call","created_at":"2026-03-30T17:37:49.587253412Z","actor":"you@example.com","issue_id":"unitAI-gzrx","model":"openai-codex/gpt-5.4","tool_name":"overthinker","exit_code":0}
