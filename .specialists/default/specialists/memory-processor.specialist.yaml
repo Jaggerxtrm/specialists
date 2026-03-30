@@ -3,10 +3,10 @@ specialist:
     name: memory-processor
     version: 1.0.0
     description: "Synthesizes a project's bd memories and current code state into a
-      concise .xtrm/memory.md context file for fresh-session injection. Reads
-      all bd memories, cross-references against recent commits and source,
-      prunes only genuinely stale or contradicted entries, and writes a 100-200
-      line curated document covering architecture, gotchas, and workflow rules."
+      concise .xtrm/memory.md context file for fresh-session injection. Reads all
+      bd memories, cross-references against recent commits and source, prunes only
+      genuinely stale or contradicted entries, and writes a 100-200 line curated
+      document covering architecture, gotchas, and workflow rules."
     category: workflow
     tags: [ memory, context, synthesis, cleanup, session-start, bd ]
     updated: "2026-03-25"

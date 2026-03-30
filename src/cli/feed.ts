@@ -64,10 +64,6 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':
       return `run_complete:${event.status}:${event.error ?? ''}`;
-    // TODO(deprecated): 'done' and 'agent_end' are legacy completion events. New jobs emit 'run_complete'.
-    case 'done':
-    case 'agent_end':
-      return `complete:${event.type}`;
     default:
       return (event as any).type;
   }
@@ -137,6 +133,17 @@ interface JobMeta {
   backend?: string;
   beadId?: string;
   startedAtMs: number;
+}
+
+function isTerminalJobStatus(jobsDir: string, jobId: string): boolean {
+  const statusPath = join(jobsDir, jobId, 'status.json');
+
+  try {
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as { status?: string };
+    return status.status === 'done' || status.status === 'error';
+  } catch {
+    return false;
+  }
 }
 
 function makeJobMetaReader(jobsDir: string): (jobId: string) => JobMeta {
@@ -240,8 +247,7 @@ function printSnapshot(
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
 function isCompletionEvent(event: TimelineEvent): boolean {
-  // TODO(deprecated): 'done' and 'agent_end' are legacy fallbacks for pre-feed-v2 jobs.
-  return isRunCompleteEvent(event) || event.type === 'done' || event.type === 'agent_end';
+  return isRunCompleteEvent(event);
 }
 
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
@@ -272,7 +278,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       lastSeenT.set(batch.jobId, maxT);
     }
 
-    if (batch.events.some(isCompletionEvent)) {
+    if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
       completedJobs.add(batch.jobId);
     }
   }
@@ -320,7 +326,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         }
 
         // Check completion
-        if (batch.events.some(isCompletionEvent)) {
+        if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
           completedJobs.add(batch.jobId);
         }
       }

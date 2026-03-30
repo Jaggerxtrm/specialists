@@ -2,8 +2,8 @@
 
 /**
  * Specialists MCP Server — entry point
- * Subcommands: install, version, list, models, init, validate, edit, run, status,
- *              result, feed, poll, stop, quickstart, help
+ * Subcommands: install, version, list, models, init, validate, edit, config, run,
+ *              status, result, feed, poll, clean, stop, quickstart, help
  */
 
 import { SpecialistsServer } from "./server.js";
@@ -157,6 +157,7 @@ async function run() {
       console.log([
         '',
         'Usage: specialists edit <name> --<field> <value> [options]',
+        '       specialists edit --all',
         '',
         'Edit a field in a .specialist.yaml without opening the file.',
         '',
@@ -171,16 +172,46 @@ async function run() {
         'Options:',
         '  --dry-run                Preview the change without writing',
         '  --scope <default|user>   Disambiguate if same name exists in multiple scopes',
+        '  --all                    Open all YAML files in config/specialists/ in $EDITOR',
         '',
         'Examples:',
         '  specialists edit code-review --model anthropic/claude-opus-4-6',
         '  specialists edit code-review --permission HIGH --dry-run',
         '  specialists edit code-review --tags analysis,security',
+        '  specialists edit --all',
         '',
       ].join('\n'));
       return;
     }
     const { run: handler } = await import('./cli/edit.js');
+    return handler();
+  }
+
+  if (sub === 'config') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists config <get|set> <key> [value] [options]',
+        '',
+        'Batch-read or batch-update specialist YAML config in config/specialists/.',
+        '',
+        'Commands:',
+        '  get <key>                 Show a key across all specialists',
+        '  set <key> <value>         Set a key across all specialists',
+        '',
+        'Options:',
+        '  --all                     Apply to all specialists (default when --name omitted)',
+        '  --name <specialist>       Target one specialist',
+        '',
+        'Examples:',
+        '  specialists config get specialist.execution.stall_timeout_ms',
+        '  specialists config set specialist.execution.stall_timeout_ms 180000',
+        '  specialists config set specialist.execution.stall_timeout_ms 120000 --name executor',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/config.js');
     return handler();
   }
 
@@ -426,6 +457,36 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/follow-up.js');
+    return handler();
+  }
+
+  if (sub === 'clean') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists clean [--all] [--keep <n>] [--dry-run]',
+        '',
+        'Purge completed job directories from .specialists/jobs/.',
+        '',
+        'Default behavior:',
+        '  - removes done/error jobs older than SPECIALISTS_JOB_TTL_DAYS',
+        '  - TTL defaults to 7 days if env is unset',
+        '',
+        'Options:',
+        '  --all        Remove all done/error jobs regardless of age',
+        '  --keep <n>   Keep only the N most recent done/error jobs',
+        '  --dry-run    Show what would be removed without deleting',
+        '',
+        'Examples:',
+        '  specialists clean',
+        '  specialists clean --all',
+        '  specialists clean --keep 20',
+        '  specialists clean --dry-run',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/clean.js');
     return handler();
   }
 

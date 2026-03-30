@@ -8,7 +8,7 @@ description: >
   jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.4
+version: 3.5
 ---
 
 # Specialists Usage
@@ -53,15 +53,16 @@ links results back to the tracker, and creates an audit trail.
 specialists init                              # first-time project setup
 specialists list                              # discover available specialists
 specialists run <name> --bead <id>            # foreground run (streams output)
-specialists run <name> --bead <id> --background  # returns job ID immediately
 specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
 specialists feed -f                           # tail merged feed (all jobs)
 specialists feed <job-id>                     # events for a specific job
 specialists result <job-id>                   # final output text
+specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
 specialists resume <job-id> "next task"       # resume a waiting keep-alive job
-specialists steer <job-id> "new direction"    # redirect a running job mid-run
 specialists stop <job-id>                     # cancel a job
 specialists edit <name>                       # edit a specialist's YAML config
+specialists status --job <job-id>             # single-job detail view
+specialists clean                             # purge old job directories
 specialists doctor                            # health check
 ```
 
@@ -73,7 +74,7 @@ bd create --title "Fix auth token refresh bug" --type bug --priority 2
 # -> unitAI-abc
 
 # 2. Run the right specialist against the bead
-specialists run executor --bead unitAI-abc --background
+specialists run executor --bead unitAI-abc &
 # -> Job started: a1b2c3
 
 # 3. Monitor (pick one)
@@ -84,6 +85,21 @@ specialists feed -f                  # tail all active jobs
 specialists result a1b2c3
 bd close unitAI-abc --reason "Fixed: token refresh now retries on 401"
 ```
+
+### Giving specialists extra context via bead notes
+
+`--prompt` and `--bead` cannot be combined. When you need to give a specialist
+specific instructions beyond what's in the bead description, update the bead notes first:
+
+```bash
+bd update unitAI-abc --notes "INSTRUCTION: Rewrite docs/cli-reference.md from current
+source. Read every command in src/cli/ and src/index.ts. Document all flags and examples."
+
+specialists run executor --bead unitAI-abc &
+```
+
+This pattern was used extensively in Wave 5 of a real session — 4 executors all received
+writing instructions via bead notes and successfully produced doc files.
 
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
@@ -104,17 +120,59 @@ Run `specialists list` to see what's available. Match by task type:
 | Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
 | Planning / scoping | **planner** (claude-sonnet-4-6) | Structured issue breakdown with deps |
 | Doc drift / audit | **sync-docs** (claude-sonnet-4-6) | Detects stale docs, restructures content |
+| Doc writing / updates | **executor** (gpt-5.3-codex) | sync-docs defaults to audit mode; executor writes files |
 | Test generation | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
 | Specialist authoring | **specialists-creator** (claude-sonnet-4-6) | Guides YAML creation against schema |
 
-When unsure, read descriptions: `specialists list --json | jq '.[].description'`
+### Specialist selection lessons (from real sessions)
 
-### Specialist selection lessons
+- **sync-docs** excels at drift audits but defaults to audit-only mode on `--bead` runs and can stall on dense reference tasks. If it stalls, switch to **explorer** for analysis or **executor** for writing.
+- **explorer** is fast and cheap (Haiku) but READ_ONLY — output auto-appends to the input bead's notes after completion. Use for investigation, not implementation.
+- **executor** is the workhorse — HIGH permissions, writes code and docs, runs tests, closes beads. Best for any task that needs files written.
+- **overthinker** is READ_ONLY — use for design analysis with `--keep-alive` to enable follow-up questions. Output auto-appends to bead notes.
+- **use_specialist MCP** is best for quick foreground runs where you need the result immediately in your context.
 
-- **sync-docs** excels at drift audits but can stall on dense reference tasks. If it stalls, switch to **explorer**.
-- **explorer** is fast and cheap (Haiku) but READ_ONLY — it produces content in its result output but cannot write files or update beads. The coordinator must pipe output back.
-- **executor** is the workhorse — HIGH permissions, writes code, runs tests, closes beads. But it may create unnecessary sub-beads (see Known Issues).
-- **overthinker** is READ_ONLY — use for design analysis, not implementation. Pipe its output to the bead yourself.
+---
+
+## Steering and Resume
+
+### Steer — redirect any running job
+
+`steer` sends a message to a running specialist. Delivered after the current tool call
+finishes, before the next LLM call. Works for **all running jobs**.
+
+```bash
+# Specialist is going off track — redirect it
+specialists steer a1b2c3 "STOP what you are doing. Focus only on supervisor.ts"
+
+# Specialist is auditing when it should be writing
+specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
+```
+
+Real example from today: an explorer was reading every file in src/cli/ when we only needed
+confirmation that steering worked. Sent `specialists steer 763ff4 "STOP. Just output:
+STEERING WORKS"` — message delivered, output confirmed in 2 seconds.
+
+### Resume — continue a keep-alive session
+
+`resume` sends a new prompt to a specialist that has finished its turn and is `waiting`.
+Only works with `--keep-alive` jobs. The session retains full conversation history.
+
+```bash
+# Start an overthinker with keep-alive for multi-turn design work
+specialists run overthinker --bead unitAI-xyz --keep-alive &
+# -> Job started: d4e5f6 (completes Phase 4, enters waiting state)
+
+# Read the design output
+specialists result d4e5f6
+
+# Ask follow-up questions
+specialists resume d4e5f6 "What about backward compatibility with existing YAML files?"
+specialists resume d4e5f6 "How would you handle migration from the old schema?"
+```
+
+Use `--keep-alive` when you plan to iterate: design reviews, multi-phase analysis,
+investigation that may need follow-up questions based on findings.
 
 ---
 
@@ -127,27 +185,28 @@ For multiple independent tasks, dispatch specialists in parallel waves.
 Group tasks by dependency:
 1. **Wave 1**: Bug fixes and blockers (unblock downstream work)
 2. **Wave 2**: Features and design (now that the surface is stable)
-3. **Wave 3**: Documentation (after code changes land)
+3. **Wave 3**: Documentation (after code changes land — use executors, not sync-docs)
 
 ### Dispatching a wave
 
 ```bash
-# Fire multiple specialists in parallel
-specialists run executor --bead unitAI-abc --background   # -> job1
-specialists run executor --bead unitAI-def --background   # -> job2
-specialists run debugger --bead unitAI-ghi --background   # -> job3
+# Fire multiple specialists in parallel (shell backgrounding)
+specialists run executor --bead unitAI-abc &
+specialists run executor --bead unitAI-def &
+specialists run overthinker --bead unitAI-ghi --keep-alive &
 ```
 
 ### Monitoring a wave
 
 ```bash
-# Merged feed — all jobs interleaved
-specialists feed -f
-
-# Per-job status check
-for job in job1 job2 job3; do
-  specialists feed $job | tail -5
+# Quick status check on all jobs
+for job in abc123 def456 ghi789; do
+  python3 -c "import json; d=json.load(open('.specialists/jobs/$job/status.json')); \
+    print(f'$job {d[\"specialist\"]:12} {d[\"status\"]:10} {d.get(\"elapsed_s\",\"?\")}s')"
 done
+
+# Or use feed for event-level detail
+specialists feed <job-id>
 ```
 
 ### Between waves
@@ -157,8 +216,20 @@ After each wave completes:
 2. **Validate**: run lint + tests on the combined output
 3. **Commit**: stage, commit, push — clean git before next wave
 4. **Close beads**: `bd close <id> --reason "..."`
-5. **Pipe READ_ONLY output**: for explorer/overthinker results, update the bead manually:
-   `bd update <id> --notes "$(specialists result <job-id>)"`
+
+### Real wave example (from a 6-wave session)
+
+```
+Wave 1: 2x executor → removed --background flag + migrated start_specialist to Supervisor
+Wave 2: overthinker + 2x executor → output contract design + retry logic + footer fix
+Wave 3: 4x sync-docs + 3x explorer → docs audit (produced reports, not files)
+Wave 4: 5x executor + 2x explorer → output contract impl + READ_ONLY auto-append + 4 fixes
+Wave 5: 4x executor → rewrote 4 doc files (executors write files, sync-docs only audits)
+Wave 6: 4x executor + overthinker (keep-alive) → cleanup + manifest design with follow-ups
+```
+
+Key insight: **executors write files, sync-docs audits**. When you need docs written
+to disk, use executor with bead notes containing "INSTRUCTION: Write <file>...".
 
 ---
 
@@ -166,13 +237,7 @@ After each wave completes:
 
 As the orchestrator, you own things specialists cannot do:
 
-### 1. Pipe READ_ONLY specialist output back to beads
-Explorer and overthinker cannot write to beads. After they complete:
-```bash
-bd update unitAI-abc --notes "$(specialists result <job-id>)"
-```
-
-### 2. Validate combined output across specialists
+### 1. Validate combined output across specialists
 Multiple specialists writing to the same worktree can conflict. After each wave:
 ```bash
 npm run lint          # or project-specific quality gate
@@ -180,7 +245,7 @@ bun test              # run affected tests
 git diff --stat       # review what changed
 ```
 
-### 3. Handle failures — don't silently fall back
+### 2. Handle failures — don't silently fall back
 If a specialist stalls or errors, surface it. Don't quietly do the work yourself.
 ```bash
 specialists feed <job-id>          # see what happened
@@ -188,13 +253,20 @@ specialists doctor                 # check for systemic issues
 ```
 
 Options when a specialist fails:
-- **Retry** with tighter prompt scope
-- **Switch specialist** (e.g., sync-docs stalls → try explorer)
+- **Steer** it back on track: `specialists steer <id> "Focus on X instead"`
+- **Switch specialist** (e.g., sync-docs stalls → try explorer or executor)
 - **Stop and report** to the user before doing it yourself
 
-### 4. Close beads and commit between waves
+### 3. Close beads and commit between waves
 Keep git clean between waves. Specialists write to the same worktree, so stacking
 uncommitted changes from multiple waves creates merge pain.
+
+### 4. Run drift detection after doc-heavy sessions
+```bash
+python3 .agents/skills/sync-docs/scripts/drift_detector.py scan --json
+# Then dispatch executor for any stale docs, stamp synced_at on fresh ones:
+python3 .agents/skills/sync-docs/scripts/drift_detector.py update-sync <file>
+```
 
 ---
 
@@ -211,7 +283,6 @@ Available after `specialists init` and session restart.
 | `resume_specialist` | Next-turn prompt for keep-alive jobs in `waiting` |
 | `steer_specialist` | Mid-run steering message for active jobs |
 | `stop_specialist` | Cancel (sends SIGTERM to job PID) |
-| `run_parallel` | **Deprecated** — use CLI background jobs instead |
 | `specialist_status` | Circuit breaker health + staleness |
 
 ### CLI vs MCP equivalences
@@ -219,7 +290,7 @@ Available after `specialists init` and session restart.
 | Action | CLI | MCP |
 |--------|-----|-----|
 | Run foreground | `specialists run <name> --bead <id>` | `use_specialist({name, bead_id})` |
-| Run background | `specialists run <name> --bead <id> --background` | `start_specialist({name, bead_id})` |
+| Run background | `specialists run <name> --bead <id> &` | `start_specialist({name, bead_id})` |
 | Monitor events | `specialists feed <job-id>` | `feed_specialist({job_id, cursor})` |
 | Read result | `specialists result <job-id>` | — (CLI only) |
 | Steer mid-run | `specialists steer <job-id> "msg"` | `steer_specialist({job_id, message})` |
@@ -227,6 +298,7 @@ Available after `specialists init` and session restart.
 | Cancel | `specialists stop <job-id>` | `stop_specialist({job_id})` |
 
 **Prefer CLI** for most orchestration work — it's simpler and output is easier to inspect.
+**Use MCP** (`use_specialist`) when you need the result directly in your conversation context.
 
 ---
 
@@ -254,13 +326,11 @@ specialists result <job-id>
 
 ## Known Issues
 
-- **Executor creates sub-beads**: When given `--bead <id>`, the executor sometimes creates
-  a child bead instead of claiming the input bead directly. This is caused by the edit-gate
-  hook or CLAUDE.md workflow telling it to `bd create` before editing. Tracked as `unitAI-j6nc`.
-- **READ_ONLY output not piped to beads**: Explorer and overthinker output lives only in
-  `specialists result`. The coordinator must manually update the bead with notes.
-- **sync-docs stalls on reference tasks**: sync-docs can stall (60s timeout) on dense
-  schema/reference documentation. Explorer handles these better.
+- **sync-docs defaults to audit mode** on `--bead` runs. Its prompt says "only run fixes
+  when explicitly asked." Use executor for doc writing, or steer it: `specialists steer
+  <id> "Execute all phases. Write the files."` Tracked as `unitAI-rnea`.
+- **READ_ONLY output auto-appends** to the input bead after completion. No manual piping
+  needed (fixed in the Supervisor). But the output also lives in `specialists result`.
 
 ---
 
@@ -273,7 +343,8 @@ specialists edit <name> # edit a specialist's YAML config
 ```
 
 - **"specialist not found"** → `specialists list` (project-scope only)
-- **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel; try a different specialist
+- **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
 - **MCP tools missing** → `specialists init` then restart Claude Code
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
-- **Stall timeout** → specialist hit 60s inactivity. Check `specialists feed <id>` for last event, then retry or switch specialist.
+- **Stall timeout** → specialist hit 120s inactivity. Check `specialists feed <id>`, then retry or switch specialist.
+- **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.

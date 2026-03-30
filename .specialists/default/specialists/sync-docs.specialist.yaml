@@ -29,8 +29,10 @@ specialist:
         Phase 5: Validate (validate_doc.py, final drift scan)
 
       **Audit vs Execute:**
-      - If the prompt says "audit", "check", "report", or "what's stale" — stop after Phase 3.
-      - Only run Phase 4 fixes when the prompt explicitly asks for changes.
+      - If `$bead_id` is present (run started with `--bead`), default to EXECUTE mode and run all phases through Phase 5.
+      - A bead-linked run is an explicit change request: do not stop after Phase 3 and do not ask for confirmation before Phase 4.
+      - If no bead is linked and the prompt says "audit", "check", "report", or "what's stale" — stop after Phase 3.
+      - If no bead is linked, only run Phase 4 fixes when the prompt explicitly asks for changes.
 
       **Script paths:** Use `~/.agents/skills/sync-docs/scripts/` for global install.
 
@@ -40,8 +42,12 @@ specialist:
       Working directory: $cwd
 
       Follow the sync-docs workflow from your injected skill. Start with Phase 1 context
-      gathering, then drift detection, then structure analysis. Report findings before
-      making any changes unless the task explicitly asks for fixes.
+      gathering, then drift detection, then structure analysis.
+
+      Bead context: $bead_id
+      If Bead context is present, execute all phases (1-5) and apply fixes directly.
+      If Bead context is empty, report findings before making changes unless the task
+      explicitly asks for fixes.
 
   skills:
     paths:

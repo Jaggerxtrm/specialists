@@ -279,12 +279,11 @@ describe('feed CLI', () => {
     expect(combined).toContain('COMPLETE');
   });
 
-  it('exits immediately in follow mode for legacy completed jobs without run_complete', async () => {
+  it('exits immediately in follow mode for completed jobs without run_complete', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
       { t: now - 1000, type: 'text' },
-      { t: now, type: 'agent_end', elapsed_s: 1 },
-    ]);
+    ], { status: 'done' });
 
     process.argv = ['node', 'specialists', 'feed', '-f'];
 
@@ -296,7 +295,7 @@ describe('feed CLI', () => {
     const { run } = await import('../../../src/cli/feed.js');
     await run();
 
-    expect(logs.join('\n')).toContain('DONE');
+    expect(logs.join('\n')).toContain('TEXT');
   });
 
   // ── Regression tests for merged chronology ─────────────────────────────────

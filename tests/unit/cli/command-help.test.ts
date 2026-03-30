@@ -41,6 +41,15 @@ describe('command-specific --help', () => {
     expect(out).toContain('active background jobs');
   });
 
+  it('clean --help describes TTL and cleanup modes', () => {
+    const out = captureIndexHelp(['clean', '--help']);
+    expect(out).toContain('Purge completed job directories');
+    expect(out).toContain('SPECIALISTS_JOB_TTL_DAYS');
+    expect(out).toContain('--all');
+    expect(out).toContain('--keep <n>');
+    expect(out).toContain('--dry-run');
+  });
+
   it('doctor --help describes checks it performs', () => {
     const out = captureIndexHelp(['doctor', '--help']);
     expect(out).toContain('Checks:');
@@ -53,5 +62,13 @@ describe('command-specific --help', () => {
     expect(out).toContain('current project');
     expect(out).toContain('project-only');
     expect(out).not.toContain('--scope <project|user>');
+  });
+
+  it('config --help documents get/set and targeting flags', () => {
+    const out = captureIndexHelp(['config', '--help']);
+    expect(out).toContain('config <get|set>');
+    expect(out).toContain('config/specialists/');
+    expect(out).toContain('--name <specialist>');
+    expect(out).toContain('stall_timeout_ms');
   });
 });

@@ -1,6 +1,8 @@
 // src/cli/edit.ts
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { SpecialistLoader } from '../specialist/loader.js';
 
@@ -110,9 +112,41 @@ function setIn(doc: ReturnType<typeof parseDocument>, path: string[], value: any
   }
 }
 
+function openAllConfigSpecialistsInEditor(): void {
+  const configDir = join(process.cwd(), 'config', 'specialists');
+  if (!existsSync(configDir)) {
+    console.error(`Error: missing directory: ${configDir}`);
+    process.exit(1);
+  }
+
+  const files = readdirSync(configDir)
+    .filter(file => file.endsWith('.specialist.yaml'))
+    .sort()
+    .map(file => join(configDir, file));
+
+  if (files.length === 0) {
+    console.error('Error: no specialist YAML files found in config/specialists/');
+    process.exit(1);
+  }
+
+  const editor = process.env.VISUAL ?? process.env.EDITOR ?? 'vi';
+  const result = spawnSync(editor, files, { stdio: 'inherit', shell: true });
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
-  const args = parseArgs(process.argv.slice(3));
+  const rawArgs = process.argv.slice(3);
+
+  if (rawArgs.length === 1 && rawArgs[0] === '--all') {
+    openAllConfigSpecialistsInEditor();
+    return;
+  }
+
+  const args = parseArgs(rawArgs);
   const { name, field, value, dryRun, scope } = args;
 
   // Find the specialist file
