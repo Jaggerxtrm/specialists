@@ -199,6 +199,52 @@ describe('Supervisor', () => {
     expect(closeBead).not.toHaveBeenCalled();
   });
 
+  it('skips note writing for external beads when beadsWriteNotes is false', async () => {
+    const updateBeadNotes = vi.fn();
+    const closeBead = vi.fn();
+    const beadsClient = { updateBeadNotes, closeBead } as any;
+    const runner = makeMockRunner('output', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'output',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 100,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: 'unitAI-external',
+    });
+    const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-external', beadsWriteNotes: false };
+    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+
+    await sup.run();
+
+    expect(updateBeadNotes).not.toHaveBeenCalled();
+    expect(closeBead).not.toHaveBeenCalled();
+  });
+
+  it('always writes notes for owned beads even when beadsWriteNotes is false', async () => {
+    const updateBeadNotes = vi.fn();
+    const closeBead = vi.fn();
+    const beadsClient = { updateBeadNotes, closeBead } as any;
+    const runner = makeMockRunner('owned output', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'owned output',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 100,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: 'specialists-owned',
+    });
+    const runOptions = { ...makeRunOptions(), beadsWriteNotes: false };
+    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+
+    await sup.run();
+
+    expect(updateBeadNotes).toHaveBeenCalledOnce();
+    expect(closeBead).toHaveBeenCalledWith('specialists-owned', 'COMPLETE', 100, 'haiku');
+  });
+
   it('appends READ_ONLY result to input bead notes after completion', async () => {
     const updateBeadNotes = vi.fn();
     const closeBead = vi.fn();

@@ -24,6 +24,8 @@ export interface RunOptions {
   keepAlive?: boolean;
   /** Additional retries after the initial attempt (default: 0). */
   maxRetries?: number;
+  /** Whether external (input) bead notes should be written by Supervisor. */
+  beadsWriteNotes?: boolean;
 }
 
 export interface RunResult {

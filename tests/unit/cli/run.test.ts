@@ -54,12 +54,85 @@ describe('run CLI', () => {
       name: 'code-review',
       inputBeadId: 'unitAI-55d',
       keepAlive: false,
+      beadsWriteNotes: true,
     }));
     expect(runArgs.prompt).toContain('# Task: Refactor auth');
     expect(runArgs.prompt).toContain('Extract JWT validation');
     expect(runArgs.variables).toEqual(expect.objectContaining({
       bead_id: 'unitAI-55d',
     }));
+  });
+
+  it('passes beadsWriteNotes=false when --no-bead-notes is provided', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--bead', 'unitAI-55d', '--no-bead-notes'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(BeadsClient.prototype, 'readBead').mockReturnValue({
+      id: 'unitAI-55d',
+      title: 'Refactor auth',
+      description: 'Extract JWT validation',
+    });
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.beadsWriteNotes).toBe(false);
+  });
+
+  it('respects specialist beads_write_notes=false from YAML config', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+        beads_write_notes: false,
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.beadsWriteNotes).toBe(false);
   });
 
   it('does not duplicate backend prefix in completion footer when model is already provider-qualified', async () => {

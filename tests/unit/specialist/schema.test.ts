@@ -100,4 +100,17 @@ specialist:
       await expect(parseSpecialist(yaml)).rejects.toThrow();
     });
   });
+
+  describe('beads_write_notes field', () => {
+    it('defaults to true when not specified', async () => {
+      const result = await parseSpecialist(VALID_YAML);
+      expect(result.specialist.beads_write_notes).toBe(true);
+    });
+
+    it('accepts false', async () => {
+      const yaml = VALID_YAML + '\n  beads_write_notes: false';
+      const result = await parseSpecialist(yaml);
+      expect(result.specialist.beads_write_notes).toBe(false);
+    });
+  });
 });

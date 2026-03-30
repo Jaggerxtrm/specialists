@@ -1,78 +1,59 @@
-Implemented ✅ batch specialist config operations via a new `specialists config` subcommand, plus `specialists edit --all`.
+Implemented ✅
 
-### What I changed
+### Changes made
 
-#### 1) New CLI: `specialists config`
-**File:** `src/cli/config.ts`
+- **`src/specialist/schema.ts`**
+  - Added YAML option:
+    - `beads_write_notes: z.boolean().default(true)`
 
-Supports:
+- **`src/cli/run.ts`**
+  - Added CLI flag parsing:
+    - `--no-bead-notes`
+  - Added `noBeadNotes` to `RunArgs`
+  - Updated usage string to include new flag
+  - Computes effective note-writing policy:
+    - `false` when `--no-bead-notes` is present
+    - otherwise from specialist YAML `beads_write_notes` (default `true`)
+  - Passes policy through `RunOptions` as `beadsWriteNotes`
 
-- `specialists config get <key>`
-  - Reads key across all YAMLs in `config/specialists/`
-- `specialists config set <key> <value>`
-  - Sets key across all YAMLs in `config/specialists/`
-- `specialists config set <key> <value> --name <specialist>`
-  - Sets key only for one specialist YAML
-- `--all` accepted explicitly (default behavior when `--name` is omitted)
+- **`src/specialist/runner.ts`**
+  - Extended `RunOptions` with:
+    - `beadsWriteNotes?: boolean`
 
-Notes:
-- Key format is dot-path, e.g. `specialist.execution.stall_timeout_ms`
-- Values are YAML-parsed (`180000` → number, `true` → boolean, etc.)
-- Preserves YAML structure/comments via `parseDocument()`
+- **`src/specialist/supervisor.ts`**
+  - Updated note-writing logic:
+    - **Owned bead** (`!inputBeadId`): always write notes
+    - **External/input bead** (`inputBeadId`): write notes only when `beadsWriteNotes !== false`
+  - This applies to both normal external-bead note writes and READ_ONLY append-to-input-bead behavior.
 
----
+- **`src/index.ts`**
+  - Updated `specialists run --help` output to document:
+    - `--no-bead-notes`
 
-#### 2) Wire command into entrypoint
-**File:** `src/index.ts`
+### Tests updated
 
-Added:
-- `config` subcommand dispatch
-- `specialists config --help` text
-- Top subcommand list includes `config`
+- **`tests/unit/specialist/schema.test.ts`**
+  - Added coverage for `beads_write_notes` default and override.
 
----
+- **`tests/unit/cli/run.test.ts`**
+  - Added assertions for:
+    - default `beadsWriteNotes: true`
+    - `--no-bead-notes` forcing `false`
+    - YAML `beads_write_notes: false` being respected
 
-#### 3) Top-level help updated
-**File:** `src/cli/help.ts`
+- **`tests/unit/specialist/supervisor.test.ts`**
+  - Added tests ensuring:
+    - external bead notes are skipped when `beadsWriteNotes: false`
+    - owned beads still always get notes even when `beadsWriteNotes: false`
 
-Added `config` to core commands and examples.
+### Verification
 
----
+Ran successfully:
+- `bun --bun vitest run tests/unit/specialist/supervisor.test.ts tests/unit/cli/run.test.ts tests/unit/specialist/schema.test.ts`
+- `bun run lint`
 
-#### 4) `specialists edit --all`
-**File:** `src/cli/edit.ts`
-
-Added support for:
-- `specialists edit --all`
-
-Behavior:
-- Opens all `config/specialists/*.specialist.yaml` in `$VISUAL`/`$EDITOR` (fallback `vi`)
-
----
-
-### Tests added/updated
-
-- **New:** `tests/unit/cli/config.test.ts`
-  - get across all
-  - set across all
-  - set with `--name`
-  - invalid args exits 1
-- **Updated:** `tests/unit/cli/command-help.test.ts`
-  - adds `config --help` coverage
-- **Updated:** `tests/unit/cli/help.test.ts`
-  - asserts `config` appears in core commands
+Also closed bead:
+- `unitAI-sdnt`
 
 ---
-
-### Validation run
-
-Executed successfully:
-
-- `npm run build`
-- `npm run lint`
-- `bun --bun vitest run tests/unit/cli/config.test.ts tests/unit/cli/command-help.test.ts tests/unit/cli/help.test.ts tests/unit/cli/edit.test.ts`
-
-All passed.
-
----
-Context: 62% used (approx 38k/61k tokens)
+Context: 74% used (approx 31k/42k tokens)

@@ -66,3 +66,6 @@
 {"id":"int-996c0482","kind":"tool_call","created_at":"2026-03-30T17:28:56.181529812Z","actor":"you@example.com","issue_id":"unitAI-ndd0","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
 {"id":"int-8042ee79","kind":"tool_call","created_at":"2026-03-30T17:34:26.077334275Z","actor":"you@example.com","issue_id":"unitAI-gzrx","model":"openai-codex/gpt-5.4","tool_name":"overthinker","exit_code":0}
 {"id":"int-f0d4518f","kind":"tool_call","created_at":"2026-03-30T17:37:49.587253412Z","actor":"you@example.com","issue_id":"unitAI-gzrx","model":"openai-codex/gpt-5.4","tool_name":"overthinker","exit_code":0}
+{"id":"int-a831a04c","kind":"tool_call","created_at":"2026-03-30T18:21:36.062964014Z","actor":"you@example.com","issue_id":"unitAI-hzm6","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
+{"id":"int-1d8b8e50","kind":"tool_call","created_at":"2026-03-30T18:22:34.883164214Z","actor":"you@example.com","issue_id":"unitAI-1eml","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-c445cf46","kind":"tool_call","created_at":"2026-03-30T18:23:37.691476459Z","actor":"you@example.com","issue_id":"unitAI-sdnt","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}

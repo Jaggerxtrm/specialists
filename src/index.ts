@@ -232,6 +232,7 @@ async function run() {
         '  --prompt <text>      Ad-hoc prompt for untracked work',
         '  --context-depth <n>  Dependency context depth when using --bead (default: 1)',
         '  --no-beads           Do not create a new tracking bead (does not disable bead reading)',
+        '  --no-bead-notes      Do not append completion notes to an external --bead',
         '  --model <model>      Override the configured model for this run',
         '  --keep-alive         Keep session alive for follow-up prompts',
         '',

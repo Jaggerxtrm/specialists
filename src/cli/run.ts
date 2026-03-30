@@ -33,6 +33,7 @@ interface RunArgs {
   beadId?: string;
   model?: string;
   noBeads: boolean;
+  noBeadNotes: boolean;
   keepAlive: boolean;
   background: boolean;
   contextDepth: number;
@@ -42,7 +43,7 @@ interface RunArgs {
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--keep-alive] [--json|--raw]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive] [--json|--raw]');
     process.exit(1);
   }
 
@@ -50,6 +51,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let beadId: string | undefined;
   let model: string | undefined;
   let noBeads = false;
+  let noBeadNotes = false;
   let keepAlive = false;
   let background = false;
   let outputMode: OutputMode = 'human';
@@ -61,9 +63,10 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--bead'           && argv[i + 1]) { beadId       = argv[++i]; continue; }
     if (token === '--model'          && argv[i + 1]) { model        = argv[++i]; continue; }
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
-    if (token === '--no-beads')    { noBeads    = true; continue; }
-    if (token === '--keep-alive')  { keepAlive  = true; continue; }
-    if (token === '--background')  { background = true; continue; }
+    if (token === '--no-beads')      { noBeads      = true; continue; }
+    if (token === '--no-bead-notes') { noBeadNotes  = true; continue; }
+    if (token === '--keep-alive')    { keepAlive    = true; continue; }
+    if (token === '--background')    { background   = true; continue; }
     if (token === '--json')        { outputMode = 'json'; continue; }
     if (token === '--raw')         { outputMode = 'raw';  continue; }
   }
@@ -87,7 +90,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, keepAlive, background, contextDepth, outputMode };
+  return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, background, contextDepth, outputMode };
 }
 
 // ── Event tailer ───────────────────────────────────────────────────────────────
@@ -238,6 +241,9 @@ export async function run(): Promise<void> {
     circuitBreaker,
     beadsClient,
   });
+  const beadsWriteNotes = args.noBeadNotes
+    ? false
+    : (specialist.specialist.beads_write_notes ?? true);
 
   // ── Run with Supervisor (creates job files for poll command) ───────────────
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
@@ -253,6 +259,7 @@ export async function run(): Promise<void> {
       backendOverride: args.model,
       inputBeadId: args.beadId,
       keepAlive: args.keepAlive,
+      beadsWriteNotes,
     },
     jobsDir,
     beadsClient,

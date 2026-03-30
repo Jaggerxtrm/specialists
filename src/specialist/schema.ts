@@ -115,6 +115,7 @@ export const SpecialistSchema = z.object({
     /** Write the final output to this file path after the session completes */
     output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
+    beads_write_notes: z.boolean().default(true),
     heartbeat: z.unknown().optional(), // intentional placeholder for future liveness metadata (accepted, ignored)
   }),
 });
