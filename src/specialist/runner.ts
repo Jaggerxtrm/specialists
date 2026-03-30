@@ -295,7 +295,14 @@ export class SpecialistRunner {
 
     // Build system prompt from prompt.system only.
     // skill_inherit and skills.paths are injected via pi --skill (native).
-    const agentsMd = prompt.system ?? '';
+    let agentsMd = prompt.system ?? '';
+
+    // When running with --bead, inject instructions to prevent the specialist from
+    // creating unnecessary sub-beads. The project's CLAUDE.md contains edit-gate rules
+    // that tell agents to `bd create` before editing — override that for specialist runs.
+    if (options.inputBeadId) {
+      agentsMd += `\n\n---\n## Specialist Run Context\nYou are running as a specialist with bead ${options.inputBeadId} as your task.\n- Claim this bead directly: \`bd update ${options.inputBeadId} --claim\`\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close the bead when done: \`bd close ${options.inputBeadId} --reason="..."\`\n---\n`;
+    }
     const skillPaths: string[] = [];
     if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);
     skillPaths.push(...(spec.specialist.skills?.paths ?? []));
