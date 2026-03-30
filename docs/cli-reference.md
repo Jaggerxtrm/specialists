@@ -4,6 +4,7 @@ scope: cli
 category: reference
 version: 1.4.2
 updated: 2026-03-30
+synced_at: 0972c0b0
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts

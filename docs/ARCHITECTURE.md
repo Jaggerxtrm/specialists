@@ -4,6 +4,7 @@ scope: architecture
 category: reference
 version: 1.0.0
 updated: 2026-03-30
+synced_at: 0972c0b0
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, stuck detection, and bead ownership semantics.
 source_of_truth_for:
   - "src/specialist/timeline-events.ts"

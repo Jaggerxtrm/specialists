@@ -1,6 +1,7 @@
 ---
 title: pi/rpc Boundary
 description: Canonical ownership boundary between pi/rpc protocol surfaces and Specialists runtime adaptation.
+synced_at: 0972c0b0
 ---
 
 # pi/rpc Boundary

@@ -4,6 +4,7 @@ scope: runtime-features
 category: guide
 version: 1.0.0
 updated: 2026-03-30
+synced_at: 0972c0b0
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, stuck detection, and specialist authoring.
 source_of_truth_for:
   - "src/cli/run.ts"
