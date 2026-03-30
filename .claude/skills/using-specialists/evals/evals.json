@@ -1,0 +1,68 @@
+{
+  "skill_name": "specialists-usage",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "bug-investigation",
+      "prompt": "I'm seeing intermittent failures where specialist jobs show status 'done' in `specialists feed` but `specialists result` says they're still running. Can you investigate what's causing this inconsistency in the job lifecycle?",
+      "expected_output": "Agent delegates to a specialist (e.g. bug-hunt) rather than diving into the source code themselves. Should create a bead first, then run the specialist with --bead.",
+      "assertions": [
+        {
+          "name": "invokes_specialist",
+          "description": "Agent runs `specialists run` or calls use_specialist/start_specialist instead of reading source files directly"
+        },
+        {
+          "name": "creates_bead_first",
+          "description": "Agent creates a tracking bead before invoking the specialist"
+        },
+        {
+          "name": "does_not_self_investigate",
+          "description": "Agent does not read supervisor.ts, status.json, or other source files to investigate the bug themselves"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "code-review",
+      "prompt": "The specialist runner module at src/specialist/runner.ts is the core execution layer. Can you review it for bugs, edge cases, and code quality issues? It's about 300 lines and fairly complex.",
+      "expected_output": "Agent delegates to a specialist (e.g. parallel-review or codebase-explorer) rather than reading the file and writing a review themselves. Should create a bead first.",
+      "assertions": [
+        {
+          "name": "invokes_specialist",
+          "description": "Agent runs `specialists run` or calls use_specialist/start_specialist instead of reading runner.ts directly"
+        },
+        {
+          "name": "creates_bead_first",
+          "description": "Agent creates a tracking bead before invoking the specialist"
+        },
+        {
+          "name": "does_not_self_review",
+          "description": "Agent does not read runner.ts and write their own code review"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "eval_name": "test-coverage",
+      "prompt": "src/specialist/loader.ts handles YAML file discovery and caching. Looking at the tests in tests/unit/specialist/loader.test.ts, what's missing? Can you add the coverage gaps?",
+      "expected_output": "Agent delegates to a specialist (e.g. test-runner) rather than reading the files and writing tests themselves. Should create a bead first.",
+      "assertions": [
+        {
+          "name": "invokes_specialist",
+          "description": "Agent runs `specialists run` or calls use_specialist/start_specialist instead of writing tests directly"
+        },
+        {
+          "name": "creates_bead_first",
+          "description": "Agent creates a tracking bead before invoking the specialist"
+        },
+        {
+          "name": "does_not_self_write_tests",
+          "description": "Agent does not read loader.ts and loader.test.ts and write new test cases themselves"
+        }
+      ],
+      "files": []
+    }
+  ]
+}

@@ -3,9 +3,6 @@ npm-debug.log*
 package-lock.json
 yarn.lock
 
-# Build artifacts
-
-
 # Database files (sqlite)
 data/*.sqlite
 data/*.sqlite-shm
@@ -17,8 +14,6 @@ logs/
 # Cache directories
 .claude/tsc-cache/
 .rovodev/
-
-
 
 # Debug files
 gemini-error.json
@@ -46,16 +41,11 @@ venv/
 .claude/settings.json
 .claude/settings.local.json
 
-# Specialist job outputs (runtime artifacts)
-.specialists/jobs/
-.specialists/trace.jsonl
-.specialists/sync-docs-report.md
-
 # Structured return logs
 .pi/structured-returns/
 
 # bv transient lock
 .beads/.bv.lock
 
+.specialists/jobs/
 .specialists/ready/
-.specialists/

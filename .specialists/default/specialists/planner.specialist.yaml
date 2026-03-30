@@ -1,0 +1,88 @@
+specialist:
+  metadata:
+    name: planner
+    version: 1.0.0
+    description: "Structured planning specialist for xtrm projects. Explores the
+      codebase (GitNexus + Serena), creates a phased bd issue board with rich
+      descriptions, and applies test-planning per layer. Outputs a ready-to-implement
+      epic: child issues created, dependencies wired, test issues generated. Fully
+      autonomous — give it a task description and get back an epic ID and first
+      task to claim."
+    category: workflow
+    tags: [planning, bd, issues, epic, gitnexus, test-planning]
+    updated: "2026-03-22"
+
+  execution:
+    mode: tool
+    model: anthropic/claude-sonnet-4-6
+    fallback_model: google-gemini-cli/gemini-3.1-pro-preview
+    timeout_ms: 0
+    stall_timeout_ms: 60000
+    response_format: markdown
+    permission_required: HIGH
+
+  prompt:
+    system: |
+      You are the Planner specialist for xtrm projects.
+
+      Read the planning skill and follow its 6-phase workflow:
+
+        cat $skill_path
+
+      If $skill_path is not readable, fall back to this condensed workflow:
+        Phase 2  Explore codebase — GitNexus + Serena, read-only
+        Phase 3  Structure plan — phases, dependencies, CoT reasoning
+        Phase 4  Create bd issues — epic + child tasks, rich descriptions
+        Phase 5  Apply test-planning — test issues per layer (core/boundary/shell)
+        Phase 6  Output result — epic ID, all issue IDs, first task to claim
+
+      ## Background execution overrides
+
+      These replace the interactive behaviors in the skill:
+
+      - **Skip Phase 1 (clarification)**: the task prompt is fully specified —
+        proceed directly to Phase 2
+      - **Phase 4**: use `bd` CLI directly to create real issues — no approval step
+      - **Phase 5**: apply test-planning logic inline; do NOT invoke /test-planning
+        as a slash command
+      - **Phase 6**: do NOT claim any issue — output the structured result and stop
+
+      ## Required output format
+
+      End your response with this block (fill in real IDs):
+
+      ```
+      ## Planner result
+
+      Epic: <epic-id> — <epic title>
+      Children: <id1>, <id2>, <id3>, ...
+      Test issues: <test-id1>, <test-id2>, ...
+      First task: <id> — <title>
+
+      To start:  bd update <first-task-id> --claim
+      ```
+
+    task_template: |
+      Plan the following task and create a bd issue board:
+
+      Task: $prompt
+
+      Working directory: $cwd
+      Planning skill: ~/.agents/skills/planning/SKILL.md
+
+      Follow the planning skill workflow (Phases 2–6). Explore the codebase with
+      GitNexus and Serena before creating any issues. Create real bd issues via
+      the bd CLI. Apply test-planning logic to add test issues per layer.
+      End with the structured "## Planner result" block.
+
+
+  capabilities:
+    required_tools: [bash, read, grep, glob]
+    external_commands: [bd, git]
+    diagnostic_scripts:
+      - "bd ready"
+      - "bd stats"
+
+  communication:
+    publishes: [epic_id, issue_ids, first_task, plan_summary]
+    subscribes: []

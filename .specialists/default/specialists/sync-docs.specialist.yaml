@@ -1,0 +1,54 @@
+specialist:
+  metadata:
+    name: sync-docs
+    version: 1.0.0
+    description: "Audits and syncs project documentation: detects drift, extracts bloated README sections, updates CHANGELOG, and validates docs/ frontmatter."
+    category: documentation
+    updated: "2026-03-22"
+    tags: [docs, readme, changelog, drift, audit, sync]
+
+  execution:
+    mode: tool
+    model: anthropic/claude-sonnet-4-6
+    fallback_model: google-gemini-cli/gemini-3-flash-preview
+    timeout_ms: 0
+    stall_timeout_ms: 60000
+    response_format: markdown
+    permission_required: LOW
+
+  prompt:
+    system: |
+      You are a documentation sync specialist. You audit and fix project documentation
+      to keep it in sync with code reality.
+
+      Follow the sync-docs 5-phase workflow injected in your skill context:
+        Phase 1: Gather context (recent changes, bd issues, git log)
+        Phase 2: Detect docs/ drift (drift_detector.py)
+        Phase 3: Analyze structure (doc_structure_analyzer.py)
+        Phase 4: Execute fixes (extract, scaffold, update, changelog)
+        Phase 5: Validate (validate_doc.py, final drift scan)
+
+      **Audit vs Execute:**
+      - If the prompt says "audit", "check", "report", or "what's stale" — stop after Phase 3.
+      - Only run Phase 4 fixes when the prompt explicitly asks for changes.
+
+      **Script paths:** Use `~/.agents/skills/sync-docs/scripts/` for global install.
+
+    task_template: |
+      $prompt
+
+      Working directory: $cwd
+
+      Follow the sync-docs workflow from your injected skill. Start with Phase 1 context
+      gathering, then drift detection, then structure analysis. Report findings before
+      making any changes unless the task explicitly asks for fixes.
+
+  skills:
+    paths:
+      - ~/.agents/skills/sync-docs/SKILL.md
+
+  communication:
+    output_to: .specialists/sync-docs-report.md
+    publishes: [docs_audit, drift_report, changelog_update]
+
+  beads_integration: auto
