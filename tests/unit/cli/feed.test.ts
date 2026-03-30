@@ -329,15 +329,15 @@ describe('feed CLI', () => {
     expect(logs.length).toBe(1);
   });
 
-  it('dedupes repeated human-visible events for the same job', async () => {
+  it('keeps detailed tool start events while still deduping repetitive meta/text', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
+      { t: now - 6000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
       { t: now - 5000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
-      { t: now - 4000, type: 'meta', model: 'claude-haiku-4-5', backend: 'anthropic' },
+      { t: now - 4000, type: 'text' },
       { t: now - 3000, type: 'text' },
-      { t: now - 2000, type: 'text' },
-      { t: now - 1000, type: 'tool', tool: 'read', phase: 'end', is_error: false },
-      { t: now - 900, type: 'tool', tool: 'read', phase: 'end', is_error: false },
+      { t: now - 2000, type: 'tool', tool: 'bash', phase: 'start', args: { command: 'bd recall one' } },
+      { t: now - 1000, type: 'tool', tool: 'bash', phase: 'start', args: { command: 'bd recall two' } },
       { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
     ]);
 
@@ -353,7 +353,7 @@ describe('feed CLI', () => {
 
     expect(logs.filter((line) => line.includes('META')).length).toBe(1);
     expect(logs.filter((line) => line.includes('TEXT')).length).toBe(1);
-    expect(logs.filter((line) => line.includes('TOOL') && line.includes('read')).length).toBe(1);
+    expect(logs.filter((line) => line.includes('TOOL') && line.includes('bd recall')).length).toBe(2);
   });
 
   it('filters by --since relative time', async () => {

@@ -212,6 +212,12 @@ import type { TimelineEvent } from '../specialist/timeline-events.js';
 /**
  * Format a single timeline event as a compact line.
  */
+function formatToolArgValue(value: unknown, maxLen = 240): string {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value);
+  const flat = raw.replace(/\s+/g, ' ').trim();
+  return flat.length > maxLen ? `${flat.slice(0, maxLen - 3)}...` : flat;
+}
+
 export function formatEventLine(
   event: TimelineEvent,
   options: { jobId: string; specialist: string; beadId?: string; colorize: Colorizer }
@@ -225,16 +231,21 @@ export function formatEventLine(
     detailParts.push(`model=${event.model}`);
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === 'tool') {
-    detailParts.push(`tool=${event.tool}`);
-    detailParts.push(`phase=${event.phase}`);
-    if (event.phase === 'start' && event.args) {
-      const argStr = Object.entries(event.args)
-        .map(([k, v]) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return `${k}=${s.length > 40 ? s.slice(0, 37) + '...' : s}`; })
-        .join(' ');
-      if (argStr) detailParts.push(`args=${argStr}`);
-    }
-    if (event.phase === 'end') {
-      detailParts.push(`ok=${event.is_error ? 'false' : 'true'}`);
+    if (event.phase === 'start') {
+      if (typeof event.args?.command === 'string') {
+        detailParts.push(`${event.tool}: ${formatToolArgValue(event.args.command)}`);
+      } else if (event.args && Object.keys(event.args).length > 0) {
+        const argStr = Object.entries(event.args)
+          .map(([k, v]) => `${k}=${formatToolArgValue(v)}`)
+          .join(' ');
+        detailParts.push(argStr ? `${event.tool}: ${argStr}` : event.tool);
+      } else {
+        detailParts.push(`${event.tool}: start`);
+      }
+    } else if (event.phase === 'end' && event.is_error) {
+      detailParts.push(`${event.tool}: error`);
+    } else {
+      detailParts.push(`${event.tool}: ${event.phase}`);
     }
   } else if (event.type === 'run_complete') {
     detailParts.push(`status=${event.status}`);

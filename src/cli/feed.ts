@@ -50,7 +50,7 @@ function getHumanEventKey(event: TimelineEvent): string {
     case 'meta':
       return `meta:${event.backend}:${event.model}`;
     case 'tool':
-      return `tool:${event.tool}:${event.phase}:${event.is_error ? 'error' : 'ok'}`;
+      return `tool:${event.tool}:${event.phase}:${event.tool_call_id ?? event.t}`;
     case 'text':
       return 'text';
     case 'thinking':
@@ -72,6 +72,21 @@ function getHumanEventKey(event: TimelineEvent): string {
   }
 }
 
+function shouldRenderHumanEvent(event: TimelineEvent): boolean {
+  if (event.type === 'message' || event.type === 'turn') return false;
+
+  if (event.type === 'tool') {
+    // Show actionable tool activity only:
+    // - start: includes arguments (often command/path)
+    // - end errors: surfaces failures
+    // Hide update and successful end events to reduce noise.
+    if (event.phase === 'update') return false;
+    if (event.phase === 'end' && !event.is_error) return false;
+  }
+
+  return true;
+}
+
 function shouldSkipHumanEvent(
   event: TimelineEvent,
   jobId: string,
@@ -82,6 +97,12 @@ function shouldSkipHumanEvent(
     const metaKey = `${event.backend}:${event.model}`;
     if (seenMetaKey.get(jobId) === metaKey) return true;
     seenMetaKey.set(jobId, metaKey);
+  }
+
+  if (event.type === 'tool') {
+    // Tool events are often repeated calls to the same tool (e.g. many bash recalls)
+    // with different arguments. Keep all of them for full observability.
+    return false;
   }
 
   const key = getHumanEventKey(event);
@@ -198,6 +219,7 @@ function printSnapshot(
   const seenMetaKey = new Map<string, string>();
 
   for (const { jobId, specialist, beadId, event } of merged) {
+    if (!shouldRenderHumanEvent(event)) continue;
     if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
     const colorize = colorMap.get(jobId);
     console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
@@ -312,6 +334,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
             ...event,
           }));
         } else {
+          if (!shouldRenderHumanEvent(event)) continue;
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
           const colorize = colorMap.get(jobId);
           console.log(formatEventLine(event, { jobId, specialist, beadId, colorize }));
