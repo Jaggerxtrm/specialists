@@ -69,3 +69,4 @@
 {"id":"int-a831a04c","kind":"tool_call","created_at":"2026-03-30T18:21:36.062964014Z","actor":"you@example.com","issue_id":"unitAI-hzm6","model":"anthropic/claude-haiku-4-5","tool_name":"explorer","exit_code":0}
 {"id":"int-1d8b8e50","kind":"tool_call","created_at":"2026-03-30T18:22:34.883164214Z","actor":"you@example.com","issue_id":"unitAI-1eml","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
 {"id":"int-c445cf46","kind":"tool_call","created_at":"2026-03-30T18:23:37.691476459Z","actor":"you@example.com","issue_id":"unitAI-sdnt","model":"openai-codex/gpt-5.3-codex","tool_name":"executor","exit_code":0}
+{"id":"int-b247a2f9","kind":"tool_call","created_at":"2026-03-30T22:32:21.625347713Z","actor":"you@example.com","issue_id":"unitAI-pjn2","model":"openai-codex/gpt-5.4","tool_name":"overthinker","exit_code":0}
