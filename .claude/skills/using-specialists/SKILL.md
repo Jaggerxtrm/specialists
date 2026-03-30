@@ -113,12 +113,14 @@ Run `specialists list` to see what's available. Match by task type:
 | Task type | Best specialist | Why |
 |-----------|----------------|-----|
 | Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously |
-| Bug investigation | **debugger** (claude-sonnet-4-6) | Systematic root cause analysis |
-| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion |
-| Code review | **parallel-review** (claude-sonnet-4-6) | Multi-backend concurrent review |
+| Bug investigation / "why is X broken" | **debugger** (claude-sonnet-4-6) | GitNexus-first triage, 5-phase investigation, hypothesis ranking, evidence-backed remediation. Use for ANY root cause analysis. |
+| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. Use with `--keep-alive` for follow-up questions. |
+| Code review / compliance | **reviewer** (claude-sonnet-4-6) | Post-run compliance checks, verdict contract (PASS/PARTIAL/FAIL). Use with `--keep-alive` for discussion. |
+| Multi-backend review | **parallel-review** (claude-sonnet-4-6) | Concurrent review across multiple AI backends |
 | Architecture exploration | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY |
 | Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
 | Planning / scoping | **planner** (claude-sonnet-4-6) | Structured issue breakdown with deps |
+| Doc audit / drift detection | **sync-docs** (claude-sonnet-4-6) | Use with `--keep-alive`: audits first, then approve/deny execution via `resume` |
 | Doc drift / audit | **sync-docs** (claude-sonnet-4-6) | Detects stale docs, restructures content |
 | Doc writing / updates | **executor** (gpt-5.3-codex) | sync-docs defaults to audit mode; executor writes files |
 | Test generation | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
@@ -126,11 +128,19 @@ Run `specialists list` to see what's available. Match by task type:
 
 ### Specialist selection lessons (from real sessions)
 
-- **sync-docs** excels at drift audits but defaults to audit-only mode on `--bead` runs and can stall on dense reference tasks. If it stalls, switch to **explorer** for analysis or **executor** for writing.
-- **explorer** is fast and cheap (Haiku) but READ_ONLY — output auto-appends to the input bead's notes after completion. Use for investigation, not implementation.
+- **debugger** is the most powerful investigation specialist. Uses GitNexus call-chain tracing (when available) for 5-phase root cause analysis with ranked hypotheses. Use for ANY "why is X broken" question — don't do the investigation yourself.
+- **sync-docs** is an interactive specialist — it audits first, then waits for approval before executing. Run with `--keep-alive` and use `resume` to approve or deny. Not a bug, it's the design.
+- **overthinker** and **reviewer** are also interactive — run with `--keep-alive` for multi-turn design/review conversations.
+- **explorer** is fast and cheap (Haiku) but READ_ONLY — output auto-appends to the input bead's notes. Use for investigation, not implementation.
 - **executor** is the workhorse — HIGH permissions, writes code and docs, runs tests, closes beads. Best for any task that needs files written.
-- **overthinker** is READ_ONLY — use for design analysis with `--keep-alive` to enable follow-up questions. Output auto-appends to bead notes.
 - **use_specialist MCP** is best for quick foreground runs where you need the result immediately in your context.
+
+### MCP tools availability (known gap)
+
+Specialists that reference GitNexus tools (debugger, planner) or would benefit from Serena LSP
+(explorer, executor) depend on the project's `.mcp.json` for MCP server availability. There is
+no explicit control in specialist YAML yet — tracked as `unitAI-4abv`. Verify your project has
+GitNexus and Serena configured in `.mcp.json` for best results.
 
 ---
 
