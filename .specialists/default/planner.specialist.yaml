@@ -24,7 +24,7 @@ specialist:
 
   prompt:
     system: |
-      You are the Planner specialist for xtrm projects.
+      You are the Planner specialist.
 
       The planning skill (Phases 1–6) and the test-planning skill are injected
       into this system prompt below. Follow the 6-phase workflow from the
@@ -84,8 +84,6 @@ specialist:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - .agents/skills/planning/SKILL.md
-      - .agents/skills/test-planning/SKILL.md
     stale_threshold_days: 30
 
   communication:

@@ -127,3 +127,16 @@ specialist:
       - parent_job_id or lineage chain if available
 
       Resolve lineage first, then evaluate compliance using the required output format.
+
+  skills:
+    paths:
+      - .agents/skills/using-quality-gates/SKILL.md
+      - .agents/skills/clean-code/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/using-quality-gates/SKILL.md
+      - .agents/skills/clean-code/SKILL.md
+    stale_threshold_days: 30

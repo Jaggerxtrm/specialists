@@ -144,5 +144,16 @@ specialist:
       --force-with-lease --force-if-includes, verify each push landed, and repeat
       until the queue is empty. Report final state when done.
 
+  skills:
+    paths:
+      - .agents/skills/xt-merge/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/xt-merge/SKILL.md
+    stale_threshold_days: 30
+
   communication:
     output_to: .specialists/merge-prs-result.md

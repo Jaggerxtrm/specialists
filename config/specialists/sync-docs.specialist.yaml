@@ -54,6 +54,13 @@ specialist:
     paths:
       - ~/.agents/skills/sync-docs/SKILL.md
 
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/sync-docs/SKILL.md
+    stale_threshold_days: 30
+
   communication:
     output_to: .specialists/sync-docs-report.md
     publishes: [docs_audit, drift_report, changelog_update]

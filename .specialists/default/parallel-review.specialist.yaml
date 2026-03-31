@@ -58,5 +58,18 @@ specialist:
       Run concurrent analysis, then synthesize a unified review report with prioritized
       recommendations organized by severity.
 
+  skills:
+    paths:
+      - .agents/skills/using-quality-gates/SKILL.md
+      - .agents/skills/clean-code/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/using-quality-gates/SKILL.md
+      - .agents/skills/clean-code/SKILL.md
+    stale_threshold_days: 30
+
   communication:
     publishes: [code_review_report, review_recommendations, quality_analysis]

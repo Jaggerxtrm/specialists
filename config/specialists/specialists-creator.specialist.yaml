@@ -80,4 +80,11 @@ specialist:
     external_commands:
       - pi
 
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - config/skills/specialists-creator/SKILL.md
+    stale_threshold_days: 30
+
   beads_integration: auto

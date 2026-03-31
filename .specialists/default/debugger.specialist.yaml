@@ -104,7 +104,18 @@ specialist:
       Then trace call chains with gitnexus_context. Read source files for pinpointed suspects.
       Fall back to grep/find if GitNexus is unavailable. Produce a full Bug Investigation Report.
 
+  skills:
+    paths:
+      - .agents/skills/xt-debugging/SKILL.md
+
   capabilities:
     required_tools: [bash, grep, find, read]
     external_commands: [grep]
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/xt-debugging/SKILL.md
+    stale_threshold_days: 30
 

@@ -55,5 +55,11 @@ specialist:
       - "cat vitest.config.ts"
       - "cat package.json | grep -A5 '\"test\"'"
 
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+    stale_threshold_days: 30
+
   communication:
     publishes: [test_results]

@@ -70,11 +70,16 @@ specialist:
       Start with GitNexus tools (gitnexus_query, gitnexus_context, cluster/process resources).
       Fall back to bash/grep if GitNexus is not available. Provide a thorough analysis.
 
-  capabilities:
-    diagnostic_scripts:
-      - "find . -name '*.ts' -not -path '*/node_modules/*' -not -path '*/dist/*' | head -50"
-      - "cat package.json"
-      - "ls -la src/"
+  skills:
+    paths:
+      - .agents/skills/gitnexus-exploring/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/gitnexus-exploring/SKILL.md
+    stale_threshold_days: 30
 
   communication:
     publishes: [codebase_analysis]

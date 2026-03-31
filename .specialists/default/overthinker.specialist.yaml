@@ -61,5 +61,16 @@ specialist:
       Produce a complete multi-phase analysis. Use markdown headers for each phase.
       End with a "## Final Answer" section containing the distilled recommendation.
 
+  skills:
+    paths:
+      - .agents/skills/planning/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/planning/SKILL.md
+    stale_threshold_days: 30
+
   communication:
     publishes: [deep_analysis, reasoning_output, overthinking_result]

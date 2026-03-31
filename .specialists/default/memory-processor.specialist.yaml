@@ -137,5 +137,18 @@ specialist:
       5. `bd forget` only Stale / Contradicted / Redundant entries
       6. Print the Memory Processor Report
 
+  skills:
+    paths:
+      - .agents/skills/documenting/SKILL.md
+      - .agents/skills/using-xtrm/SKILL.md
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/documenting/SKILL.md
+      - .agents/skills/using-xtrm/SKILL.md
+    stale_threshold_days: 30
+
   communication:
     publishes: [ memory_report, memory_md ]
