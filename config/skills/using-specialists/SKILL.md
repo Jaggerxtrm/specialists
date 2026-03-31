@@ -296,6 +296,8 @@ Available after `specialists init` and session restart.
 
 MCP is intentionally minimal. Use CLI commands for orchestration, monitoring, steering,
 resume, and cancellation.
+If you encounter legacy `start_specialist`, treat it as deprecated and migrate to
+`specialists run <name> --prompt "..." --background`.
 
 ---
 

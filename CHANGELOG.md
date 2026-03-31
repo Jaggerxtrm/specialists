@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **sync-docs specialist defaults to execute mode on `--bead` runs** — previously defaulted to audit-only (unitAI-rnea)
 - **Legacy `done`/`agent_end` completion signals removed from feed.ts** — `run_complete` is the canonical signal (unitAI-2hk5)
 
+### Upcoming 3.4.x patch entries
+
+- **v3.4.1** — build fix: removed stale `report` command reference.
+- **v3.4.2** — feat: tmux-backed `--background`, `specialists attach`, `specialists list --live`, and `tmux_session` persisted in `status.json`.
+- **v3.4.3** — fix: init guard for pi sessions skips `.specialists/default` sync; MCP tool surface reduced to `use_specialist` only.
 
 ## [3.4.0] - 2026-03-30
 

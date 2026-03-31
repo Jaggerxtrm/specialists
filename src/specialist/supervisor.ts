@@ -123,6 +123,11 @@ export class Supervisor {
     return join(this.opts.jobsDir, '..', 'ready');
   }
 
+  private writeReadyMarker(id: string): void {
+    mkdirSync(this.readyDir(), { recursive: true });
+    writeFileSync(join(this.readyDir(), id), '', 'utf-8');
+  }
+
   readStatus(id: string): SupervisorStatus | null {
     const path = this.statusPath(id);
     if (!existsSync(path)) return null;
@@ -553,9 +558,8 @@ export class Supervisor {
         output: result.output,
       }));
 
-      // Touch ready marker so the hook can surface completion banners
-      mkdirSync(this.readyDir(), { recursive: true });
-      writeFileSync(join(this.readyDir(), id), '', 'utf-8');
+      // Touch ready marker so hooks can surface completion banners.
+      this.writeReadyMarker(id);
 
       return id;
     } catch (err: any) {
@@ -571,6 +575,9 @@ export class Supervisor {
       appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
       }));
+
+      // Touch ready marker so hooks can surface failure banners.
+      this.writeReadyMarker(id);
       throw err;
     } finally {
       if (stuckIntervalId !== undefined) clearInterval(stuckIntervalId);

@@ -4,7 +4,7 @@ scope: mcp-tools
 category: reference
 version: 2.0.0
 updated: 2026-03-31
-synced_at: 0972c0b0
+synced_at: 490e0f83
 description: MCP tool contract for the Specialists server.
 source_of_truth_for:
   - "src/server.ts"
@@ -52,7 +52,7 @@ z.object({
 
 The following tools were intentionally removed from MCP surface and are CLI-only workflows now:
 
-- `start_specialist`
+- `start_specialist` *(legacy compatibility implementations may still emit a deprecation warning; migrate to `specialists run <name> --prompt "..." --background` now — full removal in next major)*
 - `feed_specialist`
 - `stop_specialist`
 - `steer_specialist`

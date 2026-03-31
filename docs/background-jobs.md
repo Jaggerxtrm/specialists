@@ -29,12 +29,14 @@ specialists run sync-docs --bead unitAI-26s
 # stderr: [job started: 49adda]
 ```
 
-`specialists run` no longer supports `--background`.
+`specialists run --background` starts a detached job.
 
-Use one of these async observation patterns instead:
-- CLI: run normally, then `feed` / `poll` / `result`
-- MCP: `start_specialist` + `feed_specialist`
-- Shell: append `&` if you explicitly want shell backgrounding
+When `tmux` is installed:
+- a named tmux session is created as `sp-<specialist>-<id>`
+- use `specialists attach <job-id>` to attach directly to that session
+- use `specialists list --live` for an interactive tmux session picker
+
+When `tmux` is not installed, the CLI falls back to detached process mode and still writes normal Supervisor job artifacts.
 
 Latest job id is also written to:
 
@@ -119,7 +121,7 @@ specialists stop 49adda
 
 | File | Purpose |
 |---|---|
-| `status.json` | current state (`starting/running/waiting/done/error`), pid, model, bead_id |
+| `status.json` | current state (`starting/running/waiting/done/error`), pid, model, bead_id, tmux_session? |
 | `events.jsonl` | append-only normalized timeline |
 | `result.txt` | final assistant output |
 | `steer.pipe` | FIFO for `steer` / `resume` messages (removed on completion) |

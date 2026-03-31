@@ -13,6 +13,7 @@ source_of_truth_for:
   - src/cli/poll.ts
   - src/cli/result.ts
   - src/cli/status.ts
+  - src/cli/attach.ts
   - src/cli/resume.ts
   - src/cli/steer.ts
   - src/cli/stop.ts
@@ -203,6 +204,35 @@ specialists status --job=a1b2c3 --json
 
 ---
 
+## `specialists attach`
+
+### Synopsis
+
+```bash
+specialists attach <job-id>
+```
+
+### Flags
+
+No flags.
+
+### Examples
+
+```bash
+specialists attach a1b2c3
+```
+
+### Exit codes
+
+- `0`: Successfully attached (returns when tmux session exits/detaches).
+- `1`: Missing args, job missing, terminal job state, missing tmux session, or tmux unavailable.
+
+Notes:
+- `attach` requires tmux and a live `tmux_session` recorded in the job `status.json`.
+- For multi-job interactive selection, use `specialists list --live`.
+
+---
+
 ## `specialists resume`
 
 ### Synopsis
@@ -285,13 +315,14 @@ specialists stop a1b2c3
 ### Synopsis
 
 ```bash
-specialists list [--category <name>] [--scope default|user] [--json]
+specialists list [--category <name>] [--scope default|user] [--live] [--json]
 ```
 
 ### Flags
 
 - `--category <name>`: Filter by category tag.
 - `--scope <default|user>`: Filter by specialist scope.
+- `--live`: Show running/waiting tmux sessions and attach via interactive selector.
 - `--json`: JSON output.
 
 ### Examples
@@ -300,6 +331,7 @@ specialists list [--category <name>] [--scope default|user] [--json]
 specialists list
 specialists list --category analysis
 specialists list --scope user
+specialists list --live
 specialists list --json
 ```
 

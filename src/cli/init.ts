@@ -245,6 +245,7 @@ function ensureProjectHookWiring(cwd: string): void {
 
   // Wire hooks with paths to .claude/hooks/
   addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
+  addHook('PostToolUse',      'node .claude/hooks/specialists-complete.mjs');
   addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {

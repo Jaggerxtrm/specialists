@@ -19297,6 +19297,7 @@ function ensureProjectHookWiring(cwd) {
     }
   }
   addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
+  addHook("PostToolUse", "node .claude/hooks/specialists-complete.mjs");
   addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
@@ -20201,6 +20202,10 @@ class Supervisor {
   readyDir() {
     return join10(this.opts.jobsDir, "..", "ready");
   }
+  writeReadyMarker(id) {
+    mkdirSync2(this.readyDir(), { recursive: true });
+    writeFileSync3(join10(this.readyDir(), id), "", "utf-8");
+  }
   readStatus(id) {
     const path = this.statusPath(id);
     if (!existsSync10(path))
@@ -20566,8 +20571,7 @@ class Supervisor {
         bead_id: result.beadId,
         output: result.output
       }));
-      mkdirSync2(this.readyDir(), { recursive: true });
-      writeFileSync3(join10(this.readyDir(), id), "", "utf-8");
+      this.writeReadyMarker(id);
       return id;
     } catch (err) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
@@ -20580,6 +20584,7 @@ class Supervisor {
       appendTimelineEvent(createRunCompleteEvent("ERROR", elapsed, {
         error: errorMsg
       }));
+      this.writeReadyMarker(id);
       throw err;
     } finally {
       if (stuckIntervalId !== undefined)

@@ -300,6 +300,13 @@ describe('Supervisor', () => {
     expect(status.status).toBe('error');
     expect(status.error).toBe('backend exploded');
     expect(existsSync(join(jobsDir, id, 'result.txt'))).toBe(false);
+    expect(existsSync(join(jobsDir, '..', 'ready', id))).toBe(true);
+
+    const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const runComplete = lines.find((event: any) => event.type === 'run_complete');
+    expect(runComplete).toBeDefined();
+    expect(runComplete.status).toBe('ERROR');
   });
 
   it('GC: job dirs older than TTL are deleted on next run', async () => {

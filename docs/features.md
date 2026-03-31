@@ -63,7 +63,7 @@ sp run executor --prompt "Investigate failing tests" --raw
 
 ---
 
-## 2) Job observation: `feed`, `poll`, `result`, `feed_specialist`
+## 2) Job observation: `feed`, `poll`, `result`
 
 All observation reads Supervisor artifacts under:
 
@@ -114,18 +114,7 @@ sp result <job-id> --wait --timeout 120
 - `--wait` polls until `done`/`error`
 - `--timeout` applies only with `--wait`
 
-### MCP `feed_specialist` (cursor-paginated event API)
-
-Use with `start_specialist` job IDs.
-
-- Input: `job_id`, optional `cursor`, optional `limit`
-- Output: `events`, `next_cursor`, `has_more`, `is_complete`, plus metadata (`status`, `specialist`, `model`, `bead_id`)
-- Poll pattern:
-  1. call with `cursor: 0`
-  2. call again with returned `next_cursor`
-  3. stop when `is_complete=true` and `has_more=false`
-
-Use `result` when you want final plain text; use feed/feed_specialist when you want event history.
+Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
 
 ---
 
@@ -328,8 +317,7 @@ sp feed <job-id> --follow
 sp result <job-id> --wait --timeout 120
 ```
 
-### MCP async observation flow
+### MCP single-run flow
 
-1. `start_specialist` → get `job_id`
-2. `feed_specialist` with cursor paging until complete
-3. (optional) `resume_specialist` for keep-alive jobs in `waiting`
+1. `use_specialist` with `name` + `prompt`/`bead_id`
+2. Read final output directly from MCP response

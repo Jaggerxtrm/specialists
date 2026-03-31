@@ -182,12 +182,13 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ### Key behavioral notes
 
-- `--background` is **removed** — use CLI orchestration (`specialists run` + `feed`/`result`) or shell `&`
+- `--background` is the preferred async path — `specialists run <name> --prompt "..." --background`
 - `steer` works for **all running jobs** (not just keep-alive) — sends message via FIFO pipe
 - `resume` is for **waiting keep-alive jobs** only — sends next-turn prompt
 - `response_format` + `output_schema` are injected into system prompt by runner
 - `required_tools` is validated against `permission_required` before run start
 - MCP is intentionally minimal: `use_specialist` only
+- `start_specialist` is legacy/deprecated: if encountered, output includes a deprecation warning and points to CLI `--background`; remove from MCP tool surface in the next major
 
 ## Key Files Reference (current)
 

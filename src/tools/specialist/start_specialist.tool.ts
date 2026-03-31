@@ -7,6 +7,9 @@ import { join } from 'node:path';
 import { logger } from '../../utils/logger.js';
 import { SpecialistLoader } from '../../specialist/loader.js';
 
+const START_SPECIALIST_DEPRECATION_WARNING =
+  '[DEPRECATED] start_specialist will be removed in the next major release. Prefer CLI background jobs: specialists run <name> --prompt "..." --background';
+
 export const startSpecialistSchema = z.object({
   name: z.string().describe('Specialist identifier (e.g. codebase-explorer)'),
   prompt: z.string().describe('The task or question for the specialist'),
@@ -21,10 +24,10 @@ export function createStartSpecialistTool(runner: SpecialistRunner, beadsClient?
   return {
     name: 'start_specialist' as const,
     description:
-      'Start a specialist asynchronously. Returns job_id immediately. ' +
+      '[DEPRECATED] Start a specialist asynchronously. Returns job_id immediately. ' +
       'Use feed_specialist to stream events and track progress (pass job_id and --follow for live output). ' +
       'Use specialist_status for circuit breaker health checks. ' +
-      'Use stop_specialist to cancel. Enables true parallel execution of multiple specialists.',
+      'Use stop_specialist to cancel. Prefer CLI background jobs: specialists run <name> --prompt "..." --background.',
     inputSchema: startSpecialistSchema,
     async execute(input: z.infer<typeof startSpecialistSchema>) {
       const jobsDir = join(process.cwd(), '.specialists', 'jobs');
@@ -63,7 +66,10 @@ export function createStartSpecialistTool(runner: SpecialistRunner, beadsClient?
       });
 
       const jobId = await jobStarted;
-      return { job_id: jobId };
+      return {
+        job_id: jobId,
+        warning: START_SPECIALIST_DEPRECATION_WARNING,
+      };
     },
   };
 }

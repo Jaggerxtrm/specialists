@@ -42,6 +42,8 @@ describe('start_specialist tool', () => {
     const result = await tool.execute({ name: 'code-review', prompt: 'review this' }) as any;
 
     expect(result.job_id).toMatch(/^[a-f0-9]{6}$/);
+    expect(result.warning).toContain('[DEPRECATED]');
+    expect(result.warning).toContain('--background');
 
     const statusPath = join(tempDir, '.specialists', 'jobs', result.job_id, 'status.json');
     const eventsPath = join(tempDir, '.specialists', 'jobs', result.job_id, 'events.jsonl');

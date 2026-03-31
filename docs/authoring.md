@@ -4,7 +4,7 @@ scope: authoring
 category: guide
 version: 1.5.0
 updated: 2026-03-30
-synced_at: 0972c0b0
+synced_at: 490e0f83
 description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
   - "config/skills/specialists-creator/SKILL.md"

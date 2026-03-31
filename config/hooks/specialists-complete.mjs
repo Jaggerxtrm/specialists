@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// specialists-complete — Claude Code UserPromptSubmit hook
+// specialists-complete — Claude Code UserPromptSubmit/PostToolUse hook
 // Checks .specialists/ready/ for completed background job markers and injects
-// completion banners into Claude's context.
+// completion/failure banners into Claude's context.
 //
 // Installed by: specialists install
 
@@ -32,16 +32,26 @@ for (const jobId of markers) {
   try {
     let specialist = jobId;
     let elapsed = '';
+    let completionStatus = 'done';
+    let errorMessage = '';
 
     if (existsSync(statusPath)) {
       const status = JSON.parse(readFileSync(statusPath, 'utf-8'));
       specialist = status.specialist ?? jobId;
       elapsed = status.elapsed_s !== undefined ? `, ${status.elapsed_s}s` : '';
+      completionStatus = status.status ?? 'done';
+      errorMessage = status.error ? ` — ${status.error}` : '';
     }
 
-    banners.push(
-      `[Specialist '${specialist}' completed (job ${jobId}${elapsed}). Run: specialists result ${jobId}]`
-    );
+    if (completionStatus === 'error') {
+      banners.push(
+        `[Specialist '${specialist}' failed (job ${jobId}${elapsed}${errorMessage}). Run: specialists feed ${jobId} --follow]`
+      );
+    } else {
+      banners.push(
+        `[Specialist '${specialist}' completed (job ${jobId}${elapsed}). Run: specialists result ${jobId}]`
+      );
+    }
 
     // Delete marker so it only fires once
     unlinkSync(markerPath);
@@ -53,7 +63,7 @@ for (const jobId of markers) {
 
 if (banners.length === 0) process.exit(0);
 
-// UserPromptSubmit hooks inject content via JSON
+// UserPromptSubmit/PostToolUse hooks inject content via JSON
 process.stdout.write(JSON.stringify({
   type: 'inject',
   content: banners.join('\n'),

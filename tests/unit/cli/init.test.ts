@@ -198,11 +198,14 @@ describe('init CLI — run()', () => {
     
     // Check correct format: events at top level (not nested in 'hooks')
     expect(settings.UserPromptSubmit).toBeDefined();
+    expect(settings.PostToolUse).toBeDefined();
     expect(settings.SessionStart).toBeDefined();
     
     // Check paths point to .claude/hooks/
     const submitCommand = settings.UserPromptSubmit[0].hooks[0].command;
+    const postToolUseCommand = settings.PostToolUse[0].hooks[0].command;
     expect(submitCommand).toContain('.claude/hooks/specialists-complete.mjs');
+    expect(postToolUseCommand).toContain('.claude/hooks/specialists-complete.mjs');
     expect(submitCommand).not.toContain('/home/');
     expect(submitCommand).not.toContain('/Users/');
   });

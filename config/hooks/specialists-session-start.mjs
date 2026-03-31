@@ -107,7 +107,7 @@ lines.push('specialists status                                 # system health')
 lines.push('specialists doctor                                 # troubleshoot issues');
 lines.push('```');
 lines.push('');
-lines.push('MCP tools: specialist_init · use_specialist · start_specialist · feed_specialist · run_parallel');
+lines.push('MCP tools: use_specialist (foreground only)');
 
 // ── Output ─────────────────────────────────────────────────────────────────
 if (lines.length === 0) process.exit(0);
