@@ -170,13 +170,28 @@ sp run executor --bead unitAI-123 --no-beads
 
 ---
 
-## 4) Keep-alive + resume (`--keep-alive`, `resume`)
+## 4) Keep-alive + resume (`--keep-alive`, `--no-keep-alive`, `resume`)
 
 Keep a session alive for multi-turn flows:
 
 ```bash
 sp run executor --prompt "Analyze this bug" --keep-alive
 ```
+
+Interactive specialists can enable this by default in YAML:
+
+```yaml
+specialist:
+  execution:
+    interactive: true
+```
+
+Default behavior and precedence:
+
+1. `--no-keep-alive` / `no_keep_alive` forces one-shot mode
+2. `--keep-alive` / `keep_alive` forces keep-alive
+3. Otherwise, runner uses `execution.interactive`
+4. If unset, default is one-shot (`false`)
 
 Supervisor behavior in keep-alive mode:
 
@@ -196,6 +211,12 @@ Rules:
 - If status is `running`, use `steer`/`steer_specialist` (mid-turn guidance)
 - `resume` writes `{type:"resume", task:"..."}` to FIFO
 - After resume turn finishes, status returns to `waiting` until closed
+
+Use `--no-keep-alive` for a one-off run even when the specialist is interactive:
+
+```bash
+sp run executor --prompt "Quick check only" --no-keep-alive
+```
 
 Observation loop for keep-alive runs:
 

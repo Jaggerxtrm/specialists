@@ -41,11 +41,12 @@ export async function run(): Promise<void> {
   lines.push(section('2. Initialize a Project'));
   lines.push('');
   lines.push(`  Run once per project root:`);
-  lines.push(`  ${cmd('specialists init')}                          # creates specialists/, .specialists/, AGENTS.md`);
+  lines.push(`  ${cmd('specialists init')}                          # creates .specialists/, wires MCP + AGENTS.md`);
   lines.push('');
   lines.push(`  What this creates:`);
-  lines.push(`  ${dim('specialists/')}       — put your .specialist.yaml files here`);
-  lines.push(`  ${dim('.specialists/')}      — runtime data (jobs/, ready/) — gitignored`);
+  lines.push(`  ${dim('.specialists/default/')} — canonical specialists (from init)`);
+  lines.push(`  ${dim('.specialists/user/')}    — custom .specialist.yaml files`);
+  lines.push(`  ${dim('.specialists/jobs|ready')} — runtime data — gitignored`);
   lines.push(`  ${dim('AGENTS.md')}          — context block injected into Claude sessions`);
   lines.push('');
 
@@ -59,8 +60,8 @@ export async function run(): Promise<void> {
   lines.push(`  ${cmd('specialists list')} ${flag('--json')}                     # machine-readable JSON`);
   lines.push('');
   lines.push(`  Scopes (searched in order, user wins on name collision):`);
-  lines.push(`  ${blue('user')}      .specialists/user/specialists/*.specialist.yaml`);
-  lines.push(`  ${blue('default')}   .specialists/default/specialists/*.specialist.yaml`);
+  lines.push(`  ${blue('user')}      .specialists/user/*.specialist.yaml`);
+  lines.push(`  ${blue('default')}   .specialists/default/*.specialist.yaml`);
   lines.push('');
 
   // ── 4. Running a specialist ────────────────────────────────────────────────

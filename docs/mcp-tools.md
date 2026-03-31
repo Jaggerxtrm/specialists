@@ -57,8 +57,23 @@ z.object({
   variables: z.record(z.string()).optional(),
   backend_override: z.string().optional(),
   bead_id: z.string().optional(),
+  keep_alive: z.boolean().optional(),
+  no_keep_alive: z.boolean().optional(),
 })
 ```
+
+### Keep-alive defaults and overrides
+
+`start_specialist` now mirrors CLI keep-alive semantics.
+
+Precedence:
+
+1. `no_keep_alive: true` forces one-shot mode
+2. `keep_alive: true` forces keep-alive mode
+3. otherwise defaults to specialist YAML `execution.interactive`
+4. if unset in YAML, default is one-shot (`false`)
+
+Use `no_keep_alive` when invoking an interactive specialist for a single turn.
 
 ### Return
 

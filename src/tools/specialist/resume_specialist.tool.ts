@@ -16,7 +16,7 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
     description:
       'Resume a waiting keep-alive specialist session with a next-turn prompt. ' +
       'The Pi session retains full conversation history between turns. ' +
-      'Only valid for jobs in waiting state (started with keepAlive=true, CLI: --keep-alive). ' +
+      'Only valid for jobs in waiting state (started with keepAlive=true, either explicit --keep-alive or execution.interactive default). ' +
       'Use steer_specialist for mid-run steering of running jobs.',
     inputSchema: resumeSpecialistSchema,
     async execute(input: z.infer<typeof resumeSpecialistSchema>) {

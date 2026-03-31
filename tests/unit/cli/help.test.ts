@@ -38,7 +38,7 @@ describe('help CLI — run()', () => {
   it('lists core commands plainly', () => {
     const combined = captureTopLevelHelp();
     expect(combined).toContain('Core commands:');
-    for (const cmd of ['init', 'list', 'config', 'run', 'feed', 'result', 'clean', 'stop', 'status', 'doctor', 'quickstart']) {
+    for (const cmd of ['init', 'list', 'config', 'run', 'feed', 'result', 'clean', 'stop', 'report', 'status', 'doctor', 'quickstart']) {
       expect(combined, `missing command: ${cmd}`).toContain(cmd);
     }
   });

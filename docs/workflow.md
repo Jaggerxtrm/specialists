@@ -79,6 +79,9 @@ Important:
 - `steer`: for jobs currently `running` (mid-turn redirection)
 - `resume`: for keep-alive jobs in `waiting` (next turn)
 
+Keep-alive may be enabled explicitly (`--keep-alive`) or by specialist YAML (`execution.interactive: true`).
+Use `--no-keep-alive` when you want one-shot behavior for an otherwise interactive specialist.
+
 `resume` is not valid for non-waiting jobs.
 
 ## READ_ONLY bead-note behavior

@@ -48,7 +48,20 @@ Latest job id is also written to:
 specialists run debugger --bead unitAI-abc --keep-alive
 ```
 
+You can also make keep-alive the default in specialist YAML:
+
+```yaml
+specialist:
+  execution:
+    interactive: true
+```
+
 After the first turn, keep-alive jobs transition to `waiting` and preserve full conversation context for future turns.
+
+Run-time precedence:
+- `--no-keep-alive` / `no_keep_alive` forces one-shot mode
+- `--keep-alive` / `keep_alive` forces keep-alive mode
+- otherwise `execution.interactive` decides (default `false`)
 
 ## Observe progress
 

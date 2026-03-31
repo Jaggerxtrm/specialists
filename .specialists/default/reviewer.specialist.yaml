@@ -19,6 +19,7 @@ specialist:
     stall_timeout_ms: 120000
     response_format: markdown
     permission_required: READ_ONLY
+    interactive: true
     thinking_level: low
 
   prompt:

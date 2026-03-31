@@ -22,6 +22,8 @@ export interface RunOptions {
    * Enables multi-turn: callers receive resumeFn/closeFn via onResumeReady callback.
    */
   keepAlive?: boolean;
+  /** Explicitly disable keepAlive even when specialist.execution.interactive=true. */
+  noKeepAlive?: boolean;
   /** Additional retries after the initial attempt (default: 0). */
   maxRetries?: number;
   /** Whether external (input) bead notes should be written by Supervisor. */
@@ -262,6 +264,9 @@ export class SpecialistRunner {
     });
 
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    const effectiveKeepAlive = options.noKeepAlive
+      ? false
+      : (options.keepAlive ?? execution.interactive ?? false);
 
     // Pre-run validation: check scripts exist, commands/tools are available, shebang typos
     validateBeforeRun(spec, permissionLevel);
@@ -402,7 +407,7 @@ export class SpecialistRunner {
         throw new Error('Specialist run finished without output');
       }
 
-      if (options.keepAlive && onResumeReady) {
+      if (effectiveKeepAlive && onResumeReady) {
         // Hand the session to the caller for multi-turn use.
         // Don't close here — caller owns the lifecycle via closeFn.
         keepAliveActive = true;

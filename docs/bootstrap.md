@@ -53,8 +53,8 @@ specialists init
 
 What it does:
 
-1. copies canonical specialists to `.specialists/default/specialists/`
-2. creates `.specialists/user/specialists/` for custom specialists
+1. copies canonical specialists to `.specialists/default/`
+2. creates `.specialists/user/` for custom specialists
 3. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
 4. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
 5. injects the canonical workflow block into `AGENTS.md`
@@ -94,14 +94,12 @@ Specialists live in `.specialists/` in the project root. Skills and hooks are pr
 
 .specialists/
 ├── default/       # canonical specialists (from init)
-│   └── specialists/
 ├── user/          # custom specialists
-│   └── specialists/
 ├── jobs/          # runtime (gitignored)
 └── ready/         # runtime (gitignored)
 ```
 
-Add custom specialists to `.specialists/user/specialists/`.
+Add custom specialists to `.specialists/user/`.
 
 ## Verify bootstrap
 

@@ -8,8 +8,8 @@ synced_at: 116f47d8
 description: Current project specialists and what each one is for.
 source_of_truth_for:
   - "config/specialists/*.specialist.yaml"
-  - ".specialists/default/specialists/*.specialist.yaml"
-  - ".specialists/user/specialists/*.specialist.yaml"
+  - ".specialists/default/*.specialist.yaml"
+  - ".specialists/user/*.specialist.yaml"
 domain:
   - specialists
 ---
@@ -17,8 +17,8 @@ domain:
 # Specialists Catalog
 
 Current specialists are loaded from:
-- `.specialists/user/specialists/` (project custom)
-- `.specialists/default/specialists/` (canonical defaults)
+- `.specialists/user/` (project custom)
+- `.specialists/default/` (canonical defaults)
 
 Canonical definitions are sourced from `config/specialists/*.specialist.yaml` during init/update flows.
 

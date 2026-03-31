@@ -2,27 +2,22 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.4.0
+version: 1.5.0
 updated: 2026-03-30
 synced_at: 0972c0b0
-description: How to write, place, and maintain project specialists.
+description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
+  - "config/skills/specialists-creator/SKILL.md"
   - "src/specialist/schema.ts"
   - "src/specialist/runner.ts"
   - "src/pi/session.ts"
-  - "config/specialists/*.specialist.yaml"
 domain:
   - authoring
 ---
 
 # Specialist Authoring
 
-Project specialists are discovered from:
-
-```text
-.specialists/default/specialists/   # canonical (from init)
-.specialists/user/specialists/      # custom overrides/additions
-```
+This guide is the user-facing reference for authoring `.specialist.yaml` files. It mirrors the canonical `specialists-creator` skill and keeps examples aligned with runtime behavior.
 
 ## Minimal skeleton
 
@@ -31,8 +26,8 @@ specialist:
   metadata:
     name: my-specialist
     version: 1.0.0
-    description: "What it does"
-    category: analysis
+    description: "One sentence."
+    category: workflow
 
   execution:
     model: anthropic/claude-sonnet-4-6
@@ -45,48 +40,36 @@ specialist:
       Working directory: $cwd
 ```
 
-## Execution schema (current)
+---
+
+## `specialist.metadata` (required)
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | yes | kebab-case: `[a-z][a-z0-9-]*` |
+| `version` | string | yes | semver (`1.0.0`) |
+| `description` | string | yes | one-sentence summary |
+| `category` | string | yes | free text (`workflow`, `analysis`, `codegen`, …) |
+| `author` | string | no | optional |
+| `created` | string | no | optional date |
+| `updated` | string | no | optional date (quote recommended: `"2026-03-22"`) |
+| `tags` | string[] | no | optional labels |
+
+## `specialist.execution` (required)
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `model` | string | — | required |
-| `fallback_model` | string | — | optional, different provider recommended |
-| `mode` | `tool|skill|auto` | `auto` | |
-| `timeout_ms` | number | `120000` | per-turn wait timeout |
-| `stall_timeout_ms` | number | unset | session inactivity watchdog |
-| `max_retries` | int >= 0 | `0` | retry count for transient backend failures |
-| `response_format` | `text|json|markdown` | `text` | output contract format hint |
-| `permission_required` | `READ_ONLY|LOW|MEDIUM|HIGH` | `READ_ONLY` | pi tool access tier |
-| `thinking_level` | enum | unset | forwarded to `pi --thinking` |
+| `fallback_model` | string | — | recommended from a different provider |
+| `mode` | `tool \| skill \| auto` | `auto` | run mode |
+| `timeout_ms` | number | `120000` | run timeout (ms) |
+| `stall_timeout_ms` | number | unset | kill if no event for N ms |
+| `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists |
+| `response_format` | `text \| json \| markdown` | `text` | output contract hint |
+| `permission_required` | `READ_ONLY \| LOW \| MEDIUM \| HIGH` | `READ_ONLY` | tool-access tier |
+| `thinking_level` | `off \| minimal \| low \| medium \| high \| xhigh` | unset | forwarded to thinking-capable models |
 
-## Prompt schema (current)
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `task_template` | string | yes | rendered with `$variables` |
-| `system` | string | no | appended as system prompt |
-| `output_schema` | object | no | schema for structured output contract |
-| `examples` | array | no | few-shot examples |
-| `skill_inherit` | string | no | injected via `--skill` |
-
-## Output contract
-
-`response_format` + `output_schema` define the expected output contract and are wired into the runner path for structured specialist responses.
-
-Use `response_format: json` with `output_schema` when downstream automation parses output.
-
-## Retry behavior (`max_retries`)
-
-Runner executes up to `max_retries + 1` attempts.
-
-Retries happen only for transient backend failures. Retries are skipped for:
-- auth failures (401/403/invalid API key class)
-- explicit session kills
-- non-transient errors
-
-Backoff is exponential with jitter.
-
-## Permission tiers
+### Permission tiers
 
 | Level | Tools |
 |---|---|
@@ -95,42 +78,251 @@ Backoff is exponential with jitter.
 | `MEDIUM` | `+ edit` |
 | `HIGH` | `+ write` |
 
-## Bead-aware run behavior
+> `READ_WRITE` is **not** a valid permission value.
 
-When invoked with an input bead (`--bead` / `bead_id`), runner appends a system override instructing the specialist to claim/close that bead directly and not create sub-beads.
+### Interactive precedence
 
-## Example (structured, retry-enabled)
+Effective keep-alive order is:
+1. explicit disable (`--no-keep-alive` / `no_keep_alive`)
+2. explicit enable (`--keep-alive` / `keep_alive`)
+3. YAML `execution.interactive`
+4. default one-shot (`false`)
+
+## `specialist.prompt` (required)
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `task_template` | string | yes | rendered with `$variables` |
+| `system` | string | no | system prompt content |
+| `skill_inherit` | string | no | single skill folder/file injected via `--skill` |
+| `output_schema` | object | no | JSON schema for structured output |
+| `examples` | array | no | few-shot examples |
+
+---
+
+## `specialist.skills` (optional)
+
+```yaml
+skills:
+  paths:
+    - skills/my-skill/         # folder (loads SKILL.md)
+    - ~/.agents/skills/domain/ # folder
+    - skills/notes.md          # direct file
+  scripts:
+    - run: ./scripts/pre-check.sh
+      phase: pre
+      inject_output: true
+    - run: "bd ready"
+      phase: pre
+      inject_output: true
+    - run: ./scripts/cleanup.sh
+      phase: post
+```
+
+### `skills.paths`
+- Each item is passed via `pi --skill`.
+- Folders resolve to their `SKILL.md`.
+- Direct file paths are accepted.
+- Missing files are skipped silently.
+
+### `skills.scripts`
+- `run` accepts either:
+  - a file path (`./scripts/foo.sh`, `~/scripts/foo.sh`), or
+  - a shell command (`bd ready`, `git status`).
+- `path` is still accepted as a deprecated alias for `run`.
+- `phase` can be `pre` or `post`.
+- `inject_output: true` makes script stdout available as `$pre_script_output`.
+
+### Pre/post script execution details
+- Scripts run **locally**, outside the specialist model session.
+- `pre` scripts run before session start.
+- `post` scripts run after completion.
+- Timeout is 30 seconds per script.
+- Exit code is captured, but script failure does **not** abort the run.
+- Pre-run validation checks:
+  - file paths exist,
+  - command binaries exist on `PATH`,
+  - obvious shebang typos are reported before launch.
+
+---
+
+## `specialist.capabilities` (optional)
+
+Declarative capabilities help validation and tooling (`specialists doctor`, pre-run checks).
+
+```yaml
+capabilities:
+  required_tools: [bash, read, grep, glob]
+  external_commands: [bd, git, gh]
+```
+
+| Field | Type | Behavior |
+|---|---|---|
+| `required_tools` | string[] | Declares required pi tools |
+| `external_commands` | string[] | Commands validated on `PATH` before run |
+
+If any `external_commands` binary is missing, startup hard-fails and the session does not begin.
+
+---
+
+## `specialist.output_file` (optional, top-level)
+
+```yaml
+output_file: .specialists/my-specialist-result.md
+```
+
+Writes final specialist output to the file after completion. Relative paths are resolved from the working directory.
+
+---
+
+## `specialist.communication` (optional)
+
+```yaml
+communication:
+  next_specialists: planner
+  # or
+  next_specialists: [planner, test-runner]
+```
+
+`next_specialists` declares downstream chain targets that should receive `$previous_result`. This field is metadata; execution/chaining is performed by the caller/pipeline.
+
+---
+
+## `specialist.validation` (optional)
+
+Used by staleness reporting in `specialists status` and `specialists list`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `files_to_watch` | string[] | If any watched file mtime is newer than `metadata.updated`, status becomes `STALE` |
+| `stale_threshold_days` | number | Days before `STALE` escalates to `AGED` |
+| `references` | array | accepted, currently unused |
+
+### Staleness states
+
+| State | Condition |
+|---|---|
+| `OK` | No watched file changed, or no watch/updated metadata configured |
+| `STALE` | Watched file mtime > `metadata.updated` |
+| `AGED` | `STALE` and days since `updated` > `stale_threshold_days` |
+
+Example:
 
 ```yaml
 specialist:
   metadata:
-    name: api-auditor
-    version: 1.0.0
-    description: "API contract checker"
-    category: quality
+    updated: "2026-03-01"
 
-  execution:
-    model: openai-codex/gpt-5.4
-    fallback_model: anthropic/claude-sonnet-4-6
-    timeout_ms: 0
-    stall_timeout_ms: 120000
-    max_retries: 2
-    response_format: json
-    permission_required: READ_ONLY
-
-  prompt:
-    task_template: |
-      Validate API behavior for:
-      $prompt
-    output_schema:
-      type: object
-      properties:
-        summary: { type: string }
-        issues:
-          type: array
-          items: { type: string }
-      required: [summary, issues]
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+    stale_threshold_days: 30
 ```
+
+---
+
+## `specialist.beads_integration` (optional)
+
+| Value | Behavior |
+|---|---|
+| `auto` (default) | Create tracking bead when `permission_required` is `LOW` or higher |
+| `always` | Always create a tracking bead |
+| `never` | Never create a tracking bead |
+
+---
+
+## Built-in template variables
+
+Always available in `prompt.task_template`:
+
+| Variable | Value |
+|---|---|
+| `$prompt` | user prompt passed to the specialist |
+| `$cwd` | current working directory (`process.cwd()`) |
+| `$pre_script_output` | combined stdout from `pre` scripts with `inject_output: true` (empty string if none) |
+
+When invoked with bead context (`--bead` / `bead_id`):
+
+| Variable | Value |
+|---|---|
+| `$bead_context` | full bead content (used in place of plain prompt context) |
+| `$bead_id` | bead identifier |
+
+Custom variables can be passed at invocation with `--variables key=value` and referenced as `$key`.
+
+---
+
+## Skills injection mechanics
+
+Files from `skills.paths` are read and appended to the system prompt at runtime.
+
+Append format:
+
+```text
+---
+# Skill: <path>
+
+<file content>
+```
+
+`prompt.skill_inherit` behaves similarly but is intended as single-file Agent Forge compatibility input and is appended under `# Service Knowledge`.
+
+---
+
+## File placement scopes (3-tier discovery)
+
+Specialists are discovered in priority order:
+
+1. Project: `<project-root>/specialists/*.specialist.yaml`
+2. User: `~/.agents/specialists/*.specialist.yaml`
+3. System: package-bundled specialists
+
+Name files as `<metadata.name>.specialist.yaml`.
+
+---
+
+## Validation workflow
+
+1. Author/update the `.specialist.yaml` file.
+2. Run schema validation:
+
+```bash
+bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.yaml
+```
+
+3. Confirm discovery:
+
+```bash
+specialists list
+```
+
+4. Smoke test run:
+
+```bash
+specialists run my-specialist --prompt "ping" --no-beads
+```
+
+The validator prints `OK <file>` on success and field-level errors on failure.
+
+---
+
+## Common errors and fixes
+
+| Error (typical) | Cause | Fix |
+|---|---|---|
+| `Must be kebab-case` | `metadata.name` has spaces/uppercase | use `my-specialist` |
+| `Must be semver` | version like `v1.0` | use `1.0.0` |
+| `Invalid enum value ... 'READ_WRITE'` | invalid permission tier | use `READ_ONLY`, `LOW`, `MEDIUM`, or `HIGH` |
+| `Invalid enum value ... 'auto'` on `permission_required` | wrong enum on wrong field | use `auto` only for `beads_integration` |
+| `Required` on `task_template` | missing prompt template | add `prompt.task_template` |
+| `Required` on `model` | missing execution model | add `execution.model` |
+| `Required` on `description` | missing metadata description | add `metadata.description` |
+| `Required` on `category` | missing metadata category | add `metadata.category` |
+| Valid YAML but poor results | `task_template` never uses `$prompt` | include `$prompt` in template |
+| `defaults` key unrecognized | unsupported top-level key | remove `defaults`; pass runtime values via `--variables` |
+
+---
 
 ## See also
 

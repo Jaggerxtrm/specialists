@@ -388,4 +388,4 @@ Call `specialists init` once per project, then use CLI commands via Bash.
 4. Read final output (`specialists result <job-id>`)
 5. Close/update bead with outcome
 
-Add custom specialists to `.specialists/user/specialists/` to extend defaults.
+Add custom specialists to `.specialists/user/` to extend defaults.

@@ -1,6 +1,6 @@
 // tests/unit/tools/specialist/start_specialist.tool.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStartSpecialistTool } from '../../../../src/tools/specialist/start_specialist.tool.js';
@@ -52,6 +52,47 @@ describe('start_specialist tool', () => {
     const status = JSON.parse(readFileSync(statusPath, 'utf-8'));
     expect(status.id).toBe(result.job_id);
     expect(status.specialist).toBe('code-review');
+  });
+
+  it('applies execution.interactive default as keepAlive=true', async () => {
+    mkdirSync(join(tempDir, '.specialists', 'default', 'specialists'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.yaml'),
+      `specialist:\n  metadata:\n    name: architect\n    version: 1.0.0\n    description: test\n    category: test\n  execution:\n    model: anthropic/claude-sonnet-4-6\n    interactive: true\n  prompt:\n    task_template: \"$prompt\"\n`,
+      'utf-8',
+    );
+
+    const runner = makeMockRunner();
+    const tool = createStartSpecialistTool(runner);
+
+    await tool.execute({ name: 'architect', prompt: 'design system' });
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const [runOptions] = runner.run.mock.calls[0];
+    expect(runOptions.keepAlive).toBe(true);
+  });
+
+  it('allows no_keep_alive override for interactive specialists', async () => {
+    mkdirSync(join(tempDir, '.specialists', 'default', 'specialists'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.yaml'),
+      `specialist:\n  metadata:\n    name: architect\n    version: 1.0.0\n    description: test\n    category: test\n  execution:\n    model: anthropic/claude-sonnet-4-6\n    interactive: true\n  prompt:\n    task_template: "$prompt"\n`,
+      'utf-8',
+    );
+
+    const runner = makeMockRunner();
+    const tool = createStartSpecialistTool(runner);
+
+    await tool.execute({
+      name: 'architect',
+      prompt: 'design system',
+      no_keep_alive: true,
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const [runOptions] = runner.run.mock.calls[0];
+    expect(runOptions.keepAlive).toBe(false);
+    expect(runOptions.noKeepAlive).toBe(true);
   });
 
   it('forwards run options to Supervisor (name, prompt, variables, backend_override, bead_id)', async () => {

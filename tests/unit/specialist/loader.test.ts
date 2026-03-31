@@ -74,8 +74,8 @@ describe('SpecialistLoader', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('discovers specialists in .specialists/default/specialists/', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+  it('discovers specialists in .specialists/default/', async () => {
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'my-spec.specialist.yaml'), MINIMAL_YAML('my-spec'));
     const list = await loader.list();
@@ -84,8 +84,8 @@ describe('SpecialistLoader', () => {
     expect(list[0].scope).toBe('default');
   });
 
-  it('discovers specialists in .specialists/user/specialists/', async () => {
-    const dir = join(tempDir, '.specialists', 'user', 'specialists');
+  it('discovers specialists in .specialists/user/', async () => {
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'my-spec.specialist.yaml'), MINIMAL_YAML('my-spec'));
     const list = await loader.list();
@@ -94,9 +94,24 @@ describe('SpecialistLoader', () => {
     expect(list[0].scope).toBe('user');
   });
 
+  it('discovers specialists in legacy nested directories for backward compatibility', async () => {
+    const legacyDefaultDir = join(tempDir, '.specialists', 'default', 'specialists');
+    const legacyUserDir = join(tempDir, '.specialists', 'user', 'specialists');
+    await mkdir(legacyDefaultDir, { recursive: true });
+    await mkdir(legacyUserDir, { recursive: true });
+    await writeFile(join(legacyDefaultDir, 'legacy-default.specialist.yaml'), MINIMAL_YAML('legacy-default'));
+    await writeFile(join(legacyUserDir, 'legacy-user.specialist.yaml'), MINIMAL_YAML('legacy-user'));
+
+    const list = await loader.list();
+
+    expect(list).toHaveLength(2);
+    expect(list.find(s => s.name === 'legacy-default')?.scope).toBe('default');
+    expect(list.find(s => s.name === 'legacy-user')?.scope).toBe('user');
+  });
+
   it('user specialists override default specialists with same name', async () => {
-    const defaultDir = join(tempDir, '.specialists', 'default', 'specialists');
-    const userDir = join(tempDir, '.specialists', 'user', 'specialists');
+    const defaultDir = join(tempDir, '.specialists', 'default');
+    const userDir = join(tempDir, '.specialists', 'user');
     await mkdir(defaultDir, { recursive: true });
     await mkdir(userDir, { recursive: true });
     await writeFile(join(defaultDir, 'shared.specialist.yaml'), MINIMAL_YAML('shared'));
@@ -112,7 +127,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('loads and caches a specialist by name', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'my-spec.specialist.yaml'), MINIMAL_YAML('my-spec'));
     const spec = await loader.get('my-spec');
@@ -126,7 +141,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('warns to stderr and skips invalid YAML instead of silently dropping', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'bad.specialist.yaml'), 'not: valid: specialist: yaml: at all');
     await writeFile(join(dir, 'good.specialist.yaml'), MINIMAL_YAML('good'));
@@ -150,7 +165,7 @@ describe('SpecialistLoader', () => {
   // --- Other functionality ---
 
   it('filters list() by category', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'arch.specialist.yaml'), CATEGORIZED_YAML('arch', 'architecture'));
     await writeFile(join(dir, 'tester.specialist.yaml'), CATEGORIZED_YAML('tester', 'testing'));
@@ -161,7 +176,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('list() returns all specialists when category filter matches none', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'arch.specialist.yaml'), CATEGORIZED_YAML('arch', 'architecture'));
     const list = await loader.list('nonexistent-category');
@@ -169,7 +184,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('ignores files that do not end with .specialist.yaml', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'readme.md'), '# not a specialist');
     await writeFile(join(dir, 'config.yaml'), 'key: value');
@@ -180,7 +195,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('invalidateCache() by name removes only that entry', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'spec-a.specialist.yaml'), MINIMAL_YAML('spec-a'));
     await writeFile(join(dir, 'spec-b.specialist.yaml'), MINIMAL_YAML('spec-b'));
@@ -198,7 +213,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('invalidateCache() without name clears all cached entries', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'spec-a.specialist.yaml'), MINIMAL_YAML('spec-a'));
     await writeFile(join(dir, 'spec-b.specialist.yaml'), MINIMAL_YAML('spec-b'));
@@ -216,7 +231,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() resolves ~/ prefixed skill paths to absolute home-relative paths', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, 'skills-spec.specialist.yaml'),
@@ -230,7 +245,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() resolves ./ prefixed skill paths relative to the specialist file directory', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, 'skills-spec.specialist.yaml'),
@@ -244,7 +259,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() leaves absolute skill paths unchanged', async () => {
-    const dir = join(tempDir, '.specialists', 'default', 'specialists');
+    const dir = join(tempDir, '.specialists', 'default');
     await mkdir(dir, { recursive: true });
     const absPath = '/usr/local/share/skills/my-skill.md';
     await writeFile(

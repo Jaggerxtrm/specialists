@@ -212,9 +212,19 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 | `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
 | `timeout_ms` | number | `120000` | ms |
 | `stall_timeout_ms` | number | — | kill if no event for N ms |
+| `interactive` | boolean | `false` | enable multi-turn keep-alive by default |
 | `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
+
+**When to use `execution.interactive`**
+
+- Set `interactive: true` for specialists intended for multi-turn workflows (`resume`, iterative planning, long investigations).
+- Leave it unset/`false` for one-shot specialists where each run should end immediately.
+- Run-level overrides still apply:
+  - CLI: `--keep-alive` enables, `--no-keep-alive` disables.
+  - MCP `start_specialist`: `keep_alive` enables, `no_keep_alive` disables.
+- Effective precedence: explicit disable (`--no-keep-alive` / `no_keep_alive`) → explicit enable (`--keep-alive` / `keep_alive`) → `execution.interactive` → one-shot default.
 
 **Permission tiers** — controls which pi tools are available:
 
@@ -420,6 +430,7 @@ specialist:
     fallback_model: google-gemini-cli/gemini-3.1-pro-preview
     timeout_ms: 300000
     stall_timeout_ms: 60000
+    interactive: true                # default keep-alive; supports resume flows
     response_format: markdown
     permission_required: READ_ONLY   # not READ_WRITE
 

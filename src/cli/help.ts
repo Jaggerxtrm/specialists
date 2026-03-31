@@ -21,6 +21,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['resume', 'Resume a waiting keep-alive session with a next-turn prompt (retains full context)'],
   ['follow-up', '[deprecated] Use resume instead'],
   ['stop', 'Stop a running job'],
+  ['report', 'Generate/show/list/diff session reports in .xtrm/reports/'],
   ['status', 'Show health, MCP state, and active jobs'],
   ['doctor', 'Diagnose installation/runtime problems'],
   ['quickstart', 'Full getting-started guide'],
@@ -41,6 +42,7 @@ const WORKTREE_COMMANDS: CommandEntry[] = [
   ['xt attach [slug]', 'Resume an existing xt worktree session'],
   ['xt worktree list', 'List worktrees with runtime and activity'],
   ['xt end', 'Close session, push, PR, cleanup'],
+  ['xt report show|list|diff', 'Session report surfaces (same .xtrm/reports files)'],
 ];
 
 function formatCommands(entries: CommandEntry[]): string[] {
@@ -107,6 +109,8 @@ export async function run(): Promise<void> {
     '  specialists steer <job-id> "focus only on supervisor.ts"',
     '  specialists resume <job-id> "now write the fix"',
     '  specialists run debugger --prompt "why does auth fail"',
+    '  specialists report list',
+    '  specialists report show --specialists',
     '  specialists result <job-id> --wait',
     '',
     bold('More help:'),

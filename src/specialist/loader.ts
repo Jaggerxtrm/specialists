@@ -62,11 +62,17 @@ export class SpecialistLoader {
   private getScanDirs(): Array<{ path: string; scope: 'default' | 'user' }> {
     const dirs: Array<{ path: string; scope: 'default' | 'user' }> = [
       // User specialists take precedence over defaults
+      { path: join(this.projectDir, '.specialists', 'user'), scope: 'user' },
+      // Back-compat nested user path
       { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
-      // Canonical project-local location
-      { path: join(this.projectDir, 'specialists'), scope: 'default' },
-      // Back-compat locations still used in tests and older repos
+
+      // Canonical project-local defaults
+      { path: join(this.projectDir, '.specialists', 'default'), scope: 'default' },
+      // Back-compat nested default path
       { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
+
+      // Legacy locations retained for compatibility
+      { path: join(this.projectDir, 'specialists'), scope: 'default' },
       { path: join(this.projectDir, '.claude', 'specialists'), scope: 'default' },
       { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'default' },
     ];

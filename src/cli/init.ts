@@ -1,6 +1,6 @@
 // src/cli/init.ts
 
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,7 +38,7 @@ Canonical tracked flow:
 4. Read final output (\`specialists result <job-id>\`)
 5. Close/update bead with outcome
 
-Add custom specialists to \`.specialists/user/specialists/\` to extend defaults.
+Add custom specialists to \`.specialists/user/\` to extend defaults.
 `.trimStart();
 
 const AGENTS_MARKER = '## Specialists';
@@ -80,7 +80,47 @@ function resolvePackagePath(relativePath: string): string | null {
 }
 
 /**
- * Copy canonical specialists to .specialists/default/specialists/
+ * Move legacy nested specialist files from .specialists/<scope>/specialists/
+ * to the flattened .specialists/<scope>/ layout.
+ */
+function migrateLegacySpecialists(cwd: string, scope: 'default' | 'user'): void {
+  const sourceDir = join(cwd, '.specialists', scope, 'specialists');
+  if (!existsSync(sourceDir)) return;
+
+  const targetDir = join(cwd, '.specialists', scope);
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.yaml'));
+  if (files.length === 0) return;
+
+  let moved = 0;
+  let skipped = 0;
+
+  for (const file of files) {
+    const src = join(sourceDir, file);
+    const dest = join(targetDir, file);
+
+    if (existsSync(dest)) {
+      skipped++;
+      continue;
+    }
+
+    renameSync(src, dest);
+    moved++;
+  }
+
+  if (moved > 0) {
+    ok(`migrated ${moved} specialist${moved === 1 ? '' : 's'} from .specialists/${scope}/specialists/ to .specialists/${scope}/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} legacy specialist${skipped === 1 ? '' : 's'} already exist in .specialists/${scope}/ (not moved)`);
+  }
+}
+
+/**
+ * Copy canonical specialists to .specialists/default/
  */
 function copyCanonicalSpecialists(cwd: string): void {
   const sourceDir = resolvePackagePath('specialists');
@@ -90,7 +130,7 @@ function copyCanonicalSpecialists(cwd: string): void {
     return;
   }
 
-  const targetDir = join(cwd, '.specialists', 'default', 'specialists');
+  const targetDir = join(cwd, '.specialists', 'default');
   const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.yaml'));
   
   if (files.length === 0) {
@@ -119,7 +159,7 @@ function copyCanonicalSpecialists(cwd: string): void {
   }
   
   if (copied > 0) {
-    ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to .specialists/default/specialists/`);
+    ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to .specialists/default/`);
   }
   if (skipped > 0) {
     skip(`${skipped} specialist${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
@@ -275,11 +315,11 @@ function installProjectSkills(cwd: string): void {
  * Create user directories for custom specialists
  */
 function createUserDirs(cwd: string): void {
-  const userDir = join(cwd, '.specialists', 'user', 'specialists');
+  const userDir = join(cwd, '.specialists', 'user');
 
   if (!existsSync(userDir)) {
     mkdirSync(userDir, { recursive: true });
-    ok('created .specialists/user/specialists/ for custom specialists');
+    ok('created .specialists/user/ for custom specialists');
   }
 }
 
@@ -370,6 +410,8 @@ export async function run(): Promise<void> {
   console.log(`\n${bold('specialists init')}\n`);
 
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
+  migrateLegacySpecialists(cwd, 'default');
+  migrateLegacySpecialists(cwd, 'user');
   copyCanonicalSpecialists(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
@@ -401,13 +443,11 @@ export async function run(): Promise<void> {
   console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);
   console.log(`  ├── default/           ${dim('# canonical specialists (from init)')}`);
-  console.log(`  │   └── specialists/`);
   console.log(`  ├── user/              ${dim('# your custom specialists')}`);
-  console.log(`  │   └── specialists/`);
   console.log(`  ├── jobs/              ${dim('# runtime (gitignored)')}`);
   console.log(`  └── ready/             ${dim('# runtime (gitignored)')}`);
   console.log(`\n  ${dim('Next steps:')}`);
   console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
-  console.log(`  2. Add custom specialists to ${yellow('.specialists/user/specialists/')}`);
+  console.log(`  2. Add custom specialists to ${yellow('.specialists/user/')}`);
   console.log(`  3. Restart Claude Code or pi to pick up changes\n`);
 }

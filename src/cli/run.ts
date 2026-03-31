@@ -34,7 +34,8 @@ interface RunArgs {
   model?: string;
   noBeads: boolean;
   noBeadNotes: boolean;
-  keepAlive: boolean;
+  keepAlive?: boolean;
+  noKeepAlive: boolean;
   background: boolean;
   contextDepth: number;
   outputMode: OutputMode;
@@ -43,7 +44,7 @@ interface RunArgs {
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive] [--json|--raw]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]');
     process.exit(1);
   }
 
@@ -52,7 +53,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let model: string | undefined;
   let noBeads = false;
   let noBeadNotes = false;
-  let keepAlive = false;
+  let keepAlive: boolean | undefined;
+  let noKeepAlive = false;
   let background = false;
   let outputMode: OutputMode = 'human';
   let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
@@ -65,7 +67,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--context-depth'  && argv[i + 1]) { contextDepth = parseInt(argv[++i], 10) || 0; continue; }
     if (token === '--no-beads')      { noBeads      = true; continue; }
     if (token === '--no-bead-notes') { noBeadNotes  = true; continue; }
-    if (token === '--keep-alive')    { keepAlive    = true; continue; }
+    if (token === '--keep-alive')    { keepAlive    = true; noKeepAlive = false; continue; }
+    if (token === '--no-keep-alive') { keepAlive    = undefined; noKeepAlive = true; continue; }
     if (token === '--background')    { background   = true; continue; }
     if (token === '--json')        { outputMode = 'json'; continue; }
     if (token === '--raw')         { outputMode = 'raw';  continue; }
@@ -90,7 +93,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, background, contextDepth, outputMode };
+  return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive, background, contextDepth, outputMode };
 }
 
 // ── Event tailer ───────────────────────────────────────────────────────────────
@@ -259,6 +262,7 @@ export async function run(): Promise<void> {
       backendOverride: args.model,
       inputBeadId: args.beadId,
       keepAlive: args.keepAlive,
+      noKeepAlive: args.noKeepAlive,
       beadsWriteNotes,
     },
     jobsDir,

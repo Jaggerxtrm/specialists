@@ -12,14 +12,8 @@ All specialist-related assets live under `.specialists/` with clear separation:
 
 ```
 .specialists/
-├── default/           # canonical assets (from init)
-│   ├── specialists/   # 11 bundled specialists
-│   ├── hooks/         # 2 bundled hooks
-│   └── skills/        # 3 bundled skills
-├── user/              # custom additions
-│   ├── specialists/
-│   ├── hooks/
-│   └── skills/
+├── default/           # canonical specialist YAMLs (from init)
+├── user/              # custom specialist YAMLs
 ├── jobs/              # runtime (gitignored)
 └── ready/             # runtime (gitignored)
 ```
@@ -34,8 +28,9 @@ All specialist-related assets live under `.specialists/` with clear separation:
 ## Scan Order
 
 The loader scans in order (first wins):
-1. `.specialists/user/specialists/` — user customizations override defaults
-2. `.specialists/default/specialists/` — canonical specialists
+1. `.specialists/user/` — user customizations override defaults
+2. `.specialists/default/` — canonical specialists
+3. legacy nested paths (`.specialists/user/specialists/`, `.specialists/default/specialists/`) for backward compatibility
 
 ## Previous Decision (Superseded)
 

@@ -44,8 +44,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
 /** Find a specialist file by name, searching in standard locations. */
 function findSpecialistFile(name: string): string | undefined {
   const scanDirs = [
-    join(process.cwd(), '.specialists', 'user', 'specialists'),
-    join(process.cwd(), '.specialists', 'default', 'specialists'),
+    join(process.cwd(), '.specialists', 'user'),
+    join(process.cwd(), '.specialists', 'user', 'specialists'), // back-compat
+    join(process.cwd(), '.specialists', 'default'),
+    join(process.cwd(), '.specialists', 'default', 'specialists'), // back-compat
     join(process.cwd(), 'specialists'),
   ];
   

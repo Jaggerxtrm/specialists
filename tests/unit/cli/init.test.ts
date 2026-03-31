@@ -102,9 +102,9 @@ describe('init CLI — run()', () => {
     expect(second).toBe(first);
   });
 
-  it('copies canonical specialists to .specialists/default/specialists/', async () => {
+  it('copies canonical specialists to .specialists/default/', async () => {
     await runInit(tempDir);
-    const specialistsDir = join(tempDir, '.specialists', 'default', 'specialists');
+    const specialistsDir = join(tempDir, '.specialists', 'default');
     const files = await readdir(specialistsDir).catch(() => []);
     const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
     
@@ -115,9 +115,29 @@ describe('init CLI — run()', () => {
     expect(yamlFiles).toContain('overthinker.specialist.yaml');
   });
 
+  it('migrates legacy nested specialists directories to flattened layout', async () => {
+    const legacyDefaultDir = join(tempDir, '.specialists', 'default', 'specialists');
+    const legacyUserDir = join(tempDir, '.specialists', 'user', 'specialists');
+
+    await mkdir(legacyDefaultDir, { recursive: true });
+    await mkdir(legacyUserDir, { recursive: true });
+
+    const legacyDefaultPath = join(legacyDefaultDir, 'legacy-default.specialist.yaml');
+    const legacyUserPath = join(legacyUserDir, 'legacy-user.specialist.yaml');
+    await writeFile(legacyDefaultPath, `specialist:\n  metadata:\n    name: legacy-default\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
+    await writeFile(legacyUserPath, `specialist:\n  metadata:\n    name: legacy-user\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
+
+    await runInit(tempDir);
+
+    expect(existsSync(join(tempDir, '.specialists', 'default', 'legacy-default.specialist.yaml'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user', 'legacy-user.specialist.yaml'))).toBe(true);
+    expect(existsSync(legacyDefaultPath)).toBe(false);
+    expect(existsSync(legacyUserPath)).toBe(false);
+  });
+
   it('does not overwrite existing specialist files', async () => {
     // Create a custom specialist with the same name as a canonical one
-    const specialistsDir = join(tempDir, '.specialists', 'default', 'specialists');
+    const specialistsDir = join(tempDir, '.specialists', 'default');
     await mkdir(specialistsDir, { recursive: true });
     const customContent = `specialist:
   metadata:
@@ -189,7 +209,7 @@ describe('init CLI — run()', () => {
 
   it('creates user specialists directory for custom assets', async () => {
     await runInit(tempDir);
-    expect(existsSync(join(tempDir, '.specialists', 'user', 'specialists'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user'))).toBe(true);
   });
 
   it('creates runtime directories (jobs, ready)', async () => {

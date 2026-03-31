@@ -46,6 +46,13 @@ specialist:
     expect(result.specialist.execution.timeout_ms).toBe(120_000);
     expect(result.specialist.execution.mode).toBe('auto');
     expect(result.specialist.execution.max_retries).toBe(0);
+    expect(result.specialist.execution.interactive).toBe(false);
+  });
+
+  it('accepts execution.interactive', async () => {
+    const yaml = VALID_YAML.replace('response_format: json', 'response_format: json\n    interactive: true');
+    const result = await parseSpecialist(yaml);
+    expect(result.specialist.execution.interactive).toBe(true);
   });
 
   it('rejects invalid name (not kebab-case)', async () => {

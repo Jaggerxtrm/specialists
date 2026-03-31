@@ -104,6 +104,36 @@ describe('SpecialistRunner', () => {
     }));
   });
 
+  it('defaults to keepAlive when execution.interactive=true', async () => {
+    const onResumeReady = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ interactive: true }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+
+    expect(onResumeReady).toHaveBeenCalledOnce();
+    expect(mockSession.close).not.toHaveBeenCalled();
+  });
+
+  it('respects noKeepAlive override when execution.interactive=true', async () => {
+    const onResumeReady = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ interactive: true }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+
+    expect(onResumeReady).not.toHaveBeenCalled();
+    expect(mockSession.close).toHaveBeenCalledOnce();
+  });
+
   it('returns correct backend even when kill() destroys meta', async () => {
     // Simulate kill() nullifying the meta property (the bug scenario)
     mockSession.kill = vi.fn().mockImplementation(() => {

@@ -34,7 +34,7 @@ Specialists exposes an MCP server for Claude Code integration.
 | `list_specialists` | discover specialists in the current project |
 | `use_specialist` | run a specialist synchronously |
 | `specialist_status` | health and background job summary |
-| `start_specialist` | async job start |
+| `start_specialist` | async job start (`keep_alive` / `no_keep_alive` supported) |
 | `feed_specialist` | poll job status + delta events by ID |
 | `stop_specialist` | cancel a running job |
 | `run_parallel` | concurrent or pipeline specialist execution |

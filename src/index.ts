@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, models, init, validate, edit, config, run,
- *              status, result, feed, poll, clean, stop, quickstart, help
+ *              status, result, feed, poll, clean, stop, report, quickstart, help
  */
 
 import { SpecialistsServer } from "./server.js";
@@ -507,6 +507,34 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/stop.js');
+    return handler();
+  }
+
+  if (sub === 'report') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists report [show|list|diff|generate] [options]',
+        '',
+        'Session report tools backed by .xtrm/reports/.',
+        '',
+        'Commands:',
+        '  specialists report                     show latest specialist-only report sections',
+        '  specialists report generate            create a new report in .xtrm/reports/',
+        '  specialists report show [date/hash]    show full report (latest by default)',
+        '  specialists report list                list reports with date/hash/issues_closed',
+        '  specialists report diff <a> <b>        compare two reports',
+        '',
+        'Options:',
+        '  --specialists                          show only specialist dispatch/problem sections',
+        '',
+        'xt parity:',
+        '  xt report show|list|diff can consume the same files under .xtrm/reports/.',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/report.js');
     return handler();
   }
 

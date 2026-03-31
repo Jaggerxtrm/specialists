@@ -36,7 +36,7 @@ source_of_truth_for:
 
 ```bash
 specialists run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] \
-  [--model <provider/model>] [--no-beads] [--keep-alive] [--json | --raw]
+  [--model <provider/model>] [--no-beads] [--keep-alive|--no-keep-alive] [--json | --raw]
 ```
 
 ### Flags
@@ -46,7 +46,8 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] \
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
 - `--model <provider/model>`: Per-run model override.
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
-- `--keep-alive`: Keep session for follow-up `resume` turns.
+- `--keep-alive`: Keep session for follow-up `resume` turns (explicit enable).
+- `--no-keep-alive`: Force one-shot run even if specialist YAML has `execution.interactive: true`.
 - `--json`: NDJSON event stream to stdout.
 - `--raw`: Legacy raw token delta stream.
 
@@ -68,6 +69,8 @@ specialists run reviewer --prompt "check logs" --raw
 
 Notes:
 - `--prompt` and `--bead` are mutually exclusive.
+- Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
+- Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
 - `--background` is removed and exits with error.
 
 ---
@@ -403,8 +406,8 @@ specialists init
 - `1`: Unhandled runtime error.
 
 What it sets up:
-- `.specialists/default/specialists/` (canonical specialist files)
-- `.specialists/user/specialists/` (custom specialists)
+- `.specialists/default/` (canonical specialist files)
+- `.specialists/user/` (custom specialists)
 - `.specialists/jobs/`, `.specialists/ready/` runtime dirs
 - `.gitignore` runtime entries
 - `AGENTS.md` Specialists section
