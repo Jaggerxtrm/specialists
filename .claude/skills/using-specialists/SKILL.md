@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 3.8
+version: 3.9
 ---
 
 # Specialists Usage
@@ -23,6 +23,8 @@ Your job is routing, sequencing, monitoring, and synthesis — not exploration o
 > **Sleep timers**: When you dispatch a specialist for a longer task, set a sleep timer and step back. Don't poll manually — set a timer appropriate to the expected run time, sleep, then check results. This lets you work independently and iterate without babysitting jobs.
 
 Specialists are autonomous AI agents that run independently — fresh context, different model, no prior bias. The reason isn't just speed — it's quality. A specialist has no competing context, leaves a tracked record via beads, and can run in the background while you stay unblocked.
+
+> **Session start**: Run `sp --help` once to see the full command surface. `sp` is the short alias for `specialists` — `sp run`, `sp feed`, `sp resume` etc. all work. Also useful: `sp run --help`, `sp resume --help`, `sp feed --help` for flag details.
 
 ## Hard Rules
 
@@ -133,12 +135,12 @@ Run `specialists list` to see what's available. Match by task type:
 | Architecture exploration / initial discovery | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY. Use first before any executor run. |
 | Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously after exploration is complete |
 | Bug investigation / "why is X broken" | **debugger** (claude-sonnet-4-6) | GitNexus-first triage, 5-phase investigation, hypothesis ranking, evidence-backed remediation. Use for ANY root cause analysis. |
-| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. Use with `--keep-alive` for follow-up questions. |
-| Code review / compliance | **reviewer** (claude-sonnet-4-6) | Post-run compliance checks, verdict contract (PASS/PARTIAL/FAIL). Use with `--keep-alive` for discussion. |
+| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. **Always use `--keep-alive`** — enters `waiting` after Phase 4 expecting your follow-up. |
+| Code review / compliance | **reviewer** (claude-sonnet-4-6) | Post-run compliance checks, verdict contract (PASS/PARTIAL/FAIL). **Always use `--keep-alive`** — enters `waiting` after verdict expecting your response or approval. |
 | Multi-backend review | **parallel-review** (claude-sonnet-4-6) | Concurrent review across multiple AI backends |
 | Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
 | Planning / scoping | **planner** (claude-sonnet-4-6) | Structured issue breakdown with deps |
-| Doc audit / drift detection | **sync-docs** (claude-sonnet-4-6) | Use with `--keep-alive`: audits first, then approve/deny execution via `resume` |
+| Doc audit / drift detection | **sync-docs** (claude-sonnet-4-6) | **Always use `--keep-alive`** — audits first, then enters `waiting` for your approve/deny via `resume` |
 | Doc writing / updates | **executor** (gpt-5.3-codex) | sync-docs defaults to audit mode; executor writes files |
 | Test generation / suite execution | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
 | Specialist authoring | **specialists-creator** (claude-sonnet-4-6) | Guides YAML creation against schema |
@@ -200,21 +202,50 @@ STEERING WORKS"` — message delivered, output confirmed in 2 seconds.
 `resume` sends a new prompt to a specialist that has finished its turn and is `waiting`.
 Only works with `--keep-alive` jobs. The session retains full conversation history.
 
+**Specialists that always use `--keep-alive`** (they enter `waiting` after every turn by design):
+
+| Specialist | What triggers `waiting` | What to send via `resume` |
+|-----------|------------------------|--------------------------|
+| **reviewer** | After delivering verdict (PASS/PARTIAL/FAIL) | Your response, clarification, or "accepted, close out" |
+| **overthinker** | After Phase 4 conclusion | Follow-up question, counter-argument, or "done, thanks" |
+| **sync-docs** | After audit report | "approve", "deny", or specific instructions |
+
+> **Warning — known gap (unitAI-4qam):** When a job enters `waiting`, the current feed and
+> result output do not clearly signal this. A job that has produced output and is silently
+> waiting looks identical to a stalled job. **Always check `status.json` before killing a
+> keep-alive job.** Only `stop` when you have confirmed you are done iterating — not because
+> the output stopped.
+
 ```bash
-# Start an overthinker with keep-alive for multi-turn design work
-specialists run overthinker --bead unitAI-xyz --keep-alive &
-# -> Job started: d4e5f6 (completes Phase 4, enters waiting state)
+# CORRECT: check status before deciding to stop
+python3 -c "import json; d=json.load(open('.specialists/jobs/d4e5f6/status.json')); print(d['status'])"
+# -> waiting   ← job is healthy, expecting your input
 
-# Read the design output
-specialists result d4e5f6
-
-# Ask follow-up questions
+# CORRECT: resume iteration
 specialists resume d4e5f6 "What about backward compatibility with existing YAML files?"
-specialists resume d4e5f6 "How would you handle migration from the old schema?"
+
+# CORRECT: end the session only when you are done
+specialists stop d4e5f6
+
+# WRONG: killing a waiting job thinking it is stuck
+specialists stop d4e5f6   # ← don't do this without checking status first
 ```
 
-Use `--keep-alive` when you plan to iterate: design reviews, multi-phase analysis,
-investigation that may need follow-up questions based on findings.
+Full example:
+
+```bash
+# Start an overthinker with keep-alive for multi-turn design work
+specialists run overthinker --bead unitAI-xyz --keep-alive --background
+# -> Job started: d4e5f6 (completes Phase 4, enters waiting state)
+
+# Read the output, then continue iterating
+specialists result d4e5f6
+specialists resume d4e5f6 "What about backward compatibility with existing YAML files?"
+specialists resume d4e5f6 "How would you handle migration from the old schema?"
+
+# Only stop when all iteration is done
+specialists stop d4e5f6
+```
 
 ---
 
