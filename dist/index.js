@@ -22150,609 +22150,10 @@ var init_stop = __esm(() => {
   init_supervisor();
 });
 
-// src/cli/report.ts
-var exports_report = {};
-__export(exports_report, {
-  run: () => run19
-});
-import { existsSync as existsSync18, mkdirSync as mkdirSync3, readdirSync as readdirSync6, readFileSync as readFileSync13, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join26 } from "node:path";
-import { spawnSync as spawnSync8 } from "node:child_process";
-import { createHash as createHash2 } from "node:crypto";
-function usage2() {
-  return [
-    "Usage:",
-    "  specialists report                       # specialists-only view of latest report",
-    "  specialists report generate              # create .xtrm/reports/<date>-<session-hash>.md",
-    "  specialists report show [date/hash]      # show full report (latest by default)",
-    "  specialists report show [date/hash] --specialists",
-    "  specialists report list                  # list reports with metadata",
-    "  specialists report diff <a> <b>          # compare two reports",
-    "",
-    "xt compatibility:",
-    "  xt report show|list|diff can delegate to the same report files in .xtrm/reports/."
-  ].join(`
-`);
-}
-function parseArgs10(argv) {
-  if (argv.length === 0) {
-    return { action: "show", specialistsOnly: true };
-  }
-  const [actionToken, ...rest] = argv;
-  const specialistsOnly = rest.includes("--specialists");
-  const positional = rest.filter((token) => token !== "--specialists");
-  if (actionToken === "generate") {
-    return { action: "generate", specialistsOnly };
-  }
-  if (actionToken === "show") {
-    return { action: "show", specialistsOnly, referenceA: positional[0] };
-  }
-  if (actionToken === "list") {
-    return { action: "list", specialistsOnly };
-  }
-  if (actionToken === "diff") {
-    return {
-      action: "diff",
-      specialistsOnly,
-      referenceA: positional[0],
-      referenceB: positional[1]
-    };
-  }
-  throw new Error(usage2());
-}
-function runCommand(command, args) {
-  const result = spawnSync8(command, args, {
-    cwd: process.cwd(),
-    encoding: "utf-8"
-  });
-  if (result.status !== 0) {
-    return "";
-  }
-  return result.stdout.trim();
-}
-function readJsonFile(path) {
-  if (!existsSync18(path))
-    return null;
-  try {
-    return JSON.parse(readFileSync13(path, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-function getSessionStartIso() {
-  for (const path of SESSION_META_PATHS) {
-    const meta = readJsonFile(path);
-    if (!meta?.launchedAt)
-      continue;
-    const date4 = new Date(meta.launchedAt);
-    if (!Number.isNaN(date4.getTime())) {
-      return date4.toISOString();
-    }
-  }
-  return new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-}
-function ensureReportsDirectory() {
-  if (!existsSync18(REPORTS_DIR)) {
-    mkdirSync3(REPORTS_DIR, { recursive: true });
-  }
-}
-function listReportPaths() {
-  if (!existsSync18(REPORTS_DIR))
-    return [];
-  return readdirSync6(REPORTS_DIR).filter((name) => name.endsWith(".md")).sort((left, right) => right.localeCompare(left)).map((name) => join26(REPORTS_DIR, name));
-}
-function parseFrontmatter(content) {
-  if (!content.startsWith(`---
-`))
-    return {};
-  const endMarker = content.indexOf(`
----
-`, 4);
-  if (endMarker === -1)
-    return {};
-  const block = content.slice(4, endMarker);
-  const entries = block.split(`
-`).map((line) => line.trim()).filter(Boolean);
-  const frontmatter = {};
-  for (const line of entries) {
-    const separator = line.indexOf(":");
-    if (separator === -1)
-      continue;
-    const key = line.slice(0, separator).trim();
-    const rawValue = line.slice(separator + 1).trim();
-    if (rawValue.startsWith("[") && rawValue.endsWith("]")) {
-      frontmatter[key] = rawValue.slice(1, -1).split(",").map((item) => item.trim()).filter(Boolean);
-      continue;
-    }
-    const numeric = Number(rawValue);
-    frontmatter[key] = Number.isFinite(numeric) && rawValue !== "" ? numeric : rawValue;
-  }
-  return frontmatter;
-}
-function readReportFile(path) {
-  const content = readFileSync13(path, "utf-8");
-  return {
-    path,
-    name: path.split("/").at(-1) ?? path,
-    content,
-    frontmatter: parseFrontmatter(content)
-  };
-}
-function resolveReportReference(reference) {
-  const reports = listReportPaths();
-  if (reports.length === 0)
-    return null;
-  if (!reference) {
-    return readReportFile(reports[0]);
-  }
-  const normalized = reference.endsWith(".md") ? reference : `${reference}.md`;
-  const directMatch = reports.find((path) => path.endsWith(`/${normalized}`));
-  if (directMatch)
-    return readReportFile(directMatch);
-  const fuzzyMatch = reports.find((path) => {
-    const name = path.split("/").at(-1) ?? "";
-    return name.includes(reference);
-  });
-  return fuzzyMatch ? readReportFile(fuzzyMatch) : null;
-}
-function formatDateLabel(isoDate) {
-  return isoDate.slice(0, 10);
-}
-function getSessionHash(seed) {
-  const headSha = runCommand("git", ["rev-parse", "--short=12", "HEAD"]) || "nogit";
-  const payload = `${seed}:${headSha}:${Date.now()}`;
-  return createHash2("sha1").update(payload).digest("hex").slice(0, 10);
-}
-function parseJsonArray(input) {
-  if (!input)
-    return [];
-  try {
-    const parsed = JSON.parse(input);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-function queryIssues(expression, includeAll = true) {
-  const args = ["query", expression, "--json", "--limit", "0"];
-  if (includeAll)
-    args.push("--all");
-  const output = runCommand("bd", args);
-  return parseJsonArray(output);
-}
-function collectClosedIssues(sessionStartIso) {
-  const expression = `status=closed AND closed_at >= '${sessionStartIso}'`;
-  return queryIssues(expression, true).sort((left, right) => (left.closed_at ?? "").localeCompare(right.closed_at ?? ""));
-}
-function collectFiledIssues(sessionStartIso) {
-  const expression = `created_at >= '${sessionStartIso}'`;
-  return queryIssues(expression, true).sort((left, right) => (left.created_at ?? "").localeCompare(right.created_at ?? ""));
-}
-function collectOpenIssues() {
-  const expression = "status=open OR status=in_progress OR status=blocked";
-  return queryIssues(expression, true).sort((left, right) => {
-    const leftPriority = left.priority ?? 9;
-    const rightPriority = right.priority ?? 9;
-    if (leftPriority !== rightPriority)
-      return leftPriority - rightPriority;
-    return left.id.localeCompare(right.id);
-  }).slice(0, 12);
-}
-function readInteractions(sessionStartIso) {
-  const path = join26(process.cwd(), ".beads", "interactions.jsonl");
-  if (!existsSync18(path))
-    return [];
-  const threshold = new Date(sessionStartIso).getTime();
-  const lines = readFileSync13(path, "utf-8").split(`
-`).filter(Boolean);
-  const records = [];
-  for (const line of lines) {
-    try {
-      const parsed = JSON.parse(line);
-      const ts = new Date(parsed.created_at).getTime();
-      if (Number.isNaN(ts) || ts < threshold)
-        continue;
-      records.push(parsed);
-    } catch {
-      continue;
-    }
-  }
-  return records.sort((left, right) => left.created_at.localeCompare(right.created_at));
-}
-function computeWaveByTime(records) {
-  const waves = new Map;
-  if (records.length === 0)
-    return waves;
-  const WAVE_GAP_MS = 25 * 60 * 1000;
-  let currentWave = 1;
-  let previousTime = new Date(records[0].created_at).getTime();
-  waves.set(currentWave, [records[0]]);
-  for (let index = 1;index < records.length; index += 1) {
-    const record3 = records[index];
-    const currentTime = new Date(record3.created_at).getTime();
-    if (currentTime - previousTime > WAVE_GAP_MS) {
-      currentWave += 1;
-      waves.set(currentWave, []);
-    }
-    waves.get(currentWave)?.push(record3);
-    previousTime = currentTime;
-  }
-  return waves;
-}
-function readJobsSince(sessionStartIso) {
-  const jobsDir = join26(process.cwd(), ".specialists", "jobs");
-  if (!existsSync18(jobsDir))
-    return [];
-  const threshold = new Date(sessionStartIso).getTime();
-  const directories = readdirSync6(jobsDir);
-  const records = [];
-  for (const dir of directories) {
-    const statusPath = join26(jobsDir, dir, "status.json");
-    if (!existsSync18(statusPath))
-      continue;
-    const status = readJsonFile(statusPath);
-    if (!status?.started_at_ms)
-      continue;
-    if (status.started_at_ms < threshold)
-      continue;
-    records.push(status);
-  }
-  return records.sort((left, right) => (left.started_at_ms ?? 0) - (right.started_at_ms ?? 0));
-}
-function collectModelsUsed(interactions, jobs) {
-  const models = new Set;
-  for (const interaction of interactions) {
-    if (interaction.model)
-      models.add(interaction.model);
-  }
-  for (const job of jobs) {
-    if (job.model)
-      models.add(job.model);
-  }
-  return [...models].sort((left, right) => left.localeCompare(right));
-}
-function collectCommits(sessionStartIso) {
-  const output = runCommand("git", [
-    "log",
-    `--since=${sessionStartIso}`,
-    "--pretty=format:%h|%ad|%s",
-    "--date=iso-strict"
-  ]);
-  if (!output)
-    return [];
-  return output.split(`
-`).filter(Boolean);
-}
-function collectChangedFiles(sessionStartIso) {
-  const output = runCommand("git", [
-    "log",
-    `--since=${sessionStartIso}`,
-    "--name-only",
-    "--pretty=format:"
-  ]);
-  const files = output.split(`
-`).map((line) => line.trim()).filter(Boolean);
-  return [...new Set(files)].sort((left, right) => left.localeCompare(right));
-}
-function collectMemoriesSnapshot(limit = 12) {
-  const output = runCommand("bd", ["memories", "--json"]);
-  if (!output)
-    return [];
-  try {
-    const parsed = JSON.parse(output);
-    return Object.entries(parsed).slice(0, limit).map(([key, value]) => ({ key, value }));
-  } catch {
-    return [];
-  }
-}
-function toMarkdownTable(headers, rows) {
-  if (rows.length === 0) {
-    return "_none_";
-  }
-  const separator = headers.map(() => "---");
-  const lines = [
-    `| ${headers.join(" | ")} |`,
-    `| ${separator.join(" | ")} |`,
-    ...rows.map((row) => `| ${row.join(" | ")} |`)
-  ];
-  return lines.join(`
-`);
-}
-function firstSentence(value, fallback) {
-  if (!value)
-    return fallback;
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (!clean)
-    return fallback;
-  const index = clean.indexOf(". ");
-  return index === -1 ? clean.slice(0, 160) : clean.slice(0, index + 1);
-}
-function buildReportContent() {
-  const sessionStartIso = getSessionStartIso();
-  const sessionDate = formatDateLabel(new Date().toISOString());
-  const sessionHash = getSessionHash(sessionStartIso);
-  const fileName = `${sessionDate}-${sessionHash}.md`;
-  const closedIssues = collectClosedIssues(sessionStartIso);
-  const filedIssues = collectFiledIssues(sessionStartIso);
-  const openIssues = collectOpenIssues();
-  const interactions = readInteractions(sessionStartIso);
-  const waves = computeWaveByTime(interactions);
-  const jobs = readJobsSince(sessionStartIso);
-  const modelsUsed = collectModelsUsed(interactions, jobs);
-  const commits = collectCommits(sessionStartIso);
-  const changedFiles = collectChangedFiles(sessionStartIso);
-  const memorySnapshot = collectMemoriesSnapshot();
-  const failedDispatches = interactions.filter((record3) => record3.exit_code !== 0);
-  const failedJobs = jobs.filter((job) => job.status === "error");
-  const waveRows = [];
-  for (const [wave, records] of waves.entries()) {
-    const specialists = [...new Set(records.map((record3) => record3.tool_name))].join(", ");
-    const models = [...new Set(records.map((record3) => record3.model))].join(", ");
-    const successCount = records.filter((record3) => record3.exit_code === 0).length;
-    const failureCount = records.length - successCount;
-    waveRows.push([
-      `${wave}`,
-      specialists || "—",
-      models || "—",
-      `${records.length} dispatches (${successCount} ok / ${failureCount} failed)`
-    ]);
-  }
-  const issueClosedRows = closedIssues.map((issue2) => [
-    issue2.id,
-    issue2.title,
-    issue2.close_reason ? firstSentence(issue2.close_reason, "closed") : "closed"
-  ]);
-  const issueFiledRows = filedIssues.map((issue2) => [
-    issue2.id,
-    `P${issue2.priority ?? "n/a"}`,
-    issue2.issue_type ?? "task",
-    issue2.title,
-    firstSentence(issue2.description, "Filed during this session.")
-  ]);
-  const dispatchRows = interactions.map((record3) => [
-    record3.created_at.replace("T", " ").replace("Z", ""),
-    record3.issue_id,
-    record3.tool_name,
-    record3.model,
-    record3.exit_code === 0 ? "success" : `failed (${record3.exit_code})`
-  ]);
-  const problemRows = [];
-  for (const failure of failedDispatches) {
-    problemRows.push([
-      `${failure.issue_id} / ${failure.tool_name}`,
-      `exit_code=${failure.exit_code}`,
-      "Inspect specialists result/feed for root-cause detail before retry."
-    ]);
-  }
-  for (const failedJob of failedJobs) {
-    problemRows.push([
-      `${failedJob.id} / ${failedJob.specialist ?? "specialist"}`,
-      failedJob.error ?? "status=error",
-      "Review .specialists/jobs/<id>/events.jsonl and result-turn-N.txt for failure boundary."
-    ]);
-  }
-  const commitRows = commits.map((line) => {
-    const [sha = "", date4 = "", subject = ""] = line.split("|");
-    return `- ${sha} — ${subject} (${date4})`;
-  });
-  const fileRows = changedFiles.map((file) => `- \`${file}\``);
-  const documentationRows = changedFiles.filter((file) => file.endsWith(".md") || file.startsWith("docs/")).map((file) => `- \`${file}\``);
-  const openIssueRows = openIssues.map((issue2) => [
-    issue2.id,
-    `P${issue2.priority ?? "n/a"}`,
-    issue2.status,
-    issue2.title,
-    issue2.status === "blocked" ? "Check blockers with bd blocked and add unblock notes." : issue2.status === "in_progress" ? "Confirm ownership and close if already done." : "Candidate for next session claim."
-  ]);
-  const memoryRows = memorySnapshot.map((memory) => [
-    memory.key,
-    firstSentence(memory.value, "")
-  ]);
-  const suggestedNext = openIssues.slice(0, 3).map((issue2) => `1. **${issue2.id}** — ${issue2.title}`);
-  const frontmatterLines = [
-    "---",
-    `session_date: ${new Date().toISOString()}`,
-    `commits: ${commits.length}`,
-    `issues_closed: ${closedIssues.length}`,
-    `issues_filed: ${filedIssues.length}`,
-    `specialist_dispatches: ${interactions.length}`,
-    `models_used: [${modelsUsed.join(", ")}]`,
-    "---"
-  ];
-  const content = [
-    ...frontmatterLines,
-    "",
-    `# Session Report — ${sessionDate}`,
-    "",
-    "## Summary",
-    "",
-    `- Session window started at: ${sessionStartIso}`,
-    `- Commits in window: ${commits.length}`,
-    `- Issues closed in window: ${closedIssues.length}`,
-    `- Issues filed in window: ${filedIssues.length}`,
-    `- Specialist dispatches observed: ${interactions.length}`,
-    "",
-    "## Issues Closed",
-    "",
-    toMarkdownTable(["ID", "Title", "Reason"], issueClosedRows),
-    "",
-    "## Issues Filed",
-    "",
-    toMarkdownTable(["ID", "P", "Type", "Title", "Rationale"], issueFiledRows),
-    "",
-    "## Specialist Dispatches",
-    "",
-    "### Wave summary",
-    "",
-    toMarkdownTable(["Wave", "Specialists", "Models", "Outcomes"], waveRows),
-    "",
-    "### Dispatch log",
-    "",
-    toMarkdownTable(["Time", "Issue", "Specialist", "Model", "Outcome"], dispatchRows),
-    "",
-    "## Problems Encountered",
-    "",
-    toMarkdownTable(["Problem", "Root cause", "Resolution / next action"], problemRows),
-    "",
-    "## Code Changes",
-    "",
-    "### Commits",
-    "",
-    commitRows.length > 0 ? commitRows.join(`
-`) : "_none_",
-    "",
-    "### Files changed",
-    "",
-    fileRows.length > 0 ? fileRows.join(`
-`) : "_none_",
-    "",
-    "## Documentation Updates",
-    "",
-    documentationRows.length > 0 ? documentationRows.join(`
-`) : "_none_",
-    "",
-    "## Open Issues with Context",
-    "",
-    toMarkdownTable(["ID", "P", "Status", "Title", "Suggestion"], openIssueRows),
-    "",
-    "## Memories Saved",
-    "",
-    toMarkdownTable(["Key", "Content"], memoryRows),
-    "",
-    "## Suggested Next Priority",
-    "",
-    suggestedNext.length > 0 ? suggestedNext.join(`
-`) : "1. No open issues detected in this repository.",
-    ""
-  ].join(`
-`);
-  return { fileName, content };
-}
-function extractSpecialistsSection(content) {
-  const start = content.indexOf("## Specialist Dispatches");
-  if (start === -1)
-    return content;
-  const nextSection = content.indexOf(`
-## `, start + 1);
-  const specialistSection = nextSection === -1 ? content.slice(start) : content.slice(start, nextSection);
-  const problemsStart = content.indexOf("## Problems Encountered");
-  const problemsEnd = problemsStart === -1 ? -1 : content.indexOf(`
-## `, problemsStart + 1);
-  const problemsSection = problemsStart === -1 ? "" : problemsEnd === -1 ? content.slice(problemsStart) : content.slice(problemsStart, problemsEnd);
-  return [specialistSection.trim(), problemsSection.trim()].filter(Boolean).join(`
-
-`) + `
-`;
-}
-function listReports() {
-  const paths = listReportPaths();
-  if (paths.length === 0) {
-    console.log("No reports found in .xtrm/reports/.");
-    return;
-  }
-  const rows = paths.map((path) => {
-    const report = readReportFile(path);
-    const date4 = String(report.frontmatter.session_date ?? report.name.slice(0, 10));
-    const hash = report.name.replace(".md", "").slice(11);
-    const closed = String(report.frontmatter.issues_closed ?? "0");
-    return [date4, hash, closed, report.name];
-  });
-  console.log(toMarkdownTable(["Date", "Session hash", "Issues closed", "File"], rows));
-}
-function showReport(reference, specialistsOnly = false) {
-  const report = resolveReportReference(reference);
-  if (!report) {
-    console.error(`Report not found: ${reference ?? "<latest>"}`);
-    process.exit(1);
-  }
-  if (!specialistsOnly) {
-    process.stdout.write(report.content);
-    return;
-  }
-  process.stdout.write(extractSpecialistsSection(report.content));
-}
-function extractIssueIds(content) {
-  const matches = content.match(/\bunitAI-[a-z0-9.]+\b/gi) ?? [];
-  return new Set(matches.map((match) => match.trim()));
-}
-function diffReports(leftRef, rightRef) {
-  if (!leftRef || !rightRef) {
-    console.error("Usage: specialists report diff <a> <b>");
-    process.exit(1);
-  }
-  const left = resolveReportReference(leftRef);
-  const right = resolveReportReference(rightRef);
-  if (!left || !right) {
-    console.error("Could not resolve both report references.");
-    process.exit(1);
-  }
-  const leftIssues = extractIssueIds(left.content);
-  const rightIssues = extractIssueIds(right.content);
-  const added = [...rightIssues].filter((id) => !leftIssues.has(id)).sort((a, b) => a.localeCompare(b));
-  const removed = [...leftIssues].filter((id) => !rightIssues.has(id)).sort((a, b) => a.localeCompare(b));
-  const leftClosed = Number(left.frontmatter.issues_closed ?? 0);
-  const rightClosed = Number(right.frontmatter.issues_closed ?? 0);
-  const leftFiled = Number(left.frontmatter.issues_filed ?? 0);
-  const rightFiled = Number(right.frontmatter.issues_filed ?? 0);
-  const lines = [
-    `Comparing ${left.name} -> ${right.name}`,
-    "",
-    `- issues_closed: ${leftClosed} -> ${rightClosed} (${rightClosed - leftClosed >= 0 ? "+" : ""}${rightClosed - leftClosed})`,
-    `- issues_filed: ${leftFiled} -> ${rightFiled} (${rightFiled - leftFiled >= 0 ? "+" : ""}${rightFiled - leftFiled})`,
-    "",
-    "Issue IDs added in later report:",
-    ...added.length > 0 ? added.map((id) => `- ${id}`) : ["- none"],
-    "",
-    "Issue IDs absent from later report:",
-    ...removed.length > 0 ? removed.map((id) => `- ${id}`) : ["- none"]
-  ];
-  console.log(lines.join(`
-`));
-}
-function generateReport() {
-  ensureReportsDirectory();
-  const report = buildReportContent();
-  const path = join26(REPORTS_DIR, report.fileName);
-  writeFileSync8(path, report.content, "utf-8");
-  console.log(path);
-}
-async function run19() {
-  let args;
-  try {
-    args = parseArgs10(process.argv.slice(3));
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    console.error(message);
-    process.exit(1);
-    return;
-  }
-  if (args.action === "generate") {
-    generateReport();
-    return;
-  }
-  if (args.action === "show") {
-    showReport(args.referenceA, args.specialistsOnly);
-    return;
-  }
-  if (args.action === "list") {
-    listReports();
-    return;
-  }
-  diffReports(args.referenceA, args.referenceB);
-}
-var REPORTS_DIR, SESSION_META_PATHS;
-var init_report = __esm(() => {
-  REPORTS_DIR = join26(process.cwd(), ".xtrm", "reports");
-  SESSION_META_PATHS = [
-    join26(process.cwd(), ".session-meta.json"),
-    join26(process.cwd(), ".xtrm", "session-meta.json")
-  ];
-});
-
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run20
+  run: () => run19
 });
 function section2(title) {
   const bar = "─".repeat(60);
@@ -22766,7 +22167,7 @@ function cmd2(s) {
 function flag(s) {
   return green12(s);
 }
-async function run20() {
+async function run19() {
   const lines = [
     "",
     bold9("specialists  ·  Quick Start Guide"),
@@ -22982,11 +22383,11 @@ var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, ye
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run21
+  run: () => run20
 });
-import { spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync19, mkdirSync as mkdirSync4, readFileSync as readFileSync14, readdirSync as readdirSync7 } from "node:fs";
-import { join as join27 } from "node:path";
+import { spawnSync as spawnSync8 } from "node:child_process";
+import { existsSync as existsSync18, mkdirSync as mkdirSync3, readFileSync as readFileSync13, readdirSync as readdirSync6 } from "node:fs";
+import { join as join26 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green13("✓")} ${msg}`);
 }
@@ -23008,17 +22409,17 @@ function section3(label) {
 ${bold10(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync9(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync8(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync9("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync8("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync19(path))
+  if (!existsSync18(path))
     return null;
   try {
-    return JSON.parse(readFileSync14(path, "utf8"));
+    return JSON.parse(readFileSync13(path, "utf8"));
   } catch {
     return null;
   }
@@ -23061,7 +22462,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync19(join27(CWD, ".beads")))
+  if (existsSync18(join26(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -23081,8 +22482,8 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join27(HOOKS_DIR, name);
-    if (!existsSync19(dest)) {
+    const dest = join26(HOOKS_DIR, name);
+    if (!existsSync18(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -23126,20 +22527,20 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join27(CWD, ".specialists");
-  const jobsDir = join27(rootDir, "jobs");
-  const readyDir = join27(rootDir, "ready");
+  const rootDir = join26(CWD, ".specialists");
+  const jobsDir = join26(rootDir, "jobs");
+  const readyDir = join26(rootDir, "ready");
   let allOk = true;
-  if (!existsSync19(rootDir)) {
+  if (!existsSync18(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync19(subDir)) {
+      if (!existsSync18(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
-        mkdirSync4(subDir, { recursive: true });
+        mkdirSync3(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -23150,14 +22551,14 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join27(CWD, ".specialists", "jobs");
-  if (!existsSync19(jobsDir)) {
+  const jobsDir = join26(CWD, ".specialists", "jobs");
+  if (!existsSync18(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
   let entries;
   try {
-    entries = readdirSync7(jobsDir);
+    entries = readdirSync6(jobsDir);
   } catch {
     entries = [];
   }
@@ -23169,11 +22570,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join27(jobsDir, jobId, "status.json");
-    if (!existsSync19(statusPath))
+    const statusPath = join26(jobsDir, jobId, "status.json");
+    if (!existsSync18(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync14(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync13(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -23200,7 +22601,7 @@ function checkZombieJobs() {
   }
   return zombies === 0;
 }
-async function run21() {
+async function run20() {
   console.log(`
 ${bold10("specialists doctor")}
 `);
@@ -23225,11 +22626,11 @@ ${bold10("specialists doctor")}
 var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join27(CWD, ".claude");
-  SPECIALISTS_DIR = join27(CWD, ".specialists");
-  HOOKS_DIR = join27(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join27(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join27(CWD, ".mcp.json");
+  CLAUDE_DIR = join26(CWD, ".claude");
+  SPECIALISTS_DIR = join26(CWD, ".specialists");
+  HOOKS_DIR = join26(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join26(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join26(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -23239,9 +22640,9 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run22
+  run: () => run21
 });
-async function run22() {
+async function run21() {
   console.log("");
   console.log(yellow11("⚠ DEPRECATED: `specialists setup` is deprecated"));
   console.log("");
@@ -23264,13 +22665,13 @@ var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run23
+  run: () => run22
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run23() {
+async function run22() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -31467,7 +30868,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run24() {
+async function run23() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -31959,34 +31360,6 @@ async function run24() {
     const { run: handler } = await Promise.resolve().then(() => (init_stop(), exports_stop));
     return handler();
   }
-  if (sub === "report") {
-    if (wantsHelp()) {
-      console.log([
-        "",
-        "Usage: specialists report [show|list|diff|generate] [options]",
-        "",
-        "Session report tools backed by .xtrm/reports/.",
-        "",
-        "Commands:",
-        "  specialists report                     show latest specialist-only report sections",
-        "  specialists report generate            create a new report in .xtrm/reports/",
-        "  specialists report show [date/hash]    show full report (latest by default)",
-        "  specialists report list                list reports with date/hash/issues_closed",
-        "  specialists report diff <a> <b>        compare two reports",
-        "",
-        "Options:",
-        "  --specialists                          show only specialist dispatch/problem sections",
-        "",
-        "xt parity:",
-        "  xt report show|list|diff can consume the same files under .xtrm/reports/.",
-        ""
-      ].join(`
-`));
-      return;
-    }
-    const { run: handler } = await Promise.resolve().then(() => (init_report(), exports_report));
-    return handler();
-  }
   if (sub === "quickstart") {
     const { run: handler } = await Promise.resolve().then(() => exports_quickstart);
     return handler();
@@ -32050,7 +31423,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run24().catch((error2) => {
+run23().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
