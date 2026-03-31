@@ -16,16 +16,21 @@
  *   --json             Output as NDJSON
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import {
   type TimelineEvent,
   isRunCompleteEvent,
+  parseTimelineEvent,
 } from '../specialist/timeline-events.js';
-import {
-  readAllJobEvents,
-  queryTimeline,
-} from '../specialist/timeline-query.js';
+import { queryTimeline } from '../specialist/timeline-query.js';
 import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
   dim,
@@ -137,32 +142,63 @@ interface JobMeta {
   startedAtMs: number;
 }
 
-function isTerminalJobStatus(jobsDir: string, jobId: string): boolean {
-  const statusPath = join(jobsDir, jobId, 'status.json');
-
+function readFileFresh(filePath: string): string | null {
   try {
-    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as { status?: string };
-    return status.status === 'done' || status.status === 'error';
+    const fd = openSync(filePath, 'r');
+    try {
+      return readFileSync(fd, 'utf-8');
+    } finally {
+      closeSync(fd);
+    }
   } catch {
-    return false;
+    return null;
   }
 }
 
-function makeJobMetaReader(jobsDir: string): (jobId: string) => JobMeta {
+function readStatusJson(jobsDir: string, jobId: string): Record<string, unknown> | null {
+  const statusPath = join(jobsDir, jobId, 'status.json');
+  const raw = readFileFresh(statusPath);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isTerminalJobStatus(jobsDir: string, jobId: string): boolean {
+  const status = readStatusJson(jobsDir, jobId);
+  return status?.status === 'done' || status?.status === 'error';
+}
+
+function readJobMeta(jobsDir: string, jobId: string): JobMeta {
+  const status = readStatusJson(jobsDir, jobId);
+  if (!status) return { startedAtMs: Date.now() };
+
+  return {
+    model: typeof status.model === 'string' ? status.model : undefined,
+    backend: typeof status.backend === 'string' ? status.backend : undefined,
+    beadId: typeof status.bead_id === 'string' ? status.bead_id : undefined,
+    startedAtMs: typeof status.started_at_ms === 'number' ? status.started_at_ms : Date.now(),
+  };
+}
+
+function makeJobMetaReader(
+  jobsDir: string,
+  options: { useCache?: boolean } = {}
+): (jobId: string) => JobMeta {
+  const useCache = options.useCache ?? true;
+  if (!useCache) {
+    return (jobId: string): JobMeta => readJobMeta(jobsDir, jobId);
+  }
+
   const cache = new Map<string, JobMeta>();
   return (jobId: string): JobMeta => {
-    if (cache.has(jobId)) return cache.get(jobId)!;
-    const statusPath = join(jobsDir, jobId, 'status.json');
-    let meta: JobMeta = { startedAtMs: Date.now() };
-    try {
-      const status = JSON.parse(readFileSync(statusPath, 'utf-8'));
-      meta = {
-        model: status.model,
-        backend: status.backend,
-        beadId: status.bead_id,
-        startedAtMs: status.started_at_ms ?? Date.now(),
-      };
-    } catch { /* status.json not yet available — use defaults */ }
+    const cached = cache.get(jobId);
+    if (cached) return cached;
+
+    const meta = readJobMeta(jobsDir, jobId);
     cache.set(jobId, meta);
     return meta;
   };
@@ -274,17 +310,80 @@ function filterMergedEventsByCursor(
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
 
+function listMatchingJobIds(jobsDir: string, options: FeedOptions): string[] {
+  if (!existsSync(jobsDir)) return [];
+
+  const jobIds: string[] = [];
+  for (const entry of readdirSync(jobsDir)) {
+    const jobDir = join(jobsDir, entry);
+
+    try {
+      if (!statSync(jobDir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    if (options.jobId && entry !== options.jobId) continue;
+
+    if (options.specialist) {
+      const status = readStatusJson(jobsDir, entry);
+      const specialist = typeof status?.specialist === 'string' ? status.specialist : undefined;
+      if (specialist !== options.specialist) continue;
+    }
+
+    jobIds.push(entry);
+  }
+
+  return jobIds;
+}
+
+function readJobEventsFresh(jobsDir: string, jobId: string): TimelineEvent[] {
+  const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+  const content = readFileFresh(eventsPath);
+  if (!content) return [];
+
+  const events: TimelineEvent[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    const parsed = parseTimelineEvent(line);
+    if (parsed) events.push(parsed);
+  }
+
+  events.sort((a, b) => a.t - b.t);
+  return events;
+}
+
+function readFilteredBatchesFresh(
+  jobsDir: string,
+  options: FeedOptions
+): Array<{ jobId: string; specialist: string; beadId?: string; events: TimelineEvent[] }> {
+  const batches: Array<{ jobId: string; specialist: string; beadId?: string; events: TimelineEvent[] }> = [];
+
+  for (const jobId of listMatchingJobIds(jobsDir, options)) {
+    const status = readStatusJson(jobsDir, jobId);
+    const specialist = typeof status?.specialist === 'string' ? status.specialist : 'unknown';
+    const beadId = typeof status?.bead_id === 'string' ? status.bead_id : undefined;
+    const events = readJobEventsFresh(jobsDir, jobId);
+    if (events.length === 0) continue;
+    batches.push({ jobId, specialist, beadId, events });
+  }
+
+  return batches;
+}
+
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
   const colorMap = new JobColorMap();
-  const getJobMeta = makeJobMetaReader(jobsDir);
+  const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
+  const trackedJobs = new Set<string>(
+    listMatchingJobIds(jobsDir, options)
+      .filter((jobId) => !isTerminalJobStatus(jobsDir, jobId))
+  );
   const completedJobs = new Set<string>();
 
-  const filteredBatches = () => readAllJobEvents(jobsDir)
-    .filter((batch) => !options.jobId || batch.jobId === options.jobId)
-    .filter((batch) => !options.specialist || batch.specialist === options.specialist);
+  const filteredBatches = () => readFilteredBatchesFresh(jobsDir, options);
 
   // Initial snapshot
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
@@ -302,17 +401,22 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       lastSeenT.set(batch.jobId, maxT);
     }
 
-    if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
+    if (trackedJobs.has(batch.jobId) && batch.events.some(isCompletionEvent)) {
       completedJobs.add(batch.jobId);
     }
   }
 
-  // Check if all jobs are complete (exit early if not forever)
-  const initialBatchCount = filteredBatches().length;
-  if (!options.forever && initialBatchCount > 0 && completedJobs.size === initialBatchCount) {
+  // Exit early only when there are no active jobs at follow start.
+  if (!options.forever && trackedJobs.size === 0) {
     if (!options.json) {
       process.stderr.write(dim('All jobs complete.\n'));
     }
+    return;
+  }
+
+  // If all tracked jobs already completed during the initial snapshot/seed pass,
+  // there is nothing left to follow.
+  if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
     return;
   }
 
@@ -327,6 +431,16 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
+      for (const jobId of listMatchingJobIds(jobsDir, options)) {
+        if (!isTerminalJobStatus(jobsDir, jobId)) {
+          trackedJobs.add(jobId);
+        }
+      }
+      for (const jobId of trackedJobs) {
+        if (isTerminalJobStatus(jobsDir, jobId)) {
+          completedJobs.add(jobId);
+        }
+      }
 
       // Filter and merge new events
       const newEvents: MergedEvent[] = [];
@@ -349,8 +463,8 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
           lastSeenT.set(batch.jobId, maxT);
         }
 
-        // Check completion
-        if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
+        // Check completion for jobs that were active during follow.
+        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId))) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -383,8 +497,8 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         }
       }
 
-      // Resolve if not forever and all complete
-      if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {
+      // Resolve if not forever and all tracked jobs are complete.
+      if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
         resolve();
       }

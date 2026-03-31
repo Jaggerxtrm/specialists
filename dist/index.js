@@ -21652,7 +21652,14 @@ var exports_feed = {};
 __export(exports_feed, {
   run: () => run12
 });
-import { existsSync as existsSync14, readFileSync as readFileSync10, readdirSync as readdirSync6, statSync as statSync2 } from "node:fs";
+import {
+  closeSync as closeSync2,
+  existsSync as existsSync14,
+  openSync as openSync2,
+  readFileSync as readFileSync10,
+  readdirSync as readdirSync6,
+  statSync as statSync2
+} from "node:fs";
 import { join as join15 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
@@ -21716,28 +21723,43 @@ function parseSince(value) {
   }
   return;
 }
-function isTerminalJobStatus(jobsDir, jobId) {
-  const statusPath = join15(jobsDir, jobId, "status.json");
+function readFileFresh(filePath) {
   try {
-    const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
-    return status.status === "done" || status.status === "error";
+    const fd = openSync2(filePath, "r");
+    try {
+      return readFileSync10(fd, "utf-8");
+    } finally {
+      closeSync2(fd);
+    }
   } catch {
-    return false;
+    return null;
   }
 }
-function readJobMeta(jobsDir, jobId) {
+function readStatusJson(jobsDir, jobId) {
   const statusPath = join15(jobsDir, jobId, "status.json");
-  let meta = { startedAtMs: Date.now() };
+  const raw = readFileFresh(statusPath);
+  if (!raw)
+    return null;
   try {
-    const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
-    meta = {
-      model: status.model,
-      backend: status.backend,
-      beadId: status.bead_id,
-      startedAtMs: status.started_at_ms ?? Date.now()
-    };
-  } catch {}
-  return meta;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+function isTerminalJobStatus(jobsDir, jobId) {
+  const status = readStatusJson(jobsDir, jobId);
+  return status?.status === "done" || status?.status === "error";
+}
+function readJobMeta(jobsDir, jobId) {
+  const status = readStatusJson(jobsDir, jobId);
+  if (!status)
+    return { startedAtMs: Date.now() };
+  return {
+    model: typeof status.model === "string" ? status.model : undefined,
+    backend: typeof status.backend === "string" ? status.backend : undefined,
+    beadId: typeof status.bead_id === "string" ? status.bead_id : undefined,
+    startedAtMs: typeof status.started_at_ms === "number" ? status.started_at_ms : Date.now()
+  };
 }
 function makeJobMetaReader(jobsDir, options = {}) {
   const useCache = options.useCache ?? true;
@@ -21873,14 +21895,8 @@ function listMatchingJobIds(jobsDir, options) {
     if (options.jobId && entry !== options.jobId)
       continue;
     if (options.specialist) {
-      const statusPath = join15(jobDir, "status.json");
-      let specialist;
-      try {
-        const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
-        specialist = status.specialist;
-      } catch {
-        specialist = undefined;
-      }
+      const status = readStatusJson(jobsDir, entry);
+      const specialist = typeof status?.specialist === "string" ? status.specialist : undefined;
       if (specialist !== options.specialist)
         continue;
     }
@@ -21888,13 +21904,43 @@ function listMatchingJobIds(jobsDir, options) {
   }
   return jobIds;
 }
+function readJobEventsFresh(jobsDir, jobId) {
+  const eventsPath = join15(jobsDir, jobId, "events.jsonl");
+  const content = readFileFresh(eventsPath);
+  if (!content)
+    return [];
+  const events = [];
+  for (const line of content.split(`
+`)) {
+    if (!line.trim())
+      continue;
+    const parsed = parseTimelineEvent(line);
+    if (parsed)
+      events.push(parsed);
+  }
+  events.sort((a, b) => a.t - b.t);
+  return events;
+}
+function readFilteredBatchesFresh(jobsDir, options) {
+  const batches = [];
+  for (const jobId of listMatchingJobIds(jobsDir, options)) {
+    const status = readStatusJson(jobsDir, jobId);
+    const specialist = typeof status?.specialist === "string" ? status.specialist : "unknown";
+    const beadId = typeof status?.bead_id === "string" ? status.bead_id : undefined;
+    const events = readJobEventsFresh(jobsDir, jobId);
+    if (events.length === 0)
+      continue;
+    batches.push({ jobId, specialist, beadId, events });
+  }
+  return batches;
+}
 async function followMerged(jobsDir, options) {
   const colorMap = new JobColorMap;
   const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
   const lastSeenT = new Map;
   const trackedJobs = new Set(listMatchingJobIds(jobsDir, options).filter((jobId) => !isTerminalJobStatus(jobsDir, jobId)));
   const completedJobs = new Set;
-  const filteredBatches = () => readAllJobEvents(jobsDir).filter((batch) => !options.jobId || batch.jobId === options.jobId).filter((batch) => !options.specialist || batch.specialist === options.specialist);
+  const filteredBatches = () => readFilteredBatchesFresh(jobsDir, options);
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
@@ -21916,6 +21962,9 @@ async function followMerged(jobsDir, options) {
       process.stderr.write(dim7(`All jobs complete.
 `));
     }
+    return;
+  }
+  if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
     return;
   }
   if (!options.json) {

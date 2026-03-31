@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
-// Use the actual .specialists/jobs path that feed.ts expects
-const specialistsDir = join(process.cwd(), '.specialists');
-const jobsDir = join(specialistsDir, 'jobs');
+// Use a temp directory — never the real .specialists/ which contains live job state
+let tempRoot: string;
+let specialistsDir: string;
+let jobsDir: string;
 
 describe('feed CLI', () => {
   const originalArgv = process.argv;
@@ -12,17 +15,18 @@ describe('feed CLI', () => {
   const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
   beforeEach(() => {
-    // Clean and recreate the jobs directory
-    if (existsSync(jobsDir)) rmSync(jobsDir, { recursive: true, force: true });
+    // Use a fresh temp directory per test — never touch the real .specialists/
+    tempRoot = mkdtempSync(join(tmpdir(), 'sp-feed-test-'));
+    specialistsDir = join(tempRoot, '.specialists');
+    jobsDir = join(specialistsDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
+    vi.spyOn(process, 'cwd').mockReturnValue(tempRoot);
   });
 
   afterEach(() => {
     process.argv = originalArgv;
-    if (existsSync(jobsDir)) rmSync(jobsDir, { recursive: true, force: true });
-    if (existsSync(specialistsDir)) rmSync(specialistsDir, { recursive: true, force: true });
+    if (existsSync(tempRoot)) rmSync(tempRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
-    vi.resetModules();
   });
 
   function createJobDir(jobId: string, specialist: string, events: any[], status?: any) {
@@ -296,6 +300,135 @@ describe('feed CLI', () => {
     await run();
 
     expect(logs.join('\n')).toContain('TEXT');
+  });
+
+  it('does not exit early in global follow when done jobs exist but an active job has no events yet', async () => {
+    const now = Date.now();
+
+    createJobDir('job-done', 'test', [
+      { t: now - 2000, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 },
+    ], { status: 'done' });
+
+    const activeJobDir = join(jobsDir, 'job-active');
+    mkdirSync(activeJobDir, { recursive: true });
+    writeFileSync(join(activeJobDir, 'events.jsonl'), '', 'utf-8');
+    writeFileSync(
+      join(activeJobDir, 'status.json'),
+      JSON.stringify({
+        id: 'job-active',
+        specialist: 'test',
+        status: 'running',
+        started_at_ms: now,
+      }),
+      'utf-8'
+    );
+
+    process.argv = ['node', 'specialists', 'feed', '-f'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    const runPromise = run();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    appendFileSync(
+      join(activeJobDir, 'events.jsonl'),
+      `\n${JSON.stringify({ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 2 })}`,
+      'utf-8'
+    );
+    writeFileSync(
+      join(activeJobDir, 'status.json'),
+      JSON.stringify({
+        id: 'job-active',
+        specialist: 'test',
+        status: 'done',
+        started_at_ms: now,
+      }),
+      'utf-8'
+    );
+
+    await Promise.race([
+      runPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('follow mode did not terminate')), 5000)),
+    ]);
+
+    const combined = logs.join('\n');
+    expect(combined).toContain('job-active');
+    expect(combined).toContain('DONE');
+  });
+
+  it('refreshes job metadata in follow mode when status.json is updated mid-run', async () => {
+    const now = Date.now();
+    createJobDir('job-meta', 'explorer', [
+      { t: now - 1000, type: 'run_start', specialist: 'explorer' },
+    ], {
+      status: 'running',
+      model: undefined,
+      backend: undefined,
+    });
+
+    process.argv = ['node', 'specialists', 'feed', '--job', 'job-meta', '-f', '--json'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const jobMetaDir = join(jobsDir, 'job-meta');
+
+    const { run } = await import('../../../src/cli/feed.js');
+    const runPromise = run();
+
+    writeFileSync(
+      join(jobMetaDir, 'status.json'),
+      JSON.stringify({
+        id: 'job-meta',
+        specialist: 'explorer',
+        status: 'running',
+        model: 'claude-haiku',
+        backend: 'anthropic',
+        started_at_ms: now,
+      }),
+      'utf-8'
+    );
+
+    appendFileSync(
+      join(jobMetaDir, 'events.jsonl'),
+      `\n${JSON.stringify({ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 })}`,
+      'utf-8'
+    );
+
+    writeFileSync(
+      join(jobMetaDir, 'status.json'),
+      JSON.stringify({
+        id: 'job-meta',
+        specialist: 'explorer',
+        status: 'done',
+        model: 'claude-haiku',
+        backend: 'anthropic',
+        started_at_ms: now,
+      }),
+      'utf-8'
+    );
+
+    await Promise.race([
+      runPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('follow mode did not terminate')), 5000)),
+    ]);
+
+    const jsonLines = logs
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('{'))
+      .map((line) => JSON.parse(line));
+
+    const completionEvent = jsonLines.find((line) => line.type === 'run_complete');
+    expect(completionEvent).toBeDefined();
+    expect(completionEvent.model).toBe('claude-haiku');
+    expect(completionEvent.backend).toBe('anthropic');
   });
 
   // ── Regression tests for merged chronology ─────────────────────────────────
