@@ -34,6 +34,16 @@ function makeRunOptions(name = 'test-specialist') {
   return { name, prompt: 'do something' };
 }
 
+async function waitForCondition(check: () => boolean, timeoutMs = 1500): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Condition not met before timeout');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 describe('Supervisor', () => {
   let tmpDir: string;
   let jobsDir: string;
@@ -126,6 +136,68 @@ describe('Supervisor', () => {
 
     expect(onJobStarted).toHaveBeenCalledWith({ id });
     expect(readFileSync(join(jobsDir, 'latest'), 'utf-8').trim()).toBe(id);
+  });
+
+  it('keeps keep-alive jobs in waiting after first turn and only completes after close', async () => {
+    const resumeMock = vi.fn().mockResolvedValue('second turn output');
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    const runner = {
+      run: vi.fn().mockImplementation(async (
+        _opts: any, _onProgress: any, _onEvent: any, _onMeta: any, _onKill: any, _onBead: any,
+        onSteerRegistered: any, onResumeReady: any,
+      ) => {
+        onSteerRegistered?.(vi.fn().mockResolvedValue(undefined));
+        onResumeReady?.(resumeMock, closeMock);
+        return {
+          output: 'first turn output',
+          model: 'claude-haiku',
+          backend: 'anthropic',
+          durationMs: 100,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123def4567890',
+          beadId: undefined,
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
+    const runPromise = sup.run();
+
+    await waitForCondition(() => existsSync(join(jobsDir, 'latest')));
+    const id = readFileSync(join(jobsDir, 'latest'), 'utf-8').trim();
+
+    await waitForCondition(() => {
+      const status = sup.readStatus(id);
+      return status?.status === 'waiting';
+    });
+
+    const waitingStatus = sup.readStatus(id);
+    expect(waitingStatus?.status).toBe('waiting');
+    expect(waitingStatus?.fifo_path).toBeDefined();
+    const fifoPath = waitingStatus?.fifo_path;
+    if (!fifoPath) {
+      throw new Error('keep-alive job did not expose fifo_path');
+    }
+
+    const eventsWhileWaiting = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    expect(eventsWhileWaiting.some((event: any) => event.type === 'run_complete')).toBe(false);
+
+    writeFileSync(fifoPath, JSON.stringify({ type: 'resume', task: 'next prompt' }) + '\n', { flag: 'a' });
+    await waitForCondition(() => resumeMock.mock.calls.length === 1);
+    await waitForCondition(() => readFileSync(join(jobsDir, id, 'result.txt'), 'utf-8') === 'second turn output');
+
+    writeFileSync(fifoPath, JSON.stringify({ type: 'close' }) + '\n', { flag: 'a' });
+    await expect(runPromise).resolves.toBe(id);
+
+    const finalStatus = sup.readStatus(id);
+    expect(finalStatus?.status).toBe('done');
+    expect(closeMock).toHaveBeenCalledOnce();
+
+    const finalEvents = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const runCompleteEvents = finalEvents.filter((event: any) => event.type === 'run_complete');
+    expect(runCompleteEvents).toHaveLength(1);
   });
 
 

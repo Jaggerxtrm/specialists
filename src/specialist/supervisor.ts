@@ -306,6 +306,61 @@ export class Supervisor {
     let closeFn: (() => Promise<void>) | undefined;
     let fifoReadStream: ReturnType<typeof createReadStream> | undefined;
     let fifoReadline: ReturnType<typeof createInterface> | undefined;
+    let keepAliveSession = false;
+    let latestOutput = '';
+    let keepAliveExitResolved = false;
+    let resolveKeepAliveExit: ((exit: { kind: 'closed' } | { kind: 'fatal'; error: Error }) => void) | undefined;
+    const keepAliveExitPromise = new Promise<{ kind: 'closed' } | { kind: 'fatal'; error: Error }>((resolve) => {
+      resolveKeepAliveExit = resolve;
+    });
+
+    const finishKeepAlive = (exit: { kind: 'closed' } | { kind: 'fatal'; error: Error }): void => {
+      if (keepAliveExitResolved) return;
+      keepAliveExitResolved = true;
+      resolveKeepAliveExit?.(exit);
+    };
+
+    const handleResumeTurn = async (task: string): Promise<void> => {
+      if (!resumeFn) return;
+      const now = Date.now();
+      setStatus({ status: 'running', current_event: 'starting', last_event_at_ms: now });
+      lastActivityMs = now;
+      silenceWarnEmitted = false;
+
+      try {
+        const output = await resumeFn(task);
+        latestOutput = output;
+        mkdirSync(this.jobDir(id), { recursive: true });
+        writeFileSync(this.resultPath(id), output, 'utf-8');
+
+        const waitingAt = Date.now();
+        setStatus({
+          status: 'waiting',
+          current_event: 'waiting',
+          elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
+          last_event_at_ms: waitingAt,
+        });
+      } catch (err: any) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: 'error', error: error.message });
+        finishKeepAlive({ kind: 'fatal', error });
+      }
+    };
+
+    const closeKeepAliveSession = async (): Promise<void> => {
+      if (!closeFn) {
+        finishKeepAlive({ kind: 'closed' });
+        return;
+      }
+      try {
+        await closeFn();
+        finishKeepAlive({ kind: 'closed' });
+      } catch (err: any) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: 'error', error: error.message });
+        finishKeepAlive({ kind: 'fatal', error });
+      }
+    };
 
     // Stuck detection: thresholds, local tracking state, and periodic checker
     const thresholds: Required<StallDetectionConfig> = {
@@ -355,7 +410,13 @@ export class Supervisor {
       }
     }, 10_000);
 
-    const sigtermHandler = () => killFn?.();
+    const sigtermHandler = () => {
+      if (keepAliveSession) {
+        void closeKeepAliveSession();
+        return;
+      }
+      killFn?.();
+    };
     process.once('SIGTERM', sigtermHandler);
 
     try {
@@ -432,45 +493,13 @@ export class Supervisor {
                   // resume: send next-turn prompt to a waiting keep-alive session
                   // waiting state: retained, non-streaming pi session awaiting explicit next-turn
                   // action from orchestrator. Valid actions: resume, close. Invalid: steer.
-                  if (resumeFn) {
-                    setStatus({ status: 'running', current_event: 'starting' });
-                    resumeFn(parsed.task)
-                      .then((output) => {
-                        mkdirSync(this.jobDir(id), { recursive: true });
-                        writeFileSync(this.resultPath(id), output, 'utf-8');
-                        setStatus({
-                          status: 'waiting',
-                          current_event: 'waiting',
-                          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-                          last_event_at_ms: Date.now(),
-                        });
-                      })
-                      .catch((err: any) => {
-                        setStatus({ status: 'error', error: err?.message ?? String(err) });
-                      });
-                  }
+                  void handleResumeTurn(parsed.task);
                 } else if (parsed?.type === 'prompt' && typeof parsed.message === 'string') {
                   // DEPRECATED: {type:"prompt"} → use {type:"resume", task:"..."} instead
                   console.error('[specialists] DEPRECATED: FIFO message {type:"prompt"} is deprecated. Use {type:"resume", task:"..."} instead.');
-                  if (resumeFn) {
-                    setStatus({ status: 'running', current_event: 'starting' });
-                    resumeFn(parsed.message)
-                      .then((output) => {
-                        mkdirSync(this.jobDir(id), { recursive: true });
-                        writeFileSync(this.resultPath(id), output, 'utf-8');
-                        setStatus({
-                          status: 'waiting',
-                          current_event: 'waiting',
-                          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-                          last_event_at_ms: Date.now(),
-                        });
-                      })
-                      .catch((err: any) => {
-                        setStatus({ status: 'error', error: err?.message ?? String(err) });
-                      });
-                  }
+                  void handleResumeTurn(parsed.message);
                 } else if (parsed?.type === 'close') {
-                  closeFn?.().catch(() => {});
+                  void closeKeepAliveSession();
                 }
               } catch { /* ignore malformed lines */ }
             });
@@ -478,9 +507,10 @@ export class Supervisor {
         },
         // onResumeReady — keep-alive: session stays alive after first agent_end
         (rFn, cFn) => {
+          keepAliveSession = true;
           resumeFn = rFn;
           closeFn = cFn;
-          setStatus({ status: 'waiting', current_event: 'waiting' });
+          setStatus({ status: 'waiting', current_event: 'waiting', last_event_at_ms: Date.now() });
         },
         // onToolStartCallback — capture tool name, args, and call ID for timeline event fidelity
         (tool, args, toolCallId) => {
@@ -512,50 +542,73 @@ export class Supervisor {
         },
       );
 
-      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      latestOutput = result.output;
       mkdirSync(this.jobDir(id), { recursive: true });
-      writeFileSync(this.resultPath(id), result.output, 'utf-8');
+      writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
 
-      const inputBeadId = runOptions.inputBeadId;
-      const ownsBead = Boolean(result.beadId && !inputBeadId);
-      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
-      const shouldAppendReadOnlyResultToInputBead = Boolean(
-        inputBeadId
-        && result.permissionRequired === 'READ_ONLY'
-        && this.opts.beadsClient,
-      );
+      if (keepAliveSession) {
+        setStatus({
+          status: 'waiting',
+          current_event: 'waiting',
+          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+          last_event_at_ms: Date.now(),
+          model: result.model,
+          backend: result.backend,
+          bead_id: result.beadId,
+        });
 
-      if (ownsBead && result.beadId) {
-        this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
-      } else if (shouldWriteExternalBeadNotes) {
-        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
-          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(result));
-        } else if (result.beadId) {
-          this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+        const keepAliveExit = await keepAliveExitPromise;
+        if (keepAliveExit.kind === 'fatal') {
+          throw keepAliveExit.error;
         }
       }
 
-      if (result.beadId) {
+      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const finalResult = {
+        ...result,
+        output: latestOutput,
+      };
+
+      const inputBeadId = runOptions.inputBeadId;
+      const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
+      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+      const shouldAppendReadOnlyResultToInputBead = Boolean(
+        inputBeadId
+        && finalResult.permissionRequired === 'READ_ONLY'
+        && this.opts.beadsClient,
+      );
+
+      if (ownsBead && finalResult.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+      } else if (shouldWriteExternalBeadNotes) {
+        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
+          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
+        } else if (finalResult.beadId) {
+          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+        }
+      }
+
+      if (finalResult.beadId) {
         // Close owned beads after notes are written. Never close input beads — orchestrator owns lifecycle.
         if (!inputBeadId) {
-          this.opts.beadsClient?.closeBead(result.beadId, 'COMPLETE', result.durationMs, result.model);
+          this.opts.beadsClient?.closeBead(finalResult.beadId, 'COMPLETE', finalResult.durationMs, finalResult.model);
         }
       }
       setStatus({
         status: 'done',
         elapsed_s: elapsed,
         last_event_at_ms: Date.now(),
-        model: result.model,
-        backend: result.backend,
-        bead_id: result.beadId,
+        model: finalResult.model,
+        backend: finalResult.backend,
+        bead_id: finalResult.beadId,
       });
 
       // Emit run_complete — THE canonical completion event
       appendTimelineEvent(createRunCompleteEvent('COMPLETE', elapsed, {
-        model: result.model,
-        backend: result.backend,
-        bead_id: result.beadId,
-        output: result.output,
+        model: finalResult.model,
+        backend: finalResult.backend,
+        bead_id: finalResult.beadId,
+        output: finalResult.output,
       }));
 
       // Touch ready marker so hooks can surface completion banners.

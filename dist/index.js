@@ -20550,11 +20550,9 @@ class Supervisor {
         }
       }
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
-      const durationMs = Date.now() - startedAtMs;
       const finalResult = {
         ...result,
-        output: latestOutput,
-        durationMs
+        output: latestOutput
       };
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
@@ -21653,7 +21651,7 @@ var exports_feed = {};
 __export(exports_feed, {
   run: () => run12
 });
-import { existsSync as existsSync14, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync10, readdirSync as readdirSync6, statSync as statSync2 } from "node:fs";
 import { join as join15 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
@@ -21726,22 +21724,31 @@ function isTerminalJobStatus(jobsDir, jobId) {
     return false;
   }
 }
-function makeJobMetaReader(jobsDir) {
+function readJobMeta(jobsDir, jobId) {
+  const statusPath = join15(jobsDir, jobId, "status.json");
+  let meta = { startedAtMs: Date.now() };
+  try {
+    const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
+    meta = {
+      model: status.model,
+      backend: status.backend,
+      beadId: status.bead_id,
+      startedAtMs: status.started_at_ms ?? Date.now()
+    };
+  } catch {}
+  return meta;
+}
+function makeJobMetaReader(jobsDir, options = {}) {
+  const useCache = options.useCache ?? true;
+  if (!useCache) {
+    return (jobId) => readJobMeta(jobsDir, jobId);
+  }
   const cache = new Map;
   return (jobId) => {
-    if (cache.has(jobId))
-      return cache.get(jobId);
-    const statusPath = join15(jobsDir, jobId, "status.json");
-    let meta = { startedAtMs: Date.now() };
-    try {
-      const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
-      meta = {
-        model: status.model,
-        backend: status.backend,
-        beadId: status.bead_id,
-        startedAtMs: status.started_at_ms ?? Date.now()
-      };
-    } catch {}
+    const cached2 = cache.get(jobId);
+    if (cached2)
+      return cached2;
+    const meta = readJobMeta(jobsDir, jobId);
     cache.set(jobId, meta);
     return meta;
   };
@@ -21850,10 +21857,41 @@ function filterMergedEventsByCursor(merged, from) {
     return merged;
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
+function listMatchingJobIds(jobsDir, options) {
+  if (!existsSync14(jobsDir))
+    return [];
+  const jobIds = [];
+  for (const entry of readdirSync6(jobsDir)) {
+    const jobDir = join15(jobsDir, entry);
+    try {
+      if (!statSync2(jobDir).isDirectory())
+        continue;
+    } catch {
+      continue;
+    }
+    if (options.jobId && entry !== options.jobId)
+      continue;
+    if (options.specialist) {
+      const statusPath = join15(jobDir, "status.json");
+      let specialist;
+      try {
+        const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
+        specialist = status.specialist;
+      } catch {
+        specialist = undefined;
+      }
+      if (specialist !== options.specialist)
+        continue;
+    }
+    jobIds.push(entry);
+  }
+  return jobIds;
+}
 async function followMerged(jobsDir, options) {
   const colorMap = new JobColorMap;
-  const getJobMeta = makeJobMetaReader(jobsDir);
+  const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
   const lastSeenT = new Map;
+  const trackedJobs = new Set(listMatchingJobIds(jobsDir, options).filter((jobId) => !isTerminalJobStatus(jobsDir, jobId)));
   const completedJobs = new Set;
   const filteredBatches = () => readAllJobEvents(jobsDir).filter((batch) => !options.jobId || batch.jobId === options.jobId).filter((batch) => !options.specialist || batch.specialist === options.specialist);
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
@@ -21868,12 +21906,11 @@ async function followMerged(jobsDir, options) {
       const maxT = Math.max(...batch.events.map((event) => event.t));
       lastSeenT.set(batch.jobId, maxT);
     }
-    if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
+    if (trackedJobs.has(batch.jobId) && batch.events.some(isCompletionEvent)) {
       completedJobs.add(batch.jobId);
     }
   }
-  const initialBatchCount = filteredBatches().length;
-  if (!options.forever && initialBatchCount > 0 && completedJobs.size === initialBatchCount) {
+  if (!options.forever && trackedJobs.size === 0) {
     if (!options.json) {
       process.stderr.write(dim7(`All jobs complete.
 `));
@@ -21889,6 +21926,11 @@ async function followMerged(jobsDir, options) {
   await new Promise((resolve2) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
+      for (const jobId of listMatchingJobIds(jobsDir, options)) {
+        if (!isTerminalJobStatus(jobsDir, jobId)) {
+          trackedJobs.add(jobId);
+        }
+      }
       const newEvents = [];
       for (const batch of batches) {
         const lastT = lastSeenT.get(batch.jobId) ?? 0;
@@ -21906,7 +21948,7 @@ async function followMerged(jobsDir, options) {
           const maxT = Math.max(...batch.events.map((e) => e.t));
           lastSeenT.set(batch.jobId, maxT);
         }
-        if (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId)) {
+        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId))) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -21936,7 +21978,7 @@ async function followMerged(jobsDir, options) {
           console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
         }
       }
-      if (!options.forever && batches.length > 0 && completedJobs.size === batches.length) {
+      if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
         resolve2();
       }
@@ -22206,10 +22248,10 @@ __export(exports_clean, {
 });
 import {
   existsSync as existsSync16,
-  readdirSync as readdirSync6,
+  readdirSync as readdirSync7,
   readFileSync as readFileSync12,
   rmSync as rmSync2,
-  statSync as statSync2
+  statSync as statSync3
 } from "node:fs";
 import { join as join19 } from "node:path";
 function parseTtlDaysFromEnvironment() {
@@ -22265,10 +22307,10 @@ function parseOptions(argv) {
 }
 function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
-  const entries = readdirSync6(directoryPath, { withFileTypes: true });
+  const entries = readdirSync7(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
     const entryPath = join19(directoryPath, entry.name);
-    const stats = statSync2(entryPath);
+    const stats = statSync3(entryPath);
     if (stats.isDirectory()) {
       totalBytes += readDirectorySizeBytes(entryPath);
       continue;
@@ -22292,7 +22334,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   }
   if (!COMPLETED_STATUSES.has(statusData.status))
     return null;
-  const directoryStats = statSync2(directoryPath);
+  const directoryStats = statSync3(directoryPath);
   return {
     id: entry.name,
     directoryPath,
@@ -22302,7 +22344,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   };
 }
 function collectCompletedJobDirectories(jobsDirectoryPath) {
-  const entries = readdirSync6(jobsDirectoryPath, { withFileTypes: true });
+  const entries = readdirSync7(jobsDirectoryPath, { withFileTypes: true });
   const completedJobs = [];
   for (const entry of entries) {
     const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
@@ -22737,7 +22779,7 @@ __export(exports_doctor, {
   run: () => run21
 });
 import { spawnSync as spawnSync10 } from "node:child_process";
-import { existsSync as existsSync17, mkdirSync as mkdirSync3, readFileSync as readFileSync14, readdirSync as readdirSync7 } from "node:fs";
+import { existsSync as existsSync17, mkdirSync as mkdirSync3, readFileSync as readFileSync14, readdirSync as readdirSync8 } from "node:fs";
 import { join as join22 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green13("✓")} ${msg}`);
@@ -22909,7 +22951,7 @@ function checkZombieJobs() {
   }
   let entries;
   try {
-    entries = readdirSync7(jobsDir);
+    entries = readdirSync8(jobsDir);
   } catch {
     entries = [];
   }
