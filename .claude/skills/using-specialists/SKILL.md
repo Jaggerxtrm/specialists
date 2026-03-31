@@ -2,18 +2,21 @@
 name: using-specialists
 description: >
   Use this skill whenever you're about to start a substantial task — pause first and
-  ask whether to delegate. Consult before any: code review, security audit, deep bug
-  investigation, test generation, multi-file refactor, or architecture analysis. Also
-  use for the mechanics of delegation: --bead workflow, --context-depth, background
-  jobs, MCP tool (`use_specialist`), specialists init,
-  or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
-  evaluate whether delegation makes sense.
-version: 3.6
+  route the work through specialists instead of doing discovery or implementation
+  yourself. Consult before any: code review, security audit, deep bug investigation,
+  test generation, multi-file refactor, architecture analysis, or multi-wave
+  specialist orchestration. Also use for the mechanics of delegation: --bead
+  workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
+  or specialists doctor. Don't wait for the user to say
+  "use a specialist" — proactively evaluate whether delegation makes sense.
+version: 3.7
 ---
 
 # Specialists Usage
 
-When this skill is loaded, you are a **coordinator first**: delegate substantial work to specialists, monitor progress, and synthesize outcomes for the user.
+When this skill is loaded, you are an **orchestrator**: route substantial work to specialists, monitor progress, sequence waves, and synthesize outcomes for the user.
+
+Your job is to coordinate, not to explore or implement. For substantial work, do **ZERO implementation** yourself: do not read files to investigate on your own, do not write code or docs on your own, and do not silently fall back to doing the work yourself when a specialist should handle it.
 
 Specialists are autonomous AI agents that run independently — fresh context, different
 model, no prior bias. Delegate when a task would take you significant effort, spans
@@ -22,23 +25,34 @@ multiple files, or benefits from a dedicated focused run.
 The reason isn't just speed — it's quality. A specialist has no competing context,
 leaves a tracked record via beads, and can run in the background while you stay unblocked.
 
-## The Delegation Decision
+## Hard Rules
+
+1. **Zero implementation by orchestrator.** When this skill is active for substantial work, you do not implement the solution yourself.
+2. **Never explore yourself.** All discovery, codebase mapping, and read-only investigation go through **explorer** (or another explicitly investigative specialist such as **debugger** when root-cause analysis is needed).
+3. **Always run explorer before executor.** Any implementation wave must be preceded by an exploration wave that scopes the task.
+4. **For tracked work, the bead is the prompt.** The bead description, notes, and parent context are the instruction surface.
+5. **`--bead` and `--prompt` are mutually exclusive.** If you need to refine instructions, update the bead notes; do not add `--prompt`.
+6. **Wave sequencing is strict.** Never start wave N+1 before wave N is complete. Within-wave parallelism is fine only for independent jobs.
+7. **No destructive operations by specialists.** Specialists must not perform destructive or irreversible actions: no `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. If a task requires destructive action, stop and surface it to the user.
+
+## When to Use This Skill
 
 Before starting any substantial task, ask: is this worth delegating?
 
-**Delegate when:**
+**Use this skill when:**
 - It would take >5 minutes of focused work
 - It spans multiple files or modules
 - A fresh perspective adds value (code review, security audit)
 - It can run in the background while you do other things
 - You have multiple independent tasks — dispatch them as a wave
+- You need investigation, planning, implementation, review, or docs work to happen in a disciplined sequence
 
-**Do it yourself when:**
+**You may not need this skill when:**
 - It's a single-file edit or quick config change
 - It needs interactive back-and-forth
 - It's obviously trivial (one-liner, formatting fix)
 
-When in doubt, delegate. Specialists run in parallel — you don't have to wait.
+Once you decide this is substantial delegated work and load this skill, do not personally explore or implement it. Orchestrate specialists instead.
 
 ---
 
@@ -50,7 +64,6 @@ links results back to the tracker, and creates an audit trail.
 ### CLI commands
 
 ```bash
-specialists init                              # first-time project setup
 specialists list                              # discover available specialists
 specialists run <name> --bead <id>            # foreground run (streams output)
 specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
@@ -73,20 +86,31 @@ specialists doctor                            # health check
 bd create --title "Fix auth token refresh bug" --type bug --priority 2
 # -> unitAI-abc
 
-# 2. Run the right specialist against the bead
-specialists run executor --bead unitAI-abc &
+# 2. Explore first — never skip discovery
+specialists run explorer --bead unitAI-abc --context-depth 2 &
+# -> Job started: e1f2g3
+
+# 3. Read exploration results, then run implementation
+specialists result e1f2g3
+specialists run executor --bead unitAI-abc --context-depth 2 &
 # -> Job started: a1b2c3
 
-# 3. Monitor (pick one)
+# 4. Monitor (pick one)
 specialists feed a1b2c3              # check events so far
 specialists feed -f                  # tail all active jobs
 
-# 4. Read results and close
+# 5. Read results and close
 specialists result a1b2c3
 bd close unitAI-abc --reason "Fixed: token refresh now retries on 401"
 ```
 
-### Giving specialists extra context via bead notes
+### Bead-first workflow (`--bead` is the prompt)
+
+For tracked work, the bead is not just bookkeeping — it is the specialist's prompt.
+The specialist reads:
+- the bead title + description
+- bead notes
+- parent/ancestor bead context (controlled by `--context-depth`)
 
 `--prompt` and `--bead` cannot be combined. When you need to give a specialist
 specific instructions beyond what's in the bead description, update the bead notes first:
@@ -95,13 +119,16 @@ specific instructions beyond what's in the bead description, update the bead not
 bd update unitAI-abc --notes "INSTRUCTION: Rewrite docs/cli-reference.md from current
 source. Read every command in src/cli/ and src/index.ts. Document all flags and examples."
 
-specialists run executor --bead unitAI-abc &
+specialists run executor --bead unitAI-abc --context-depth 2 &
 ```
 
 This pattern was used extensively in Wave 5 of a real session — 4 executors all received
 writing instructions via bead notes and successfully produced doc files.
 
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
+Prefer **`--context-depth 2`** for child-bead workflows so downstream waves inherit the
+parent task framing plus the immediate predecessor context.
+
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
 
 ---
@@ -112,28 +139,42 @@ Run `specialists list` to see what's available. Match by task type:
 
 | Task type | Best specialist | Why |
 |-----------|----------------|-----|
-| Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously |
+| Architecture exploration / initial discovery | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY. Use first before any executor run. |
+| Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously after exploration is complete |
 | Bug investigation / "why is X broken" | **debugger** (claude-sonnet-4-6) | GitNexus-first triage, 5-phase investigation, hypothesis ranking, evidence-backed remediation. Use for ANY root cause analysis. |
 | Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. Use with `--keep-alive` for follow-up questions. |
 | Code review / compliance | **reviewer** (claude-sonnet-4-6) | Post-run compliance checks, verdict contract (PASS/PARTIAL/FAIL). Use with `--keep-alive` for discussion. |
 | Multi-backend review | **parallel-review** (claude-sonnet-4-6) | Concurrent review across multiple AI backends |
-| Architecture exploration | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY |
 | Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
 | Planning / scoping | **planner** (claude-sonnet-4-6) | Structured issue breakdown with deps |
 | Doc audit / drift detection | **sync-docs** (claude-sonnet-4-6) | Use with `--keep-alive`: audits first, then approve/deny execution via `resume` |
-| Doc drift / audit | **sync-docs** (claude-sonnet-4-6) | Detects stale docs, restructures content |
 | Doc writing / updates | **executor** (gpt-5.3-codex) | sync-docs defaults to audit mode; executor writes files |
-| Test generation | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
+| Test generation / suite execution | **test-runner** (claude-haiku-4-5) | Runs suites, interprets failures |
 | Specialist authoring | **specialists-creator** (claude-sonnet-4-6) | Guides YAML creation against schema |
 
 ### Specialist selection lessons (from real sessions)
 
+- **explorer** is mandatory before **executor**. Do not do discovery yourself, and do not send executor in blind.
 - **debugger** is the most powerful investigation specialist. Uses GitNexus call-chain tracing (when available) for 5-phase root cause analysis with ranked hypotheses. Use for ANY "why is X broken" question — don't do the investigation yourself.
 - **sync-docs** is an interactive specialist — it audits first, then waits for approval before executing. Run with `--keep-alive` and use `resume` to approve or deny. Not a bug, it's the design.
 - **overthinker** and **reviewer** are also interactive — run with `--keep-alive` for multi-turn design/review conversations.
 - **explorer** is fast and cheap (Haiku) but READ_ONLY — output auto-appends to the input bead's notes. Use for investigation, not implementation.
-- **executor** is the workhorse — HIGH permissions, writes code and docs, runs tests, closes beads. Best for any task that needs files written.
+- **executor** is the workhorse — HIGH permissions, writes code and docs, runs tests, closes beads. Best for any task that needs files written after the exploration wave is done.
 - **use_specialist MCP** is best for quick foreground runs where you need the result immediately in your context.
+
+### Example dispatches (showing specialist variety)
+
+```bash
+specialists run explorer --bead unitAI-exp --context-depth 2 --background
+specialists run debugger --bead unitAI-bug --context-depth 2 --background
+specialists run planner --bead unitAI-scope --context-depth 2 --background
+specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
+specialists run executor --bead unitAI-impl --context-depth 2 --background
+specialists run reviewer --bead unitAI-review --context-depth 2 --keep-alive --background
+specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --background
+specialists run test-runner --bead unitAI-tests --context-depth 2 --background
+specialists run specialists-creator --bead unitAI-skill --context-depth 2 --background
+```
 
 ### Pi extensions availability (known gap)
 
@@ -188,58 +229,117 @@ investigation that may need follow-up questions based on findings.
 
 ## Wave Orchestration
 
-For multiple independent tasks, dispatch specialists in parallel waves.
+For multi-step work, dispatch specialists in **waves**.
 
-### Planning a wave
+A **wave** is a set of specialist jobs that may run in parallel **only if they are independent**.
+Waves themselves are strictly sequential: **never start wave N+1 before wave N completes**.
 
-Group tasks by dependency:
-1. **Wave 1**: Bug fixes and blockers (unblock downstream work)
-2. **Wave 2**: Features and design (now that the surface is stable)
-3. **Wave 3**: Documentation (after code changes land — use executors, not sync-docs)
+### Wave rules
 
-### Dispatching a wave
+1. **Sequence between waves.** Exploration happens before implementation; implementation before review; review before doc sync.
+2. **Parallelize only within a wave.** If two jobs do not depend on each other, they may run together in the same wave.
+3. **Do not overlap waves.** Wait for every job in the current wave to finish, read results, and update beads before launching the next wave.
+4. **Use bead dependencies to encode the pipeline.** The dependency graph should match the wave order.
+5. **Use `--context-depth 2`** for downstream waves so each specialist sees the parent task plus immediate upstream context.
 
-```bash
-# Fire multiple specialists in parallel (--background for reliable detach)
-specialists run executor --bead unitAI-abc --background
-specialists run executor --bead unitAI-def --background
-specialists run overthinker --bead unitAI-ghi --keep-alive --background
-```
+### Polling a wave with `status.json`
 
-### Monitoring a wave
+Use `status.json` to determine whether a wave is done:
 
 ```bash
-# Quick status check on all jobs
 for job in abc123 def456 ghi789; do
   python3 -c "import json; d=json.load(open('.specialists/jobs/$job/status.json')); \
     print(f'$job {d[\"specialist\"]:12} {d[\"status\"]:10} {d.get(\"elapsed_s\",\"?\")}s')"
 done
-
-# Or use feed for event-level detail
-specialists feed <job-id>
 ```
 
-### Between waves
-
-After each wave completes:
+A wave is complete only when every job in that wave is in a terminal state (`completed` or `error`) and you have:
 1. **Read results**: `specialists result <job-id>` for each
-2. **Validate**: run lint + tests on the combined output
-3. **Commit**: stage, commit, push — clean git before next wave
-4. **Close beads**: `bd close <id> --reason "..."`
+2. **Updated/closed beads** as needed
+3. **Validated combined output** before advancing
 
-### Real wave example (from a 6-wave session)
+### Canonical 4-wave pipeline example
 
+Use this when a task needs investigation, implementation, review, and doc follow-through.
+
+```bash
+# 0. Create the parent bead
+bd create --title "Improve using-specialists wave orchestration" --type task --priority 2
+# -> unitAI-root
+
+# 1. Create child beads in dependency order
+bd create --title "Explore: map codebase for <task>" --type task --priority 2
+# -> unitAI-exp
+bd dep add unitAI-exp unitAI-root
+
+bd create --title "Implement: <task>" --type task --priority 2
+# -> unitAI-impl
+bd dep add unitAI-impl unitAI-exp
+
+bd create --title "Review: <task> changes" --type task --priority 2
+# -> unitAI-review
+bd dep add unitAI-review unitAI-impl
+
+bd create --title "sync-docs: <task>" --type task --priority 2
+# -> unitAI-docs
+bd dep add unitAI-docs unitAI-review
 ```
-Wave 1: 2x executor → stabilized background job execution and supervisor lifecycle
-Wave 2: overthinker + 2x executor → output contract design + retry logic + footer fix
-Wave 3: 4x sync-docs + 3x explorer → docs audit (produced reports, not files)
-Wave 4: 5x executor + 2x explorer → output contract impl + READ_ONLY auto-append + 4 fixes
-Wave 5: 4x executor → rewrote 4 doc files (executors write files, sync-docs only audits)
-Wave 6: 4x executor + overthinker (keep-alive) → cleanup + manifest design with follow-ups
+
+#### Wave 1 — Explorer
+
+```bash
+specialists run explorer --bead unitAI-exp --context-depth 2 --background
+# -> Job started: job1
+# (poll until completed, then read result)
+specialists result job1
 ```
 
-Key insight: **executors write files, sync-docs audits**. When you need docs written
-to disk, use executor with bead notes containing "INSTRUCTION: Write <file>...".
+#### Wave 2 — Executor
+
+Only after Wave 1 is complete:
+
+```bash
+specialists run executor --bead unitAI-impl --context-depth 2 --background
+# -> Job started: job2
+# (poll until completed, validate, then advance)
+```
+
+#### Wave 3 — Reviewer
+
+Only after Wave 2 is complete:
+
+```bash
+specialists run reviewer --bead unitAI-review --context-depth 2 --keep-alive --background
+# -> Job started: job3
+# (poll until waiting, read verdict — if changes needed, feed back before advancing)
+```
+
+#### Wave 4 — sync-docs
+
+Only after Wave 3 is complete:
+
+```bash
+specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --background
+# -> Job started: job4
+# (poll until waiting — sync-docs audits first; use `resume` to approve or deny)
+```
+
+### Within-wave parallelism example
+
+Parallelism is fine when jobs in the same wave are independent:
+
+```bash
+# Two independent exploration beads can run together in Wave 1
+specialists run explorer --bead unitAI-exp-a --context-depth 2 --background
+specialists run explorer --bead unitAI-exp-b --context-depth 2 --background
+# Do NOT start the executor wave until BOTH exploration jobs are complete.
+```
+
+### Future direction
+
+A future `workflows.yaml` spec may formalize wave sequencing, dependencies, and completion
+rules declaratively. This skill only documents the discipline for now — it does not
+define or implement that spec yet.
 
 ---
 
@@ -247,7 +347,12 @@ to disk, use executor with bead notes containing "INSTRUCTION: Write <file>...".
 
 As the orchestrator, you own things specialists cannot do:
 
-### 1. Validate combined output across specialists
+### 1. Route work to the right specialist — don't explore or implement yourself
+For substantial work, your role is to select the right specialist, launch the right wave,
+and pass context through beads. Discovery goes to **explorer** first; implementation goes
+to **executor** (or another writing specialist) only after discovery is done.
+
+### 2. Validate combined output across specialists
 Multiple specialists writing to the same worktree can conflict. After each wave:
 ```bash
 npm run lint          # or project-specific quality gate
@@ -255,7 +360,7 @@ bun test              # run affected tests
 git diff --stat       # review what changed
 ```
 
-### 2. Handle failures — don't silently fall back
+### 3. Handle failures — don't silently fall back
 If a specialist stalls or errors, surface it. Don't quietly do the work yourself.
 ```bash
 specialists feed <job-id>          # see what happened
@@ -267,11 +372,11 @@ Options when a specialist fails:
 - **Switch specialist** (e.g., sync-docs stalls → try explorer or executor)
 - **Stop and report** to the user before doing it yourself
 
-### 3. Close beads and commit between waves
+### 4. Close beads and commit between waves
 Keep git clean between waves. Specialists write to the same worktree, so stacking
 uncommitted changes from multiple waves creates merge pain.
 
-### 4. Run drift detection after doc-heavy sessions
+### 5. Run drift detection after doc-heavy sessions
 ```bash
 python3 .agents/skills/sync-docs/scripts/drift_detector.py scan --json
 # Then dispatch executor for any stale docs, stamp synced_at on fresh ones:
@@ -281,8 +386,6 @@ python3 .agents/skills/sync-docs/scripts/drift_detector.py update-sync <file>
 ---
 
 ## MCP Tools (Claude Code)
-
-Available after `specialists init` and session restart.
 
 | Tool | Purpose |
 |------|---------|
@@ -300,20 +403,20 @@ resume, and cancellation.
   <id> "Execute all phases. Write the files."` Tracked as `unitAI-rnea`.
 - **READ_ONLY output auto-appends** to the input bead after completion. No manual piping
   needed (fixed in the Supervisor). But the output also lives in `specialists result`.
+- **`--bead` and `--prompt` conflict** by design. For tracked work, treat the bead as the
+  prompt and update notes instead of trying to combine flags.
 
 ---
 
-## Setup and Troubleshooting
+## Troubleshooting
 
 ```bash
-specialists init        # first-time setup: creates .specialists/, wires AGENTS.md/CLAUDE.md
 specialists doctor      # health check: hooks, MCP, zombie jobs
 specialists edit <name> # edit a specialist's YAML config
 ```
 
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
-- **MCP tools missing** → `specialists init` then restart Claude Code
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
 - **Stall timeout** → specialist hit 120s inactivity. Check `specialists feed <id>`, then retry or switch specialist.
 - **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
