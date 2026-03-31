@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, models, init, validate, edit, config, run,
- * *              status, result, feed, poll, clean, stop, quickstart, help
+ *              status, result, feed, poll, clean, stop, attach, quickstart, help
  */
 
 import { SpecialistsServer } from "./server.js";
@@ -54,11 +54,13 @@ async function run() {
         'Options:',
         '  --category <name>   Filter by category tag',
         '  --json              Output as JSON array',
+        '  --live              List running tmux-backed jobs and attach interactively',
         '',
         'Examples:',
         '  specialists list',
         '  specialists list --category analysis',
         '  specialists list --json',
+        '  specialists list --live',
         '',
         'Project model:',
         '  Specialists are project-only. User-scope discovery is deprecated.',
@@ -510,6 +512,32 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'attach') {
+    if (wantsHelp()) {
+      process.stdout.write([
+        'Usage: specialists attach <job-id>',
+        '',
+        'Attach your terminal to the tmux session of a running background specialist job.',
+        'The job must have been started with --background and tmux must be installed.',
+        '',
+        'Arguments:',
+        '  <job-id>    The job ID returned by specialists run --background',
+        '',
+        'Exit codes:',
+        '  0 — session attached and exited normally',
+        '  1 — job not found, already done, or no tmux session',
+        '',
+        'Examples:',
+        '  specialists attach job_a1b2c3d4',
+        '  specialists attach $(specialists run executor --background --prompt "...")',
+        '',
+        'See also: specialists list --live   (interactive session picker)',
+      ].join('\n') + '\n');
+      process.exit(0);
+    }
+    const { run: handler } = await import('./cli/attach.js');
+    return handler();
+  }
 
   if (sub === 'quickstart') {
     const { run: handler } = await import('./cli/quickstart.js');

@@ -57,6 +57,7 @@ export interface SupervisorStatus {
   bead_id?: string;
   session_file?: string;
   fifo_path?: string;
+  tmux_session?: string;
   error?: string;
 }
 
@@ -250,6 +251,7 @@ export class Supervisor {
       started_at_ms: startedAtMs,
       pid: process.pid,
       ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
+      ...(process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}),
     };
     this.writeStatusFile(id, initialStatus);
     // Persist a latest marker so other processes can discover the active job id immediately
@@ -581,6 +583,10 @@ export class Supervisor {
       closeSync(eventsFd);
       // Remove the FIFO on job completion (best effort)
       try { if (existsSync(fifoPath)) rmSync(fifoPath); } catch { /* ignore */ }
+      // Best-effort tmux cleanup for tmux-backed background runs
+      if (statusSnapshot.tmux_session) {
+        spawnSync('tmux', ['kill-session', '-t', statusSnapshot.tmux_session], { stdio: 'ignore' });
+      }
     }
   }
 }

@@ -2,6 +2,7 @@
 
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { spawn as cpSpawn } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
@@ -11,6 +12,7 @@ import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
 import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
+import { isTmuxAvailable, buildSessionName, createTmuxSession } from './tmux-utils.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold  = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -161,6 +163,10 @@ function formatFooterModel(backend: string | undefined, model: string | undefine
   return model.startsWith(`${backend}/`) ? model : `${backend}/${model}`;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -169,16 +175,26 @@ export async function run(): Promise<void> {
   if (args.background) {
     const latestPath = join(process.cwd(), '.specialists', 'jobs', 'latest');
     const oldLatest = (() => { try { return readFileSync(latestPath, 'utf-8').trim(); } catch { return ''; } })();
+    const cwd = process.cwd();
+    const innerArgs = process.argv.slice(2).filter(a => a !== '--background');
+    const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote).join(' ')}`;
 
-    // Re-invoke ourselves without --background, fully detached
-    const childArgs = process.argv.slice(2).filter(a => a !== '--background');
-    const child = cpSpawn(process.execPath, [process.argv[1], ...childArgs], {
-      detached: true,
-      stdio: 'ignore',
-      cwd: process.cwd(),
-      env: process.env,
-    });
-    child.unref();
+    let childPid: number | undefined;
+    if (isTmuxAvailable()) {
+      const suffix = randomBytes(3).toString('hex');
+      const sessionName = buildSessionName(args.name, suffix);
+      createTmuxSession(sessionName, cwd, cmd);
+    } else {
+      // Re-invoke ourselves without --background, fully detached
+      const child = cpSpawn(process.execPath, [process.argv[1], ...innerArgs], {
+        detached: true,
+        stdio: 'ignore',
+        cwd,
+        env: process.env,
+      });
+      child.unref();
+      childPid = child.pid;
+    }
 
     // Wait up to 5s for the child to write a new job ID to .specialists/jobs/latest
     const deadline = Date.now() + 5000;
@@ -195,7 +211,7 @@ export async function run(): Promise<void> {
       process.stdout.write(`${jobId}\n`);
     } else {
       process.stderr.write('Warning: job started but ID not yet available. Check specialists status.\n');
-      process.stdout.write(`${child.pid}\n`);
+      process.stdout.write(`${childPid ?? ''}\n`);
     }
     process.exit(0);
   }

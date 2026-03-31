@@ -1,6 +1,11 @@
 // src/cli/list.ts
 
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import readline from 'node:readline';
 import { SpecialistLoader } from '../specialist/loader.js';
+import type { SupervisorStatus } from '../specialist/supervisor.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -14,12 +19,166 @@ export interface ParsedArgs {
   category?: string;
   scope?: 'default' | 'user';
   json?: boolean;
+  live?: boolean;
+}
+
+interface LiveJob {
+  id: string;
+  specialist: string;
+  status: 'running' | 'waiting';
+  tmuxSession: string;
+  elapsedS: number;
+  startedAtMs: number;
 }
 
 export class ArgParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ArgParseError';
+  }
+}
+
+function toLiveJob(status: SupervisorStatus | null): LiveJob | null {
+  if (!status) return null;
+  if ((status.status !== 'running' && status.status !== 'waiting') || !status.tmux_session) {
+    return null;
+  }
+
+  const elapsedS = status.elapsed_s ?? Math.max(0, Math.floor((Date.now() - status.started_at_ms) / 1000));
+
+  return {
+    id: status.id,
+    specialist: status.specialist,
+    status: status.status,
+    tmuxSession: status.tmux_session,
+    elapsedS,
+    startedAtMs: status.started_at_ms,
+  };
+}
+
+function readJobStatus(statusPath: string): SupervisorStatus | null {
+  try {
+    return JSON.parse(readFileSync(statusPath, 'utf-8')) as SupervisorStatus;
+  } catch {
+    return null;
+  }
+}
+
+function listLiveJobs(): LiveJob[] {
+  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  if (!existsSync(jobsDir)) return [];
+
+  const jobs = readdirSync(jobsDir)
+    .map(entry => toLiveJob(readJobStatus(join(jobsDir, entry, 'status.json'))))
+    .filter((job): job is LiveJob => job !== null)
+    .sort((a, b) => b.startedAtMs - a.startedAtMs);
+
+  return jobs;
+}
+
+function formatLiveChoice(job: LiveJob): string {
+  return `${job.tmuxSession}  ${job.specialist}  ${job.elapsedS}s  ${job.status}`;
+}
+
+function renderLiveSelector(jobs: readonly LiveJob[], selectedIndex: number): string[] {
+  return [
+    '',
+    bold('Select tmux session (↑/↓, Enter to attach, Ctrl+C to cancel)'),
+    '',
+    ...jobs.map((job, index) => `${index === selectedIndex ? cyan('❯') : ' '} ${formatLiveChoice(job)}`),
+    '',
+  ];
+}
+
+function selectLiveJob(jobs: readonly LiveJob[]): Promise<LiveJob | null> {
+  return new Promise(resolve => {
+    const input = process.stdin;
+    const output = process.stdout;
+    const wasRawMode = input.isTTY ? input.isRaw : false;
+    let selectedIndex = 0;
+    let renderedLineCount = 0;
+
+    const cleanup = (selected: LiveJob | null): void => {
+      input.off('keypress', onKeypress);
+      if (input.isTTY && !wasRawMode) {
+        input.setRawMode(false);
+      }
+      output.write('\x1B[?25h');
+      if (renderedLineCount > 0) {
+        readline.moveCursor(output, 0, -renderedLineCount);
+        readline.clearScreenDown(output);
+      }
+      resolve(selected);
+    };
+
+    const render = (): void => {
+      if (renderedLineCount > 0) {
+        readline.moveCursor(output, 0, -renderedLineCount);
+        readline.clearScreenDown(output);
+      }
+      const lines = renderLiveSelector(jobs, selectedIndex);
+      output.write(lines.join('\n'));
+      renderedLineCount = lines.length;
+    };
+
+    const onKeypress = (_: string, key: readline.Key): void => {
+      if (key.ctrl && key.name === 'c') {
+        cleanup(null);
+        return;
+      }
+
+      if (key.name === 'up') {
+        selectedIndex = (selectedIndex - 1 + jobs.length) % jobs.length;
+        render();
+        return;
+      }
+
+      if (key.name === 'down') {
+        selectedIndex = (selectedIndex + 1) % jobs.length;
+        render();
+        return;
+      }
+
+      if (key.name === 'return') {
+        cleanup(jobs[selectedIndex]);
+      }
+    };
+
+    readline.emitKeypressEvents(input);
+    if (input.isTTY && !wasRawMode) {
+      input.setRawMode(true);
+    }
+    output.write('\x1B[?25l');
+    input.on('keypress', onKeypress);
+    render();
+  });
+}
+
+async function runLiveMode(): Promise<void> {
+  const jobs = listLiveJobs();
+
+  if (jobs.length === 0) {
+    console.log('No running tmux sessions found.');
+    return;
+  }
+
+  if (!process.stdout.isTTY || !process.stdin.isTTY) {
+    for (const job of jobs) {
+      console.log(`${job.id}  ${job.tmuxSession}  ${job.status}`);
+    }
+    return;
+  }
+
+  const selected = await selectLiveJob(jobs);
+  if (!selected) return;
+
+  const attach = spawnSync('tmux', ['attach-session', '-t', selected.tmuxSession], {
+    stdio: 'inherit',
+  });
+
+  if (attach.error) {
+    console.error(`Failed to attach tmux session ${selected.tmuxSession}: ${attach.error.message}`);
+    process.exit(1);
   }
 }
 
@@ -55,6 +214,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (token === '--live') {
+      result.live = true;
+      continue;
+    }
+
     // Unknown flags: silently ignored
   }
 
@@ -73,6 +237,11 @@ export async function run(): Promise<void> {
       process.exit(1);
     }
     throw err;
+  }
+
+  if (args.live) {
+    await runLiveMode();
+    return;
   }
 
   const loader = new SpecialistLoader();

@@ -72,3 +72,19 @@ describe('list CLI — parseArgs --json', () => {
     expect(result.json).toBeUndefined();
   });
 });
+
+describe('list CLI — parseArgs --live', () => {
+  it('parses --live flag', () => {
+    expect(parseArgs(['--live'])).toEqual({ live: true });
+  });
+
+  it('parses --live with other flags', () => {
+    expect(parseArgs(['--scope', 'default', '--json', '--live']))
+      .toEqual({ scope: 'default', json: true, live: true });
+  });
+
+  it('live defaults to undefined when not provided', () => {
+    const result = parseArgs([]);
+    expect(result.live).toBeUndefined();
+  });
+});

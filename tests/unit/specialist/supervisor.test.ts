@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as childProcess from 'node:child_process';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
@@ -36,14 +37,22 @@ function makeRunOptions(name = 'test-specialist') {
 describe('Supervisor', () => {
   let tmpDir: string;
   let jobsDir: string;
+  let originalTmuxSessionEnv: string | undefined;
 
   beforeEach(() => {
+    originalTmuxSessionEnv = process.env.SPECIALISTS_TMUX_SESSION;
     tmpDir = mkdtempSync(join(tmpdir(), 'supervisor-test-'));
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
   });
 
   afterEach(() => {
+    if (originalTmuxSessionEnv === undefined) {
+      delete process.env.SPECIALISTS_TMUX_SESSION;
+    } else {
+      process.env.SPECIALISTS_TMUX_SESSION = originalTmuxSessionEnv;
+    }
+    vi.restoreAllMocks();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -814,6 +823,126 @@ describe('Supervisor', () => {
         });
         expect(hasWarning).toBe(false);
       }
+    });
+  });
+
+  describe('tmux session persistence and cleanup', () => {
+    it('initial status.json includes tmux_session when SPECIALISTS_TMUX_SESSION is set', async () => {
+      process.env.SPECIALISTS_TMUX_SESSION = 'specialists-job-123';
+      const capturedStatuses: SupervisorStatus[] = [];
+      const runner = {
+        run: vi.fn().mockImplementation(async () => {
+          const entries = readdirSync(jobsDir).filter(e => e !== 'latest');
+          if (entries.length > 0) {
+            const id = entries[0];
+            try {
+              capturedStatuses.push(JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8')));
+            } catch { /* ignore */ }
+          }
+          return {
+            output: 'done',
+            model: 'haiku',
+            backend: 'anthropic',
+            durationMs: 10,
+            specialistVersion: '1.0.0',
+            promptHash: 'abc123',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      await sup.run();
+
+      expect(capturedStatuses).toHaveLength(1);
+      expect(capturedStatuses[0].tmux_session).toBe('specialists-job-123');
+    });
+
+    it('initial status.json omits tmux_session when SPECIALISTS_TMUX_SESSION is not set', async () => {
+      const capturedStatuses: SupervisorStatus[] = [];
+      const runner = {
+        run: vi.fn().mockImplementation(async () => {
+          const entries = readdirSync(jobsDir).filter(e => e !== 'latest');
+          if (entries.length > 0) {
+            const id = entries[0];
+            try {
+              capturedStatuses.push(JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8')));
+            } catch { /* ignore */ }
+          }
+          return {
+            output: 'done',
+            model: 'haiku',
+            backend: 'anthropic',
+            durationMs: 10,
+            specialistVersion: '1.0.0',
+            promptHash: 'abc123',
+            beadId: undefined,
+          };
+        }),
+      } as any;
+
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      await sup.run();
+
+      expect(capturedStatuses).toHaveLength(1);
+      expect('tmux_session' in capturedStatuses[0]).toBe(false);
+    });
+
+    it('calls tmux kill-session in finally when tmux_session is present (idempotent exit ignored)', async () => {
+      process.env.SPECIALISTS_TMUX_SESSION = 'specialists-job-456';
+      const originalSpawnSync = childProcess.spawnSync;
+      const spawnSyncSpy = vi.spyOn(childProcess, 'spawnSync').mockImplementation(((command: any, args: any, options: any) => {
+        if (command === 'tmux') {
+          return {
+            pid: 0,
+            output: [],
+            stdout: '',
+            stderr: 'no server running',
+            status: 1,
+            signal: null,
+          } as any;
+        }
+        return originalSpawnSync(command, args, options as any);
+      }) as any);
+
+      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      await expect(sup.run()).resolves.toMatch(/^[a-z0-9]{6}$/);
+
+      expect(spawnSyncSpy).toHaveBeenCalledWith(
+        'tmux',
+        ['kill-session', '-t', 'specialists-job-456'],
+        { stdio: 'ignore' },
+      );
+    });
+
+    it('calls tmux kill-session even when runner errors', async () => {
+      process.env.SPECIALISTS_TMUX_SESSION = 'specialists-job-789';
+      const originalSpawnSync = childProcess.spawnSync;
+      const spawnSyncSpy = vi.spyOn(childProcess, 'spawnSync').mockImplementation(((command: any, args: any, options: any) => {
+        if (command === 'tmux') {
+          return {
+            pid: 0,
+            output: [],
+            stdout: '',
+            stderr: 'session not found',
+            status: 1,
+            signal: null,
+          } as any;
+        }
+        return originalSpawnSync(command, args, options as any);
+      }) as any);
+
+      const runner = {
+        run: vi.fn().mockRejectedValue(new Error('backend exploded')),
+      } as any;
+      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+
+      await expect(sup.run()).rejects.toThrow('backend exploded');
+      expect(spawnSyncSpy).toHaveBeenCalledWith(
+        'tmux',
+        ['kill-session', '-t', 'specialists-job-789'],
+        { stdio: 'ignore' },
+      );
     });
   });
 

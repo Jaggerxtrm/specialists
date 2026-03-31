@@ -1,17 +1,64 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
+const hasTmux = spawnSync('which', ['tmux'], { stdio: 'ignore' }).status === 0;
 
-function runCli(args: string[], cwd: string) {
+function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env) {
   return spawnSync('bun', ['run', join(repoRoot, 'src/index.ts'), ...args], {
     cwd,
     encoding: 'utf-8',
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...env, NO_COLOR: '1' },
   });
+}
+
+async function writeSpecialist(tempDir: string, name: string, model = 'invalid/model') {
+  await mkdir(join(tempDir, 'specialists'), { recursive: true });
+  await writeFile(join(tempDir, 'specialists', `${name}.specialist.yaml`), [
+    'specialist:',
+    '  metadata:',
+    `    name: ${name}`,
+    '    version: 1.0.0',
+    '    description: test specialist',
+    '    category: test',
+    '  execution:',
+    `    model: ${model}`,
+    '    timeout_ms: 1000',
+    '    permission_required: READ_ONLY',
+    '  prompt:',
+    '    task_template: "Do $prompt"',
+  ].join('\n'));
+}
+
+async function readStatus(cwd: string, jobId: string): Promise<SupervisorStatus> {
+  const raw = await readFile(join(cwd, '.specialists', 'jobs', jobId, 'status.json'), 'utf-8');
+  return JSON.parse(raw) as SupervisorStatus;
+}
+
+async function waitFor<T>(
+  producer: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  timeoutMs = 20_000,
+  intervalMs = 200,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: T;
+
+  while (Date.now() < deadline) {
+    last = await producer();
+    if (predicate(last)) return last;
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  return producer();
+}
+
+function tmuxHasSession(sessionName: string): boolean {
+  return spawnSync('tmux', ['has-session', '-t', sessionName], { stdio: 'ignore' }).status === 0;
 }
 
 describe('integration: specialists run', () => {
@@ -43,12 +90,13 @@ describe('integration: specialists run', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-'));
     await mkdir(join(tempDir, '.specialists'), { recursive: true });
     await mkdir(join(tempDir, 'specialists'), { recursive: true });
-    await writeFile(join(tempDir, 'specialists', 'code-review.yaml'), [
+    await writeFile(join(tempDir, 'specialists', 'code-review.specialist.yaml'), [
       'specialist:',
       '  metadata:',
       '    name: code-review',
       '    version: 1.0.0',
       '    description: test specialist',
+      '    category: test',
       '  execution:',
       '    model: gemini',
       '    timeout_ms: 1000',
@@ -63,16 +111,79 @@ describe('integration: specialists run', () => {
     expect(result.stderr).toContain("Unable to read bead 'unitAI-missing' via bd show --json");
   });
 
-  it('accepts --background and spawns a detached child', async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-'));
+  (hasTmux ? it : it.skip)('uses tmux for --background, prints job id, and cleans the tmux session after exit', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-tmux-'));
+    await mkdir(join(tempDir, '.specialists', 'jobs'), { recursive: true });
+    await writeSpecialist(tempDir, 'nonexistent');
 
-    // --background with a nonexistent specialist will still spawn, but the child
-    // will fail to find the specialist. The parent exits 0 regardless (detached).
-    const result = runCli(['run', 'nonexistent-specialist', '--prompt', 'hello', '--background'], tempDir);
+    const result = runCli(['run', 'nonexistent', '--prompt', 'hello', '--background', '--no-beads', '--no-bead-notes'], tempDir);
 
-    // Parent should exit 0 (it spawned and detached)
     expect(result.status).toBe(0);
-  });
+    const jobId = result.stdout.trim();
+    expect(jobId).toMatch(/^[a-f0-9]{6}$/);
+
+    const statusWithTmux = await waitFor(
+      () => readStatus(tempDir, jobId),
+      status => typeof status.tmux_session === 'string' && status.tmux_session.length > 0,
+      10_000,
+    );
+
+    expect(statusWithTmux.tmux_session).toMatch(/^sp-nonexistent-/);
+    const tmuxSession = statusWithTmux.tmux_session as string;
+
+    expect(await waitFor(
+      async () => tmuxHasSession(tmuxSession),
+      exists => exists,
+      5_000,
+    )).toBe(true);
+
+    await waitFor(
+      () => readStatus(tempDir, jobId),
+      status => status.status === 'done' || status.status === 'error',
+      30_000,
+    );
+
+    expect(await waitFor(
+      async () => tmuxHasSession(tmuxSession),
+      exists => !exists,
+      10_000,
+    )).toBe(false);
+  }, 45_000);
+
+  it('falls back to detached spawn when tmux is unavailable, prints job id, and does not set tmux session', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-bg-fallback-'));
+    await mkdir(join(tempDir, '.specialists', 'jobs'), { recursive: true });
+    await writeSpecialist(tempDir, 'fallback-no-tmux');
+
+    const bunDir = dirname(process.execPath);
+    const beforeFallbackTmuxSessions = hasTmux
+      ? spawnSync('tmux', ['ls'], { encoding: 'utf-8' }).stdout
+      : '';
+
+    const result = runCli(
+      ['run', 'fallback-no-tmux', '--prompt', 'hello', '--background', '--no-beads', '--no-bead-notes'],
+      tempDir,
+      { ...process.env, PATH: bunDir },
+    );
+
+    expect(result.status).toBe(0);
+    const jobId = result.stdout.trim();
+    expect(jobId).toMatch(/^[a-f0-9]{6}$/);
+
+    const status = await waitFor(
+      () => readStatus(tempDir, jobId),
+      s => s.status === 'starting' || s.status === 'running' || s.status === 'error' || s.status === 'done',
+      5_000,
+    );
+
+    expect(status.tmux_session).toBeUndefined();
+
+    if (hasTmux) {
+      const afterFallbackTmuxSessions = spawnSync('tmux', ['ls'], { encoding: 'utf-8' }).stdout;
+      expect(afterFallbackTmuxSessions).not.toContain('sp-fallback-no-tmux-');
+      expect(beforeFallbackTmuxSessions).not.toContain('sp-fallback-no-tmux-');
+    }
+  }, 20_000);
 });
 
 // ── poll_specialist removal (z0mq.8) ─────────────────────────────────────────

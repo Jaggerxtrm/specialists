@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
+import * as childProcess from 'node:child_process';
+import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
 import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
@@ -207,6 +211,96 @@ describe('run CLI', () => {
 
     expect(plainText).toContain('anthropic/claude-haiku-4-5');
     expect(plainText).not.toContain('anthropic/anthropic/claude-haiku-4-5');
+  });
+
+  it('uses tmux background mode when tmux is available', async () => {
+    process.argv = ['node', '/repo/src/index.ts', 'run', 'code-review', '--prompt', "he'llo", '--background'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    const randomBytesSpy = vi.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from('a1b2c3', 'hex'));
+    const isTmuxAvailableSpy = vi.spyOn(tmuxUtils, 'isTmuxAvailable').mockReturnValue(true);
+    const createTmuxSessionSpy = vi.spyOn(tmuxUtils, 'createTmuxSession').mockImplementation(() => {});
+    const detachedSpawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation(() => ({
+      pid: 123,
+      unref: vi.fn(),
+    } as any));
+
+    let latestReads = 0;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((path: any) => {
+      if (String(path).endsWith('/.specialists/jobs/latest')) {
+        latestReads += 1;
+        return latestReads === 1 ? 'old-job' : 'job-from-tmux';
+      }
+      throw new Error('unexpected path');
+    });
+
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+
+    expect(randomBytesSpy).toHaveBeenCalledWith(3);
+    expect(isTmuxAvailableSpy).toHaveBeenCalled();
+    expect(createTmuxSessionSpy).toHaveBeenCalledWith(
+      'sp-code-review-a1b2c3',
+      process.cwd(),
+      `${process.execPath} /repo/src/index.ts 'run' 'code-review' '--prompt' 'he'\\''llo'`,
+    );
+    expect(detachedSpawnSpy).not.toHaveBeenCalled();
+    expect(stdoutWrite).toHaveBeenCalledWith('job-from-tmux\n');
+    expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringContaining('tmux'));
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('falls back to detached spawn when tmux is not available', async () => {
+    process.argv = ['node', '/repo/src/index.ts', 'run', 'code-review', '--prompt', 'hello', '--background'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(tmuxUtils, 'isTmuxAvailable').mockReturnValue(false);
+    const createTmuxSessionSpy = vi.spyOn(tmuxUtils, 'createTmuxSession').mockImplementation(() => {});
+    const unref = vi.fn();
+    const detachedSpawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation(() => ({
+      pid: 456,
+      unref,
+    } as any));
+
+    let latestReads = 0;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((path: any) => {
+      if (String(path).endsWith('/.specialists/jobs/latest')) {
+        latestReads += 1;
+        return latestReads === 1 ? 'old-job' : 'job-from-fallback';
+      }
+      throw new Error('unexpected path');
+    });
+
+    const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+
+    expect(createTmuxSessionSpy).not.toHaveBeenCalled();
+    expect(detachedSpawnSpy).toHaveBeenCalledTimes(1);
+    const [command, spawnArgs, options] = detachedSpawnSpy.mock.calls[0] as [string, string[], any];
+    expect(command).toBe(process.execPath);
+    expect(spawnArgs).toEqual([
+      '/repo/src/index.ts',
+      'run',
+      'code-review',
+      '--prompt',
+      'hello',
+    ]);
+    expect(options.detached).toBe(true);
+    expect(options.stdio).toBe('ignore');
+    expect(options.cwd).toBe(process.cwd());
+    expect(options.env).toBe(process.env);
+    expect(unref).toHaveBeenCalled();
+    expect(stdoutWrite).toHaveBeenCalledWith('job-from-fallback\n');
+    expect(exit).toHaveBeenCalledWith(0);
   });
 
   it('exits when both --prompt and --bead are provided', async () => {
