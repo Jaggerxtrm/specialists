@@ -158,8 +158,6 @@ The specialist runs with full bead context, on a model tuned for the task, while
 
 ## MCP Tools (Claude Code)
 
-Available after `specialists init` and session restart.
-
 | Tool | Purpose |
 |------|---------|
 | `use_specialist` | Foreground run; pass `bead_id` for tracked work and get final output directly in conversation context |
@@ -169,16 +167,10 @@ resume, and cancellation.
 
 ---
 
-## Setup and Troubleshooting
-
-```bash
-specialists init                 # safe for agents: wires MCP, hooks, AGENTS.md, skills
-specialists init --sync-defaults # human-only: also writes canonical .specialists/default/ YAML
-specialists doctor               # health check: hooks, MCP, zombie jobs
-```
+## Troubleshooting
 
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel
-- **MCP tools missing** → `specialists init` then restart Claude Code *(safe for agents)*
-- **Canonical specialists missing** → `specialists init --sync-defaults` *(human-only)*
+- **MCP tools missing** → ask the user to run `specialists init` and restart Claude Code
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
+- **Stall timeout** → specialist hit 120s inactivity; retry or switch specialist
