@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-04-01
+
 ### Added
 
 - **Retry logic in SpecialistRunner** — exponential backoff with jitter, transient error detection via `isTransientError()`, new `execution.max_retries` schema field (default: 0); retries only on 5xx/timeout/network errors, never on auth errors (unitAI-xtn)
