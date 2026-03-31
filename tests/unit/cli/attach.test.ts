@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
@@ -8,8 +9,9 @@ vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(),
 }));
 
-const specialistsDir = join(process.cwd(), '.specialists');
-const jobsDir = join(specialistsDir, 'jobs');
+let tempRoot: string;
+let specialistsDir: string;
+let jobsDir: string;
 
 function writeStatus(jobId: string, status: Record<string, unknown>): void {
   const jobDir = join(jobsDir, jobId);
@@ -21,15 +23,18 @@ describe('attach CLI', () => {
   const originalArgv = process.argv;
 
   beforeEach(() => {
-    if (existsSync(specialistsDir)) rmSync(specialistsDir, { recursive: true, force: true });
+    tempRoot = mkdtempSync(join(tmpdir(), 'sp-attach-test-'));
+    specialistsDir = join(tempRoot, '.specialists');
+    jobsDir = join(specialistsDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
+    vi.spyOn(process, 'cwd').mockReturnValue(tempRoot);
     (spawnSync as unknown as { mockReset: () => void }).mockReset();
     (execFileSync as unknown as { mockReset: () => void }).mockReset();
   });
 
   afterEach(() => {
     process.argv = originalArgv;
-    if (existsSync(specialistsDir)) rmSync(specialistsDir, { recursive: true, force: true });
+    if (existsSync(tempRoot)) rmSync(tempRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 
