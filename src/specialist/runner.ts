@@ -304,11 +304,15 @@ export class SpecialistRunner {
     // skill_inherit and skills.paths are injected via pi --skill (native).
     let agentsMd = prompt.system ?? '';
 
-    // When running with --bead, inject instructions to prevent the specialist from
-    // creating unnecessary sub-beads. The project's CLAUDE.md contains edit-gate rules
-    // that tell agents to `bd create` before editing — override that for specialist runs.
-    if (options.inputBeadId) {
-      agentsMd += `\n\n---\n## Specialist Run Context\nYou are running as a specialist with bead ${options.inputBeadId} as your task.\n- Claim this bead directly: \`bd update ${options.inputBeadId} --claim\`\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close the bead when done: \`bd close ${options.inputBeadId} --reason="..."\`\n---\n`;
+    // Always inject a Specialist Run Context block to override project-level CLAUDE.md/AGENTS.md
+    // instructions that are meant for human developers, not specialist agents. Key overrides:
+    // - CLAUDE.md often says "run specialists init" — specialists must NEVER do this
+    // - CLAUDE.md edit-gate rules say "bd create before editing" — not applicable inside a specialist
+    {
+      const beadInstructions = options.inputBeadId
+        ? `\n- Your task bead is: ${options.inputBeadId}\n- Claim it: \`bd update ${options.inputBeadId} --claim\`\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${options.inputBeadId} --reason="..."\``
+        : '';
+      agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.${beadInstructions}\n---\n`;
     }
     const skillPaths: string[] = [];
     if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);

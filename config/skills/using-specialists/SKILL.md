@@ -5,10 +5,9 @@ description: >
   ask whether to delegate. Consult before any: code review, security audit, deep bug
   investigation, test generation, multi-file refactor, or architecture analysis. Also
   use for the mechanics of delegation: --bead workflow, --context-depth, background
-  jobs, MCP tool (`use_specialist`), specialists init,
-  or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
+  jobs, and MCP tool (`use_specialist`). Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
-version: 3.6
+version: 3.7
 ---
 
 # Specialists Usage
@@ -51,7 +50,6 @@ links results back to the tracker, and creates an audit trail.
 ### CLI commands
 
 ```bash
-specialists init                              # first-time project setup
 specialists list                              # discover available specialists
 specialists run <name> --bead <id>            # foreground run (streams output)
 specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
@@ -64,7 +62,6 @@ specialists stop <job-id>                     # cancel a job
 specialists edit <name>                       # edit a specialist's YAML config
 specialists status --job <job-id>             # single-job detail view
 specialists clean                             # purge old job directories
-specialists doctor                            # health check
 ```
 
 ### Typical flow
@@ -265,7 +262,6 @@ git diff --stat       # review what changed
 If a specialist stalls or errors, surface it. Don't quietly do the work yourself.
 ```bash
 specialists feed <job-id>          # see what happened
-specialists doctor                 # check for systemic issues
 ```
 
 Options when a specialist fails:
@@ -287,8 +283,6 @@ python3 .agents/skills/sync-docs/scripts/drift_detector.py update-sync <file>
 ---
 
 ## MCP Tools (Claude Code)
-
-Available after `specialists init` and session restart.
 
 | Tool | Purpose |
 |------|---------|
@@ -313,17 +307,10 @@ If you encounter legacy `start_specialist`, treat it as deprecated and migrate t
 
 ---
 
-## Setup and Troubleshooting
-
-```bash
-specialists init        # first-time setup: creates .specialists/, wires AGENTS.md/CLAUDE.md
-specialists doctor      # health check: hooks, MCP, zombie jobs
-specialists edit <name> # edit a specialist's YAML config
-```
+## Troubleshooting
 
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
-- **MCP tools missing** → `specialists init` then restart Claude Code
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
 - **Stall timeout** → specialist hit 120s inactivity. Check `specialists feed <id>`, then retry or switch specialist.
 - **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.

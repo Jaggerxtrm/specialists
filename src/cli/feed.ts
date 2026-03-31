@@ -9,6 +9,7 @@
  *   --job <id>         Filter to a specific job
  *   --specialist <name> Filter by specialist name
  *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
+ *   --from <n>         Show only events with seq >= n
  *   --limit <n>        Max events to show (default: 100)
  *   --follow, -f       Live follow mode (append new events at bottom)
  *   --forever          Stay open even when all jobs complete
@@ -40,6 +41,7 @@ interface FeedOptions {
   jobId?: string;
   specialist?: string;
   since?: number;
+  from: number;
   limit: number;
   follow: boolean;
   forever: boolean;
@@ -170,6 +172,7 @@ function parseArgs(argv: string[]): FeedOptions {
   let jobId: string | undefined;
   let specialist: string | undefined;
   let since: number | undefined;
+  let from = 0;
   let limit = 100;
   let follow = false;
   let forever = false;
@@ -179,6 +182,11 @@ function parseArgs(argv: string[]): FeedOptions {
     if (argv[i] === '--job' && argv[i + 1]) { jobId = argv[++i]; continue; }
     if (argv[i] === '--specialist' && argv[i + 1]) { specialist = argv[++i]; continue; }
     if (argv[i] === '--since' && argv[i + 1]) { since = parseSince(argv[++i]); continue; }
+    if (argv[i] === '--from' && argv[i + 1]) {
+      const parsedFrom = parseInt(argv[++i], 10);
+      from = Number.isFinite(parsedFrom) && parsedFrom >= 0 ? parsedFrom : 0;
+      continue;
+    }
     if (argv[i] === '--limit' && argv[i + 1]) { limit = parseInt(argv[++i], 10); continue; }
     if (argv[i] === '--follow' || argv[i] === '-f') { follow = true; continue; }
     if (argv[i] === '--forever') { forever = true; continue; }
@@ -186,7 +194,7 @@ function parseArgs(argv: string[]): FeedOptions {
     if (!jobId && !argv[i].startsWith('--')) jobId = argv[i];
   }
 
-  return { jobId, specialist, since, limit, follow, forever, json };
+  return { jobId, specialist, since, from, limit, follow, forever, json };
 }
 
 // ============================================================================
@@ -250,6 +258,22 @@ function isCompletionEvent(event: TimelineEvent): boolean {
   return isRunCompleteEvent(event);
 }
 
+function isEventAtOrAfterCursor(event: TimelineEvent, from: number): boolean {
+  if (from <= 0) return true;
+
+  const seq = (event as { seq?: unknown }).seq;
+  if (typeof seq !== 'number') return true;
+  return seq >= from;
+}
+
+function filterMergedEventsByCursor(
+  merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
+  from: number
+): Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }> {
+  if (from <= 0) return merged;
+  return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
+}
+
 async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
   const colorMap = new JobColorMap();
   const getJobMeta = makeJobMetaReader(jobsDir);
@@ -263,12 +287,12 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
     .filter((batch) => !options.specialist || batch.specialist === options.specialist);
 
   // Initial snapshot
-  const initial = queryTimeline(jobsDir, {
+  const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit,
-  });
+  }), options.from);
 
   printSnapshot(initial, { ...options, json: options.json }, jobsDir);
 
@@ -309,7 +333,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
       for (const batch of batches) {
         const lastT = lastSeenT.get(batch.jobId) ?? 0;
         for (const event of batch.events) {
-          if (event.t > lastT) {
+          if (event.t > lastT && isEventAtOrAfterCursor(event, options.from)) {
             newEvents.push({
               jobId: batch.jobId,
               specialist: batch.specialist,
@@ -384,11 +408,13 @@ Modes:
   specialists feed -f              Follow all jobs globally
 
 Options:
+  --from <n>     Show only events with seq >= <n>
   -f, --follow   Follow live updates
   --forever      Keep following in global mode even when all jobs complete
 
 Examples:
   specialists feed 49adda
+  specialists feed 49adda --from 15
   specialists feed 49adda --follow
   specialists feed -f
   specialists feed -f --forever
@@ -405,18 +431,22 @@ export async function run(): Promise<void> {
     return;
   }
 
+  if (options.from > 0 && !options.json) {
+    console.log(dim(`Showing events from seq ${options.from}`));
+  }
+
   if (options.follow) {
     await followMerged(jobsDir, options);
     return;
   }
 
   // Snapshot mode
-  const merged = queryTimeline(jobsDir, {
+  const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit,
-  });
+  }), options.from);
 
   printSnapshot(merged, options, jobsDir);
 }

@@ -18531,16 +18531,21 @@ class SpecialistRunner {
       system_prompt_present: !!prompt.system
     });
     let agentsMd = prompt.system ?? "";
-    if (options.inputBeadId) {
+    {
+      const beadInstructions = options.inputBeadId ? `
+- Your task bead is: ${options.inputBeadId}
+- Claim it: \`bd update ${options.inputBeadId} --claim\`
+- Do NOT create new beads or sub-issues — this bead IS your task.
+- Do NOT run \`bd create\` — the orchestrator manages issue tracking.
+- Close when done: \`bd close ${options.inputBeadId} --reason="..."\`` : "";
       agentsMd += `
 
 ---
-## Specialist Run Context
-You are running as a specialist with bead ${options.inputBeadId} as your task.
-- Claim this bead directly: \`bd update ${options.inputBeadId} --claim\`
-- Do NOT create new beads or sub-issues — this bead IS your task.
-- Do NOT run \`bd create\` — the orchestrator manages issue tracking.
-- Close the bead when done: \`bd close ${options.inputBeadId} --reason="..."\`
+## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)
+You are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:
+- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.
+- Do NOT run \`specialists setup\` or \`specialists install\`.
+- The edit-gate (bd create before editing) does NOT apply inside a specialist run.${beadInstructions}
 ---
 `;
     }
@@ -19521,7 +19526,7 @@ var init_init = __esm(() => {
   AGENTS_BLOCK = `
 ## Specialists
 
-Call \`specialists init\` once per project, then use CLI commands via Bash.
+Use CLI commands via Bash to run and monitor specialists:
 
 Core specialist commands (CLI-first in pi):
 - \`specialists list\`
@@ -20799,6 +20804,9 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
+function killTmuxSession(name) {
+  spawnSync7("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+}
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
 
@@ -21730,6 +21738,7 @@ function parseArgs8(argv) {
   let jobId;
   let specialist;
   let since;
+  let from = 0;
   let limit = 100;
   let follow = false;
   let forever = false;
@@ -21745,6 +21754,11 @@ function parseArgs8(argv) {
     }
     if (argv[i] === "--since" && argv[i + 1]) {
       since = parseSince(argv[++i]);
+      continue;
+    }
+    if (argv[i] === "--from" && argv[i + 1]) {
+      const parsedFrom = parseInt(argv[++i], 10);
+      from = Number.isFinite(parsedFrom) && parsedFrom >= 0 ? parsedFrom : 0;
       continue;
     }
     if (argv[i] === "--limit" && argv[i + 1]) {
@@ -21766,7 +21780,7 @@ function parseArgs8(argv) {
     if (!jobId && !argv[i].startsWith("--"))
       jobId = argv[i];
   }
-  return { jobId, specialist, since, limit, follow, forever, json };
+  return { jobId, specialist, since, from, limit, follow, forever, json };
 }
 function printSnapshot(merged, options, jobsDir) {
   if (merged.length === 0) {
@@ -21811,18 +21825,31 @@ function printSnapshot(merged, options, jobsDir) {
 function isCompletionEvent(event) {
   return isRunCompleteEvent(event);
 }
+function isEventAtOrAfterCursor(event, from) {
+  if (from <= 0)
+    return true;
+  const seq = event.seq;
+  if (typeof seq !== "number")
+    return true;
+  return seq >= from;
+}
+function filterMergedEventsByCursor(merged, from) {
+  if (from <= 0)
+    return merged;
+  return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
+}
 async function followMerged(jobsDir, options) {
   const colorMap = new JobColorMap;
   const getJobMeta = makeJobMetaReader(jobsDir);
   const lastSeenT = new Map;
   const completedJobs = new Set;
   const filteredBatches = () => readAllJobEvents(jobsDir).filter((batch) => !options.jobId || batch.jobId === options.jobId).filter((batch) => !options.specialist || batch.specialist === options.specialist);
-  const initial = queryTimeline(jobsDir, {
+  const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit
-  });
+  }), options.from);
   printSnapshot(initial, { ...options, json: options.json }, jobsDir);
   for (const batch of filteredBatches()) {
     if (batch.events.length > 0) {
@@ -21854,7 +21881,7 @@ async function followMerged(jobsDir, options) {
       for (const batch of batches) {
         const lastT = lastSeenT.get(batch.jobId) ?? 0;
         for (const event of batch.events) {
-          if (event.t > lastT) {
+          if (event.t > lastT && isEventAtOrAfterCursor(event, options.from)) {
             newEvents.push({
               jobId: batch.jobId,
               specialist: batch.specialist,
@@ -21911,16 +21938,19 @@ async function run12() {
     console.log(dim7("No jobs directory found."));
     return;
   }
+  if (options.from > 0 && !options.json) {
+    console.log(dim7(`Showing events from seq ${options.from}`));
+  }
   if (options.follow) {
     await followMerged(jobsDir, options);
     return;
   }
-  const merged = queryTimeline(jobsDir, {
+  const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit
-  });
+  }), options.from);
   printSnapshot(merged, options, jobsDir);
 }
 var init_feed = __esm(() => {
@@ -22377,14 +22407,25 @@ async function run18() {
 `);
     process.exit(1);
   }
+  const tmuxSession = status.tmux_session;
   try {
     process.kill(status.pid, "SIGTERM");
     process.stdout.write(`${green11("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
+    if (tmuxSession) {
+      killTmuxSession(tmuxSession);
+      process.stdout.write(`${dim10(`  tmux session ${tmuxSession} killed`)}
+`);
+    }
   } catch (err) {
     if (err.code === "ESRCH") {
       process.stderr.write(`${red6(`Process ${status.pid} not found.`)} Job may have already completed.
 `);
+      if (tmuxSession) {
+        killTmuxSession(tmuxSession);
+        process.stdout.write(`${dim10(`  tmux session ${tmuxSession} killed`)}
+`);
+      }
     } else {
       process.stderr.write(`${red6("Error:")} ${err.message}
 `);
@@ -22395,6 +22436,7 @@ async function run18() {
 var green11 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
+  init_tmux_utils();
 });
 
 // src/cli/attach.ts
@@ -30817,11 +30859,13 @@ async function run24() {
         "  specialists feed -f              Follow all jobs globally",
         "",
         "Options:",
+        "  --from <n>     Show only events with seq >= <n>",
         "  -f, --follow   Follow live updates",
         "  --forever      Keep following in global mode even when all jobs complete",
         "",
         "Examples:",
         "  specialists feed 49adda",
+        "  specialists feed 49adda --from 15",
         "  specialists feed 49adda --follow",
         "  specialists feed -f",
         "  specialists feed -f --forever",

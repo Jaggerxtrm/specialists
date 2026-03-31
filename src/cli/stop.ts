@@ -3,6 +3,7 @@
 
 import { join } from 'node:path';
 import { Supervisor } from '../specialist/supervisor.js';
+import { killTmuxSession } from './tmux-utils.js';
 
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const red   = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -34,12 +35,24 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
+  const tmuxSession = status.tmux_session;
+
   try {
     process.kill(status.pid, 'SIGTERM');
     process.stdout.write(`${green('✓')} Sent SIGTERM to PID ${status.pid} (job ${jobId})\n`);
+
+    if (tmuxSession) {
+      killTmuxSession(tmuxSession);
+      process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
+    }
   } catch (err: any) {
     if (err.code === 'ESRCH') {
       process.stderr.write(`${red(`Process ${status.pid} not found.`)} Job may have already completed.\n`);
+
+      if (tmuxSession) {
+        killTmuxSession(tmuxSession);
+        process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
+      }
     } else {
       process.stderr.write(`${red('Error:')} ${err.message}\n`);
       process.exit(1);

@@ -16,7 +16,7 @@ function skip(msg: string) { console.log(`  ${yellow('○')} ${msg}`); }
 const AGENTS_BLOCK = `
 ## Specialists
 
-Call \`specialists init\` once per project, then use CLI commands via Bash.
+Use CLI commands via Bash to run and monitor specialists:
 
 Core specialist commands (CLI-first in pi):
 - \`specialists list\`
