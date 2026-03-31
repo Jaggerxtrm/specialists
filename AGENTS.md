@@ -2,31 +2,6 @@
 # XTRM Agent Workflow
 
 > Full reference: [XTRM-GUIDE.md](XTRM-GUIDE.md)
-> Run `bd prime` at session start (or after context reset) for live beads workflow context.
-
-## Session Start
-
-1. `bd prime` — load workflow context and active claims
-2. `bd memories <keyword>` — retrieve memories relevant to today's task
-3. `bd recall <key>` — retrieve a specific memory by key if needed
-4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
-5. `bd update <id> --claim` — claim before any file edit
-
-## Execution Interaction Policy
-
-- Proceed by default on standard implementation tasks once scope is clear.
-- Do **not** ask repetitive “Proceed? Yes/No” confirmations.
-- Ask for confirmation only when actions are destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
-- Prefer concise clarifying questions only when requirements are genuinely ambiguous.
-
-## Active Gates (extensions enforce these — not optional)
-
-| Gate | Trigger | Required action |
-|------|---------|-----------------|
-| **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
-| **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
-| **Stop** | Session end with unclosed claim | `bd close <id>` |
-| **Memory** | Auto-fires at session end if issue closed | `bd remember "<insight>"` then run the `bd kv set` command shown in the gate message |
 
 ## bd Command Reference
 
@@ -74,25 +49,12 @@ bd preflight --check                   # Pre-PR readiness (lint, tests, beads)
 bd doctor                              # Diagnose installation issues
 ```
 
-## Git Workflow (strict: one branch per issue)
-
-```bash
-git checkout -b feature/<issue-id>-<slug>   # or fix/... chore/...
-bd update <id> --claim                       # claim before any edit
 # ... write code ...
 bd close <id> --reason="..."                 # closes issue
 xt end                                       # push, PR, merge, worktree cleanup
 ```
 
 **Never** continue new work on a previously used branch.
-
-## Quality Gates (automatic)
-
-Run on every file edit via PostToolUse extension:
-- **TypeScript/JS**: ESLint + tsc
-- **Python**: ruff + mypy
-
-Gate output appears as extension context. Fix failures before proceeding — do not commit with lint errors.
 
 ## bv — Graph-Aware Triage
 
@@ -141,10 +103,6 @@ bv --robot-plan | jq '.plan.summary.highest_impact'
 bv --robot-insights | jq '.Cycles'               # Circular deps — must fix
 ```
 
-## Worktree Sessions
-
-- `xt pi` — launch Pi in a sandboxed worktree
-- `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
 <!-- gitnexus:start -->
@@ -254,13 +212,6 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 
 **IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
 
-### Why bd?
-
-- Dependency-aware: Track blockers and relationships between issues
-- Git-friendly: Dolt-powered version control with native sync
-- Agent-optimized: JSON output, ready work detection, discovered-from links
-- Prevents duplicate tracking systems and confusion
-
 ### Quick Start
 
 **Check for ready work:**
@@ -305,66 +256,7 @@ bd close bd-42 --reason "Completed" --json
 - `3` - Low (polish, optimization)
 - `4` - Backlog (future ideas)
 
-### Workflow for AI Agents
-
-1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task atomically**: `bd update <id> --claim`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
-   - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
-
-### Auto-Sync
-
-bd automatically syncs via Dolt:
-
-- Each write auto-commits to Dolt history
-- Use `bd dolt push`/`bd dolt pull` for remote sync
-- No manual export/import needed!
-
-### Important Rules
-
-- ✅ Use bd for ALL task tracking
-- ✅ Always use `--json` flag for programmatic use
-- ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
-- ❌ Do NOT create markdown TODO lists
-- ❌ Do NOT use external issue trackers
-- ❌ Do NOT duplicate tracking systems
-
-For more details, see README.md and docs/QUICKSTART.md.
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
-<!-- END BEADS INTEGRATION -->
-
 ## Specialists
-
-Call `specialists init` once per project, then use CLI commands via Bash.
 
 MCP is intentionally minimal: only `use_specialist` is exposed. Use CLI for orchestration (`run/feed/result/steer/resume/stop`).
 Legacy `start_specialist` is deprecated and should be migrated to `specialists run <name> --prompt "..." --background` ahead of next-major removal.
