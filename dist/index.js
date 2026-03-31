@@ -19433,6 +19433,10 @@ function ensureAgentsMd(cwd) {
 }
 async function run5(opts = {}) {
   const cwd = process.cwd();
+  if (!process.stdin.isTTY) {
+    console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.");
+    process.exit(1);
+  }
   console.log(`
 ${bold4("specialists init")}
 `);

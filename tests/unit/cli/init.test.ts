@@ -11,6 +11,7 @@ async function importInitModule() {
 }
 
 async function runInit(cwd: string, opts: InitOptions = {}) {
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
   vi.spyOn(process, 'cwd').mockReturnValue(cwd);
   const { run } = await importInitModule();
   await run(opts);
