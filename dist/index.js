@@ -19434,7 +19434,8 @@ function ensureAgentsMd(cwd) {
 }
 async function run5(opts = {}) {
   const cwd = process.cwd();
-  const inAgentSession = !process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET;
+  const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
+  const inAgentSession = !forceInit && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
   if (inAgentSession) {
     console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.");
     process.exit(1);
@@ -21929,6 +21930,11 @@ async function followMerged(jobsDir, options) {
       for (const jobId of listMatchingJobIds(jobsDir, options)) {
         if (!isTerminalJobStatus(jobsDir, jobId)) {
           trackedJobs.add(jobId);
+        }
+      }
+      for (const jobId of trackedJobs) {
+        if (isTerminalJobStatus(jobsDir, jobId)) {
+          completedJobs.add(jobId);
         }
       }
       const newEvents = [];
