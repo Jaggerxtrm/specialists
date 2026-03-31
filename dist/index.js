@@ -19434,7 +19434,8 @@ function ensureAgentsMd(cwd) {
 }
 async function run5(opts = {}) {
   const cwd = process.cwd();
-  if (!process.stdin.isTTY) {
+  const inAgentSession = !process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET;
+  if (inAgentSession) {
     console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.");
     process.exit(1);
   }
@@ -20530,40 +20531,62 @@ class Supervisor {
         toolStartMs = undefined;
         toolDurationWarnEmitted = false;
       });
-      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      latestOutput = result.output;
       mkdirSync2(this.jobDir(id), { recursive: true });
-      writeFileSync3(this.resultPath(id), result.output, "utf-8");
-      const inputBeadId = runOptions.inputBeadId;
-      const ownsBead = Boolean(result.beadId && !inputBeadId);
-      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
-      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && result.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
-      if (ownsBead && result.beadId) {
-        this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
-      } else if (shouldWriteExternalBeadNotes) {
-        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
-          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(result));
-        } else if (result.beadId) {
-          this.opts.beadsClient?.updateBeadNotes(result.beadId, formatBeadNotes(result));
+      writeFileSync3(this.resultPath(id), latestOutput, "utf-8");
+      if (keepAliveSession) {
+        setStatus({
+          status: "waiting",
+          current_event: "waiting",
+          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
+          last_event_at_ms: Date.now(),
+          model: result.model,
+          backend: result.backend,
+          bead_id: result.beadId
+        });
+        const keepAliveExit = await keepAliveExitPromise;
+        if (keepAliveExit.kind === "fatal") {
+          throw keepAliveExit.error;
         }
       }
-      if (result.beadId) {
+      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const durationMs = Date.now() - startedAtMs;
+      const finalResult = {
+        ...result,
+        output: latestOutput,
+        durationMs
+      };
+      const inputBeadId = runOptions.inputBeadId;
+      const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
+      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && finalResult.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
+      if (ownsBead && finalResult.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+      } else if (shouldWriteExternalBeadNotes) {
+        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
+          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
+        } else if (finalResult.beadId) {
+          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+        }
+      }
+      if (finalResult.beadId) {
         if (!inputBeadId) {
-          this.opts.beadsClient?.closeBead(result.beadId, "COMPLETE", result.durationMs, result.model);
+          this.opts.beadsClient?.closeBead(finalResult.beadId, "COMPLETE", finalResult.durationMs, finalResult.model);
         }
       }
       setStatus({
         status: "done",
         elapsed_s: elapsed,
         last_event_at_ms: Date.now(),
-        model: result.model,
-        backend: result.backend,
-        bead_id: result.beadId
+        model: finalResult.model,
+        backend: finalResult.backend,
+        bead_id: finalResult.beadId
       });
       appendTimelineEvent(createRunCompleteEvent("COMPLETE", elapsed, {
-        model: result.model,
-        backend: result.backend,
-        bead_id: result.beadId,
-        output: result.output
+        model: finalResult.model,
+        backend: finalResult.backend,
+        bead_id: finalResult.beadId,
+        output: finalResult.output
       }));
       this.writeReadyMarker(id);
       return id;

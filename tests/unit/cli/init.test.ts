@@ -12,6 +12,10 @@ async function importInitModule() {
 
 async function runInit(cwd: string, opts: InitOptions = {}) {
   Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  delete process.env.SPECIALISTS_TMUX_SESSION;
+  delete process.env.SPECIALISTS_JOB_ID;
+  delete process.env.PI_SESSION_ID;
+  delete process.env.PI_RPC_SOCKET;
   vi.spyOn(process, 'cwd').mockReturnValue(cwd);
   const { run } = await importInitModule();
   await run(opts);

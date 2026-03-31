@@ -422,7 +422,14 @@ export interface InitOptions {
 export async function run(opts: InitOptions = {}): Promise<void> {
   const cwd = process.cwd();
 
-  if (!process.stdin.isTTY) {
+  const inAgentSession =
+    !process.stdin.isTTY ||
+    !!process.env.SPECIALISTS_TMUX_SESSION ||
+    !!process.env.SPECIALISTS_JOB_ID ||
+    !!process.env.PI_SESSION_ID ||
+    !!process.env.PI_RPC_SOCKET;
+
+  if (inAgentSession) {
     console.error('specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.');
     process.exit(1);
   }
