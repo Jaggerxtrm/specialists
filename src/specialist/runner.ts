@@ -312,7 +312,8 @@ export class SpecialistRunner {
       const beadInstructions = options.inputBeadId
         ? `\n- Your task bead is: ${options.inputBeadId}\n- Claim it: \`bd update ${options.inputBeadId} --claim\`\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${options.inputBeadId} --reason="..."\``
         : '';
-      agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.${beadInstructions}\n---\n`;
+      agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
+- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.${beadInstructions}\n---\n`;
     }
     const skillPaths: string[] = [];
     if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);

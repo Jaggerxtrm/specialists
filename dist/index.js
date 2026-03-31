@@ -18545,7 +18545,8 @@ class SpecialistRunner {
 You are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:
 - Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.
 - Do NOT run \`specialists setup\` or \`specialists install\`.
-- The edit-gate (bd create before editing) does NOT apply inside a specialist run.${beadInstructions}
+- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
+- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.${beadInstructions}
 ---
 `;
     }
@@ -20334,6 +20335,58 @@ class Supervisor {
     let closeFn;
     let fifoReadStream;
     let fifoReadline;
+    let keepAliveSession = false;
+    let latestOutput = "";
+    let keepAliveExitResolved = false;
+    let resolveKeepAliveExit;
+    const keepAliveExitPromise = new Promise((resolve2) => {
+      resolveKeepAliveExit = resolve2;
+    });
+    const finishKeepAlive = (exit) => {
+      if (keepAliveExitResolved)
+        return;
+      keepAliveExitResolved = true;
+      resolveKeepAliveExit?.(exit);
+    };
+    const handleResumeTurn = async (task) => {
+      if (!resumeFn)
+        return;
+      const now = Date.now();
+      setStatus({ status: "running", current_event: "starting", last_event_at_ms: now });
+      lastActivityMs = now;
+      silenceWarnEmitted = false;
+      try {
+        const output = await resumeFn(task);
+        latestOutput = output;
+        mkdirSync2(this.jobDir(id), { recursive: true });
+        writeFileSync3(this.resultPath(id), output, "utf-8");
+        const waitingAt = Date.now();
+        setStatus({
+          status: "waiting",
+          current_event: "waiting",
+          elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
+          last_event_at_ms: waitingAt
+        });
+      } catch (err) {
+        const error2 = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: "error", error: error2.message });
+        finishKeepAlive({ kind: "fatal", error: error2 });
+      }
+    };
+    const closeKeepAliveSession = async () => {
+      if (!closeFn) {
+        finishKeepAlive({ kind: "closed" });
+        return;
+      }
+      try {
+        await closeFn();
+        finishKeepAlive({ kind: "closed" });
+      } catch (err) {
+        const error2 = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: "error", error: error2.message });
+        finishKeepAlive({ kind: "fatal", error: error2 });
+      }
+    };
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection
@@ -20379,7 +20432,13 @@ class Supervisor {
         }
       }
     }, 1e4);
-    const sigtermHandler = () => killFn?.();
+    const sigtermHandler = () => {
+      if (keepAliveSession) {
+        closeKeepAliveSession();
+        return;
+      }
+      killFn?.();
+    };
     process.once("SIGTERM", sigtermHandler);
     try {
       const result = await runner.run(runOptions, (delta) => {
@@ -20431,48 +20490,21 @@ class Supervisor {
             if (parsed?.type === "steer" && typeof parsed.message === "string") {
               steerFn?.(parsed.message).catch(() => {});
             } else if (parsed?.type === "resume" && typeof parsed.task === "string") {
-              if (resumeFn) {
-                setStatus({ status: "running", current_event: "starting" });
-                resumeFn(parsed.task).then((output) => {
-                  mkdirSync2(this.jobDir(id), { recursive: true });
-                  writeFileSync3(this.resultPath(id), output, "utf-8");
-                  setStatus({
-                    status: "waiting",
-                    current_event: "waiting",
-                    elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-                    last_event_at_ms: Date.now()
-                  });
-                }).catch((err) => {
-                  setStatus({ status: "error", error: err?.message ?? String(err) });
-                });
-              }
+              handleResumeTurn(parsed.task);
             } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
               console.error('[specialists] DEPRECATED: FIFO message {type:"prompt"} is deprecated. Use {type:"resume", task:"..."} instead.');
-              if (resumeFn) {
-                setStatus({ status: "running", current_event: "starting" });
-                resumeFn(parsed.message).then((output) => {
-                  mkdirSync2(this.jobDir(id), { recursive: true });
-                  writeFileSync3(this.resultPath(id), output, "utf-8");
-                  setStatus({
-                    status: "waiting",
-                    current_event: "waiting",
-                    elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-                    last_event_at_ms: Date.now()
-                  });
-                }).catch((err) => {
-                  setStatus({ status: "error", error: err?.message ?? String(err) });
-                });
-              }
+              handleResumeTurn(parsed.message);
             } else if (parsed?.type === "close") {
-              closeFn?.().catch(() => {});
+              closeKeepAliveSession();
             }
           } catch {}
         });
         fifoReadline.on("error", () => {});
       }, (rFn, cFn) => {
+        keepAliveSession = true;
         resumeFn = rFn;
         closeFn = cFn;
-        setStatus({ status: "waiting", current_event: "waiting" });
+        setStatus({ status: "waiting", current_event: "waiting", last_event_at_ms: Date.now() });
       }, (tool, args, toolCallId) => {
         currentTool = tool;
         currentToolArgs = args;
