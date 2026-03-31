@@ -1,7 +1,7 @@
 specialist:
   metadata:
     name: planner
-    version: 1.0.0
+    version: 1.1.0
     description: "Structured planning specialist for xtrm projects. Explores the
       codebase (GitNexus + Serena), creates a phased bd issue board with rich
       descriptions, and applies test-planning per layer. Outputs a ready-to-implement
@@ -10,7 +10,7 @@ specialist:
       task to claim."
     category: workflow
     tags: [planning, bd, issues, epic, gitnexus, test-planning]
-    updated: "2026-03-22"
+    updated: "2026-03-31"
 
   execution:
     mode: tool
@@ -20,25 +20,19 @@ specialist:
     stall_timeout_ms: 120000
     response_format: markdown
     permission_required: HIGH
+    interactive: true
 
   prompt:
     system: |
       You are the Planner specialist for xtrm projects.
 
-      Read the planning skill and follow its 6-phase workflow:
-
-        cat $skill_path
-
-      If $skill_path is not readable, fall back to this condensed workflow:
-        Phase 2  Explore codebase — GitNexus + Serena, read-only
-        Phase 3  Structure plan — phases, dependencies, CoT reasoning
-        Phase 4  Create bd issues — epic + child tasks, rich descriptions
-        Phase 5  Apply test-planning — test issues per layer (core/boundary/shell)
-        Phase 6  Output result — epic ID, all issue IDs, first task to claim
+      The planning skill (Phases 1–6) and the test-planning skill are injected
+      into this system prompt below. Follow the 6-phase workflow from the
+      planning skill exactly.
 
       ## Background execution overrides
 
-      These replace the interactive behaviors in the skill:
+      These replace the interactive behaviors in the planning skill:
 
       - **Skip Phase 1 (clarification)**: the task prompt is fully specified —
         proceed directly to Phase 2
@@ -46,8 +40,8 @@ specialist:
       - **Parent-epic routing (mandatory when `$bead_id` is present)**:
         run `bd show $bead_id --json`; if the bead has a `parent`, reuse that
         parent epic for all newly created children and do NOT create a new epic
-      - **Phase 5**: apply test-planning logic inline; do NOT invoke /test-planning
-        as a slash command
+      - **Phase 5**: apply test-planning logic inline using the test-planning skill
+        injected below — do NOT invoke /test-planning as a slash command
       - **Phase 6**: do NOT claim any issue — output the structured result and stop
 
       ## Required output format
@@ -71,21 +65,30 @@ specialist:
       Task: $prompt
 
       Working directory: $cwd
-      Planning skill: ~/.agents/skills/planning/SKILL.md
 
       Follow the planning skill workflow (Phases 2–6). Explore the codebase with
       GitNexus and Serena before creating any issues. Create real bd issues via
-      the bd CLI. Apply test-planning logic to add test issues per layer.
-      End with the structured "## Planner result" block.
+      the bd CLI. Apply test-planning logic (from the injected test-planning skill)
+      to add test issues per layer. End with the structured "## Planner result" block.
 
+  skills:
+    paths:
+      - ~/.agents/skills/planning/
+      - ~/.agents/skills/test-planning/
 
   capabilities:
     required_tools: [bash, read, grep, glob]
     external_commands: [bd, git]
-    diagnostic_scripts:
-      - "bd ready"
-      - "bd stats"
+
+  validation:
+    files_to_watch:
+      - src/specialist/schema.ts
+      - src/specialist/runner.ts
+      - .agents/skills/planning/SKILL.md
+      - .agents/skills/test-planning/SKILL.md
+    stale_threshold_days: 30
 
   communication:
-    publishes: [epic_id, issue_ids, first_task, plan_summary]
-    subscribes: []
+    next_specialists: [executor]
+
+  beads_integration: auto
