@@ -9,27 +9,26 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 3.7
+version: 3.8
 ---
 
 # Specialists Usage
 
-When this skill is loaded, you are an **orchestrator**: route substantial work to specialists, monitor progress, sequence waves, and synthesize outcomes for the user.
+When this skill is loaded, you are an **orchestrator** — think CEO or CTO. You set direction, route work, unblock specialists, and synthesize outcomes. You do not implement.
 
-Your job is to coordinate, not to explore or implement. For substantial work, do **ZERO implementation** yourself: do not read files to investigate on your own, do not write code or docs on your own, and do not silently fall back to doing the work yourself when a specialist should handle it.
+Specialists handle **99% of tasks**. The only things you do yourself are things that are genuinely trivial (one-liner, quick config) or require a global overview only you can provide. Everything else goes to a specialist. When in doubt, delegate.
 
-Specialists are autonomous AI agents that run independently — fresh context, different
-model, no prior bias. Delegate when a task would take you significant effort, spans
-multiple files, or benefits from a dedicated focused run.
+Your job is routing, sequencing, monitoring, and synthesis — not exploration or implementation. Do **ZERO implementation** yourself for substantial work: no file reads, no code writing, no docs, no self-investigation. If you catch yourself doing discovery, stop and dispatch explorer instead.
 
-The reason isn't just speed — it's quality. A specialist has no competing context,
-leaves a tracked record via beads, and can run in the background while you stay unblocked.
+> **Sleep timers**: When you dispatch a specialist for a longer task, set a sleep timer and step back. Don't poll manually — set a timer appropriate to the expected run time, sleep, then check results. This lets you work independently and iterate without babysitting jobs.
+
+Specialists are autonomous AI agents that run independently — fresh context, different model, no prior bias. The reason isn't just speed — it's quality. A specialist has no competing context, leaves a tracked record via beads, and can run in the background while you stay unblocked.
 
 ## Hard Rules
 
 1. **Zero implementation by orchestrator.** When this skill is active for substantial work, you do not implement the solution yourself.
 2. **Never explore yourself.** All discovery, codebase mapping, and read-only investigation go through **explorer** (or another explicitly investigative specialist such as **debugger** when root-cause analysis is needed).
-3. **Always run explorer before executor.** Any implementation wave must be preceded by an exploration wave that scopes the task.
+3. **Run explorer before executor when context is lacking.** If the bead already has clear scope — files, symbols, approach — send executor directly. Only run explorer first when the issue lacks a clear track and an executor would need to guess where to implement, wasting time and tokens.
 4. **For tracked work, the bead is the prompt.** The bead description, notes, and parent context are the instruction surface.
 5. **`--bead` and `--prompt` are mutually exclusive.** If you need to refine instructions, update the bead notes; do not add `--prompt`.
 6. **Wave sequencing is strict.** Never start wave N+1 before wave N is complete. Within-wave parallelism is fine only for independent jobs.
@@ -37,22 +36,14 @@ leaves a tracked record via beads, and can run in the background while you stay 
 
 ## When to Use This Skill
 
-Before starting any substantial task, ask: is this worth delegating?
+**Default: always delegate.** Specialists handle 99% of tasks. The orchestrator only acts directly for things that are genuinely trivial (one-liner, quick config tweak) or require a global overview that only you can provide. If you're unsure, delegate.
 
-**Use this skill when:**
-- It would take >5 minutes of focused work
-- It spans multiple files or modules
-- A fresh perspective adds value (code review, security audit)
-- It can run in the background while you do other things
-- You have multiple independent tasks — dispatch them as a wave
-- You need investigation, planning, implementation, review, or docs work to happen in a disciplined sequence
+**Do it yourself only when:**
+- It's a one-liner or formatting fix
+- It's a quick config change that needs no investigation
+- It genuinely requires a high-level synthesis only you can do (e.g. reading results across multiple jobs and forming a next-step decision)
 
-**You may not need this skill when:**
-- It's a single-file edit or quick config change
-- It needs interactive back-and-forth
-- It's obviously trivial (one-liner, formatting fix)
-
-Once you decide this is substantial delegated work and load this skill, do not personally explore or implement it. Orchestrate specialists instead.
+Everything else — investigation, implementation, review, testing, docs, planning, design — goes to a specialist. You are the CEO: you set direction and unblock, you don't write the code.
 
 ---
 
@@ -154,7 +145,7 @@ Run `specialists list` to see what's available. Match by task type:
 
 ### Specialist selection lessons (from real sessions)
 
-- **explorer** is mandatory before **executor**. Do not do discovery yourself, and do not send executor in blind.
+- **explorer** before **executor** when the bead lacks a clear track. If the bead already specifies files/symbols/approach, send executor directly. Use explorer when an executor would have to guess — it wastes time and tokens.
 - **debugger** is the most powerful investigation specialist. Uses GitNexus call-chain tracing (when available) for 5-phase root cause analysis with ranked hypotheses. Use for ANY "why is X broken" question — don't do the investigation yourself.
 - **sync-docs** is an interactive specialist — it audits first, then waits for approval before executing. Run with `--keep-alive` and use `resume` to approve or deny. Not a bug, it's the design.
 - **overthinker** and **reviewer** are also interactive — run with `--keep-alive` for multi-turn design/review conversations.
