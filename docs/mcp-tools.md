@@ -2,14 +2,13 @@
 title: MCP Tools Reference
 scope: mcp-tools
 category: reference
-version: 1.1.0
-updated: 2026-03-30
+version: 2.0.0
+updated: 2026-03-31
 synced_at: 0972c0b0
-description: MCP tool contracts for the Specialists server.
+description: MCP tool contract for the Specialists server.
 source_of_truth_for:
   - "src/server.ts"
-  - "src/tools/specialist/*.tool.ts"
-  - "src/specialist/supervisor.ts"
+  - "src/tools/specialist/use_specialist.tool.ts"
 domain:
   - mcp
   - tools
@@ -17,95 +16,55 @@ domain:
 
 # MCP Tools Reference
 
-This server exposes 11 tools (including deprecated aliases).
+This server now exposes a single MCP tool.
 
 ## Active tool inventory
 
 | Tool | Purpose |
 |---|---|
-| `specialist_init` | bootstrap + catalog |
-| `list_specialists` | list specialists |
-| `use_specialist` | synchronous run |
-| `start_specialist` | async run, returns `job_id` |
-| `feed_specialist` | cursor-paginated event stream |
-| `resume_specialist` | next-turn resume for waiting keep-alive jobs |
-| `steer_specialist` | mid-run steering for running jobs |
-| `stop_specialist` | cancel running job |
-| `specialist_status` | health + job summary |
-| `run_parallel` | deprecated |
-| `follow_up_specialist` | deprecated alias |
+| `use_specialist` | synchronous specialist run with result returned directly in MCP response |
 
-## `start_specialist` (Supervisor-backed)
-
-`start_specialist` now launches a full Supervisor-managed run (same durable runtime model as CLI `specialists run`).
-
-Artifacts are written under:
-
-```text
-.specialists/jobs/<job-id>/
-  status.json
-  events.jsonl
-  result.txt
-```
+## `use_specialist`
 
 ### Input schema
 
 ```ts
 z.object({
   name: z.string(),
-  prompt: z.string(),
+  prompt: z.string().optional(),
+  bead_id: z.string().optional(),
   variables: z.record(z.string()).optional(),
   backend_override: z.string().optional(),
-  bead_id: z.string().optional(),
-  keep_alive: z.boolean().optional(),
-  no_keep_alive: z.boolean().optional(),
+  model_override: z.string().optional(),
+  no_beads: z.boolean().optional(),
+  include_blocker_context: z.boolean().optional(),
+  context_depth: z.number().int().min(0).max(5).optional(),
 })
 ```
 
-### Keep-alive defaults and overrides
+### Behavior highlights
 
-`start_specialist` now mirrors CLI keep-alive semantics.
+- `bead_id` links execution to an existing bead and uses it as task context.
+- The tool runs in foreground and returns final output directly in the MCP result.
+- For orchestration, monitoring, steering, resume, and cancellation, use the CLI (`specialists run/feed/result/steer/resume/stop`).
 
-Precedence:
+## Removed MCP tools
 
-1. `no_keep_alive: true` forces one-shot mode
-2. `keep_alive: true` forces keep-alive mode
-3. otherwise defaults to specialist YAML `execution.interactive`
-4. if unset in YAML, default is one-shot (`false`)
+The following tools were intentionally removed from MCP surface and are CLI-only workflows now:
 
-Use `no_keep_alive` when invoking an interactive specialist for a single turn.
-
-### Return
-
-```ts
-{ job_id: string }
-```
-
-## `steer_specialist`
-
-- Valid for `running` jobs.
-- Works for both registry-backed runs and Supervisor/FIFO jobs.
-- Sends a non-cancelling mid-turn instruction.
-
-## `resume_specialist`
-
-- Valid only for keep-alive jobs in `waiting` state.
-- Sends next-turn task with conversation history preserved.
-- If job is `running`, use `steer_specialist` instead.
-
-## Bead behavior highlights
-
-- `use_specialist`/`start_specialist` accept `bead_id`.
-- Runner injects bead-aware system override to prevent specialist-created sub-beads.
-- For READ_ONLY + input bead runs, Supervisor auto-appends output notes to the input bead.
-
-## Deprecated
-
-- `follow_up_specialist` → use `resume_specialist`
-- `run_parallel` → use `start_specialist` + `feed_specialist`
+- `start_specialist`
+- `feed_specialist`
+- `stop_specialist`
+- `steer_specialist`
+- `resume_specialist`
+- `specialist_status`
+- `run_parallel`
+- `follow_up_specialist`
+- `specialist_init`
+- `list_specialists`
 
 ## See also
 
-- [background-jobs.md](background-jobs.md)
-- [workflow.md](workflow.md)
 - [cli-reference.md](cli-reference.md)
+- [workflow.md](workflow.md)
+- [background-jobs.md](background-jobs.md)

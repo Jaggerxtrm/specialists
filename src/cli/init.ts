@@ -1,7 +1,7 @@
 // src/cli/init.ts
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -404,15 +404,91 @@ function ensureAgentsMd(cwd: string): void {
   }
 }
 
+function hasPiSessionEnv(): boolean {
+  return Boolean(
+    process.env.PI_SESSION_ID ||
+      process.env.PI_RPC_SOCKET ||
+      process.env.PI_AGENT_SESSION ||
+      process.env.PI_CODING_AGENT,
+  );
+}
+
+function readLinuxProcFile(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+function getLinuxParentPid(pid: number): number | null {
+  const status = readLinuxProcFile(`/proc/${pid}/status`);
+  if (!status) return null;
+
+  const ppidLine = status.split('\n').find(line => line.startsWith('PPid:'));
+  if (!ppidLine) return null;
+
+  const value = Number(ppidLine.replace('PPid:', '').trim());
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function hasPiAncestorProcess(maxDepth = 8): boolean {
+  let pid: number | null = process.ppid;
+  let depth = 0;
+
+  while (pid && depth < maxDepth) {
+    const cmdline = readLinuxProcFile(`/proc/${pid}/cmdline`);
+    if (!cmdline) break;
+
+    const command = cmdline.replace(/\0/g, ' ').trim();
+    const executable = basename(command.split(' ')[0] ?? '');
+    const isPiExecutable = executable === 'pi' || executable === 'pi-coding-agent' || executable.startsWith('pi-');
+
+    if (isPiExecutable || command.includes('@mariozechner/pi-coding-agent')) {
+      return true;
+    }
+
+    pid = getLinuxParentPid(pid);
+    depth++;
+  }
+
+  return false;
+}
+
+function hasExistingDefaultSpecialists(cwd: string): boolean {
+  const defaultDir = join(cwd, '.specialists', 'default');
+  const legacyNestedDir = join(defaultDir, 'specialists');
+
+  const hasFlat = existsSync(defaultDir)
+    && readdirSync(defaultDir).some(file => file.endsWith('.specialist.yaml'));
+
+  if (hasFlat) return true;
+
+  return existsSync(legacyNestedDir)
+    && readdirSync(legacyNestedDir).some(file => file.endsWith('.specialist.yaml'));
+}
+
+function shouldSkipDefaultSyncInPiSession(cwd: string): boolean {
+  if (process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC === '1') return false;
+  if (!hasExistingDefaultSpecialists(cwd)) return false;
+  return hasPiSessionEnv() || hasPiAncestorProcess();
+}
+
 export async function run(): Promise<void> {
   const cwd = process.cwd();
 
   console.log(`\n${bold('specialists init')}\n`);
 
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
-  migrateLegacySpecialists(cwd, 'default');
+  const skipDefaultSync = shouldSkipDefaultSyncInPiSession(cwd);
+  if (skipDefaultSync) {
+    skip('pi session detected with existing default specialists; skipped .specialists/default sync');
+  } else {
+    migrateLegacySpecialists(cwd, 'default');
+    copyCanonicalSpecialists(cwd);
+  }
+
   migrateLegacySpecialists(cwd, 'user');
-  copyCanonicalSpecialists(cwd);
   createUserDirs(cwd);
   createRuntimeDirs(cwd);
 

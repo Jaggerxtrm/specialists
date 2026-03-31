@@ -5,7 +5,7 @@ description: >
   ask whether to delegate. Consult before any: code review, security audit, deep bug
   investigation, test generation, multi-file refactor, or architecture analysis. Also
   use for the mechanics of delegation: --bead workflow, --context-depth, background
-  jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
+  jobs, MCP tool (`use_specialist`), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
 version: 3.6
@@ -230,7 +230,7 @@ After each wave completes:
 ### Real wave example (from a 6-wave session)
 
 ```
-Wave 1: 2x executor → fixed --background flag + migrated start_specialist to Supervisor
+Wave 1: 2x executor → stabilized background job execution and supervisor lifecycle
 Wave 2: overthinker + 2x executor → output contract design + retry logic + footer fix
 Wave 3: 4x sync-docs + 3x explorer → docs audit (produced reports, not files)
 Wave 4: 5x executor + 2x explorer → output contract impl + READ_ONLY auto-append + 4 fixes
@@ -286,51 +286,10 @@ Available after `specialists init` and session restart.
 
 | Tool | Purpose |
 |------|---------|
-| `specialist_init` | Bootstrap once per session |
-| `use_specialist` | Foreground run; pass `bead_id` for tracked work |
-| `start_specialist` | Async: returns job ID immediately (Supervisor-backed) |
-| `feed_specialist` | Cursor-paginated run events (status + deltas) |
-| `resume_specialist` | Next-turn prompt for keep-alive jobs in `waiting` |
-| `steer_specialist` | Mid-run steering message for active jobs |
-| `stop_specialist` | Cancel (sends SIGTERM to job PID) |
-| `specialist_status` | Circuit breaker health + staleness |
+| `use_specialist` | Foreground run; pass `bead_id` for tracked work and get final output directly in conversation context |
 
-### CLI vs MCP equivalences
-
-| Action | CLI | MCP |
-|--------|-----|-----|
-| Run foreground | `specialists run <name> --bead <id>` | `use_specialist({name, bead_id})` |
-| Run background | `specialists run <name> --bead <id> --background` | `start_specialist({name, bead_id})` |
-| Monitor events | `specialists feed <job-id>` | `feed_specialist({job_id, cursor})` |
-| Read result | `specialists result <job-id>` | — (CLI only) |
-| Steer mid-run | `specialists steer <job-id> "msg"` | `steer_specialist({job_id, message})` |
-| Resume waiting | `specialists resume <job-id> "task"` | `resume_specialist({job_id, task})` |
-| Cancel | `specialists stop <job-id>` | `stop_specialist({job_id})` |
-
-**Prefer CLI** for most orchestration work — it's simpler and output is easier to inspect.
-**Use MCP** (`use_specialist`) when you need the result directly in your conversation context.
-
----
-
-## feed_specialist Observation Pattern
-
-Use cursor-based polling for structured progress when monitoring long specialist runs:
-
-```bash
-# first read
-feed_specialist({job_id: "abc123"})
-# => {events:[...], next_cursor: 12, has_more: true, is_complete: false}
-
-# continue from cursor
-feed_specialist({job_id: "abc123", cursor: 12})
-# => {events:[...], next_cursor: 25, has_more: false, is_complete: true}
-```
-
-When `is_complete: true` and `has_more: false`, fetch final text with:
-
-```bash
-specialists result <job-id>
-```
+MCP is intentionally minimal. Use CLI commands for orchestration, monitoring, steering,
+resume, and cancellation.
 
 ---
 

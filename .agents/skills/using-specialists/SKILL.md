@@ -5,7 +5,7 @@ description: >
   ask whether to delegate. Consult before any: code review, security audit, deep bug
   investigation, test generation, multi-file refactor, or architecture analysis. Also
   use for the mechanics of delegation: --bead workflow, --context-depth, background
-  jobs, MCP tools (use_specialist, start_specialist, feed_specialist), specialists init,
+  jobs, MCP tool (`use_specialist`), specialists init,
   or specialists doctor. Don't wait for the user to say "use a specialist" — proactively
   evaluate whether delegation makes sense.
 version: 3.3
@@ -162,37 +162,10 @@ Available after `specialists init` and session restart.
 
 | Tool | Purpose |
 |------|---------|
-| `specialist_init` | Bootstrap once per session |
-| `use_specialist` | Foreground run; pass `bead_id` for tracked work |
-| `start_specialist` | Async: returns job ID immediately |
-| `feed_specialist` | Cursor-paginated run events (status + deltas) |
-| `resume_specialist` | Next-turn prompt for keep-alive jobs in `waiting` |
-| `steer_specialist` | Mid-run steering message for active jobs |
-| `stop_specialist` | Cancel |
-| `run_parallel` | Concurrent or pipeline execution |
-| `specialist_status` | Circuit breaker health + staleness |
+| `use_specialist` | Foreground run; pass `bead_id` for tracked work and get final output directly in conversation context |
 
----
-
-## feed_specialist Observation Pattern
-
-Use cursor-based polling for structured progress when monitoring long specialist runs:
-
-```bash
-# first read
-feed_specialist({job_id: "abc123"})
-# => {events:[...], next_cursor: 12, has_more: true, is_complete: false}
-
-# continue from cursor
-feed_specialist({job_id: "abc123", cursor: 12})
-# => {events:[...], next_cursor: 25, has_more: false, is_complete: true}
-```
-
-When `is_complete: true` and `has_more: false`, fetch final text with:
-
-```bash
-specialists result <job-id>
-```
+MCP is intentionally minimal. Use CLI commands for orchestration, monitoring, steering,
+resume, and cancellation.
 
 ---
 

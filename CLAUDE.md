@@ -1,3 +1,10 @@
+# OpenWolf
+
+@.wolf/OPENWOLF.md
+
+This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+
+
 <!-- xtrm:start -->
 # XTRM Agent Workflow
 
@@ -156,8 +163,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 ### Core surfaces
 
 - **CLI**: `specialists run|resume|steer|feed|result|status|stop|list|init|edit|doctor`
-- **MCP tools**: `specialist_init`, `list_specialists`, `use_specialist`, `start_specialist`, `feed_specialist`, `stop_specialist`, `steer_specialist`, `resume_specialist`, `specialist_status`
-- **MCP deprecated**: `run_parallel` (use CLI background jobs), `follow_up_specialist` (use `resume_specialist`)
+- **MCP tools**: `use_specialist` only (foreground, returns result directly to conversation context)
 - **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
 
 ### Execution semantics
@@ -176,12 +182,12 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ### Key behavioral notes
 
-- `--background` is **removed** — use `start_specialist` MCP, foreground run + feed/result, or shell `&`
+- `--background` is **removed** — use CLI orchestration (`specialists run` + `feed`/`result`) or shell `&`
 - `steer` works for **all running jobs** (not just keep-alive) — sends message via FIFO pipe
 - `resume` is for **waiting keep-alive jobs** only — sends next-turn prompt
 - `response_format` + `output_schema` are injected into system prompt by runner
 - `required_tools` is validated against `permission_required` before run start
-- `feed_specialist` is the canonical MCP observation tool (cursor-paginated)
+- MCP is intentionally minimal: `use_specialist` only
 
 ## Key Files Reference (current)
 
@@ -195,15 +201,13 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
 - `src/specialist/schema.ts` — YAML schema incl. `max_retries`, `response_format`, `output_schema`
 - `src/tools/specialist/use_specialist.tool.ts` — foreground MCP run (`bead_id` aware)
-- `src/tools/specialist/start_specialist.tool.ts` — async MCP run (Supervisor-backed)
-- `src/tools/specialist/feed_specialist.tool.ts` — cursor-paginated MCP event observation
 
 ## Operator Notes
 
 - Prefer bead-linked runs for tracked work: `specialists run <name> --bead <id>`
 - Steer running specialists: `specialists steer <job-id> "new direction"`
 - Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
-- Observe jobs with `specialists feed -f` or MCP `feed_specialist`
+- Observe jobs with `specialists feed -f`
 - Use `specialists result <job-id>` for final output text
 - Edit specialist configs: `specialists edit <name>`
 - READ_ONLY specialist output auto-appends to input bead notes
@@ -215,7 +219,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - `docs/ARCHITECTURE.md` — event pipeline, RPC adapter, Supervisor lifecycle
 - `docs/features.md` — structured output, observation, beads, resume, stuck detection
 - `docs/pi-rpc-boundary.md` — what pi owns vs what Specialists owns
-- `docs/mcp-tools.md` — all 11 MCP tools with schemas and examples
+- `docs/mcp-tools.md` — single MCP tool contract (`use_specialist`) plus CLI-first guidance
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

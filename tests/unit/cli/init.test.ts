@@ -19,10 +19,16 @@ describe('init CLI — run()', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-init-test-'));
+    process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC = '1';
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(async () => {
+    delete process.env.PI_SESSION_ID;
+    delete process.env.PI_RPC_SOCKET;
+    delete process.env.PI_AGENT_SESSION;
+    delete process.env.PI_CODING_AGENT;
+    delete process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC;
     vi.restoreAllMocks();
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -151,13 +157,27 @@ describe('init CLI — run()', () => {
     task_template: "custom"
 `;
     await writeFile(join(specialistsDir, 'debugger.specialist.yaml'), customContent, 'utf-8');
-    
+
     await runInit(tempDir);
-    
+
     // The custom file should NOT be overwritten
     const content = await readFile(join(specialistsDir, 'debugger.specialist.yaml'), 'utf-8');
     expect(content).toContain('99.0.0');
     expect(content).toContain('Custom bug hunt');
+  });
+
+  it('skips default specialist sync in pi sessions when defaults already exist', async () => {
+    const specialistsDir = join(tempDir, '.specialists', 'default');
+    await mkdir(specialistsDir, { recursive: true });
+    await writeFile(join(specialistsDir, 'custom.specialist.yaml'), 'custom', 'utf-8');
+
+    delete process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC;
+    process.env.PI_SESSION_ID = 'pi-session-test';
+    await runInit(tempDir);
+
+    const files = await readdir(specialistsDir);
+    expect(files).toContain('custom.specialist.yaml');
+    expect(files).not.toContain('debugger.specialist.yaml');
   });
 
   it('installs hooks to .claude/hooks/ (project-local for Claude)', async () => {

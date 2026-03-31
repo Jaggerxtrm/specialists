@@ -366,6 +366,8 @@ For more details, see README.md and docs/QUICKSTART.md.
 
 Call `specialists init` once per project, then use CLI commands via Bash.
 
+MCP is intentionally minimal: only `use_specialist` is exposed. Use CLI for orchestration (`run/feed/result/steer/resume/stop`).
+
 **Core specialist commands (CLI-first in pi):**
 - `specialists list`
 - `specialists run <name> --bead <id>`

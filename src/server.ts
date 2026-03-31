@@ -1,10 +1,7 @@
 /**
- * Specialists MCP Server — v2 Specialist System
+ * Specialists MCP Server
  *
- * 9-tool orchestration layer: list_specialists, use_specialist,
- * run_parallel, specialist_status, start_specialist, feed_specialist,
- * stop_specialist, specialist_init, steer_specialist. All workflow logic lives in .specialist.yaml
- * files discovered across 3 scopes.
+ * Exposes only `use_specialist`. All specialist orchestration runs through the CLI.
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -21,20 +18,8 @@ import { SpecialistRunner } from "./specialist/runner.js";
 import { HookEmitter } from "./specialist/hooks.js";
 import { CircuitBreaker } from "./utils/circuitBreaker.js";
 import { BeadsClient } from "./specialist/beads.js";
-import { createListSpecialistsTool, listSpecialistsSchema } from "./tools/specialist/list_specialists.tool.js";
 import { createUseSpecialistTool, useSpecialistSchema } from "./tools/specialist/use_specialist.tool.js";
-import { createRunParallelTool, runParallelSchema } from "./tools/specialist/run_parallel.tool.js";
-import { createSpecialistStatusTool } from "./tools/specialist/specialist_status.tool.js";
-import { JobRegistry } from "./specialist/jobRegistry.js";
-import { createStartSpecialistTool, startSpecialistSchema } from "./tools/specialist/start_specialist.tool.js";
-import { createStopSpecialistTool, stopSpecialistSchema } from "./tools/specialist/stop_specialist.tool.js";
-import { createSteerSpecialistTool, steerSpecialistSchema } from "./tools/specialist/steer_specialist.tool.js";
-import { createFollowUpSpecialistTool, followUpSpecialistSchema } from "./tools/specialist/follow_up_specialist.tool.js";
-import { createResumeSpecialistTool, resumeSpecialistSchema } from "./tools/specialist/resume_specialist.tool.js";
-import { createFeedSpecialistTool, feedSpecialistSchema } from "./tools/specialist/feed_specialist.tool.js";
 import { z } from "zod";
-
-import { createSpecialistInitTool, specialistInitSchema } from "./tools/specialist/specialist_init.tool.js";
 type AnyTool = {
   name: string;
   description: string;
@@ -54,22 +39,8 @@ export class SpecialistsServer {
     });
     const beadsClient = new BeadsClient();
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
-    const registry = new JobRegistry();
-    const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
-    this.tools = [
-      createListSpecialistsTool(loader),
-      createUseSpecialistTool(runner),
-      createRunParallelTool(runner),
-      createSpecialistStatusTool(loader, circuitBreaker),
-      createStartSpecialistTool(runner, beadsClient),
-      createStopSpecialistTool(),
-      createSteerSpecialistTool(registry),
-      createResumeSpecialistTool(registry),
-      createFollowUpSpecialistTool(registry),
-      createSpecialistInitTool(loader),
-      createFeedSpecialistTool(jobsDir),
-    ];
+    this.tools = [createUseSpecialistTool(runner)];
 
     this.server = new Server(
       { name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION },
@@ -83,17 +54,7 @@ export class SpecialistsServer {
 
   private setupHandlers(): void {
     const schemaMap: Record<string, z.ZodTypeAny> = {
-      list_specialists: listSpecialistsSchema,
       use_specialist: useSpecialistSchema,
-      run_parallel: runParallelSchema,
-      specialist_status: z.object({}),
-      start_specialist: startSpecialistSchema,
-      stop_specialist: stopSpecialistSchema,
-      steer_specialist: steerSpecialistSchema,
-      resume_specialist: resumeSpecialistSchema,
-      follow_up_specialist: followUpSpecialistSchema,
-      specialist_init: specialistInitSchema,
-      feed_specialist: feedSpecialistSchema,
     };
     this.toolSchemas = schemaMap;
 
