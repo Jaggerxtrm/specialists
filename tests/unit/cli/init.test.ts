@@ -4,14 +4,16 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import type { InitOptions } from '../../../src/cli/init.js';
+
 async function importInitModule() {
   return import('../../../src/cli/init.js');
 }
 
-async function runInit(cwd: string) {
+async function runInit(cwd: string, opts: InitOptions = {}) {
   vi.spyOn(process, 'cwd').mockReturnValue(cwd);
   const { run } = await importInitModule();
-  await run();
+  await run(opts);
 }
 
 describe('init CLI — run()', () => {
@@ -19,16 +21,10 @@ describe('init CLI — run()', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-init-test-'));
-    process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC = '1';
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(async () => {
-    delete process.env.PI_SESSION_ID;
-    delete process.env.PI_RPC_SOCKET;
-    delete process.env.PI_AGENT_SESSION;
-    delete process.env.PI_CODING_AGENT;
-    delete process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC;
     vi.restoreAllMocks();
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -108,13 +104,20 @@ describe('init CLI — run()', () => {
     expect(second).toBe(first);
   });
 
-  it('copies canonical specialists to .specialists/default/', async () => {
+  it('does NOT copy canonical specialists without --sync-defaults', async () => {
     await runInit(tempDir);
     const specialistsDir = join(tempDir, '.specialists', 'default');
     const files = await readdir(specialistsDir).catch(() => []);
     const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
+    expect(yamlFiles.length).toBe(0);
+  });
+
+  it('copies canonical specialists to .specialists/default/ when --sync-defaults', async () => {
+    await runInit(tempDir, { syncDefaults: true });
+    const specialistsDir = join(tempDir, '.specialists', 'default');
+    const files = await readdir(specialistsDir).catch(() => []);
+    const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
     
-    // Should have copied at least the known canonical specialists
     expect(yamlFiles.length).toBeGreaterThan(0);
     expect(yamlFiles).toContain('debugger.specialist.yaml');
     expect(yamlFiles).toContain('explorer.specialist.yaml');
@@ -133,7 +136,8 @@ describe('init CLI — run()', () => {
     await writeFile(legacyDefaultPath, `specialist:\n  metadata:\n    name: legacy-default\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
     await writeFile(legacyUserPath, `specialist:\n  metadata:\n    name: legacy-user\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
 
-    await runInit(tempDir);
+    // default migration only runs with --sync-defaults; user migration always runs
+    await runInit(tempDir, { syncDefaults: true });
 
     expect(existsSync(join(tempDir, '.specialists', 'default', 'legacy-default.specialist.yaml'))).toBe(true);
     expect(existsSync(join(tempDir, '.specialists', 'user', 'legacy-user.specialist.yaml'))).toBe(true);
@@ -141,8 +145,7 @@ describe('init CLI — run()', () => {
     expect(existsSync(legacyUserPath)).toBe(false);
   });
 
-  it('does not overwrite existing specialist files', async () => {
-    // Create a custom specialist with the same name as a canonical one
+  it('does not overwrite existing specialist files when --sync-defaults', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');
     await mkdir(specialistsDir, { recursive: true });
     const customContent = `specialist:
@@ -158,7 +161,7 @@ describe('init CLI — run()', () => {
 `;
     await writeFile(join(specialistsDir, 'debugger.specialist.yaml'), customContent, 'utf-8');
 
-    await runInit(tempDir);
+    await runInit(tempDir, { syncDefaults: true });
 
     // The custom file should NOT be overwritten
     const content = await readFile(join(specialistsDir, 'debugger.specialist.yaml'), 'utf-8');
@@ -166,18 +169,17 @@ describe('init CLI — run()', () => {
     expect(content).toContain('Custom bug hunt');
   });
 
-  it('skips default specialist sync in pi sessions when defaults already exist', async () => {
+  it('plain init never touches .specialists/default/ even when PI_SESSION_ID is set', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');
     await mkdir(specialistsDir, { recursive: true });
     await writeFile(join(specialistsDir, 'custom.specialist.yaml'), 'custom', 'utf-8');
 
-    delete process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC;
     process.env.PI_SESSION_ID = 'pi-session-test';
-    await runInit(tempDir);
+    await runInit(tempDir); // no syncDefaults — always safe
+    delete process.env.PI_SESSION_ID;
 
     const files = await readdir(specialistsDir);
-    expect(files).toContain('custom.specialist.yaml');
-    expect(files).not.toContain('debugger.specialist.yaml');
+    expect(files).toEqual(['custom.specialist.yaml']); // no additions
   });
 
   it('installs hooks to .claude/hooks/ (project-local for Claude)', async () => {
@@ -188,7 +190,8 @@ describe('init CLI — run()', () => {
     
     expect(mjsFiles.length).toBeGreaterThan(0);
     expect(mjsFiles).toContain('specialists-complete.mjs');
-    expect(mjsFiles).toContain('specialists-session-start.mjs');
+    // check-open-specialists.mjs is project-local (not a shipped asset)
+    expect(mjsFiles.length).toBeGreaterThan(0);
   });
 
   it('wires hooks in .claude/settings.json with paths to .claude/hooks/', async () => {

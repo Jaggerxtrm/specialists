@@ -12,11 +12,11 @@ describe('command-specific --help', () => {
     vi.restoreAllMocks();
   });
 
-  it('init --help mentions sole onboarding command and force-workflow', () => {
+  it('init --help mentions sole onboarding command and sync-defaults', () => {
     const out = captureIndexHelp(['init', '--help']);
     expect(out).toContain('sole onboarding command');
-    expect(out).toContain('--force-workflow');
-    expect(out).toContain('AGENTS.md and CLAUDE.md');
+    expect(out).toContain('--sync-defaults');
+    expect(out).toContain('Human-only');
   });
 
   it('run --help distinguishes tracked and ad-hoc modes', () => {

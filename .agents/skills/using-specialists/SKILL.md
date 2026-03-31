@@ -172,11 +172,13 @@ resume, and cancellation.
 ## Setup and Troubleshooting
 
 ```bash
-specialists init        # first-time setup: creates .specialists/, wires AGENTS.md/CLAUDE.md
-specialists doctor      # health check: hooks, MCP, zombie jobs
+specialists init                 # safe for agents: wires MCP, hooks, AGENTS.md, skills
+specialists init --sync-defaults # human-only: also writes canonical .specialists/default/ YAML
+specialists doctor               # health check: hooks, MCP, zombie jobs
 ```
 
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists feed <id>`; `specialists stop` to cancel
-- **MCP tools missing** → `specialists init` then restart Claude Code
+- **MCP tools missing** → `specialists init` then restart Claude Code *(safe for agents)*
+- **Canonical specialists missing** → `specialists init --sync-defaults` *(human-only)*
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`

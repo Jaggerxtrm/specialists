@@ -1,7 +1,7 @@
 // src/cli/init.ts
 
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -313,14 +313,23 @@ function installProjectSkills(cwd: string): void {
 }
 
 /**
- * Create user directories for custom specialists
+ * Create .specialists/default/ and .specialists/user/ directories.
+ * Safe to call always — creates empty dirs only, never writes YAML.
  */
-function createUserDirs(cwd: string): void {
+function createSpecialistsDirs(cwd: string): void {
+  const defaultDir = join(cwd, '.specialists', 'default');
   const userDir = join(cwd, '.specialists', 'user');
 
-  if (!existsSync(userDir)) {
-    mkdirSync(userDir, { recursive: true });
-    ok('created .specialists/user/ for custom specialists');
+  let created = 0;
+  for (const dir of [defaultDir, userDir]) {
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      created++;
+    }
+  }
+
+  if (created > 0) {
+    ok('created .specialists/default/ and .specialists/user/');
   }
 }
 
@@ -405,92 +414,28 @@ function ensureAgentsMd(cwd: string): void {
   }
 }
 
-function hasPiSessionEnv(): boolean {
-  return Boolean(
-    process.env.PI_SESSION_ID ||
-      process.env.PI_RPC_SOCKET ||
-      process.env.PI_AGENT_SESSION ||
-      process.env.PI_CODING_AGENT,
-  );
+export interface InitOptions {
+  /** When true, copy canonical specialists to .specialists/default/ and migrate legacy layouts. */
+  syncDefaults?: boolean;
 }
 
-function readLinuxProcFile(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-function getLinuxParentPid(pid: number): number | null {
-  const status = readLinuxProcFile(`/proc/${pid}/status`);
-  if (!status) return null;
-
-  const ppidLine = status.split('\n').find(line => line.startsWith('PPid:'));
-  if (!ppidLine) return null;
-
-  const value = Number(ppidLine.replace('PPid:', '').trim());
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function hasPiAncestorProcess(maxDepth = 8): boolean {
-  let pid: number | null = process.ppid;
-  let depth = 0;
-
-  while (pid && depth < maxDepth) {
-    const cmdline = readLinuxProcFile(`/proc/${pid}/cmdline`);
-    if (!cmdline) break;
-
-    const command = cmdline.replace(/\0/g, ' ').trim();
-    const executable = basename(command.split(' ')[0] ?? '');
-    const isPiExecutable = executable === 'pi' || executable === 'pi-coding-agent' || executable.startsWith('pi-');
-
-    if (isPiExecutable || command.includes('@mariozechner/pi-coding-agent')) {
-      return true;
-    }
-
-    pid = getLinuxParentPid(pid);
-    depth++;
-  }
-
-  return false;
-}
-
-function hasExistingDefaultSpecialists(cwd: string): boolean {
-  const defaultDir = join(cwd, '.specialists', 'default');
-  const legacyNestedDir = join(defaultDir, 'specialists');
-
-  const hasFlat = existsSync(defaultDir)
-    && readdirSync(defaultDir).some(file => file.endsWith('.specialist.yaml'));
-
-  if (hasFlat) return true;
-
-  return existsSync(legacyNestedDir)
-    && readdirSync(legacyNestedDir).some(file => file.endsWith('.specialist.yaml'));
-}
-
-function shouldSkipDefaultSyncInPiSession(cwd: string): boolean {
-  if (process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC === '1') return false;
-  if (!hasExistingDefaultSpecialists(cwd)) return false;
-  return hasPiSessionEnv() || hasPiAncestorProcess();
-}
-
-export async function run(): Promise<void> {
+export async function run(opts: InitOptions = {}): Promise<void> {
   const cwd = process.cwd();
 
   console.log(`\n${bold('specialists init')}\n`);
 
+  const { syncDefaults = false } = opts;
+
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
-  const skipDefaultSync = shouldSkipDefaultSyncInPiSession(cwd);
-  if (skipDefaultSync) {
-    skip('pi session detected with existing default specialists; skipped .specialists/default sync');
-  } else {
+  if (syncDefaults) {
     migrateLegacySpecialists(cwd, 'default');
     copyCanonicalSpecialists(cwd);
+  } else {
+    skip('.specialists/default/ not synced (pass --sync-defaults to write canonical specialists)');
   }
 
   migrateLegacySpecialists(cwd, 'user');
-  createUserDirs(cwd);
+  createSpecialistsDirs(cwd);
   createRuntimeDirs(cwd);
 
   // ── 2. Update .gitignore (only runtime dirs) ──────────────────────────────
@@ -519,7 +464,7 @@ export async function run(): Promise<void> {
   console.log('');
   console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);
-  console.log(`  ├── default/           ${dim('# canonical specialists (from init)')}`);
+  console.log(`  ├── default/           ${dim('# canonical specialists (from init --sync-defaults)')}`)
   console.log(`  ├── user/              ${dim('# your custom specialists')}`);
   console.log(`  ├── jobs/              ${dim('# runtime (gitignored)')}`);
   console.log(`  └── ready/             ${dim('# runtime (gitignored)')}`);

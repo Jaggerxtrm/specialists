@@ -93,33 +93,38 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists init [--force-workflow]',
+        'Usage: specialists init [--sync-defaults]',
         '',
         'Bootstrap a project for specialists. This is the sole onboarding command.',
         '',
-        'What it does:',
-        '  • creates specialists/ for project .specialist.yaml files',
-        '  • creates .specialists/ runtime dirs (jobs/, ready/)',
-        '  • adds .specialists/ to .gitignore',
-        '  • injects the managed workflow block into AGENTS.md and CLAUDE.md',
-        '  • registers the Specialists MCP server at project scope',
+        'What it does (always safe, idempotent):',
+        '  • creates .specialists/user/ for custom specialists',
+        '  • creates .specialists/jobs/ and .specialists/ready/ runtime dirs',
+        '  • adds runtime dirs to .gitignore',
+        '  • injects the Specialists section into AGENTS.md',
+        '  • registers the Specialists MCP server at project scope (.mcp.json)',
+        '  • installs hooks to .claude/hooks/ and wires .claude/settings.json',
+        '  • installs skills to .claude/skills/ and .pi/skills/',
         '',
         'Options:',
-        '  --force-workflow   Overwrite existing managed workflow blocks',
+        '  --sync-defaults    Also copy canonical specialists to .specialists/default/.',
+        '                     Human-only: rewrites default specialist YAML files.',
         '',
         'Examples:',
-        '  specialists init',
-        '  specialists init --force-workflow',
+        '  specialists init                 # safe for agents to call',
+        '  specialists init --sync-defaults # human-only: sync canonical specialists',
         '',
         'Notes:',
         '  setup and install are deprecated; use specialists init.',
-        '  Safe to run again; existing project state is preserved where possible.',
+        '  MCP missing → specialists init (safe for anyone to call).',
+        '  Specialists missing → specialists init --sync-defaults (human-only).',
         '',
       ].join('\n'));
       return;
     }
+    const syncDefaults = process.argv.includes('--sync-defaults');
     const { run: handler } = await import('./cli/init.js');
-    return handler();
+    return handler({ syncDefaults });
   }
 
   if (sub === 'validate') {

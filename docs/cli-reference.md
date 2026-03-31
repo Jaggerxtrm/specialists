@@ -419,17 +419,20 @@ specialists edit code-review --timeout 120000
 ### Synopsis
 
 ```bash
-specialists init
+specialists init [--sync-defaults]
 ```
 
 ### Flags
 
-None parsed by current implementation.
+| Flag | Description |
+|------|-------------|
+| `--sync-defaults` | Also copy canonical specialists to `.specialists/default/`. Human-only. |
 
 ### Examples
 
 ```bash
-specialists init
+specialists init                 # safe for agents
+specialists init --sync-defaults # human-only: sync canonical specialists
 ```
 
 ### Exit codes
@@ -437,14 +440,16 @@ specialists init
 - `0`: Success.
 - `1`: Unhandled runtime error.
 
-What it sets up:
-- `.specialists/default/` (canonical specialist files)
+What it sets up (always):
 - `.specialists/user/` (custom specialists)
 - `.specialists/jobs/`, `.specialists/ready/` runtime dirs
 - `.gitignore` runtime entries
 - `AGENTS.md` Specialists section
 - `.mcp.json` `mcpServers.specialists`
 - `.claude/hooks`, `.claude/settings.json`, `.claude/skills`, `.pi/skills`
+
+With `--sync-defaults` only:
+- `.specialists/default/` (canonical specialist files)
 
 ---
 

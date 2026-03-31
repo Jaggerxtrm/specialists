@@ -45,39 +45,36 @@ npm install -g @jaggerxtrm/specialists
 
 ## Bootstrap a project
 
-From the project root:
+`specialists init` is **safe for anyone to call** — agents included. It only writes idempotent, non-destructive files.
 
 ```bash
 specialists init
 ```
 
-What it does:
+What it does (always safe, idempotent):
 
-1. copies canonical specialists to `.specialists/default/`
-2. creates `.specialists/user/` for custom specialists
-3. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
-4. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
-5. injects the canonical workflow block into `AGENTS.md`
-6. registers Specialists in `.mcp.json`
-7. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`
-8. installs skills to `.claude/skills/` (Claude Code) and `.pi/skills/` (pi)
+1. creates `.specialists/user/` for custom specialists
+2. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
+3. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
+4. injects the Specialists section into `AGENTS.md`
+5. registers Specialists in `.mcp.json`
+6. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`
+7. installs skills to `.claude/skills/` (Claude Code) and `.pi/skills/` (pi)
 
-## Force-refresh workflow instructions
+## Sync canonical specialists (human-only)
 
-If `AGENTS.md` or `CLAUDE.md` already contain a managed block and you want to rewrite it from the canonical source:
+To copy the canonical specialist YAML files to `.specialists/default/`, pass `--sync-defaults`. This is a **human-only** operation — it writes files that your team manages and commits.
 
 ```bash
-specialists init --force-workflow
+specialists init --sync-defaults
 ```
 
-Managed markers:
+Additional step performed:
 
-```md
-<!-- specialists:start -->
-## Specialists Workflow
-...
-<!-- specialists:end -->
-```
+- copies canonical specialists to `.specialists/default/`
+- migrates any legacy nested layout (`default/specialists/*.yaml`) to the flat `default/*.yaml` layout
+
+> **Do not run `--sync-defaults` from automated agents.** Agents that need MCP wiring should call plain `specialists init`.
 
 ## Directory structure
 

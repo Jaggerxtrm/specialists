@@ -19155,7 +19155,7 @@ __export(exports_init, {
   run: () => run5
 });
 import { copyFileSync, cpSync, existsSync as existsSync6, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
-import { basename as basename2, join as join6 } from "node:path";
+import { join as join6 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
   console.log(`  ${green3("✓")} ${msg}`);
@@ -19350,11 +19350,18 @@ function installProjectSkills(cwd) {
     skip(`${totalSkipped} skill location${totalSkipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
-function createUserDirs(cwd) {
+function createSpecialistsDirs(cwd) {
+  const defaultDir = join6(cwd, ".specialists", "default");
   const userDir = join6(cwd, ".specialists", "user");
-  if (!existsSync6(userDir)) {
-    mkdirSync(userDir, { recursive: true });
-    ok("created .specialists/user/ for custom specialists");
+  let created = 0;
+  for (const dir of [defaultDir, userDir]) {
+    if (!existsSync6(dir)) {
+      mkdirSync(dir, { recursive: true });
+      created++;
+    }
+  }
+  if (created > 0) {
+    ok("created .specialists/default/ and .specialists/user/");
   }
 }
 function createRuntimeDirs(cwd) {
@@ -19424,74 +19431,20 @@ function ensureAgentsMd(cwd) {
     ok("created AGENTS.md with Specialists section");
   }
 }
-function hasPiSessionEnv() {
-  return Boolean(process.env.PI_SESSION_ID || process.env.PI_RPC_SOCKET || process.env.PI_AGENT_SESSION || process.env.PI_CODING_AGENT);
-}
-function readLinuxProcFile(path) {
-  try {
-    return readFileSync3(path, "utf-8");
-  } catch {
-    return null;
-  }
-}
-function getLinuxParentPid(pid) {
-  const status = readLinuxProcFile(`/proc/${pid}/status`);
-  if (!status)
-    return null;
-  const ppidLine = status.split(`
-`).find((line) => line.startsWith("PPid:"));
-  if (!ppidLine)
-    return null;
-  const value = Number(ppidLine.replace("PPid:", "").trim());
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-function hasPiAncestorProcess(maxDepth = 8) {
-  let pid = process.ppid;
-  let depth = 0;
-  while (pid && depth < maxDepth) {
-    const cmdline = readLinuxProcFile(`/proc/${pid}/cmdline`);
-    if (!cmdline)
-      break;
-    const command = cmdline.replace(/\0/g, " ").trim();
-    const executable = basename2(command.split(" ")[0] ?? "");
-    const isPiExecutable = executable === "pi" || executable === "pi-coding-agent" || executable.startsWith("pi-");
-    if (isPiExecutable || command.includes("@mariozechner/pi-coding-agent")) {
-      return true;
-    }
-    pid = getLinuxParentPid(pid);
-    depth++;
-  }
-  return false;
-}
-function hasExistingDefaultSpecialists(cwd) {
-  const defaultDir = join6(cwd, ".specialists", "default");
-  const legacyNestedDir = join6(defaultDir, "specialists");
-  const hasFlat = existsSync6(defaultDir) && readdirSync2(defaultDir).some((file) => file.endsWith(".specialist.yaml"));
-  if (hasFlat)
-    return true;
-  return existsSync6(legacyNestedDir) && readdirSync2(legacyNestedDir).some((file) => file.endsWith(".specialist.yaml"));
-}
-function shouldSkipDefaultSyncInPiSession(cwd) {
-  if (process.env.SPECIALISTS_INIT_FORCE_DEFAULT_SYNC === "1")
-    return false;
-  if (!hasExistingDefaultSpecialists(cwd))
-    return false;
-  return hasPiSessionEnv() || hasPiAncestorProcess();
-}
-async function run5() {
+async function run5(opts = {}) {
   const cwd = process.cwd();
   console.log(`
 ${bold4("specialists init")}
 `);
-  const skipDefaultSync = shouldSkipDefaultSyncInPiSession(cwd);
-  if (skipDefaultSync) {
-    skip("pi session detected with existing default specialists; skipped .specialists/default sync");
-  } else {
+  const { syncDefaults = false } = opts;
+  if (syncDefaults) {
     migrateLegacySpecialists(cwd, "default");
     copyCanonicalSpecialists(cwd);
+  } else {
+    skip(".specialists/default/ not synced (pass --sync-defaults to write canonical specialists)");
   }
   migrateLegacySpecialists(cwd, "user");
-  createUserDirs(cwd);
+  createSpecialistsDirs(cwd);
   createRuntimeDirs(cwd);
   ensureGitignore(cwd);
   ensureAgentsMd(cwd);
@@ -19510,7 +19463,7 @@ ${bold4("Done!")}
   console.log("");
   console.log(`  ${dim4(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
-  console.log(`  ├── default/           ${dim4("# canonical specialists (from init)")}`);
+  console.log(`  ├── default/           ${dim4("# canonical specialists (from init --sync-defaults)")}`);
   console.log(`  ├── user/              ${dim4("# your custom specialists")}`);
   console.log(`  ├── jobs/              ${dim4("# runtime (gitignored)")}`);
   console.log(`  └── ready/             ${dim4("# runtime (gitignored)")}`);
@@ -19830,7 +19783,7 @@ __export(exports_config, {
 });
 import { existsSync as existsSync9 } from "node:fs";
 import { readdir as readdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
-import { basename as basename3, join as join9 } from "node:path";
+import { basename as basename2, join as join9 } from "node:path";
 function usage() {
   return [
     "Usage:",
@@ -19939,7 +19892,7 @@ async function getAcrossFiles(files, keyPath) {
     const content = await readFile3(file, "utf-8");
     const doc2 = $parseDocument(content);
     const value = doc2.getIn(keyPath);
-    const name = getSpecialistNameFromPath(basename3(file));
+    const name = getSpecialistNameFromPath(basename2(file));
     console.log(`${yellow7(name)}: ${formatValue(value)}`);
   }
 }
@@ -30624,34 +30577,39 @@ async function run24() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists init [--force-workflow]",
+        "Usage: specialists init [--sync-defaults]",
         "",
         "Bootstrap a project for specialists. This is the sole onboarding command.",
         "",
-        "What it does:",
-        "  • creates specialists/ for project .specialist.yaml files",
-        "  • creates .specialists/ runtime dirs (jobs/, ready/)",
-        "  • adds .specialists/ to .gitignore",
-        "  • injects the managed workflow block into AGENTS.md and CLAUDE.md",
-        "  • registers the Specialists MCP server at project scope",
+        "What it does (always safe, idempotent):",
+        "  • creates .specialists/user/ for custom specialists",
+        "  • creates .specialists/jobs/ and .specialists/ready/ runtime dirs",
+        "  • adds runtime dirs to .gitignore",
+        "  • injects the Specialists section into AGENTS.md",
+        "  • registers the Specialists MCP server at project scope (.mcp.json)",
+        "  • installs hooks to .claude/hooks/ and wires .claude/settings.json",
+        "  • installs skills to .claude/skills/ and .pi/skills/",
         "",
         "Options:",
-        "  --force-workflow   Overwrite existing managed workflow blocks",
+        "  --sync-defaults    Also copy canonical specialists to .specialists/default/.",
+        "                     Human-only: rewrites default specialist YAML files.",
         "",
         "Examples:",
-        "  specialists init",
-        "  specialists init --force-workflow",
+        "  specialists init                 # safe for agents to call",
+        "  specialists init --sync-defaults # human-only: sync canonical specialists",
         "",
         "Notes:",
         "  setup and install are deprecated; use specialists init.",
-        "  Safe to run again; existing project state is preserved where possible.",
+        "  MCP missing → specialists init (safe for anyone to call).",
+        "  Specialists missing → specialists init --sync-defaults (human-only).",
         ""
       ].join(`
 `));
       return;
     }
+    const syncDefaults = process.argv.includes("--sync-defaults");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
-    return handler();
+    return handler({ syncDefaults });
   }
   if (sub === "validate") {
     if (wantsHelp()) {
