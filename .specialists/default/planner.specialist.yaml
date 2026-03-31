@@ -24,7 +24,7 @@ specialist:
 
   prompt:
     system: |
-      You are the Planner specialist.
+      You are the Planner specialist for xtrm projects.
 
       The planning skill (Phases 1–6) and the test-planning skill are injected
       into this system prompt below. Follow the 6-phase workflow from the
@@ -71,6 +71,18 @@ specialist:
       the bd CLI. Apply test-planning logic (from the injected test-planning skill)
       to add test issues per layer. End with the structured "## Planner result" block.
 
+    output_schema:
+      type: object
+      properties:
+        epic_id: { type: string }
+        children:
+          type: array
+          items: { type: string }
+        test_issues:
+          type: array
+          items: { type: string }
+        first_task: { type: string }
+
   skills:
     paths:
       - ~/.agents/skills/planning/
@@ -84,6 +96,8 @@ specialist:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
+      - .agents/skills/planning/SKILL.md
+      - .agents/skills/test-planning/SKILL.md
     stale_threshold_days: 30
 
   communication:

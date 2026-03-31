@@ -71,6 +71,18 @@ specialist:
       the bd CLI. Apply test-planning logic (from the injected test-planning skill)
       to add test issues per layer. End with the structured "## Planner result" block.
 
+    output_schema:
+      type: object
+      properties:
+        epic_id: { type: string }
+        children:
+          type: array
+          items: { type: string }
+        test_issues:
+          type: array
+          items: { type: string }
+        first_task: { type: string }
+
   skills:
     paths:
       - ~/.agents/skills/planning/

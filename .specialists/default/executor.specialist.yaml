@@ -13,7 +13,7 @@ specialist:
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
     stall_timeout_ms: 120000
-    response_format: text
+    response_format: markdown
     permission_required: HIGH
     thinking_level: medium
 
@@ -232,6 +232,26 @@ specialist:
       $pre_script_output
 
       Working directory: $cwd
+
+    output_schema:
+      type: object
+      properties:
+        status:
+          enum: [success, partial, failed]
+        files_changed:
+          type: array
+          items: { type: string }
+        symbols_modified:
+          type: array
+          items: { type: string }
+        lint_pass: { type: boolean }
+        tests_pass: { type: boolean }
+        issues_closed:
+          type: array
+          items: { type: string }
+        follow_ups:
+          type: array
+          items: { type: string }
 
   skills:
     paths:

@@ -70,6 +70,18 @@ specialist:
       Start with GitNexus tools (gitnexus_query, gitnexus_context, cluster/process resources).
       Fall back to bash/grep if GitNexus is not available. Provide a thorough analysis.
 
+    output_schema:
+      type: object
+      properties:
+        summary: { type: string }
+        key_files:
+          type: array
+          items: { type: string }
+        architecture_notes: { type: string }
+        recommendations:
+          type: array
+          items: { type: string }
+
   skills:
     paths:
       - .agents/skills/gitnexus-exploring/SKILL.md

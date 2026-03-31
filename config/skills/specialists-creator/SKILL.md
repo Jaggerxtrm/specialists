@@ -244,8 +244,47 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 | `task_template` | string | yes | Template string with `$variable` substitution |
 | `system` | string | no | System prompt / agents.md content |
 | `skill_inherit` | string | no | Single skill folder/file injected via `pi --skill` (Agent Forge compat) |
-| `output_schema` | object | no | JSON schema for structured output |
+| `output_schema` | object | no | JSON schema for structured output — injected into system prompt by runner; post-run validation is warn-only |
 | `examples` | array | no | Few-shot examples |
+
+**`output_schema` guidance**: Add when the specialist's output should be machine-readable by downstream consumers (mesk handoff, pipeline injection). The schema is injected as an instruction into the system prompt — the agent structures its output accordingly. Use `response_format: markdown` alongside it for human-readable output with a machine-readable block at the end.
+
+Standard schemas by specialist type:
+
+```yaml
+# executor — change manifest
+prompt:
+  output_schema:
+    type: object
+    properties:
+      status: { enum: [success, partial, failed] }
+      files_changed: { type: array, items: { type: string } }
+      symbols_modified: { type: array, items: { type: string } }
+      lint_pass: { type: boolean }
+      tests_pass: { type: boolean }
+      issues_closed: { type: array, items: { type: string } }
+      follow_ups: { type: array, items: { type: string } }
+
+# explorer — analysis report
+prompt:
+  output_schema:
+    type: object
+    properties:
+      summary: { type: string }
+      key_files: { type: array, items: { type: string } }
+      architecture_notes: { type: string }
+      recommendations: { type: array, items: { type: string } }
+
+# planner — epic result
+prompt:
+  output_schema:
+    type: object
+    properties:
+      epic_id: { type: string }
+      children: { type: array, items: { type: string } }
+      test_issues: { type: array, items: { type: string } }
+      first_task: { type: string }
+```
 
 ### `specialist.skills` (optional)
 
