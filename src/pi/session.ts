@@ -40,7 +40,7 @@ export class StallTimeoutError extends Error {
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
 export interface AgentSessionMeta {
@@ -173,9 +173,11 @@ export class PiAgentSession {
       args.push('--append-system-prompt', this.options.systemPrompt);
     }
 
+    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
+
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: this.options.cwd,
+      cwd: sessionCwd,
     });
 
     const donePromise = new Promise<void>((resolve, reject) => {

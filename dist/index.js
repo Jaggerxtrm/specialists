@@ -17745,7 +17745,7 @@ var init_backendMap = __esm(() => {
 import { spawn } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
 import { homedir } from "node:os";
-import { join as join2 } from "node:path";
+import { join as join2, resolve } from "node:path";
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
     case "READ_ONLY":
@@ -17824,12 +17824,13 @@ class PiAgentSession {
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }
+    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: this.options.cwd
+      cwd: sessionCwd
     });
-    const donePromise = new Promise((resolve, reject) => {
-      this._doneResolve = resolve;
+    const donePromise = new Promise((resolve2, reject) => {
+      this._doneResolve = resolve2;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -18000,7 +18001,7 @@ class PiAgentSession {
     }
   }
   sendCommand(cmd, timeoutMs = 1e4) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (!this.proc?.stdin) {
         reject(new Error("No stdin available"));
         return;
@@ -18010,7 +18011,7 @@ class PiAgentSession {
         this._pendingRequests.delete(id);
         reject(new Error(`RPC timeout: no response for command id=${id} after ${timeoutMs}ms`));
       }, timeoutMs);
-      this._pendingRequests.set(id, { resolve, reject, timer });
+      this._pendingRequests.set(id, { resolve: resolve2, reject, timer });
       this.proc.stdin.write(JSON.stringify({ ...cmd, id }) + `
 `, (err) => {
         if (err) {
@@ -18072,13 +18073,13 @@ class PiAgentSession {
     this._clearStallTimer();
     this.proc?.stdin?.end();
     if (this.proc) {
-      await new Promise((resolve) => {
-        this.proc.on("close", () => resolve());
+      await new Promise((resolve2) => {
+        this.proc.on("close", () => resolve2());
         setTimeout(() => {
           if (this.proc && !this._killed) {
             this.proc.kill();
           }
-          resolve();
+          resolve2();
         }, 2000);
       });
     }
@@ -18124,8 +18125,8 @@ class PiAgentSession {
       throw new Error("Session is not active");
     }
     this._agentEndReceived = false;
-    const donePromise = new Promise((resolve, reject) => {
-      this._doneResolve = resolve;
+    const donePromise = new Promise((resolve2, reject) => {
+      this._doneResolve = resolve2;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -18359,7 +18360,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { execSync, spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync3, readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, resolve as resolve2 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 function runScript(command) {
   const run = (command ?? "").trim();
@@ -18390,7 +18391,7 @@ ${blocks}
 </pre_flight_context>`;
 }
 function resolvePath(p) {
-  return p.startsWith("~/") ? resolve(homedir2(), p.slice(2)) : resolve(p);
+  return p.startsWith("~/") ? resolve2(homedir2(), p.slice(2)) : resolve2(p);
 }
 function commandExists(cmd) {
   const result = spawnSync2("which", [cmd], { stdio: "ignore" });
@@ -18473,7 +18474,7 @@ ${errors5.join(`
   }
 }
 function sleep(ms) {
-  return new Promise((resolve2) => setTimeout(resolve2, ms));
+  return new Promise((resolve3) => setTimeout(resolve3, ms));
 }
 function getRetryDelayMs(attemptNumber) {
   const baseDelay = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
@@ -18882,7 +18883,7 @@ function renderLiveSelector(jobs, selectedIndex) {
   ];
 }
 function selectLiveJob(jobs) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const input = process.stdin;
     const output = process.stdout;
     const wasRawMode = input.isTTY ? input.isRaw : false;
@@ -18898,7 +18899,7 @@ function selectLiveJob(jobs) {
         readline.moveCursor(output, 0, -renderedLineCount);
         readline.clearScreenDown(output);
       }
-      resolve2(selected);
+      resolve3(selected);
     };
     const render = () => {
       if (renderedLineCount > 0) {
@@ -20341,8 +20342,8 @@ class Supervisor {
     let latestOutput = "";
     let keepAliveExitResolved = false;
     let resolveKeepAliveExit;
-    const keepAliveExitPromise = new Promise((resolve2) => {
-      resolveKeepAliveExit = resolve2;
+    const keepAliveExitPromise = new Promise((resolve3) => {
+      resolveKeepAliveExit = resolve3;
     });
     const finishKeepAlive = (exit) => {
       if (keepAliveExitResolved)
@@ -20900,13 +20901,13 @@ async function parseArgs6(argv) {
     process.exit(1);
   }
   if (!prompt && !beadId && !process.stdin.isTTY) {
-    prompt = await new Promise((resolve2) => {
+    prompt = await new Promise((resolve3) => {
       let buf = "";
       process.stdin.setEncoding("utf-8");
       process.stdin.on("data", (chunk) => {
         buf += chunk;
       });
-      process.stdin.on("end", () => resolve2(buf.trim()));
+      process.stdin.on("end", () => resolve3(buf.trim()));
     });
   }
   if (!prompt && !beadId) {
@@ -21605,7 +21606,7 @@ function filterTimelineEvents(merged, filter) {
     result = result.filter(({ specialist }) => specialist === filter.specialist);
   }
   if (filter.limit !== undefined && filter.limit > 0) {
-    result = result.slice(0, filter.limit);
+    result = result.slice(-filter.limit);
   }
   return result;
 }
@@ -21938,7 +21939,9 @@ async function followMerged(jobsDir, options) {
   const colorMap = new JobColorMap;
   const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
   const lastSeenT = new Map;
-  const trackedJobs = new Set(listMatchingJobIds(jobsDir, options).filter((jobId) => !isTerminalJobStatus(jobsDir, jobId)));
+  const initialMatchingJobIds = listMatchingJobIds(jobsDir, options);
+  const hasInitialMatchingJobs = initialMatchingJobIds.length > 0;
+  const trackedJobs = new Set(initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(jobsDir, jobId)));
   const completedJobs = new Set;
   const filteredBatches = () => readFilteredBatchesFresh(jobsDir, options);
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
@@ -21959,12 +21962,18 @@ async function followMerged(jobsDir, options) {
   }
   if (!options.forever && trackedJobs.size === 0) {
     if (!options.json) {
-      process.stderr.write(dim7(`All jobs complete.
-`));
+      const message = hasInitialMatchingJobs ? `All jobs complete.
+` : `No jobs found.
+`;
+      process.stderr.write(dim7(message));
     }
     return;
   }
-  if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
+  if (!options.forever && hasInitialMatchingJobs && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
+    if (!options.json) {
+      process.stderr.write(`All jobs complete.
+`);
+    }
     return;
   }
   if (!options.json) {
@@ -21973,7 +21982,7 @@ async function followMerged(jobsDir, options) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
-  await new Promise((resolve2) => {
+  await new Promise((resolve3) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
       for (const jobId of listMatchingJobIds(jobsDir, options)) {
@@ -22035,7 +22044,7 @@ async function followMerged(jobsDir, options) {
       }
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
-        resolve2();
+        resolve3();
       }
     }, 500);
   });

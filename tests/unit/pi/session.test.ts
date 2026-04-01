@@ -1,5 +1,6 @@
 // tests/unit/pi/session.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resolve } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 // ── Mock node:child_process before importing session ──────────────────────────
@@ -208,6 +209,22 @@ describe('PiAgentSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fake = makeFakeProc();
+  });
+
+  it('pins spawn cwd to an absolute current working directory by default', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    const spawnOptions = mockSpawn.mock.calls[0][2] as { cwd?: string };
+    expect(spawnOptions.cwd).toBe(resolve(process.cwd()));
+  });
+
+  it('resolves provided relative cwd to an absolute path at spawn time', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini', cwd: '.' });
+    await session.start();
+
+    const spawnOptions = mockSpawn.mock.calls[0][2] as { cwd?: string };
+    expect(spawnOptions.cwd).toBe(resolve('.'));
   });
 
   it('prompt() does NOT close stdin', async () => {
