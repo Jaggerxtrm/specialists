@@ -195,7 +195,7 @@ export function filterTimelineEvents(
   }
 
   if (filter.limit !== undefined && filter.limit > 0) {
-    result = result.slice(0, filter.limit);
+    result = result.slice(-filter.limit);
   }
 
   return result;

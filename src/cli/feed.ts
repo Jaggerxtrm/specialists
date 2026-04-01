@@ -10,7 +10,7 @@
  *   --specialist <name> Filter by specialist name
  *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
  *   --from <n>         Show only events with seq >= n
- *   --limit <n>        Max events to show (default: 100)
+ *   --limit <n>        Max recent events to show (default: 100)
  *   --follow, -f       Live follow mode (append new events at bottom)
  *   --forever          Stay open even when all jobs complete
  *   --json             Output as NDJSON
@@ -377,9 +377,10 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
+  const initialMatchingJobIds = listMatchingJobIds(jobsDir, options);
+  const hasInitialMatchingJobs = initialMatchingJobIds.length > 0;
   const trackedJobs = new Set<string>(
-    listMatchingJobIds(jobsDir, options)
-      .filter((jobId) => !isTerminalJobStatus(jobsDir, jobId))
+    initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(jobsDir, jobId))
   );
   const completedJobs = new Set<string>();
 
@@ -409,14 +410,18 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
   // Exit early only when there are no active jobs at follow start.
   if (!options.forever && trackedJobs.size === 0) {
     if (!options.json) {
-      process.stderr.write(dim('All jobs complete.\n'));
+      const message = hasInitialMatchingJobs ? 'All jobs complete.\n' : 'No jobs found.\n';
+      process.stderr.write(dim(message));
     }
     return;
   }
 
   // If all tracked jobs already completed during the initial snapshot/seed pass,
   // there is nothing left to follow.
-  if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
+  if (!options.forever && hasInitialMatchingJobs && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
+    if (!options.json) {
+      process.stderr.write('All jobs complete.\n');
+    }
     return;
   }
 
@@ -517,7 +522,7 @@ function showUsage(): void {
 Read background job events.
 
 Modes:
-  specialists feed <job-id>        Replay events for one job
+  specialists feed <job-id>        Show recent events for one job
   specialists feed <job-id> -f     Follow one job until completion
   specialists feed -f              Follow all jobs globally
 

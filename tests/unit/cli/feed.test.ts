@@ -283,6 +283,21 @@ describe('feed CLI', () => {
     expect(combined).toContain('COMPLETE');
   });
 
+  it('prints "No jobs found." in follow mode when jobs directory is empty', async () => {
+    process.argv = ['node', 'specialists', 'feed', '-f'];
+
+    const stderrWrites: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(stripAnsi(stderrWrites.join(''))).toContain('No jobs found.');
+  });
+
   it('exits immediately in follow mode for completed jobs without run_complete', async () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
@@ -534,7 +549,7 @@ describe('feed CLI', () => {
     expect(logs.length).toBe(1);
   });
 
-  it('respects --limit flag', async () => {
+  it('respects --limit flag using the most recent events', async () => {
     createJobDir('job1', 'test', [
       { t: Date.now() - 3000, type: 'run_start', specialist: 'test' },
       { t: Date.now() - 2000, type: 'meta', model: 'claude-3', backend: 'anthropic' },
@@ -553,6 +568,10 @@ describe('feed CLI', () => {
     await run();
 
     expect(logs.length).toBe(2);
+    const combined = logs.join('\n');
+    expect(combined).toContain('TOOL');
+    expect(combined).toContain('DONE');
+    expect(combined).not.toContain('START');
   });
 
   it('suppresses turn/message noise and successful tool end events', async () => {

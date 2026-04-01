@@ -139,7 +139,7 @@ describe('timeline-query', () => {
       expect(filtered).toHaveLength(2);
     });
 
-    it('filters by limit', () => {
+    it('filters by limit using the most recent events', () => {
       const merged = Array.from({ length: 10 }, (_, i) => ({
         jobId: 'j1',
         specialist: 's1',
@@ -148,6 +148,7 @@ describe('timeline-query', () => {
 
       const filtered = filterTimelineEvents(merged, { limit: 3 });
       expect(filtered).toHaveLength(3);
+      expect(filtered.map((item) => item.event.t)).toEqual([7000, 8000, 9000]);
     });
 
     it('filters by jobId', () => {
