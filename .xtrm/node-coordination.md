@@ -166,3 +166,65 @@ With spec frozen (Stream 1), SQLite ready (Stream 2), and node tables designed (
 - unitAI-780u: Memory patch pipeline
 - unitAI-u9my: Beads promotion
 - unitAI-i6up: v1A preset definitions
+
+---
+
+## Full Dependency Sequence
+
+```
+Stage 0 — Validate & Design
+  93rt (output contract)  ←  overthinker first, then executor
+       ↓
+  0jm9 (manual validation)
+       ↓
+  16ov (freeze spec)
+
+Stage 1 — Config Foundations
+  e242 (YAML → JSON migration)
+       ↓
+  22tq (sp edit enrichment)
+       ↓
+  6exi (populate all fields on every specialist)
+       ↓
+  rcxv (sp edit presets: cheap/power/medium)
+
+Stage 2 — SQLite Runtime
+  0c0w (db setup command)
+       ↓
+  08zd Phase 1 (RPC completeness)
+       ↓
+  08zd Phase 2 (pipeline linkage)
+       ↓
+  08zd Phase 3 (SQLite migration)
+       ↓
+  4qam (waiting state visibility)
+
+Stage 3 — Node v1A Core (needs Stage 0 + Stage 2)
+  z5ml (node SQLite persistence model)      ← needs 08zd Phase 3 + 16ov
+       ↓
+  69rw (NodeSupervisor state machine)        ← needs z5ml + 4qam
+       ↓
+  iy5g (coordinator contract + repair loop)  ← needs 69rw
+  w0cg (feed isolation + node_id tagging)    ← needs z5ml + 69rw
+  780u (memory patch pipeline)               ← needs z5ml + iy5g
+  u9my (beads promotion / sp node promote)   ← needs 69rw
+  i6up (v1A preset definitions)              ← needs 16ov + e242 + 22tq
+
+Stage 4 — Node v1B Researcher (needs Stage 3 + MCP wiring)
+  gzrx (centralized manifest)
+  4abv (MCP extension wiring)
+       ↓
+  psc2 (researcher activation)               ← needs i6up + 4abv + gzrx
+```
+
+### What can run in parallel
+- Stage 0 and Stage 1 and Stage 2 — all three fully independent
+- Within Stage 3: iy5g, w0cg, 780u, u9my can partially overlap after 69rw
+- Stage 4 waits for everything
+
+### Assignments
+- **Stream 1 (Stage 0)**: separate orchestrator — output contract + validation
+- **Stream 2 (Stage 2)**: longest path orchestrator — SQLite foundation
+- **Stream 3 (Stage 3 design)**: separate orchestrator — node DB model design
+- **Stage 1 (config)**: can be executor waves between sessions
+- **Stage 3 implementation + Stage 4**: after all streams converge
