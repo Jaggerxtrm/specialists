@@ -13,6 +13,7 @@ const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
 const green  = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+const magenta = (s: string) => `\x1b[35m${s}\x1b[0m`;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ParsedArgs {
@@ -29,6 +30,18 @@ interface LiveJob {
   tmuxSession: string;
   elapsedS: number;
   startedAtMs: number;
+}
+
+function permissionBadge(permission: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH'): string {
+  if (permission === 'READ_ONLY') return green('[READ_ONLY]');
+  if (permission === 'LOW') return cyan('[LOW]');
+  if (permission === 'MEDIUM') return yellow('[MEDIUM]');
+  return magenta('[HIGH]');
+}
+
+function formatScript(script: { run: string; phase: 'pre' | 'post'; inject_output: boolean }): string {
+  const injectField = script.inject_output ? '   inject_output: true' : '';
+  return `- run: ${script.run}   phase: ${script.phase}${injectField}`;
 }
 
 export class ArgParseError extends Error {
@@ -265,14 +278,34 @@ export async function run(): Promise<void> {
 
   console.log(`\n${bold(`Specialists (${specialists.length})`)}\n`);
   for (const s of specialists) {
-    const name     = cyan(s.name.padEnd(nameWidth));
+    const name = cyan(s.name.padEnd(nameWidth));
     const scopeTag = s.scope === 'default' ? green('[default]') : yellow('[user]');
-    const model    = dim(s.model);
-    const desc     = s.description.length > 80
+    const model = dim(s.model);
+    const permission = permissionBadge(s.permission_required);
+    const interactive = s.interactive ? yellow('[interactive]') : dim('[non-interactive]');
+    const thinkingLevel = s.thinking_level ? `  ${dim(`thinking: ${s.thinking_level}`)}` : '';
+    const desc = s.description.length > 80
       ? s.description.slice(0, 79) + '…'
       : s.description;
-    console.log(`  ${name}  ${scopeTag}  ${model}`);
+
+    console.log(`  ${name}  ${scopeTag}  ${permission}  ${interactive}  ${model}`);
     console.log(`  ${' '.repeat(nameWidth)}  ${dim(desc)}`);
+    console.log(`  ${' '.repeat(nameWidth)}  ${dim(`version: ${s.version}`)}${thinkingLevel}`);
+
+    if (s.skills.length > 0) {
+      console.log(`  ${' '.repeat(nameWidth)}  ${bold('skills:')}`);
+      for (const skillPath of s.skills) {
+        console.log(`  ${' '.repeat(nameWidth)}    - ${skillPath}`);
+      }
+    }
+
+    if (s.scripts.length > 0) {
+      console.log(`  ${' '.repeat(nameWidth)}  ${bold('scripts:')}`);
+      for (const script of s.scripts) {
+        console.log(`  ${' '.repeat(nameWidth)}    ${formatScript(script)}`);
+      }
+    }
+
     console.log();
   }
 }

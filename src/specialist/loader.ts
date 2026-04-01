@@ -2,7 +2,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { parseSpecialist, type Specialist } from './schema.js';
+import { parseSpecialist, type ScriptEntry, type Specialist } from './schema.js';
 
 export interface StallDetectionConfig {
   running_silence_warn_ms?: number;
@@ -17,6 +17,11 @@ export interface SpecialistSummary {
   category: string;
   version: string;
   model: string;
+  permission_required: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
+  interactive: boolean;
+  thinking_level?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  skills: string[];
+  scripts: ScriptEntry[];
   scope: 'default' | 'user';
   filePath: string;
   updated?: string;
@@ -95,8 +100,16 @@ export class SpecialistLoader {
           if (category && cat !== category) continue;
           seen.add(name);
           results.push({
-            name, description, category: cat, version,
+            name,
+            description,
+            category: cat,
+            version,
             model: spec.specialist.execution.model,
+            permission_required: spec.specialist.execution.permission_required,
+            interactive: spec.specialist.execution.interactive,
+            thinking_level: spec.specialist.execution.thinking_level,
+            skills: spec.specialist.skills?.paths ?? [],
+            scripts: spec.specialist.skills?.scripts ?? [],
             scope: dir.scope,
             filePath,
             updated,

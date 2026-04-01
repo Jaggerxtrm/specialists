@@ -17652,6 +17652,11 @@ class SpecialistLoader {
             category: cat,
             version: version2,
             model: spec.specialist.execution.model,
+            permission_required: spec.specialist.execution.permission_required,
+            interactive: spec.specialist.execution.interactive,
+            thinking_level: spec.specialist.execution.thinking_level,
+            skills: spec.specialist.skills?.paths ?? [],
+            scripts: spec.specialist.skills?.scripts ?? [],
             scope: dir.scope,
             filePath,
             updated,
@@ -18840,6 +18845,19 @@ import { spawnSync as spawnSync3 } from "node:child_process";
 import { existsSync as existsSync5, readdirSync, readFileSync as readFileSync2 } from "node:fs";
 import { join as join5 } from "node:path";
 import readline from "node:readline";
+function permissionBadge(permission) {
+  if (permission === "READ_ONLY")
+    return green("[READ_ONLY]");
+  if (permission === "LOW")
+    return cyan("[LOW]");
+  if (permission === "MEDIUM")
+    return yellow2("[MEDIUM]");
+  return magenta("[HIGH]");
+}
+function formatScript(script) {
+  const injectField = script.inject_output ? "   inject_output: true" : "";
+  return `- run: ${script.run}   phase: ${script.phase}${injectField}`;
+}
 function toLiveJob(status) {
   if (!status)
     return null;
@@ -19029,13 +19047,29 @@ ${bold2(`Specialists (${specialists.length})`)}
     const name = cyan(s.name.padEnd(nameWidth));
     const scopeTag = s.scope === "default" ? green("[default]") : yellow2("[user]");
     const model = dim2(s.model);
+    const permission = permissionBadge(s.permission_required);
+    const interactive = s.interactive ? yellow2("[interactive]") : dim2("[non-interactive]");
+    const thinkingLevel = s.thinking_level ? `  ${dim2(`thinking: ${s.thinking_level}`)}` : "";
     const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
-    console.log(`  ${name}  ${scopeTag}  ${model}`);
+    console.log(`  ${name}  ${scopeTag}  ${permission}  ${interactive}  ${model}`);
     console.log(`  ${" ".repeat(nameWidth)}  ${dim2(desc)}`);
+    console.log(`  ${" ".repeat(nameWidth)}  ${dim2(`version: ${s.version}`)}${thinkingLevel}`);
+    if (s.skills.length > 0) {
+      console.log(`  ${" ".repeat(nameWidth)}  ${bold2("skills:")}`);
+      for (const skillPath of s.skills) {
+        console.log(`  ${" ".repeat(nameWidth)}    - ${skillPath}`);
+      }
+    }
+    if (s.scripts.length > 0) {
+      console.log(`  ${" ".repeat(nameWidth)}  ${bold2("scripts:")}`);
+      for (const script of s.scripts) {
+        console.log(`  ${" ".repeat(nameWidth)}    ${formatScript(script)}`);
+      }
+    }
     console.log();
   }
 }
-var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError;
+var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, ArgParseError;
 var init_list = __esm(() => {
   init_loader();
   ArgParseError = class ArgParseError extends Error {
@@ -20770,9 +20804,9 @@ function formatEventInlineDebounced(event, activePhase) {
     nextPhase: null
   };
 }
-var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta2 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
-  JOB_COLORS = [cyan4, yellow8, magenta, green7, blue, red2];
+  JOB_COLORS = [cyan4, yellow8, magenta2, green7, blue, red2];
   EVENT_LABELS = {
     run_start: "START",
     meta: "META",
@@ -30699,6 +30733,9 @@ async function run24() {
         "  - specialist name",
         "  - model",
         "  - short description",
+        "  - permission_required + interactive mode",
+        "  - version + optional thinking_level",
+        "  - skills.paths and configured pre/post scripts",
         "",
         "Options:",
         "  --category <name>   Filter by category tag",
@@ -30710,6 +30747,11 @@ async function run24() {
         "  specialists list --category analysis",
         "  specialists list --json",
         "  specialists list --live",
+        "",
+        "More help:",
+        "  specialists help            Full command catalog",
+        "  specialists run --help      Run command details and keep-alive options",
+        "  specialists init --help     Bootstrap and project workflow setup",
         "",
         "Project model:",
         "  Specialists are project-only. User-scope discovery is deprecated.",
