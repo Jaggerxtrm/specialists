@@ -19035,30 +19035,27 @@ async function run3() {
     console.log("No specialists found.");
     return;
   }
-  const nameWidth = Math.max(...specialists.map((s) => s.name.length), 4);
-  const indent = "  " + " ".repeat(nameWidth + 2);
   console.log(`
 ${bold2(`Specialists (${specialists.length})`)}
 `);
   for (const s of specialists) {
-    const name = cyan(s.name.padEnd(nameWidth));
     const scopeTag = s.scope === "default" ? green("[default]") : yellow2("[user]");
     const permission = permissionBadge(s.permission_required);
     const keepAliveTag = s.interactive ? `  ${yellow2("[keep-alive]")}` : "";
     const thinkingTag = s.thinking_level && s.thinking_level !== "off" ? `  ${dim2(`thinking:${s.thinking_level}`)}` : "";
     const model = dim2(s.model);
-    const desc = s.description.length > 72 ? s.description.slice(0, 71) + "…" : s.description;
-    console.log(`  ${name}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
-    console.log(`${indent}${dim2(desc)}`);
+    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
+    console.log(`  ${cyan(s.name)}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
+    console.log(`  ${dim2(desc)}`);
     if (s.skills.length > 0) {
-      console.log(`${indent}${dim2("skills: " + s.skills.join("  "))}`);
+      console.log(`  ${dim2("skills: " + s.skills.join("  "))}`);
     }
     if (s.scripts.length > 0) {
       const scriptSummary = s.scripts.map((sc) => {
         const inject = sc.inject_output ? " →$out" : "";
         return `${sc.phase}: ${sc.run}${inject}`;
       }).join("  ∙  ");
-      console.log(`${indent}${dim2("scripts: " + scriptSummary)}`);
+      console.log(`  ${dim2("scripts: " + scriptSummary)}`);
     }
     console.log();
   }

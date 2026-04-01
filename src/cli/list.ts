@@ -270,25 +270,21 @@ export async function run(): Promise<void> {
     return;
   }
 
-  const nameWidth = Math.max(...specialists.map(s => s.name.length), 4);
-  const indent = '  ' + ' '.repeat(nameWidth + 2);
-
   console.log(`\n${bold(`Specialists (${specialists.length})`)}\n`);
   for (const s of specialists) {
-    const name = cyan(s.name.padEnd(nameWidth));
     const scopeTag = s.scope === 'default' ? green('[default]') : yellow('[user]');
     const permission = permissionBadge(s.permission_required);
     const keepAliveTag = s.interactive ? `  ${yellow('[keep-alive]')}` : '';
     const thinkingTag = s.thinking_level && s.thinking_level !== 'off'
       ? `  ${dim(`thinking:${s.thinking_level}`)}` : '';
     const model = dim(s.model);
-    const desc = s.description.length > 72 ? s.description.slice(0, 71) + '…' : s.description;
+    const desc = s.description.length > 80 ? s.description.slice(0, 79) + '…' : s.description;
 
-    console.log(`  ${name}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
-    console.log(`${indent}${dim(desc)}`);
+    console.log(`  ${cyan(s.name)}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
+    console.log(`  ${dim(desc)}`);
 
     if (s.skills.length > 0) {
-      console.log(`${indent}${dim('skills: ' + s.skills.join('  '))}`);
+      console.log(`  ${dim('skills: ' + s.skills.join('  '))}`);
     }
 
     if (s.scripts.length > 0) {
@@ -296,7 +292,7 @@ export async function run(): Promise<void> {
         const inject = sc.inject_output ? ' →$out' : '';
         return `${sc.phase}: ${sc.run}${inject}`;
       }).join('  ∙  ');
-      console.log(`${indent}${dim('scripts: ' + scriptSummary)}`);
+      console.log(`  ${dim('scripts: ' + scriptSummary)}`);
     }
 
     console.log();
