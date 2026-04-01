@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 3.9
+version: 3.10
 ---
 
 # Specialists Usage
@@ -135,7 +135,7 @@ Run `specialists list` to see what's available. Match by task type:
 | Architecture exploration / initial discovery | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY. Use first before any executor run. |
 | Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously after exploration is complete |
 | Bug investigation / "why is X broken" | **debugger** (claude-sonnet-4-6) | GitNexus-first triage, 5-phase investigation, hypothesis ranking, evidence-backed remediation. Use for ANY root cause analysis. |
-| Design decisions / tradeoffs | **overthinker** (gpt-5.4) | 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. **Always use `--keep-alive`** — enters `waiting` after Phase 4 expecting your follow-up. |
+| Complex problems / design decisions / tradeoffs | **overthinker** (gpt-5.4) | Use before executor on any non-trivial task. 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. Iterate with `resume` to refine before handing off to executor. **Always use `--keep-alive`** — enters `waiting` after Phase 4 expecting your follow-up. |
 | Code review / compliance | **reviewer** (claude-sonnet-4-6) | Post-run compliance checks, verdict contract (PASS/PARTIAL/FAIL). **Always use `--keep-alive`** — enters `waiting` after verdict expecting your response or approval. |
 | Multi-backend review | **parallel-review** (claude-sonnet-4-6) | Concurrent review across multiple AI backends |
 | Reference docs / dense schemas | **explorer** (claude-haiku-4-5) | Better than sync-docs for reference-heavy output |
@@ -168,6 +168,32 @@ specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --ba
 specialists run test-runner --bead unitAI-tests --context-depth 2 --background
 specialists run specialists-creator --bead unitAI-skill --context-depth 2 --background
 ```
+
+### Overthinker-first pattern for complex tasks
+
+For any task with non-obvious solutions — architecture decisions, tricky bugs, performance problems, API design — run **overthinker before executor**. The overthinker surfaces edge cases, challenges assumptions, and produces a refined solution direction. The executor then implements against that plan rather than guessing.
+
+```bash
+# 1. Run explorer if context is needed (skip if bead already has scope)
+specialists run explorer --bead unitAI-prob --context-depth 2 --background
+
+# 2. Run overthinker to think through the solution
+specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
+# -> enters waiting after Phase 4
+
+# 3. Iterate: challenge assumptions, ask follow-ups, refine
+specialists resume <job-id> "What about the edge case where X?"
+specialists resume <job-id> "Is option B safer than option A here?"
+
+# 4. Only when satisfied with the design — stop and hand off
+specialists stop <job-id>
+
+# 5. Update executor bead notes with the agreed solution direction
+bd update unitAI-impl --notes "SOLUTION: <overthinker conclusion here>"
+specialists run executor --bead unitAI-impl --context-depth 2 --background
+```
+
+The overthinker is cheap relative to the cost of an executor implementing the wrong thing. Use it liberally on anything non-trivial. Explorer can run before (to gather context) or its output can inform executor targets after.
 
 ### Pi extensions availability (known gap)
 
