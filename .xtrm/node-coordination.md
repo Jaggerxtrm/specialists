@@ -5,10 +5,10 @@
 
 ## Stream 1: Validate Node Concept (unitAI-0jm9)
 
-### Prereq: unitAI-b8ac (wire response_format + output_schema into runner)
+### Prereq: unitAI-93rt (output contract — reopened, was falsely closed)
 
 ### Scope
-- Fix output_schema/response_format injection in runner.ts (unitAI-b8ac)
+- Implement output contract: base + extension catalog (unitAI-93rt — see bead notes for full design)
 - Create `node_coordinator.specialist.json` in `.specialists/user/` with:
   - `response_format: json`
   - `output_schema`: coordinator action contract
@@ -20,23 +20,36 @@
 
 ### Starting prompt for orchestrator
 ```
-Take issues unitAI-b8ac and unitAI-0jm9.
+Take issues unitAI-93rt and unitAI-0jm9.
 
-unitAI-b8ac: response_format and output_schema are dead schema fields in specialist YAML/JSON —
-defined in schema.ts but never read by runner.ts. Fix: runner.ts must inject them into the
-system prompt. If response_format is 'json', append JSON-only instruction. If output_schema
-is present, append the schema definition.
+unitAI-93rt (REOPENED — was falsely closed by executor): Define standardized specialist
+output contract. Design: base contract (summary, status, issues_closed/created, follow_ups,
+risks) + extension catalog (7 types: codegen, analysis, review, synthesis, orchestration,
+workflow, research) + 'custom' escape hatch. Runner merges base + catalog extension by
+output_type field. Users never touch runner.ts — just set output_type: 'codegen' etc.
+See 93rt bead notes for full design with all 3 updates.
 
-After b8ac lands: create node_coordinator.specialist.json (see 0jm9 notes for full spec).
-Then run the manual validation described in 0jm9 notes — start 3 keep-alive specialists,
-manually orchestrate 3+ coordinator turns, verify JSON output contract works.
+After 93rt lands: create node_coordinator.specialist.json (see 0jm9 notes for full spec,
+output_type: 'orchestration'). Then run the manual validation described in 0jm9 notes —
+start 3 keep-alive specialists, manually orchestrate 3+ coordinator turns, verify JSON
+output contract works.
 
 Key files: src/specialist/runner.ts, src/specialist/schema.ts
-Key context: bd show unitAI-b8ac, bd show unitAI-0jm9
+Key context: bd show unitAI-93rt, bd show unitAI-0jm9
 ```
 
+### Before starting: iterate with overthinker on 93rt
+Fire an overthinker on unitAI-93rt before implementation. Give it the full bead notes
+(3 design updates) and ask it to:
+1. Validate the base + extension catalog model
+2. Challenge whether 7 extension types is the right number or if some should merge
+3. Design the exact runner.ts injection logic (where in the prompt, how to merge)
+4. Propose the output_type field addition to specialist schema
+5. Consider edge cases: what if output_type is missing? What if custom + output_type both set?
+At least 2 turns back and forth to refine before handing to executor.
+
 ### Beads to claim
-- unitAI-b8ac (bug fix)
+- unitAI-93rt (output contract)
 - unitAI-0jm9 (validation)
 - unitAI-16ov (spec freeze — after validation)
 
@@ -122,7 +135,8 @@ Key context: bd show unitAI-z5ml, bd show unitAI-2b3m (parent epic with full des
 ```
 Stream 1 (validation)     Stream 2 (SQLite)        Stream 3 (node DB)
 ─────────────────────     ──────────────────        ──────────────────
-b8ac (output_schema fix)  0c0w (db setup)           z5ml (design tables)
+93rt (output contract)    0c0w (db setup)           z5ml (design tables)
+  ↑ overthinker first
          ↓                       ↓                  [blocked until 08zd
 0jm9 (manual validation)  08zd Phase 1              Phase 3 has tables]
          ↓                       ↓
