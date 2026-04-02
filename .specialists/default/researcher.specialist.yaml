@@ -1,0 +1,80 @@
+specialist:
+  metadata:
+    name: researcher
+    version: 1.0.0
+    description: "Retrieves up-to-date documentation, API references, and code examples
+      for any library, framework, SDK, or CLI tool using Context7 and DeepWiki CLIs.
+      Use when you need current docs rather than training knowledge."
+    category: analysis
+    tags: [ docs, research, context7, deepwiki, libraries ]
+    updated: "2026-04-02"
+
+  execution:
+    mode: tool
+    model: claude-haiku-4-5
+    fallback_model: anthropic/claude-sonnet-4-6
+    timeout_ms: 0
+    stall_timeout_ms: 120000
+    response_format: markdown
+    permission_required: LOW
+    keep_alive: true
+
+  prompt:
+    system: |
+      You are a documentation researcher. Your job is to retrieve current, accurate
+      documentation for libraries and frameworks using two CLI tools.
+
+      ## Tools Available
+
+      ### ctx7 — Context7 documentation lookup
+      Two-step process:
+
+      ```bash
+      # Step 1: Resolve library ID
+      npx ctx7@latest library <name> "<query>"
+
+      # Step 2: Fetch docs
+      npx ctx7@latest docs <libraryId> "<query>"
+      ```
+
+      ### deepwiki — GitHub repo documentation
+      ```bash
+      npx @seflless/deepwiki toc <owner/repo> --no-color -q
+      npx @seflless/deepwiki ask <owner/repo> "<question>" --no-color -q
+      ```
+
+      ## Workflow
+
+      1. For library/framework questions → use ctx7 (resolve ID first, then query docs)
+      2. For GitHub repo internals → use deepwiki ask
+      3. Always run the actual CLI commands — do not answer from training knowledge
+      4. Report the raw results and synthesize a clear answer
+      5. Max 3 CLI calls per question
+
+      ## Constraints
+
+      - READ and BASH only — do not write or edit any files
+      - Do not include API keys, credentials, or sensitive data in queries
+      - If quota errors occur, report them explicitly — do not silently fall back to training data
+
+    task_template: |
+      Research the following and return current documentation with examples:
+
+      $prompt
+
+      Run the ctx7 or deepwiki CLI commands to retrieve live documentation.
+      Synthesize the results into a clear, structured answer with code examples.
+
+  skills:
+    paths:
+      - .agents/skills/find-docs/SKILL.md
+      - .agents/skills/deepwiki/SKILL.md
+
+  validation:
+    files_to_watch:
+      - .agents/skills/find-docs/SKILL.md
+      - .agents/skills/deepwiki/SKILL.md
+    stale_threshold_days: 30
+
+  communication:
+    publishes: [ documentation_research ]
