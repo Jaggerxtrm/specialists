@@ -13,11 +13,13 @@
 
 ## Live Status (updated 2026-04-03)
 
-### Stream 1 — Output Contract + Validation (another agent)
+### Stream 1 — Output Contract + Validation (this orchestrator)
 | Bead | Job | Status | Notes |
 |------|-----|--------|-------|
-| unitAI-93rt | 9f19b9 (executor) | ✅ CLOSED | output_type + response_format + output_schema wired in runner. Warn-only post-run validation. Adopted in executor/explorer/planner. ⚠️ pre-existing lint errors in supervisor.ts (unrelated) |
-| unitAI-0jm9 | — | 🔜 open | Create node_coordinator.specialist.json + run 3-turn manual validation loop |
+| unitAI-93rt | e92066 (executor) | ✅ CLOSED | Redesigned: semantic output_type enum (codegen\|analysis\|review\|synthesis\|orchestration\|workflow\|research\|custom). Base contract adds `verification` field. Markdown sections split Risks/Follow-ups. Base+extension+yaml merge in runner. Warn-only validation. Overthinker-validated (cbae9a, 2 turns) before impl. Both specialists-creator SKILL.md files updated. All default specialists skill paths migrated .agents/→.xtrm/. Lint clean, 44 tests pass. |
+| unitAI-c02w | — | ✅ CLOSED | Fix: specialists-creator YAML skill paths → .xtrm/skills/active/pi/ in both config/ and .specialists/default/ |
+| unitAI-w2w6 | b670f1 (explorer) | ✅ CLOSED | SKILL parity: perfect ✓. docs/authoring.md: missing output_type entirely. 8 specialists missing output_type (debugger→analysis, overthinker→synthesis, researcher→research, memory-processor→workflow, parallel-review→review, sync-docs→workflow, test-runner→workflow, specialists-creator→codegen). researcher uses invalid `keep_alive` field (must be `interactive`). xt-merge skill path still .agents/ not .xtrm/. Non-standard fields (publishes, output_to, diagnostic_scripts) in some YAMLs. |
+| unitAI-0jm9 | — | 🔜 open | Create node_coordinator.specialist.yaml (not .json — e242 not landed yet) + run 3-turn manual validation loop |
 | unitAI-16ov | — | blocked on 0jm9 | Spec freeze after validation |
 
 ### Stream 2 — SQLite Foundation
@@ -28,10 +30,11 @@
 | unitAI-08zd Phase 1 retry | 00df5e (executor) | ❌ crashed again (FIFO test hang — pre-existing) | supervisor.test.ts keep-alive test hangs in original code too — not a regression. All other tests pass. |
 | unitAI-08zd Phase 1 | — | ✅ ready to commit | Lint clean. 9 test files pass. supervisor.test.ts hang is pre-existing. Committing partial + Phase 2 next. |
 | unitAI-08zd Phase 2 | 623cdd (executor) | ❌ did nothing (15s, no output) | Stopped — explorer-first required |
-| unitAI-30k2 review | b2883e (reviewer, keep-alive) | 🔄 running | Reviewing Phase 1 commit 200b0eb9 |
-| unitAI-9twy explore | c1c2fc (explorer) | 🔄 running | Mapping Phase 2 scope: feed/status/result gaps |
-| unitAI-08zd Phase 2 | — | ⏳ blocked on review + explore | Executor dispatches after both complete |
-| unitAI-08zd Phase 3 | — | blocked on Phase 2 | SQLite migration, WAL mode, worktree column |
+| unitAI-30k2 review | d8fb3c (reviewer, keep-alive) | ✅ PASS 82/100 | Phase 1 approved. Gaps: no schema migration, cwd not passed to SQLite client, auto_compaction dead-end, output_type not in run_complete. |
+| unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
+| unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. Crashed on supervisor.test.ts FIFO hang (pre-existing). 56 tests pass. Committed 84889edc. |
+| unitAI-08zd Phase 3 | — | blocked on Phase 2 + planner | SQLite migration, WAL mode, worktree column — needs planner decomposition first (unitAI-3chh) |
+| unitAI-3chh | — | blocked on Phase 2 | Planner bead: decompose Phase 3 into worktree-safe sub-tasks with explicit file ownership |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
 
 ### Stream 3 — Node Persistence (another agent)
@@ -120,6 +123,38 @@ Key context: bd show unitAI-0c0w, bd show unitAI-08zd
 - unitAI-0c0w (db setup)
 - unitAI-08zd Phase 1 tasks (may need sub-issues)
 - unitAI-4qam (after db infrastructure exists)
+
+---
+
+## Stream 2 Handoff: Phase 3 Planner (unitAI-3chh)
+
+> **Prerequisite**: Phase 2 executor (unitAI-bmpq) must be closed before dispatching planner.
+> **Worktree rule**: Any executor with edit permission runs in its own worktree. Reviewer/test-runner must `cd` into that same worktree. Orchestrator merges in dependency order.
+
+### Starting prompt for next agent
+
+```
+Take issue unitAI-3chh — planner decomposition for 08zd Phase 3.
+
+Phase 1 (RPC observability callbacks) and Phase 2 (CLI surface enrichment) are landed.
+Phase 3 is the heaviest phase of the 08zd epic: full SQLite persistence replacing
+in-memory job state in Supervisor, WAL mode, worktree_column, and read-path changes
+across feed/status/result CLI commands.
+
+Your job is PLANNING ONLY — do not implement. Produce a set of sub-task beads with:
+- One bead per executor run (scope must fit in one session, ~200 lines max)
+- Explicit file ownership per bead (no two beads touch the same file)
+- Dependency order between beads
+- For each bead: title, description, files owned, what must land first
+
+Key context: bd show unitAI-3chh, bd show unitAI-08zd, bd show unitAI-bmpq
+Key files: src/specialist/supervisor.ts, src/specialist/observability-sqlite.ts,
+           src/cli/feed.ts, src/cli/status.ts, src/cli/result.ts
+
+After plan is accepted, executors will run one per worktree branch. Do not skip
+the file-ownership constraint — this caused crashes earlier (two executors touching
+supervisor.ts simultaneously without isolation).
+```
 
 ---
 

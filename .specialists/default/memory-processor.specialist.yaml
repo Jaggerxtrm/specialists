@@ -169,13 +169,15 @@ specialist:
 
   skills:
     paths:
+      - .xtrm/skills/active/pi/documenting/SKILL.md
+      - .xtrm/skills/active/pi/using-xtrm/SKILL.md
 
   validation:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - .agents/skills/documenting/SKILL.md
-      - .agents/skills/using-xtrm/SKILL.md
+      - .xtrm/skills/default/documenting/SKILL.md
+      - .xtrm/skills/default/using-xtrm/SKILL.md
     stale_threshold_days: 30
 
   communication:
