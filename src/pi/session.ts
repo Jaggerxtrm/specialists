@@ -169,6 +169,12 @@ export class PiAgentSession {
     const ssPath = join(piExtDir, 'service-skills');
     if (existsSync(ssPath)) args.push('-e', ssPath);
 
+    const serenaPath = join(piExtDir, 'serena');
+    if (existsSync(serenaPath)) args.push('-e', serenaPath);
+
+    const gitnexusPath = join(piExtDir, 'gitnexus');
+    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+
     if (this.options.systemPrompt) {
       args.push('--append-system-prompt', this.options.systemPrompt);
     }
