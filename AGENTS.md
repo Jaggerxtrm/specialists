@@ -2,6 +2,31 @@
 # XTRM Agent Workflow
 
 > Full reference: [XTRM-GUIDE.md](XTRM-GUIDE.md)
+> Run `bd prime` at session start (or after context reset) for live beads workflow context.
+
+## Session Start
+
+1. `bd prime` — load workflow context and active claims
+2. `bd memories <keyword>` — retrieve memories relevant to today's task
+3. `bd recall <key>` — retrieve a specific memory by key if needed
+4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
+5. `bd update <id> --claim` — claim before any file edit
+
+## Execution Interaction Policy
+
+- Proceed by default on standard implementation tasks once scope is clear.
+- Do **not** ask repetitive “Proceed? Yes/No” confirmations.
+- Ask for confirmation only when actions are destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
+- Prefer concise clarifying questions only when requirements are genuinely ambiguous.
+
+## Active Gates (extensions enforce these — not optional)
+
+| Gate | Trigger | Required action |
+|------|---------|-----------------|
+| **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
+| **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
+| **Stop** | Session end with unclosed claim | `bd close <id>` |
+| **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` |
 
 ## bd Command Reference
 
@@ -26,9 +51,11 @@ bd create --title="..." --description="..." --type=task --priority=2
 # types: task | bug | feature | epic | chore | decision
 
 # Closing
-bd close <id>                          # Close issue
+# Memory gate: ack per issue before close
+#   bd kv set "memory-acked:<id>" "saved:<key>"  OR  "nothing novel:<reason>"
+bd close <id>                          # Close issue (blocked until memory-acked:<id> exists)
 bd close <id> --reason="Done: ..."     # Close with context
-bd close <id1> <id2> <id3>            # Batch close
+bd close <id1> <id2> <id3>            # Batch close (each id needs its own memory ack)
 
 # Dependencies
 bd dep add <issue> <depends-on>        # issue depends on depends-on (depends-on blocks issue)
@@ -49,12 +76,25 @@ bd preflight --check                   # Pre-PR readiness (lint, tests, beads)
 bd doctor                              # Diagnose installation issues
 ```
 
+## Git Workflow (strict: one branch per issue)
+
+```bash
+git checkout -b feature/<issue-id>-<slug>   # or fix/... chore/...
+bd update <id> --claim                       # claim before any edit
 # ... write code ...
 bd close <id> --reason="..."                 # closes issue
 xt end                                       # push, PR, merge, worktree cleanup
 ```
 
 **Never** continue new work on a previously used branch.
+
+## Quality Gates (automatic)
+
+Run on every file edit via PostToolUse extension:
+- **TypeScript/JS**: ESLint + tsc
+- **Python**: ruff + mypy
+
+Gate output appears as extension context. Fix failures before proceeding — do not commit with lint errors.
 
 ## bv — Graph-Aware Triage
 
@@ -103,12 +143,16 @@ bv --robot-plan | jq '.plan.summary.highest_impact'
 bv --robot-insights | jq '.Cycles'               # Circular deps — must fix
 ```
 
+## Worktree Sessions
+
+- `xt pi` — launch Pi in a sandboxed worktree
+- `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (1448 symbols, 2836 relationships, 118 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (1919 symbols, 3817 relationships, 159 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

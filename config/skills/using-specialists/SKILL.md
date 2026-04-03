@@ -133,6 +133,7 @@ Run `specialists list` to see what's available. Match by task type:
 | Task type | Best specialist | Why |
 |-----------|----------------|-----|
 | Architecture exploration / initial discovery | **explorer** (claude-haiku-4-5) | Fast codebase mapping, READ_ONLY. Use first before any executor run. |
+| Live docs / library lookup / code discovery | **researcher** (claude-haiku-4-5) | Two modes: *targeted* (ctx7 for library docs, deepwiki for repo internals) and *discovery* (ghgrep → find interesting repos → deepwiki deep dive). Always use `--keep-alive` — enters `waiting` after each turn. |
 | Bug fix / implementation | **executor** (gpt-5.3-codex) | HIGH perms, writes code + tests autonomously after exploration is complete |
 | Bug investigation / "why is X broken" | **debugger** (claude-sonnet-4-6) | GitNexus-first triage, 5-phase investigation, hypothesis ranking, evidence-backed remediation. Use for ANY root cause analysis. |
 | Complex problems / design decisions / tradeoffs | **overthinker** (gpt-5.4) | Use before executor on any non-trivial task. 4-phase reasoning: analysis, devil's advocate, synthesis, conclusion. Iterate with `resume` to refine before handing off to executor. **Always use `--keep-alive`** — enters `waiting` after Phase 4 expecting your follow-up. |
@@ -147,6 +148,7 @@ Run `specialists list` to see what's available. Match by task type:
 
 ### Specialist selection lessons (from real sessions)
 
+- **researcher** is the docs and discovery specialist. Two modes: *targeted* (look up ctx7/deepwiki docs for a specific library relevant to the current job) and *discovery* (ghgrep for code patterns → spot interesting repos → deepwiki deep dive). Keep-alive by design — resume with follow-up questions or new research angles. Do not look up docs yourself — delegate to researcher.
 - **explorer** before **executor** when the bead lacks a clear track. If the bead already specifies files/symbols/approach, send executor directly. Use explorer when an executor would have to guess — it wastes time and tokens.
 - **debugger** is the most powerful investigation specialist. Uses GitNexus call-chain tracing (when available) for 5-phase root cause analysis with ranked hypotheses. Use for ANY "why is X broken" question — don't do the investigation yourself.
 - **sync-docs** is an interactive specialist — it audits first, then waits for approval before executing. Run with `--keep-alive` and use `resume` to approve or deny. Not a bug, it's the design.
@@ -159,6 +161,7 @@ Run `specialists list` to see what's available. Match by task type:
 
 ```bash
 specialists run explorer --bead unitAI-exp --context-depth 2 --background
+specialists run researcher --bead unitAI-research --context-depth 2 --keep-alive --background
 specialists run debugger --bead unitAI-bug --context-depth 2 --background
 specialists run planner --bead unitAI-scope --context-depth 2 --background
 specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
@@ -232,6 +235,7 @@ Only works with `--keep-alive` jobs. The session retains full conversation histo
 
 | Specialist | What triggers `waiting` | What to send via `resume` |
 |-----------|------------------------|--------------------------|
+| **researcher** | After delivering research findings | Follow-up question, new research angle, or "done, thanks" |
 | **reviewer** | After delivering verdict (PASS/PARTIAL/FAIL) | Your response, clarification, or "accepted, close out" |
 | **overthinker** | After Phase 4 conclusion | Follow-up question, counter-argument, or "done, thanks" |
 | **sync-docs** | After audit report | "approve", "deny", or specific instructions |

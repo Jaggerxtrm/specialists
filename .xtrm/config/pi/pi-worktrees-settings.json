@@ -1,0 +1,6 @@
+{
+  "worktree": {
+    "parentDir": "../{{project}}.worktrees",
+    "onCreate": "npm install 2>/dev/null || true"
+  }
+}

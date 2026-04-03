@@ -255,7 +255,7 @@ specialist:
 
   skills:
     paths:
-      - .claude/skills/specialists-creator/
+      - .xtrm/skills/active/pi/clean-code/SKILL.md
     scripts:
       - run: "git diff --stat HEAD 2>/dev/null || true"
         phase: pre

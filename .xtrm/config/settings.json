@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__list_memories",
+      "mcp__serena__read_memory",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__find_symbol",
+      "mcp__serena__replace_symbol_body",
+      "Bash(python -m py_compile:*)",
+      "Bash(tree:*)",
+      "Bash(podman exec:*)",
+      "Bash(bd show:*)",
+      "Bash(bd list:*)",
+      "Bash(bd ready:*)",
+      "Bash(bd stats:*)",
+      "Bash(bd search:*)",
+      "Bash(bd prime:*)",
+      "Bash(bd memories:*)",
+      "Bash(bd recall:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git fetch:*)",
+      "mcp__serena__list_dir",
+      "mcp__yfinance-market-intelligence__get_volatility_metrics",
+      "mcp__yfinance-market-intelligence__get_amt_snapshot",
+      "mcp__yfinance-market-intelligence__get_market_overview",
+      "Skill(scan-context)",
+      "mcp__gmail__search_emails",
+      "mcp__gmail__read_email",
+      "mcp__gmail__batch_modify_emails",
+      "mcp__gmail__list_email_labels"
+    ],
+    "defaultMode": "default"
+  },
+  "model": "sonnet",
+  "skillSuggestions": {
+    "enabled": true
+  }
+}

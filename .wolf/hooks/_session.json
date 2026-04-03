@@ -1,0 +1,44 @@
+{
+  "session_id": "session-2026-04-01-0426",
+  "started": "2026-04-01T02:26:33.546Z",
+  "files_read": {
+    "/home/dawid/projects/specialists/src/cli/list.ts": {
+      "count": 2,
+      "tokens": 0,
+      "first_read": "2026-04-01T04:01:21.852Z"
+    },
+    "/home/dawid/projects/specialists/.claude/settings.json": {
+      "count": 1,
+      "tokens": 26,
+      "first_read": "2026-04-01T05:07:30.636Z"
+    }
+  },
+  "files_written": [
+    {
+      "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+      "action": "edit",
+      "tokens": 376,
+      "at": "2026-04-01T04:01:35.122Z"
+    },
+    {
+      "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+      "action": "edit",
+      "tokens": 1,
+      "at": "2026-04-01T04:01:42.646Z"
+    },
+    {
+      "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+      "action": "edit",
+      "tokens": 323,
+      "at": "2026-04-01T04:04:51.109Z"
+    }
+  ],
+  "edit_counts": {
+    "src/cli/list.ts": 3
+  },
+  "anatomy_hits": 1,
+  "anatomy_misses": 1,
+  "repeated_reads_warned": 1,
+  "cerebrum_warnings": 0,
+  "stop_count": 17
+}

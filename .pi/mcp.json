@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "lifecycle": "lazy",
+      "idleTimeout": 10
+    },
+    "deepwiki": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "pi-mcp-adapter",
+        "https://mcp.deepwiki.com/mcp"
+      ],
+      "lifecycle": "lazy",
+      "idleTimeout": 10
+    },
+    "github-grep": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "pi-mcp-adapter",
+        "https://mcp.grep.app"
+      ],
+      "lifecycle": "lazy",
+      "idleTimeout": 10
+    },
+    "gitnexus": {
+      "command": "gitnexus",
+      "args": [
+        "mcp"
+      ],
+      "lifecycle": "lazy",
+      "idleTimeout": 10
+    },
+    "specialists": {
+      "command": "specialists",
+      "args": [],
+      "lifecycle": "lazy",
+      "idleTimeout": 10
+    }
+  }
+}

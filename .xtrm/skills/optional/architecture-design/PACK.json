@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1",
+  "name": "architecture-design",
+  "version": "1.0.0",
+  "description": "Architecture and design pattern skills",
+  "skills": [
+    "architecture-patterns",
+    "subagent-driven-development",
+    "prompt-engineering-patterns"
+  ]
+}

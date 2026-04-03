@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1",
+  "name": "code-quality",
+  "version": "1.0.0",
+  "description": "Code quality and review skills",
+  "skills": [
+    "systematic-debugging",
+    "verification-before-completion",
+    "code-review-excellence",
+    "multi-reviewer-patterns"
+  ]
+}

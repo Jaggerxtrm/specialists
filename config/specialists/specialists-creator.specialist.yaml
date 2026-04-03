@@ -70,7 +70,7 @@ specialist:
 
   skills:
     paths:
-      - config/skills/specialists-creator/SKILL.md
+      - .xtrm/skills/active/pi/specialists-creator/SKILL.md
     scripts:
       - run: "pi --list-models"
         phase: pre

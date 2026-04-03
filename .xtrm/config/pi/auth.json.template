@@ -1,0 +1,14 @@
+{
+  "zai": {
+    "type": "api_key",
+    "key": "{{ZAI_API_KEY}}"
+  },
+  "dashscope": {
+    "type": "api_key",
+    "key": "{{DASHSCOPE_API_KEY}}"
+  },
+  "anthropic": {},
+  "google-gemini-cli": {},
+  "qwen-cli": {},
+  "google-antigravity": {}
+}

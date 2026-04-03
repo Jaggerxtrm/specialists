@@ -106,7 +106,7 @@ specialist:
 
   skills:
     paths:
-      - .agents/skills/xt-debugging/SKILL.md
+      - .xtrm/skills/default/active/pi/xt-debugging/SKILL.md
 
   capabilities:
     required_tools: [bash, grep, find, read]

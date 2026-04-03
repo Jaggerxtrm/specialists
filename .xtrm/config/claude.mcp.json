@@ -1,0 +1,29 @@
+{
+  "$schema": "../vsync_repo/schemas/mcp_servers.schema.json",
+  "$metadata": {
+    "description": "Core MCP servers - installed by default for all agents",
+    "agents": ["claude-code", "gemini", "qwen", "antigravity"],
+    "version": "2.0.0"
+  },
+  "mcpServers": {
+    "github-grep": {
+      "type": "http",
+      "url": "https://mcp.grep.app"
+    },
+    "deepwiki": {
+      "type": "http",
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "gitnexus": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "gitnexus", "mcp"],
+      "env": {},
+      "_notes": {
+        "description": "Code intelligence MCP - provides graph queries for impact analysis, execution flows, symbol context",
+        "prerequisite": "Run 'gitnexus analyze' in the project first to build the index",
+        "auto_index": "xtrm project init runs gitnexus analyze automatically"
+      }
+    }
+  }
+}

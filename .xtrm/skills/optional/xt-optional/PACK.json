@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1",
+  "name": "xt-optional",
+  "version": "1.0.0",
+  "description": "Optional xt selected skills",
+  "skills": [
+    "docker-expert",
+    "obsidian-cli",
+    "python-testing",
+    "senior-backend",
+    "senior-data-scientist",
+    "senior-devops",
+    "senior-security"
+  ]
+}
+

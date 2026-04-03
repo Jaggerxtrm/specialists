@@ -1,23 +1,15 @@
 {
   "packages": [
-    "./extensions/auto-session-name",
-    "./extensions/auto-update",
-    "./extensions/beads",
-    "./extensions/compact-header",
-    "./extensions/custom-footer",
-    "./extensions/custom-provider-qwen-cli",
-    "./extensions/git-checkpoint",
-    "./extensions/lsp-bootstrap",
-    "./extensions/pi-serena-compact",
-    "./extensions/quality-gates",
-    "./extensions/service-skills",
-    "./extensions/session-flow",
-    "./extensions/xtrm-loader",
-    "./extensions/xtrm-ui",
     "npm:pi-gitnexus",
     "npm:pi-serena-tools",
     "npm:@zenobius/pi-worktrees",
     "npm:@robhowley/pi-structured-return",
     "npm:@aliou/pi-guardrails"
+  ],
+  "extensions": [
+    "../.xtrm/extensions"
+  ],
+  "skills": [
+    "../.xtrm/skills/active/pi"
   ]
 }

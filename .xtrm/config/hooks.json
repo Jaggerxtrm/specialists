@@ -1,0 +1,84 @@
+{
+  "hooksDir": ".xtrm/hooks",
+  "hooks": {
+    "SessionStart": [
+      {
+        "script": "using-xtrm-reminder.mjs"
+      },
+      {
+        "script": "beads-compact-restore.mjs",
+        "timeout": 5000
+      },
+      {
+        "script": "quality-check-env.mjs",
+        "timeout": 5000
+      },
+      {
+        "script": "xtrm-session-logger.mjs",
+        "timeout": 3000
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "script": "worktree-boundary.mjs",
+        "timeout": 2000
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "script": "beads-edit-gate.mjs",
+        "timeout": 5000
+      },
+      {
+        "matcher": "Bash",
+        "script": "beads-commit-gate.mjs",
+        "timeout": 5000
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|execute_shell_command|bash",
+        "script": "beads-claim-sync.mjs",
+        "timeout": 5000
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "script": "quality-check.cjs",
+        "timeout": 30000
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
+        "script": "quality-check.py",
+        "timeout": 30000
+      },
+      {
+        "matcher": "Bash|Grep|Read|Glob|mcp__serena__find_symbol|mcp__serena__get_symbols_overview|mcp__serena__search_for_pattern|mcp__serena__find_referencing_symbols|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol|mcp__serena__rename_symbol",
+        "script": "gitnexus/gitnexus-hook.cjs",
+        "timeout": 10000
+      },
+      {
+        "script": "xtrm-tool-logger.mjs",
+        "timeout": 3000
+      }
+    ],
+    "Stop": [
+      {
+        "script": "beads-stop-gate.mjs",
+        "timeout": 5000
+      },
+      {
+        "script": "beads-memory-gate.mjs",
+        "timeout": 8000
+      }
+    ],
+    "PreCompact": [
+      {
+        "script": "beads-compact-save.mjs",
+        "timeout": 5000
+      }
+    ]
+  },
+  "statusLine": {
+    "script": "statusline.mjs"
+  }
+}

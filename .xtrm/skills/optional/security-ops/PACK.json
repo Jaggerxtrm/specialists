@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "name": "security-ops",
+  "version": "1.0.0",
+  "description": "Security auditing and DevSecOps skills",
+  "skills": [
+    "security-auditor"
+  ]
+}

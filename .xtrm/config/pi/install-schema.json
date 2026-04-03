@@ -1,0 +1,44 @@
+{
+  "fields": [
+    {
+      "key": "DASHSCOPE_API_KEY",
+      "label": "DashScope API Key",
+      "hint": "From https://dashscope.aliyuncs.com — used for Qwen/GLM/Kimi/MiniMax models",
+      "secret": true,
+      "required": true
+    },
+    {
+      "key": "ZAI_API_KEY",
+      "label": "ZAI API Key",
+      "hint": "From your ZAI account dashboard",
+      "secret": true,
+      "required": false
+    }
+  ],
+  "oauth_providers": [
+    {
+      "key": "anthropic",
+      "instruction": "Run `pi` and authenticate via Claude.ai OAuth"
+    },
+    {
+      "key": "google-gemini-cli",
+      "instruction": "Run `pi` and authenticate via Google OAuth"
+    },
+    {
+      "key": "qwen-cli",
+      "instruction": "Inside `pi`, run `/login qwen-cli` for OAuth device flow"
+    },
+    {
+      "key": "google-antigravity",
+      "instruction": "Run `pi` and authenticate via Google OAuth (Antigravity)"
+    }
+  ],
+  "packages": [
+    "npm:pi-gitnexus",
+    "npm:pi-serena-tools",
+    "npm:@zenobius/pi-worktrees",
+    "npm:@robhowley/pi-structured-return",
+    "npm:@aliou/pi-guardrails",
+    "npm:@aliou/pi-processes"
+  ]
+}

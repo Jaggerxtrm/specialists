@@ -1,7 +1,0 @@
-../core/lib.ts(1,15): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './logger.js'?
-../core/lib.ts(2,15): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './runner.js'?
-../core/lib.ts(3,15): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './adapter.js'?
-index.ts(13,10): error TS2305: Module '"@xtrm/pi-core"' has no exported member 'SubprocessRunner'.
-index.ts(13,28): error TS2305: Module '"@xtrm/pi-core"' has no exported member 'EventAdapter'.
-index.ts(359,59): error TS2339: Property 'sessionId' does not exist on type 'ExtensionContext'.
-index.ts(359,76): error TS2339: Property 'session_id' does not exist on type 'ExtensionContext'.

@@ -1,0 +1,20 @@
+{
+  "defaultProvider": "dashscope",
+  "defaultModel": "glm-5",
+  "defaultThinkingLevel": "medium",
+  "editorPaddingX": 0,
+  "theme": "light",
+  "packages": [
+    "npm:@aliou/pi-guardrails",
+    "npm:pi-gitnexus",
+    "npm:pi-serena-tools",
+    "npm:@zenobius/pi-worktrees",
+    "npm:@aliou/pi-processes"
+  ],
+  "steeringMode": "all",
+  "followUpMode": "all",
+  "hideThinkingBlock": true,
+  "lsp": {
+    "hookMode": "agent_end"
+  }
+}

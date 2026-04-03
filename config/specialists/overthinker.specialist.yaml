@@ -63,8 +63,8 @@ specialist:
 
   skills:
     paths:
-      - .agents/skills/planning/SKILL.md
-
+      - .xtrm/skills/active/pi/deepwiki/
+      - .xtrm/skills/active/pi/find-docs/
   validation:
     files_to_watch:
       - src/specialist/schema.ts

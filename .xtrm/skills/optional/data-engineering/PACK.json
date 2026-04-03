@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "name": "data-engineering",
+  "version": "1.0.0",
+  "description": "Data analysis and engineering skills",
+  "skills": [
+    "data-analyst"
+  ]
+}

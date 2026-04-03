@@ -2,58 +2,52 @@ Implemented ✅
 
 ### Changes made
 
-- **`src/specialist/schema.ts`**
-  - Added YAML option:
-    - `beads_write_notes: z.boolean().default(true)`
+#### 1) Added richer fields to `specialists list` data model + JSON output
+Updated `src/specialist/loader.ts` (`SpecialistSummary`) to include:
 
-- **`src/cli/run.ts`**
-  - Added CLI flag parsing:
-    - `--no-bead-notes`
-  - Added `noBeadNotes` to `RunArgs`
-  - Updated usage string to include new flag
-  - Computes effective note-writing policy:
-    - `false` when `--no-bead-notes` is present
-    - otherwise from specialist YAML `beads_write_notes` (default `true`)
-  - Passes policy through `RunOptions` as `beadsWriteNotes`
+- `permission_required`
+- `interactive`
+- `thinking_level`
+- `skills` (from `skills.paths`)
+- `scripts` (from `skills.scripts`)
+- `version` was already present and remains
 
-- **`src/specialist/runner.ts`**
-  - Extended `RunOptions` with:
-    - `beadsWriteNotes?: boolean`
-
-- **`src/specialist/supervisor.ts`**
-  - Updated note-writing logic:
-    - **Owned bead** (`!inputBeadId`): always write notes
-    - **External/input bead** (`inputBeadId`): write notes only when `beadsWriteNotes !== false`
-  - This applies to both normal external-bead note writes and READ_ONLY append-to-input-bead behavior.
-
-- **`src/index.ts`**
-  - Updated `specialists run --help` output to document:
-    - `--no-bead-notes`
-
-### Tests updated
-
-- **`tests/unit/specialist/schema.test.ts`**
-  - Added coverage for `beads_write_notes` default and override.
-
-- **`tests/unit/cli/run.test.ts`**
-  - Added assertions for:
-    - default `beadsWriteNotes: true`
-    - `--no-bead-notes` forcing `false`
-    - YAML `beads_write_notes: false` being respected
-
-- **`tests/unit/specialist/supervisor.test.ts`**
-  - Added tests ensuring:
-    - external bead notes are skipped when `beadsWriteNotes: false`
-    - owned beads still always get notes even when `beadsWriteNotes: false`
-
-### Verification
-
-Ran successfully:
-- `bun --bun vitest run tests/unit/specialist/supervisor.test.ts tests/unit/cli/run.test.ts tests/unit/specialist/schema.test.ts`
-- `bun run lint`
-
-Also closed bead:
-- `unitAI-sdnt`
+These now flow through `specialists list --json` with schema-parity naming.
 
 ---
-Context: 74% used (approx 31k/42k tokens)
+
+#### 2) Updated human-readable `specialists list` output
+Updated `src/cli/list.ts` to render:
+
+- permission badge: `[READ_ONLY] | [LOW] | [MEDIUM] | [HIGH]`
+- interactive flag: `[interactive]` or `[non-interactive]`
+- version line: `version: x.y.z`
+- optional thinking level: `thinking: <level>`
+- `skills:` block listing each `skills.paths` entry
+- `scripts:` block listing each script in requested style:
+  - `- run: <cmd-or-path>   phase: <pre|post>   inject_output: true` (shown when true)
+
+Also ensured no tags/category were added to human output.
+
+---
+
+#### 3) Updated `sp/specialists list --help` style
+Updated list help in `src/index.ts` to include:
+
+- **Examples** section
+- **More help** section
+
+matching the broader CLI help style convention.
+
+---
+
+### Validation run
+
+- `bun test tests/unit/cli/list.test.ts tests/integration/cli/attach.integration.test.ts` ✅
+- `bun run lint` (`tsc --noEmit`) ✅
+
+---
+
+Also closed bead:
+
+- `bd close unitAI-ebkf --reason="Implemented richer specialists list output (permission, interactive, version, thinking_level, skills, scripts) and updated list help format."`

@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-03-31T23:34:40.339Z",
+      "error_message": "Missing error handling in unknown",
+      "file": ".claude/skills/using-specialists/SKILL.md",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-03-31T23:34:40.339Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-03-31T23:46:34.089Z",
+      "error_message": "Incorrect value in code",
+      "file": ".claude/skills/using-specialists/SKILL.md",
+      "root_cause": "Had 's advocate, synthesis, conclusion. Use with `",
+      "fix": "Changed to 's advocate, synthesis, conclusion. **Always use `",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-03-31T23:46:48.101Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-03-31T23:47:35.067Z",
+      "error_message": "Significant refactor of ",
+      "file": ".claude/skills/using-specialists/SKILL.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 20→49 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-03-31T23:47:35.067Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-04-01T01:48:12.008Z",
+      "error_message": "Incorrect value in code",
+      "file": ".claude/skills/using-specialists/SKILL.md",
+      "root_cause": "Had 's advocate, synthesis, conclusion. **Always use `",
+      "fix": "Changed to 's advocate, synthesis, conclusion. Iterate with `",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-01T01:48:12.008Z"
+    }
+  ]
+}

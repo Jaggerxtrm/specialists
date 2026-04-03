@@ -85,8 +85,8 @@ specialist:
 
   skills:
     paths:
-      - ~/.agents/skills/planning/
-      - ~/.agents/skills/test-planning/
+      - .xtrm/skills/active/pi/planning/SKILL.md
+      - .xtrm/skills/active/pi/test-planning/SKILL.md
 
   capabilities:
     required_tools: [bash, read, grep, glob]
@@ -96,8 +96,6 @@ specialist:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - .agents/skills/planning/SKILL.md
-      - .agents/skills/test-planning/SKILL.md
     stale_threshold_days: 30
 
   communication:

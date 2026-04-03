@@ -1,0 +1,2732 @@
+{
+  "version": 1,
+  "created_at": "2026-03-31T01:28:56.295Z",
+  "lifetime": {
+    "total_tokens_estimated": 341261,
+    "total_reads": 49,
+    "total_writes": 323,
+    "total_sessions": 5,
+    "anatomy_hits": 33,
+    "anatomy_misses": 16,
+    "repeated_reads_blocked": 4,
+    "estimated_savings_vs_bare_cli": 6600
+  },
+  "sessions": [
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:36:22.669Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:44:52.417Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:44:58.593Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:46:30.339Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:46:37.208Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:47:18.536Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:49:43.576Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:50:21.706Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:50:46.235Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T22:56:28.865Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T23:01:21.536Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-2342",
+      "started": "2026-03-31T21:42:08.467Z",
+      "ended": "2026-03-31T23:02:30.334Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.xtrm/reports/2026-03-31-88dd475a.md",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:07:29.522Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:09:14.250Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:12:24.332Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 0,
+        "reads_count": 1,
+        "writes_count": 0,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:19:20.340Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 5608,
+        "reads_count": 1,
+        "writes_count": 1,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:19:45.236Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 5608,
+        "reads_count": 1,
+        "writes_count": 1,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:39:18.909Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 6334,
+        "reads_count": 1,
+        "writes_count": 6,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:48:01.466Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:50:13.775Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-03-31T23:58:49.551Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:00:57.517Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:10:53.018Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:13:16.817Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:15:54.834Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:19:14.546Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:19:54.537Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:20:43.716Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:23:26.267Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:23:51.590Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:34:14.702Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:41:55.312Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:44:41.045Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T00:59:18.181Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:00:30.205Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:12:58.029Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:17:30.747Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:25:44.953Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7307,
+        "reads_count": 1,
+        "writes_count": 11,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:54:21.515Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:58:06.944Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T01:58:32.638Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T02:01:17.444Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T02:14:16.165Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-03-31-0103",
+      "started": "2026-03-31T23:03:14.025Z",
+      "ended": "2026-04-01T02:21:21.327Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4002,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 5608,
+          "action": "create"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 364,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 83,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 210,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 65,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 153,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 130,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 50,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 636,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 4,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 100,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/skills/using-specialists/SKILL.md",
+          "tokens_estimated": 423,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 4002,
+        "output_tokens_estimated": 7834,
+        "reads_count": 1,
+        "writes_count": 14,
+        "repeated_reads_blocked": 0,
+        "anatomy_lookups": 1
+      }
+    },
+    {
+      "id": "session-2026-04-01-0426",
+      "started": "2026-04-01T02:26:33.546Z",
+      "ended": "2026-04-01T04:02:01.816Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 0,
+          "was_repeated": true,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 376,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 1,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 377,
+        "reads_count": 1,
+        "writes_count": 2,
+        "repeated_reads_blocked": 1,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-04-01-0426",
+      "started": "2026-04-01T02:26:33.546Z",
+      "ended": "2026-04-01T04:05:08.477Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 0,
+          "was_repeated": true,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 376,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 1,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 323,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 700,
+        "reads_count": 1,
+        "writes_count": 3,
+        "repeated_reads_blocked": 1,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-04-01-0426",
+      "started": "2026-04-01T02:26:33.546Z",
+      "ended": "2026-04-01T04:58:12.217Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 0,
+          "was_repeated": true,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 376,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 1,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 323,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 0,
+        "output_tokens_estimated": 700,
+        "reads_count": 1,
+        "writes_count": 3,
+        "repeated_reads_blocked": 1,
+        "anatomy_lookups": 0
+      }
+    },
+    {
+      "id": "session-2026-04-01-0426",
+      "started": "2026-04-01T02:26:33.546Z",
+      "ended": "2026-04-01T05:07:34.462Z",
+      "reads": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 0,
+          "was_repeated": true,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "/home/dawid/projects/specialists/.claude/settings.json",
+          "tokens_estimated": 26,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 376,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 1,
+          "action": "edit"
+        },
+        {
+          "file": "/home/dawid/projects/specialists/src/cli/list.ts",
+          "tokens_estimated": 323,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 26,
+        "output_tokens_estimated": 700,
+        "reads_count": 2,
+        "writes_count": 3,
+        "repeated_reads_blocked": 1,
+        "anatomy_lookups": 1
+      }
+    }
+  ],
+  "daemon_usage": [],
+  "waste_flags": [],
+  "optimization_report": {
+    "last_generated": null,
+    "patterns": []
+  }
+}
