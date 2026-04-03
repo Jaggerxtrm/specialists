@@ -210,6 +210,59 @@ describe('Supervisor', () => {
     expect(toolEnd?.result_summary).toBe('line 1\nline 2');
   });
 
+  it('includes gitnexus_summary in run_complete when gitnexus tools execute', async () => {
+    const runner = {
+      run: vi.fn().mockImplementation(async (
+        _opts: any,
+        _onProgress: any,
+        onEvent: any,
+        _onMetric: any,
+        _onMeta: any,
+        _onKill: any,
+        _onBead: any,
+        _onSteer: any,
+        _onResume: any,
+        onToolStart: any,
+        onToolEnd: any,
+      ) => {
+        onToolStart?.('gitnexus_impact', { target: 'run' }, 'call-gx-1');
+        onToolEnd?.('gitnexus_impact', false, 'call-gx-1', undefined, {
+          files: ['src/specialist/supervisor.ts'],
+          risk_level: 'HIGH',
+          symbols_analyzed: ['run'],
+        });
+        onEvent?.('tool_execution_end');
+
+        onToolStart?.('write', { path: 'tmp.txt' }, 'call-write-1');
+        onToolEnd?.('write', false, 'call-write-1', undefined, { path: 'tmp.txt' });
+        onEvent?.('tool_execution_end');
+
+        return {
+          output: 'done',
+          model: 'haiku',
+          backend: 'anthropic',
+          durationMs: 10,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123',
+          beadId: undefined,
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const id = await sup.run();
+
+    const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const runComplete = events.find((event: any) => event.type === 'run_complete');
+    expect(runComplete?.gitnexus_summary).toBeDefined();
+    expect(runComplete?.gitnexus_summary?.tool_invocations).toBe(1);
+    expect(runComplete?.gitnexus_summary?.highest_risk).toBe('HIGH');
+    expect(runComplete?.gitnexus_summary?.files_touched).toEqual(
+      expect.arrayContaining(['src/specialist/supervisor.ts', 'tmp.txt']),
+    );
+    expect(runComplete?.gitnexus_summary?.symbols_analyzed).toContain('run');
+  });
+
   it('result.txt contains the runner output string', async () => {
     const sup = new Supervisor({
       jobsDir,

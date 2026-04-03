@@ -107,6 +107,74 @@ function formatBeadNotes(result: { output: string; promptHash: string; durationM
   return `${result.output}\n\n---\n${metadata}`;
 }
 
+const GITNEXUS_RISK_ORDER: Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number> = {
+  LOW: 0,
+  MEDIUM: 1,
+  HIGH: 2,
+  CRITICAL: 3,
+};
+
+function normalizeGitnexusRisk(value: unknown): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'LOW' || normalized === 'MEDIUM' || normalized === 'HIGH' || normalized === 'CRITICAL') {
+    return normalized;
+  }
+  return undefined;
+}
+
+function collectStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function extractGitnexusFiles(tool: string, resultRaw?: Record<string, unknown>): string[] {
+  if (!resultRaw) return [];
+  if (tool === 'gitnexus_impact') {
+    return collectStringArray(resultRaw.files);
+  }
+  if (tool === 'gitnexus_detect_changes') {
+    return collectStringArray(resultRaw.files_changed);
+  }
+  return [];
+}
+
+function extractGitnexusSymbols(resultRaw?: Record<string, unknown>, args?: Record<string, unknown>): string[] {
+  if (!resultRaw) return [];
+  const symbols = [
+    ...collectStringArray(resultRaw.symbols_analyzed),
+    ...collectStringArray(resultRaw.affected_symbols),
+    ...collectStringArray(resultRaw.symbols_modified),
+  ];
+
+  const argTarget = args?.target;
+  if (typeof argTarget === 'string' && argTarget.trim().length > 0) {
+    symbols.push(argTarget);
+  }
+
+  return symbols;
+}
+
+function extractGitnexusRisk(resultRaw?: Record<string, unknown>): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined {
+  if (!resultRaw) return undefined;
+  const direct = normalizeGitnexusRisk(resultRaw.risk_level)
+    ?? normalizeGitnexusRisk(resultRaw.riskLevel)
+    ?? normalizeGitnexusRisk(resultRaw.highest_risk)
+    ?? normalizeGitnexusRisk(resultRaw.risk);
+  if (direct) return direct;
+
+  const blastRadius = resultRaw.blast_radius;
+  if (blastRadius && typeof blastRadius === 'object' && !Array.isArray(blastRadius)) {
+    const blastRadiusRecord = blastRadius as Record<string, unknown>;
+    return normalizeGitnexusRisk(blastRadiusRecord.risk_level)
+      ?? normalizeGitnexusRisk(blastRadiusRecord.riskLevel)
+      ?? normalizeGitnexusRisk(blastRadiusRecord.highest_risk)
+      ?? normalizeGitnexusRisk(blastRadiusRecord.risk);
+  }
+
+  return undefined;
+}
+
 
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
@@ -337,6 +405,7 @@ export class Supervisor {
     let textLogged = false;
     let currentTool = '';
     let currentToolResultContent: string | undefined;
+    let currentToolResultRaw: Record<string, unknown> | undefined;
     let runMetrics: SessionRunMetrics = {
       turns: 0,
       tool_calls: 0,
@@ -346,6 +415,12 @@ export class Supervisor {
     let currentToolCallId = '';
     let currentToolArgs: Record<string, unknown> | undefined;
     let currentToolIsError = false;
+    const gitnexusAccumulator = {
+      files_touched: new Set<string>(),
+      symbols_analyzed: new Set<string>(),
+      highest_risk: undefined as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined,
+      tool_invocations: 0,
+    };
     let textCharCount = 0;
     let thinkingCharCount = 0;
     const toolCallNames: string[] = [];
@@ -515,6 +590,7 @@ export class Supervisor {
             args: currentToolArgs,
             isError: currentToolIsError,
             resultContent: currentToolResultContent,
+            resultRaw: currentToolResultRaw,
             charCount: eventType === 'text'
               ? textCharCount
               : eventType === 'thinking'
@@ -634,6 +710,7 @@ export class Supervisor {
           currentToolCallId = toolCallId ?? '';
           currentToolIsError = false; // reset on new tool start
           currentToolResultContent = undefined;
+          currentToolResultRaw = undefined;
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
           toolCallNames.push(tool);
@@ -647,7 +724,7 @@ export class Supervisor {
           }
         },
         // onToolEndCallback — restore correct per-call context before onEvent('tool_execution_end') fires
-        (tool, isError, toolCallId, resultContent) => {
+        (tool, isError, toolCallId, resultContent, resultRaw) => {
           if (toolCallId && activeToolCalls.has(toolCallId)) {
             const entry = activeToolCalls.get(toolCallId)!;
             currentTool = entry.tool;
@@ -659,8 +736,36 @@ export class Supervisor {
           }
           currentToolIsError = isError;
           currentToolResultContent = resultContent;
+          currentToolResultRaw = resultRaw;
           toolStartMs = undefined;
           toolDurationWarnEmitted = false;
+
+          if (tool === 'edit' || tool === 'write') {
+            const path = resultRaw?.path;
+            if (typeof path === 'string' && path.trim().length > 0) {
+              gitnexusAccumulator.files_touched.add(path);
+            }
+          }
+
+          if (tool.startsWith('gitnexus_')) {
+            gitnexusAccumulator.tool_invocations += 1;
+
+            for (const file of extractGitnexusFiles(tool, resultRaw)) {
+              gitnexusAccumulator.files_touched.add(file);
+            }
+
+            for (const symbol of extractGitnexusSymbols(resultRaw, currentToolArgs)) {
+              gitnexusAccumulator.symbols_analyzed.add(symbol);
+            }
+
+            const risk = extractGitnexusRisk(resultRaw);
+            if (risk) {
+              const currentHighest = gitnexusAccumulator.highest_risk;
+              if (!currentHighest || GITNEXUS_RISK_ORDER[risk] > GITNEXUS_RISK_ORDER[currentHighest]) {
+                gitnexusAccumulator.highest_risk = risk;
+              }
+            }
+          }
         },
       );
 
@@ -734,6 +839,15 @@ export class Supervisor {
         metrics: runMetrics,
       });
 
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0
+        ? {
+            files_touched: [...gitnexusAccumulator.files_touched],
+            symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+            highest_risk: gitnexusAccumulator.highest_risk,
+            tool_invocations: gitnexusAccumulator.tool_invocations,
+          }
+        : undefined;
+
       // Emit run_complete — THE canonical completion event
       appendTimelineEvent(createRunCompleteEvent('COMPLETE', elapsed, {
         model: finalResult.model,
@@ -745,6 +859,7 @@ export class Supervisor {
         tool_calls: [...toolCallNames],
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
+        ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
       }));
 
       // Touch ready marker so hooks can surface completion banners.
@@ -766,6 +881,15 @@ export class Supervisor {
         exit_reason: err instanceof Error ? err.name : 'error',
       });
 
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0
+        ? {
+            files_touched: [...gitnexusAccumulator.files_touched],
+            symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+            highest_risk: gitnexusAccumulator.highest_risk,
+            tool_invocations: gitnexusAccumulator.tool_invocations,
+          }
+        : undefined;
+
       // Emit run_complete with ERROR status
       appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
@@ -774,6 +898,7 @@ export class Supervisor {
         tool_calls: [...toolCallNames],
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
+        ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
       }));
 
       // Touch ready marker so hooks can surface failure banners.
