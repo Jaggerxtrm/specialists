@@ -197,10 +197,11 @@ The overthinker is cheap relative to the cost of an executor implementing the wr
 
 ### Pi extensions availability (known gap)
 
-GitNexus and Serena are **pi extensions** (not MCP servers) at `~/.pi/agent/extensions/`.
-Specialists run with `--no-extensions` and only selectively re-enable `quality-gates` and
-`service-skills`. GitNexus (call-chain tracing for debugger/planner) and Serena LSP
-(token-efficient reads for explorer/executor) are NOT currently wired. Tracked as `unitAI-4abv`.
+GitNexus and Serena are **pi extensions** installed globally via npm. Both are now wired
+in session.ts alongside quality-gates and service-skills. pi-gitnexus enables call-chain
+tracing for debugger/planner. pi-serena-tools enables token-efficient LSP reads/edits for
+explorer/executor (40+ tools, 75-95% token savings). Install: `pi install npm:pi-gitnexus`
+and `pi install npm:pi-serena-tools`.
 
 ---
 
