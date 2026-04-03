@@ -540,6 +540,57 @@ specialist:
 
 ---
 
+## Context Window & Lifecycle Design
+
+Specialists run as long-lived Pi sessions. Context management is not optional — ignoring it causes silent quality degradation before any hard limit is hit.
+
+### Context rot starts before the window fills
+
+Quality degrades as the context grows — compressed early context causes inconsistency, missed facts, and instruction drift. Design for bounded, coherent runs rather than arbitrarily long ones.
+
+**Rules when authoring a specialist:**
+- Set `stall_timeout_ms` explicitly for any specialist that may idle between turns (keep-alive/interactive). Without it, a stuck session holds resources indefinitely.
+- Use `thinking_level: low` for orchestration/coordinator specialists that emit structured JSON output — thinking tokens cost context budget without improving structured output quality.
+- For research/explorer specialists: bounded scope per session + `handoff_summary` in `output_schema` > one unbounded session.
+- `interactive: true` specialists must define what "done" looks like in their system prompt — otherwise they drift.
+
+### Context metrics are always available
+
+`status.json` exposes `metrics.token_usage` (cumulative input+output tokens) and `metrics.turns` on every turn. These are written by 08zd Phase 1 and available to any caller (NodeSupervisor, orchestrator, human).
+
+**context_pct formula**: `(cumulative_input_tokens / model_context_window) * 100`
+
+Approximate context windows:
+| Model family | Window |
+|-------------|--------|
+| `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5` | 200k tokens |
+| `gemini-3.1-pro-preview` | 1M tokens |
+| `qwen3.5-plus`, `dashscope/qwen3.5-plus` | 128k tokens |
+| `zai/glm-5`, `zai/glm-5-turbo` | 128k tokens |
+
+### For Node members specifically
+
+NodeSupervisor injects `member_health` into the coordinator resume prompt on **every turn** — not just at warning thresholds. This is by design: the coordinator needs continuous data to make proactive rotation decisions before quality degrades.
+
+When authoring a specialist intended to run as a Node member:
+- Include a `handoff_summary` field in `output_schema` so context can be transferred on rotation
+- Keep system prompts concise — the NodeSupervisor will inject additional context on each resume
+- `thinking_level: low` or `off` for coordinator-class specialists; higher levels for deep analysis members
+
+### Design checklist for long-running specialists
+
+Before finalising a specialist that uses `interactive: true` or is expected to run many turns:
+
+```
+[ ] stall_timeout_ms set (not relying on timeout_ms alone)
+[ ] thinking_level set appropriately for the output type
+[ ] output_schema includes handoff_summary or equivalent for rotation
+[ ] system prompt has explicit termination condition ("you are done when...")
+[ ] task_template doesn't inject large static blobs that could be fetched on demand
+```
+
+---
+
 ## Common Errors and Fixes
 
 | Zod Error | Cause | Fix |

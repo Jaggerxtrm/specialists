@@ -133,26 +133,111 @@ Key context: bd show unitAI-0c0w, bd show unitAI-08zd
 
 ## Stream 2 Handoff: Phase 3 Planner (unitAI-3chh)
 
-> **Prerequisite**: Phase 2 executor (unitAI-bmpq) must be closed before dispatching planner.
+> **Prerequisite**: Phases 1, 1b, and 2 are all committed and green. Planner is unblocked.
 > **Worktree rule**: Any executor with edit permission runs in its own worktree. Reviewer/test-runner must `cd` into that same worktree. Orchestrator merges in dependency order.
+
+---
+
+### What was completed (Phases 1 → 1b → 2)
+
+#### Phase 1 — commit 200b0eb9
+- `src/pi/session.ts`: `SessionMetricEvent` union + `SessionRunMetrics`. `onMetric` fires for 5 types: `token_usage`, `finish_reason`, `turn_summary`, `compaction`, `retry`
+- `src/specialist/timeline-events.ts`: interfaces + factory functions for all 5 metric types + `stale_warning`
+- `src/specialist/supervisor.ts`: `onMetric` wired as 4th runner param, `mergeRunMetrics()`, `metrics` in `status.json`, best-effort `sqliteClient`
+- `src/specialist/runner.ts`: `onMetric` 4th param, output contract injection
+- `src/specialist/observability-db.ts` (NEW): git-root DB path, `resolveObservabilityDbLocation()`, gitignore
+- `src/specialist/observability-sqlite.ts` (NEW): best-effort SQLite via `execFileSync('sqlite3')`. Tables: `specialist_jobs`, `specialist_events`, `specialist_results`
+- `src/cli/db.ts` (NEW): `specialists db setup` — TTY-gated, chmod 644
+
+#### Phase 1b — commit 98df33a2
+- `src/pi/session.ts`: `onToolEnd` now passes `result` content string. Emits distinct `auto_compaction_start` / `auto_compaction_end` strings (was same for both)
+- `src/specialist/runner.ts`: forwards `result` through `onToolEndCallback`
+- `src/specialist/supervisor.ts`: captures `result_summary` in tool context, persists on `tool_execution_end`
+- `src/specialist/timeline-events.ts`: `result_summary?: string` on `TimelineEventTool` (phase:end); auto_compaction phase preserved; `char_count?: number` on `TimelineEventText` + `TimelineEventThinking`
+
+#### Phase 2 — commit 84889edc
+- `src/cli/format-helpers.ts`: cost_usd, turns, tool_calls formatting
+- `src/cli/status.ts`: metrics human-readable display
+- `src/cli/result.ts`: metrics in `--json` mode
+- Specialist YAML fixes: output_type on 8 specialists, researcher `interactive`, xt-merge skill path
+
+---
+
+### Complete event map for planner — what flows through events.jsonl NOW
+
+Every `appendTimelineEvent` call in `supervisor.ts` writes one of these to `events.jsonl`. Phase 3 must persist ALL of them to SQLite via dual-write.
+
+| Event type | Key fields | Source |
+|-----------|-----------|--------|
+| `run_start` | specialist, bead_id | job init |
+| `meta` | model, backend | first assistant message_start |
+| `thinking` | char_count? | message construction |
+| `text` | char_count? | streaming text delta |
+| `tool` (start) | tool, tool_call_id, args, started_at | tool_execution_start |
+| `tool` (update) | tool, tool_call_id | tool_execution_update |
+| `tool` (end) | tool, tool_call_id, is_error, result_summary? | tool_execution_end |
+| `message` (start/end) | role (assistant\|toolResult) | message_start/end |
+| `turn` (start/end) | — | turn_start/end |
+| `token_usage` | input/output/cache tokens, cost_usd, source | onMetric |
+| `finish_reason` | finish_reason, source | onMetric |
+| `turn_summary` | turn_index, token_usage?, finish_reason? | onMetric (turn_end) |
+| `compaction` (start/end) | phase | auto_compaction_start/end |
+| `retry` (start/end) | phase | auto_retry_start/end |
+| `stale_warning` | reason, silence_ms, threshold_ms, tool? | stuck detector |
+| `run_complete` | status, elapsed_s, model, backend, bead_id, output, token_usage, finish_reason, tool_calls[], metrics | job end |
+
+**Intentionally NOT captured:**
+- `agent_end` → replaced by `run_complete`
+- `message_done` → not persisted by design
+- `extension_error` → not yet wired (future bead)
+
+**Pi RPC ground truth**: `pi/rpc/rpc-mode.ts` line 316 — `session.subscribe(event => output(event))` broadcasts ALL `AgentSessionEvent` objects verbatim. `session.ts` handles a curated subset; unknown types hit `default: return null`.
+
+---
 
 ### Starting prompt for next agent
 
 ```
 Take issue unitAI-3chh — planner decomposition for 08zd Phase 3.
 
-Phase 1 (RPC observability callbacks) and Phase 2 (CLI surface enrichment) are landed.
-Phase 3 is the heaviest phase of the 08zd epic: full SQLite persistence replacing
-in-memory job state in Supervisor, WAL mode, worktree_column, and read-path changes
-across feed/status/result CLI commands.
+Phases 1, 1b, and 2 are all committed and green (commits 200b0eb9, 98df33a2, 84889edc).
+The events.jsonl timeline is now complete. The full event map is in node-coordination.md
+under "Complete event map for planner". Read it — that is exactly what Phase 3 must
+persist to SQLite via dual-write alongside the existing events.jsonl writes.
 
-Your job is PLANNING ONLY — do not implement. Produce a set of sub-task beads with:
-- One bead per executor run (scope must fit in one session, ~200 lines max)
-- Explicit file ownership per bead (no two beads touch the same file)
-- Dependency order between beads
-- For each bead: title, description, files owned, what must land first
+Phase 3 is SQLite persistence ONLY — no new event types, no new callbacks.
+The complete event surface is already wired. Phase 3 persists it durably.
 
-Key context: bd show unitAI-3chh, bd show unitAI-08zd, bd show unitAI-bmpq
+Core scope:
+1. observability-sqlite.ts: extend schema to include all Phase 1b fields
+   (result_summary, char_count, auto_compaction phase distinction). Add schema_version table.
+2. supervisor.ts: dual-write every appendTimelineEvent call to SQLite in addition
+   to events.jsonl. File-based fallback stays — no breaking change.
+3. WAL mode: PRAGMA journal_mode=WAL on DB open
+4. observability-db.ts + observability-sqlite.ts: add worktree_column (nullable TEXT)
+   to specialist_jobs table — needed for unitAI-hgpu worktree isolation feature
+5. feed/status/result CLI: read from SQLite when DB exists, fall back to file paths
+
+Your job is PLANNING ONLY — produce sub-task beads with:
+- One bead per executor (scope ~200 lines max, fits in one session without crashing)
+- EXPLICIT file ownership per bead — no two beads touch the same file
+- Dependency order between beads (expressed as bd dep add)
+- Each bead: title, description, files owned, prerequisite beads
+
+Worktree rule (MANDATORY): each executor bead runs in its own git worktree branch.
+Reviewer/test-runner for that bead CDs into the same worktree — not main.
+Orchestrator merges in dependency order, runs lint+tests after each merge.
+
+Key context: bd show unitAI-3chh, bd show unitAI-08zd, bd show unitAI-hgpu
+Key files to plan around:
+  src/specialist/observability-sqlite.ts  ← schema + queries
+  src/specialist/observability-db.ts      ← DB path resolution
+  src/specialist/supervisor.ts            ← dual-write caller
+  src/cli/feed.ts                         ← read path
+  src/cli/status.ts                       ← read path
+  src/cli/result.ts                       ← read path
+  tests/unit/specialist/supervisor.test.ts ← NOTE: run alone, not batched
+```
 Key files: src/specialist/supervisor.ts, src/specialist/observability-sqlite.ts,
            src/cli/feed.ts, src/cli/status.ts, src/cli/result.ts
 
@@ -242,6 +327,75 @@ With spec frozen (Stream 1), SQLite ready (Stream 2), and node tables designed (
 - unitAI-780u: Memory patch pipeline
 - unitAI-u9my: Beads promotion
 - unitAI-i6up: v1A preset definitions
+
+---
+
+## Key Design Decisions (captured from session 2026-04-03)
+
+### Context Window — Continuous Monitoring, Not Threshold Gating
+
+**Revised design**: `member_health` must be injected into the coordinator resume prompt on **every turn**, even at 50% usage. The original 60/75/90% tiered approach was wrong — it only alerts after degradation has begun.
+
+**Why**: "Context rot" — specialist reasoning quality degrades before the context window fills. Compressed/lost early context causes inconsistency, missed facts, and silent instruction drift. By the time a 75% warning fires, the specialist may already be reasoning poorly. Continuous telemetry gives the coordinator the data to make proactive rotation decisions.
+
+**Corrected member_health injection**:
+- Inject on **every** `specialists resume <coordinator-job-id>` call
+- Include all members, not just those above a threshold
+- Let the coordinator decide when to act — don't hide data from it
+
+```
+## Member Health (every turn)
+| member_id   | turns | token_usage | context_pct | status  |
+|-------------|-------|-------------|-------------|---------|
+| explorer-1  | 4     | 31,200      | 15%         | OK      |
+| executor-1  | 12    | 89,400      | 44%         | MONITOR |
+| debugger-1  | 2     | 8,100       | 4%          | OK      |
+```
+
+Status labels:
+- `OK` — < 40%
+- `MONITOR` — 40–65% (show but no action required)
+- `WARN` — 65–80% (coordinator should plan rotation)
+- `CRITICAL` — > 80% (NodeSupervisor may force-pause)
+
+**context_pct formula**: `(cumulative_input_tokens / model_context_window) * 100`
+
+Approximate context windows:
+| Model | Window |
+|-------|--------|
+| claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 | 200k |
+| gemini-3.1-pro-preview | 1M |
+| qwen3.5-plus, glm-5 | 128k |
+
+**Source**: `status.json` → `metrics.token_usage`. Requires 08zd Phase 3 to be available per-job in SQLite; Phase 1b already captures token_usage in `run_complete` event.
+
+---
+
+### NodeSupervisor — member_id Registry is the Sole Translation Layer
+
+Coordinator uses logical `member_id` references only (e.g. `explorer-1`). NodeSupervisor owns the `member_id → job_id` map. After spawning, NodeSupervisor resumes coordinator with a Member Registry Update. This pattern means the coordinator YAML never needs to change when the underlying job infrastructure changes.
+
+---
+
+### JSON Fence Problem — Belt-and-Suspenders Fix Required
+
+`response_format: json` alone does not prevent models from wrapping output in ` ```json ``` ` fences. Fix requires both:
+1. Explicit anti-fence instruction in system prompt: *"Emit raw JSON only. Never wrap in markdown fences."*
+2. Runner-level post-process strip: trim leading ` ```json\n ` and trailing ` ``` ` before `JSON.parse`
+
+The runner strip is a safety net for ALL `json`-format specialists, not just node-coordinator.
+
+---
+
+### gitnexus RPC Extraction — No Protocol Changes Needed
+
+Pi RPC `tool_execution_end` already contains the full `event.result` for all MCP tools including gitnexus. The current `findToolResultContent()` in `session.ts` discards everything beyond 500 chars of text. Fix is extraction layer only:
+1. Extend `onToolEnd` to pass raw result object alongside text summary
+2. Add gitnexus-specific accumulator in `supervisor.ts` (collects `files_touched`, `symbols_analyzed`, `highest_risk` across a run)
+3. Add `result_raw?: Record<string, unknown>` to `TimelineEventTool`
+4. Emit accumulated `gitnexus_summary` in `run_complete`
+
+Tracked in unitAI-g5np. Prerequisite for blast radius propagation (impact_report in 16ov spec).
 
 ---
 

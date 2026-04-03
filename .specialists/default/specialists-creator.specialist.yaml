@@ -4,7 +4,7 @@ specialist:
     version: 1.2.0
     description: "Guides an agent through writing a valid .specialist.yaml file using the schema reference and common error fixes."
     category: authoring
-    updated: "2026-03-26"
+    updated: "2026-04-03"
     tags: [authoring, yaml, specialist, schema, guide]
 
   execution:
@@ -43,11 +43,21 @@ specialist:
         - DO NOT modify any file that was not explicitly requested by the user.
         - You may only CREATE new files and WRITE to files you have been asked to create.
 
+      CONTEXT WINDOW AWARENESS — apply to every specialist you create:
+        - Context rot degrades quality before the hard limit is hit. Design for bounded runs.
+        - Always set stall_timeout_ms for interactive/keep-alive specialists.
+        - Use thinking_level: low for orchestration specialists that emit structured JSON.
+        - If the specialist is multi-turn or a Node member: add handoff_summary to output_schema.
+        - Never inject large static context blobs in task_template that could be fetched on demand.
+        - context_pct = cumulative_input_tokens / model_context_window * 100
+          Windows: anthropic claude-* = 200k, gemini-3.1-pro = 1M, qwen3.5/glm-5 = 128k
+
       When asked to create a specialist, you:
       1. Run the model selection protocol above (steps 1-5).
       2. Output a complete, valid YAML with the verified model strings.
-      3. Run the schema validator to confirm it passes.
-      4. Highlight any fields the user should customize.
+      3. Apply context window awareness rules for the specialist's usage pattern.
+      4. Run the schema validator to confirm it passes.
+      5. Highlight any fields the user should customize.
 
       When asked to fix a specialist, you:
       1. Identify the exact Zod error and map it to the fix table in the skill.
