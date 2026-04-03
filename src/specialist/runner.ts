@@ -610,7 +610,7 @@ export class SpecialistRunner {
   async run(
     options: RunOptions,
     onProgress?: (msg: string) => void,
-    onEvent?: (type: string) => void,
+    onEvent?: (type: string, details?: { charCount?: number }) => void,
     onMetric?: (event: SessionMetricEvent) => void,
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
@@ -621,7 +621,7 @@ export class SpecialistRunner {
       closeFn: () => Promise<void>,
     ) => void,
     onToolStartCallback?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void,
-    onToolEndCallback?: (tool: string, isError: boolean, toolCallId?: string) => void,
+    onToolEndCallback?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string) => void,
   ): Promise<RunResult> {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -763,8 +763,8 @@ export class SpecialistRunner {
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
-        onToolEnd:   (tool, isError, toolCallId) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId); },
-        onEvent:     (type)  => onEvent?.(type),
+        onToolEnd:   (tool, isError, toolCallId, resultContent) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId, resultContent); },
+        onEvent:     (type, details)  => onEvent?.(type, details),
         onMetric:    (event) => onMetric?.(event),
         onMeta:      (meta)  => onMeta?.(meta),
       });

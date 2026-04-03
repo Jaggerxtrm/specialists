@@ -94,10 +94,10 @@ export interface PiSessionOptions {
   onThinking?: (delta: string) => void;
   /** Called with tool name, optional args payload, and optional tool call ID when a tool starts executing */
   onToolStart?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void;
-  /** Called with tool name, error flag, and optional tool call ID when a tool result arrives */
-  onToolEnd?: (tool: string, isError: boolean, toolCallId?: string) => void;
+  /** Called with tool name, error flag, optional tool call ID, and summarized tool result content */
+  onToolEnd?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string) => void;
   /** Called with the raw pi event type (for job status tracking) */
-  onEvent?: (type: string) => void;
+  onEvent?: (type: string, details?: { charCount?: number }) => void;
   /** Called with additive observability metrics derived from RPC events */
   onMetric?: (event: SessionMetricEvent) => void;
   /** Called once with actual backend/model from the first assistant message_start */
@@ -200,6 +200,47 @@ function findTokenUsage(payload: unknown): SessionTokenUsage | undefined {
   }
 
   return normalizeTokenUsage(record);
+}
+
+function normalizeToolResultPart(contentPart: unknown): string | undefined {
+  if (!contentPart || typeof contentPart !== 'object') return undefined;
+  const part = contentPart as Record<string, unknown>;
+  const text = part.text;
+  if (typeof text === 'string' && text.trim().length > 0) return text;
+
+  const content = part.content;
+  if (typeof content === 'string' && content.trim().length > 0) return content;
+
+  const output = part.output;
+  if (typeof output === 'string' && output.trim().length > 0) return output;
+
+  return undefined;
+}
+
+function findToolResultContent(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const result = record.result;
+  if (!result || typeof result !== 'object') return undefined;
+  const resultRecord = result as Record<string, unknown>;
+
+  const content = resultRecord.content;
+  if (Array.isArray(content)) {
+    const parts = content
+      .map(normalizeToolResultPart)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    if (parts.length > 0) return parts.join('\n');
+  }
+
+  if (typeof resultRecord.content === 'string' && resultRecord.content.trim().length > 0) {
+    return resultRecord.content;
+  }
+
+  if (typeof resultRecord.output === 'string' && resultRecord.output.trim().length > 0) {
+    return resultRecord.output;
+  }
+
+  return undefined;
 }
 
 export class PiAgentSession {
@@ -489,6 +530,7 @@ export class PiAgentSession {
         event.toolName ?? event.name ?? 'tool',
         event.isError ?? false,
         event.toolCallId as string | undefined,
+        findToolResultContent(event),
       );
       this.options.onEvent?.('tool_execution_end');
       return;
@@ -500,7 +542,7 @@ export class PiAgentSession {
         this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
       }
       this.options.onMetric?.({ type: 'compaction', phase: type === 'auto_compaction_start' ? 'start' : 'end' });
-      this.options.onEvent?.('auto_compaction');
+      this.options.onEvent?.(type);
       return;
     }
     if (type === 'auto_retry_start' || type === 'auto_retry_end') {
@@ -517,17 +559,21 @@ export class PiAgentSession {
       const ae = event.assistantMessageEvent;
       if (!ae) return;
       switch (ae.type) {
-        case 'text_delta':
-          if (ae.delta) this.options.onToken?.(ae.delta);
-          this.options.onEvent?.('text');
+        case 'text_delta': {
+          const delta = typeof ae.delta === 'string' ? ae.delta : '';
+          if (delta) this.options.onToken?.(delta);
+          this.options.onEvent?.('text', { charCount: delta.length });
           break;
+        }
         case 'thinking_start':
-          this.options.onEvent?.('thinking');
+          this.options.onEvent?.('thinking', { charCount: 0 });
           break;
-        case 'thinking_delta':
-          if (ae.delta) this.options.onThinking?.(ae.delta);
-          this.options.onEvent?.('thinking');
+        case 'thinking_delta': {
+          const delta = typeof ae.delta === 'string' ? ae.delta : '';
+          if (delta) this.options.onThinking?.(delta);
+          this.options.onEvent?.('thinking', { charCount: delta.length });
           break;
+        }
         case 'toolcall_start':
           // Tool name known at LLM construction time — set before execution events fire
           this.options.onToolStart?.(ae.name ?? ae.toolName ?? 'tool');

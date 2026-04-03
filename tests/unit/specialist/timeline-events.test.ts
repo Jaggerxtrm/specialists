@@ -91,10 +91,13 @@ describe('timeline-events', () => {
   });
 
   describe('mapCallbackEventToTimelineEvent', () => {
-    it('maps thinking to thinking event', () => {
-      const event = mapCallbackEventToTimelineEvent('thinking', {});
+    it('maps thinking to thinking event with char_count', () => {
+      const event = mapCallbackEventToTimelineEvent('thinking', { charCount: 12 });
       expect(event).not.toBeNull();
       expect(event!.type).toBe('thinking');
+      if (event?.type === 'thinking') {
+        expect(event.char_count).toBe(12);
+      }
     });
 
     it('toolcall returns null (removed — tool_execution_start is authoritative)', () => {
@@ -113,6 +116,19 @@ describe('timeline-events', () => {
         expect(event.phase).toBe('end');
         expect(event.tool).toBe('read');
         expect(event.is_error).toBe(false);
+      }
+    });
+
+    it('maps tool_execution_end with result content to truncated result_summary', () => {
+      const event = mapCallbackEventToTimelineEvent('tool_execution_end', {
+        tool: 'bash',
+        resultContent: 'a'.repeat(700),
+      });
+      expect(event).not.toBeNull();
+      if (event?.type === 'tool') {
+        expect(event.result_summary).toBeDefined();
+        expect(event.result_summary?.length).toBe(501);
+        expect(event.result_summary?.endsWith('…')).toBe(true);
       }
     });
 
@@ -223,16 +239,31 @@ describe('timeline-events', () => {
       expect(end!.type).toBe('turn');
     });
 
-    it('maps text to text event', () => {
-      const event = mapCallbackEventToTimelineEvent('text', {});
+    it('maps text to text event with char_count', () => {
+      const event = mapCallbackEventToTimelineEvent('text', { charCount: 21 });
       expect(event).not.toBeNull();
       expect(event!.type).toBe('text');
+      if (event?.type === 'text') {
+        expect(event.char_count).toBe(21);
+      }
     });
 
-    it('maps auto_compaction to compaction event', () => {
-      const event = mapCallbackEventToTimelineEvent('auto_compaction', {});
+    it('maps auto_compaction_start to compaction start event', () => {
+      const event = mapCallbackEventToTimelineEvent('auto_compaction_start', {});
       expect(event).not.toBeNull();
       expect(event!.type).toBe('compaction');
+      if (event?.type === 'compaction') {
+        expect(event.phase).toBe('start');
+      }
+    });
+
+    it('maps auto_compaction_end to compaction end event', () => {
+      const event = mapCallbackEventToTimelineEvent('auto_compaction_end', {});
+      expect(event).not.toBeNull();
+      expect(event!.type).toBe('compaction');
+      if (event?.type === 'compaction') {
+        expect(event.phase).toBe('end');
+      }
     });
 
     it('maps auto_retry to retry event', () => {

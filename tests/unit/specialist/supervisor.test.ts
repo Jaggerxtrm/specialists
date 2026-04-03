@@ -172,6 +172,44 @@ describe('Supervisor', () => {
     expect(completion?.tool_calls).toEqual(['read', 'bash']);
   });
 
+  it('captures tool result summaries on tool_execution_end events', async () => {
+    const runner = {
+      run: vi.fn().mockImplementation(async (
+        _opts: any,
+        _onProgress: any,
+        onEvent: any,
+        _onMetric: any,
+        _onMeta: any,
+        _onKill: any,
+        _onBead: any,
+        _onSteer: any,
+        _onResume: any,
+        onToolStart: any,
+        onToolEnd: any,
+      ) => {
+        onToolStart?.('read', { path: 'foo.ts' }, 'call-1');
+        onToolEnd?.('read', false, 'call-1', 'line 1\nline 2');
+        onEvent?.('tool_execution_end');
+        return {
+          output: 'done',
+          model: 'haiku',
+          backend: 'anthropic',
+          durationMs: 10,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123',
+          beadId: undefined,
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const id = await sup.run();
+
+    const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const toolEnd = events.find((event: any) => event.type === 'tool' && event.phase === 'end');
+    expect(toolEnd?.result_summary).toBe('line 1\nline 2');
+  });
+
   it('result.txt contains the runner output string', async () => {
     const sup = new Supervisor({
       jobsDir,

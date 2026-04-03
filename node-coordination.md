@@ -13,14 +13,18 @@
 
 ## Live Status (updated 2026-04-03)
 
-### Stream 1 — Output Contract + Validation (this orchestrator)
+### Stream 1 — Output Contract + Validation — ✅ COMPLETE
 | Bead | Job | Status | Notes |
 |------|-----|--------|-------|
-| unitAI-93rt | e92066 (executor) | ✅ CLOSED | Redesigned: semantic output_type enum (codegen\|analysis\|review\|synthesis\|orchestration\|workflow\|research\|custom). Base contract adds `verification` field. Markdown sections split Risks/Follow-ups. Base+extension+yaml merge in runner. Warn-only validation. Overthinker-validated (cbae9a, 2 turns) before impl. Both specialists-creator SKILL.md files updated. All default specialists skill paths migrated .agents/→.xtrm/. Lint clean, 44 tests pass. |
-| unitAI-c02w | — | ✅ CLOSED | Fix: specialists-creator YAML skill paths → .xtrm/skills/active/pi/ in both config/ and .specialists/default/ |
-| unitAI-w2w6 | b670f1 (explorer) | ✅ CLOSED | SKILL parity: perfect ✓. docs/authoring.md: missing output_type entirely. 8 specialists missing output_type (debugger→analysis, overthinker→synthesis, researcher→research, memory-processor→workflow, parallel-review→review, sync-docs→workflow, test-runner→workflow, specialists-creator→codegen). researcher uses invalid `keep_alive` field (must be `interactive`). xt-merge skill path still .agents/ not .xtrm/. Non-standard fields (publishes, output_to, diagnostic_scripts) in some YAMLs. |
-| unitAI-0jm9 | — | 🔜 open | Create node_coordinator.specialist.yaml (not .json — e242 not landed yet) + run 3-turn manual validation loop |
-| unitAI-16ov | — | blocked on 0jm9 | Spec freeze after validation |
+| unitAI-93rt | e92066 (executor) | ✅ CLOSED | Redesigned: semantic output_type enum. Base+extension+yaml merge in runner. Warn-only validation. Overthinker-validated (2 turns). Both SKILL.md files + all default specialist YAMLs updated. |
+| unitAI-c02w | — | ✅ CLOSED | specialists-creator YAML skill paths → .xtrm/skills/active/pi/ |
+| unitAI-w2w6 | b670f1 (explorer) | ✅ CLOSED | Schema audit: 8 missing output_type, researcher keep_alive→interactive, xt-merge path, memory-processor null paths, model prefixes. All fixed. |
+| unitAI-8f4v | e30c62 (executor) | ✅ CLOSED | All schema fixes applied. node-coordinator.specialist.yaml created in default scope. |
+| unitAI-0jm9 | ed2e4e (node-coordinator) | ✅ CLOSED | Manual validation: 2 coordinator turns, valid JSON both turns, correct schema. Gaps found: JSON in fences, spawn→resume semantic, member ID injection needed. node-coordinator performs well. |
+| unitAI-z61d | a031c1 (explorer) | ✅ CLOSED | Full issue scan: no existing specs for context window awareness or blast radius propagation. Clean design space. member_health + impact_report both greenfield. |
+| unitAI-4qez | a50ffb (explorer) | ✅ CLOSED | Confirmed: Pi RPC tool_execution_end has full event.result for all tools incl. gitnexus. findToolResultContent() discards structure (500-char text only). No protocol changes needed — extraction layer fix in session.ts + accumulator in supervisor.ts. |
+| unitAI-g5np | — | 🔜 open | Extract gitnexus enrichment + files touched from RPC tool results. Scope confirmed by 4qez. Implementation: extend onToolEnd, add supervisor accumulator, TimelineEventTool.result_raw, emit in run_complete. |
+| unitAI-16ov | — | ✅ CLOSED | Spec frozen: JSON fence fix (prompt+runner strip), spawn→resume semantic, member ID injection protocol, context window awareness (member_health 60/75/90% tiers, needs 08zd Ph3), blast radius propagation (impact_report in codegen/analysis, needs g5np), pipeline forwarding contract. See bead design field. |
 
 ### Stream 2 — SQLite Foundation
 | Bead | Job | Status | Notes |
@@ -32,9 +36,10 @@
 | unitAI-08zd Phase 2 | 623cdd (executor) | ❌ did nothing (15s, no output) | Stopped — explorer-first required |
 | unitAI-30k2 review | d8fb3c (reviewer, keep-alive) | ✅ PASS 82/100 | Phase 1 approved. Gaps: no schema migration, cwd not passed to SQLite client, auto_compaction dead-end, output_type not in run_complete. |
 | unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
-| unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. Crashed on supervisor.test.ts FIFO hang (pre-existing). 56 tests pass. Committed 84889edc. |
+| unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. Committed 84889edc. |
 | unitAI-08zd Phase 3 | — | blocked on Phase 2 + planner | SQLite migration, WAL mode, worktree column — needs planner decomposition first (unitAI-3chh) |
-| unitAI-3chh | — | blocked on Phase 2 | Planner bead: decompose Phase 3 into worktree-safe sub-tasks with explicit file ownership |
+| unitAI-08zd Phase 1b | 7d7d78 (executor) | 🔄 running | Fix 3 gaps: tool result content, auto_compaction_start, text char_count |
+| unitAI-3chh | — | blocked on Phase 1b | Planner bead: decompose Phase 3 into worktree-safe sub-tasks with explicit file ownership |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
 
 ### Stream 3 — Node Persistence (another agent)

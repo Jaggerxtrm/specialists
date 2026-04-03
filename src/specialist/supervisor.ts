@@ -336,6 +336,7 @@ export class Supervisor {
 
     let textLogged = false;
     let currentTool = '';
+    let currentToolResultContent: string | undefined;
     let runMetrics: SessionRunMetrics = {
       turns: 0,
       tool_calls: 0,
@@ -345,6 +346,8 @@ export class Supervisor {
     let currentToolCallId = '';
     let currentToolArgs: Record<string, unknown> | undefined;
     let currentToolIsError = false;
+    let textCharCount = 0;
+    let thinkingCharCount = 0;
     const toolCallNames: string[] = [];
     // Map from toolCallId → {tool, args} for parallel tool call tracking
     const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
@@ -482,7 +485,7 @@ export class Supervisor {
           this.opts.onProgress?.(delta);
         },
         // onEvent — map callback events to timeline events
-        (eventType) => {
+        (eventType, details) => {
           const now = Date.now();
           // Reset silence timer on any activity
           lastActivityMs = now;
@@ -495,11 +498,28 @@ export class Supervisor {
           });
 
           // Map callback event to timeline event using the canonical model
+          if (eventType === 'turn_start') {
+            textCharCount = 0;
+            thinkingCharCount = 0;
+          }
+          if (eventType === 'text') {
+            textCharCount += details?.charCount ?? 0;
+          }
+          if (eventType === 'thinking') {
+            thinkingCharCount += details?.charCount ?? 0;
+          }
+
           const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
             tool: currentTool,
             toolCallId: currentToolCallId || undefined,
             args: currentToolArgs,
             isError: currentToolIsError,
+            resultContent: currentToolResultContent,
+            charCount: eventType === 'text'
+              ? textCharCount
+              : eventType === 'thinking'
+                ? thinkingCharCount
+                : details?.charCount,
           });
 
           if (timelineEvent) {
@@ -613,6 +633,7 @@ export class Supervisor {
           currentToolArgs = args;
           currentToolCallId = toolCallId ?? '';
           currentToolIsError = false; // reset on new tool start
+          currentToolResultContent = undefined;
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
           toolCallNames.push(tool);
@@ -626,7 +647,7 @@ export class Supervisor {
           }
         },
         // onToolEndCallback — restore correct per-call context before onEvent('tool_execution_end') fires
-        (tool, isError, toolCallId) => {
+        (tool, isError, toolCallId, resultContent) => {
           if (toolCallId && activeToolCalls.has(toolCallId)) {
             const entry = activeToolCalls.get(toolCallId)!;
             currentTool = entry.tool;
@@ -637,6 +658,7 @@ export class Supervisor {
             currentTool = tool;
           }
           currentToolIsError = isError;
+          currentToolResultContent = resultContent;
           toolStartMs = undefined;
           toolDurationWarnEmitted = false;
         },

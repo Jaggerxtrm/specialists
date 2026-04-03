@@ -104,6 +104,7 @@ export interface TimelineEventMeta extends TimelineEventBase {
  */
 export interface TimelineEventThinking extends TimelineEventBase {
   type: 'thinking';
+  char_count?: number;
 }
 
 /**
@@ -130,6 +131,8 @@ export interface TimelineEventTool extends TimelineEventBase {
   args?: Record<string, unknown>;
   /** ISO timestamp of tool start — present on phase=start events for duration computation */
   started_at?: string;
+  /** Summarized tool result content (truncated to keep timeline compact) */
+  result_summary?: string;
 }
 
 /**
@@ -139,6 +142,7 @@ export interface TimelineEventTool extends TimelineEventBase {
  */
 export interface TimelineEventText extends TimelineEventBase {
   type: 'text';
+  char_count?: number;
 }
 
 /**
@@ -337,6 +341,16 @@ export const TIMELINE_EVENT_TYPES = {
  * - 'message_done'          -> IGNORED (message-level completion, not persisted to timeline)
  * - 'done'                  -> IGNORED (legacy name for agent_end, kept for safety)
  */
+const TOOL_RESULT_SUMMARY_LIMIT = 500;
+
+function summarizeToolResult(resultContent: string | undefined): string | undefined {
+  if (!resultContent) return undefined;
+  const compact = resultContent.trim();
+  if (!compact) return undefined;
+  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT) return compact;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}…`;
+}
+
 export function mapCallbackEventToTimelineEvent(
   callbackEvent: string,
   context: {
@@ -344,13 +358,19 @@ export function mapCallbackEventToTimelineEvent(
     toolCallId?: string;
     isError?: boolean;
     args?: Record<string, unknown>;
+    resultContent?: string;
+    charCount?: number;
   }
 ): TimelineEvent | null {
   const t = Date.now();
 
   switch (callbackEvent) {
     case 'thinking':
-      return { t, type: TIMELINE_EVENT_TYPES.THINKING };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.THINKING,
+        ...(context.charCount !== undefined ? { char_count: context.charCount } : {}),
+      };
 
     case 'tool_execution_start':
       return {
@@ -373,8 +393,9 @@ export function mapCallbackEventToTimelineEvent(
         tool_call_id: context.toolCallId,
       };
 
-    case 'tool_execution_end':
+    case 'tool_execution_end': {
       // Tool execution completed
+      const resultSummary = summarizeToolResult(context.resultContent);
       return {
         t,
         type: TIMELINE_EVENT_TYPES.TOOL,
@@ -382,7 +403,9 @@ export function mapCallbackEventToTimelineEvent(
         phase: 'end',
         tool_call_id: context.toolCallId,
         is_error: context.isError,
+        ...(resultSummary ? { result_summary: resultSummary } : {}),
       };
+    }
 
     case 'message_start_assistant':
       return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: 'start', role: 'assistant' };
@@ -402,6 +425,10 @@ export function mapCallbackEventToTimelineEvent(
     case 'turn_end':
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: 'end' };
 
+    case 'auto_compaction_start':
+      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: 'start' };
+
+    case 'auto_compaction_end':
     case 'auto_compaction':
       return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: 'end' };
 
@@ -409,7 +436,11 @@ export function mapCallbackEventToTimelineEvent(
       return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: 'end' };
 
     case 'text':
-      return { t, type: TIMELINE_EVENT_TYPES.TEXT };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TEXT,
+        ...(context.charCount !== undefined ? { char_count: context.charCount } : {}),
+      };
 
     case 'agent_end':
     case 'message_done':

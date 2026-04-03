@@ -3,6 +3,23 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as childProcess from 'node:child_process';
 import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual };
+});
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>();
+  return { ...actual };
+});
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual };
+});
+vi.mock('../../../src/cli/tmux-utils.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/cli/tmux-utils.js')>();
+  return { ...actual };
+});
 import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
@@ -217,7 +234,7 @@ describe('run CLI', () => {
     process.argv = ['node', '/repo/src/index.ts', 'run', 'code-review', '--prompt', "he'llo", '--background'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
-    const randomBytesSpy = vi.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from('a1b2c3', 'hex'));
+    const randomBytesSpy = vi.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from('a1b2c3', 'hex') as any);
     const isTmuxAvailableSpy = vi.spyOn(tmuxUtils, 'isTmuxAvailable').mockReturnValue(true);
     const createTmuxSessionSpy = vi.spyOn(tmuxUtils, 'createTmuxSession').mockImplementation(() => {});
     const detachedSpawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation(() => ({
