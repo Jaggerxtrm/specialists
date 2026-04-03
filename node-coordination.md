@@ -11,7 +11,7 @@
 | Stream 2 — 08zd (Phases 1→3) + 4qam | **this orchestrator** |
 | Stream 3 — z5ml implementation | another agent (unblocked after 08zd Phase 3) |
 
-## Live Status (updated 2026-04-03)
+## Live Status (updated 2026-04-04)
 
 ### Stream 1 — Output Contract + Validation — ✅ COMPLETE
 | Bead | Job | Status | Notes |
@@ -23,7 +23,7 @@
 | unitAI-0jm9 | ed2e4e (node-coordinator) | ✅ CLOSED | Manual validation: 2 coordinator turns, valid JSON both turns, correct schema. Gaps found: JSON in fences, spawn→resume semantic, member ID injection needed. node-coordinator performs well. |
 | unitAI-z61d | a031c1 (explorer) | ✅ CLOSED | Full issue scan: no existing specs for context window awareness or blast radius propagation. Clean design space. member_health + impact_report both greenfield. |
 | unitAI-4qez | a50ffb (explorer) | ✅ CLOSED | Confirmed: Pi RPC tool_execution_end has full event.result for all tools incl. gitnexus. findToolResultContent() discards structure (500-char text only). No protocol changes needed — extraction layer fix in session.ts + accumulator in supervisor.ts. |
-| unitAI-g5np | — | 🔜 open | Extract gitnexus enrichment + files touched from RPC tool results. Scope confirmed by 4qez. Implementation: extend onToolEnd, add supervisor accumulator, TimelineEventTool.result_raw, emit in run_complete. |
+| unitAI-g5np | cbdbef (executor) | ✅ CLOSED — commit c601a032 | findToolResultRaw in session.ts, resultRaw→runner→supervisor, gitnexusAccumulator, result_raw+gitnexus_summary in timeline-events.ts. Merged master 23e4d875. |
 | unitAI-16ov | — | ✅ CLOSED | Spec frozen: JSON fence fix (prompt+runner strip), spawn→resume semantic, member ID injection protocol, context window awareness (member_health 60/75/90% tiers, needs 08zd Ph3), blast radius propagation (impact_report in codegen/analysis, needs g5np), pipeline forwarding contract. See bead design field. |
 
 ### Stream 2 — SQLite Foundation
@@ -39,7 +39,7 @@
 | unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
 | unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED — commit 84889edc | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. |
 | unitAI-08zd Phase 3 | — | 🔜 unblocked — awaiting planner | SQLite dual-write, WAL mode, worktree column — planner bead unitAI-3chh ready to dispatch |
-| unitAI-3chh | — | 🔜 unblocked — ready to dispatch | Planner: decompose Phase 3 into worktree-safe sub-tasks. Prompt in node-coordination.md § "Starting prompt for next agent" |
+| unitAI-3chh | 79b4ae (planner) | ⚠️ failed — model fixed, ready to retry | anthropic/claude-sonnet-4-6 returned 403 (OAuth blocked for org). Planner model updated to dashscope/qwen3.5-plus + qwen3-coder-plus. Ready to re-dispatch. |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
 | unitAI-hgpu | — | 🔜 open P0 | --worktree CLI flag + Supervisor worktree_path record. Partly depends on Phase 3 (worktree_column). CLI flag can parallel Phase 3 waves. |
 | unitAI-1san | — | 🔜 open P1 | Cross-agent file consistency check on 08zd touched files. Run explorer on committed state before Phase 3. |
