@@ -227,6 +227,8 @@ Your job is PLANNING ONLY — produce sub-task beads with:
 - Each bead: title, description, files owned, prerequisite beads
 
 Worktree rule (MANDATORY): each executor bead runs in its own git worktree branch.
+Use `bd worktree create` — NOT `git worktree add` or `xt claude`. Only bd worktree
+preserves beads context (claims, edit-gate, memory gate) inside the worktree session.
 Reviewer/test-runner for that bead CDs into the same worktree — not main.
 Orchestrator merges in dependency order, runs lint+tests after each merge.
 
