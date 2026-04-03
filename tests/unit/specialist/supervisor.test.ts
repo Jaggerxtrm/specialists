@@ -125,6 +125,43 @@ describe('Supervisor', () => {
     const completion = events.find((event: any) => event.type === 'run_complete');
     expect(completion?.metrics?.finish_reason).toBe('stop');
     expect(completion?.metrics?.token_usage?.total_tokens).toBe(44);
+    expect(completion?.token_usage?.total_tokens).toBe(44);
+    expect(completion?.finish_reason).toBe('stop');
+    expect(completion?.tool_calls).toEqual([]);
+    expect(completion?.exit_reason).toBe('agent_end');
+  });
+
+  it('captures tool_calls list in run_complete and status metrics', async () => {
+    const runner = {
+      run: vi.fn().mockImplementation(async (
+        _opts: any, _onProgress: any, _onEvent: any, _onMetric: any,
+        _onMeta: any, _onKill: any, _onBead: any, _onSteer: any, _onResume: any,
+        onToolStart: any,
+      ) => {
+        onToolStart?.('read', { path: 'foo.ts' }, 'call-1');
+        onToolStart?.('bash', { command: 'echo hi' }, 'call-2');
+        return {
+          output: 'done',
+          model: 'haiku',
+          backend: 'anthropic',
+          durationMs: 10,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123',
+          beadId: undefined,
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const id = await sup.run();
+
+    const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
+    expect(status.metrics?.tool_calls).toBe(2);
+    expect(status.metrics?.tool_call_names).toEqual(['read', 'bash']);
+
+    const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const completion = events.find((event: any) => event.type === 'run_complete');
+    expect(completion?.tool_calls).toEqual(['read', 'bash']);
   });
 
   it('result.txt contains the runner output string', async () => {

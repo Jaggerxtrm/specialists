@@ -146,13 +146,13 @@ specialist:
 
   skills:
     paths:
-      - .agents/skills/xt-merge/SKILL.md
+      - .xtrm/skills/active/pi/xt-merge/SKILL.md
 
   validation:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - .agents/skills/xt-merge/SKILL.md
+      - .xtrm/skills/active/pi/xt-merge/SKILL.md
     stale_threshold_days: 30
 
   communication:

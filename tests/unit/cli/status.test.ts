@@ -22,6 +22,16 @@ function createJob(rootDir: string, jobId: string, eventCount = 0): void {
       bead_id: 'unitAI-tv3',
       started_at_ms: Date.now() - 83_000,
       session_file: '/tmp/session.jsonl',
+      metrics: {
+        turns: 4,
+        tool_calls: 7,
+        finish_reason: 'stop',
+        exit_reason: 'agent_end',
+        token_usage: {
+          total_tokens: 1234,
+          cost_usd: 0.042,
+        },
+      },
     }),
     'utf-8',
   );
@@ -123,6 +133,12 @@ describe('status CLI — run()', () => {
     expect(clean).toContain('elapsed      1m23s');
     expect(clean).toContain('bead_id      unitAI-tv3');
     expect(clean).toContain('events       3');
+    expect(clean).toContain('turns        4');
+    expect(clean).toContain('tool_calls   7');
+    expect(clean).toContain('finish       stop');
+    expect(clean).toContain('exit_reason  agent_end');
+    expect(clean).toContain('tokens       1234');
+    expect(clean).toContain('cost_usd     $0.042000');
     expect(clean).not.toContain('Active Jobs');
   }, TEST_TIMEOUT_MS);
 
@@ -138,8 +154,9 @@ describe('status CLI — run()', () => {
     const { run } = await import('../../../src/cli/status.js');
     await run();
 
-    const payload = JSON.parse(writes.join('\n')) as { job: { id: string; event_count: number } };
+    const payload = JSON.parse(writes.join('\n')) as { job: { id: string; event_count: number; metrics?: { turns?: number } } };
     expect(payload.job.id).toBe('job-abc');
     expect(payload.job.event_count).toBe(2);
+    expect(payload.job.metrics?.turns).toBe(4);
   }, TEST_TIMEOUT_MS);
 });

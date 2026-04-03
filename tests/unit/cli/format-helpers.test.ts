@@ -20,6 +20,7 @@ import {
   formatErrorBanner,
   formatDiscoveryBanner,
   formatEventInlineDebounced,
+  formatEventLine,
 } from '../../../src/cli/format-helpers.js';
 
 describe('format-helpers', () => {
@@ -170,6 +171,35 @@ describe('format-helpers', () => {
       const banner = formatDiscoveryBanner('job1');
       expect(banner).toContain('discovered');
       expect(banner).toContain('job1');
+    });
+  });
+
+  describe('formatEventLine', () => {
+    it('renders run_complete metrics summary including cost/turns/tools/exit', () => {
+      const line = formatEventLine({
+        t: Date.now(),
+        type: 'run_complete',
+        status: 'COMPLETE',
+        elapsed_s: 5,
+        token_usage: { total_tokens: 111, input_tokens: 70, output_tokens: 41, cost_usd: 0.012345 },
+        finish_reason: 'stop',
+        exit_reason: 'agent_end',
+        tool_calls: ['read', 'bash'],
+        metrics: { turns: 3 },
+      }, {
+        jobId: 'job1',
+        specialist: 'explorer',
+        beadId: 'unitAI-1',
+        colorize: (value: string) => value,
+      });
+
+      expect(line).toContain('status=COMPLETE');
+      expect(line).toContain('tokens=111');
+      expect(line).toContain('cost=$0.012345');
+      expect(line).toContain('turns=3');
+      expect(line).toContain('tools=2');
+      expect(line).toContain('finish=stop');
+      expect(line).toContain('exit=agent_end');
     });
   });
 

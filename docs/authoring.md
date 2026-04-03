@@ -66,6 +66,7 @@ specialist:
 | `stall_timeout_ms` | number | unset | kill if no event for N ms |
 | `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists |
 | `response_format` | `text \| json \| markdown` | `text` | output contract hint |
+| `output_type` | `codegen \| analysis \| review \| synthesis \| orchestration \| workflow \| research \| custom` | `custom` | semantic archetype (`codegen` implementation/change manifests, `analysis` architecture/exploration, `review` compliance/verdicts, `synthesis` multi-source decisions, `orchestration` coordinator handoffs, `workflow` procedural run outputs, `research` source-backed findings, `custom` no built-in extension) |
 | `permission_required` | `READ_ONLY \| LOW \| MEDIUM \| HIGH` | `READ_ONLY` | tool-access tier |
 | `thinking_level` | `off \| minimal \| low \| medium \| high \| xhigh` | unset | forwarded to thinking-capable models |
 

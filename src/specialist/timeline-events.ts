@@ -179,8 +179,10 @@ export interface TimelineTokenUsage {
 export interface TimelineRunMetrics {
   token_usage?: TimelineTokenUsage;
   finish_reason?: string;
+  exit_reason?: string;
   turns?: number;
   tool_calls?: number;
+  tool_call_names?: string[];
   auto_compactions?: number;
   auto_retries?: number;
 }
@@ -201,6 +203,11 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
   error?: string;
   /** Final assistant output text */
   output?: string;
+  /** Aggregated metrics promoted for easy JSON consumption */
+  token_usage?: TimelineTokenUsage;
+  finish_reason?: string;
+  tool_calls?: string[];
+  exit_reason?: string;
   /** Optional additive metrics summary */
   metrics?: TimelineRunMetrics;
 }
@@ -536,6 +543,10 @@ export function createRunCompleteEvent(
     bead_id?: string;
     error?: string;
     output?: string;
+    token_usage?: TimelineTokenUsage;
+    finish_reason?: string;
+    tool_calls?: string[];
+    exit_reason?: string;
     metrics?: TimelineRunMetrics;
   }
 ): TimelineEventRunComplete {

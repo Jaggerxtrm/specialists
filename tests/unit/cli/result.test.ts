@@ -17,6 +17,16 @@ function createJob(jobId: string, status: 'starting' | 'running' | 'waiting' | '
       specialist: 'bug-hunt',
       status,
       started_at_ms: Date.now() - 1000,
+      metrics: {
+        turns: 2,
+        tool_calls: 3,
+        finish_reason: 'stop',
+        exit_reason: status === 'done' ? 'agent_end' : undefined,
+        token_usage: {
+          total_tokens: 99,
+          cost_usd: 0.00123,
+        },
+      },
     }),
     'utf-8',
   );
@@ -68,6 +78,32 @@ describe('result CLI', () => {
     expect(stdoutWrites.join('')).toContain('last completed output');
     expect(stderrWrites.join('')).toContain('Showing last completed output');
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('prints JSON payload with metrics when --json is set', async () => {
+    createJob('job-json', 'done', true);
+    process.argv = ['node', 'specialists', 'result', 'job-json', '--json'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg?: unknown) => {
+      logs.push(String(msg ?? ''));
+    });
+
+    const { run } = await import('../../../src/cli/result.js');
+    await run();
+
+    const payload = JSON.parse(logs.join('\n')) as {
+      job: { id: string; metrics: { turns: number; tool_calls: number; token_usage: { total_tokens: number } } };
+      output: string;
+      error: string | null;
+    };
+
+    expect(payload.job.id).toBe('job-json');
+    expect(payload.job.metrics.turns).toBe(2);
+    expect(payload.job.metrics.tool_calls).toBe(3);
+    expect(payload.job.metrics.token_usage.total_tokens).toBe(99);
+    expect(payload.output).toContain('last completed output');
+    expect(payload.error).toBeNull();
   });
 
   it('exits with code 1 when job is running and result.txt does not exist', async () => {

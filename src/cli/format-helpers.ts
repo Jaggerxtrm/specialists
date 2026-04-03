@@ -68,6 +68,27 @@ export function formatElapsed(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+export function formatCostUsd(costUsd: number | undefined): string | null {
+  if (costUsd === undefined || !Number.isFinite(costUsd)) return null;
+  return `$${costUsd.toFixed(6)}`;
+}
+
+export function formatTokenUsageSummary(tokenUsage: {
+  total_tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+} | undefined): string[] {
+  if (!tokenUsage) return [];
+  const parts: string[] = [];
+  if (tokenUsage.total_tokens !== undefined) parts.push(`tokens=${tokenUsage.total_tokens}`);
+  if (tokenUsage.input_tokens !== undefined) parts.push(`in=${tokenUsage.input_tokens}`);
+  if (tokenUsage.output_tokens !== undefined) parts.push(`out=${tokenUsage.output_tokens}`);
+  const cost = formatCostUsd(tokenUsage.cost_usd);
+  if (cost) parts.push(`cost=${cost}`);
+  return parts;
+}
+
 // ============================================================================
 // Event Labels
 // ============================================================================
@@ -264,10 +285,24 @@ export function formatEventLine(
   } else if (event.type === 'run_complete') {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
-    if (event.metrics?.finish_reason) detailParts.push(`finish=${event.metrics.finish_reason}`);
-    if (event.metrics?.token_usage?.total_tokens !== undefined) {
-      detailParts.push(`tokens=${event.metrics.token_usage.total_tokens}`);
+    const finishReason = event.finish_reason ?? event.metrics?.finish_reason;
+    if (finishReason) detailParts.push(`finish=${finishReason}`);
+    const exitReason = event.exit_reason ?? event.metrics?.exit_reason;
+    if (exitReason) detailParts.push(`exit=${exitReason}`);
+
+    const tokenUsage = event.token_usage ?? event.metrics?.token_usage;
+    detailParts.push(...formatTokenUsageSummary(tokenUsage));
+
+    const turns = event.metrics?.turns;
+    if (turns !== undefined) detailParts.push(`turns=${turns}`);
+
+    const toolCalls = event.tool_calls ?? event.metrics?.tool_call_names;
+    if (toolCalls && toolCalls.length > 0) {
+      detailParts.push(`tools=${toolCalls.length}`);
+    } else if (event.metrics?.tool_calls !== undefined) {
+      detailParts.push(`tools=${event.metrics.tool_calls}`);
     }
+
     if (event.error) {
       detailParts.push(`error=${event.error}`);
     }
@@ -278,10 +313,12 @@ export function formatEventLine(
     }
   } else if (event.type === 'token_usage') {
     const usage = event.token_usage;
-    if (usage.total_tokens !== undefined) detailParts.push(`total=${usage.total_tokens}`);
-    if (usage.input_tokens !== undefined) detailParts.push(`in=${usage.input_tokens}`);
-    if (usage.output_tokens !== undefined) detailParts.push(`out=${usage.output_tokens}`);
-    if (usage.cost_usd !== undefined) detailParts.push(`cost=$${usage.cost_usd.toFixed(6)}`);
+    detailParts.push(...formatTokenUsageSummary({
+      total_tokens: usage.total_tokens,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cost_usd: usage.cost_usd,
+    }));
   } else if (event.type === 'finish_reason') {
     detailParts.push(`reason=${event.finish_reason}`);
     detailParts.push(`source=${event.source}`);

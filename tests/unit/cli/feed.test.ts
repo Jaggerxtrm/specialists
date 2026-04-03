@@ -152,7 +152,17 @@ describe('feed CLI', () => {
     const now = Date.now();
     createJobDir('job1', 'test', [
       { t: now - 2000, type: 'tool', tool: 'bash', phase: 'start', args: { command: 'echo hi' } },
-      { t: now, type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },
+      {
+        t: now,
+        type: 'run_complete',
+        status: 'COMPLETE',
+        elapsed_s: 5,
+        finish_reason: 'stop',
+        exit_reason: 'agent_end',
+        token_usage: { total_tokens: 321, cost_usd: 0.000654 },
+        metrics: { turns: 2 },
+        tool_calls: ['bash'],
+      },
     ], { bead_id: 'unitAI-777' });
 
     process.argv = ['node', 'specialists', 'feed'];
@@ -175,6 +185,12 @@ describe('feed CLI', () => {
     const combined = stripAnsi(logs.join('\n'));
     expect(combined).toContain('status=COMPLETE');
     expect(combined).toContain('elapsed=5s');
+    expect(combined).toContain('tokens=321');
+    expect(combined).toContain('cost=$0.000654');
+    expect(combined).toContain('turns=2');
+    expect(combined).toContain('tools=1');
+    expect(combined).toContain('finish=stop');
+    expect(combined).toContain('exit=agent_end');
   });
 
   it('outputs JSON with --json flag', async () => {

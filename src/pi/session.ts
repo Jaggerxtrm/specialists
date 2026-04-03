@@ -62,8 +62,10 @@ export interface SessionTokenUsage {
 export interface SessionRunMetrics {
   token_usage?: SessionTokenUsage;
   finish_reason?: string;
+  exit_reason?: string;
   turns?: number;
   tool_calls?: number;
+  tool_call_names?: string[];
   auto_compactions?: number;
   auto_retries?: number;
 }

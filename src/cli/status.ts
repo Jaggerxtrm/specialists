@@ -13,6 +13,7 @@ import {
   yellow,
   red,
   cyan,
+  formatCostUsd,
 } from './format-helpers.js';
 
 function ok(msg: string)   { console.log(`  ${green('✓')} ${msg}`); }
@@ -99,6 +100,28 @@ function countJobEvents(jobsDir: string, jobId: string): number {
   return raw.split('\n').filter(line => line.trim().length > 0).length;
 }
 
+function formatMetricsInline(metrics: SupervisorStatus['metrics']): string {
+  if (!metrics) return '';
+  const parts: string[] = [];
+
+  if (metrics.turns !== undefined) parts.push(`turns=${metrics.turns}`);
+
+  const toolCount = metrics.tool_call_names?.length ?? metrics.tool_calls;
+  if (toolCount !== undefined) parts.push(`tools=${toolCount}`);
+
+  if (metrics.token_usage?.total_tokens !== undefined) {
+    parts.push(`tokens=${metrics.token_usage.total_tokens}`);
+  }
+
+  const cost = formatCostUsd(metrics.token_usage?.cost_usd);
+  if (cost) parts.push(`cost=${cost}`);
+
+  if (metrics.finish_reason) parts.push(`finish=${metrics.finish_reason}`);
+  if (metrics.exit_reason) parts.push(`exit=${metrics.exit_reason}`);
+
+  return parts.join(' ');
+}
+
 function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
   console.log(`\n${bold('specialists status')}\n`);
   section(`Job ${job.id}`);
@@ -110,11 +133,16 @@ function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
   console.log(`  bead_id      ${job.bead_id ?? 'n/a'}`);
   console.log(`  events       ${eventCount}`);
   if (job.metrics?.finish_reason) console.log(`  finish       ${job.metrics.finish_reason}`);
+  if (job.metrics?.exit_reason) console.log(`  exit_reason  ${job.metrics.exit_reason}`);
+  if (job.metrics?.turns !== undefined) console.log(`  turns        ${job.metrics.turns}`);
+  const toolCount = job.metrics?.tool_call_names?.length ?? job.metrics?.tool_calls;
+  if (toolCount !== undefined) console.log(`  tool_calls   ${toolCount}`);
   if (job.metrics?.token_usage?.total_tokens !== undefined) {
     console.log(`  tokens       ${job.metrics.token_usage.total_tokens}`);
   }
   if (job.metrics?.token_usage?.cost_usd !== undefined) {
-    console.log(`  cost_usd     ${job.metrics.token_usage.cost_usd}`);
+    const cost = formatCostUsd(job.metrics.token_usage.cost_usd);
+    console.log(`  cost_usd     ${cost ?? job.metrics.token_usage.cost_usd}`);
   }
   if (job.session_file) console.log(`  session_file ${job.session_file}`);
   if (job.error) console.log(`  error        ${red(job.error)}`);
@@ -312,11 +340,14 @@ export async function run(): Promise<void> {
   } else {
     for (const job of jobs) {
       const elapsed = formatElapsed(job);
+      const metricsInline = formatMetricsInline(job.metrics);
       const detail = job.status === 'error'
         ? red(job.error?.slice(0, 40) ?? 'error')
         : job.current_tool
           ? dim(`tool: ${job.current_tool}`)
-          : dim(job.current_event ?? '');
+          : metricsInline
+            ? dim(metricsInline)
+            : dim(job.current_event ?? '');
       console.log(
         `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
       );

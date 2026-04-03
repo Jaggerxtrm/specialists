@@ -304,6 +304,7 @@ export class Supervisor {
         ...runMetrics,
         ...incoming,
         ...(incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {}),
+        ...(incoming.tool_call_names ? { tool_call_names: [...incoming.tool_call_names] } : {}),
       };
       setStatus({ metrics: runMetrics });
     };
@@ -349,6 +350,7 @@ export class Supervisor {
     let currentToolCallId = '';
     let currentToolArgs: Record<string, unknown> | undefined;
     let currentToolIsError = false;
+    const toolCallNames: string[] = [];
     // Map from toolCallId → {tool, args} for parallel tool call tracking
     const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
     let killFn: (() => void) | undefined;
@@ -613,7 +615,11 @@ export class Supervisor {
           currentToolIsError = false; // reset on new tool start
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
-          mergeRunMetrics({ tool_calls: (runMetrics.tool_calls ?? 0) + 1 });
+          toolCallNames.push(tool);
+          mergeRunMetrics({
+            tool_calls: toolCallNames.length,
+            tool_call_names: toolCallNames,
+          });
           setStatus({ current_tool: tool });
           if (toolCallId) {
             activeToolCalls.set(toolCallId, { tool, args });
@@ -665,6 +671,11 @@ export class Supervisor {
       };
 
       mergeRunMetrics(finalResult.metrics);
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: 'agent_end',
+      });
 
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
@@ -707,6 +718,10 @@ export class Supervisor {
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
         output: finalResult.output,
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
       }));
 
@@ -723,9 +738,19 @@ export class Supervisor {
         error: errorMsg,
       });
 
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: err instanceof Error ? err.name : 'error',
+      });
+
       // Emit run_complete with ERROR status
       appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
       }));
 
