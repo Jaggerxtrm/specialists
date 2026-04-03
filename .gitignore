@@ -54,5 +54,9 @@ venv/
 .specialists/db/*.db
 .specialists/db/*.db-wal
 .specialists/db/*.db-shm
-# bd worktree
+# bd worktrees (sibling dirs created by bd worktree create)
+unitAI-*/
 g5np-rpc-extraction/
+
+# Claude Code
+.claude/scheduled_tasks.lock
