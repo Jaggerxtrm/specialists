@@ -199,7 +199,7 @@ Every `appendTimelineEvent` call in `supervisor.ts` writes one of these to `even
 | `text` | char_count? | streaming text delta |
 | `tool` (start) | tool, tool_call_id, args, started_at | tool_execution_start |
 | `tool` (update) | tool, tool_call_id | tool_execution_update |
-| `tool` (end) | tool, tool_call_id, is_error, result_summary? | tool_execution_end |
+| `tool` (end) | tool, tool_call_id, is_error, result_summary?, result_raw? | tool_execution_end |
 | `message` (start/end) | role (assistant\|toolResult) | message_start/end |
 | `turn` (start/end) | — | turn_start/end |
 | `token_usage` | input/output/cache tokens, cost_usd, source | onMetric |
@@ -208,7 +208,7 @@ Every `appendTimelineEvent` call in `supervisor.ts` writes one of these to `even
 | `compaction` (start/end) | phase | auto_compaction_start/end |
 | `retry` (start/end) | phase | auto_retry_start/end |
 | `stale_warning` | reason, silence_ms, threshold_ms, tool? | stuck detector |
-| `run_complete` | status, elapsed_s, model, backend, bead_id, output, token_usage, finish_reason, tool_calls[], metrics | job end |
+| `run_complete` | status, elapsed_s, model, backend, bead_id, output, token_usage, finish_reason, tool_calls[], metrics, gitnexus_summary? | job end |
 
 **Intentionally NOT captured:**
 - `agent_end` → replaced by `run_complete`
@@ -216,6 +216,169 @@ Every `appendTimelineEvent` call in `supervisor.ts` writes one of these to `even
 - `extension_error` → not yet wired (future bead)
 
 **Pi RPC ground truth**: `pi/rpc/rpc-mode.ts` line 316 — `session.subscribe(event => output(event))` broadcasts ALL `AgentSessionEvent` objects verbatim. `session.ts` handles a curated subset; unknown types hit `default: return null`.
+
+**g5np addition (commit c601a032)**: `tool` (end) now includes `result_raw` (full MCP tool result payload). `run_complete` includes `gitnexus_summary` (accumulated files_touched, symbols_analyzed, highest_risk, tool_invocations) when any gitnexus tool was used during the run.
+
+---
+
+### Phase 3 Schema — DENORMALIZED (revised 2026-04-04)
+
+The original schema stored everything in `event_json TEXT` blobs — making 18+ event types unqueryable. **Revised: every field from every event type gets a real SQL column.** The blob stays for forward compat and full replay.
+
+#### specialist_events (denormalized)
+
+```sql
+specialist_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id          TEXT NOT NULL,
+  specialist      TEXT NOT NULL,
+  bead_id         TEXT,
+  t               INTEGER NOT NULL,
+  type            TEXT NOT NULL,
+
+  -- tool events (type='tool')
+  tool_name       TEXT,
+  tool_call_id    TEXT,
+  tool_phase      TEXT,              -- start, update, end
+  tool_args       TEXT,              -- JSON (start only)
+  tool_started_at TEXT,              -- ISO (start only)
+  is_error        INTEGER,           -- 0/1 (end only)
+  result_summary  TEXT,              -- truncated text (end only)
+  result_raw      TEXT,              -- full JSON payload (end only, from g5np)
+
+  -- text/thinking events
+  char_count      INTEGER,
+
+  -- message events
+  message_phase   TEXT,              -- start, end
+  message_role    TEXT,              -- assistant, toolResult
+
+  -- turn events
+  turn_phase      TEXT,              -- start, end
+
+  -- token_usage events
+  input_tokens    INTEGER,
+  output_tokens   INTEGER,
+  cache_read_tokens  INTEGER,
+  cache_write_tokens INTEGER,
+  cost_usd        REAL,
+  token_source    TEXT,
+
+  -- finish_reason events
+  finish_reason   TEXT,
+  finish_source   TEXT,
+
+  -- turn_summary events
+  turn_index      INTEGER,
+  turn_tokens     TEXT,              -- JSON
+  turn_finish     TEXT,
+
+  -- compaction/retry events
+  phase           TEXT,              -- start, end
+
+  -- stale_warning events
+  stale_reason    TEXT,
+  silence_ms      INTEGER,
+  threshold_ms    INTEGER,
+  stale_tool      TEXT,
+
+  -- run_complete events
+  run_status      TEXT,              -- COMPLETE, ERROR, CANCELLED
+  elapsed_s       REAL,
+  run_model       TEXT,
+  run_backend     TEXT,
+  run_bead_id     TEXT,
+  run_output      TEXT,
+  run_token_usage TEXT,              -- JSON summary
+  run_finish_reason TEXT,
+  run_tool_calls  TEXT,              -- JSON array
+  run_metrics     TEXT,              -- JSON full metrics
+  run_error       TEXT,
+
+  -- gitnexus summary (run_complete only, from g5np)
+  gitnexus_files_touched    TEXT,    -- JSON array
+  gitnexus_symbols_analyzed TEXT,    -- JSON array
+  gitnexus_highest_risk     TEXT,    -- LOW/MEDIUM/HIGH/CRITICAL
+  gitnexus_tool_invocations INTEGER,
+
+  -- archive blob (always present)
+  event_json      TEXT NOT NULL
+);
+
+CREATE INDEX idx_events_job_t    ON specialist_events(job_id, t, id);
+CREATE INDEX idx_events_type     ON specialist_events(type);
+CREATE INDEX idx_events_tool     ON specialist_events(tool_name) WHERE tool_name IS NOT NULL;
+CREATE INDEX idx_events_bead     ON specialist_events(bead_id) WHERE bead_id IS NOT NULL;
+```
+
+#### specialist_jobs (enriched)
+
+```sql
+specialist_jobs (
+  job_id              TEXT PRIMARY KEY,
+  specialist          TEXT NOT NULL,
+  worktree_column     TEXT,
+  bead_id             TEXT,
+  model               TEXT,
+  backend             TEXT,
+  status              TEXT NOT NULL,
+  total_turns         INTEGER DEFAULT 0,
+  total_tool_calls    INTEGER DEFAULT 0,
+  total_cost_usd      REAL DEFAULT 0,
+  input_tokens        INTEGER DEFAULT 0,
+  output_tokens       INTEGER DEFAULT 0,
+  exit_reason         TEXT,
+  highest_gitnexus_risk TEXT,
+  files_touched       TEXT,             -- JSON array
+  started_at_ms       INTEGER,
+  elapsed_s           REAL,
+  node_id             TEXT,             -- nullable FK → node_runs.id
+  status_json         TEXT NOT NULL,    -- full blob for backward compat
+  updated_at_ms       INTEGER NOT NULL
+);
+
+CREATE INDEX idx_jobs_specialist ON specialist_jobs(specialist);
+CREATE INDEX idx_jobs_bead       ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+CREATE INDEX idx_jobs_status     ON specialist_jobs(status);
+CREATE INDEX idx_jobs_node       ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
+```
+
+#### specialist_results — unchanged
+
+#### schema_version — bump to version=2
+
+---
+
+### Phase 3 Concurrency — SQLite in Parallel Worktrees (from overthinker unitAI-tjaz)
+
+**Problem**: 5+ specialists running in parallel worktrees all write to one shared SQLite DB. WAL mode handles read/write concurrency but write/write collisions cause `SQLITE_BUSY`.
+
+**Decision**: WAL + busy_timeout + bounded retry + no silent drops.
+
+1. **Persistent in-process `bun:sqlite` connection** — not `execFileSync('sqlite3')` shell-out per statement
+2. **`PRAGMA journal_mode=WAL`** — multiple readers + one writer, readers never blocked
+3. **`PRAGMA busy_timeout=5000`** — SQLite handles brief lock waits internally
+4. **Bounded app-level retry on `SQLITE_BUSY`**: 3-5 attempts, exponential backoff + jitter (25ms→50ms→100ms→200ms)
+5. **NEVER silently swallow final write failures** — emit stderr, set degradation flag in status.json
+6. **Keep transactions tiny** — one row per insert, no batching in Phase 3
+
+**Failure mode accepted**: worst case is loss of ONE in-flight event on process crash (atomic rollback). No partial row corruption (SQLite guarantee).
+
+**Not in Phase 3 scope**: write batching (later optimization), writer broker/daemon (never), append-log primary (conflicts with SQLite-as-primary).
+
+---
+
+### Worktree DB Path — `--git-common-dir` Fix (fqxo scope)
+
+`resolveObservabilityDbLocation()` uses `git rev-parse --show-toplevel` which returns the **worktree root** in a worktree — each worktree gets its own isolated DB, fragmenting all data.
+
+**Fix**: use `--git-common-dir` instead:
+```
+const gitCommonDir = execSync('git rev-parse --git-common-dir').toString().trim()
+const root = path.resolve(gitCommonDir, '..')  // parent of .git = always main repo root
+```
+
+Must land in fqxo alongside WAL mode so all worktrees share one DB and concurrent access is safe.
 
 ---
 
