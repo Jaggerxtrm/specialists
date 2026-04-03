@@ -665,6 +665,9 @@ export class SpecialistRunner {
     const beadVariables: Record<string, string> = options.inputBeadId
       ? { bead_context: options.prompt, bead_id: options.inputBeadId }
       : {};
+    const beadTemplateVariables: Record<string, string> = options.inputBeadId
+      ? { bead_id: options.inputBeadId, prompt: options.prompt }
+      : {};
     const variables: Record<string, string> = {
       prompt: options.prompt,
       cwd: process.cwd(),
@@ -672,7 +675,10 @@ export class SpecialistRunner {
       ...(options.variables ?? {}),
       ...beadVariables,
     };
-    const renderedTask = renderTemplate(prompt.task_template, variables);
+    const taskTemplate = options.inputBeadId
+      ? renderTemplate(prompt.task_template, beadTemplateVariables)
+      : prompt.task_template;
+    const renderedTask = renderTemplate(taskTemplate, variables);
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
     await hooks.emit('post_render', invocationId, metadata.name, metadata.version, {
@@ -684,7 +690,9 @@ export class SpecialistRunner {
 
     // Build system prompt from prompt.system only.
     // skill_inherit and skills.paths are injected via pi --skill (native).
-    let agentsMd = prompt.system ?? '';
+    let agentsMd = options.inputBeadId
+      ? renderTemplate(prompt.system ?? '', beadTemplateVariables)
+      : (prompt.system ?? '');
 
     // Always inject a Specialist Run Context block to override project-level CLAUDE.md/AGENTS.md
     // instructions that are meant for human developers, not specialist agents. Key overrides:

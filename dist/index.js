@@ -17842,6 +17842,53 @@ function findTokenUsage(payload) {
   }
   return normalizeTokenUsage(record3);
 }
+function normalizeToolResultPart(contentPart) {
+  if (!contentPart || typeof contentPart !== "object")
+    return;
+  const part = contentPart;
+  const text = part.text;
+  if (typeof text === "string" && text.trim().length > 0)
+    return text;
+  const content = part.content;
+  if (typeof content === "string" && content.trim().length > 0)
+    return content;
+  const output = part.output;
+  if (typeof output === "string" && output.trim().length > 0)
+    return output;
+  return;
+}
+function findToolResultContent(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  const result = record3.result;
+  if (!result || typeof result !== "object")
+    return;
+  const resultRecord = result;
+  const content = resultRecord.content;
+  if (Array.isArray(content)) {
+    const parts = content.map(normalizeToolResultPart).filter((value) => typeof value === "string" && value.length > 0);
+    if (parts.length > 0)
+      return parts.join(`
+`);
+  }
+  if (typeof resultRecord.content === "string" && resultRecord.content.trim().length > 0) {
+    return resultRecord.content;
+  }
+  if (typeof resultRecord.output === "string" && resultRecord.output.trim().length > 0) {
+    return resultRecord.output;
+  }
+  return;
+}
+function findToolResultRaw(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  const result = record3.result;
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    return;
+  return result;
+}
 
 class PiAgentSession {
   options;
@@ -18080,7 +18127,7 @@ class PiAgentSession {
       return;
     }
     if (type === "tool_execution_end") {
-      this.options.onToolEnd?.(event.toolName ?? event.name ?? "tool", event.isError ?? false, event.toolCallId);
+      this.options.onToolEnd?.(event.toolName ?? event.name ?? "tool", event.isError ?? false, event.toolCallId, findToolResultContent(event), findToolResultRaw(event));
       this.options.onEvent?.("tool_execution_end");
       return;
     }
@@ -18089,7 +18136,7 @@ class PiAgentSession {
         this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
       }
       this.options.onMetric?.({ type: "compaction", phase: type === "auto_compaction_start" ? "start" : "end" });
-      this.options.onEvent?.("auto_compaction");
+      this.options.onEvent?.(type);
       return;
     }
     if (type === "auto_retry_start" || type === "auto_retry_end") {
@@ -18105,19 +18152,23 @@ class PiAgentSession {
       if (!ae)
         return;
       switch (ae.type) {
-        case "text_delta":
-          if (ae.delta)
-            this.options.onToken?.(ae.delta);
-          this.options.onEvent?.("text");
+        case "text_delta": {
+          const delta = typeof ae.delta === "string" ? ae.delta : "";
+          if (delta)
+            this.options.onToken?.(delta);
+          this.options.onEvent?.("text", { charCount: delta.length });
           break;
+        }
         case "thinking_start":
-          this.options.onEvent?.("thinking");
+          this.options.onEvent?.("thinking", { charCount: 0 });
           break;
-        case "thinking_delta":
-          if (ae.delta)
-            this.options.onThinking?.(ae.delta);
-          this.options.onEvent?.("thinking");
+        case "thinking_delta": {
+          const delta = typeof ae.delta === "string" ? ae.delta : "";
+          if (delta)
+            this.options.onThinking?.(delta);
+          this.options.onEvent?.("thinking", { charCount: delta.length });
           break;
+        }
         case "toolcall_start":
           this.options.onToolStart?.(ae.name ?? ae.toolName ?? "tool");
           this.options.onEvent?.("toolcall");
@@ -18926,12 +18977,12 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
 ⚙ ${tool}…`);
           onToolStartCallback?.(tool, args, toolCallId);
         },
-        onToolEnd: (tool, isError, toolCallId) => {
+        onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => {
           onProgress?.(`✓
 `);
-          onToolEndCallback?.(tool, isError, toolCallId);
+          onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw);
         },
-        onEvent: (type) => onEvent?.(type),
+        onEvent: (type, details) => onEvent?.(type, details),
         onMetric: (event) => onMetric?.(event),
         onMeta: (meta) => onMeta?.(meta)
       });
@@ -20765,11 +20816,25 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/timeline-events.ts
+function summarizeToolResult(resultContent) {
+  if (!resultContent)
+    return;
+  const compact = resultContent.trim();
+  if (!compact)
+    return;
+  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
+    return compact;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}…`;
+}
 function mapCallbackEventToTimelineEvent(callbackEvent, context) {
   const t = Date.now();
   switch (callbackEvent) {
     case "thinking":
-      return { t, type: TIMELINE_EVENT_TYPES.THINKING };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.THINKING,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
     case "tool_execution_start":
       return {
         t,
@@ -20789,15 +20854,19 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         phase: "update",
         tool_call_id: context.toolCallId
       };
-    case "tool_execution_end":
+    case "tool_execution_end": {
+      const resultSummary = summarizeToolResult(context.resultContent);
       return {
         t,
         type: TIMELINE_EVENT_TYPES.TOOL,
         tool: context.tool ?? "unknown",
         phase: "end",
         tool_call_id: context.toolCallId,
-        is_error: context.isError
+        is_error: context.isError,
+        ...resultSummary ? { result_summary: resultSummary } : {},
+        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
       };
+    }
     case "message_start_assistant":
       return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
     case "message_end_assistant":
@@ -20810,12 +20879,19 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
     case "turn_end":
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
+    case "auto_compaction_start":
+      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: "start" };
+    case "auto_compaction_end":
     case "auto_compaction":
       return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: "end" };
     case "auto_retry":
       return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: "end" };
     case "text":
-      return { t, type: TIMELINE_EVENT_TYPES.TEXT };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TEXT,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
     case "agent_end":
     case "message_done":
     case "done":
@@ -20935,7 +21011,7 @@ function isRunCompleteEvent(event) {
 function compareTimelineEvents(a, b) {
   return a.t - b.t;
 }
-var TIMELINE_EVENT_TYPES;
+var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
 var init_timeline_events = __esm(() => {
   TIMELINE_EVENT_TYPES = {
     RUN_START: "run_start",
@@ -21000,6 +21076,58 @@ function formatBeadNotes(result) {
 
 ---
 ${metadata}`;
+}
+function normalizeGitnexusRisk(value) {
+  if (typeof value !== "string")
+    return;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "LOW" || normalized === "MEDIUM" || normalized === "HIGH" || normalized === "CRITICAL") {
+    return normalized;
+  }
+  return;
+}
+function collectStringArray(value) {
+  if (!Array.isArray(value))
+    return [];
+  return value.filter((entry) => typeof entry === "string" && entry.trim().length > 0);
+}
+function extractGitnexusFiles(tool, resultRaw) {
+  if (!resultRaw)
+    return [];
+  if (tool === "gitnexus_impact") {
+    return collectStringArray(resultRaw.files);
+  }
+  if (tool === "gitnexus_detect_changes") {
+    return collectStringArray(resultRaw.files_changed);
+  }
+  return [];
+}
+function extractGitnexusSymbols(resultRaw, args) {
+  if (!resultRaw)
+    return [];
+  const symbols = [
+    ...collectStringArray(resultRaw.symbols_analyzed),
+    ...collectStringArray(resultRaw.affected_symbols),
+    ...collectStringArray(resultRaw.symbols_modified)
+  ];
+  const argTarget = args?.target;
+  if (typeof argTarget === "string" && argTarget.trim().length > 0) {
+    symbols.push(argTarget);
+  }
+  return symbols;
+}
+function extractGitnexusRisk(resultRaw) {
+  if (!resultRaw)
+    return;
+  const direct = normalizeGitnexusRisk(resultRaw.risk_level) ?? normalizeGitnexusRisk(resultRaw.riskLevel) ?? normalizeGitnexusRisk(resultRaw.highest_risk) ?? normalizeGitnexusRisk(resultRaw.risk);
+  if (direct)
+    return direct;
+  const blastRadius = resultRaw.blast_radius;
+  if (blastRadius && typeof blastRadius === "object" && !Array.isArray(blastRadius)) {
+    const blastRadiusRecord = blastRadius;
+    return normalizeGitnexusRisk(blastRadiusRecord.risk_level) ?? normalizeGitnexusRisk(blastRadiusRecord.riskLevel) ?? normalizeGitnexusRisk(blastRadiusRecord.highest_risk) ?? normalizeGitnexusRisk(blastRadiusRecord.risk);
+  }
+  return;
 }
 
 class Supervisor {
@@ -21072,12 +21200,6 @@ class Supervisor {
     try {
       this.sqliteClient?.upsertStatus(data);
     } catch {}
-  }
-  updateStatus(id, updates) {
-    const current = this.readStatus(id);
-    if (!current)
-      return;
-    this.writeStatusFile(id, { ...current, ...updates });
   }
   gc() {
     if (!existsSync12(this.opts.jobsDir))
@@ -21155,7 +21277,7 @@ class Supervisor {
     }
   }
   async run() {
-    const { runner, runOptions, jobsDir } = this.opts;
+    const { runner, runOptions } = this.opts;
     this.gc();
     this.crashRecovery();
     const id = crypto.randomUUID().slice(0, 6);
@@ -21187,7 +21309,8 @@ class Supervisor {
       runMetrics = {
         ...runMetrics,
         ...incoming,
-        ...incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {}
+        ...incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {},
+        ...incoming.tool_call_names ? { tool_call_names: [...incoming.tool_call_names] } : {}
       };
       setStatus({ metrics: runMetrics });
     };
@@ -21211,6 +21334,8 @@ class Supervisor {
     } catch {}
     let textLogged = false;
     let currentTool = "";
+    let currentToolResultContent;
+    let currentToolResultRaw;
     let runMetrics = {
       turns: 0,
       tool_calls: 0,
@@ -21220,6 +21345,15 @@ class Supervisor {
     let currentToolCallId = "";
     let currentToolArgs;
     let currentToolIsError = false;
+    const gitnexusAccumulator = {
+      files_touched: new Set,
+      symbols_analyzed: new Set,
+      highest_risk: undefined,
+      tool_invocations: 0
+    };
+    let textCharCount = 0;
+    let thinkingCharCount = 0;
+    const toolCallNames = [];
     const activeToolCalls = new Map;
     let killFn;
     let steerFn;
@@ -21343,7 +21477,7 @@ class Supervisor {
           setStatus({ current_tool: currentTool });
         }
         this.opts.onProgress?.(delta);
-      }, (eventType) => {
+      }, (eventType, details) => {
         const now = Date.now();
         lastActivityMs = now;
         silenceWarnEmitted = false;
@@ -21353,11 +21487,24 @@ class Supervisor {
           last_event_at_ms: now,
           elapsed_s: Math.round((now - startedAtMs) / 1000)
         });
+        if (eventType === "turn_start") {
+          textCharCount = 0;
+          thinkingCharCount = 0;
+        }
+        if (eventType === "text") {
+          textCharCount += details?.charCount ?? 0;
+        }
+        if (eventType === "thinking") {
+          thinkingCharCount += details?.charCount ?? 0;
+        }
         const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
           tool: currentTool,
           toolCallId: currentToolCallId || undefined,
           args: currentToolArgs,
-          isError: currentToolIsError
+          isError: currentToolIsError,
+          resultContent: currentToolResultContent,
+          resultRaw: currentToolResultRaw,
+          charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount
         });
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
@@ -21408,7 +21555,8 @@ class Supervisor {
         steerFn = fn;
         if (!existsSync12(fifoPath))
           return;
-        fifoReadStream = createReadStream(fifoPath, { flags: "r+" });
+        const fifoFd = openSync(fifoPath, "r+");
+        fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: true });
         fifoReadline = createInterface({ input: fifoReadStream });
         fifoReadline.on("line", (line) => {
           try {
@@ -21436,14 +21584,20 @@ class Supervisor {
         currentToolArgs = args;
         currentToolCallId = toolCallId ?? "";
         currentToolIsError = false;
+        currentToolResultContent = undefined;
+        currentToolResultRaw = undefined;
         toolStartMs = Date.now();
         toolDurationWarnEmitted = false;
-        mergeRunMetrics({ tool_calls: (runMetrics.tool_calls ?? 0) + 1 });
+        toolCallNames.push(tool);
+        mergeRunMetrics({
+          tool_calls: toolCallNames.length,
+          tool_call_names: toolCallNames
+        });
         setStatus({ current_tool: tool });
         if (toolCallId) {
           activeToolCalls.set(toolCallId, { tool, args });
         }
-      }, (tool, isError, toolCallId) => {
+      }, (tool, isError, toolCallId, resultContent, resultRaw) => {
         if (toolCallId && activeToolCalls.has(toolCallId)) {
           const entry = activeToolCalls.get(toolCallId);
           currentTool = entry.tool;
@@ -21454,8 +21608,32 @@ class Supervisor {
           currentTool = tool;
         }
         currentToolIsError = isError;
+        currentToolResultContent = resultContent;
+        currentToolResultRaw = resultRaw;
         toolStartMs = undefined;
         toolDurationWarnEmitted = false;
+        if (tool === "edit" || tool === "write") {
+          const path = resultRaw?.path;
+          if (typeof path === "string" && path.trim().length > 0) {
+            gitnexusAccumulator.files_touched.add(path);
+          }
+        }
+        if (tool.startsWith("gitnexus_")) {
+          gitnexusAccumulator.tool_invocations += 1;
+          for (const file of extractGitnexusFiles(tool, resultRaw)) {
+            gitnexusAccumulator.files_touched.add(file);
+          }
+          for (const symbol of extractGitnexusSymbols(resultRaw, currentToolArgs)) {
+            gitnexusAccumulator.symbols_analyzed.add(symbol);
+          }
+          const risk = extractGitnexusRisk(resultRaw);
+          if (risk) {
+            const currentHighest = gitnexusAccumulator.highest_risk;
+            if (!currentHighest || GITNEXUS_RISK_ORDER[risk] > GITNEXUS_RISK_ORDER[currentHighest]) {
+              gitnexusAccumulator.highest_risk = risk;
+            }
+          }
+        }
       });
       latestOutput = result.output;
       mkdirSync3(this.jobDir(id), { recursive: true });
@@ -21484,6 +21662,11 @@ class Supervisor {
         output: latestOutput
       };
       mergeRunMetrics(finalResult.metrics);
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: "agent_end"
+      });
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
       const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
@@ -21511,12 +21694,23 @@ class Supervisor {
         bead_id: finalResult.beadId,
         metrics: runMetrics
       });
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
+        files_touched: [...gitnexusAccumulator.files_touched],
+        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+        highest_risk: gitnexusAccumulator.highest_risk,
+        tool_invocations: gitnexusAccumulator.tool_invocations
+      } : undefined;
       appendTimelineEvent(createRunCompleteEvent("COMPLETE", elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
         output: finalResult.output,
-        metrics: runMetrics
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
+        metrics: runMetrics,
+        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
       }));
       this.writeReadyMarker(id);
       return id;
@@ -21528,9 +21722,25 @@ class Supervisor {
         elapsed_s: elapsed,
         error: errorMsg
       });
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: err instanceof Error ? err.name : "error"
+      });
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
+        files_touched: [...gitnexusAccumulator.files_touched],
+        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+        highest_risk: gitnexusAccumulator.highest_risk,
+        tool_invocations: gitnexusAccumulator.tool_invocations
+      } : undefined;
       appendTimelineEvent(createRunCompleteEvent("ERROR", elapsed, {
         error: errorMsg,
-        metrics: runMetrics
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
+        metrics: runMetrics,
+        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
       }));
       this.writeReadyMarker(id);
       throw err;
@@ -21558,7 +21768,7 @@ class Supervisor {
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER;
 var init_supervisor = __esm(() => {
   init_timeline_events();
   init_observability_sqlite();
@@ -21568,6 +21778,12 @@ var init_supervisor = __esm(() => {
     running_silence_error_ms: 300000,
     waiting_stale_ms: 3600000,
     tool_duration_warn_ms: 120000
+  };
+  GITNEXUS_RISK_ORDER = {
+    LOW: 0,
+    MEDIUM: 1,
+    HIGH: 2,
+    CRITICAL: 3
   };
 });
 
@@ -21581,6 +21797,26 @@ function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+function formatCostUsd(costUsd) {
+  if (costUsd === undefined || !Number.isFinite(costUsd))
+    return null;
+  return `$${costUsd.toFixed(6)}`;
+}
+function formatTokenUsageSummary(tokenUsage) {
+  if (!tokenUsage)
+    return [];
+  const parts = [];
+  if (tokenUsage.total_tokens !== undefined)
+    parts.push(`tokens=${tokenUsage.total_tokens}`);
+  if (tokenUsage.input_tokens !== undefined)
+    parts.push(`in=${tokenUsage.input_tokens}`);
+  if (tokenUsage.output_tokens !== undefined)
+    parts.push(`out=${tokenUsage.output_tokens}`);
+  const cost = formatCostUsd(tokenUsage.cost_usd);
+  if (cost)
+    parts.push(`cost=${cost}`);
+  return parts;
 }
 function getEventLabel(type) {
   return EVENT_LABELS[type] ?? type.slice(0, 5).toUpperCase();
@@ -21645,10 +21881,22 @@ function formatEventLine(event, options) {
   } else if (event.type === "run_complete") {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
-    if (event.metrics?.finish_reason)
-      detailParts.push(`finish=${event.metrics.finish_reason}`);
-    if (event.metrics?.token_usage?.total_tokens !== undefined) {
-      detailParts.push(`tokens=${event.metrics.token_usage.total_tokens}`);
+    const finishReason = event.finish_reason ?? event.metrics?.finish_reason;
+    if (finishReason)
+      detailParts.push(`finish=${finishReason}`);
+    const exitReason = event.exit_reason ?? event.metrics?.exit_reason;
+    if (exitReason)
+      detailParts.push(`exit=${exitReason}`);
+    const tokenUsage = event.token_usage ?? event.metrics?.token_usage;
+    detailParts.push(...formatTokenUsageSummary(tokenUsage));
+    const turns = event.metrics?.turns;
+    if (turns !== undefined)
+      detailParts.push(`turns=${turns}`);
+    const toolCalls = event.tool_calls ?? event.metrics?.tool_call_names;
+    if (toolCalls && toolCalls.length > 0) {
+      detailParts.push(`tools=${toolCalls.length}`);
+    } else if (event.metrics?.tool_calls !== undefined) {
+      detailParts.push(`tools=${event.metrics.tool_calls}`);
     }
     if (event.error) {
       detailParts.push(`error=${event.error}`);
@@ -21660,14 +21908,12 @@ function formatEventLine(event, options) {
     }
   } else if (event.type === "token_usage") {
     const usage2 = event.token_usage;
-    if (usage2.total_tokens !== undefined)
-      detailParts.push(`total=${usage2.total_tokens}`);
-    if (usage2.input_tokens !== undefined)
-      detailParts.push(`in=${usage2.input_tokens}`);
-    if (usage2.output_tokens !== undefined)
-      detailParts.push(`out=${usage2.output_tokens}`);
-    if (usage2.cost_usd !== undefined)
-      detailParts.push(`cost=$${usage2.cost_usd.toFixed(6)}`);
+    detailParts.push(...formatTokenUsageSummary({
+      total_tokens: usage2.total_tokens,
+      input_tokens: usage2.input_tokens,
+      output_tokens: usage2.output_tokens,
+      cost_usd: usage2.cost_usd
+    }));
   } else if (event.type === "finish_reason") {
     detailParts.push(`reason=${event.finish_reason}`);
     detailParts.push(`source=${event.source}`);
@@ -22204,6 +22450,27 @@ function countJobEvents(jobsDir, jobId) {
   return raw.split(`
 `).filter((line) => line.trim().length > 0).length;
 }
+function formatMetricsInline(metrics) {
+  if (!metrics)
+    return "";
+  const parts = [];
+  if (metrics.turns !== undefined)
+    parts.push(`turns=${metrics.turns}`);
+  const toolCount = metrics.tool_call_names?.length ?? metrics.tool_calls;
+  if (toolCount !== undefined)
+    parts.push(`tools=${toolCount}`);
+  if (metrics.token_usage?.total_tokens !== undefined) {
+    parts.push(`tokens=${metrics.token_usage.total_tokens}`);
+  }
+  const cost = formatCostUsd(metrics.token_usage?.cost_usd);
+  if (cost)
+    parts.push(`cost=${cost}`);
+  if (metrics.finish_reason)
+    parts.push(`finish=${metrics.finish_reason}`);
+  if (metrics.exit_reason)
+    parts.push(`exit=${metrics.exit_reason}`);
+  return parts.join(" ");
+}
 function renderJobDetail(job, eventCount) {
   console.log(`
 ${bold8("specialists status")}
@@ -22218,11 +22485,19 @@ ${bold8("specialists status")}
   console.log(`  events       ${eventCount}`);
   if (job.metrics?.finish_reason)
     console.log(`  finish       ${job.metrics.finish_reason}`);
+  if (job.metrics?.exit_reason)
+    console.log(`  exit_reason  ${job.metrics.exit_reason}`);
+  if (job.metrics?.turns !== undefined)
+    console.log(`  turns        ${job.metrics.turns}`);
+  const toolCount = job.metrics?.tool_call_names?.length ?? job.metrics?.tool_calls;
+  if (toolCount !== undefined)
+    console.log(`  tool_calls   ${toolCount}`);
   if (job.metrics?.token_usage?.total_tokens !== undefined) {
     console.log(`  tokens       ${job.metrics.token_usage.total_tokens}`);
   }
   if (job.metrics?.token_usage?.cost_usd !== undefined) {
-    console.log(`  cost_usd     ${job.metrics.token_usage.cost_usd}`);
+    const cost = formatCostUsd(job.metrics.token_usage.cost_usd);
+    console.log(`  cost_usd     ${cost ?? job.metrics.token_usage.cost_usd}`);
   }
   if (job.session_file)
     console.log(`  session_file ${job.session_file}`);
@@ -22383,7 +22658,8 @@ ${bold8("specialists status")}
   } else {
     for (const job of jobs) {
       const elapsed = formatElapsed2(job);
-      const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : dim7(job.current_event ?? "");
+      const metricsInline = formatMetricsInline(job.metrics);
+      const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : metricsInline ? dim7(metricsInline) : dim7(job.current_event ?? "");
       console.log(`  ${dim7(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
     }
   }
@@ -22405,15 +22681,20 @@ import { join as join14 } from "node:path";
 function parseArgs7(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
-    console.error("Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>]");
+    console.error("Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]");
     process.exit(1);
   }
   let wait = false;
+  let json = false;
   let timeout;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--wait") {
       wait = true;
+      continue;
+    }
+    if (token === "--json") {
+      json = true;
       continue;
     }
     if (token === "--timeout" && argv[i + 1]) {
@@ -22426,11 +22707,27 @@ function parseArgs7(argv) {
       continue;
     }
   }
-  return { jobId, wait, timeout };
+  return { jobId, wait, json, timeout };
 }
 async function run12() {
   const args = parseArgs7(process.argv.slice(3));
   const { jobId } = args;
+  const emitJson = (status2, output2, error2) => {
+    console.log(JSON.stringify({
+      job: status2 ? {
+        id: status2.id,
+        specialist: status2.specialist,
+        status: status2.status,
+        model: status2.model ?? null,
+        backend: status2.backend ?? null,
+        bead_id: status2.bead_id ?? null,
+        metrics: status2.metrics ?? null,
+        error: status2.error ?? null
+      } : null,
+      output: output2,
+      error: error2
+    }, null, 2));
+  };
   const jobsDir = join14(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
@@ -22450,28 +22747,50 @@ async function run12() {
     while (true) {
       const status2 = supervisor.readStatus(jobId);
       if (!status2) {
-        console.error(`No job found: ${jobId}`);
+        if (args.json) {
+          emitJson(null, null, `No job found: ${jobId}`);
+        } else {
+          console.error(`No job found: ${jobId}`);
+        }
         process.exit(1);
       }
       if (status2.status === "done") {
         const output2 = readResultOutput();
         if (!output2) {
-          console.error(`Result not found for job ${jobId}`);
+          if (args.json) {
+            emitJson(status2, null, `Result not found for job ${jobId}`);
+          } else {
+            console.error(`Result not found for job ${jobId}`);
+          }
           process.exit(1);
         }
-        process.stdout.write(output2);
+        if (args.json) {
+          emitJson(status2, output2, null);
+        } else {
+          process.stdout.write(output2);
+        }
         return;
       }
       if (status2.status === "error") {
-        process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status2.error ?? "unknown error"}
+        const message = `Job ${jobId} failed: ${status2.error ?? "unknown error"}`;
+        if (args.json) {
+          emitJson(status2, null, message);
+        } else {
+          process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status2.error ?? "unknown error"}
 `);
+        }
         process.exit(1);
       }
       if (args.timeout !== undefined) {
         const elapsedSecs = (Date.now() - startMs) / 1000;
         if (elapsedSecs >= args.timeout) {
-          process.stderr.write(`Timeout: job ${jobId} did not complete within ${args.timeout}s
+          const timeoutMessage = `Timeout: job ${jobId} did not complete within ${args.timeout}s`;
+          if (args.json) {
+            emitJson(status2, null, timeoutMessage);
+          } else {
+            process.stderr.write(`${timeoutMessage}
 `);
+          }
           process.exit(1);
         }
       }
@@ -22480,30 +22799,56 @@ async function run12() {
   }
   const status = supervisor.readStatus(jobId);
   if (!status) {
-    console.error(`No job found: ${jobId}`);
+    if (args.json) {
+      emitJson(null, null, `No job found: ${jobId}`);
+    } else {
+      console.error(`No job found: ${jobId}`);
+    }
     process.exit(1);
   }
-  if (status.status === "running" || status.status === "starting") {
+  if (status.status === "running" || status.status === "starting" || status.status === "waiting") {
     const output2 = readResultOutput();
     if (!output2) {
-      process.stderr.write(`${dim9(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}
+      const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
+      if (args.json) {
+        emitJson(status, null, message);
+      } else {
+        process.stderr.write(`${dim9(message)}
 `);
+      }
       process.exit(1);
     }
-    process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
+    if (args.json) {
+      emitJson(status, output2, null);
+    } else {
+      process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
-    process.stdout.write(output2);
+      process.stdout.write(output2);
+    }
     return;
   }
   if (status.status === "error") {
-    process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
+    const message = `Job ${jobId} failed: ${status.error ?? "unknown error"}`;
+    if (args.json) {
+      emitJson(status, null, message);
+    } else {
+      process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
 `);
+    }
     process.exit(1);
   }
   const output = readResultOutput();
   if (!output) {
-    console.error(`Result not found for job ${jobId}`);
+    if (args.json) {
+      emitJson(status, null, `Result not found for job ${jobId}`);
+    } else {
+      console.error(`Result not found for job ${jobId}`);
+    }
     process.exit(1);
+  }
+  if (args.json) {
+    emitJson(status, output, null);
+    return;
   }
   process.stdout.write(output);
 }

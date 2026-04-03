@@ -458,6 +458,31 @@ describe('SpecialistRunner', () => {
       ].join('\n'));
     });
 
+    it('substitutes bead template variables in system prompt for bead runs', async () => {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+      const runner = new SpecialistRunner({
+        loader: makeLoader(
+          {},
+          'never',
+          { system: 'Inspect bead $bead_id and task $prompt' },
+        ),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await runner.run({
+        name: 'test-spec',
+        prompt: '# Task: Refactor auth\nImprove token validation flow.',
+        inputBeadId: 'unitAI-55d',
+      });
+
+      const sessionOptions = sessionFactory.mock.calls[0][0];
+      expect(sessionOptions.systemPrompt).toContain('Inspect bead unitAI-55d and task # Task: Refactor auth\nImprove token validation flow.');
+      expect(sessionOptions.systemPrompt).not.toContain('$bead_id');
+      expect(sessionOptions.systemPrompt).not.toContain('$prompt');
+    });
+
     it('does not crash when createBead returns null', async () => {
       const beadsClient = makeBeadsClient({ createBead: vi.fn().mockReturnValue(null) });
       const runner = new SpecialistRunner({

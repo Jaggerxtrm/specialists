@@ -54,3 +54,5 @@ venv/
 .specialists/db/*.db
 .specialists/db/*.db-wal
 .specialists/db/*.db-shm
+# bd worktree
+g5np-rpc-extraction/
