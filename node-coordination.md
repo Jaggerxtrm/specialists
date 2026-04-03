@@ -38,11 +38,33 @@
 | unitAI-30k2 review | d8fb3c (reviewer, keep-alive) | ✅ PASS 82/100 | Phase 1 approved. Gaps: no schema migration, cwd not passed to SQLite client, auto_compaction dead-end, output_type not in run_complete. |
 | unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
 | unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED — commit 84889edc | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. |
-| unitAI-08zd Phase 3 | — | 🔜 unblocked — awaiting planner | SQLite dual-write, WAL mode, worktree column — planner bead unitAI-3chh ready to dispatch |
-| unitAI-3chh | 79b4ae (planner) | ⚠️ failed — model fixed, ready to retry | anthropic/claude-sonnet-4-6 returned 403 (OAuth blocked for org). Planner model updated to dashscope/qwen3.5-plus + qwen3-coder-plus. Ready to re-dispatch. |
+| unitAI-08zd Phase 3 | — | 🔜 unblocked — planner done, executors ready | SQLite dual-write, WAL mode, worktree column. Merge order: A→C→B→D. |
+| unitAI-3chh | cdb342 (planner) | ✅ CLOSED | Decomposed into ky4c/fqxo/afl9/hhs6 + test beads mhra/lcv6/pi8m. Merge order: A→C→B→D. |
+| unitAI-ky4c | — | 🔜 unblocked — first task | Phase 3A: schema_version table + worktree_column (observability-sqlite.ts) |
+| unitAI-fqxo | — | 🔜 blocked on ky4c | Phase 3C: WAL enforcement + DB exports (observability-sqlite.ts, observability-db.ts) |
+| unitAI-afl9 | — | 🔜 blocked on fqxo | Phase 3B: supervisor dual-write (supervisor.ts) |
+| unitAI-hhs6 | — | 🔜 blocked on afl9 | Phase 3D: CLI read paths (feed.ts, status.ts, result.ts) |
+| unitAI-mhra/lcv6/pi8m | — | 🔜 test beads for 3A/3B/3D | Each blocks its impl bead |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
 | unitAI-hgpu | — | 🔜 open P0 | --worktree CLI flag + Supervisor worktree_path record. Partly depends on Phase 3 (worktree_column). CLI flag can parallel Phase 3 waves. |
-| unitAI-1san | — | 🔜 open P1 | Cross-agent file consistency check on 08zd touched files. Run explorer on committed state before Phase 3. |
+| unitAI-1san | — | ✅ CLOSED | Consistency check passed — no contradictions or dead code. Follow-ups: e90j/brbb/hpjg (P3). |
+
+### Stream 3 — Node Persistence (another agent) + Stage 3 Core (post-convergence)
+| Bead | Job | Status | Notes |
+|------|-----|--------|-------|
+| unitAI-z5ml | — | 🔜 blocked on hhs6 (Phase 3D) | Node SQLite tables: node_runs, node_members, node_events, node_memory, action_dispatch_log. Circular FK: coordinator_job_id nullable, 4-step bootstrap. |
+| unitAI-69rw | — | 🔜 blocked on z5ml + 4qam | NodeSupervisor state machine: spawn/resume/pause/rotate members, member_id→job_id registry, member_health every turn |
+| unitAI-iy5g | — | 🔜 blocked on 69rw | Coordinator JSON contract enforcement + 3-attempt repair loop |
+| unitAI-w0cg | — | 🔜 blocked on 69rw + z5ml | Node feed isolation: sp node feed, node_id tagging in member jobs |
+| unitAI-780u | — | 🔜 blocked on iy5g + z5ml | Shared memory patch validation + SQLite persistence (node_memory table) |
+| unitAI-u9my | — | 🔜 blocked on 69rw | Beads-first reporting + sp node promote flow |
+| unitAI-i6up | — | 🔜 blocked on 16ov✅ + e242 + 22tq | Research node v1A preset definitions |
+
+**Dep chain**: hhs6 → z5ml → 69rw → {iy5g, w0cg, u9my} → {780u}
+
+**Deps wired 2026-04-04**: z5ml→hhs6, 69rw→4qam, w0cg→z5ml, 780u→z5ml, i6up→e242, i6up→22tq
+
+---
 
 ### Stream 3 — Node Persistence (another agent)
 | Bead | Job | Status | Notes |
