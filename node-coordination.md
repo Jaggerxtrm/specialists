@@ -32,15 +32,17 @@
 | unitAI-0c0w | 13d71f (executor) | ✅ CLOSED | `specialists db setup`: TTY-gated, git-root DB path, chmod 644, clean safety, gitignore. 50 tests pass. |
 | unitAI-08zd Phase 1 | b0bb4a (executor) | ❌ crashed (13min, context limit) | Partial work in tree — lint clean, tests hang. See bead notes. |
 | unitAI-08zd Phase 1 retry | 00df5e (executor) | ❌ crashed again (FIFO test hang — pre-existing) | supervisor.test.ts keep-alive test hangs in original code too — not a regression. All other tests pass. |
-| unitAI-08zd Phase 1 | — | ✅ ready to commit | Lint clean. 9 test files pass. supervisor.test.ts hang is pre-existing. Committing partial + Phase 2 next. |
+| unitAI-08zd Phase 1 | — | ✅ CLOSED — commit 200b0eb9 | session.ts onMetric, timeline-events.ts 5 metric types, supervisor.ts mergeRunMetrics, observability-sqlite.ts + db.ts new. |
+| unitAI-08zd Phase 1b | 7d7d78 (executor) | ✅ CLOSED — commit 98df33a2 | onToolEnd result param, auto_compaction_start/end distinct, result_summary + char_count on timeline events. |
 | unitAI-08zd Phase 2 | 623cdd (executor) | ❌ did nothing (15s, no output) | Stopped — explorer-first required |
 | unitAI-30k2 review | d8fb3c (reviewer, keep-alive) | ✅ PASS 82/100 | Phase 1 approved. Gaps: no schema migration, cwd not passed to SQLite client, auto_compaction dead-end, output_type not in run_complete. |
 | unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
-| unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. Committed 84889edc. |
-| unitAI-08zd Phase 3 | — | blocked on Phase 2 + planner | SQLite migration, WAL mode, worktree column — needs planner decomposition first (unitAI-3chh) |
-| unitAI-08zd Phase 1b | 7d7d78 (executor) | 🔄 running | Fix 3 gaps: tool result content, auto_compaction_start, text char_count |
-| unitAI-3chh | — | blocked on Phase 1b | Planner bead: decompose Phase 3 into worktree-safe sub-tasks with explicit file ownership |
+| unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED — commit 84889edc | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. |
+| unitAI-08zd Phase 3 | — | 🔜 unblocked — awaiting planner | SQLite dual-write, WAL mode, worktree column — planner bead unitAI-3chh ready to dispatch |
+| unitAI-3chh | — | 🔜 unblocked — ready to dispatch | Planner: decompose Phase 3 into worktree-safe sub-tasks. Prompt in node-coordination.md § "Starting prompt for next agent" |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
+| unitAI-hgpu | — | 🔜 open P0 | --worktree CLI flag + Supervisor worktree_path record. Partly depends on Phase 3 (worktree_column). CLI flag can parallel Phase 3 waves. |
+| unitAI-1san | — | 🔜 open P1 | Cross-agent file consistency check on 08zd touched files. Run explorer on committed state before Phase 3. |
 
 ### Stream 3 — Node Persistence (another agent)
 | Bead | Job | Status | Notes |
@@ -237,13 +239,6 @@ Key files to plan around:
   src/cli/status.ts                       ← read path
   src/cli/result.ts                       ← read path
   tests/unit/specialist/supervisor.test.ts ← NOTE: run alone, not batched
-```
-Key files: src/specialist/supervisor.ts, src/specialist/observability-sqlite.ts,
-           src/cli/feed.ts, src/cli/status.ts, src/cli/result.ts
-
-After plan is accepted, executors will run one per worktree branch. Do not skip
-the file-ownership constraint — this caused crashes earlier (two executors touching
-supervisor.ts simultaneously without isolation).
 ```
 
 ---
