@@ -65,6 +65,7 @@ export interface SupervisorStatus {
   session_file?: string;
   fifo_path?: string;
   tmux_session?: string;
+  worktree_path?: string;
   metrics?: SessionRunMetrics;
   error?: string;
 }
@@ -349,6 +350,7 @@ export class Supervisor {
       pid: process.pid,
       ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
       ...(process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}),
+      ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
     };
     this.writeStatusFile(id, initialStatus);
     // Persist a latest marker so other processes can discover the active job id immediately
@@ -432,6 +434,7 @@ export class Supervisor {
     let closeFn: (() => Promise<void>) | undefined;
     let fifoReadStream: ReturnType<typeof createReadStream> | undefined;
     let fifoReadline: ReturnType<typeof createInterface> | undefined;
+    let fifoFd: number | undefined;
     let keepAliveSession = false;
     let latestOutput = '';
     let keepAliveExitResolved = false;
@@ -671,8 +674,8 @@ export class Supervisor {
           // so the fd is guaranteed open before onResumeReady transitions to 'waiting'.
           // createReadStream without a path argument uses the pre-opened fd directly,
           // eliminating the race where a test writer (O_WRONLY) blocks waiting for a reader.
-          const fifoFd = openSync(fifoPath, 'r+');
-          fifoReadStream = createReadStream('', { fd: fifoFd, autoClose: true });
+          fifoFd = openSync(fifoPath, 'r+');
+          fifoReadStream = createReadStream('', { fd: fifoFd, autoClose: false });
           fifoReadline = createInterface({ input: fifoReadStream });
           fifoReadline.on('line', (line) => {
               try {
@@ -907,8 +910,11 @@ export class Supervisor {
     } finally {
       if (stuckIntervalId !== undefined) clearInterval(stuckIntervalId);
       process.removeListener('SIGTERM', sigtermHandler);
-      // Close the FIFO readline interface and destroy the stream to release event loop
+      // Close the FIFO: readline → fd → stream. Closing the fd synchronously before
+      // destroying the stream prevents the event loop hang that blocks batch test suites.
+      // autoClose is false so stream.destroy() won't attempt a second close on the fd.
       try { fifoReadline?.close(); } catch { /* ignore */ }
+      if (fifoFd !== undefined) { try { closeSync(fifoFd); } catch { /* ignore */ } fifoFd = undefined; }
       try { fifoReadStream?.destroy(); } catch { /* ignore */ }
       // Ensure events are flushed to disk before closing
       try { fsyncSync(eventsFd); } catch { /* ignore */ }

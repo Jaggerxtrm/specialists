@@ -21374,6 +21374,7 @@ class Supervisor {
     let closeFn;
     let fifoReadStream;
     let fifoReadline;
+    let fifoFd;
     let keepAliveSession = false;
     let latestOutput = "";
     let keepAliveExitResolved = false;
@@ -21568,8 +21569,8 @@ class Supervisor {
         steerFn = fn;
         if (!existsSync12(fifoPath))
           return;
-        const fifoFd = openSync(fifoPath, "r+");
-        fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: true });
+        fifoFd = openSync(fifoPath, "r+");
+        fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: false });
         fifoReadline = createInterface({ input: fifoReadStream });
         fifoReadline.on("line", (line) => {
           try {
@@ -21764,6 +21765,12 @@ class Supervisor {
       try {
         fifoReadline?.close();
       } catch {}
+      if (fifoFd !== undefined) {
+        try {
+          closeSync(fifoFd);
+        } catch {}
+        fifoFd = undefined;
+      }
       try {
         fifoReadStream?.destroy();
       } catch {}
