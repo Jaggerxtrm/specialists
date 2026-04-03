@@ -13,6 +13,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as childProcess from 'node:child_process';
+
+// vi.mock at module scope makes the ESM namespace mutable so vi.spyOn works.
+// Without this, vi.spyOn(childProcess, 'spawnSync') throws
+// "Cannot replace module namespace object's binding's value".
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual };
+});
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
@@ -946,13 +954,15 @@ describe('Supervisor', () => {
       const waitingDir = join(jobsDir, waitingId);
       mkdirSync(waitingDir, { recursive: true });
 
-      // last_event_at_ms exactly at the threshold boundary (3_600_000ms ago)
+      // last_event_at_ms exactly at the threshold boundary (3_600_000ms ago).
+      // Subtract 1ms from now so that even after a few ms of test setup,
+      // last_event_at_ms is still >= (Date.now() - threshold) when crashRecovery runs.
       const waitingStatus: SupervisorStatus = {
         id: waitingId,
         specialist: 'test',
         status: 'waiting',
-        started_at_ms: now - 3_600_000,
-        last_event_at_ms: now - 3_600_000, // exactly at threshold — not strictly >
+        started_at_ms: now - 3_600_000 + 500,
+        last_event_at_ms: now - 3_600_000 + 500, // 500ms inside boundary — safely not strictly >
       };
       writeFileSync(join(waitingDir, 'status.json'), JSON.stringify(waitingStatus));
 
@@ -1035,7 +1045,7 @@ describe('Supervisor', () => {
 
     it('calls tmux kill-session in finally when tmux_session is present (idempotent exit ignored)', async () => {
       process.env.SPECIALISTS_TMUX_SESSION = 'specialists-job-456';
-      const originalSpawnSync = childProcess.spawnSync;
+      const realSpawnSync = childProcess.spawnSync;
       const spawnSyncSpy = vi.spyOn(childProcess, 'spawnSync').mockImplementation(((command: any, args: any, options: any) => {
         if (command === 'tmux') {
           return {
@@ -1047,7 +1057,7 @@ describe('Supervisor', () => {
             signal: null,
           } as any;
         }
-        return originalSpawnSync(command, args, options as any);
+        return realSpawnSync(command, args, options as any);
       }) as any);
 
       const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
@@ -1062,7 +1072,7 @@ describe('Supervisor', () => {
 
     it('calls tmux kill-session even when runner errors', async () => {
       process.env.SPECIALISTS_TMUX_SESSION = 'specialists-job-789';
-      const originalSpawnSync = childProcess.spawnSync;
+      const realSpawnSync = childProcess.spawnSync;
       const spawnSyncSpy = vi.spyOn(childProcess, 'spawnSync').mockImplementation(((command: any, args: any, options: any) => {
         if (command === 'tmux') {
           return {
@@ -1074,7 +1084,7 @@ describe('Supervisor', () => {
             signal: null,
           } as any;
         }
-        return originalSpawnSync(command, args, options as any);
+        return realSpawnSync(command, args, options as any);
       }) as any);
 
       const runner = {
