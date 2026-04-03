@@ -183,11 +183,6 @@ export class Supervisor {
     try { this.sqliteClient?.upsertStatus(data); } catch { /* best effort */ }
   }
 
-  private updateStatus(id: string, updates: Partial<SupervisorStatus>): void {
-    const current = this.readStatus(id);
-    if (!current) return;
-    this.writeStatusFile(id, { ...current, ...updates });
-  }
 
   /** GC: remove job dirs older than JOB_TTL_DAYS. */
   private gc(): void {
@@ -266,7 +261,7 @@ export class Supervisor {
    * Returns the job ID when complete (or throws on error).
    */
   async run(): Promise<string> {
-    const { runner, runOptions, jobsDir } = this.opts;
+    const { runner, runOptions } = this.opts;
 
     this.gc();
     this.crashRecovery();
@@ -576,7 +571,12 @@ export class Supervisor {
           // Start a background reader loop on the FIFO.
           // Opening with 'r+' (O_RDWR) prevents blocking on open when there's no writer yet.
           // Each line received is forwarded as a steer message to the Pi session.
-          fifoReadStream = createReadStream(fifoPath, { flags: 'r+' });
+          // Open the FIFO fd synchronously (O_RDWR = non-blocking on named pipes)
+          // so the fd is guaranteed open before onResumeReady transitions to 'waiting'.
+          // createReadStream without a path argument uses the pre-opened fd directly,
+          // eliminating the race where a test writer (O_WRONLY) blocks waiting for a reader.
+          const fifoFd = openSync(fifoPath, 'r+');
+          fifoReadStream = createReadStream('', { fd: fifoFd, autoClose: true });
           fifoReadline = createInterface({ input: fifoReadStream });
           fifoReadline.on('line', (line) => {
               try {
