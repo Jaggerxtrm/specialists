@@ -84,6 +84,23 @@ describe('timeline-events', () => {
       expect(event.metrics?.token_usage?.total_tokens).toBe(120);
     });
 
+    it('includes gitnexus_summary when provided', () => {
+      const event = createRunCompleteEvent('COMPLETE', 15, {
+        gitnexus_summary: {
+          files_touched: ['src/a.ts'],
+          symbols_analyzed: ['runSpecialist'],
+          highest_risk: 'HIGH',
+          tool_invocations: 2,
+        },
+      });
+      expect(event.gitnexus_summary).toEqual({
+        files_touched: ['src/a.ts'],
+        symbols_analyzed: ['runSpecialist'],
+        highest_risk: 'HIGH',
+        tool_invocations: 2,
+      });
+    });
+
     it('does not include output when not provided', () => {
       const event = createRunCompleteEvent('COMPLETE', 5);
       expect(event.output).toBeUndefined();
@@ -116,6 +133,18 @@ describe('timeline-events', () => {
         expect(event.phase).toBe('end');
         expect(event.tool).toBe('read');
         expect(event.is_error).toBe(false);
+      }
+    });
+
+    it('maps tool_execution_end with resultRaw to tool event result_raw', () => {
+      const resultRaw = { files_changed: ['src/a.ts'] };
+      const event = mapCallbackEventToTimelineEvent('tool_execution_end', {
+        tool: 'gitnexus_detect_changes',
+        resultRaw,
+      });
+      expect(event).not.toBeNull();
+      if (event?.type === 'tool') {
+        expect(event.result_raw).toEqual(resultRaw);
       }
     });
 

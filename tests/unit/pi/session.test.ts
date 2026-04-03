@@ -217,6 +217,21 @@ describe('_handleEvent — RPC protocol parsing', () => {
     expect(onToken).toHaveBeenCalledWith('hello');
     expect(onEvent).toHaveBeenCalledWith('text');
   });
+
+  it('tool_execution_end passes undefined resultRaw when result is not an object', async () => {
+    const onToolEnd = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onToolEnd });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'tool_execution_end',
+      toolName: 'bash',
+      isError: false,
+      result: 'plain text result',
+    });
+
+    expect(onToolEnd).toHaveBeenCalledWith('bash', false, undefined, undefined, undefined);
+  });
 });
 
 // ── PiAgentSession behaviour tests ───────────────────────────────────────────

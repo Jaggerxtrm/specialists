@@ -133,6 +133,8 @@ export interface TimelineEventTool extends TimelineEventBase {
   started_at?: string;
   /** Summarized tool result content (truncated to keep timeline compact) */
   result_summary?: string;
+  /** Raw structured tool result payload (when available) */
+  result_raw?: Record<string, unknown>;
 }
 
 /**
@@ -214,6 +216,12 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
   exit_reason?: string;
   /** Optional additive metrics summary */
   metrics?: TimelineRunMetrics;
+  gitnexus_summary?: {
+    files_touched: string[];
+    symbols_analyzed: string[];
+    highest_risk?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    tool_invocations: number;
+  };
 }
 
 /**
@@ -359,6 +367,7 @@ export function mapCallbackEventToTimelineEvent(
     isError?: boolean;
     args?: Record<string, unknown>;
     resultContent?: string;
+    resultRaw?: Record<string, unknown>;
     charCount?: number;
   }
 ): TimelineEvent | null {
@@ -404,6 +413,7 @@ export function mapCallbackEventToTimelineEvent(
         tool_call_id: context.toolCallId,
         is_error: context.isError,
         ...(resultSummary ? { result_summary: resultSummary } : {}),
+        ...(context.resultRaw ? { result_raw: context.resultRaw } : {}),
       };
     }
 
@@ -579,6 +589,12 @@ export function createRunCompleteEvent(
     tool_calls?: string[];
     exit_reason?: string;
     metrics?: TimelineRunMetrics;
+    gitnexus_summary?: {
+      files_touched: string[];
+      symbols_analyzed: string[];
+      highest_risk?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+      tool_invocations: number;
+    };
   }
 ): TimelineEventRunComplete {
   return {

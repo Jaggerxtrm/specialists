@@ -94,8 +94,8 @@ export interface PiSessionOptions {
   onThinking?: (delta: string) => void;
   /** Called with tool name, optional args payload, and optional tool call ID when a tool starts executing */
   onToolStart?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void;
-  /** Called with tool name, error flag, optional tool call ID, and summarized tool result content */
-  onToolEnd?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string) => void;
+  /** Called with tool name, error flag, optional tool call ID, summarized result content, and optional raw result payload */
+  onToolEnd?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string, resultRaw?: Record<string, unknown>) => void;
   /** Called with the raw pi event type (for job status tracking) */
   onEvent?: (type: string, details?: { charCount?: number }) => void;
   /** Called with additive observability metrics derived from RPC events */
@@ -241,6 +241,14 @@ function findToolResultContent(payload: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function findToolResultRaw(payload: unknown): Record<string, unknown> | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const result = record.result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
+  return result as Record<string, unknown>;
 }
 
 export class PiAgentSession {
@@ -531,6 +539,7 @@ export class PiAgentSession {
         event.isError ?? false,
         event.toolCallId as string | undefined,
         findToolResultContent(event),
+        findToolResultRaw(event),
       );
       this.options.onEvent?.('tool_execution_end');
       return;
