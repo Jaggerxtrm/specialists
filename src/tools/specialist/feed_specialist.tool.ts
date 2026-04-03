@@ -39,12 +39,16 @@ export function createFeedSpecialistTool(jobsDir: string) {
       let specialist = 'unknown';
       let model: string | undefined;
       let bead_id: string | undefined;
+      let metrics: Record<string, unknown> | undefined;
       try {
         const s = JSON.parse(readFileSync(statusPath, 'utf-8'));
         status = s.status ?? 'unknown';
         specialist = s.specialist ?? 'unknown';
         model = s.model;
         bead_id = s.bead_id;
+        metrics = typeof s.metrics === 'object' && s.metrics !== null
+          ? s.metrics as Record<string, unknown>
+          : undefined;
       } catch {
         // status.json unreadable — continue with defaults
       }
@@ -66,6 +70,7 @@ export function createFeedSpecialistTool(jobsDir: string) {
         ...(model !== undefined ? { model } : {}),
         status,
         ...(bead_id !== undefined ? { bead_id } : {}),
+        ...(metrics !== undefined ? { metrics } : {}),
         events: sliced,
         cursor,
         next_cursor,

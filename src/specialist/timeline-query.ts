@@ -28,12 +28,13 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   type TimelineEvent,
   parseTimelineEvent,
   compareTimelineEvents,
 } from './timeline-events.js';
+import { createObservabilitySqliteClient } from './observability-sqlite.js';
 
 // ============================================================================
 // SINGLE JOB READING
@@ -45,6 +46,17 @@ import {
  * Skips malformed lines non-fatally.
  */
 export function readJobEvents(jobDir: string): TimelineEvent[] {
+  const jobId = basename(jobDir);
+  try {
+    const sqliteEvents = createObservabilitySqliteClient()?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      sqliteEvents.sort(compareTimelineEvents);
+      return sqliteEvents;
+    }
+  } catch {
+    // fallback to file-based timeline
+  }
+
   const eventsPath = join(jobDir, 'events.jsonl');
   if (!existsSync(eventsPath)) return [];
 
@@ -258,7 +270,7 @@ export function isJobComplete(events: TimelineEvent[]): boolean {
  */
 export function getJobCompletionStatus(
   events: TimelineEvent[]
-): { status: 'COMPLETE' | 'ERROR' | 'CANCELLED'; elapsed_s: number; error?: string } | null {
+): { status: 'COMPLETE' | 'ERROR' | 'CANCELLED'; elapsed_s: number; error?: string; metrics?: Record<string, unknown> } | null {
   const completeEvent = events.find((e) => e.type === 'run_complete');
   if (!completeEvent || completeEvent.type !== 'run_complete') return null;
 
@@ -266,6 +278,7 @@ export function getJobCompletionStatus(
     status: completeEvent.status,
     elapsed_s: completeEvent.elapsed_s,
     error: completeEvent.error,
+    metrics: completeEvent.metrics as Record<string, unknown> | undefined,
   };
 }
 

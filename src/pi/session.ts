@@ -50,6 +50,31 @@ export interface AgentSessionMeta {
   startedAt: Date;
 }
 
+export interface SessionTokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+}
+
+export interface SessionRunMetrics {
+  token_usage?: SessionTokenUsage;
+  finish_reason?: string;
+  turns?: number;
+  tool_calls?: number;
+  auto_compactions?: number;
+  auto_retries?: number;
+}
+
+export type SessionMetricEvent =
+  | { type: 'token_usage'; token_usage: SessionTokenUsage; source: 'message_done' | 'turn_end' | 'agent_end' }
+  | { type: 'finish_reason'; finish_reason: string; source: 'message_done' | 'turn_end' | 'agent_end' }
+  | { type: 'turn_summary'; turn_index: number; token_usage?: SessionTokenUsage; finish_reason?: string }
+  | { type: 'compaction'; phase: 'start' | 'end' }
+  | { type: 'retry'; phase: 'start' | 'end' };
+
 export interface PiSessionOptions {
   model: string;
   systemPrompt?: string;
@@ -71,6 +96,8 @@ export interface PiSessionOptions {
   onToolEnd?: (tool: string, isError: boolean, toolCallId?: string) => void;
   /** Called with the raw pi event type (for job status tracking) */
   onEvent?: (type: string) => void;
+  /** Called with additive observability metrics derived from RPC events */
+  onMetric?: (event: SessionMetricEvent) => void;
   /** Called once with actual backend/model from the first assistant message_start */
   onMeta?: (meta: { backend: string; model: string }) => void;
   /** Kill and fail if no streaming/protocol activity occurs within this window */
@@ -94,6 +121,85 @@ function mapPermissionToTools(level?: string): string | undefined {
   }
 }
 
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function pickFirstNumber(record: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const value = asNumber(record[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function normalizeTokenUsage(candidate: unknown): SessionTokenUsage | undefined {
+  if (!candidate || typeof candidate !== 'object') return undefined;
+  const usage = candidate as Record<string, unknown>;
+
+  const normalized: SessionTokenUsage = {
+    input_tokens: pickFirstNumber(usage, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens']),
+    output_tokens: pickFirstNumber(usage, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens']),
+    cache_creation_tokens: pickFirstNumber(usage, ['cache_creation_tokens', 'cacheCreationTokens', 'cache_write_tokens']),
+    cache_read_tokens: pickFirstNumber(usage, ['cache_read_tokens', 'cacheReadTokens', 'cache_hit_tokens']),
+    total_tokens: pickFirstNumber(usage, ['total_tokens', 'totalTokens']),
+    cost_usd: pickFirstNumber(usage, ['cost_usd', 'costUsd', 'usd_cost', 'cost']),
+  };
+
+  const hasAny = Object.values(normalized).some(value => value !== undefined);
+  if (!hasAny) return undefined;
+
+  if (normalized.total_tokens === undefined) {
+    const components = [
+      normalized.input_tokens,
+      normalized.output_tokens,
+      normalized.cache_creation_tokens,
+      normalized.cache_read_tokens,
+    ].filter((value): value is number => value !== undefined);
+    if (components.length > 0) {
+      normalized.total_tokens = components.reduce((sum, value) => sum + value, 0);
+    }
+  }
+
+  return normalized;
+}
+
+function findFinishReason(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const direct = record.stopReason ?? record.finishReason ?? record.finish_reason ?? record.reason;
+  if (typeof direct === 'string' && direct.trim().length > 0) return direct;
+  return undefined;
+}
+
+function findTokenUsage(payload: unknown): SessionTokenUsage | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const candidates: unknown[] = [
+    record.usage,
+    record.tokenUsage,
+    record.token_usage,
+    (record.stats as Record<string, unknown> | undefined)?.usage,
+    (record.stats as Record<string, unknown> | undefined)?.tokenUsage,
+    (record.result as Record<string, unknown> | undefined)?.usage,
+    (record.result as Record<string, unknown> | undefined)?.tokenUsage,
+    (record.assistantMessageEvent as Record<string, unknown> | undefined)?.usage,
+    (record.assistantMessageEvent as Record<string, unknown> | undefined)?.tokenUsage,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeTokenUsage(candidate);
+    if (normalized) return normalized;
+  }
+
+  return normalizeTokenUsage(record);
+}
+
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -108,6 +214,12 @@ export class PiAgentSession {
   private _stderrBuffer = '';
   private _stallTimer?: ReturnType<typeof setTimeout>;
   private _stallError?: Error;
+  private _metrics: SessionRunMetrics = {
+    turns: 0,
+    tool_calls: 0,
+    auto_compactions: 0,
+    auto_retries: 0,
+  };
   readonly meta: AgentSessionMeta;
 
   private constructor(
@@ -250,6 +362,23 @@ export class PiAgentSession {
     }, timeoutMs);
   }
 
+  private _updateTokenUsage(tokenUsage: SessionTokenUsage | undefined, source: 'message_done' | 'turn_end' | 'agent_end'): void {
+    if (!tokenUsage) return;
+
+    this._metrics.token_usage = {
+      ...this._metrics.token_usage,
+      ...tokenUsage,
+    };
+
+    this.options.onMetric?.({ type: 'token_usage', token_usage: tokenUsage, source });
+  }
+
+  private _updateFinishReason(finishReason: string | undefined, source: 'message_done' | 'turn_end' | 'agent_end'): void {
+    if (!finishReason) return;
+    this._metrics.finish_reason = finishReason;
+    this.options.onMetric?.({ type: 'finish_reason', finish_reason: finishReason, source });
+  }
+
   private _handleEvent(line: string): void {
     let event: Record<string, any>;
     try { event = JSON.parse(line); } catch { return; }
@@ -298,10 +427,21 @@ export class PiAgentSession {
 
     // ── Turn boundaries ─────────────────────────────────────────────────────
     if (type === 'turn_start') {
+      this._metrics.turns = (this._metrics.turns ?? 0) + 1;
       this.options.onEvent?.('turn_start');
       return;
     }
     if (type === 'turn_end') {
+      const tokenUsage = findTokenUsage(event);
+      const finishReason = findFinishReason(event);
+      this._updateTokenUsage(tokenUsage, 'turn_end');
+      this._updateFinishReason(finishReason, 'turn_end');
+      this.options.onMetric?.({
+        type: 'turn_summary',
+        turn_index: this._metrics.turns ?? 0,
+        ...(tokenUsage ? { token_usage: tokenUsage } : {}),
+        ...(finishReason ? { finish_reason: finishReason } : {}),
+      });
       this.options.onEvent?.('turn_end');
       return;
     }
@@ -316,6 +456,10 @@ export class PiAgentSession {
           .map((c: any) => c.text)
           .join('');
       }
+
+      this._updateTokenUsage(findTokenUsage(event), 'agent_end');
+      this._updateFinishReason(findFinishReason(event), 'agent_end');
+
       this._agentEndReceived = true;
       this._clearStallTimer();
       this.options.onEvent?.('agent_end');
@@ -325,6 +469,7 @@ export class PiAgentSession {
 
     // ── Tool execution (top-level per RPC docs) ────────────────────────────────
     if (type === 'tool_execution_start') {
+      this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
       this.options.onToolStart?.(
         event.toolName ?? event.name ?? 'tool',
         event.args as Record<string, unknown> | undefined,
@@ -349,10 +494,18 @@ export class PiAgentSession {
 
     // ── Auto-compaction / auto-retry lifecycle events ──────────────────────────
     if (type === 'auto_compaction_start' || type === 'auto_compaction_end') {
+      if (type === 'auto_compaction_end') {
+        this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
+      }
+      this.options.onMetric?.({ type: 'compaction', phase: type === 'auto_compaction_start' ? 'start' : 'end' });
       this.options.onEvent?.('auto_compaction');
       return;
     }
     if (type === 'auto_retry_start' || type === 'auto_retry_end') {
+      if (type === 'auto_retry_end') {
+        this._metrics.auto_retries = (this._metrics.auto_retries ?? 0) + 1;
+      }
+      this.options.onMetric?.({ type: 'retry', phase: type === 'auto_retry_start' ? 'start' : 'end' });
       this.options.onEvent?.('auto_retry');
       return;
     }
@@ -381,10 +534,15 @@ export class PiAgentSession {
         case 'toolcall_end':
           this.options.onEvent?.('toolcall');
           break;
-        case 'done':
+        case 'done': {
           // Message-level completion (distinct from run-level agent_end)
+          const tokenUsage = findTokenUsage(ae);
+          const finishReason = findFinishReason(ae);
+          this._updateTokenUsage(tokenUsage, 'message_done');
+          this._updateFinishReason(finishReason, 'message_done');
           this.options.onEvent?.('message_done');
           break;
+        }
       }
     }
   }
@@ -479,6 +637,10 @@ export class PiAgentSession {
     } catch {
       return null;
     }
+  }
+
+  getMetrics(): SessionRunMetrics {
+    return { ...this._metrics, ...(this._metrics.token_usage ? { token_usage: { ...this._metrics.token_usage } } : {}) };
   }
 
   /**

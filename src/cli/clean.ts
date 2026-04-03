@@ -26,6 +26,7 @@ interface CompletedJobDirectory {
 const MS_PER_DAY = 86_400_000;
 const DEFAULT_TTL_DAYS = 7;
 const COMPLETED_STATUSES = new Set<SupervisorStatus['status']>(['done', 'error']);
+const PROTECTED_SQLITE_SUFFIXES = ['.db', '.db-wal', '.db-shm'] as const;
 
 function parseTtlDaysFromEnvironment(): number {
   const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
@@ -109,10 +110,31 @@ function readDirectorySizeBytes(directoryPath: string): number {
   return totalBytes;
 }
 
+function containsProtectedSqliteArtifact(directoryPath: string): boolean {
+  const entries = readdirSync(directoryPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const entryPath = join(directoryPath, entry.name);
+
+    if (entry.isDirectory()) {
+      if (containsProtectedSqliteArtifact(entryPath)) return true;
+      continue;
+    }
+
+    if (PROTECTED_SQLITE_SUFFIXES.some(suffix => entry.name.endsWith(suffix))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function readCompletedJobDirectory(baseDirectory: string, entry: Dirent): CompletedJobDirectory | null {
   if (!entry.isDirectory()) return null;
 
   const directoryPath = join(baseDirectory, entry.name);
+  if (containsProtectedSqliteArtifact(directoryPath)) return null;
+
   const statusFilePath = join(directoryPath, 'status.json');
   if (!existsSync(statusFilePath)) return null;
 

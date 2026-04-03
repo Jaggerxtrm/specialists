@@ -48,6 +48,7 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
           elapsed_s: j.elapsed_s,
           current_event: j.current_event,
           bead_id: j.bead_id,
+          metrics: j.metrics,
           error: j.error,
         })),
       };

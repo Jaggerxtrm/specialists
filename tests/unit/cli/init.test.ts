@@ -249,11 +249,14 @@ describe('init CLI — run()', () => {
     expect(existsSync(join(tempDir, '.specialists', 'ready'))).toBe(true);
   });
 
-  it('adds runtime dirs to .gitignore', async () => {
+  it('adds runtime dirs and observability db artifacts to .gitignore', async () => {
     await runInit(tempDir);
     const gitignore = await readFile(join(tempDir, '.gitignore'), 'utf-8');
     expect(gitignore).toContain('.specialists/jobs/');
     expect(gitignore).toContain('.specialists/ready/');
+    expect(gitignore).toContain('.specialists/db/*.db');
+    expect(gitignore).toContain('.specialists/db/*.db-wal');
+    expect(gitignore).toContain('.specialists/db/*.db-shm');
   });
 
   it('does not overwrite existing hook files', async () => {

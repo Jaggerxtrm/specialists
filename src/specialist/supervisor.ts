@@ -29,9 +29,16 @@ import {
   createMetaEvent,
   createRunCompleteEvent,
   createStaleWarningEvent,
+  createTokenUsageEvent,
+  createFinishReasonEvent,
+  createTurnSummaryEvent,
+  createCompactionEvent,
+  createRetryEvent,
   mapCallbackEventToTimelineEvent,
 } from './timeline-events.js';
+import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
+import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 
@@ -58,6 +65,7 @@ export interface SupervisorStatus {
   session_file?: string;
   fifo_path?: string;
   tmux_session?: string;
+  metrics?: SessionRunMetrics;
   error?: string;
 }
 
@@ -101,7 +109,11 @@ function formatBeadNotes(result: { output: string; promptHash: string; durationM
 
 
 export class Supervisor {
-  constructor(private opts: SupervisorOptions) {}
+  private readonly sqliteClient: ObservabilitySqliteClient | null;
+
+  constructor(private opts: SupervisorOptions) {
+    this.sqliteClient = createObservabilitySqliteClient();
+  }
 
   private jobDir(id: string): string {
     return join(this.opts.jobsDir, id);
@@ -129,6 +141,13 @@ export class Supervisor {
   }
 
   readStatus(id: string): SupervisorStatus | null {
+    try {
+      const sqliteStatus = this.sqliteClient?.readStatus(id);
+      if (sqliteStatus) return sqliteStatus;
+    } catch {
+      // fallback to file state
+    }
+
     const path = this.statusPath(id);
     if (!existsSync(path)) return null;
     try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
@@ -136,6 +155,15 @@ export class Supervisor {
 
   /** List all jobs sorted newest-first. */
   listJobs(): SupervisorStatus[] {
+    try {
+      const sqliteJobs = this.sqliteClient?.listStatuses() ?? [];
+      if (sqliteJobs.length > 0) {
+        return sqliteJobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      }
+    } catch {
+      // fallback to file state
+    }
+
     if (!existsSync(this.opts.jobsDir)) return [];
     const jobs: SupervisorStatus[] = [];
     for (const entry of readdirSync(this.opts.jobsDir)) {
@@ -152,6 +180,7 @@ export class Supervisor {
     const tmp = path + '.tmp';
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
     renameSync(tmp, path);
+    try { this.sqliteClient?.upsertStatus(data); } catch { /* best effort */ }
   }
 
   private updateStatus(id: string, updates: Partial<SupervisorStatus>): void {
@@ -269,6 +298,16 @@ export class Supervisor {
       this.writeStatusFile(id, statusSnapshot);
     };
 
+    const mergeRunMetrics = (incoming: SessionRunMetrics | undefined): void => {
+      if (!incoming) return;
+      runMetrics = {
+        ...runMetrics,
+        ...incoming,
+        ...(incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {}),
+      };
+      setStatus({ metrics: runMetrics });
+    };
+
     // Keep events.jsonl fd open for the job lifetime
     const eventsFd = openSync(this.eventsPath(id), 'a');
     const appendTimelineEvent = (event: TimelineEvent): void => {
@@ -277,6 +316,12 @@ export class Supervisor {
       } catch (err: any) {
         // Log but don't crash — event logging is best-effort
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
+
+      try {
+        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
+      } catch {
+        // best effort
       }
     };
 
@@ -295,6 +340,12 @@ export class Supervisor {
 
     let textLogged = false;
     let currentTool = '';
+    let runMetrics: SessionRunMetrics = {
+      turns: 0,
+      tool_calls: 0,
+      auto_compactions: 0,
+      auto_retries: 0,
+    };
     let currentToolCallId = '';
     let currentToolArgs: Record<string, unknown> | undefined;
     let currentToolIsError = false;
@@ -332,6 +383,7 @@ export class Supervisor {
         latestOutput = output;
         mkdirSync(this.jobDir(id), { recursive: true });
         writeFileSync(this.resultPath(id), output, 'utf-8');
+        try { this.sqliteClient?.upsertResult(id, output); } catch { /* best effort */ }
 
         const waitingAt = Date.now();
         setStatus({
@@ -461,6 +513,47 @@ export class Supervisor {
             appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
           }
         },
+        // onMetric — additive RPC-derived observability
+        (metricEvent: SessionMetricEvent) => {
+          if (metricEvent.type === 'token_usage') {
+            mergeRunMetrics({ token_usage: metricEvent.token_usage });
+            appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
+            return;
+          }
+
+          if (metricEvent.type === 'finish_reason') {
+            mergeRunMetrics({ finish_reason: metricEvent.finish_reason });
+            appendTimelineEvent(createFinishReasonEvent(metricEvent.finish_reason, metricEvent.source));
+            return;
+          }
+
+          if (metricEvent.type === 'turn_summary') {
+            mergeRunMetrics({
+              turns: metricEvent.turn_index,
+              ...(metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {}),
+              ...(metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}),
+            });
+            appendTimelineEvent(createTurnSummaryEvent(
+              metricEvent.turn_index,
+              metricEvent.token_usage,
+              metricEvent.finish_reason,
+            ));
+            return;
+          }
+
+          if (metricEvent.type === 'compaction') {
+            const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === 'end' ? 1 : 0);
+            mergeRunMetrics({ auto_compactions: compactions });
+            appendTimelineEvent(createCompactionEvent(metricEvent.phase));
+            return;
+          }
+
+          if (metricEvent.type === 'retry') {
+            const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === 'end' ? 1 : 0);
+            mergeRunMetrics({ auto_retries: retries });
+            appendTimelineEvent(createRetryEvent(metricEvent.phase));
+          }
+        },
         // onMeta — model/backend metadata
         (meta) => {
           setStatus({ model: meta.model, backend: meta.backend });
@@ -520,6 +613,7 @@ export class Supervisor {
           currentToolIsError = false; // reset on new tool start
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
+          mergeRunMetrics({ tool_calls: (runMetrics.tool_calls ?? 0) + 1 });
           setStatus({ current_tool: tool });
           if (toolCallId) {
             activeToolCalls.set(toolCallId, { tool, args });
@@ -545,6 +639,7 @@ export class Supervisor {
       latestOutput = result.output;
       mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
+      try { this.sqliteClient?.upsertResult(id, latestOutput); } catch { /* best effort */ }
 
       if (keepAliveSession) {
         setStatus({
@@ -568,6 +663,8 @@ export class Supervisor {
         ...result,
         output: latestOutput,
       };
+
+      mergeRunMetrics(finalResult.metrics);
 
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
@@ -601,6 +698,7 @@ export class Supervisor {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
+        metrics: runMetrics,
       });
 
       // Emit run_complete — THE canonical completion event
@@ -609,6 +707,7 @@ export class Supervisor {
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
         output: finalResult.output,
+        metrics: runMetrics,
       }));
 
       // Touch ready marker so hooks can surface completion banners.
@@ -627,6 +726,7 @@ export class Supervisor {
       // Emit run_complete with ERROR status
       appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
+        metrics: runMetrics,
       }));
 
       // Touch ready marker so hooks can surface failure banners.

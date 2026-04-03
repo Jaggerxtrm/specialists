@@ -43,8 +43,9 @@ describe('help CLI — run()', () => {
     }
   });
 
-  it('shows deprecated setup and install commands', () => {
+  it('includes db setup and deprecated setup/install commands', () => {
     const combined = captureTopLevelHelp();
+    expect(combined).toContain('db setup');
     expect(combined).toContain('[deprecated] Use specialists init instead');
   });
 

@@ -186,6 +186,23 @@ describe('_handleEvent — RPC protocol parsing', () => {
     expect(onEvent).toHaveBeenCalledWith('message_done');
   });
 
+  it('assistantMessageEvent.done emits finish_reason metric', async () => {
+    const onMetric = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onMetric });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'done', stopReason: 'length' },
+    });
+
+    expect(onMetric).toHaveBeenCalledWith({
+      type: 'finish_reason',
+      finish_reason: 'length',
+      source: 'message_done',
+    });
+  });
+
   it('text_delta nested in message_update calls onToken and onEvent("text")', async () => {
     const onToken = vi.fn();
     const onEvent = vi.fn();
@@ -439,6 +456,26 @@ describe('sendCommand — concurrent dispatch', () => {
     const session = await PiAgentSession.create({ model: 'gemini' });
     await session.start();
     expect(session.getStderr()).toBe('');
+  });
+
+  it('captures token usage metrics from agent_end payloads', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'agent_end',
+      usage: {
+        input_tokens: 10,
+        output_tokens: 15,
+        total_tokens: 25,
+      },
+      messages: [],
+    });
+
+    const metrics = session.getMetrics();
+    expect(metrics.token_usage?.total_tokens).toBe(25);
+    expect(metrics.token_usage?.input_tokens).toBe(10);
+    expect(metrics.token_usage?.output_tokens).toBe(15);
   });
 
   it('auto_compaction_start and auto_compaction_end both fire onEvent("auto_compaction")', async () => {

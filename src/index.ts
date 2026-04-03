@@ -2,7 +2,7 @@
 
 /**
  * Specialists MCP Server — entry point
- * Subcommands: install, version, list, models, init, validate, edit, config, run,
+ * Subcommands: install, version, list, models, init, db, validate, edit, config, run,
  *              status, result, feed, poll, clean, stop, attach, quickstart, help
  */
 
@@ -133,6 +133,34 @@ async function run() {
     const syncDefaults = process.argv.includes('--sync-defaults');
     const { run: handler } = await import('./cli/init.js');
     return handler({ syncDefaults });
+  }
+
+  if (sub === 'db') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists db setup',
+        '',
+        'Provision the shared observability SQLite database (human-only).',
+        '',
+        'Commands:',
+        '  setup   Create and initialize the observability DB (one-time)',
+        '  init    Alias for setup',
+        '',
+        'Notes:',
+        '  - TTY required (blocked in agent/non-interactive sessions)',
+        '  - Resolves at git-root .specialists/db/ by default',
+        '  - Uses $XDG_DATA_HOME/specialists when XDG_DATA_HOME is set',
+        '',
+        'Examples:',
+        '  specialists db setup',
+        '  sp db setup',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/db.js');
+    return handler(process.argv.slice(3));
   }
 
   if (sub === 'validate') {
@@ -489,6 +517,7 @@ async function run() {
         'Default behavior:',
         '  - removes done/error jobs older than SPECIALISTS_JOB_TTL_DAYS',
         '  - TTL defaults to 7 days if env is unset',
+        '  - never removes SQLite artifacts (*.db, *.db-wal, *.db-shm)',
         '',
         'Options:',
         '  --all        Remove all done/error jobs regardless of age',

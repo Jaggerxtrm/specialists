@@ -109,6 +109,13 @@ function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
   console.log(`  elapsed      ${formatElapsed(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? 'n/a'}`);
   console.log(`  events       ${eventCount}`);
+  if (job.metrics?.finish_reason) console.log(`  finish       ${job.metrics.finish_reason}`);
+  if (job.metrics?.token_usage?.total_tokens !== undefined) {
+    console.log(`  tokens       ${job.metrics.token_usage.total_tokens}`);
+  }
+  if (job.metrics?.token_usage?.cost_usd !== undefined) {
+    console.log(`  cost_usd     ${job.metrics.token_usage.cost_usd}`);
+  }
   if (job.session_file) console.log(`  session_file ${job.session_file}`);
   if (job.error) console.log(`  error        ${red(job.error)}`);
   console.log();
@@ -228,6 +235,7 @@ export async function run(): Promise<void> {
         status: j.status,
         elapsed_s: j.elapsed_s,
         current_tool: j.current_tool ?? null,
+        metrics: j.metrics ?? null,
         error: j.error ?? null,
       })),
     };

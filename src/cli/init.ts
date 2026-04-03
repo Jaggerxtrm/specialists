@@ -42,7 +42,13 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 `.trimStart();
 
 const AGENTS_MARKER = '## Specialists';
-const GITIGNORE_ENTRIES = ['.specialists/jobs/', '.specialists/ready/'];
+const GITIGNORE_ENTRIES = [
+  '.specialists/jobs/',
+  '.specialists/ready/',
+  '.specialists/db/*.db',
+  '.specialists/db/*.db-wal',
+  '.specialists/db/*.db-shm',
+];
 const MCP_FILE = '.mcp.json';
 const MCP_SERVER_NAME = 'specialists';
 const MCP_SERVER_CONFIG = { command: 'specialists', args: [] };

@@ -98,6 +98,35 @@ describe('Supervisor', () => {
     expect(status.bead_id).toBeUndefined();
   });
 
+  it('persists runner metrics to status.json and run_complete', async () => {
+    const runner = makeMockRunner('out', 'haiku', 'anthropic');
+    runner.run.mockResolvedValueOnce({
+      output: 'out',
+      model: 'haiku',
+      backend: 'anthropic',
+      durationMs: 10,
+      specialistVersion: '1.0.0',
+      promptHash: 'abc123',
+      beadId: undefined,
+      metrics: {
+        finish_reason: 'stop',
+        token_usage: { total_tokens: 44, input_tokens: 12, output_tokens: 32 },
+      },
+    });
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const id = await sup.run();
+
+    const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
+    expect(status.metrics?.finish_reason).toBe('stop');
+    expect(status.metrics?.token_usage?.total_tokens).toBe(44);
+
+    const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const completion = events.find((event: any) => event.type === 'run_complete');
+    expect(completion?.metrics?.finish_reason).toBe('stop');
+    expect(completion?.metrics?.token_usage?.total_tokens).toBe(44);
+  });
+
   it('result.txt contains the runner output string', async () => {
     const sup = new Supervisor({
       jobsDir,
@@ -143,7 +172,7 @@ describe('Supervisor', () => {
     const closeMock = vi.fn().mockResolvedValue(undefined);
     const runner = {
       run: vi.fn().mockImplementation(async (
-        _opts: any, _onProgress: any, _onEvent: any, _onMeta: any, _onKill: any, _onBead: any,
+        _opts: any, _onProgress: any, _onEvent: any, _onMetric: any, _onMeta: any, _onKill: any, _onBead: any,
         onSteerRegistered: any, onResumeReady: any,
       ) => {
         onSteerRegistered?.(vi.fn().mockResolvedValue(undefined));
@@ -516,7 +545,7 @@ describe('Supervisor', () => {
     it('status.json is updated with bead_id when onBeadCreated callback fires', async () => {
       const runner = {
         run: vi.fn().mockImplementation(async (
-          _opts: any, _onProg: any, _onEvt: any, _onMeta: any, _onKill: any,
+          _opts: any, _onProg: any, _onEvt: any, _onMetric: any, _onMeta: any, _onKill: any,
           onBeadCreated: any,
         ) => {
           onBeadCreated('unitAI-auto-99');
@@ -657,7 +686,7 @@ describe('Supervisor', () => {
 
       const runner = {
         run: vi.fn().mockImplementation(async (
-          _opts: any, _onProg: any, onEvent: any,
+          _opts: any, _onProg: any, onEvent: any, _onMetric: any,
           _onMeta: any, _onKill: any, _onBead: any, _onSteer: any, _onResume: any,
           onToolStart: any,
         ) => {

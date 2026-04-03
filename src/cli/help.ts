@@ -30,6 +30,7 @@ const CORE_COMMANDS: CommandEntry[] = [
 ];
 
 const EXTENDED_COMMANDS: CommandEntry[] = [
+  ['db setup', 'Human-only: provision shared observability SQLite database'],
   ['edit', 'Edit a specialist field such as model or description'],
   ['models', 'List models available on pi'],
   ['version', 'Print installed version'],

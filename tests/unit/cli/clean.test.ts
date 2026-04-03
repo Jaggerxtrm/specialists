@@ -173,4 +173,21 @@ describe('clean CLI — run()', () => {
     expect(existsSync(runningDir)).toBe(true);
     expect(readFileSync(join(runningDir, 'status.json'), 'utf-8')).toContain('running');
   });
+
+  it('never removes directories that contain sqlite database artifacts', async () => {
+    const now = Date.now();
+    const oldTime = now - 8 * 86_400_000;
+
+    createCompletedJob(jobsDirectory, 'protected-db', oldTime, oldTime);
+    writeFileSync(join(jobsDirectory, 'protected-db', 'observability.db'), 'sqlite', 'utf-8');
+    writeFileSync(join(jobsDirectory, 'protected-db', 'observability.db-wal'), 'wal', 'utf-8');
+    writeFileSync(join(jobsDirectory, 'protected-db', 'observability.db-shm'), 'shm', 'utf-8');
+
+    await invokeClean(['--all']);
+
+    expect(existsSync(join(jobsDirectory, 'protected-db'))).toBe(true);
+    expect(existsSync(join(jobsDirectory, 'protected-db', 'observability.db'))).toBe(true);
+    expect(existsSync(join(jobsDirectory, 'protected-db', 'observability.db-wal'))).toBe(true);
+    expect(existsSync(join(jobsDirectory, 'protected-db', 'observability.db-shm'))).toBe(true);
+  });
 });

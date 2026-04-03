@@ -47,12 +47,24 @@ specialist:
     expect(result.specialist.execution.mode).toBe('auto');
     expect(result.specialist.execution.max_retries).toBe(0);
     expect(result.specialist.execution.interactive).toBe(false);
+    expect(result.specialist.execution.output_type).toBe('custom');
   });
 
   it('accepts execution.interactive', async () => {
     const yaml = VALID_YAML.replace('response_format: json', 'response_format: json\n    interactive: true');
     const result = await parseSpecialist(yaml);
     expect(result.specialist.execution.interactive).toBe(true);
+  });
+
+  it('accepts execution.output_type', async () => {
+    const yaml = VALID_YAML.replace('permission_required: READ_ONLY', 'permission_required: READ_ONLY\n    output_type: analysis');
+    const result = await parseSpecialist(yaml);
+    expect(result.specialist.execution.output_type).toBe('analysis');
+  });
+
+  it('rejects invalid execution.output_type', async () => {
+    const yaml = VALID_YAML.replace('permission_required: READ_ONLY', 'permission_required: READ_ONLY\n    output_type: invalid-kind');
+    await expect(parseSpecialist(yaml)).rejects.toThrow();
   });
 
   it('rejects invalid name (not kebab-case)', async () => {

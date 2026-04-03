@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Supervisor } from '../specialist/supervisor.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -47,7 +48,19 @@ export async function run(): Promise<void> {
 
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
+  const sqliteClient = createObservabilitySqliteClient();
   const resultPath = join(jobsDir, jobId, 'result.txt');
+
+  const readResultOutput = (): string | null => {
+    if (existsSync(resultPath)) {
+      return readFileSync(resultPath, 'utf-8');
+    }
+    try {
+      return sqliteClient?.readResult(jobId) ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   if (args.wait) {
     const startMs = Date.now();
@@ -61,11 +74,12 @@ export async function run(): Promise<void> {
       }
 
       if (status.status === 'done') {
-        if (!existsSync(resultPath)) {
-          console.error(`Result file not found for job ${jobId}`);
+        const output = readResultOutput();
+        if (!output) {
+          console.error(`Result not found for job ${jobId}`);
           process.exit(1);
         }
-        process.stdout.write(readFileSync(resultPath, 'utf-8'));
+        process.stdout.write(output);
         return;
       }
 
@@ -97,13 +111,14 @@ export async function run(): Promise<void> {
   }
 
   if (status.status === 'running' || status.status === 'starting') {
-    if (!existsSync(resultPath)) {
+    const output = readResultOutput();
+    if (!output) {
       process.stderr.write(`${dim(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}\n`);
       process.exit(1);
     }
 
     process.stderr.write(`${dim(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}\n`);
-    process.stdout.write(readFileSync(resultPath, 'utf-8'));
+    process.stdout.write(output);
     return;
   }
 
@@ -111,10 +126,11 @@ export async function run(): Promise<void> {
     process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? 'unknown error'}\n`);
     process.exit(1);
   }
-  if (!existsSync(resultPath)) {
-    console.error(`Result file not found for job ${jobId}`);
+  const output = readResultOutput();
+  if (!output) {
+    console.error(`Result not found for job ${jobId}`);
     process.exit(1);
   }
 
-  process.stdout.write(readFileSync(resultPath, 'utf-8'));
+  process.stdout.write(output);
 }

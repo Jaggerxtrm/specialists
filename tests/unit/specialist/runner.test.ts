@@ -11,7 +11,15 @@ function makeMockSession() {
     start: vi.fn().mockResolvedValue(undefined),
     prompt: vi.fn().mockResolvedValue(undefined),
     waitForDone: vi.fn().mockResolvedValue(undefined),
-    getLastOutput: vi.fn().mockResolvedValue('{"result": "ok"}'),
+    getLastOutput: vi.fn().mockResolvedValue(JSON.stringify({
+      summary: 'Done',
+      status: 'success',
+      issues_closed: [],
+      issues_created: [],
+      follow_ups: [],
+      risks: [],
+      verification: [],
+    })),
     getState: vi.fn().mockResolvedValue(null),
     close: vi.fn().mockResolvedValue(undefined),
     executeBash: vi.fn().mockResolvedValue(''),
@@ -20,13 +28,17 @@ function makeMockSession() {
   };
 }
 
-function makeLoader(overrides: Record<string, unknown> = {}, beadsIntegration = 'auto') {
+function makeLoader(
+  executionOverrides: Record<string, unknown> = {},
+  beadsIntegration = 'auto',
+  promptOverrides: Record<string, unknown> = {},
+) {
   return {
     get: vi.fn().mockResolvedValue({
       specialist: {
         metadata: { name: 'test-spec', version: '1.0.0' },
-        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY', ...overrides },
-        prompt: { task_template: 'Do $prompt', system: 'You are helpful.' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY', ...executionOverrides },
+        prompt: { task_template: 'Do $prompt', system: 'You are helpful.', ...promptOverrides },
         communication: undefined,
         capabilities: undefined,
         beads_integration: beadsIntegration,
@@ -64,7 +76,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
     const result = await runner.run({ name: 'test-spec', prompt: 'analyze this' });
-    expect(result.output).toBe('{"result": "ok"}');
+    expect(JSON.parse(result.output).status).toBe('success');
     expect(result.backend).toBe('google-gemini-cli');
     expect(result.specialistVersion).toBe('1.0.0');
     expect(result.promptHash).toHaveLength(16);
@@ -104,6 +116,96 @@ describe('SpecialistRunner', () => {
     }));
   });
 
+  it('injects markdown output contract when response_format=markdown', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ response_format: 'markdown', output_type: 'codegen' }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    const sessionOptions = sessionFactory.mock.calls[0][0];
+    expect(sessionOptions.systemPrompt).toContain('## Output Contract');
+    expect(sessionOptions.systemPrompt).toContain('## Summary');
+    expect(sessionOptions.systemPrompt).toContain('Output archetype: `codegen`');
+  });
+
+  it('injects JSON-only contract when response_format=json', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ response_format: 'json', output_type: 'review' }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    const sessionOptions = sessionFactory.mock.calls[0][0];
+    expect(sessionOptions.systemPrompt).toContain('Respond with a single valid JSON object only.');
+    expect(sessionOptions.systemPrompt).toContain('Output archetype: `review`');
+  });
+
+  it('does not inject output contract when response_format=text', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ response_format: 'text', output_type: 'analysis' }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    const sessionOptions = sessionFactory.mock.calls[0][0];
+    expect(sessionOptions.systemPrompt).not.toContain('## Output Contract');
+  });
+
+  it('warns when response_format=json output is not parseable JSON', async () => {
+    mockSession.getLastOutput.mockResolvedValueOnce('not-json');
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ response_format: 'json' }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Strong warning: response_format=json but output is not valid JSON'));
+    stderrSpy.mockRestore();
+  });
+
+  it('warns when markdown+output_schema omits machine-readable block', async () => {
+    mockSession.getLastOutput.mockResolvedValueOnce('## Summary\nDone.');
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const runner = new SpecialistRunner({
+      loader: makeLoader(
+        { response_format: 'markdown' },
+        'auto',
+        {
+          output_schema: {
+            type: 'object',
+            properties: { status: { type: 'string' } },
+            required: ['status'],
+          },
+        },
+      ),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('missing `## Machine-readable block` JSON fenced block'));
+    stderrSpy.mockRestore();
+  });
+
   it('defaults to keepAlive when execution.interactive=true', async () => {
     const onResumeReady = vi.fn();
     const runner = new SpecialistRunner({
@@ -113,7 +215,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this' }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).toHaveBeenCalledOnce();
     expect(mockSession.close).not.toHaveBeenCalled();
@@ -128,7 +230,7 @@ describe('SpecialistRunner', () => {
       sessionFactory: vi.fn().mockResolvedValue(mockSession),
     });
 
-    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
+    await runner.run({ name: 'test-spec', prompt: 'analyze this', noKeepAlive: true }, undefined, undefined, undefined, undefined, undefined, undefined, undefined, onResumeReady);
 
     expect(onResumeReady).not.toHaveBeenCalled();
     expect(mockSession.close).toHaveBeenCalledOnce();
@@ -178,7 +280,7 @@ describe('SpecialistRunner', () => {
 
       const result = await runner.run({ name: 'test-spec', prompt: 'go', maxRetries: 1 });
 
-      expect(result.output).toBe('{"result": "ok"}');
+      expect(JSON.parse(result.output).status).toBe('success');
       expect(mockSession.prompt).toHaveBeenCalledTimes(2);
       expect(mockSession.waitForDone).toHaveBeenCalledTimes(2);
     } finally {
@@ -366,7 +468,7 @@ describe('SpecialistRunner', () => {
         beadsClient,
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
-      expect(result.output).toBe('{"result": "ok"}');
+      expect(JSON.parse(result.output).status).toBe('success');
       expect(result.beadId).toBeUndefined();
     });
 
@@ -378,7 +480,7 @@ describe('SpecialistRunner', () => {
         sessionFactory: vi.fn().mockResolvedValue(mockSession),
       });
       const result = await runner.run({ name: 'test-spec', prompt: 'go' });
-      expect(result.output).toBe('{"result": "ok"}');
+      expect(JSON.parse(result.output).status).toBe('success');
       expect(result.beadId).toBeUndefined();
     });
   });

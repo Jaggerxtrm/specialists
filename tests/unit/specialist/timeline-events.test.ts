@@ -6,6 +6,9 @@ import {
   createRunStartEvent,
   createMetaEvent,
   createRunCompleteEvent,
+  createTokenUsageEvent,
+  createFinishReasonEvent,
+  createTurnSummaryEvent,
   mapCallbackEventToTimelineEvent,
   parseTimelineEvent,
   isRunCompleteEvent,
@@ -68,6 +71,17 @@ describe('timeline-events', () => {
         output: 'Final assistant output text',
       });
       expect(event.output).toBe('Final assistant output text');
+    });
+
+    it('includes metrics when provided', () => {
+      const event = createRunCompleteEvent('COMPLETE', 15, {
+        metrics: {
+          finish_reason: 'stop',
+          token_usage: { total_tokens: 120 },
+        },
+      });
+      expect(event.metrics?.finish_reason).toBe('stop');
+      expect(event.metrics?.token_usage?.total_tokens).toBe(120);
     });
 
     it('does not include output when not provided', () => {
@@ -215,6 +229,18 @@ describe('timeline-events', () => {
       expect(event!.type).toBe('text');
     });
 
+    it('maps auto_compaction to compaction event', () => {
+      const event = mapCallbackEventToTimelineEvent('auto_compaction', {});
+      expect(event).not.toBeNull();
+      expect(event!.type).toBe('compaction');
+    });
+
+    it('maps auto_retry to retry event', () => {
+      const event = mapCallbackEventToTimelineEvent('auto_retry', {});
+      expect(event).not.toBeNull();
+      expect(event!.type).toBe('retry');
+    });
+
     it('ignores done (legacy)', () => {
       const event = mapCallbackEventToTimelineEvent('done', {});
       expect(event).toBeNull();
@@ -223,6 +249,27 @@ describe('timeline-events', () => {
     it('returns null for unknown events', () => {
       const event = mapCallbackEventToTimelineEvent('unknown_event', {});
       expect(event).toBeNull();
+    });
+  });
+
+  describe('metric constructors', () => {
+    it('creates token_usage event', () => {
+      const event = createTokenUsageEvent({ total_tokens: 10 }, 'agent_end');
+      expect(event.type).toBe('token_usage');
+      expect(event.token_usage.total_tokens).toBe(10);
+    });
+
+    it('creates finish_reason event', () => {
+      const event = createFinishReasonEvent('stop', 'agent_end');
+      expect(event.type).toBe('finish_reason');
+      expect(event.finish_reason).toBe('stop');
+    });
+
+    it('creates turn_summary event', () => {
+      const event = createTurnSummaryEvent(2, { total_tokens: 9 }, 'toolUse');
+      expect(event.type).toBe('turn_summary');
+      expect(event.turn_index).toBe(2);
+      expect(event.token_usage?.total_tokens).toBe(9);
     });
   });
 

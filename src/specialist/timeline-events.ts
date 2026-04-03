@@ -167,6 +167,24 @@ export interface TimelineEventTurn extends TimelineEventBase {
  * Emitted exactly once per run, containing final status and metadata.
  * This replaces the historical double-completion (done + agent_end).
  */
+export interface TimelineTokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_read_tokens?: number;
+  total_tokens?: number;
+  cost_usd?: number;
+}
+
+export interface TimelineRunMetrics {
+  token_usage?: TimelineTokenUsage;
+  finish_reason?: string;
+  turns?: number;
+  tool_calls?: number;
+  auto_compactions?: number;
+  auto_retries?: number;
+}
+
 export interface TimelineEventRunComplete extends TimelineEventBase {
   type: 'run_complete';
   /** Final status */
@@ -183,6 +201,8 @@ export interface TimelineEventRunComplete extends TimelineEventBase {
   error?: string;
   /** Final assistant output text */
   output?: string;
+  /** Optional additive metrics summary */
+  metrics?: TimelineRunMetrics;
 }
 
 /**
@@ -205,6 +225,35 @@ export interface TimelineEventStaleWarning extends TimelineEventBase {
   threshold_ms: number;
   /** Tool name, present for tool_duration reason */
   tool?: string;
+}
+
+export interface TimelineEventTokenUsage extends TimelineEventBase {
+  type: 'token_usage';
+  token_usage: TimelineTokenUsage;
+  source: 'message_done' | 'turn_end' | 'agent_end';
+}
+
+export interface TimelineEventFinishReason extends TimelineEventBase {
+  type: 'finish_reason';
+  finish_reason: string;
+  source: 'message_done' | 'turn_end' | 'agent_end';
+}
+
+export interface TimelineEventTurnSummary extends TimelineEventBase {
+  type: 'turn_summary';
+  turn_index: number;
+  token_usage?: TimelineTokenUsage;
+  finish_reason?: string;
+}
+
+export interface TimelineEventCompaction extends TimelineEventBase {
+  type: 'compaction';
+  phase: 'start' | 'end';
+}
+
+export interface TimelineEventRetry extends TimelineEventBase {
+  type: 'retry';
+  phase: 'start' | 'end';
 }
 
 /**
@@ -230,6 +279,11 @@ export type TimelineEvent =
   | TimelineEventTurn
   | TimelineEventRunComplete
   | TimelineEventStaleWarning
+  | TimelineEventTokenUsage
+  | TimelineEventFinishReason
+  | TimelineEventTurnSummary
+  | TimelineEventCompaction
+  | TimelineEventRetry
   | TimelineEventLegacyComplete;
 
 // ============================================================================
@@ -246,6 +300,11 @@ export const TIMELINE_EVENT_TYPES = {
   TURN: 'turn',
   RUN_COMPLETE: 'run_complete',
   STALE_WARNING: 'stale_warning',
+  TOKEN_USAGE: 'token_usage',
+  FINISH_REASON: 'finish_reason',
+  TURN_SUMMARY: 'turn_summary',
+  COMPACTION: 'compaction',
+  RETRY: 'retry',
   DONE: 'done',
   AGENT_END: 'agent_end',
 } as const;
@@ -336,6 +395,12 @@ export function mapCallbackEventToTimelineEvent(
     case 'turn_end':
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: 'end' };
 
+    case 'auto_compaction':
+      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: 'end' };
+
+    case 'auto_retry':
+      return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: 'end' };
+
     case 'text':
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
 
@@ -404,6 +469,60 @@ export function createStaleWarningEvent(
   };
 }
 
+export function createTokenUsageEvent(
+  token_usage: TimelineTokenUsage,
+  source: 'message_done' | 'turn_end' | 'agent_end'
+): TimelineEventTokenUsage {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
+    token_usage,
+    source,
+  };
+}
+
+export function createFinishReasonEvent(
+  finish_reason: string,
+  source: 'message_done' | 'turn_end' | 'agent_end'
+): TimelineEventFinishReason {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
+    finish_reason,
+    source,
+  };
+}
+
+export function createTurnSummaryEvent(
+  turn_index: number,
+  token_usage?: TimelineTokenUsage,
+  finish_reason?: string,
+): TimelineEventTurnSummary {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
+    turn_index,
+    ...(token_usage ? { token_usage } : {}),
+    ...(finish_reason ? { finish_reason } : {}),
+  };
+}
+
+export function createCompactionEvent(phase: 'start' | 'end'): TimelineEventCompaction {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.COMPACTION,
+    phase,
+  };
+}
+
+export function createRetryEvent(phase: 'start' | 'end'): TimelineEventRetry {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RETRY,
+    phase,
+  };
+}
+
 /**
  * Create a run_complete event.
  * THE CANONICAL COMPLETION EVENT.
@@ -417,6 +536,7 @@ export function createRunCompleteEvent(
     bead_id?: string;
     error?: string;
     output?: string;
+    metrics?: TimelineRunMetrics;
   }
 ): TimelineEventRunComplete {
   return {

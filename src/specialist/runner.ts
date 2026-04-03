@@ -2,7 +2,13 @@
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { renderTemplate } from './templateEngine.js';
-import { PiAgentSession, SessionKilledError, type PiSessionOptions } from '../pi/session.js';
+import {
+  PiAgentSession,
+  SessionKilledError,
+  type PiSessionOptions,
+  type SessionMetricEvent,
+  type SessionRunMetrics,
+} from '../pi/session.js';
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -38,10 +44,14 @@ export interface RunResult {
   specialistVersion: string;
   promptHash: string;
   beadId?: string;
+  metrics?: SessionRunMetrics;
   permissionRequired?: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
-export type SessionFactory = (opts: PiSessionOptions) => Promise<Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>>;
+type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>
+  & { getMetrics?: () => SessionRunMetrics };
+
+export type SessionFactory = (opts: PiSessionOptions) => Promise<SessionLike>;
 
 import { type BeadsClient, shouldCreateBead } from './beads.js';
 
@@ -219,6 +229,377 @@ function isAuthError(error: unknown): boolean {
   return /\b(401|403|unauthorized|forbidden|authentication|auth|invalid api key|api key)\b/i.test(message);
 }
 
+type ResponseFormat = 'text' | 'json' | 'markdown';
+type OutputType = 'codegen' | 'analysis' | 'review' | 'synthesis' | 'orchestration' | 'workflow' | 'research' | 'custom';
+type JsonSchema = Record<string, unknown>;
+
+const BASE_OUTPUT_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    status: { enum: ['success', 'partial', 'failed', 'waiting'] },
+    issues_closed: { type: 'array', items: { type: 'string' } },
+    issues_created: { type: 'array', items: { type: 'string' } },
+    follow_ups: { type: 'array', items: { type: 'string' } },
+    risks: { type: 'array', items: { type: 'string' } },
+    verification: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['summary', 'status', 'issues_closed', 'issues_created', 'follow_ups', 'risks', 'verification'],
+};
+
+const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonSchema> = {
+  codegen: {
+    type: 'object',
+    properties: {
+      files_changed: { type: 'array', items: { type: 'string' } },
+      symbols_modified: { type: 'array', items: { type: 'string' } },
+      lint_pass: { type: 'boolean' },
+      tests_pass: { type: 'boolean' },
+    },
+  },
+  analysis: {
+    type: 'object',
+    properties: {
+      key_files: { type: 'array', items: { type: 'string' } },
+      architecture_notes: { type: 'string' },
+      recommendations: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  review: {
+    type: 'object',
+    properties: {
+      verdict: { enum: ['pass', 'partial', 'fail'] },
+      findings: { type: 'array', items: { type: 'string' } },
+      recommendation: { type: 'string' },
+    },
+  },
+  synthesis: {
+    type: 'object',
+    properties: {
+      decisions: { type: 'array', items: { type: 'string' } },
+      rationale: { type: 'string' },
+      next_steps: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  orchestration: {
+    type: 'object',
+    properties: {
+      actions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            type: {
+              enum: [
+                'resume_member',
+                'steer_member',
+                'request_human_input',
+                'spawn_member',
+                'stop_member',
+                'mark_blocked',
+                'complete_node',
+              ],
+            },
+            target: { type: 'string' },
+            payload: { type: 'string' },
+            reason: { type: 'string' },
+            priority: { type: 'number' },
+          },
+          required: ['type', 'target', 'payload', 'reason'],
+        },
+      },
+      blocking_on: {
+        type: 'object',
+        properties: {
+          kind: { enum: ['human_input', 'member_output', 'external_dependency'] },
+          target: { type: 'string' },
+          details: { type: 'string' },
+        },
+        required: ['kind'],
+      },
+      memory_patch: {
+        type: 'object',
+        properties: {
+          facts: { type: 'array', items: { type: 'string' } },
+          questions: { type: 'array', items: { type: 'string' } },
+          decisions: { type: 'array', items: { type: 'string' } },
+          handoff_summary: { type: 'string' },
+        },
+      },
+      coordination_state: {
+        type: 'object',
+        properties: {
+          current_goal: { type: 'string' },
+          active_members: { type: 'array', items: { type: 'string' } },
+          waiting_on_members: { type: 'array', items: { type: 'string' } },
+          pending_decisions: { type: 'array', items: { type: 'string' } },
+          blockers: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      routing_rationale: { type: 'string' },
+      next_trigger: {
+        type: 'object',
+        properties: {
+          event: { enum: ['on_member_update', 'on_human_input', 'on_external_update', 'on_timeout', 'manual_resume'] },
+          target: { type: 'string' },
+          details: { type: 'string' },
+        },
+        required: ['event'],
+      },
+    },
+  },
+  workflow: {
+    type: 'object',
+    properties: {
+      steps_completed: { type: 'array', items: { type: 'string' } },
+      first_task: { type: 'string' },
+      children: { type: 'array', items: { type: 'string' } },
+      test_issues: { type: 'array', items: { type: 'string' } },
+    },
+  },
+  research: {
+    type: 'object',
+    properties: {
+      sources_checked: { type: 'array', items: { type: 'string' } },
+      confidence: { enum: ['low', 'medium', 'high'] },
+      recommendations: { type: 'array', items: { type: 'string' } },
+    },
+  },
+};
+
+const OUTPUT_TYPE_GUIDANCE: Record<Exclude<OutputType, 'custom'>, string> = {
+  codegen: '- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.',
+  analysis: '- Analysis focus: include architecture understanding and evidence-backed findings.',
+  review: '- Review focus: include severity-ranked findings with clear merge/readiness recommendation.',
+  synthesis: '- Synthesis focus: consolidate findings into decisions and clear next steps.',
+  orchestration: '- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.',
+  workflow: '- Workflow focus: include procedural state transitions and operational checkpoints.',
+  research: '- Research focus: include sources checked, confidence, and final recommendations.',
+};
+
+function deepMergeSchemas(base: JsonSchema, override: JsonSchema): JsonSchema {
+  const merged: JsonSchema = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    const baseValue = merged[key];
+    if (isRecord(baseValue) && isRecord(overrideValue)) {
+      merged[key] = deepMergeSchemas(baseValue, overrideValue);
+      continue;
+    }
+    merged[key] = overrideValue;
+  }
+  return merged;
+}
+
+function resolveOutputContractSchema(
+  responseFormat: ResponseFormat,
+  outputType: OutputType,
+  outputSchema: JsonSchema | undefined,
+): JsonSchema | undefined {
+  if (responseFormat === 'text') return undefined;
+  if (responseFormat === 'markdown' && !outputSchema) return undefined;
+
+  let mergedSchema: JsonSchema = { ...BASE_OUTPUT_SCHEMA };
+
+  if (outputType !== 'custom') {
+    mergedSchema = deepMergeSchemas(mergedSchema, OUTPUT_TYPE_SCHEMA_EXTENSIONS[outputType]);
+  }
+
+  if (outputSchema) {
+    mergedSchema = deepMergeSchemas(mergedSchema, outputSchema);
+  }
+
+  return mergedSchema;
+}
+
+function buildOutputContractInstruction(
+  responseFormat: ResponseFormat,
+  outputType: OutputType,
+  outputSchema: JsonSchema | undefined,
+): string {
+  if (responseFormat === 'text') return '';
+
+  const lines: string[] = ['## Output Contract'];
+
+  if (responseFormat === 'markdown') {
+    lines.push(
+      'Respond using markdown with canonical sections (include when applicable):',
+      '- `## Summary`',
+      '- `## Status`',
+      '- `## Changes`',
+      '- `## Verification`',
+      '- `## Risks`',
+      '- `## Follow-ups`',
+      '- `## Beads`',
+      'Optional sections when relevant:',
+      '- `## Architecture`',
+      '- `## Acceptance Criteria`',
+      '- `## Machine-readable block`',
+      'Do not impose artificial bullet limits — prioritize completeness and clarity.',
+    );
+  } else {
+    lines.push(
+      'Respond with a single valid JSON object only.',
+      'Do not wrap JSON in markdown fences, headers, or prose.',
+    );
+  }
+
+  if (outputType !== 'custom') {
+    lines.push(`Output archetype: \`${outputType}\``);
+    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
+  }
+
+  if (outputSchema) {
+    lines.push(
+      'Structure your output to match this schema:',
+      '```json',
+      JSON.stringify(outputSchema, null, 2),
+      '```',
+    );
+
+    if (responseFormat === 'markdown') {
+      lines.push(
+        'MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.',
+        'The machine-readable JSON block is canonical and must match the schema.',
+      );
+    }
+  }
+
+  return `\n\n${lines.join('\n')}`;
+}
+
+function tryParseJson(input: string): { value?: unknown; error?: string } {
+  try {
+    return { value: JSON.parse(input) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: message };
+  }
+}
+
+function extractJsonFromMachineReadableBlock(output: string): { value?: unknown; error?: string } {
+  const blockRegex = /##\s*Machine-readable block[\s\S]*?```json\s*([\s\S]*?)```/i;
+  const match = output.match(blockRegex);
+  if (!match || !match[1]) {
+    return { error: 'missing `## Machine-readable block` JSON fenced block' };
+  }
+  return tryParseJson(match[1].trim());
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateValueAgainstSchema(value: unknown, schema: JsonSchema, path: string): string[] {
+  const errors: string[] = [];
+  const schemaType = schema.type;
+  const schemaEnum = schema.enum;
+
+  if (Array.isArray(schemaEnum) && schemaEnum.length > 0 && !schemaEnum.some(candidate => Object.is(candidate, value))) {
+    errors.push(`${path}: expected one of [${schemaEnum.map(item => JSON.stringify(item)).join(', ')}], got ${JSON.stringify(value)}`);
+  }
+
+  const effectiveType = typeof schemaType === 'string'
+    ? schemaType
+    : isRecord(schema.properties) || Array.isArray(schema.required)
+      ? 'object'
+      : Array.isArray(schema.items)
+        ? 'array'
+        : undefined;
+
+  if (!effectiveType) return errors;
+
+  switch (effectiveType) {
+    case 'object': {
+      if (!isRecord(value)) {
+        errors.push(`${path}: expected object, got ${Array.isArray(value) ? 'array' : typeof value}`);
+        return errors;
+      }
+      const properties = isRecord(schema.properties) ? schema.properties : {};
+      const required = Array.isArray(schema.required) ? schema.required.filter((item): item is string => typeof item === 'string') : [];
+
+      for (const key of required) {
+        if (!(key in value)) {
+          errors.push(`${path}.${key}: missing required property`);
+        }
+      }
+
+      for (const [key, propertySchemaRaw] of Object.entries(properties)) {
+        if (!(key in value)) continue;
+        if (!isRecord(propertySchemaRaw)) continue;
+        errors.push(...validateValueAgainstSchema(value[key], propertySchemaRaw, `${path}.${key}`));
+      }
+      return errors;
+    }
+    case 'array': {
+      if (!Array.isArray(value)) {
+        errors.push(`${path}: expected array, got ${typeof value}`);
+        return errors;
+      }
+      const itemSchema = isRecord(schema.items) ? schema.items : undefined;
+      if (!itemSchema) return errors;
+      for (let i = 0; i < value.length; i += 1) {
+        errors.push(...validateValueAgainstSchema(value[i], itemSchema, `${path}[${i}]`));
+      }
+      return errors;
+    }
+    case 'string':
+      if (typeof value !== 'string') errors.push(`${path}: expected string, got ${typeof value}`);
+      return errors;
+    case 'number':
+      if (typeof value !== 'number' || Number.isNaN(value)) errors.push(`${path}: expected number, got ${typeof value}`);
+      return errors;
+    case 'integer':
+      if (typeof value !== 'number' || !Number.isInteger(value)) errors.push(`${path}: expected integer, got ${JSON.stringify(value)}`);
+      return errors;
+    case 'boolean':
+      if (typeof value !== 'boolean') errors.push(`${path}: expected boolean, got ${typeof value}`);
+      return errors;
+    default:
+      return errors;
+  }
+}
+
+function validateOutputContract(
+  output: string,
+  responseFormat: ResponseFormat,
+  outputSchema: JsonSchema | undefined,
+): string[] {
+  const warnings: string[] = [];
+  if (responseFormat === 'text') return warnings;
+
+  if (!outputSchema) return warnings;
+
+  let structuredPayload: unknown;
+
+  if (responseFormat === 'json') {
+    const parsed = tryParseJson(output.trim());
+    if (parsed.error) {
+      warnings.push(`Strong warning: response_format=json but output is not valid JSON (${parsed.error}).`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+
+  if (responseFormat === 'markdown') {
+    const parsed = extractJsonFromMachineReadableBlock(output);
+    if (parsed.error) {
+      warnings.push(`Output contract warning: ${parsed.error}.`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+
+  const schemaErrors = validateValueAgainstSchema(structuredPayload, outputSchema, '$');
+  if (schemaErrors.length > 0) {
+    warnings.push(
+      `Output contract warning: schema mismatch (${schemaErrors.length} issue${schemaErrors.length === 1 ? '' : 's'}).`,
+      ...schemaErrors.map(issue => `  - ${issue}`),
+    );
+  }
+
+  return warnings;
+}
+
 export class SpecialistRunner {
   private sessionFactory: SessionFactory;
 
@@ -230,6 +611,7 @@ export class SpecialistRunner {
     options: RunOptions,
     onProgress?: (msg: string) => void,
     onEvent?: (type: string) => void,
+    onMetric?: (event: SessionMetricEvent) => void,
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
     onBeadCreated?: (beadId: string) => void,
@@ -315,6 +697,13 @@ export class SpecialistRunner {
       agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
 - GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.${beadInstructions}\n---\n`;
     }
+
+    const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
+    const outputType = (execution.output_type ?? 'custom') as OutputType;
+    const specialistOutputSchema = prompt.output_schema as JsonSchema | undefined;
+    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
+    agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
+
     const skillPaths: string[] = [];
     if (prompt.skill_inherit) skillPaths.push(prompt.skill_inherit);
     skillPaths.push(...(spec.specialist.skills?.paths ?? []));
@@ -355,6 +744,7 @@ export class SpecialistRunner {
 
     let output: string | undefined;
     let sessionBackend: string = model; // captured before kill() can destroy meta
+    let runMetrics: SessionRunMetrics | undefined;
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     let keepAliveActive = false; // set true when keepAlive hands session ownership to caller
     let sessionClosed = false; // track if we closed cleanly (to avoid kill in finally)
@@ -375,6 +765,7 @@ export class SpecialistRunner {
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
         onToolEnd:   (tool, isError, toolCallId) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId); },
         onEvent:     (type)  => onEvent?.(type),
+        onMetric:    (event) => onMetric?.(event),
         onMeta:      (meta)  => onMeta?.(meta),
       });
       await session.start();
@@ -389,6 +780,7 @@ export class SpecialistRunner {
           await session.prompt(renderedTask);
           await session.waitForDone(execution.timeout_ms);
           output = await session.getLastOutput();
+          runMetrics = session.getMetrics?.();
           sessionBackend = session.meta.backend; // capture before finally calls kill()
           break;
         } catch (err: any) {
@@ -465,6 +857,11 @@ export class SpecialistRunner {
 
     const durationMs = Date.now() - start;
 
+    const outputContractWarnings = validateOutputContract(output, responseFormat, outputContractSchema);
+    if (outputContractWarnings.length > 0) {
+      process.stderr.write(`[specialists] output contract warnings:\n${outputContractWarnings.map(msg => `  ⚠ ${msg}`).join('\n')}\n`);
+    }
+
     if (output_file) {
       await writeFile(output_file, output, 'utf-8').catch(() => {});
     }
@@ -491,6 +888,7 @@ export class SpecialistRunner {
       specialistVersion: metadata.version,
       promptHash,
       beadId,
+      metrics: runMetrics,
       permissionRequired: execution.permission_required,
     };
   }
@@ -516,6 +914,7 @@ export class SpecialistRunner {
       options,
       (text)      => registry.appendOutput(jobId, text),
       (eventType) => registry.setCurrentEvent(jobId, eventType),
+      undefined,
       (meta)      => registry.setMeta(jobId, meta),
       (killFn)    => registry.setKillFn(jobId, killFn),
       (beadId)    => registry.setBeadId(jobId, beadId),

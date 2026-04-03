@@ -49,3 +49,8 @@ venv/
 
 .specialists/jobs/
 .specialists/ready/
+
+# Specialists observability database
+.specialists/db/*.db
+.specialists/db/*.db-wal
+.specialists/db/*.db-shm

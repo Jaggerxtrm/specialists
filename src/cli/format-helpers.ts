@@ -84,6 +84,11 @@ export const EVENT_LABELS: Record<string, string> = {
   message: 'MSG',
   turn: 'TURN',
   run_complete: 'DONE',
+  token_usage: 'TOKNS',
+  finish_reason: 'FINSH',
+  turn_summary: 'TURN+',
+  compaction: 'CMPCT',
+  retry: 'RETRY',
   error: 'ERR',
 };
 
@@ -259,6 +264,10 @@ export function formatEventLine(
   } else if (event.type === 'run_complete') {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
+    if (event.metrics?.finish_reason) detailParts.push(`finish=${event.metrics.finish_reason}`);
+    if (event.metrics?.token_usage?.total_tokens !== undefined) {
+      detailParts.push(`tokens=${event.metrics.token_usage.total_tokens}`);
+    }
     if (event.error) {
       detailParts.push(`error=${event.error}`);
     }
@@ -267,6 +276,23 @@ export function formatEventLine(
     if (event.bead_id) {
       detailParts.push(`bead=${event.bead_id}`);
     }
+  } else if (event.type === 'token_usage') {
+    const usage = event.token_usage;
+    if (usage.total_tokens !== undefined) detailParts.push(`total=${usage.total_tokens}`);
+    if (usage.input_tokens !== undefined) detailParts.push(`in=${usage.input_tokens}`);
+    if (usage.output_tokens !== undefined) detailParts.push(`out=${usage.output_tokens}`);
+    if (usage.cost_usd !== undefined) detailParts.push(`cost=$${usage.cost_usd.toFixed(6)}`);
+  } else if (event.type === 'finish_reason') {
+    detailParts.push(`reason=${event.finish_reason}`);
+    detailParts.push(`source=${event.source}`);
+  } else if (event.type === 'turn_summary') {
+    detailParts.push(`turn=${event.turn_index}`);
+    if (event.finish_reason) detailParts.push(`reason=${event.finish_reason}`);
+    if (event.token_usage?.total_tokens !== undefined) {
+      detailParts.push(`total=${event.token_usage.total_tokens}`);
+    }
+  } else if (event.type === 'compaction' || event.type === 'retry') {
+    detailParts.push(`phase=${event.phase}`);
   } else if (event.type === 'text') {
     detailParts.push('kind=assistant');
   } else if (event.type === 'thinking') {

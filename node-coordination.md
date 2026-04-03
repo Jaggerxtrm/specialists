@@ -3,6 +3,39 @@
 > Three parallel work streams to advance the Research Node architecture.
 > Each orchestrator gets their own scope, starting prompt, and beads to claim.
 
+## Assignments
+
+| Stream | Owner |
+|--------|-------|
+| Stream 1 — 0jm9 manual validation + 16ov spec freeze | another agent |
+| Stream 2 — 08zd (Phases 1→3) + 4qam | **this orchestrator** |
+| Stream 3 — z5ml implementation | another agent (unblocked after 08zd Phase 3) |
+
+## Live Status (updated 2026-04-03)
+
+### Stream 1 — Output Contract + Validation (another agent)
+| Bead | Job | Status | Notes |
+|------|-----|--------|-------|
+| unitAI-93rt | 9f19b9 (executor) | ✅ CLOSED | output_type + response_format + output_schema wired in runner. Warn-only post-run validation. Adopted in executor/explorer/planner. ⚠️ pre-existing lint errors in supervisor.ts (unrelated) |
+| unitAI-0jm9 | — | 🔜 open | Create node_coordinator.specialist.json + run 3-turn manual validation loop |
+| unitAI-16ov | — | blocked on 0jm9 | Spec freeze after validation |
+
+### Stream 2 — SQLite Foundation
+| Bead | Job | Status | Notes |
+|------|-----|--------|-------|
+| unitAI-0c0w | 13d71f (executor) | ✅ CLOSED | `specialists db setup`: TTY-gated, git-root DB path, chmod 644, clean safety, gitignore. 50 tests pass. |
+| unitAI-08zd Phase 1 | b0bb4a (executor) | ❌ crashed (13min, context limit) | Partial work in tree — lint clean, tests hang. See bead notes. |
+| unitAI-08zd Phase 1 retry | 00df5e (executor) | ❌ crashed again (FIFO test hang — pre-existing) | supervisor.test.ts keep-alive test hangs in original code too — not a regression. All other tests pass. |
+| unitAI-08zd Phase 1 | — | ✅ ready to commit | Lint clean. 9 test files pass. supervisor.test.ts hang is pre-existing. Committing partial + Phase 2 next. |
+| unitAI-08zd Phase 2 | — | blocked on Phase 1 | Pipeline linkage: session → supervisor → status.json + events.jsonl |
+| unitAI-08zd Phase 3 | — | blocked on Phase 2 | SQLite migration, WAL mode, worktree column |
+| unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
+
+### Stream 3 — Node Persistence (another agent)
+| Bead | Job | Status | Notes |
+|------|-----|--------|-------|
+| unitAI-z5ml | — | 🔜 design done, awaiting implementation | Snapshot+append-log schema. Circular FK: coordinator_job_id nullable, 4-step bootstrap. See z5ml bead notes. Blocked on 08zd Phase 3. |
+
 ## Stream 1: Validate Node Concept (unitAI-0jm9)
 
 ### Prereq: unitAI-93rt (output contract — reopened, was falsely closed)

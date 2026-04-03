@@ -25,6 +25,8 @@ const ExecutionSchema = z.object({
   max_retries: z.number().int().min(0).default(0),
   interactive: z.boolean().default(false),
   response_format: z.enum(['text', 'json', 'markdown']).default('text'),
+  /** Semantic output archetype used for structured output contracts and schema extensions. */
+  output_type: z.enum(['codegen', 'analysis', 'review', 'synthesis', 'orchestration', 'workflow', 'research', 'custom']).default('custom'),
   /** Controls which pi tools are available to the agent.
    *  READ_ONLY : read, grep, find, ls        (no bash, no writes)
    *  LOW       : + bash                       (inspect/run, no file edits)

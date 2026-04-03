@@ -30,6 +30,7 @@ import {
   isRunCompleteEvent,
   parseTimelineEvent,
 } from '../specialist/timeline-events.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { queryTimeline } from '../specialist/timeline-query.js';
 import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
@@ -71,6 +72,15 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':
       return `run_complete:${event.status}:${event.error ?? ''}`;
+    case 'token_usage':
+      return `token_usage:${event.token_usage.total_tokens ?? ''}:${event.source}`;
+    case 'finish_reason':
+      return `finish_reason:${event.finish_reason}:${event.source}`;
+    case 'turn_summary':
+      return `turn_summary:${event.turn_index}`;
+    case 'compaction':
+    case 'retry':
+      return `${event.type}:${event.phase}`;
     default:
       return (event as any).type;
   }
@@ -139,8 +149,11 @@ interface JobMeta {
   model?: string;
   backend?: string;
   beadId?: string;
+  metrics?: Record<string, unknown>;
   startedAtMs: number;
 }
+
+const sqliteClient = createObservabilitySqliteClient();
 
 function readFileFresh(filePath: string): string | null {
   try {
@@ -156,6 +169,13 @@ function readFileFresh(filePath: string): string | null {
 }
 
 function readStatusJson(jobsDir: string, jobId: string): Record<string, unknown> | null {
+  try {
+    const sqliteStatus = sqliteClient?.readStatus(jobId);
+    if (sqliteStatus) return sqliteStatus as unknown as Record<string, unknown>;
+  } catch {
+    // fallback to status.json
+  }
+
   const statusPath = join(jobsDir, jobId, 'status.json');
   const raw = readFileFresh(statusPath);
   if (!raw) return null;
@@ -180,6 +200,9 @@ function readJobMeta(jobsDir: string, jobId: string): JobMeta {
     model: typeof status.model === 'string' ? status.model : undefined,
     backend: typeof status.backend === 'string' ? status.backend : undefined,
     beadId: typeof status.bead_id === 'string' ? status.bead_id : undefined,
+    metrics: typeof status.metrics === 'object' && status.metrics !== null
+      ? status.metrics as Record<string, unknown>
+      : undefined,
     startedAtMs: typeof status.started_at_ms === 'number' ? status.started_at_ms : Date.now(),
   };
 }
@@ -263,6 +286,7 @@ function printSnapshot(
         model,
         backend,
         beadId: meta.beadId ?? beadId,
+        metrics: meta.metrics,
         elapsed_ms: Date.now() - meta.startedAtMs,
         ...event,
       }));
@@ -338,6 +362,16 @@ function listMatchingJobIds(jobsDir: string, options: FeedOptions): string[] {
 }
 
 function readJobEventsFresh(jobsDir: string, jobId: string): TimelineEvent[] {
+  try {
+    const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      sqliteEvents.sort((a, b) => a.t - b.t);
+      return sqliteEvents;
+    }
+  } catch {
+    // fallback to events.jsonl
+  }
+
   const eventsPath = join(jobsDir, jobId, 'events.jsonl');
   const content = readFileFresh(eventsPath);
   if (!content) return [];
@@ -490,6 +524,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
             model,
             backend,
             beadId: meta.beadId ?? beadId,
+            metrics: meta.metrics,
             elapsed_ms: Date.now() - meta.startedAtMs,
             ...event,
           }));
