@@ -18,6 +18,7 @@ specialist:
     timeout_ms: 0
     stall_timeout_ms: 120000
     response_format: markdown
+    output_type: review
     permission_required: READ_ONLY
     interactive: true
     thinking_level: low

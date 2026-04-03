@@ -1,27 +1,24 @@
 specialist:
   metadata:
     name: researcher
-    version: 1.2.0
+    version: 1.1.0
     description: "Documentation and code researcher. Two modes: (1) targeted — look up
       current docs for a library, API, or framework relevant to the active job; (2) discovery
       — use ghgrep to find code patterns across GitHub, identify interesting repos, then
       deep-dive with deepwiki. Uses ctx7, deepwiki, and ghgrep CLIs. Keep-alive by default."
     category: analysis
-    author: ""
-    created: "2026-04-02"
-    updated: "2026-04-02"
     tags: [ docs, research, context7, deepwiki, github, discovery ]
+    updated: "2026-04-02"
 
   execution:
     mode: tool
-    model: dashscope/qwen3.5-plus
+    model: claude-haiku-4-5
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
-    stall_timeout_ms: 300000
-    interactive: true
+    stall_timeout_ms: 120000
     response_format: markdown
     permission_required: LOW
-    thinking_level: off
+    keep_alive: true
 
   prompt:
     system: |
@@ -127,18 +124,11 @@ specialist:
       Synthesize results into a clear, structured answer with code examples and actionable insights.
       After delivering your findings, enter keep-alive waiting state for follow-up questions.
 
-    examples: []
-
   skills:
     paths:
       - .xtrm/skills/active/pi/find-docs/SKILL.md
       - .xtrm/skills/active/pi/deepwiki/SKILL.md
       - .xtrm/skills/active/pi/github-search/SKILL.md
-    scripts: []
-
-  capabilities:
-    required_tools: [ bash, read ]
-    external_commands: [ ghgrep, npx ]
 
   validation:
     files_to_watch:
@@ -148,6 +138,4 @@ specialist:
     stale_threshold_days: 30
 
   communication:
-    next_specialists: []
-
-  beads_integration: auto
+    publishes: [ documentation_research, code_discovery ]

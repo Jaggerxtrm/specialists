@@ -27,7 +27,10 @@
 | unitAI-08zd Phase 1 | b0bb4a (executor) | ❌ crashed (13min, context limit) | Partial work in tree — lint clean, tests hang. See bead notes. |
 | unitAI-08zd Phase 1 retry | 00df5e (executor) | ❌ crashed again (FIFO test hang — pre-existing) | supervisor.test.ts keep-alive test hangs in original code too — not a regression. All other tests pass. |
 | unitAI-08zd Phase 1 | — | ✅ ready to commit | Lint clean. 9 test files pass. supervisor.test.ts hang is pre-existing. Committing partial + Phase 2 next. |
-| unitAI-08zd Phase 2 | — | blocked on Phase 1 | Pipeline linkage: session → supervisor → status.json + events.jsonl |
+| unitAI-08zd Phase 2 | 623cdd (executor) | ❌ did nothing (15s, no output) | Stopped — explorer-first required |
+| unitAI-30k2 review | b2883e (reviewer, keep-alive) | 🔄 running | Reviewing Phase 1 commit 200b0eb9 |
+| unitAI-9twy explore | c1c2fc (explorer) | 🔄 running | Mapping Phase 2 scope: feed/status/result gaps |
+| unitAI-08zd Phase 2 | — | ⏳ blocked on review + explore | Executor dispatches after both complete |
 | unitAI-08zd Phase 3 | — | blocked on Phase 2 | SQLite migration, WAL mode, worktree column |
 | unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
 

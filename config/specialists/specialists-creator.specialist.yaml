@@ -84,7 +84,7 @@ specialist:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - config/skills/specialists-creator/SKILL.md
+      - .xtrm/skills/default/specialists-creator/SKILL.md
     stale_threshold_days: 30
 
   beads_integration: auto

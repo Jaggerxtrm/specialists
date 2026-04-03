@@ -17527,6 +17527,7 @@ var init_schema = __esm(() => {
     max_retries: numberType().int().min(0).default(0),
     interactive: booleanType().default(false),
     response_format: enumType(["text", "json", "markdown"]).default("text"),
+    output_type: enumType(["codegen", "analysis", "review", "synthesis", "orchestration", "workflow", "research", "custom"]).default("custom"),
     permission_required: enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]).default("READ_ONLY"),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
     preferred_profile: stringType().optional(),
@@ -17765,6 +17766,82 @@ function mapPermissionToTools(level) {
       return;
   }
 }
+function asNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value))
+    return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return;
+}
+function pickFirstNumber(record3, keys) {
+  for (const key of keys) {
+    const value = asNumber(record3[key]);
+    if (value !== undefined)
+      return value;
+  }
+  return;
+}
+function normalizeTokenUsage(candidate) {
+  if (!candidate || typeof candidate !== "object")
+    return;
+  const usage = candidate;
+  const normalized = {
+    input_tokens: pickFirstNumber(usage, ["input_tokens", "inputTokens", "prompt_tokens", "promptTokens"]),
+    output_tokens: pickFirstNumber(usage, ["output_tokens", "outputTokens", "completion_tokens", "completionTokens"]),
+    cache_creation_tokens: pickFirstNumber(usage, ["cache_creation_tokens", "cacheCreationTokens", "cache_write_tokens"]),
+    cache_read_tokens: pickFirstNumber(usage, ["cache_read_tokens", "cacheReadTokens", "cache_hit_tokens"]),
+    total_tokens: pickFirstNumber(usage, ["total_tokens", "totalTokens"]),
+    cost_usd: pickFirstNumber(usage, ["cost_usd", "costUsd", "usd_cost", "cost"])
+  };
+  const hasAny = Object.values(normalized).some((value) => value !== undefined);
+  if (!hasAny)
+    return;
+  if (normalized.total_tokens === undefined) {
+    const components = [
+      normalized.input_tokens,
+      normalized.output_tokens,
+      normalized.cache_creation_tokens,
+      normalized.cache_read_tokens
+    ].filter((value) => value !== undefined);
+    if (components.length > 0) {
+      normalized.total_tokens = components.reduce((sum, value) => sum + value, 0);
+    }
+  }
+  return normalized;
+}
+function findFinishReason(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  const direct = record3.stopReason ?? record3.finishReason ?? record3.finish_reason ?? record3.reason;
+  if (typeof direct === "string" && direct.trim().length > 0)
+    return direct;
+  return;
+}
+function findTokenUsage(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  const candidates = [
+    record3.usage,
+    record3.tokenUsage,
+    record3.token_usage,
+    record3.stats?.usage,
+    record3.stats?.tokenUsage,
+    record3.result?.usage,
+    record3.result?.tokenUsage,
+    record3.assistantMessageEvent?.usage,
+    record3.assistantMessageEvent?.tokenUsage
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeTokenUsage(candidate);
+    if (normalized)
+      return normalized;
+  }
+  return normalizeTokenUsage(record3);
+}
 
 class PiAgentSession {
   options;
@@ -17781,6 +17858,12 @@ class PiAgentSession {
   _stderrBuffer = "";
   _stallTimer;
   _stallError;
+  _metrics = {
+    turns: 0,
+    tool_calls: 0,
+    auto_compactions: 0,
+    auto_retries: 0
+  };
   meta;
   constructor(options, meta) {
     this.options = options;
@@ -17826,6 +17909,12 @@ class PiAgentSession {
     const ssPath = join2(piExtDir, "service-skills");
     if (existsSync2(ssPath))
       args.push("-e", ssPath);
+    const serenaPath = join2(piExtDir, "serena");
+    if (existsSync2(serenaPath))
+      args.push("-e", serenaPath);
+    const gitnexusPath = join2(piExtDir, "gitnexus");
+    if (existsSync2(gitnexusPath))
+      args.push("-e", gitnexusPath);
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }
@@ -17889,6 +17978,21 @@ class PiAgentSession {
       this.kill(err);
     }, timeoutMs);
   }
+  _updateTokenUsage(tokenUsage, source) {
+    if (!tokenUsage)
+      return;
+    this._metrics.token_usage = {
+      ...this._metrics.token_usage,
+      ...tokenUsage
+    };
+    this.options.onMetric?.({ type: "token_usage", token_usage: tokenUsage, source });
+  }
+  _updateFinishReason(finishReason, source) {
+    if (!finishReason)
+      return;
+    this._metrics.finish_reason = finishReason;
+    this.options.onMetric?.({ type: "finish_reason", finish_reason: finishReason, source });
+  }
   _handleEvent(line) {
     let event;
     try {
@@ -17933,10 +18037,21 @@ class PiAgentSession {
       return;
     }
     if (type === "turn_start") {
+      this._metrics.turns = (this._metrics.turns ?? 0) + 1;
       this.options.onEvent?.("turn_start");
       return;
     }
     if (type === "turn_end") {
+      const tokenUsage = findTokenUsage(event);
+      const finishReason = findFinishReason(event);
+      this._updateTokenUsage(tokenUsage, "turn_end");
+      this._updateFinishReason(finishReason, "turn_end");
+      this.options.onMetric?.({
+        type: "turn_summary",
+        turn_index: this._metrics.turns ?? 0,
+        ...tokenUsage ? { token_usage: tokenUsage } : {},
+        ...finishReason ? { finish_reason: finishReason } : {}
+      });
       this.options.onEvent?.("turn_end");
       return;
     }
@@ -17946,6 +18061,8 @@ class PiAgentSession {
       if (last) {
         this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
       }
+      this._updateTokenUsage(findTokenUsage(event), "agent_end");
+      this._updateFinishReason(findFinishReason(event), "agent_end");
       this._agentEndReceived = true;
       this._clearStallTimer();
       this.options.onEvent?.("agent_end");
@@ -17953,6 +18070,7 @@ class PiAgentSession {
       return;
     }
     if (type === "tool_execution_start") {
+      this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
       this.options.onToolStart?.(event.toolName ?? event.name ?? "tool", event.args, event.toolCallId);
       this.options.onEvent?.("tool_execution_start");
       return;
@@ -17967,10 +18085,18 @@ class PiAgentSession {
       return;
     }
     if (type === "auto_compaction_start" || type === "auto_compaction_end") {
+      if (type === "auto_compaction_end") {
+        this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
+      }
+      this.options.onMetric?.({ type: "compaction", phase: type === "auto_compaction_start" ? "start" : "end" });
       this.options.onEvent?.("auto_compaction");
       return;
     }
     if (type === "auto_retry_start" || type === "auto_retry_end") {
+      if (type === "auto_retry_end") {
+        this._metrics.auto_retries = (this._metrics.auto_retries ?? 0) + 1;
+      }
+      this.options.onMetric?.({ type: "retry", phase: type === "auto_retry_start" ? "start" : "end" });
       this.options.onEvent?.("auto_retry");
       return;
     }
@@ -17999,9 +18125,14 @@ class PiAgentSession {
         case "toolcall_end":
           this.options.onEvent?.("toolcall");
           break;
-        case "done":
+        case "done": {
+          const tokenUsage = findTokenUsage(ae);
+          const finishReason = findFinishReason(ae);
+          this._updateTokenUsage(tokenUsage, "message_done");
+          this._updateFinishReason(finishReason, "message_done");
           this.options.onEvent?.("message_done");
           break;
+        }
       }
     }
   }
@@ -18071,6 +18202,9 @@ class PiAgentSession {
     } catch {
       return null;
     }
+  }
+  getMetrics() {
+    return { ...this._metrics, ...this._metrics.token_usage ? { token_usage: { ...this._metrics.token_usage } } : {} };
   }
   async close() {
     if (this._killed)
@@ -18490,6 +18624,169 @@ function isAuthError(error2) {
   const message = error2 instanceof Error ? error2.message : typeof error2 === "string" ? error2 : JSON.stringify(error2);
   return /\b(401|403|unauthorized|forbidden|authentication|auth|invalid api key|api key)\b/i.test(message);
 }
+function deepMergeSchemas(base, override) {
+  const merged = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    const baseValue = merged[key];
+    if (isRecord(baseValue) && isRecord(overrideValue)) {
+      merged[key] = deepMergeSchemas(baseValue, overrideValue);
+      continue;
+    }
+    merged[key] = overrideValue;
+  }
+  return merged;
+}
+function resolveOutputContractSchema(responseFormat, outputType, outputSchema) {
+  if (responseFormat === "text")
+    return;
+  if (responseFormat === "markdown" && !outputSchema)
+    return;
+  let mergedSchema = { ...BASE_OUTPUT_SCHEMA };
+  if (outputType !== "custom") {
+    mergedSchema = deepMergeSchemas(mergedSchema, OUTPUT_TYPE_SCHEMA_EXTENSIONS[outputType]);
+  }
+  if (outputSchema) {
+    mergedSchema = deepMergeSchemas(mergedSchema, outputSchema);
+  }
+  return mergedSchema;
+}
+function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
+  if (responseFormat === "text")
+    return "";
+  const lines = ["## Output Contract"];
+  if (responseFormat === "markdown") {
+    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits — prioritize completeness and clarity.");
+  } else {
+    lines.push("Respond with a single valid JSON object only.", "Do not wrap JSON in markdown fences, headers, or prose.");
+  }
+  if (outputType !== "custom") {
+    lines.push(`Output archetype: \`${outputType}\``);
+    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
+  }
+  if (outputSchema) {
+    lines.push("Structure your output to match this schema:", "```json", JSON.stringify(outputSchema, null, 2), "```");
+    if (responseFormat === "markdown") {
+      lines.push("MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.", "The machine-readable JSON block is canonical and must match the schema.");
+    }
+  }
+  return `
+
+${lines.join(`
+`)}`;
+}
+function tryParseJson(input) {
+  try {
+    return { value: JSON.parse(input) };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return { error: message };
+  }
+}
+function extractJsonFromMachineReadableBlock(output) {
+  const blockRegex = /##\s*Machine-readable block[\s\S]*?```json\s*([\s\S]*?)```/i;
+  const match = output.match(blockRegex);
+  if (!match || !match[1]) {
+    return { error: "missing `## Machine-readable block` JSON fenced block" };
+  }
+  return tryParseJson(match[1].trim());
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function validateValueAgainstSchema(value, schema, path) {
+  const errors5 = [];
+  const schemaType = schema.type;
+  const schemaEnum = schema.enum;
+  if (Array.isArray(schemaEnum) && schemaEnum.length > 0 && !schemaEnum.some((candidate) => Object.is(candidate, value))) {
+    errors5.push(`${path}: expected one of [${schemaEnum.map((item) => JSON.stringify(item)).join(", ")}], got ${JSON.stringify(value)}`);
+  }
+  const effectiveType = typeof schemaType === "string" ? schemaType : isRecord(schema.properties) || Array.isArray(schema.required) ? "object" : Array.isArray(schema.items) ? "array" : undefined;
+  if (!effectiveType)
+    return errors5;
+  switch (effectiveType) {
+    case "object": {
+      if (!isRecord(value)) {
+        errors5.push(`${path}: expected object, got ${Array.isArray(value) ? "array" : typeof value}`);
+        return errors5;
+      }
+      const properties = isRecord(schema.properties) ? schema.properties : {};
+      const required2 = Array.isArray(schema.required) ? schema.required.filter((item) => typeof item === "string") : [];
+      for (const key of required2) {
+        if (!(key in value)) {
+          errors5.push(`${path}.${key}: missing required property`);
+        }
+      }
+      for (const [key, propertySchemaRaw] of Object.entries(properties)) {
+        if (!(key in value))
+          continue;
+        if (!isRecord(propertySchemaRaw))
+          continue;
+        errors5.push(...validateValueAgainstSchema(value[key], propertySchemaRaw, `${path}.${key}`));
+      }
+      return errors5;
+    }
+    case "array": {
+      if (!Array.isArray(value)) {
+        errors5.push(`${path}: expected array, got ${typeof value}`);
+        return errors5;
+      }
+      const itemSchema = isRecord(schema.items) ? schema.items : undefined;
+      if (!itemSchema)
+        return errors5;
+      for (let i = 0;i < value.length; i += 1) {
+        errors5.push(...validateValueAgainstSchema(value[i], itemSchema, `${path}[${i}]`));
+      }
+      return errors5;
+    }
+    case "string":
+      if (typeof value !== "string")
+        errors5.push(`${path}: expected string, got ${typeof value}`);
+      return errors5;
+    case "number":
+      if (typeof value !== "number" || Number.isNaN(value))
+        errors5.push(`${path}: expected number, got ${typeof value}`);
+      return errors5;
+    case "integer":
+      if (typeof value !== "number" || !Number.isInteger(value))
+        errors5.push(`${path}: expected integer, got ${JSON.stringify(value)}`);
+      return errors5;
+    case "boolean":
+      if (typeof value !== "boolean")
+        errors5.push(`${path}: expected boolean, got ${typeof value}`);
+      return errors5;
+    default:
+      return errors5;
+  }
+}
+function validateOutputContract(output, responseFormat, outputSchema) {
+  const warnings = [];
+  if (responseFormat === "text")
+    return warnings;
+  if (!outputSchema)
+    return warnings;
+  let structuredPayload;
+  if (responseFormat === "json") {
+    const parsed = tryParseJson(output.trim());
+    if (parsed.error) {
+      warnings.push(`Strong warning: response_format=json but output is not valid JSON (${parsed.error}).`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+  if (responseFormat === "markdown") {
+    const parsed = extractJsonFromMachineReadableBlock(output);
+    if (parsed.error) {
+      warnings.push(`Output contract warning: ${parsed.error}.`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+  const schemaErrors = validateValueAgainstSchema(structuredPayload, outputSchema, "$");
+  if (schemaErrors.length > 0) {
+    warnings.push(`Output contract warning: schema mismatch (${schemaErrors.length} issue${schemaErrors.length === 1 ? "" : "s"}).`, ...schemaErrors.map((issue2) => `  - ${issue2}`));
+  }
+  return warnings;
+}
 
 class SpecialistRunner {
   deps;
@@ -18498,7 +18795,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  async run(options, onProgress, onEvent, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
+  async run(options, onProgress, onEvent, onMetric, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
     const start = Date.now();
@@ -18556,6 +18853,11 @@ You are a specialist agent. The following rules OVERRIDE any conflicting instruc
 ---
 `;
     }
+    const responseFormat = execution.response_format ?? "text";
+    const outputType = execution.output_type ?? "custom";
+    const specialistOutputSchema = prompt.output_schema;
+    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
+    agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
     const skillPaths = [];
     if (prompt.skill_inherit)
       skillPaths.push(prompt.skill_inherit);
@@ -18602,6 +18904,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
     });
     let output;
     let sessionBackend = model;
+    let runMetrics;
     let session;
     let keepAliveActive = false;
     let sessionClosed = false;
@@ -18629,6 +18932,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
           onToolEndCallback?.(tool, isError, toolCallId);
         },
         onEvent: (type) => onEvent?.(type),
+        onMetric: (event) => onMetric?.(event),
         onMeta: (meta) => onMeta?.(meta)
       });
       await session.start();
@@ -18639,6 +18943,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
           await session.prompt(renderedTask);
           await session.waitForDone(execution.timeout_ms);
           output = await session.getLastOutput();
+          runMetrics = session.getMetrics?.();
           sessionBackend = session.meta.backend;
           break;
         } catch (err) {
@@ -18700,6 +19005,13 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       }
     }
     const durationMs = Date.now() - start;
+    const outputContractWarnings = validateOutputContract(output, responseFormat, outputContractSchema);
+    if (outputContractWarnings.length > 0) {
+      process.stderr.write(`[specialists] output contract warnings:
+${outputContractWarnings.map((msg) => `  ⚠ ${msg}`).join(`
+`)}
+`);
+    }
     if (output_file) {
       await writeFile(output_file, output, "utf-8").catch(() => {});
     }
@@ -18719,6 +19031,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       specialistVersion: metadata.version,
       promptHash,
       beadId,
+      metrics: runMetrics,
       permissionRequired: execution.permission_required
     };
   }
@@ -18734,11 +19047,11 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       model: "?",
       specialistVersion
     });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn), (resumeFn, closeFn) => registry2.setResumeFn(jobId, resumeFn, closeFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), undefined, (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn), (resumeFn, closeFn) => registry2.setResumeFn(jobId, resumeFn, closeFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
     return jobId;
   }
 }
-var PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2;
+var PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
 var init_runner = __esm(() => {
   init_session();
   init_circuitBreaker();
@@ -18747,6 +19060,147 @@ var init_runner = __esm(() => {
     bash: ["LOW", "MEDIUM", "HIGH"],
     edit: ["MEDIUM", "HIGH"],
     write: ["HIGH"]
+  };
+  BASE_OUTPUT_SCHEMA = {
+    type: "object",
+    properties: {
+      summary: { type: "string" },
+      status: { enum: ["success", "partial", "failed", "waiting"] },
+      issues_closed: { type: "array", items: { type: "string" } },
+      issues_created: { type: "array", items: { type: "string" } },
+      follow_ups: { type: "array", items: { type: "string" } },
+      risks: { type: "array", items: { type: "string" } },
+      verification: { type: "array", items: { type: "string" } }
+    },
+    required: ["summary", "status", "issues_closed", "issues_created", "follow_ups", "risks", "verification"]
+  };
+  OUTPUT_TYPE_SCHEMA_EXTENSIONS = {
+    codegen: {
+      type: "object",
+      properties: {
+        files_changed: { type: "array", items: { type: "string" } },
+        symbols_modified: { type: "array", items: { type: "string" } },
+        lint_pass: { type: "boolean" },
+        tests_pass: { type: "boolean" }
+      }
+    },
+    analysis: {
+      type: "object",
+      properties: {
+        key_files: { type: "array", items: { type: "string" } },
+        architecture_notes: { type: "string" },
+        recommendations: { type: "array", items: { type: "string" } }
+      }
+    },
+    review: {
+      type: "object",
+      properties: {
+        verdict: { enum: ["pass", "partial", "fail"] },
+        findings: { type: "array", items: { type: "string" } },
+        recommendation: { type: "string" }
+      }
+    },
+    synthesis: {
+      type: "object",
+      properties: {
+        decisions: { type: "array", items: { type: "string" } },
+        rationale: { type: "string" },
+        next_steps: { type: "array", items: { type: "string" } }
+      }
+    },
+    orchestration: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                enum: [
+                  "resume_member",
+                  "steer_member",
+                  "request_human_input",
+                  "spawn_member",
+                  "stop_member",
+                  "mark_blocked",
+                  "complete_node"
+                ]
+              },
+              target: { type: "string" },
+              payload: { type: "string" },
+              reason: { type: "string" },
+              priority: { type: "number" }
+            },
+            required: ["type", "target", "payload", "reason"]
+          }
+        },
+        blocking_on: {
+          type: "object",
+          properties: {
+            kind: { enum: ["human_input", "member_output", "external_dependency"] },
+            target: { type: "string" },
+            details: { type: "string" }
+          },
+          required: ["kind"]
+        },
+        memory_patch: {
+          type: "object",
+          properties: {
+            facts: { type: "array", items: { type: "string" } },
+            questions: { type: "array", items: { type: "string" } },
+            decisions: { type: "array", items: { type: "string" } },
+            handoff_summary: { type: "string" }
+          }
+        },
+        coordination_state: {
+          type: "object",
+          properties: {
+            current_goal: { type: "string" },
+            active_members: { type: "array", items: { type: "string" } },
+            waiting_on_members: { type: "array", items: { type: "string" } },
+            pending_decisions: { type: "array", items: { type: "string" } },
+            blockers: { type: "array", items: { type: "string" } }
+          }
+        },
+        routing_rationale: { type: "string" },
+        next_trigger: {
+          type: "object",
+          properties: {
+            event: { enum: ["on_member_update", "on_human_input", "on_external_update", "on_timeout", "manual_resume"] },
+            target: { type: "string" },
+            details: { type: "string" }
+          },
+          required: ["event"]
+        }
+      }
+    },
+    workflow: {
+      type: "object",
+      properties: {
+        steps_completed: { type: "array", items: { type: "string" } },
+        first_task: { type: "string" },
+        children: { type: "array", items: { type: "string" } },
+        test_issues: { type: "array", items: { type: "string" } }
+      }
+    },
+    research: {
+      type: "object",
+      properties: {
+        sources_checked: { type: "array", items: { type: "string" } },
+        confidence: { enum: ["low", "medium", "high"] },
+        recommendations: { type: "array", items: { type: "string" } }
+      }
+    }
+  };
+  OUTPUT_TYPE_GUIDANCE = {
+    codegen: "- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.",
+    analysis: "- Analysis focus: include architecture understanding and evidence-backed findings.",
+    review: "- Review focus: include severity-ranked findings with clear merge/readiness recommendation.",
+    synthesis: "- Synthesis focus: consolidate findings into decisions and clear next steps.",
+    orchestration: "- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.",
+    workflow: "- Workflow focus: include procedural state transitions and operational checkpoints.",
+    research: "- Research focus: include sources checked, confidence, and final recommendations."
   };
 });
 
@@ -19536,20 +19990,347 @@ Canonical tracked flow:
 
 Add custom specialists to \`.specialists/user/\` to extend defaults.
 `.trimStart();
-  GITIGNORE_ENTRIES = [".specialists/jobs/", ".specialists/ready/"];
+  GITIGNORE_ENTRIES = [
+    ".specialists/jobs/",
+    ".specialists/ready/",
+    ".specialists/db/*.db",
+    ".specialists/db/*.db-wal",
+    ".specialists/db/*.db-shm"
+  ];
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
+});
+
+// src/specialist/observability-db.ts
+import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { join as join7, sep } from "node:path";
+function resolveGitRootFrom(cwd) {
+  const result = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return cwd;
+  const gitRoot = result.stdout.trim();
+  return gitRoot.length > 0 ? gitRoot : cwd;
+}
+function resolveDbDirectory(gitRoot) {
+  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
+  if (xdgDataHome) {
+    return { directory: join7(xdgDataHome, "specialists"), source: "xdg-data-home" };
+  }
+  return {
+    directory: join7(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    source: "git-root"
+  };
+}
+function resolveObservabilityDbLocation(cwd = process.cwd()) {
+  const gitRoot = resolveGitRootFrom(cwd);
+  const resolved = resolveDbDirectory(gitRoot);
+  const dbPath = join7(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  return {
+    gitRoot,
+    dbDirectory: resolved.directory,
+    dbPath,
+    dbWalPath: `${dbPath}-wal`,
+    dbShmPath: `${dbPath}-shm`,
+    source: resolved.source
+  };
+}
+function ensureObservabilityDbFile(location) {
+  mkdirSync2(location.dbDirectory, { recursive: true });
+  const alreadyExists = existsSync7(location.dbPath);
+  if (!alreadyExists) {
+    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+  }
+  chmodSync(location.dbPath, 420);
+  return { created: !alreadyExists };
+}
+function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
+  const gitignorePath = join7(gitRoot, ".gitignore");
+  const requiredEntries = [
+    ".specialists/db/*.db",
+    ".specialists/db/*.db-wal",
+    ".specialists/db/*.db-shm"
+  ];
+  const existing = existsSync7(gitignorePath) ? readFileSync4(gitignorePath, "utf-8") : "";
+  const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
+  if (missingEntries.length === 0) {
+    return { changed: false };
+  }
+  const needsLeadingNewline = existing.length > 0 && !existing.endsWith(`
+`);
+  const prefix = needsLeadingNewline ? `
+` : "";
+  const sectionHeader = existing.includes("# Specialists observability database") ? "" : `# Specialists observability database
+`;
+  const block = `${prefix}${sectionHeader}${missingEntries.join(`
+`)}
+`;
+  writeFileSync2(gitignorePath, `${existing}${block}`, "utf-8");
+  return { changed: true };
+}
+function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
+  const jobsDirPrefix = `${join7(gitRoot, ".specialists", "jobs")}${sep}`;
+  return pathToCheck.startsWith(jobsDirPrefix);
+}
+var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
+var init_observability_db = __esm(() => {
+  DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
+});
+
+// src/specialist/observability-sqlite.ts
+import { execFileSync, spawnSync as spawnSync6 } from "node:child_process";
+import { existsSync as existsSync8 } from "node:fs";
+function quoteSql(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+function toSqlNumber(value) {
+  return value === undefined ? "NULL" : String(value);
+}
+function toSqlText(value) {
+  return value === undefined ? "NULL" : quoteSql(value);
+}
+function hasSqlite3Binary() {
+  const probe = spawnSync6("which", ["sqlite3"], { stdio: "ignore" });
+  return probe.status === 0;
+}
+function runSql(dbPath, sql) {
+  return execFileSync("sqlite3", ["-json", dbPath, sql], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+}
+function initSchema(dbPath) {
+  runSql(dbPath, `
+    PRAGMA journal_mode=WAL;
+    CREATE TABLE IF NOT EXISTS specialist_jobs (
+      job_id TEXT PRIMARY KEY,
+      specialist TEXT NOT NULL,
+      status_json TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS specialist_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL,
+      specialist TEXT NOT NULL,
+      bead_id TEXT,
+      t INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      event_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, id);
+    CREATE TABLE IF NOT EXISTS specialist_results (
+      job_id TEXT PRIMARY KEY,
+      output TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+  `);
+}
+
+class SqliteClient {
+  dbPath;
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+  }
+  upsertStatus(status) {
+    const statusJson = quoteSql(JSON.stringify(status));
+    const specialist = quoteSql(status.specialist);
+    const sql = `
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
+      VALUES (${quoteSql(status.id)}, ${specialist}, ${statusJson}, ${Date.now()})
+      ON CONFLICT(job_id) DO UPDATE SET
+        specialist = excluded.specialist,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `;
+    runSql(this.dbPath, sql);
+  }
+  appendEvent(jobId, specialist, beadId, event) {
+    const eventJson = quoteSql(JSON.stringify(event));
+    const sql = `
+      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
+      VALUES (
+        ${quoteSql(jobId)},
+        ${quoteSql(specialist)},
+        ${toSqlText(beadId)},
+        ${toSqlNumber(event.t)},
+        ${quoteSql(event.type)},
+        ${eventJson}
+      );
+    `;
+    runSql(this.dbPath, sql);
+  }
+  upsertResult(jobId, output) {
+    const sql = `
+      INSERT INTO specialist_results (job_id, output, updated_at_ms)
+      VALUES (${quoteSql(jobId)}, ${quoteSql(output)}, ${Date.now()})
+      ON CONFLICT(job_id) DO UPDATE SET
+        output = excluded.output,
+        updated_at_ms = excluded.updated_at_ms;
+    `;
+    runSql(this.dbPath, sql);
+  }
+  readStatus(jobId) {
+    const rowsRaw = runSql(this.dbPath, `SELECT status_json FROM specialist_jobs WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
+    if (!rowsRaw)
+      return null;
+    const rows = JSON.parse(rowsRaw);
+    const encoded = rows[0]?.status_json;
+    if (!encoded)
+      return null;
+    return JSON.parse(encoded);
+  }
+  listStatuses() {
+    const rowsRaw = runSql(this.dbPath, "SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC;").trim();
+    if (!rowsRaw)
+      return [];
+    const rows = JSON.parse(rowsRaw);
+    const statuses = [];
+    for (const row of rows) {
+      if (!row.status_json)
+        continue;
+      try {
+        statuses.push(JSON.parse(row.status_json));
+      } catch {}
+    }
+    return statuses;
+  }
+  readEvents(jobId) {
+    const rowsRaw = runSql(this.dbPath, `
+      SELECT event_json FROM specialist_events
+      WHERE job_id = ${quoteSql(jobId)}
+      ORDER BY t ASC, id ASC;
+    `).trim();
+    if (!rowsRaw)
+      return [];
+    const rows = JSON.parse(rowsRaw);
+    const events = [];
+    for (const row of rows) {
+      if (!row.event_json)
+        continue;
+      try {
+        events.push(JSON.parse(row.event_json));
+      } catch {}
+    }
+    return events;
+  }
+  readResult(jobId) {
+    const rowsRaw = runSql(this.dbPath, `SELECT output FROM specialist_results WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
+    if (!rowsRaw)
+      return null;
+    const rows = JSON.parse(rowsRaw);
+    return rows[0]?.output ?? null;
+  }
+}
+function createObservabilitySqliteClient(cwd = process.cwd()) {
+  if (!hasSqlite3Binary())
+    return null;
+  const location = resolveObservabilityDbLocation(cwd);
+  if (!existsSync8(location.dbPath))
+    return null;
+  try {
+    initSchema(location.dbPath);
+    return new SqliteClient(location.dbPath);
+  } catch {
+    return null;
+  }
+}
+var init_observability_sqlite = __esm(() => {
+  init_observability_db();
+});
+
+// src/cli/db.ts
+var exports_db = {};
+__export(exports_db, {
+  run: () => run6
+});
+function printDbHelp() {
+  console.log([
+    "",
+    "Usage: specialists db setup",
+    "",
+    "Human-only command to provision the shared observability SQLite database.",
+    "",
+    "Behavior:",
+    "  - resolves storage at git-root (.specialists/db/observability.db),",
+    "    or $XDG_DATA_HOME/specialists/observability.db when XDG_DATA_HOME is set",
+    "  - creates the DB file once (no auto-create from runtime paths)",
+    "  - enforces chmod 644 on the database file",
+    "  - ensures .gitignore excludes .db, .db-wal, and .db-shm files under .specialists/db/",
+    "",
+    "Examples:",
+    "  specialists db setup",
+    "  sp db setup",
+    ""
+  ].join(`
+`));
+}
+function assertHumanInteractiveTerminal() {
+  const forceSetup = process.env.SPECIALISTS_DB_SETUP_FORCE === "1";
+  const inAgentSession = !forceSetup && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
+  if (!inAgentSession)
+    return;
+  console.error("specialists db setup requires an interactive terminal. This is a user-only setup command — do not invoke from scripts or agent sessions.");
+  process.exit(1);
+}
+function printSetupResult(created, gitignoreUpdated, location) {
+  console.log(`
+${bold5("specialists db setup")}
+`);
+  console.log(`  ${green4("✓")} database path: ${location.dbPath}`);
+  console.log(`  ${green4("✓")} mode: chmod 644`);
+  if (location.source === "xdg-data-home") {
+    console.log(`  ${yellow5("○")} using XDG_DATA_HOME (${location.dbDirectory})`);
+  } else {
+    console.log(`  ${green4("✓")} using shared git-root location (${location.dbDirectory})`);
+  }
+  console.log(`  ${created ? green4("✓ created database file") : yellow5("○ database file already exists")}`);
+  console.log(`  ${gitignoreUpdated ? green4("✓ updated .gitignore for DB artifacts") : yellow5("○ .gitignore already excludes DB artifacts")}`);
+  console.log("");
+}
+async function run6(argv = process.argv.slice(3)) {
+  const subcommand = argv[0];
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    printDbHelp();
+    return;
+  }
+  if (subcommand !== "setup" && subcommand !== "init") {
+    console.error(`Unknown db subcommand: '${subcommand}'`);
+    printDbHelp();
+    process.exit(1);
+  }
+  assertHumanInteractiveTerminal();
+  const location = resolveObservabilityDbLocation(process.cwd());
+  if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
+    throw new Error(`Refusing to place observability DB inside jobs directory: ${location.dbPath}`);
+  }
+  const setupResult = ensureObservabilityDbFile(location);
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Failed to initialize observability SQLite schema. Ensure sqlite3 is installed and retry.");
+  }
+  const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
+  printSetupResult(setupResult.created, gitignoreResult.changed, location);
+}
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`;
+var init_db = __esm(() => {
+  init_observability_db();
+  init_observability_sqlite();
 });
 
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run6,
+  run: () => run7,
   parseArgs: () => parseArgs3,
   ArgParseError: () => ArgParseError2
 });
 import { readFile as readFile2 } from "node:fs/promises";
-import { existsSync as existsSync7 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync9 } from "node:fs";
+import { join as join8 } from "node:path";
 function parseArgs3(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -19560,21 +20341,21 @@ function parseArgs3(argv) {
 }
 function findSpecialistFile(name) {
   const scanDirs = [
-    join7(process.cwd(), ".specialists", "user"),
-    join7(process.cwd(), ".specialists", "user", "specialists"),
-    join7(process.cwd(), ".specialists", "default"),
-    join7(process.cwd(), ".specialists", "default", "specialists"),
-    join7(process.cwd(), "specialists")
+    join8(process.cwd(), ".specialists", "user"),
+    join8(process.cwd(), ".specialists", "user", "specialists"),
+    join8(process.cwd(), ".specialists", "default"),
+    join8(process.cwd(), ".specialists", "default", "specialists"),
+    join8(process.cwd(), "specialists")
   ];
   for (const dir of scanDirs) {
-    const candidate = join7(dir, `${name}.specialist.yaml`);
-    if (existsSync7(candidate)) {
+    const candidate = join8(dir, `${name}.specialist.yaml`);
+    if (existsSync9(candidate)) {
       return candidate;
     }
   }
   return;
 }
-async function run6() {
+async function run7() {
   let args;
   try {
     args = parseArgs3(process.argv.slice(3));
@@ -19618,10 +20399,10 @@ async function run6() {
     process.exit(result.valid ? 0 : 1);
   }
   console.log(`
-${bold5("Validating")} ${cyan3(name)} ${dim5(`(${filePath})`)}
+${bold6("Validating")} ${cyan3(name)} ${dim5(`(${filePath})`)}
 `);
   if (result.valid) {
-    console.log(`${green4("✓")} Schema validation passed
+    console.log(`${green5("✓")} Schema validation passed
 `);
   } else {
     console.log(`${red("✗")} Schema validation failed:
@@ -19635,16 +20416,16 @@ ${bold5("Validating")} ${cyan3(name)} ${dim5(`(${filePath})`)}
     console.log();
   }
   if (result.warnings.length > 0) {
-    console.log(`${yellow5("Warnings")}:
+    console.log(`${yellow6("Warnings")}:
 `);
     for (const warning of result.warnings) {
-      console.log(`  ${yellow5("⚠")} ${warning}`);
+      console.log(`  ${yellow6("⚠")} ${warning}`);
     }
     console.log();
   }
   process.exit(result.valid ? 0 : 1);
 }
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError2;
+var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError2;
 var init_validate = __esm(() => {
   init_schema();
   ArgParseError2 = class ArgParseError2 extends Error {
@@ -19658,11 +20439,11 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run7
+  run: () => run8
 });
-import { spawnSync as spawnSync5 } from "node:child_process";
-import { existsSync as existsSync8, readdirSync as readdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join8 } from "node:path";
+import { spawnSync as spawnSync7 } from "node:child_process";
+import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { join as join9 } from "node:path";
 function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -19726,23 +20507,23 @@ function setIn(doc2, path, value) {
   }
 }
 function openAllConfigSpecialistsInEditor() {
-  const configDir = join8(process.cwd(), "config", "specialists");
-  if (!existsSync8(configDir)) {
+  const configDir = join9(process.cwd(), "config", "specialists");
+  if (!existsSync10(configDir)) {
     console.error(`Error: missing directory: ${configDir}`);
     process.exit(1);
   }
-  const files = readdirSync3(configDir).filter((file) => file.endsWith(".specialist.yaml")).sort().map((file) => join8(configDir, file));
+  const files = readdirSync3(configDir).filter((file) => file.endsWith(".specialist.yaml")).sort().map((file) => join9(configDir, file));
   if (files.length === 0) {
     console.error("Error: no specialist YAML files found in config/specialists/");
     process.exit(1);
   }
   const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-  const result = spawnSync5(editor, files, { stdio: "inherit", shell: true });
+  const result = spawnSync7(editor, files, { stdio: "inherit", shell: true });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
 }
-async function run7() {
+async function run8() {
   const rawArgs = process.argv.slice(3);
   if (rawArgs.length === 1 && rawArgs[0] === "--all") {
     openAllConfigSpecialistsInEditor();
@@ -19756,10 +20537,10 @@ async function run7() {
   if (!match) {
     const hint = scope ? ` (scope: ${scope})` : "";
     console.error(`Error: specialist "${name}" not found${hint}`);
-    console.error(`  Run ${yellow6("specialists list")} to see available specialists`);
+    console.error(`  Run ${yellow7("specialists list")} to see available specialists`);
     process.exit(1);
   }
-  const raw = readFileSync4(match.filePath, "utf-8");
+  const raw = readFileSync5(match.filePath, "utf-8");
   const doc2 = $parseDocument(raw);
   const yamlPath = FIELD_MAP[field];
   let typedValue = value;
@@ -19772,7 +20553,7 @@ async function run7() {
   const updated = doc2.toString();
   if (dryRun) {
     console.log(`
-${bold6(`[dry-run] ${match.filePath}`)}
+${bold7(`[dry-run] ${match.filePath}`)}
 `);
     console.log(dim6("--- current"));
     console.log(dim6(`+++ updated`));
@@ -19784,17 +20565,17 @@ ${bold6(`[dry-run] ${match.filePath}`)}
       if (line !== oldLines[i]) {
         if (oldLines[i] !== undefined)
           console.log(dim6(`- ${oldLines[i]}`));
-        console.log(green5(`+ ${line}`));
+        console.log(green6(`+ ${line}`));
       }
     });
     console.log();
     return;
   }
-  writeFileSync2(match.filePath, updated, "utf-8");
+  writeFileSync3(match.filePath, updated, "utf-8");
   const displayValue = field === "tags" ? `[${typedValue.join(", ")}]` : String(typedValue);
-  console.log(`${green5("✓")} ${bold6(name)}: ${yellow6(field)} = ${displayValue}` + dim6(` (${match.filePath})`));
+  console.log(`${green6("✓")} ${bold7(name)}: ${yellow7(field)} = ${displayValue}` + dim6(` (${match.filePath})`));
 }
-var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, FIELD_MAP, VALID_PERMISSIONS;
 var init_edit = __esm(() => {
   init_dist();
   init_loader();
@@ -19812,11 +20593,11 @@ var init_edit = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run8
+  run: () => run9
 });
-import { existsSync as existsSync9 } from "node:fs";
+import { existsSync as existsSync11 } from "node:fs";
 import { readdir as readdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
-import { basename as basename2, join as join9 } from "node:path";
+import { basename as basename2, join as join10 } from "node:path";
 function usage() {
   return [
     "Usage:",
@@ -19886,22 +20667,22 @@ function splitKeyPath(key) {
   return path;
 }
 function getSpecialistDir(projectDir) {
-  return join9(projectDir, "config", "specialists");
+  return join10(projectDir, "config", "specialists");
 }
 function getSpecialistNameFromPath(path) {
   return path.replace(/\.specialist\.yaml$/, "");
 }
 async function listSpecialistFiles(projectDir) {
   const specialistDir = getSpecialistDir(projectDir);
-  if (!existsSync9(specialistDir)) {
+  if (!existsSync11(specialistDir)) {
     throw new Error(`Missing directory: ${specialistDir}`);
   }
   const entries = await readdir2(specialistDir);
-  return entries.filter((entry) => entry.endsWith(".specialist.yaml")).sort((a, b) => a.localeCompare(b)).map((entry) => join9(specialistDir, entry));
+  return entries.filter((entry) => entry.endsWith(".specialist.yaml")).sort((a, b) => a.localeCompare(b)).map((entry) => join10(specialistDir, entry));
 }
 async function findNamedSpecialistFile(projectDir, name) {
-  const path = join9(getSpecialistDir(projectDir), `${name}.specialist.yaml`);
-  if (!existsSync9(path)) {
+  const path = join10(getSpecialistDir(projectDir), `${name}.specialist.yaml`);
+  if (!existsSync11(path)) {
     throw new Error(`Specialist not found in config/specialists/: ${name}`);
   }
   return path;
@@ -19926,7 +20707,7 @@ async function getAcrossFiles(files, keyPath) {
     const doc2 = $parseDocument(content);
     const value = doc2.getIn(keyPath);
     const name = getSpecialistNameFromPath(basename2(file));
-    console.log(`${yellow7(name)}: ${formatValue(value)}`);
+    console.log(`${yellow8(name)}: ${formatValue(value)}`);
   }
 }
 async function setAcrossFiles(files, keyPath, rawValue) {
@@ -19937,9 +20718,9 @@ async function setAcrossFiles(files, keyPath, rawValue) {
     doc2.setIn(keyPath, typedValue);
     await writeFile2(file, doc2.toString(), "utf-8");
   }
-  console.log(`${green6("✓")} updated ${files.length} specialist${files.length === 1 ? "" : "s"}: ` + `${keyPath.join(".")} = ${formatValue(typedValue)}`);
+  console.log(`${green7("✓")} updated ${files.length} specialist${files.length === 1 ? "" : "s"}: ` + `${keyPath.join(".")} = ${formatValue(typedValue)}`);
 }
-async function run8() {
+async function run9() {
   let args;
   try {
     args = parseArgs5(process.argv.slice(3));
@@ -19972,7 +20753,7 @@ async function run8() {
   }
   await setAcrossFiles(files, keyPath, args.value);
 }
-var green6 = (s) => `\x1B[32m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError3;
+var green7 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, ArgParseError3;
 var init_config = __esm(() => {
   init_dist();
   ArgParseError3 = class ArgParseError3 extends Error {
@@ -20029,6 +20810,10 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
     case "turn_end":
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
+    case "auto_compaction":
+      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: "end" };
+    case "auto_retry":
+      return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: "end" };
     case "text":
       return { t, type: TIMELINE_EVENT_TYPES.TEXT };
     case "agent_end":
@@ -20063,6 +20848,45 @@ function createStaleWarningEvent(reason, options) {
     silence_ms: options.silence_ms,
     threshold_ms: options.threshold_ms,
     ...options.tool !== undefined ? { tool: options.tool } : {}
+  };
+}
+function createTokenUsageEvent(token_usage, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
+    token_usage,
+    source
+  };
+}
+function createFinishReasonEvent(finish_reason, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
+    finish_reason,
+    source
+  };
+}
+function createTurnSummaryEvent(turn_index, token_usage, finish_reason) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
+    turn_index,
+    ...token_usage ? { token_usage } : {},
+    ...finish_reason ? { finish_reason } : {}
+  };
+}
+function createCompactionEvent(phase) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.COMPACTION,
+    phase
+  };
+}
+function createRetryEvent(phase) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RETRY,
+    phase
   };
 }
 function createRunCompleteEvent(status, elapsed_s, options) {
@@ -20123,6 +20947,11 @@ var init_timeline_events = __esm(() => {
     TURN: "turn",
     RUN_COMPLETE: "run_complete",
     STALE_WARNING: "stale_warning",
+    TOKEN_USAGE: "token_usage",
+    FINISH_REASON: "finish_reason",
+    TURN_SUMMARY: "turn_summary",
+    COMPACTION: "compaction",
+    RETRY: "retry",
     DONE: "done",
     AGENT_END: "agent_end"
   };
@@ -20132,24 +20961,24 @@ var init_timeline_events = __esm(() => {
 import {
   appendFileSync,
   closeSync,
-  existsSync as existsSync10,
+  existsSync as existsSync12,
   fsyncSync,
-  mkdirSync as mkdirSync2,
+  mkdirSync as mkdirSync3,
   openSync,
   readdirSync as readdirSync4,
-  readFileSync as readFileSync5,
+  readFileSync as readFileSync6,
   renameSync as renameSync2,
   rmSync,
   statSync,
-  writeFileSync as writeFileSync3,
+  writeFileSync as writeFileSync4,
   writeSync
 } from "node:fs";
-import { join as join10 } from "node:path";
+import { join as join11 } from "node:path";
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
-import { spawnSync as spawnSync6, execFileSync } from "node:child_process";
+import { spawnSync as spawnSync8, execFileSync as execFileSync2 } from "node:child_process";
 function getCurrentGitSha() {
-  const result = spawnSync6("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -20175,58 +21004,74 @@ ${metadata}`;
 
 class Supervisor {
   opts;
+  sqliteClient;
   constructor(opts) {
     this.opts = opts;
+    this.sqliteClient = createObservabilitySqliteClient();
   }
   jobDir(id) {
-    return join10(this.opts.jobsDir, id);
+    return join11(this.opts.jobsDir, id);
   }
   statusPath(id) {
-    return join10(this.jobDir(id), "status.json");
+    return join11(this.jobDir(id), "status.json");
   }
   resultPath(id) {
-    return join10(this.jobDir(id), "result.txt");
+    return join11(this.jobDir(id), "result.txt");
   }
   eventsPath(id) {
-    return join10(this.jobDir(id), "events.jsonl");
+    return join11(this.jobDir(id), "events.jsonl");
   }
   readyDir() {
-    return join10(this.opts.jobsDir, "..", "ready");
+    return join11(this.opts.jobsDir, "..", "ready");
   }
   writeReadyMarker(id) {
-    mkdirSync2(this.readyDir(), { recursive: true });
-    writeFileSync3(join10(this.readyDir(), id), "", "utf-8");
+    mkdirSync3(this.readyDir(), { recursive: true });
+    writeFileSync4(join11(this.readyDir(), id), "", "utf-8");
   }
   readStatus(id) {
+    try {
+      const sqliteStatus = this.sqliteClient?.readStatus(id);
+      if (sqliteStatus)
+        return sqliteStatus;
+    } catch {}
     const path = this.statusPath(id);
-    if (!existsSync10(path))
+    if (!existsSync12(path))
       return null;
     try {
-      return JSON.parse(readFileSync5(path, "utf-8"));
+      return JSON.parse(readFileSync6(path, "utf-8"));
     } catch {
       return null;
     }
   }
   listJobs() {
-    if (!existsSync10(this.opts.jobsDir))
+    try {
+      const sqliteJobs = this.sqliteClient?.listStatuses() ?? [];
+      if (sqliteJobs.length > 0) {
+        return sqliteJobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      }
+    } catch {}
+    if (!existsSync12(this.opts.jobsDir))
       return [];
     const jobs = [];
     for (const entry of readdirSync4(this.opts.jobsDir)) {
-      const path = join10(this.opts.jobsDir, entry, "status.json");
-      if (!existsSync10(path))
+      const path = join11(this.opts.jobsDir, entry, "status.json");
+      if (!existsSync12(path))
         continue;
       try {
-        jobs.push(JSON.parse(readFileSync5(path, "utf-8")));
+        jobs.push(JSON.parse(readFileSync6(path, "utf-8")));
       } catch {}
     }
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
   writeStatusFile(id, data) {
-    mkdirSync2(this.jobDir(id), { recursive: true });
+    mkdirSync3(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + ".tmp";
-    writeFileSync3(tmp, JSON.stringify(data, null, 2), "utf-8");
+    writeFileSync4(tmp, JSON.stringify(data, null, 2), "utf-8");
     renameSync2(tmp, path);
+    try {
+      this.sqliteClient?.upsertStatus(data);
+    } catch {}
   }
   updateStatus(id, updates) {
     const current = this.readStatus(id);
@@ -20235,11 +21080,11 @@ class Supervisor {
     this.writeStatusFile(id, { ...current, ...updates });
   }
   gc() {
-    if (!existsSync10(this.opts.jobsDir))
+    if (!existsSync12(this.opts.jobsDir))
       return;
     const cutoff = Date.now() - JOB_TTL_DAYS * 86400000;
     for (const entry of readdirSync4(this.opts.jobsDir)) {
-      const dir = join10(this.opts.jobsDir, entry);
+      const dir = join11(this.opts.jobsDir, entry);
       try {
         const stat2 = statSync(dir);
         if (!stat2.isDirectory())
@@ -20250,7 +21095,7 @@ class Supervisor {
     }
   }
   crashRecovery() {
-    if (!existsSync10(this.opts.jobsDir))
+    if (!existsSync12(this.opts.jobsDir))
       return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
@@ -20258,11 +21103,11 @@ class Supervisor {
     };
     const now = Date.now();
     for (const entry of readdirSync4(this.opts.jobsDir)) {
-      const statusPath = join10(this.opts.jobsDir, entry, "status.json");
-      if (!existsSync10(statusPath))
+      const statusPath = join11(this.opts.jobsDir, entry, "status.json");
+      if (!existsSync12(statusPath))
         continue;
       try {
-        const s = JSON.parse(readFileSync5(statusPath, "utf-8"));
+        const s = JSON.parse(readFileSync6(statusPath, "utf-8"));
         if (s.status === "running" || s.status === "starting") {
           if (!s.pid)
             continue;
@@ -20275,7 +21120,7 @@ class Supervisor {
           if (!pidAlive) {
             const tmp = statusPath + ".tmp";
             const updated = { ...s, status: "error", error: "Process crashed or was killed" };
-            writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
             renameSync2(tmp, statusPath);
           } else if (s.status === "running") {
             const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
@@ -20287,7 +21132,7 @@ class Supervisor {
                 status: "error",
                 error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
               };
-              writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
               renameSync2(tmp, statusPath);
             }
           }
@@ -20295,7 +21140,7 @@ class Supervisor {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join10(this.opts.jobsDir, entry, "events.jsonl");
+            const eventsPath = join11(this.opts.jobsDir, entry, "events.jsonl");
             const event = createStaleWarningEvent("waiting_stale", {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms
@@ -20316,8 +21161,8 @@ class Supervisor {
     const id = crypto.randomUUID().slice(0, 6);
     const dir = this.jobDir(id);
     const startedAtMs = Date.now();
-    mkdirSync2(dir, { recursive: true });
-    mkdirSync2(this.readyDir(), { recursive: true });
+    mkdirSync3(dir, { recursive: true });
+    mkdirSync3(this.readyDir(), { recursive: true });
     const initialStatus = {
       id,
       specialist: runOptions.name,
@@ -20328,13 +21173,23 @@ class Supervisor {
       ...process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}
     };
     this.writeStatusFile(id, initialStatus);
-    writeFileSync3(join10(this.opts.jobsDir, "latest"), `${id}
+    writeFileSync4(join11(this.opts.jobsDir, "latest"), `${id}
 `, "utf-8");
     this.opts.onJobStarted?.({ id });
     let statusSnapshot = initialStatus;
     const setStatus = (updates) => {
       statusSnapshot = { ...statusSnapshot, ...updates };
       this.writeStatusFile(id, statusSnapshot);
+    };
+    const mergeRunMetrics = (incoming) => {
+      if (!incoming)
+        return;
+      runMetrics = {
+        ...runMetrics,
+        ...incoming,
+        ...incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {}
+      };
+      setStatus({ metrics: runMetrics });
     };
     const eventsFd = openSync(this.eventsPath(id), "a");
     const appendTimelineEvent = (event) => {
@@ -20344,15 +21199,24 @@ class Supervisor {
       } catch (err) {
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
+      try {
+        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
+      } catch {}
     };
     appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
-    const fifoPath = join10(dir, "steer.pipe");
+    const fifoPath = join11(dir, "steer.pipe");
     try {
-      execFileSync("mkfifo", [fifoPath]);
+      execFileSync2("mkfifo", [fifoPath]);
       setStatus({ fifo_path: fifoPath });
     } catch {}
     let textLogged = false;
     let currentTool = "";
+    let runMetrics = {
+      turns: 0,
+      tool_calls: 0,
+      auto_compactions: 0,
+      auto_retries: 0
+    };
     let currentToolCallId = "";
     let currentToolArgs;
     let currentToolIsError = false;
@@ -20386,8 +21250,11 @@ class Supervisor {
       try {
         const output = await resumeFn(task);
         latestOutput = output;
-        mkdirSync2(this.jobDir(id), { recursive: true });
-        writeFileSync3(this.resultPath(id), output, "utf-8");
+        mkdirSync3(this.jobDir(id), { recursive: true });
+        writeFileSync4(this.resultPath(id), output, "utf-8");
+        try {
+          this.sqliteClient?.upsertResult(id, output);
+        } catch {}
         const waitingAt = Date.now();
         setStatus({
           status: "waiting",
@@ -20498,6 +21365,37 @@ class Supervisor {
           textLogged = true;
           appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
         }
+      }, (metricEvent) => {
+        if (metricEvent.type === "token_usage") {
+          mergeRunMetrics({ token_usage: metricEvent.token_usage });
+          appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
+          return;
+        }
+        if (metricEvent.type === "finish_reason") {
+          mergeRunMetrics({ finish_reason: metricEvent.finish_reason });
+          appendTimelineEvent(createFinishReasonEvent(metricEvent.finish_reason, metricEvent.source));
+          return;
+        }
+        if (metricEvent.type === "turn_summary") {
+          mergeRunMetrics({
+            turns: metricEvent.turn_index,
+            ...metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {},
+            ...metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}
+          });
+          appendTimelineEvent(createTurnSummaryEvent(metricEvent.turn_index, metricEvent.token_usage, metricEvent.finish_reason));
+          return;
+        }
+        if (metricEvent.type === "compaction") {
+          const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
+          mergeRunMetrics({ auto_compactions: compactions });
+          appendTimelineEvent(createCompactionEvent(metricEvent.phase));
+          return;
+        }
+        if (metricEvent.type === "retry") {
+          const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
+          mergeRunMetrics({ auto_retries: retries });
+          appendTimelineEvent(createRetryEvent(metricEvent.phase));
+        }
       }, (meta) => {
         setStatus({ model: meta.model, backend: meta.backend });
         appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
@@ -20508,7 +21406,7 @@ class Supervisor {
         setStatus({ bead_id: beadId });
       }, (fn) => {
         steerFn = fn;
-        if (!existsSync10(fifoPath))
+        if (!existsSync12(fifoPath))
           return;
         fifoReadStream = createReadStream(fifoPath, { flags: "r+" });
         fifoReadline = createInterface({ input: fifoReadStream });
@@ -20540,6 +21438,7 @@ class Supervisor {
         currentToolIsError = false;
         toolStartMs = Date.now();
         toolDurationWarnEmitted = false;
+        mergeRunMetrics({ tool_calls: (runMetrics.tool_calls ?? 0) + 1 });
         setStatus({ current_tool: tool });
         if (toolCallId) {
           activeToolCalls.set(toolCallId, { tool, args });
@@ -20559,8 +21458,11 @@ class Supervisor {
         toolDurationWarnEmitted = false;
       });
       latestOutput = result.output;
-      mkdirSync2(this.jobDir(id), { recursive: true });
-      writeFileSync3(this.resultPath(id), latestOutput, "utf-8");
+      mkdirSync3(this.jobDir(id), { recursive: true });
+      writeFileSync4(this.resultPath(id), latestOutput, "utf-8");
+      try {
+        this.sqliteClient?.upsertResult(id, latestOutput);
+      } catch {}
       if (keepAliveSession) {
         setStatus({
           status: "waiting",
@@ -20581,6 +21483,7 @@ class Supervisor {
         ...result,
         output: latestOutput
       };
+      mergeRunMetrics(finalResult.metrics);
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
       const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
@@ -20605,13 +21508,15 @@ class Supervisor {
         last_event_at_ms: Date.now(),
         model: finalResult.model,
         backend: finalResult.backend,
-        bead_id: finalResult.beadId
+        bead_id: finalResult.beadId,
+        metrics: runMetrics
       });
       appendTimelineEvent(createRunCompleteEvent("COMPLETE", elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
-        output: finalResult.output
+        output: finalResult.output,
+        metrics: runMetrics
       }));
       this.writeReadyMarker(id);
       return id;
@@ -20624,7 +21529,8 @@ class Supervisor {
         error: errorMsg
       });
       appendTimelineEvent(createRunCompleteEvent("ERROR", elapsed, {
-        error: errorMsg
+        error: errorMsg,
+        metrics: runMetrics
       }));
       this.writeReadyMarker(id);
       throw err;
@@ -20643,11 +21549,11 @@ class Supervisor {
       } catch {}
       closeSync(eventsFd);
       try {
-        if (existsSync10(fifoPath))
+        if (existsSync12(fifoPath))
           rmSync(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync6("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync8("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
     }
   }
@@ -20655,6 +21561,7 @@ class Supervisor {
 var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS;
 var init_supervisor = __esm(() => {
   init_timeline_events();
+  init_observability_sqlite();
   JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
   STALL_DETECTION_DEFAULTS = {
     running_silence_warn_ms: 60000,
@@ -20710,7 +21617,7 @@ function formatToolDetail(event) {
   const toolName = cyan4(event.tool);
   if (event.phase === "start") {
     if (typeof event.args?.command === "string") {
-      return `${toolName}: ${yellow8(formatToolArgValue(event.args.command))}`;
+      return `${toolName}: ${yellow9(formatToolArgValue(event.args.command))}`;
     }
     if (event.args && Object.keys(event.args).length > 0) {
       const argStr = Object.entries(event.args).map(([k, v]) => `${k}=${formatToolArgValue(v)}`).join(" ");
@@ -20727,7 +21634,7 @@ function formatEventLine(event, options) {
   const ts = dim7(formatTime(event.t));
   const job = options.colorize(`[${options.jobId}]`);
   const bead = dim7(`[${options.beadId ?? "-"}]`);
-  const label = options.colorize(bold7(getEventLabel(event.type).padEnd(5)));
+  const label = options.colorize(bold8(getEventLabel(event.type).padEnd(5)));
   const detailParts = [];
   let detail = "";
   if (event.type === "meta") {
@@ -20738,6 +21645,11 @@ function formatEventLine(event, options) {
   } else if (event.type === "run_complete") {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
+    if (event.metrics?.finish_reason)
+      detailParts.push(`finish=${event.metrics.finish_reason}`);
+    if (event.metrics?.token_usage?.total_tokens !== undefined) {
+      detailParts.push(`tokens=${event.metrics.token_usage.total_tokens}`);
+    }
     if (event.error) {
       detailParts.push(`error=${event.error}`);
     }
@@ -20746,6 +21658,28 @@ function formatEventLine(event, options) {
     if (event.bead_id) {
       detailParts.push(`bead=${event.bead_id}`);
     }
+  } else if (event.type === "token_usage") {
+    const usage2 = event.token_usage;
+    if (usage2.total_tokens !== undefined)
+      detailParts.push(`total=${usage2.total_tokens}`);
+    if (usage2.input_tokens !== undefined)
+      detailParts.push(`in=${usage2.input_tokens}`);
+    if (usage2.output_tokens !== undefined)
+      detailParts.push(`out=${usage2.output_tokens}`);
+    if (usage2.cost_usd !== undefined)
+      detailParts.push(`cost=$${usage2.cost_usd.toFixed(6)}`);
+  } else if (event.type === "finish_reason") {
+    detailParts.push(`reason=${event.finish_reason}`);
+    detailParts.push(`source=${event.source}`);
+  } else if (event.type === "turn_summary") {
+    detailParts.push(`turn=${event.turn_index}`);
+    if (event.finish_reason)
+      detailParts.push(`reason=${event.finish_reason}`);
+    if (event.token_usage?.total_tokens !== undefined) {
+      detailParts.push(`total=${event.token_usage.total_tokens}`);
+    }
+  } else if (event.type === "compaction" || event.type === "retry") {
+    detailParts.push(`phase=${event.phase}`);
   } else if (event.type === "text") {
     detailParts.push("kind=assistant");
   } else if (event.type === "thinking") {
@@ -20778,7 +21712,7 @@ function formatEventInline(event) {
       return `${dim7("[tool]")}  ${cyan4(event.tool)}${dim7(argStr)}`;
     }
     case "stale_warning":
-      return yellow8(`[warning] ${event.reason}: ${Math.round(event.silence_ms / 1000)}s silent`);
+      return yellow9(`[warning] ${event.reason}: ${Math.round(event.silence_ms / 1000)}s silent`);
     default:
       return null;
   }
@@ -20795,9 +21729,9 @@ function formatEventInlineDebounced(event, activePhase) {
     nextPhase: null
   };
 }
-var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold7 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta2 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim7 = (s) => `\x1B[2m${s}\x1B[0m`, bold8 = (s) => `\x1B[1m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta2 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
-  JOB_COLORS = [cyan4, yellow8, magenta2, green7, blue, red2];
+  JOB_COLORS = [cyan4, yellow9, magenta2, green8, blue, red2];
   EVENT_LABELS = {
     run_start: "START",
     meta: "META",
@@ -20807,12 +21741,17 @@ var init_format_helpers = __esm(() => {
     message: "MSG",
     turn: "TURN",
     run_complete: "DONE",
+    token_usage: "TOKNS",
+    finish_reason: "FINSH",
+    turn_summary: "TURN+",
+    compaction: "CMPCT",
+    retry: "RETRY",
     error: "ERR"
   };
 });
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync9 } from "node:child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -20820,7 +21759,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync7("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync9("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -20835,14 +21774,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync7("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync9("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function killTmuxSession(name) {
-  spawnSync7("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync9("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -20850,10 +21789,10 @@ var init_tmux_utils = () => {};
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run9
+  run: () => run10
 });
-import { join as join11 } from "node:path";
-import { readFileSync as readFileSync6 } from "node:fs";
+import { join as join12 } from "node:path";
+import { readFileSync as readFileSync7 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { spawn as cpSpawn } from "node:child_process";
 async function parseArgs6(argv) {
@@ -20942,13 +21881,13 @@ async function parseArgs6(argv) {
   return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive, background, contextDepth, outputMode };
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
-  const eventsPath = join11(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join12(jobsDir, jobId, "events.jsonl");
   let linesRead = 0;
   let activeInlinePhase = null;
   const drain = () => {
     let content;
     try {
-      content = readFileSync6(eventsPath, "utf-8");
+      content = readFileSync7(eventsPath, "utf-8");
     } catch {
       return;
     }
@@ -21007,13 +21946,13 @@ function formatFooterModel(backend, model) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
-async function run9() {
+async function run10() {
   const args = await parseArgs6(process.argv.slice(3));
   if (args.background) {
-    const latestPath = join11(process.cwd(), ".specialists", "jobs", "latest");
+    const latestPath = join12(process.cwd(), ".specialists", "jobs", "latest");
     const oldLatest = (() => {
       try {
-        return readFileSync6(latestPath, "utf-8").trim();
+        return readFileSync7(latestPath, "utf-8").trim();
       } catch {
         return "";
       }
@@ -21041,7 +21980,7 @@ async function run9() {
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 100));
       try {
-        const current = readFileSync6(latestPath, "utf-8").trim();
+        const current = readFileSync7(latestPath, "utf-8").trim();
         if (current && current !== oldLatest) {
           jobId2 = current;
           break;
@@ -21061,7 +22000,7 @@ async function run9() {
   }
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join11(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join12(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -21096,7 +22035,7 @@ async function run9() {
     beadsClient
   });
   const beadsWriteNotes = args.noBeadNotes ? false : specialist.specialist.beads_write_notes ?? true;
-  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
   let stopTailer;
   const supervisor = new Supervisor({
     runner,
@@ -21127,7 +22066,7 @@ async function run9() {
     }
   });
   process.stderr.write(`
-${bold8(`Running ${cyan5(args.name)}`)}
+${bold9(`Running ${cyan5(args.name)}`)}
 
 `);
   let jobId;
@@ -21150,7 +22089,7 @@ ${bold8(`Running ${cyan5(args.name)}`)}
     modelLabel ? dim8(modelLabel) : ""
   ].filter(Boolean).join("  ");
   process.stderr.write(`
-${green8("✓")} ${footer}
+${green9("✓")} ${footer}
 
 `);
   process.stderr.write(dim8(`Poll: specialists poll ${jobId} --json
@@ -21158,7 +22097,7 @@ ${green8("✓")} ${footer}
 `));
   process.exit(0);
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -21173,16 +22112,16 @@ var init_run = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run10
+  run: () => run11
 });
-import { spawnSync as spawnSync8 } from "node:child_process";
-import { existsSync as existsSync11, readFileSync as readFileSync7 } from "node:fs";
-import { join as join12 } from "node:path";
+import { spawnSync as spawnSync10 } from "node:child_process";
+import { existsSync as existsSync13, readFileSync as readFileSync8 } from "node:fs";
+import { join as join13 } from "node:path";
 function ok2(msg) {
-  console.log(`  ${green7("✓")} ${msg}`);
+  console.log(`  ${green8("✓")} ${msg}`);
 }
 function warn(msg) {
-  console.log(`  ${yellow8("○")} ${msg}`);
+  console.log(`  ${yellow9("○")} ${msg}`);
 }
 function fail(msg) {
   console.log(`  ${red2("✗")} ${msg}`);
@@ -21193,10 +22132,10 @@ function info(msg) {
 function section(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold7(`── ${label} ${line}`)}`);
+${bold8(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync8(bin, args, {
+  const r = spawnSync10(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -21204,7 +22143,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync8("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -21218,11 +22157,11 @@ function statusColor(status) {
     case "running":
       return cyan4(status);
     case "done":
-      return green7(status);
+      return green8(status);
     case "error":
       return red2(status);
     case "starting":
-      return yellow8(status);
+      return yellow9(status);
     default:
       return status;
   }
@@ -21256,10 +22195,10 @@ function parseStatusArgs(argv) {
   return { jsonMode, jobId };
 }
 function countJobEvents(jobsDir, jobId) {
-  const eventsFile = join12(jobsDir, jobId, "events.jsonl");
-  if (!existsSync11(eventsFile))
+  const eventsFile = join13(jobsDir, jobId, "events.jsonl");
+  if (!existsSync13(eventsFile))
     return 0;
-  const raw = readFileSync7(eventsFile, "utf-8").trim();
+  const raw = readFileSync8(eventsFile, "utf-8").trim();
   if (!raw)
     return 0;
   return raw.split(`
@@ -21267,7 +22206,7 @@ function countJobEvents(jobsDir, jobId) {
 }
 function renderJobDetail(job, eventCount) {
   console.log(`
-${bold7("specialists status")}
+${bold8("specialists status")}
 `);
   section(`Job ${job.id}`);
   console.log(`  specialist   ${job.specialist}`);
@@ -21277,13 +22216,21 @@ ${bold7("specialists status")}
   console.log(`  elapsed      ${formatElapsed2(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? "n/a"}`);
   console.log(`  events       ${eventCount}`);
+  if (job.metrics?.finish_reason)
+    console.log(`  finish       ${job.metrics.finish_reason}`);
+  if (job.metrics?.token_usage?.total_tokens !== undefined) {
+    console.log(`  tokens       ${job.metrics.token_usage.total_tokens}`);
+  }
+  if (job.metrics?.token_usage?.cost_usd !== undefined) {
+    console.log(`  cost_usd     ${job.metrics.token_usage.cost_usd}`);
+  }
   if (job.session_file)
     console.log(`  session_file ${job.session_file}`);
   if (job.error)
     console.log(`  error        ${red2(job.error)}`);
   console.log();
 }
-async function run10() {
+async function run11() {
   const argv = process.argv.slice(3);
   let parsedArgs;
   try {
@@ -21302,12 +22249,12 @@ async function run10() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync11(join12(process.cwd(), ".beads"));
+  const beadsPresent = existsSync13(join13(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   let jobs = [];
   let supervisor = null;
-  if (existsSync11(jobsDir)) {
+  if (existsSync13(jobsDir)) {
     supervisor = new Supervisor({
       runner: null,
       runOptions: null,
@@ -21374,6 +22321,7 @@ async function run10() {
         status: j.status,
         elapsed_s: j.elapsed_s,
         current_tool: j.current_tool ?? null,
+        metrics: j.metrics ?? null,
         error: j.error ?? null
       }))
     };
@@ -21381,11 +22329,11 @@ async function run10() {
     return;
   }
   console.log(`
-${bold7("specialists status")}
+${bold8("specialists status")}
 `);
   section("Specialists");
   if (allSpecialists.length === 0) {
-    warn(`no specialists found — run ${yellow8("specialists init")} to scaffold`);
+    warn(`no specialists found — run ${yellow9("specialists init")} to scaffold`);
   } else {
     const byScope = allSpecialists.reduce((acc, s) => {
       acc[s.scope] = (acc[s.scope] ?? 0) + 1;
@@ -21398,32 +22346,32 @@ ${bold7("specialists status")}
       if (staleness === "AGED") {
         warn(`${s.name}  ${red2("AGED")}  ${dim7(s.scope)}`);
       } else if (staleness === "STALE") {
-        warn(`${s.name}  ${yellow8("STALE")}  ${dim7(s.scope)}`);
+        warn(`${s.name}  ${yellow9("STALE")}  ${dim7(s.scope)}`);
       }
     }
   }
   section("pi  (coding agent runtime)");
   if (!piInstalled) {
-    fail(`pi not installed — install ${yellow8("pi")} first`);
+    fail(`pi not installed — install ${yellow9("pi")} first`);
   } else {
     const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
-    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim7(`(${[...piProviders].join(", ")})`)} ` : yellow8("no providers configured — run pi config");
+    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim7(`(${[...piProviders].join(", ")})`)} ` : yellow9("no providers configured — run pi config");
     ok2(`${vStr}  —  ${pStr}`);
   }
   section("beads  (issue tracker)");
   if (!bdInstalled) {
-    fail(`bd not installed — install ${yellow8("bd")} first`);
+    fail(`bd not installed — install ${yellow9("bd")} first`);
   } else {
     ok2(`bd installed${bdVersion?.ok ? `  ${dim7(bdVersion.stdout)}` : ""}`);
     if (beadsPresent) {
       ok2(".beads/ present in project");
     } else {
-      warn(`.beads/ not found — run ${yellow8("bd init")} to enable issue tracking`);
+      warn(`.beads/ not found — run ${yellow9("bd init")} to enable issue tracking`);
     }
   }
   section("MCP");
   if (!specialistsBin.ok) {
-    fail(`specialists not installed globally — run ${yellow8("npm install -g @jaggerxtrm/specialists")}`);
+    fail(`specialists not installed globally — run ${yellow9("npm install -g @jaggerxtrm/specialists")}`);
   } else {
     ok2(`specialists binary installed  ${dim7(specialistsBin.stdout)}`);
     info(`verify registration: claude mcp get specialists`);
@@ -21450,10 +22398,10 @@ var init_status = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run11
+  run: () => run12
 });
-import { existsSync as existsSync12, readFileSync as readFileSync8 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync14, readFileSync as readFileSync9 } from "node:fs";
+import { join as join14 } from "node:path";
 function parseArgs7(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
@@ -21480,12 +22428,23 @@ function parseArgs7(argv) {
   }
   return { jobId, wait, timeout };
 }
-async function run11() {
+async function run12() {
   const args = parseArgs7(process.argv.slice(3));
   const { jobId } = args;
-  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const resultPath = join13(jobsDir, jobId, "result.txt");
+  const sqliteClient = createObservabilitySqliteClient();
+  const resultPath = join14(jobsDir, jobId, "result.txt");
+  const readResultOutput = () => {
+    if (existsSync14(resultPath)) {
+      return readFileSync9(resultPath, "utf-8");
+    }
+    try {
+      return sqliteClient?.readResult(jobId) ?? null;
+    } catch {
+      return null;
+    }
+  };
   if (args.wait) {
     const startMs = Date.now();
     while (true) {
@@ -21495,11 +22454,12 @@ async function run11() {
         process.exit(1);
       }
       if (status2.status === "done") {
-        if (!existsSync12(resultPath)) {
-          console.error(`Result file not found for job ${jobId}`);
+        const output2 = readResultOutput();
+        if (!output2) {
+          console.error(`Result not found for job ${jobId}`);
           process.exit(1);
         }
-        process.stdout.write(readFileSync8(resultPath, "utf-8"));
+        process.stdout.write(output2);
         return;
       }
       if (status2.status === "error") {
@@ -21524,14 +22484,15 @@ async function run11() {
     process.exit(1);
   }
   if (status.status === "running" || status.status === "starting") {
-    if (!existsSync12(resultPath)) {
+    const output2 = readResultOutput();
+    if (!output2) {
       process.stderr.write(`${dim9(`Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`)}
 `);
       process.exit(1);
     }
     process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
-    process.stdout.write(readFileSync8(resultPath, "utf-8"));
+    process.stdout.write(output2);
     return;
   }
   if (status.status === "error") {
@@ -21539,25 +22500,35 @@ async function run11() {
 `);
     process.exit(1);
   }
-  if (!existsSync12(resultPath)) {
-    console.error(`Result file not found for job ${jobId}`);
+  const output = readResultOutput();
+  if (!output) {
+    console.error(`Result not found for job ${jobId}`);
     process.exit(1);
   }
-  process.stdout.write(readFileSync8(resultPath, "utf-8"));
+  process.stdout.write(output);
 }
 var dim9 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
+  init_observability_sqlite();
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync13, readdirSync as readdirSync5, readFileSync as readFileSync9 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync10 } from "node:fs";
+import { basename as basename3, join as join15 } from "node:path";
 function readJobEvents(jobDir) {
-  const eventsPath = join14(jobDir, "events.jsonl");
-  if (!existsSync13(eventsPath))
+  const jobId = basename3(jobDir);
+  try {
+    const sqliteEvents = createObservabilitySqliteClient()?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      sqliteEvents.sort(compareTimelineEvents);
+      return sqliteEvents;
+    }
+  } catch {}
+  const eventsPath = join15(jobDir, "events.jsonl");
+  if (!existsSync15(eventsPath))
     return [];
-  const content = readFileSync9(eventsPath, "utf-8");
+  const content = readFileSync10(eventsPath, "utf-8");
   const lines = content.split(`
 `).filter(Boolean);
   const events = [];
@@ -21570,15 +22541,15 @@ function readJobEvents(jobDir) {
   return events;
 }
 function readJobEventsById(jobsDir, jobId) {
-  return readJobEvents(join14(jobsDir, jobId));
+  return readJobEvents(join15(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  if (!existsSync13(jobsDir))
+  if (!existsSync15(jobsDir))
     return [];
   const batches = [];
   const entries = readdirSync5(jobsDir);
   for (const entry of entries) {
-    const jobDir = join14(jobsDir, entry);
+    const jobDir = join15(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -21587,12 +22558,12 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join14(jobDir, "status.json");
+    const statusPath = join15(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync13(statusPath)) {
+    if (existsSync15(statusPath)) {
       try {
-        const status = JSON.parse(readFileSync9(statusPath, "utf-8"));
+        const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
         beadId = status.bead_id;
       } catch {}
@@ -21648,6 +22619,7 @@ function queryTimeline(jobsDir, filter = {}) {
 }
 var init_timeline_query = __esm(() => {
   init_timeline_events();
+  init_observability_sqlite();
 });
 
 // src/specialist/model-display.ts
@@ -21676,17 +22648,17 @@ function formatSpecialistModel(specialist, model) {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run12
+  run: () => run13
 });
 import {
   closeSync as closeSync2,
-  existsSync as existsSync14,
+  existsSync as existsSync16,
   openSync as openSync2,
-  readFileSync as readFileSync10,
+  readFileSync as readFileSync11,
   readdirSync as readdirSync6,
   statSync as statSync2
 } from "node:fs";
-import { join as join15 } from "node:path";
+import { join as join16 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -21705,6 +22677,15 @@ function getHumanEventKey(event) {
       return `run_start:${event.specialist}:${event.bead_id ?? ""}`;
     case "run_complete":
       return `run_complete:${event.status}:${event.error ?? ""}`;
+    case "token_usage":
+      return `token_usage:${event.token_usage.total_tokens ?? ""}:${event.source}`;
+    case "finish_reason":
+      return `finish_reason:${event.finish_reason}:${event.source}`;
+    case "turn_summary":
+      return `turn_summary:${event.turn_index}`;
+    case "compaction":
+    case "retry":
+      return `${event.type}:${event.phase}`;
     default:
       return event.type;
   }
@@ -21753,7 +22734,7 @@ function readFileFresh(filePath) {
   try {
     const fd = openSync2(filePath, "r");
     try {
-      return readFileSync10(fd, "utf-8");
+      return readFileSync11(fd, "utf-8");
     } finally {
       closeSync2(fd);
     }
@@ -21762,7 +22743,12 @@ function readFileFresh(filePath) {
   }
 }
 function readStatusJson(jobsDir, jobId) {
-  const statusPath = join15(jobsDir, jobId, "status.json");
+  try {
+    const sqliteStatus = sqliteClient?.readStatus(jobId);
+    if (sqliteStatus)
+      return sqliteStatus;
+  } catch {}
+  const statusPath = join16(jobsDir, jobId, "status.json");
   const raw = readFileFresh(statusPath);
   if (!raw)
     return null;
@@ -21784,6 +22770,7 @@ function readJobMeta(jobsDir, jobId) {
     model: typeof status.model === "string" ? status.model : undefined,
     backend: typeof status.backend === "string" ? status.backend : undefined,
     beadId: typeof status.bead_id === "string" ? status.bead_id : undefined,
+    metrics: typeof status.metrics === "object" && status.metrics !== null ? status.metrics : undefined,
     startedAtMs: typeof status.started_at_ms === "number" ? status.started_at_ms : Date.now()
   };
 }
@@ -21870,6 +22857,7 @@ function printSnapshot(merged, options, jobsDir) {
         model,
         backend,
         beadId: meta.beadId ?? beadId,
+        metrics: meta.metrics,
         elapsed_ms: Date.now() - meta.startedAtMs,
         ...event
       }));
@@ -21907,11 +22895,11 @@ function filterMergedEventsByCursor(merged, from) {
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
 function listMatchingJobIds(jobsDir, options) {
-  if (!existsSync14(jobsDir))
+  if (!existsSync16(jobsDir))
     return [];
   const jobIds = [];
   for (const entry of readdirSync6(jobsDir)) {
-    const jobDir = join15(jobsDir, entry);
+    const jobDir = join16(jobsDir, entry);
     try {
       if (!statSync2(jobDir).isDirectory())
         continue;
@@ -21931,7 +22919,14 @@ function listMatchingJobIds(jobsDir, options) {
   return jobIds;
 }
 function readJobEventsFresh(jobsDir, jobId) {
-  const eventsPath = join15(jobsDir, jobId, "events.jsonl");
+  try {
+    const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      sqliteEvents.sort((a, b) => a.t - b.t);
+      return sqliteEvents;
+    }
+  } catch {}
+  const eventsPath = join16(jobsDir, jobId, "events.jsonl");
   const content = readFileFresh(eventsPath);
   if (!content)
     return [];
@@ -22054,6 +23049,7 @@ async function followMerged(jobsDir, options) {
             model,
             backend,
             beadId: meta.beadId ?? beadId,
+            metrics: meta.metrics,
             elapsed_ms: Date.now() - meta.startedAtMs,
             ...event
           }));
@@ -22074,10 +23070,10 @@ async function followMerged(jobsDir, options) {
     }, 500);
   });
 }
-async function run12() {
+async function run13() {
   const options = parseArgs8(process.argv.slice(3));
-  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
-  if (!existsSync14(jobsDir)) {
+  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  if (!existsSync16(jobsDir)) {
     console.log(dim7("No jobs directory found."));
     return;
   }
@@ -22096,19 +23092,22 @@ async function run12() {
   }), options.from);
   printSnapshot(merged, options, jobsDir);
 }
+var sqliteClient;
 var init_feed = __esm(() => {
   init_timeline_events();
+  init_observability_sqlite();
   init_timeline_query();
   init_format_helpers();
+  sqliteClient = createObservabilitySqliteClient();
 });
 
 // src/cli/poll.ts
 var exports_poll = {};
 __export(exports_poll, {
-  run: () => run13
+  run: () => run14
 });
-import { existsSync as existsSync15, readFileSync as readFileSync11 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync12 } from "node:fs";
+import { join as join17 } from "node:path";
 function parseArgs9(argv) {
   let jobId;
   let cursor = 0;
@@ -22145,19 +23144,19 @@ function parseArgs9(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
-  const jobDir = join16(jobsDir, jobId);
-  const statusPath = join16(jobDir, "status.json");
+  const jobDir = join17(jobsDir, jobId);
+  const statusPath = join17(jobDir, "status.json");
   let status = null;
-  if (existsSync15(statusPath)) {
+  if (existsSync17(statusPath)) {
     try {
-      status = JSON.parse(readFileSync11(statusPath, "utf-8"));
+      status = JSON.parse(readFileSync12(statusPath, "utf-8"));
     } catch {}
   }
-  const resultPath = join16(jobDir, "result.txt");
+  const resultPath = join17(jobDir, "result.txt");
   let fullOutput = "";
-  if (existsSync15(resultPath)) {
+  if (existsSync17(resultPath)) {
     try {
-      fullOutput = readFileSync11(resultPath, "utf-8");
+      fullOutput = readFileSync12(resultPath, "utf-8");
     } catch {}
   }
   const events = readJobEventsById(jobsDir, jobId);
@@ -22187,11 +23186,11 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
     error: status?.error
   };
 }
-async function run13() {
+async function run14() {
   const { jobId, cursor, outputCursor } = parseArgs9(process.argv.slice(3));
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
-  const jobDir = join16(jobsDir, jobId);
-  if (!existsSync15(jobDir)) {
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
+  const jobDir = join17(jobsDir, jobId);
+  if (!existsSync17(jobDir)) {
     const result2 = {
       job_id: jobId,
       status: "error",
@@ -22220,18 +23219,18 @@ var init_poll = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run14
+  run: () => run15
 });
-import { join as join17 } from "node:path";
-import { writeFileSync as writeFileSync4 } from "node:fs";
-async function run14() {
+import { join as join18 } from "node:path";
+import { writeFileSync as writeFileSync5 } from "node:fs";
+async function run15() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
     console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -22253,8 +23252,8 @@ async function run14() {
   try {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-    writeFileSync4(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green9("✓")} Steer message sent to job ${jobId}
+    writeFileSync5(status.fifo_path, payload, { flag: "a" });
+    process.stdout.write(`${green10("✓")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
     process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
@@ -22262,7 +23261,7 @@ async function run14() {
     process.exit(1);
   }
 }
-var green9 = (s) => `\x1B[32m${s}\x1B[0m`, red4 = (s) => `\x1B[31m${s}\x1B[0m`;
+var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red4 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_steer = __esm(() => {
   init_supervisor();
 });
@@ -22270,18 +23269,18 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run15
+  run: () => run16
 });
-import { join as join18 } from "node:path";
-import { writeFileSync as writeFileSync5 } from "node:fs";
-async function run15() {
+import { join as join19 } from "node:path";
+import { writeFileSync as writeFileSync6 } from "node:fs";
+async function run16() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
     console.error('Usage: specialists|sp resume <job-id> "<task>"');
     process.exit(1);
   }
-  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -22303,8 +23302,8 @@ async function run15() {
   try {
     const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-    writeFileSync5(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green10("✓")} Resume sent to job ${jobId}
+    writeFileSync6(status.fifo_path, payload, { flag: "a" });
+    process.stdout.write(`${green11("✓")} Resume sent to job ${jobId}
 `);
     process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
 `);
@@ -22314,7 +23313,7 @@ async function run15() {
     process.exit(1);
   }
 }
-var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
+var green11 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_resume = __esm(() => {
   init_supervisor();
 });
@@ -22322,9 +23321,9 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run16
+  run: () => run17
 });
-async function run16() {
+async function run17() {
   process.stderr.write("\x1B[33m⚠ DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -22333,16 +23332,16 @@ async function run16() {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run17
+  run: () => run18
 });
 import {
-  existsSync as existsSync16,
+  existsSync as existsSync18,
   readdirSync as readdirSync7,
-  readFileSync as readFileSync12,
+  readFileSync as readFileSync13,
   rmSync as rmSync2,
   statSync as statSync3
 } from "node:fs";
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 function parseTtlDaysFromEnvironment() {
   const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
   if (!rawValue)
@@ -22398,7 +23397,7 @@ function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   const entries = readdirSync7(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
-    const entryPath = join19(directoryPath, entry.name);
+    const entryPath = join20(directoryPath, entry.name);
     const stats = statSync3(entryPath);
     if (stats.isDirectory()) {
       totalBytes += readDirectorySizeBytes(entryPath);
@@ -22408,16 +23407,33 @@ function readDirectorySizeBytes(directoryPath) {
   }
   return totalBytes;
 }
+function containsProtectedSqliteArtifact(directoryPath) {
+  const entries = readdirSync7(directoryPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = join20(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      if (containsProtectedSqliteArtifact(entryPath))
+        return true;
+      continue;
+    }
+    if (PROTECTED_SQLITE_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) {
+      return true;
+    }
+  }
+  return false;
+}
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
-  const directoryPath = join19(baseDirectory, entry.name);
-  const statusFilePath = join19(directoryPath, "status.json");
-  if (!existsSync16(statusFilePath))
+  const directoryPath = join20(baseDirectory, entry.name);
+  if (containsProtectedSqliteArtifact(directoryPath))
+    return null;
+  const statusFilePath = join20(directoryPath, "status.json");
+  if (!existsSync18(statusFilePath))
     return null;
   let statusData;
   try {
-    statusData = JSON.parse(readFileSync12(statusFilePath, "utf-8"));
+    statusData = JSON.parse(readFileSync13(statusFilePath, "utf-8"));
   } catch {
     return null;
   }
@@ -22490,7 +23506,7 @@ function printUsageAndExit(message) {
   console.error("Usage: specialists|sp clean [--all] [--keep <n>] [--dry-run]");
   process.exit(1);
 }
-async function run17() {
+async function run18() {
   let options;
   try {
     options = parseOptions(process.argv.slice(3));
@@ -22498,8 +23514,8 @@ async function run17() {
     const message = error2 instanceof Error ? error2.message : String(error2);
     printUsageAndExit(message);
   }
-  const jobsDirectoryPath = join19(process.cwd(), ".specialists", "jobs");
-  if (!existsSync16(jobsDirectoryPath)) {
+  const jobsDirectoryPath = join20(process.cwd(), ".specialists", "jobs");
+  if (!existsSync18(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
   }
@@ -22516,24 +23532,25 @@ async function run17() {
   }
   console.log(renderSummary(jobsToRemove.length, freedBytes, false));
 }
-var MS_PER_DAY = 86400000, DEFAULT_TTL_DAYS = 7, COMPLETED_STATUSES;
+var MS_PER_DAY = 86400000, DEFAULT_TTL_DAYS = 7, COMPLETED_STATUSES, PROTECTED_SQLITE_SUFFIXES;
 var init_clean = __esm(() => {
   COMPLETED_STATUSES = new Set(["done", "error"]);
+  PROTECTED_SQLITE_SUFFIXES = [".db", ".db-wal", ".db-shm"];
 });
 
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run18
+  run: () => run19
 });
-import { join as join20 } from "node:path";
-async function run18() {
+import { join as join21 } from "node:path";
+async function run19() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join20(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join21(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -22553,7 +23570,7 @@ async function run18() {
   const tmuxSession = status.tmux_session;
   try {
     process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green11("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
+    process.stdout.write(`${green12("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
     if (tmuxSession) {
       killTmuxSession(tmuxSession);
@@ -22576,7 +23593,7 @@ async function run18() {
     }
   }
 }
-var green11 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`;
+var green12 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`;
 var init_stop = __esm(() => {
   init_supervisor();
   init_tmux_utils();
@@ -22585,18 +23602,18 @@ var init_stop = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run19
+  run: () => run20
 });
-import { execFileSync as execFileSync2, spawnSync as spawnSync9 } from "node:child_process";
-import { readFileSync as readFileSync13 } from "node:fs";
-import { join as join21 } from "node:path";
+import { execFileSync as execFileSync3, spawnSync as spawnSync11 } from "node:child_process";
+import { readFileSync as readFileSync14 } from "node:fs";
+import { join as join22 } from "node:path";
 function exitWithError(message) {
   console.error(message);
   process.exit(1);
 }
 function readStatus(statusPath, jobId) {
   try {
-    return JSON.parse(readFileSync13(statusPath, "utf-8"));
+    return JSON.parse(readFileSync14(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
       exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
@@ -22605,13 +23622,13 @@ function readStatus(statusPath, jobId) {
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
   }
 }
-async function run19() {
+async function run20() {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
   }
-  const jobsDir = join21(process.cwd(), ".specialists", "jobs");
-  const statusPath = join21(jobsDir, jobId, "status.json");
+  const jobsDir = join22(process.cwd(), ".specialists", "jobs");
+  const statusPath = join22(jobsDir, jobId, "status.json");
   const status = readStatus(statusPath, jobId);
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
@@ -22620,12 +23637,12 @@ async function run19() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync9("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync11("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
   try {
-    execFileSync2("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
+    execFileSync3("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
   } catch {
     process.exit(1);
   }
@@ -22635,24 +23652,24 @@ var init_attach = () => {};
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run20
+  run: () => run21
 });
 function section2(title) {
   const bar = "─".repeat(60);
   return `
-${bold9(cyan6(title))}
+${bold10(cyan6(title))}
 ${dim11(bar)}`;
 }
 function cmd2(s) {
-  return yellow9(s);
+  return yellow10(s);
 }
 function flag(s) {
-  return green12(s);
+  return green13(s);
 }
-async function run20() {
+async function run21() {
   const lines = [
     "",
-    bold9("specialists  ·  Quick Start Guide"),
+    bold10("specialists  ·  Quick Start Guide"),
     dim11("One MCP server. Multiple AI backends. Intelligent orchestration."),
     dim11("Tip: sp is a shorter alias — sp run, sp list, sp feed etc. work identically."),
     ""
@@ -22691,10 +23708,10 @@ async function run20() {
   lines.push("");
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
-  lines.push(`  ${bold9("Foreground")} (streams output to stdout):`);
+  lines.push(`  ${bold10("Foreground")} (streams output to stdout):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim11('"Review src/api.ts for security issues"')}`);
   lines.push("");
-  lines.push(`  ${bold9("Tracked run")} (linked to a beads issue for workflow integration):`);
+  lines.push(`  ${bold10("Tracked run")} (linked to a beads issue for workflow integration):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--bead")} ${dim11("unitAI-abc")}`);
   lines.push(`  ${dim11("  # uses bead description as prompt, tracks result in issue")}`);
   lines.push("");
@@ -22709,32 +23726,32 @@ async function run20() {
   lines.push("");
   lines.push(section2("5. Async Job Lifecycle"));
   lines.push("");
-  lines.push(`  ${bold9("MCP pattern")}: ${cmd2("start_specialist")} → ${cmd2("feed_specialist")} (returns job_id directly)`);
-  lines.push(`  ${bold9("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim11("[job started: <id>]")} to stderr`);
-  lines.push(`  ${bold9("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
+  lines.push(`  ${bold10("MCP pattern")}: ${cmd2("start_specialist")} → ${cmd2("feed_specialist")} (returns job_id directly)`);
+  lines.push(`  ${bold10("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim11("[job started: <id>]")} to stderr`);
+  lines.push(`  ${bold10("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push("");
-  lines.push(`  ${bold9("Watch progress")} — stream events as they arrive:`);
+  lines.push(`  ${bold10("Watch progress")} — stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
   lines.push("");
-  lines.push(`  ${bold9("Read results")} — print the final output:`);
+  lines.push(`  ${bold10("Read results")} — print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
-  lines.push(`  ${bold9("Steer a running job")} — redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${bold10("Steer a running job")} — redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim11("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
-  lines.push(`  ${bold9("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${bold10("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
   lines.push(`  ${cmd2("specialists run debugger")} ${flag("--bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${dim11("  # → status: waiting after first turn")}`);
   lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
   lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
   lines.push("");
-  lines.push(`  ${bold9("Cancel a job")}:`);
+  lines.push(`  ${bold10("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
-  lines.push(`  ${bold9("Job files")} in ${dim11(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${bold10("Job files")} in ${dim11(".specialists/jobs/<job-id>/")}:`);
   lines.push(`  ${dim11("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
   lines.push(`  ${dim11("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
   lines.push(`  ${dim11("result.txt")}    — final output (written when status=done)`);
@@ -22804,11 +23821,11 @@ async function run20() {
   lines.push("");
   lines.push(`  Specialists emits lifecycle events to ${dim11(".specialists/trace.jsonl")}:`);
   lines.push("");
-  lines.push(`  ${bold9("Hook point")}              ${bold9("When fired")}`);
-  lines.push(`  ${yellow9("specialist:start")}       before the agent session begins`);
-  lines.push(`  ${yellow9("specialist:token")}       on each streamed token (delta)`);
-  lines.push(`  ${yellow9("specialist:done")}        after successful completion`);
-  lines.push(`  ${yellow9("specialist:error")}       on failure or timeout`);
+  lines.push(`  ${bold10("Hook point")}              ${bold10("When fired")}`);
+  lines.push(`  ${yellow10("specialist:start")}       before the agent session begins`);
+  lines.push(`  ${yellow10("specialist:token")}       on each streamed token (delta)`);
+  lines.push(`  ${yellow10("specialist:done")}        after successful completion`);
+  lines.push(`  ${yellow10("specialist:error")}       on failure or timeout`);
   lines.push("");
   lines.push(`  Each event line in trace.jsonl:`);
   lines.push(`  ${dim11('{"t":"<ISO>","hook":"specialist:done","specialist":"code-review","durationMs":4120}')}`);
@@ -22820,37 +23837,37 @@ async function run20() {
   lines.push("");
   lines.push(`  After ${cmd2("specialists init")}, these MCP tools are available to Claude:`);
   lines.push("");
-  lines.push(`  ${bold9("specialist_init")}    — bootstrap: bd init + list specialists`);
-  lines.push(`  ${bold9("list_specialists")}   — discover specialists (project/user/system)`);
-  lines.push(`  ${bold9("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
-  lines.push(`  ${bold9("run_parallel")}       — concurrent or pipeline execution`);
-  lines.push(`  ${bold9("start_specialist")}   — async job start, returns job ID`);
-  lines.push(`  ${bold9("feed_specialist")}    — stream events/output by job ID`);
-  lines.push(`  ${bold9("steer_specialist")}      — send a mid-run message to a running job`);
-  lines.push(`  ${bold9("resume_specialist")}    — resume a waiting keep-alive session with a next-turn prompt`);
-  lines.push(`  ${bold9("stop_specialist")}      — cancel a running job by ID`);
-  lines.push(`  ${bold9("specialist_status")}  — circuit breaker health + staleness`);
+  lines.push(`  ${bold10("specialist_init")}    — bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold10("list_specialists")}   — discover specialists (project/user/system)`);
+  lines.push(`  ${bold10("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
+  lines.push(`  ${bold10("run_parallel")}       — concurrent or pipeline execution`);
+  lines.push(`  ${bold10("start_specialist")}   — async job start, returns job ID`);
+  lines.push(`  ${bold10("feed_specialist")}    — stream events/output by job ID`);
+  lines.push(`  ${bold10("steer_specialist")}      — send a mid-run message to a running job`);
+  lines.push(`  ${bold10("resume_specialist")}    — resume a waiting keep-alive session with a next-turn prompt`);
+  lines.push(`  ${bold10("stop_specialist")}      — cancel a running job by ID`);
+  lines.push(`  ${bold10("specialist_status")}  — circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
   lines.push("");
-  lines.push(`  ${bold9("Foreground review, save to file:")}`);
+  lines.push(`  ${bold10("Foreground review, save to file:")}`);
   lines.push(`  ${cmd2('specialists run code-review --prompt "Audit src/" > review.md')}`);
   lines.push("");
-  lines.push(`  ${bold9("Tracked run with beads integration:")}`);
+  lines.push(`  ${bold10("Tracked run with beads integration:")}`);
   lines.push(`  ${cmd2("specialists run deep-analysis --bead unitAI-abc")}`);
   lines.push(`  ${dim11("  # prompt from bead, result tracked in bead")}`);
   lines.push("");
-  lines.push(`  ${bold9("Steer a job mid-run:")}`);
+  lines.push(`  ${bold10("Steer a job mid-run:")}`);
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
-  lines.push(`  ${bold9("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${bold10("Multi-turn keep-alive (iterative work):")}`);
   lines.push(`  ${cmd2("specialists run debugger --bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push("");
-  lines.push(`  ${bold9("Override model for a single run:")}`);
+  lines.push(`  ${bold10("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
   lines.push(dim11("─".repeat(62)));
@@ -22860,27 +23877,27 @@ async function run20() {
   console.log(lines.join(`
 `));
 }
-var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, yellow9 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green12 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run21
+  run: () => run22
 });
-import { spawnSync as spawnSync10 } from "node:child_process";
-import { existsSync as existsSync17, mkdirSync as mkdirSync3, readFileSync as readFileSync14, readdirSync as readdirSync8 } from "node:fs";
-import { join as join22 } from "node:path";
+import { spawnSync as spawnSync12 } from "node:child_process";
+import { existsSync as existsSync19, mkdirSync as mkdirSync4, readFileSync as readFileSync15, readdirSync as readdirSync8 } from "node:fs";
+import { join as join23 } from "node:path";
 function ok3(msg) {
-  console.log(`  ${green13("✓")} ${msg}`);
+  console.log(`  ${green14("✓")} ${msg}`);
 }
 function warn2(msg) {
-  console.log(`  ${yellow10("○")} ${msg}`);
+  console.log(`  ${yellow11("○")} ${msg}`);
 }
 function fail2(msg) {
   console.log(`  ${red7("✗")} ${msg}`);
 }
 function fix(msg) {
-  console.log(`    ${dim12("→ fix:")} ${yellow10(msg)}`);
+  console.log(`    ${dim12("→ fix:")} ${yellow11(msg)}`);
 }
 function hint(msg) {
   console.log(`    ${dim12(msg)}`);
@@ -22888,20 +23905,20 @@ function hint(msg) {
 function section3(label) {
   const line = "─".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold10(`── ${label} ${line}`)}`);
+${bold11(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync10(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync12(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync12("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync17(path))
+  if (!existsSync19(path))
     return null;
   try {
-    return JSON.parse(readFileSync14(path, "utf8"));
+    return JSON.parse(readFileSync15(path, "utf8"));
   } catch {
     return null;
   }
@@ -22944,7 +23961,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync17(join22(CWD, ".beads")))
+  if (existsSync19(join23(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -22964,8 +23981,8 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join22(HOOKS_DIR, name);
-    if (!existsSync17(dest)) {
+    const dest = join23(HOOKS_DIR, name);
+    if (!existsSync19(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -23009,20 +24026,20 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join22(CWD, ".specialists");
-  const jobsDir = join22(rootDir, "jobs");
-  const readyDir = join22(rootDir, "ready");
+  const rootDir = join23(CWD, ".specialists");
+  const jobsDir = join23(rootDir, "jobs");
+  const readyDir = join23(rootDir, "ready");
   let allOk = true;
-  if (!existsSync17(rootDir)) {
+  if (!existsSync19(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync17(subDir)) {
+      if (!existsSync19(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
-        mkdirSync3(subDir, { recursive: true });
+        mkdirSync4(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -23033,8 +24050,8 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join22(CWD, ".specialists", "jobs");
-  if (!existsSync17(jobsDir)) {
+  const jobsDir = join23(CWD, ".specialists", "jobs");
+  if (!existsSync19(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -23052,11 +24069,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join22(jobsDir, jobId, "status.json");
-    if (!existsSync17(statusPath))
+    const statusPath = join23(jobsDir, jobId, "status.json");
+    if (!existsSync19(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync14(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync15(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -23070,7 +24087,7 @@ function checkZombieJobs() {
             running++;
           else {
             zombies++;
-            warn2(`${jobId}  ${yellow10("ZOMBIE")}  ${dim12(`pid ${pid} not found, status=${status.status}`)}`);
+            warn2(`${jobId}  ${yellow11("ZOMBIE")}  ${dim12(`pid ${pid} not found, status=${status.status}`)}`);
             fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
           }
         }
@@ -23083,9 +24100,9 @@ function checkZombieJobs() {
   }
   return zombies === 0;
 }
-async function run21() {
+async function run22() {
   console.log(`
-${bold10("specialists doctor")}
+${bold11("specialists doctor")}
 `);
   const piOk = checkPi();
   const spOk = checkSpAlias();
@@ -23098,21 +24115,21 @@ ${bold10("specialists doctor")}
   const allOk = piOk && bdOk && xtOk && hooksOk && mcpOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green13("✓")} ${bold10("All checks passed")}  — specialists is healthy`);
+    console.log(`  ${green14("✓")} ${bold11("All checks passed")}  — specialists is healthy`);
   } else {
-    console.log(`  ${yellow10("○")} ${bold10("Some checks failed")}  — follow the fix hints above`);
+    console.log(`  ${yellow11("○")} ${bold11("Some checks failed")}  — follow the fix hints above`);
     console.log(`  ${dim12("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
   }
   console.log("");
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join22(CWD, ".claude");
-  SPECIALISTS_DIR = join22(CWD, ".specialists");
-  HOOKS_DIR = join22(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join22(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join22(CWD, ".mcp.json");
+  CLAUDE_DIR = join23(CWD, ".claude");
+  SPECIALISTS_DIR = join23(CWD, ".specialists");
+  HOOKS_DIR = join23(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join23(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join23(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -23122,13 +24139,13 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run22
+  run: () => run23
 });
-async function run22() {
+async function run23() {
   console.log("");
-  console.log(yellow11("⚠ DEPRECATED: `specialists setup` is deprecated"));
+  console.log(yellow12("⚠ DEPRECATED: `specialists setup` is deprecated"));
   console.log("");
-  console.log(`  Use ${bold11("specialists init")} instead.`);
+  console.log(`  Use ${bold12("specialists init")} instead.`);
   console.log("");
   console.log("  The init command handles all setup tasks:");
   console.log("    • creates specialists/ and .specialists/ directories");
@@ -23142,29 +24159,29 @@ async function run22() {
   console.log(`  ${dim13("Run: specialists init --help for full details")}`);
   console.log("");
 }
-var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`;
+var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`;
 
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run23
+  run: () => run24
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run23() {
+async function run24() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
     "",
-    bold12("Usage:"),
+    bold13("Usage:"),
     "  specialists|sp [command]",
     "  specialists|sp [command] --help",
     "",
     dim14("  sp is a shorter alias — sp run, sp list, sp feed etc. all work identically."),
     "",
-    bold12("Common flows:"),
+    bold13("Common flows:"),
     "",
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
@@ -23198,16 +24215,16 @@ async function run23() {
     "    specialists attach <job-id>                            # → attach directly",
     "    specialists feed <job-id> --follow                     # → structured event stream",
     "",
-    bold12("Core commands:"),
+    bold13("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
     "",
-    bold12("Extended commands:"),
+    bold13("Extended commands:"),
     ...formatCommands(EXTENDED_COMMANDS),
     "",
-    bold12("xtrm worktree commands:"),
+    bold13("xtrm worktree commands:"),
     ...formatCommands(WORKTREE_COMMANDS),
     "",
-    bold12("Examples:"),
+    bold13("Examples:"),
     "  specialists init",
     "  specialists list",
     "  specialists config get specialist.execution.stall_timeout_ms",
@@ -23223,7 +24240,7 @@ async function run23() {
     "  specialists report show --specialists",
     "  specialists result <job-id> --wait",
     "",
-    bold12("More help:"),
+    bold13("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
     "  specialists run --help         Run command details and flags",
     "  specialists poll --help        Job status polling details",
@@ -23238,7 +24255,7 @@ async function run23() {
   console.log(lines.join(`
 `));
 }
-var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
+var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
 var init_help = __esm(() => {
   CORE_COMMANDS = [
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
@@ -23262,6 +24279,7 @@ var init_help = __esm(() => {
     ["help", "Show this help"]
   ];
   EXTENDED_COMMANDS = [
+    ["db setup", "Human-only: provision shared observability SQLite database"],
     ["edit", "Edit a specialist field such as model or description"],
     ["models", "List models available on pi"],
     ["version", "Print installed version"],
@@ -30692,7 +31710,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run24() {
+async function run25() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -30808,6 +31826,34 @@ async function run24() {
     const syncDefaults = process.argv.includes("--sync-defaults");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
     return handler({ syncDefaults });
+  }
+  if (sub === "db") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists db setup",
+        "",
+        "Provision the shared observability SQLite database (human-only).",
+        "",
+        "Commands:",
+        "  setup   Create and initialize the observability DB (one-time)",
+        "  init    Alias for setup",
+        "",
+        "Notes:",
+        "  - TTY required (blocked in agent/non-interactive sessions)",
+        "  - Resolves at git-root .specialists/db/ by default",
+        "  - Uses $XDG_DATA_HOME/specialists when XDG_DATA_HOME is set",
+        "",
+        "Examples:",
+        "  specialists db setup",
+        "  sp db setup",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_db(), exports_db));
+    return handler(process.argv.slice(3));
   }
   if (sub === "validate") {
     if (wantsHelp()) {
@@ -31163,6 +32209,7 @@ async function run24() {
         "Default behavior:",
         "  - removes done/error jobs older than SPECIALISTS_JOB_TTL_DAYS",
         "  - TTL defaults to 7 days if env is unset",
+        "  - never removes SQLite artifacts (*.db, *.db-wal, *.db-shm)",
         "",
         "Options:",
         "  --all        Remove all done/error jobs regardless of age",
@@ -31292,7 +32339,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run24().catch((error2) => {
+run25().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

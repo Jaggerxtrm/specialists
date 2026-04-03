@@ -19,6 +19,7 @@ specialist:
     timeout_ms: 0
     stall_timeout_ms: 120000
     response_format: markdown
+    output_type: workflow
     permission_required: HIGH
     interactive: true
 

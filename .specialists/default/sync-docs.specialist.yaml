@@ -52,13 +52,13 @@ specialist:
 
   skills:
     paths:
-      - ~/.agents/skills/sync-docs/SKILL.md
+      - .xtrm/skills/active/pi/sync-docs/SKILL.md
 
   validation:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
-      - .agents/skills/sync-docs/SKILL.md
+      - .xtrm/skills/active/pi/sync-docs/SKILL.md
     stale_threshold_days: 30
 
   communication:

@@ -2,20 +2,19 @@ specialist:
   metadata:
     name: explorer
     version: 1.1.0
-    description: "Explores the codebase structure, identifies patterns, and answers
-      architecture questions using GitNexus knowledge graph for deep call-chain
-      and execution-flow awareness."
+    description: "Explores the codebase structure, identifies patterns, and answers architecture questions using GitNexus knowledge graph for deep call-chain and execution-flow awareness."
     category: analysis
-    tags: [ codebase, architecture, exploration, gitnexus ]
+    tags: [codebase, architecture, exploration, gitnexus]
     updated: "2026-03-11"
 
   execution:
     mode: tool
-    model: dashscope/qwen3.5-plus
+    model: anthropic/claude-haiku-4-5
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
     stall_timeout_ms: 120000
     response_format: markdown
+    output_type: analysis
     permission_required: READ_ONLY
 
   prompt:
@@ -86,7 +85,7 @@ specialist:
 
   skills:
     paths:
-      - .agents/skills/gitnexus-exploring/SKILL.md
+      - .xtrm/skills/active/pi/gitnexus-exploring/SKILL.md
 
   validation:
     files_to_watch:
@@ -96,4 +95,4 @@ specialist:
     stale_threshold_days: 30
 
   communication:
-    publishes: [ codebase_analysis ]
+    publishes: [codebase_analysis]

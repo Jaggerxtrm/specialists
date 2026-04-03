@@ -214,6 +214,7 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 | `stall_timeout_ms` | number | — | kill if no event for N ms |
 | `interactive` | boolean | `false` | enable multi-turn keep-alive by default |
 | `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
+| `output_type` | enum | `custom` | `codegen` \| `analysis` \| `review` \| `synthesis` \| `orchestration` \| `workflow` \| `research` \| `custom` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
 
@@ -247,7 +248,34 @@ bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-speci
 | `output_schema` | object | no | JSON schema for structured output — injected into system prompt by runner; post-run validation is warn-only |
 | `examples` | array | no | Few-shot examples |
 
-**`output_schema` guidance**: Add when the specialist's output should be machine-readable by downstream consumers (mesk handoff, pipeline injection). The schema is injected as an instruction into the system prompt — the agent structures its output accordingly. Use `response_format: markdown` alongside it for human-readable output with a machine-readable block at the end.
+**Output contract precedence (runner-injected):** `response_format` → `output_type` → `output_schema`.
+
+**`response_format` behavior**
+- `text`: no report template is injected (raw behavior)
+- `json`: specialist must return one parseable JSON object
+- `markdown`: specialist must use canonical report sections when applicable:
+  - `## Summary`
+  - `## Status`
+  - `## Changes`
+  - `## Verification`
+  - `## Risks`
+  - `## Follow-ups`
+  - `## Beads`
+  - Optional: `## Architecture`, `## Acceptance Criteria`, `## Machine-readable block`
+
+**`output_type` (semantic archetype)**
+- `codegen`: implementation/change manifests
+- `analysis`: architecture/exploration reports
+- `review`: compliance/review verdicts
+- `synthesis`: decision summaries across multiple findings
+- `orchestration`: coordinator actions/state handoffs
+- `workflow`: procedural/operational run outputs
+- `research`: source-backed findings with confidence
+- `custom`: no built-in extension (schema still includes base contract fields in structured modes)
+
+**`output_schema` guidance**: Add when output must be machine-readable by downstream consumers (beads notes, feed, orchestrators). The schema is injected into the system prompt and validated post-run with warn-only behavior (never hard-fail in v1).
+
+**Mandatory markdown+schema rule:** if `response_format: markdown` and `output_schema` is present, the output must include `## Machine-readable block` containing exactly one JSON object in a single ` ```json ` fenced block. That JSON object is canonical and must match the schema.
 
 Standard schemas by specialist type:
 

@@ -106,7 +106,7 @@ specialist:
 
   skills:
     paths:
-      - .agents/skills/xt-debugging/SKILL.md
+      - .xtrm/skills/active/pi/xt-debugging/SKILL.md
 
   capabilities:
     required_tools: [bash, grep, find, read]
@@ -118,4 +118,3 @@ specialist:
       - src/specialist/runner.ts
       - .agents/skills/xt-debugging/SKILL.md
     stale_threshold_days: 30
-

@@ -45,9 +45,17 @@ describe('command-specific --help', () => {
     const out = captureIndexHelp(['clean', '--help']);
     expect(out).toContain('Purge completed job directories');
     expect(out).toContain('SPECIALISTS_JOB_TTL_DAYS');
+    expect(out).toContain('never removes SQLite artifacts');
     expect(out).toContain('--all');
     expect(out).toContain('--keep <n>');
     expect(out).toContain('--dry-run');
+  });
+
+  it('db --help documents the human-only setup command', () => {
+    const out = captureIndexHelp(['db', '--help']);
+    expect(out).toContain('Usage: specialists db setup');
+    expect(out).toContain('human-only');
+    expect(out).toContain('XDG_DATA_HOME');
   });
 
   it('doctor --help describes checks it performs', () => {
