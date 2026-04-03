@@ -19,6 +19,8 @@ export interface RunOptions {
   variables?: Record<string, string>;
   backendOverride?: string;
   autonomyLevel?: string;
+  /** Working directory for local scripts and the pi session. */
+  workingDirectory?: string;
   /** Existing bead whose content should be used as the task prompt. */
   inputBeadId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
@@ -78,7 +80,7 @@ interface ScriptResult {
   exitCode: number;
 }
 
-function runScript(command: string | undefined): ScriptResult {
+function runScript(command: string | undefined, cwd: string): ScriptResult {
   const run = (command ?? '').trim();
   if (!run) {
     return { name: 'unknown', output: 'Missing script command (expected `run` or legacy `path`).', exitCode: 1 };
@@ -86,7 +88,7 @@ function runScript(command: string | undefined): ScriptResult {
 
   const scriptName = basename(run.split(' ')[0]);
   try {
-    const output = execSync(run, { encoding: 'utf8', timeout: 30_000 });
+    const output = execSync(run, { encoding: 'utf8', timeout: 30_000, cwd });
     return { name: scriptName, output, exitCode: 0 };
   } catch (e: any) {
     return { name: scriptName, output: e.stdout ?? e.message ?? '', exitCode: e.status ?? 1 };
@@ -655,9 +657,11 @@ export class SpecialistRunner {
 
     // Pre-phase scripts/commands run locally before the pi session starts.
     // Their stdout is captured and injected into the task via $pre_script_output.
+    const runCwd = resolve(options.workingDirectory ?? process.cwd());
+
     const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
     const preResults = preScripts
-      .map(s => runScript(s.run ?? (s as any).path))
+      .map(s => runScript(s.run ?? (s as any).path, runCwd))
       .filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
 
@@ -670,7 +674,7 @@ export class SpecialistRunner {
       : {};
     const variables: Record<string, string> = {
       prompt: options.prompt,
-      cwd: process.cwd(),
+      cwd: runCwd,
       pre_script_output: preScriptOutput,
       ...(options.variables ?? {}),
       ...beadVariables,
@@ -700,7 +704,7 @@ export class SpecialistRunner {
     // - CLAUDE.md edit-gate rules say "bd create before editing" — not applicable inside a specialist
     {
       const beadInstructions = options.inputBeadId
-        ? `\n- Your task bead is: ${options.inputBeadId}\n- Claim it: \`bd update ${options.inputBeadId} --claim\`\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${options.inputBeadId} --reason="..."\``
+        ? `\n- Your task bead is: ${options.inputBeadId}\n- Claim it: \`bd update ${options.inputBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${options.inputBeadId} --reason="..."\``
         : '';
       agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
 - GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.${beadInstructions}\n---\n`;
@@ -767,7 +771,7 @@ export class SpecialistRunner {
         thinkingLevel: execution.thinking_level,
         permissionLevel,
         stallTimeoutMs: execution.stall_timeout_ms,
-        cwd: process.cwd(),
+        cwd: runCwd,
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
@@ -833,7 +837,7 @@ export class SpecialistRunner {
 
       // Post-phase scripts/commands run locally after the pi session completes
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
-      for (const script of postScripts) runScript(script.run ?? (script as any).path);
+      for (const script of postScripts) runScript(script.run ?? (script as any).path, runCwd);
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {

@@ -18552,14 +18552,14 @@ import { execSync, spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync3, readFileSync } from "node:fs";
 import { basename, resolve as resolve2 } from "node:path";
 import { homedir as homedir2 } from "node:os";
-function runScript(command) {
+function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
     return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
   }
   const scriptName = basename(run.split(" ")[0]);
   try {
-    const output = execSync(run, { encoding: "utf8", timeout: 30000 });
+    const output = execSync(run, { encoding: "utf8", timeout: 30000, cwd });
     return { name: scriptName, output, exitCode: 0 };
   } catch (e) {
     return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
@@ -18865,18 +18865,21 @@ class SpecialistRunner {
     const permissionLevel = options.autonomyLevel ?? execution.permission_required;
     const effectiveKeepAlive = options.noKeepAlive ? false : options.keepAlive ?? execution.interactive ?? false;
     validateBeforeRun(spec, permissionLevel);
+    const runCwd = resolve2(options.workingDirectory ?? process.cwd());
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
-    const preResults = preScripts.map((s) => runScript(s.run ?? s.path)).filter((_, i) => preScripts[i].inject_output);
+    const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
     const beadVariables = options.inputBeadId ? { bead_context: options.prompt, bead_id: options.inputBeadId } : {};
+    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: options.prompt } : {};
     const variables = {
       prompt: options.prompt,
-      cwd: process.cwd(),
+      cwd: runCwd,
       pre_script_output: preScriptOutput,
       ...options.variables ?? {},
       ...beadVariables
     };
-    const renderedTask = renderTemplate(prompt.task_template, variables);
+    const taskTemplate = options.inputBeadId ? renderTemplate(prompt.task_template, beadTemplateVariables) : prompt.task_template;
+    const renderedTask = renderTemplate(taskTemplate, variables);
     const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
     await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
       prompt_hash: promptHash,
@@ -18884,11 +18887,11 @@ class SpecialistRunner {
       estimated_tokens: Math.ceil(renderedTask.length / 4),
       system_prompt_present: !!prompt.system
     });
-    let agentsMd = prompt.system ?? "";
+    let agentsMd = options.inputBeadId ? renderTemplate(prompt.system ?? "", beadTemplateVariables) : prompt.system ?? "";
     {
       const beadInstructions = options.inputBeadId ? `
 - Your task bead is: ${options.inputBeadId}
-- Claim it: \`bd update ${options.inputBeadId} --claim\`
+- Claim it: \`bd update ${options.inputBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)
 - Do NOT create new beads or sub-issues — this bead IS your task.
 - Do NOT run \`bd create\` — the orchestrator manages issue tracking.
 - Close when done: \`bd close ${options.inputBeadId} --reason="..."\`` : "";
@@ -18969,7 +18972,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
         thinkingLevel: execution.thinking_level,
         permissionLevel,
         stallTimeoutMs: execution.stall_timeout_ms,
-        cwd: process.cwd(),
+        cwd: runCwd,
         onToken: (delta) => onProgress?.(delta),
         onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
         onToolStart: (tool, args, toolCallId) => {
@@ -19030,7 +19033,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
       }
       const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
       for (const script of postScripts)
-        runScript(script.run ?? script.path);
+        runScript(script.run ?? script.path, runCwd);
       circuitBreaker.recordSuccess(model);
     } catch (err) {
       const isCancelled = err instanceof SessionKilledError;
@@ -20157,9 +20160,16 @@ function runSql(dbPath, sql) {
 function initSchema(dbPath) {
   runSql(dbPath, `
     PRAGMA journal_mode=WAL;
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+    VALUES (1, strftime('%s', 'now') * 1000);
     CREATE TABLE IF NOT EXISTS specialist_jobs (
       job_id TEXT PRIMARY KEY,
       specialist TEXT NOT NULL,
+      worktree_column TEXT,
       status_json TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
@@ -20189,11 +20199,13 @@ class SqliteClient {
   upsertStatus(status) {
     const statusJson = quoteSql(JSON.stringify(status));
     const specialist = quoteSql(status.specialist);
+    const worktree = toSqlText(status.worktree_path);
     const sql = `
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-      VALUES (${quoteSql(status.id)}, ${specialist}, ${statusJson}, ${Date.now()})
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, status_json, updated_at_ms)
+      VALUES (${quoteSql(status.id)}, ${specialist}, ${worktree}, ${statusJson}, ${Date.now()})
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
+        worktree_column = excluded.worktree_column,
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms;
     `;
@@ -21292,7 +21304,8 @@ class Supervisor {
       started_at_ms: startedAtMs,
       pid: process.pid,
       ...runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {},
-      ...process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}
+      ...process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {},
+      ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}
     };
     this.writeStatusFile(id, initialStatus);
     writeFileSync4(join11(this.opts.jobsDir, "latest"), `${id}
@@ -22032,19 +22045,101 @@ function killTmuxSession(name) {
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
 
+// src/specialist/worktree.ts
+import { mkdirSync as mkdirSync4 } from "node:fs";
+import { execFileSync as execFileSync3, spawnSync as spawnSync10 } from "node:child_process";
+import { join as join12, resolve as resolve3 } from "node:path";
+function slugify(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "task";
+}
+function buildWorktreeBranchName(beadId, source) {
+  return `feature/${beadId}-${slugify(source)}`;
+}
+function runGit(repoRoot, args) {
+  return execFileSync3("git", args, {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
+}
+function listWorktrees(repoRoot) {
+  const output = runGit(repoRoot, ["worktree", "list", "--porcelain"]);
+  if (!output)
+    return [];
+  const entries = [];
+  const blocks = output.split(`
+
+`);
+  for (const block of blocks) {
+    const lines = block.split(`
+`).filter(Boolean);
+    if (lines.length === 0)
+      continue;
+    let path = "";
+    let branchRef;
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        path = line.slice("worktree ".length).trim();
+        continue;
+      }
+      if (line.startsWith("branch ")) {
+        branchRef = line.slice("branch ".length).trim();
+      }
+    }
+    if (!path)
+      continue;
+    entries.push({ path: resolve3(path), branchRef });
+  }
+  return entries;
+}
+function branchExists(repoRoot, branchName) {
+  const result = spawnSync10("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+    cwd: repoRoot,
+    stdio: "ignore"
+  });
+  return result.status === 0;
+}
+function getRepoRoot(cwd) {
+  return runGit(cwd, ["rev-parse", "--show-toplevel"]);
+}
+function ensureWorktreeForBranch(cwd, branchName, beadId) {
+  const repoRoot = getRepoRoot(cwd);
+  const branchRef = `refs/heads/${branchName}`;
+  const allWorktrees = listWorktrees(repoRoot);
+  const existing = allWorktrees.find((entry) => entry.branchRef === branchRef);
+  if (existing) {
+    return { branchName, worktreePath: existing.path, created: false };
+  }
+  const dirName = branchName.replace(/^feature\//, "").replace(/\//g, "-");
+  const worktreePath = resolve3(join12(repoRoot, ".worktrees", beadId, dirName));
+  mkdirSync4(join12(repoRoot, ".worktrees", beadId), { recursive: true });
+  const gitArgs = branchExists(repoRoot, branchName) ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath, "HEAD"];
+  const result = spawnSync10("git", gitArgs, {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim() ?? "unknown git error";
+    throw new Error(`Failed to create worktree for branch ${branchName}: ${stderr}`);
+  }
+  return { branchName, worktreePath, created: true };
+}
+var init_worktree = () => {};
+
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
   run: () => run10
 });
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 import { readFileSync as readFileSync7 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { spawn as cpSpawn } from "node:child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]');
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--worktree|--no-worktree] [--json|--raw]');
     process.exit(1);
   }
   let prompt = "";
@@ -22057,6 +22152,8 @@ async function parseArgs6(argv) {
   let background = false;
   let outputMode = "human";
   let contextDepth = 1;
+  let worktree = false;
+  let noWorktree = false;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
@@ -22097,6 +22194,16 @@ async function parseArgs6(argv) {
       background = true;
       continue;
     }
+    if (token === "--worktree") {
+      worktree = true;
+      noWorktree = false;
+      continue;
+    }
+    if (token === "--no-worktree") {
+      noWorktree = true;
+      worktree = false;
+      continue;
+    }
     if (token === "--json") {
       outputMode = "json";
       continue;
@@ -22111,23 +22218,37 @@ async function parseArgs6(argv) {
     process.exit(1);
   }
   if (!prompt && !beadId && !process.stdin.isTTY) {
-    prompt = await new Promise((resolve3) => {
+    prompt = await new Promise((resolve4) => {
       let buf = "";
       process.stdin.setEncoding("utf-8");
       process.stdin.on("data", (chunk) => {
         buf += chunk;
       });
-      process.stdin.on("end", () => resolve3(buf.trim()));
+      process.stdin.on("end", () => resolve4(buf.trim()));
     });
   }
   if (!prompt && !beadId) {
     console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
     process.exit(1);
   }
-  return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive, background, contextDepth, outputMode };
+  return {
+    name,
+    prompt,
+    beadId,
+    model,
+    noBeads,
+    noBeadNotes,
+    keepAlive,
+    noKeepAlive,
+    background,
+    contextDepth,
+    outputMode,
+    worktree,
+    noWorktree
+  };
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
-  const eventsPath = join12(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join13(jobsDir, jobId, "events.jsonl");
   let linesRead = 0;
   let activeInlinePhase = null;
   const drain = () => {
@@ -22195,7 +22316,7 @@ function shellQuote(value) {
 async function run10() {
   const args = await parseArgs6(process.argv.slice(3));
   if (args.background) {
-    const latestPath = join12(process.cwd(), ".specialists", "jobs", "latest");
+    const latestPath = join13(process.cwd(), ".specialists", "jobs", "latest");
     const oldLatest = (() => {
       try {
         return readFileSync7(latestPath, "utf-8").trim();
@@ -22246,11 +22367,12 @@ async function run10() {
   }
   const loader = new SpecialistLoader;
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join12(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join13(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
   let variables;
+  let beadTitle = "";
   if (args.beadId) {
     const bead = beadReader.readBead(args.beadId);
     if (!bead) {
@@ -22263,6 +22385,7 @@ async function run10() {
 `));
     }
     const beadContext = buildBeadContext(bead, blockers);
+    beadTitle = bead.title;
     prompt = beadContext;
     variables = {
       bead_context: beadContext,
@@ -22274,6 +22397,27 @@ async function run10() {
 `);
     process.exit(1);
   });
+  const permissionRequired = specialist.specialist.execution.permission_required;
+  const needsIsolatedWorktree = args.worktree || !args.noWorktree && (permissionRequired === "MEDIUM" || permissionRequired === "HIGH");
+  let runWorkingDirectory = process.cwd();
+  if (needsIsolatedWorktree) {
+    if (!args.beadId) {
+      process.stderr.write(`Error: worktree isolation requires --bead <id> so branch naming can follow feature/<bead-id>-<slug>.
+`);
+      process.exit(1);
+    }
+    try {
+      const branchName = buildWorktreeBranchName(args.beadId, beadTitle || args.name);
+      const worktree = ensureWorktreeForBranch(process.cwd(), branchName, args.beadId);
+      runWorkingDirectory = worktree.worktreePath;
+      process.stderr.write(dim8(`[worktree: ${runWorkingDirectory} (${worktree.branchName}${worktree.created ? ", created" : ", reused"})]
+`));
+    } catch (error2) {
+      process.stderr.write(`Error: ${error2?.message ?? error2}
+`);
+      process.exit(1);
+    }
+  }
   const runner = new SpecialistRunner({
     loader,
     hooks,
@@ -22281,7 +22425,7 @@ async function run10() {
     beadsClient
   });
   const beadsWriteNotes = args.noBeadNotes ? false : specialist.specialist.beads_write_notes ?? true;
-  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   let stopTailer;
   const supervisor = new Supervisor({
     runner,
@@ -22293,7 +22437,8 @@ async function run10() {
       inputBeadId: args.beadId,
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
-      beadsWriteNotes
+      beadsWriteNotes,
+      workingDirectory: runWorkingDirectory
     },
     jobsDir,
     beadsClient,
@@ -22353,6 +22498,7 @@ var init_run = __esm(() => {
   init_supervisor();
   init_format_helpers();
   init_tmux_utils();
+  init_worktree();
 });
 
 // src/cli/status.ts
@@ -22360,9 +22506,9 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run11
 });
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 import { existsSync as existsSync13, readFileSync as readFileSync8 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join14 } from "node:path";
 function ok2(msg) {
   console.log(`  ${green8("✓")} ${msg}`);
 }
@@ -22381,7 +22527,7 @@ function section(label) {
 ${bold8(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync10(bin, args, {
+  const r = spawnSync11(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -22389,7 +22535,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync11("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -22441,7 +22587,7 @@ function parseStatusArgs(argv) {
   return { jsonMode, jobId };
 }
 function countJobEvents(jobsDir, jobId) {
-  const eventsFile = join13(jobsDir, jobId, "events.jsonl");
+  const eventsFile = join14(jobsDir, jobId, "events.jsonl");
   if (!existsSync13(eventsFile))
     return 0;
   const raw = readFileSync8(eventsFile, "utf-8").trim();
@@ -22482,6 +22628,7 @@ ${bold8("specialists status")}
   console.log(`  backend      ${job.backend ?? "n/a"}`);
   console.log(`  elapsed      ${formatElapsed2(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? "n/a"}`);
+  console.log(`  worktree     ${job.worktree_path ?? "n/a"}`);
   console.log(`  events       ${eventCount}`);
   if (job.metrics?.finish_reason)
     console.log(`  finish       ${job.metrics.finish_reason}`);
@@ -22524,9 +22671,9 @@ async function run11() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync13(join13(process.cwd(), ".beads"));
+  const beadsPresent = existsSync13(join14(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
   let jobs = [];
   let supervisor = null;
   if (existsSync13(jobsDir)) {
@@ -22597,7 +22744,8 @@ async function run11() {
         elapsed_s: j.elapsed_s,
         current_tool: j.current_tool ?? null,
         metrics: j.metrics ?? null,
-        error: j.error ?? null
+        error: j.error ?? null,
+        worktree_path: j.worktree_path ?? null
       }))
     };
     console.log(JSON.stringify(output, null, 2));
@@ -22677,7 +22825,7 @@ __export(exports_result, {
   run: () => run12
 });
 import { existsSync as existsSync14, readFileSync as readFileSync9 } from "node:fs";
-import { join as join14 } from "node:path";
+import { join as join15 } from "node:path";
 function parseArgs7(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
@@ -22728,10 +22876,10 @@ async function run12() {
       error: error2
     }, null, 2));
   };
-  const jobsDir = join14(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join15(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
-  const resultPath = join14(jobsDir, jobId, "result.txt");
+  const resultPath = join15(jobsDir, jobId, "result.txt");
   const readResultOutput = () => {
     if (existsSync14(resultPath)) {
       return readFileSync9(resultPath, "utf-8");
@@ -22860,7 +23008,7 @@ var init_result = __esm(() => {
 
 // src/specialist/timeline-query.ts
 import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync10 } from "node:fs";
-import { basename as basename3, join as join15 } from "node:path";
+import { basename as basename3, join as join16 } from "node:path";
 function readJobEvents(jobDir) {
   const jobId = basename3(jobDir);
   try {
@@ -22870,7 +23018,7 @@ function readJobEvents(jobDir) {
       return sqliteEvents;
     }
   } catch {}
-  const eventsPath = join15(jobDir, "events.jsonl");
+  const eventsPath = join16(jobDir, "events.jsonl");
   if (!existsSync15(eventsPath))
     return [];
   const content = readFileSync10(eventsPath, "utf-8");
@@ -22886,7 +23034,7 @@ function readJobEvents(jobDir) {
   return events;
 }
 function readJobEventsById(jobsDir, jobId) {
-  return readJobEvents(join15(jobsDir, jobId));
+  return readJobEvents(join16(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
   if (!existsSync15(jobsDir))
@@ -22894,7 +23042,7 @@ function readAllJobEvents(jobsDir) {
   const batches = [];
   const entries = readdirSync5(jobsDir);
   for (const entry of entries) {
-    const jobDir = join15(jobsDir, entry);
+    const jobDir = join16(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -22903,7 +23051,7 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join15(jobDir, "status.json");
+    const statusPath = join16(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
     if (existsSync15(statusPath)) {
@@ -23003,7 +23151,7 @@ import {
   readdirSync as readdirSync6,
   statSync as statSync2
 } from "node:fs";
-import { join as join16 } from "node:path";
+import { join as join17 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -23093,7 +23241,7 @@ function readStatusJson(jobsDir, jobId) {
     if (sqliteStatus)
       return sqliteStatus;
   } catch {}
-  const statusPath = join16(jobsDir, jobId, "status.json");
+  const statusPath = join17(jobsDir, jobId, "status.json");
   const raw = readFileFresh(statusPath);
   if (!raw)
     return null;
@@ -23244,7 +23392,7 @@ function listMatchingJobIds(jobsDir, options) {
     return [];
   const jobIds = [];
   for (const entry of readdirSync6(jobsDir)) {
-    const jobDir = join16(jobsDir, entry);
+    const jobDir = join17(jobsDir, entry);
     try {
       if (!statSync2(jobDir).isDirectory())
         continue;
@@ -23271,7 +23419,7 @@ function readJobEventsFresh(jobsDir, jobId) {
       return sqliteEvents;
     }
   } catch {}
-  const eventsPath = join16(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join17(jobsDir, jobId, "events.jsonl");
   const content = readFileFresh(eventsPath);
   if (!content)
     return [];
@@ -23347,7 +23495,7 @@ async function followMerged(jobsDir, options) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
-  await new Promise((resolve3) => {
+  await new Promise((resolve4) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
       for (const jobId of listMatchingJobIds(jobsDir, options)) {
@@ -23410,14 +23558,14 @@ async function followMerged(jobsDir, options) {
       }
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
-        resolve3();
+        resolve4();
       }
     }, 500);
   });
 }
 async function run13() {
   const options = parseArgs8(process.argv.slice(3));
-  const jobsDir = join16(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
   if (!existsSync16(jobsDir)) {
     console.log(dim7("No jobs directory found."));
     return;
@@ -23452,7 +23600,7 @@ __export(exports_poll, {
   run: () => run14
 });
 import { existsSync as existsSync17, readFileSync as readFileSync12 } from "node:fs";
-import { join as join17 } from "node:path";
+import { join as join18 } from "node:path";
 function parseArgs9(argv) {
   let jobId;
   let cursor = 0;
@@ -23489,15 +23637,15 @@ function parseArgs9(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
-  const jobDir = join17(jobsDir, jobId);
-  const statusPath = join17(jobDir, "status.json");
+  const jobDir = join18(jobsDir, jobId);
+  const statusPath = join18(jobDir, "status.json");
   let status = null;
   if (existsSync17(statusPath)) {
     try {
       status = JSON.parse(readFileSync12(statusPath, "utf-8"));
     } catch {}
   }
-  const resultPath = join17(jobDir, "result.txt");
+  const resultPath = join18(jobDir, "result.txt");
   let fullOutput = "";
   if (existsSync17(resultPath)) {
     try {
@@ -23528,13 +23676,14 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
     model: status?.model,
     backend: status?.backend,
     bead_id: status?.bead_id,
+    worktree_path: status?.worktree_path,
     error: status?.error
   };
 }
 async function run14() {
   const { jobId, cursor, outputCursor } = parseArgs9(process.argv.slice(3));
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
-  const jobDir = join17(jobsDir, jobId);
+  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
+  const jobDir = join18(jobsDir, jobId);
   if (!existsSync17(jobDir)) {
     const result2 = {
       job_id: jobId,
@@ -23566,7 +23715,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run15
 });
-import { join as join18 } from "node:path";
+import { join as join19 } from "node:path";
 import { writeFileSync as writeFileSync5 } from "node:fs";
 async function run15() {
   const jobId = process.argv[3];
@@ -23575,7 +23724,7 @@ async function run15() {
     console.error('Usage: specialists|sp steer <job-id> "<message>"');
     process.exit(1);
   }
-  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -23600,6 +23749,10 @@ async function run15() {
     writeFileSync5(status.fifo_path, payload, { flag: "a" });
     process.stdout.write(`${green10("✓")} Steer message sent to job ${jobId}
 `);
+    if (status.worktree_path) {
+      process.stdout.write(`  worktree: ${status.worktree_path}
+`);
+    }
   } catch (err) {
     process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
 `);
@@ -23616,7 +23769,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run16
 });
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 import { writeFileSync as writeFileSync6 } from "node:fs";
 async function run16() {
   const jobId = process.argv[3];
@@ -23625,7 +23778,7 @@ async function run16() {
     console.error('Usage: specialists|sp resume <job-id> "<task>"');
     process.exit(1);
   }
-  const jobsDir = join19(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join20(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -23650,6 +23803,10 @@ async function run16() {
     writeFileSync6(status.fifo_path, payload, { flag: "a" });
     process.stdout.write(`${green11("✓")} Resume sent to job ${jobId}
 `);
+    if (status.worktree_path) {
+      process.stdout.write(`  worktree: ${status.worktree_path}
+`);
+    }
     process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
 `);
   } catch (err) {
@@ -23686,7 +23843,7 @@ import {
   rmSync as rmSync2,
   statSync as statSync3
 } from "node:fs";
-import { join as join20 } from "node:path";
+import { join as join21 } from "node:path";
 function parseTtlDaysFromEnvironment() {
   const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
   if (!rawValue)
@@ -23742,7 +23899,7 @@ function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   const entries = readdirSync7(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
-    const entryPath = join20(directoryPath, entry.name);
+    const entryPath = join21(directoryPath, entry.name);
     const stats = statSync3(entryPath);
     if (stats.isDirectory()) {
       totalBytes += readDirectorySizeBytes(entryPath);
@@ -23755,7 +23912,7 @@ function readDirectorySizeBytes(directoryPath) {
 function containsProtectedSqliteArtifact(directoryPath) {
   const entries = readdirSync7(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
-    const entryPath = join20(directoryPath, entry.name);
+    const entryPath = join21(directoryPath, entry.name);
     if (entry.isDirectory()) {
       if (containsProtectedSqliteArtifact(entryPath))
         return true;
@@ -23770,10 +23927,10 @@ function containsProtectedSqliteArtifact(directoryPath) {
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
-  const directoryPath = join20(baseDirectory, entry.name);
+  const directoryPath = join21(baseDirectory, entry.name);
   if (containsProtectedSqliteArtifact(directoryPath))
     return null;
-  const statusFilePath = join20(directoryPath, "status.json");
+  const statusFilePath = join21(directoryPath, "status.json");
   if (!existsSync18(statusFilePath))
     return null;
   let statusData;
@@ -23859,7 +24016,7 @@ async function run18() {
     const message = error2 instanceof Error ? error2.message : String(error2);
     printUsageAndExit(message);
   }
-  const jobsDirectoryPath = join20(process.cwd(), ".specialists", "jobs");
+  const jobsDirectoryPath = join21(process.cwd(), ".specialists", "jobs");
   if (!existsSync18(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
@@ -23888,14 +24045,14 @@ var exports_stop = {};
 __export(exports_stop, {
   run: () => run19
 });
-import { join as join21 } from "node:path";
+import { join as join22 } from "node:path";
 async function run19() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join21(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join22(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -23949,9 +24106,9 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run20
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync11 } from "node:child_process";
+import { execFileSync as execFileSync4, spawnSync as spawnSync12 } from "node:child_process";
 import { readFileSync as readFileSync14 } from "node:fs";
-import { join as join22 } from "node:path";
+import { join as join23 } from "node:path";
 function exitWithError(message) {
   console.error(message);
   process.exit(1);
@@ -23972,8 +24129,8 @@ async function run20() {
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
   }
-  const jobsDir = join22(process.cwd(), ".specialists", "jobs");
-  const statusPath = join22(jobsDir, jobId, "status.json");
+  const jobsDir = join23(process.cwd(), ".specialists", "jobs");
+  const statusPath = join23(jobsDir, jobId, "status.json");
   const status = readStatus(statusPath, jobId);
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
@@ -23982,12 +24139,12 @@ async function run20() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync11("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync12("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
   try {
-    execFileSync3("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
+    execFileSync4("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
   } catch {
     process.exit(1);
   }
@@ -24229,9 +24386,9 @@ var exports_doctor = {};
 __export(exports_doctor, {
   run: () => run22
 });
-import { spawnSync as spawnSync12 } from "node:child_process";
-import { existsSync as existsSync19, mkdirSync as mkdirSync4, readFileSync as readFileSync15, readdirSync as readdirSync8 } from "node:fs";
-import { join as join23 } from "node:path";
+import { spawnSync as spawnSync13 } from "node:child_process";
+import { existsSync as existsSync19, mkdirSync as mkdirSync5, readFileSync as readFileSync15, readdirSync as readdirSync8 } from "node:fs";
+import { join as join24 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green14("✓")} ${msg}`);
 }
@@ -24253,11 +24410,11 @@ function section3(label) {
 ${bold11(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync12(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync13(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync12("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync13("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
   if (!existsSync19(path))
@@ -24306,7 +24463,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync19(join23(CWD, ".beads")))
+  if (existsSync19(join24(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -24326,7 +24483,7 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join23(HOOKS_DIR, name);
+    const dest = join24(HOOKS_DIR, name);
     if (!existsSync19(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
@@ -24371,9 +24528,9 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join23(CWD, ".specialists");
-  const jobsDir = join23(rootDir, "jobs");
-  const readyDir = join23(rootDir, "ready");
+  const rootDir = join24(CWD, ".specialists");
+  const jobsDir = join24(rootDir, "jobs");
+  const readyDir = join24(rootDir, "ready");
   let allOk = true;
   if (!existsSync19(rootDir)) {
     warn2(".specialists/ not found in current project");
@@ -24384,7 +24541,7 @@ function checkRuntimeDirs() {
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
       if (!existsSync19(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
-        mkdirSync4(subDir, { recursive: true });
+        mkdirSync5(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -24395,7 +24552,7 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join23(CWD, ".specialists", "jobs");
+  const jobsDir = join24(CWD, ".specialists", "jobs");
   if (!existsSync19(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
@@ -24414,7 +24571,7 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join23(jobsDir, jobId, "status.json");
+    const statusPath = join24(jobsDir, jobId, "status.json");
     if (!existsSync19(statusPath))
       continue;
     try {
@@ -24470,11 +24627,11 @@ ${bold11("specialists doctor")}
 var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join23(CWD, ".claude");
-  SPECIALISTS_DIR = join23(CWD, ".specialists");
-  HOOKS_DIR = join23(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join23(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join23(CWD, ".mcp.json");
+  CLAUDE_DIR = join24(CWD, ".claude");
+  SPECIALISTS_DIR = join24(CWD, ".specialists");
+  HOOKS_DIR = join24(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join24(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join24(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -32315,6 +32472,8 @@ async function run25() {
         "  --no-bead-notes      Do not append completion notes to an external --bead",
         "  --model <model>      Override the configured model for this run",
         "  --keep-alive         Keep session alive for follow-up prompts",
+        "  --worktree           Force run in isolated git worktree (feature/<bead-id>-<slug>)",
+        "  --no-worktree        Disable auto worktree isolation for MEDIUM/HIGH specialists",
         "",
         "Examples:",
         "  specialists run debugger --bead unitAI-55d",
