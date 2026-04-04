@@ -608,7 +608,7 @@ export class PiAgentSession {
    * Send a JSON command to pi's stdin and return a promise for the response.
    * Each call is assigned a unique ID; concurrent calls are supported.
    */
-  private sendCommand(cmd: Record<string, any>, timeoutMs = 10_000): Promise<any> {
+  private sendCommand(cmd: Record<string, any>, timeoutMs = 30_000): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.proc?.stdin) {
         reject(new Error('No stdin available'));
