@@ -20069,14 +20069,25 @@ import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFile
 import { spawnSync as spawnSync5 } from "node:child_process";
 import { join as join7, sep } from "node:path";
 function resolveGitRootFrom(cwd) {
-  const result = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
+  const commonDirResult = spawnSync5("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
-  if (result.status !== 0)
+  if (commonDirResult.status === 0) {
+    const commonDir = commonDirResult.stdout.trim();
+    if (commonDir.length > 0 && commonDir.endsWith(`${sep}.git`)) {
+      return commonDir.slice(0, -4);
+    }
+  }
+  const fallbackResult = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (fallbackResult.status !== 0)
     return cwd;
-  const gitRoot = result.stdout.trim();
+  const gitRoot = fallbackResult.stdout.trim();
   return gitRoot.length > 0 ? gitRoot : cwd;
 }
 function resolveDbDirectory(gitRoot) {
@@ -20146,31 +20157,63 @@ var init_observability_db = __esm(() => {
 });
 
 // src/specialist/observability-sqlite.ts
-import { execFileSync, spawnSync as spawnSync6 } from "node:child_process";
 import { existsSync as existsSync8 } from "node:fs";
-function quoteSql(value) {
-  return `'${value.replaceAll("'", "''")}'`;
+function loadBunDatabase() {
+  if (_probed)
+    return _BunDatabase;
+  _probed = true;
+  try {
+    _BunDatabase = __require("bun:sqlite").Database;
+  } catch {
+    _BunDatabase = null;
+  }
+  return _BunDatabase;
 }
-function toSqlNumber(value) {
-  return value === undefined ? "NULL" : String(value);
+function calculateRetryDelay(attempt) {
+  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
+  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
 }
-function toSqlText(value) {
-  return value === undefined ? "NULL" : quoteSql(value);
+function withRetry(operation, context) {
+  let lastError;
+  for (let attempt = 0;attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return operation();
+    } catch (error2) {
+      lastError = error2 instanceof Error ? error2 : new Error(String(error2));
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
+        break;
+      }
+      const delayMs = calculateRetryDelay(attempt);
+      const start = Date.now();
+      while (Date.now() - start < delayMs) {}
+    }
+  }
+  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? "unknown error"}`);
 }
-function hasSqlite3Binary() {
-  const probe = spawnSync6("which", ["sqlite3"], { stdio: "ignore" });
-  return probe.status === 0;
+function parseJournalMode(mode) {
+  if (!mode)
+    return null;
+  return mode.toLowerCase();
 }
-function runSql(dbPath, sql) {
-  return execFileSync("sqlite3", ["-json", dbPath, sql], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
+function enforceWalMode(db) {
+  const result = db.query("PRAGMA journal_mode=WAL").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? "null"})`);
+  }
 }
-function initSchema(dbPath) {
-  runSql(dbPath, `
-    PRAGMA journal_mode=WAL;
-
+function verifyWalMode(db) {
+  const result = db.query("PRAGMA journal_mode").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
+  }
+}
+function initSchema(db) {
+  enforceWalMode(db);
+  db.run(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version     INTEGER PRIMARY KEY,
       applied_at_ms INTEGER NOT NULL
@@ -20207,7 +20250,7 @@ function initSchema(dbPath) {
       updated_at_ms INTEGER NOT NULL
     );
   `);
-  runSql(dbPath, `
+  db.run(`
     CREATE TABLE IF NOT EXISTS specialist_jobs_new (
       job_id         TEXT PRIMARY KEY,
       specialist     TEXT NOT NULL,
@@ -20222,116 +20265,118 @@ function initSchema(dbPath) {
     DROP TABLE IF EXISTS specialist_jobs;
     ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
+  verifyWalMode(db);
 }
 
 class SqliteClient {
-  dbPath;
+  db;
   constructor(dbPath) {
-    this.dbPath = dbPath;
+    const Ctor = loadBunDatabase();
+    this.db = new Ctor(dbPath);
+    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    this.db.run("PRAGMA journal_mode=WAL");
   }
   upsertStatus(status) {
-    const statusJson = quoteSql(JSON.stringify(status));
-    const specialist = quoteSql(status.specialist);
-    const sql = `
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-      VALUES (${quoteSql(status.id)}, ${specialist}, ${statusJson}, ${Date.now()})
-      ON CONFLICT(job_id) DO UPDATE SET
-        specialist = excluded.specialist,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms;
-    `;
-    runSql(this.dbPath, sql);
+    const statusJson = JSON.stringify(status);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          specialist = excluded.specialist,
+          status_json = excluded.status_json,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [status.id, status.specialist, statusJson, Date.now()]);
+    }, "upsertStatus");
   }
   appendEvent(jobId, specialist, beadId, event) {
-    const eventJson = quoteSql(JSON.stringify(event));
-    const sql = `
-      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-      VALUES (
-        ${quoteSql(jobId)},
-        ${quoteSql(specialist)},
-        ${toSqlText(beadId)},
-        ${toSqlNumber(event.t)},
-        ${quoteSql(event.type)},
-        ${eventJson}
-      );
-    `;
-    runSql(this.dbPath, sql);
+    const eventJson = JSON.stringify(event);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+    }, "appendEvent");
   }
   upsertResult(jobId, output) {
-    const sql = `
-      INSERT INTO specialist_results (job_id, output, updated_at_ms)
-      VALUES (${quoteSql(jobId)}, ${quoteSql(output)}, ${Date.now()})
-      ON CONFLICT(job_id) DO UPDATE SET
-        output = excluded.output,
-        updated_at_ms = excluded.updated_at_ms;
-    `;
-    runSql(this.dbPath, sql);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_results (job_id, output, updated_at_ms)
+        VALUES (?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          output = excluded.output,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [jobId, output, Date.now()]);
+    }, "upsertResult");
   }
   readStatus(jobId) {
-    const rowsRaw = runSql(this.dbPath, `SELECT status_json FROM specialist_jobs WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
-    if (!rowsRaw)
-      return null;
-    const rows = JSON.parse(rowsRaw);
-    const encoded = rows[0]?.status_json;
-    if (!encoded)
-      return null;
-    return JSON.parse(encoded);
+    return withRetry(() => {
+      const row = this.db.query("SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
+      if (!row?.status_json)
+        return null;
+      return JSON.parse(row.status_json);
+    }, "readStatus");
   }
   listStatuses() {
-    const rowsRaw = runSql(this.dbPath, "SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC;").trim();
-    if (!rowsRaw)
-      return [];
-    const rows = JSON.parse(rowsRaw);
-    const statuses = [];
-    for (const row of rows) {
-      if (!row.status_json)
-        continue;
-      try {
-        statuses.push(JSON.parse(row.status_json));
-      } catch {}
-    }
-    return statuses;
+    return withRetry(() => {
+      const rows = this.db.query("SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC").all();
+      const statuses = [];
+      for (const row of rows) {
+        if (!row.status_json)
+          continue;
+        try {
+          statuses.push(JSON.parse(row.status_json));
+        } catch {}
+      }
+      return statuses;
+    }, "listStatuses");
   }
   readEvents(jobId) {
-    const rowsRaw = runSql(this.dbPath, `
-      SELECT event_json FROM specialist_events
-      WHERE job_id = ${quoteSql(jobId)}
-      ORDER BY t ASC, id ASC;
-    `).trim();
-    if (!rowsRaw)
-      return [];
-    const rows = JSON.parse(rowsRaw);
-    const events = [];
-    for (const row of rows) {
-      if (!row.event_json)
-        continue;
-      try {
-        events.push(JSON.parse(row.event_json));
-      } catch {}
-    }
-    return events;
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT event_json FROM specialist_events
+        WHERE job_id = ?
+        ORDER BY t ASC, id ASC;
+      `).all(jobId);
+      const events = [];
+      for (const row of rows) {
+        if (!row.event_json)
+          continue;
+        try {
+          events.push(JSON.parse(row.event_json));
+        } catch {}
+      }
+      return events;
+    }, "readEvents");
   }
   readResult(jobId) {
-    const rowsRaw = runSql(this.dbPath, `SELECT output FROM specialist_results WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
-    if (!rowsRaw)
-      return null;
-    const rows = JSON.parse(rowsRaw);
-    return rows[0]?.output ?? null;
+    return withRetry(() => {
+      const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
+      return row?.output ?? null;
+    }, "readResult");
+  }
+  close() {
+    this.db.close();
   }
 }
 function createObservabilitySqliteClient(cwd = process.cwd()) {
-  if (!hasSqlite3Binary())
+  if (!loadBunDatabase())
     return null;
   const location = resolveObservabilityDbLocation(cwd);
   if (!existsSync8(location.dbPath))
     return null;
   try {
-    initSchema(location.dbPath);
+    const Ctor = loadBunDatabase();
+    const initDb = new Ctor(location.dbPath);
+    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    initSchema(initDb);
+    initDb.close();
     return new SqliteClient(location.dbPath);
   } catch {
     return null;
   }
 }
+var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTEMPTS = 5, BASE_RETRY_DELAY_MS = 50;
 var init_observability_sqlite = __esm(() => {
   init_observability_db();
 });
@@ -20535,7 +20580,7 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run8
 });
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join9 } from "node:path";
 function parseArgs4(argv) {
@@ -20612,7 +20657,7 @@ function openAllConfigSpecialistsInEditor() {
     process.exit(1);
   }
   const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-  const result = spawnSync7(editor, files, { stdio: "inherit", shell: true });
+  const result = spawnSync6(editor, files, { stdio: "inherit", shell: true });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
@@ -20859,10 +20904,10 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/job-root.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { dirname as dirname3, join as join11, resolve as resolve3 } from "node:path";
 function resolveCommonGitRoot(cwd) {
-  const result = spawnSync8("git", ["rev-parse", "--git-common-dir"], {
+  const result = spawnSync7("git", ["rev-parse", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20879,7 +20924,7 @@ function resolveJobsDir(cwd = process.cwd()) {
   return join11(commonRoot, ".specialists", "jobs");
 }
 function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync8("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+  const result = spawnSync7("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -21128,9 +21173,9 @@ import {
 import { join as join12 } from "node:path";
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
-import { spawnSync as spawnSync9, execFileSync as execFileSync2 } from "node:child_process";
+import { spawnSync as spawnSync8, execFileSync } from "node:child_process";
 function getCurrentGitSha() {
-  const result = spawnSync9("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -21410,7 +21455,7 @@ class Supervisor {
     appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
     const fifoPath = join12(dir, "steer.pipe");
     try {
-      execFileSync2("mkfifo", [fifoPath]);
+      execFileSync("mkfifo", [fifoPath]);
       setStatus({ fifo_path: fifoPath });
     } catch {}
     let textLogged = false;
@@ -21851,7 +21896,7 @@ class Supervisor {
           rmSync(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync9("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync8("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
     }
   }
@@ -21879,7 +21924,7 @@ var init_supervisor = __esm(() => {
 // src/specialist/worktree.ts
 import { existsSync as existsSync13, symlinkSync, mkdirSync as mkdirSync4 } from "node:fs";
 import { join as join13, resolve as resolve4 } from "node:path";
-import { spawnSync as spawnSync10, execFileSync as execFileSync3 } from "node:child_process";
+import { spawnSync as spawnSync9, execFileSync as execFileSync2 } from "node:child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -21893,7 +21938,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync10("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync9("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -21932,7 +21977,7 @@ function symlinkPiNpmCache(commonRoot, worktreePath) {
 }
 function createWorktreeViaBd(worktreePath, branch, cwd) {
   try {
-    execFileSync3("bd", ["worktree", "create", worktreePath, "--branch", branch], {
+    execFileSync2("bd", ["worktree", "create", worktreePath, "--branch", branch], {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -22175,7 +22220,7 @@ var init_format_helpers = __esm(() => {
 });
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync10 } from "node:child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -22183,7 +22228,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync11("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync10("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -22198,14 +22243,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync11("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync10("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function killTmuxSession(name) {
-  spawnSync11("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync10("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -22610,7 +22655,7 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run11
 });
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 import { existsSync as existsSync14, readFileSync as readFileSync8 } from "node:fs";
 import { join as join15 } from "node:path";
 function ok2(msg) {
@@ -22631,7 +22676,7 @@ function section(label) {
 ${bold8(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync12(bin, args, {
+  const r = spawnSync11(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -22639,7 +22684,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync12("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync11("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -23928,7 +23973,7 @@ async function run17() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync19, readdirSync as readdirSync7, readFileSync as readFileSync13 } from "node:fs";
 import { join as join20 } from "node:path";
-import { spawnSync as spawnSync13 } from "node:child_process";
+import { spawnSync as spawnSync12 } from "node:child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join20(jobDir, "status.json");
   if (!existsSync19(statusPath))
@@ -23974,7 +24019,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync13("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync12("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -24300,7 +24345,7 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run20
 });
-import { execFileSync as execFileSync4, spawnSync as spawnSync14 } from "node:child_process";
+import { execFileSync as execFileSync3, spawnSync as spawnSync13 } from "node:child_process";
 import { readFileSync as readFileSync15 } from "node:fs";
 import { join as join23 } from "node:path";
 function exitWithError(message) {
@@ -24333,12 +24378,12 @@ async function run20() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync14("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync13("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
   try {
-    execFileSync4("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
+    execFileSync3("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
   } catch {
     process.exit(1);
   }
@@ -24580,7 +24625,7 @@ var exports_doctor = {};
 __export(exports_doctor, {
   run: () => run22
 });
-import { spawnSync as spawnSync15 } from "node:child_process";
+import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync21, mkdirSync as mkdirSync5, readFileSync as readFileSync16, readdirSync as readdirSync9 } from "node:fs";
 import { join as join24 } from "node:path";
 function ok3(msg) {
@@ -24604,11 +24649,11 @@ function section3(label) {
 ${bold11(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync15(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync14(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync15("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync14("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
   if (!existsSync21(path))
