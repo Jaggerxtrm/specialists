@@ -605,6 +605,15 @@ supervisor.ts FIFO readline kept the event loop alive in batch test suites. Fix:
 #### Projected SQLite growth
 ~950 rows / ~200-300KB per run. 50 runs/day → ~15MB/day. WAL mode + VACUUM handles this. Not tracked in git (binary, gitignored).
 
+#### JSON-first schema (overthinker consensus 2026-04-05)
+specialist_events uses `event_json TEXT` as canonical payload — no denormalized columns. `char_count` and `text_content` dropped (commit 626ed89c). Only `type TEXT` kept as a real indexed column. Query via `json_extract(event_json, '$.field')`. Promote to column only if measured bottleneck. bun:sqlite JSON1 fully available (json_extract, ->>, json_each).
+
+#### bun:sqlite lazy import (commit eacf3ace)
+`loadBunDatabase()` in observability-sqlite.ts returns null under Node/vitest. No top-level `import 'bun:sqlite'` — prevents module graph poisoning. Dual test runner: vitest excludes bun:sqlite tests, `npm run test:bun` runs them.
+
+#### Atomic dual-write (afl9 requirement)
+`db.transaction()` required for status + event writes. Crash between individual writes leaves orphaned state. CLI readers must each set `PRAGMA busy_timeout=5000` on their own connection.
+
 ---
 
 ## Full Dependency Sequence
