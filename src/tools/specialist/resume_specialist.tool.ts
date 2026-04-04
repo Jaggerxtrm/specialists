@@ -1,9 +1,9 @@
 // src/tools/specialist/resume_specialist.tool.ts
 import { z } from 'zod';
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { JobRegistry } from '../../specialist/jobRegistry.js';
 import { Supervisor } from '../../specialist/supervisor.js';
+import { resolveJobsDir } from '../../specialist/job-root.js';
 
 export const resumeSpecialistSchema = z.object({
   job_id: z.string().describe('Job ID of a waiting keep-alive specialist session'),
@@ -34,7 +34,7 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
       }
 
       // Fall back to FIFO for Supervisor-managed CLI-started jobs
-      const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+      const jobsDir = resolveJobsDir();
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
       const status = supervisor.readStatus(input.job_id);
 

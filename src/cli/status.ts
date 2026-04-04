@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
+import { resolveJobsDir } from '../specialist/job-root.js';
 import {
   bold,
   dim,
@@ -185,7 +186,7 @@ export async function run(): Promise<void> {
 
   const specialistsBin = cmd('which', ['specialists']);
 
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  const jobsDir = resolveJobsDir();
   let jobs: SupervisorStatus[] = [];
   let supervisor: Supervisor | null = null;
   if (existsSync(jobsDir)) {

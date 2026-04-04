@@ -1,9 +1,9 @@
 // src/cli/steer.ts
 // Write a steering message to the FIFO of a running background specialist job.
 
-import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { Supervisor } from '../specialist/supervisor.js';
+import { resolveJobsDir } from '../specialist/job-root.js';
 
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const red   = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -17,7 +17,7 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  const jobsDir = resolveJobsDir();
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
   const status = supervisor.readStatus(jobId);
 
