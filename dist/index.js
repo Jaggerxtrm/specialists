@@ -17965,12 +17965,13 @@ class PiAgentSession {
     const ssPath = join2(piExtDir, "service-skills");
     if (existsSync2(ssPath))
       args.push("-e", ssPath);
-    const serenaPath = join2(piExtDir, "serena");
-    if (existsSync2(serenaPath))
-      args.push("-e", serenaPath);
-    const gitnexusPath = join2(piExtDir, "gitnexus");
+    const npmGlobalDir = join2(homedir(), ".nvm/versions/node", process.version, "lib/node_modules");
+    const gitnexusPath = join2(npmGlobalDir, "pi-gitnexus");
     if (existsSync2(gitnexusPath))
       args.push("-e", gitnexusPath);
+    const serenaPath = join2(npmGlobalDir, "pi-serena-tools");
+    if (existsSync2(serenaPath))
+      args.push("-e", serenaPath);
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }

@@ -332,11 +332,14 @@ export class PiAgentSession {
     const ssPath = join(piExtDir, 'service-skills');
     if (existsSync(ssPath)) args.push('-e', ssPath);
 
-    const serenaPath = join(piExtDir, 'serena');
-    if (existsSync(serenaPath)) args.push('-e', serenaPath);
-
-    const gitnexusPath = join(piExtDir, 'gitnexus');
+    // npm package extensions (gitnexus, serena) - resolve from global node_modules
+    // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
+    const npmGlobalDir = join(homedir(), '.nvm/versions/node', process.version, 'lib/node_modules');
+    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
     if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+
+    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
+    if (existsSync(serenaPath)) args.push('-e', serenaPath);
 
     if (this.options.systemPrompt) {
       args.push('--append-system-prompt', this.options.systemPrompt);
