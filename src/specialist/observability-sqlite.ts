@@ -29,29 +29,63 @@ function runSql(dbPath: string, sql: string): string {
 }
 
 function initSchema(dbPath: string): void {
+  // Step 1: core tables + schema_version (must run before migration)
   runSql(dbPath, `
     PRAGMA journal_mode=WAL;
+
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version     INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (1, strftime('%s', 'now') * 1000);
+
+    -- Ensure specialist_jobs exists with at least the base columns so the
+    -- migration INSERT below can always SELECT from it.
     CREATE TABLE IF NOT EXISTS specialist_jobs (
-      job_id TEXT PRIMARY KEY,
-      specialist TEXT NOT NULL,
-      status_json TEXT NOT NULL,
+      job_id       TEXT PRIMARY KEY,
+      specialist   TEXT NOT NULL,
+      status_json  TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
+
     CREATE TABLE IF NOT EXISTS specialist_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id TEXT NOT NULL,
-      specialist TEXT NOT NULL,
-      bead_id TEXT,
-      t INTEGER NOT NULL,
-      type TEXT NOT NULL,
-      event_json TEXT NOT NULL
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       TEXT NOT NULL,
+      specialist   TEXT NOT NULL,
+      bead_id      TEXT,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL,
+      char_count   INTEGER,
+      text_content TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, id);
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
+      ON specialist_events(job_id, t, id);
+
     CREATE TABLE IF NOT EXISTS specialist_results (
-      job_id TEXT PRIMARY KEY,
-      output TEXT NOT NULL,
+      job_id        TEXT PRIMARY KEY,
+      output        TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
+  `);
+
+  // Step 2: idempotent migration — rebuild specialist_jobs with new columns.
+  // Uses CREATE TABLE replacement so it works on both fresh and existing DBs.
+  runSql(dbPath, `
+    CREATE TABLE IF NOT EXISTS specialist_jobs_new (
+      job_id         TEXT PRIMARY KEY,
+      specialist     TEXT NOT NULL,
+      worktree_column TEXT,
+      status_json    TEXT NOT NULL,
+      updated_at_ms  INTEGER NOT NULL,
+      last_output    TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_new
+      SELECT job_id, specialist, NULL, status_json, updated_at_ms, NULL
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
 }
 
