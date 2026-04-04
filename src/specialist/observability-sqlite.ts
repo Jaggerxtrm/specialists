@@ -132,9 +132,7 @@ export function initSchema(db: BunDb): void {
       bead_id      TEXT,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL,
-      char_count   INTEGER,
-      text_content TEXT
+      event_json   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
       ON specialist_events(job_id, t, id);

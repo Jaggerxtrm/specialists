@@ -18913,7 +18913,8 @@ You are a specialist agent. The following rules OVERRIDE any conflicting instruc
 - Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.
 - Do NOT run \`specialists setup\` or \`specialists install\`.
 - The edit-gate (bd create before editing) does NOT apply inside a specialist run.
-- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.${beadInstructions}
+- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.
+- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths — but never leave.${beadInstructions}
 ---
 `;
     }
@@ -20237,9 +20238,7 @@ function initSchema(db) {
       bead_id      TEXT,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL,
-      char_count   INTEGER,
-      text_content TEXT
+      event_json   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
       ON specialist_events(job_id, t, id);
