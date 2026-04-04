@@ -671,7 +671,12 @@ specialists doctor      # health check: hooks, MCP, zombie jobs
 specialists edit <name> # edit a specialist's YAML config
 ```
 
-- **RPC timeout on job start** (10s, `command id=1`) → pi-core extension missing or broken. User must run `! xt pi reload` to repair. Cannot be fixed from inside Claude Code.
+- **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
+  worktrees, stdout output corrupts the RPC JSON channel. Fix: ensure the worktree's
+  `.pi/npm/node_modules` symlinks to the main repo's (provisioned by `provisionWorktree()`).
+  If symlink is broken: `! xt pi reload` or manually `ln -s <main>/.pi/npm/node_modules <worktree>/.pi/npm/node_modules`.
+- **RPC timeout on non-worktree job** → likely zombie vitest/tinypool processes holding resources.
+  Kill them: `ps aux | grep vitest` then `kill <pids>`. Also try `npm run build` (stale dist).
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
