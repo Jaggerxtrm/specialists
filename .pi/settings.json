@@ -6,9 +6,7 @@
     "npm:@robhowley/pi-structured-return",
     "npm:@aliou/pi-guardrails"
   ],
-  "extensions": [
-    "../.xtrm/extensions"
-  ],
+  "extensions": [],
   "skills": [
     "../.xtrm/skills/active/pi"
   ]
