@@ -69,18 +69,24 @@ export async function run(): Promise<void> {
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
-  const resultPath = join(jobsDir, jobId, 'result.txt');
 
-  const readResultOutput = (): string | null => {
-    if (existsSync(resultPath)) {
+  try {
+    const resultPath = join(jobsDir, jobId, 'result.txt');
+
+    const readResultOutput = (): string | null => {
+      try {
+        const sqliteResult = sqliteClient?.readResult(jobId) ?? null;
+        if (sqliteResult) return sqliteResult;
+      } catch {
+        // fallback to result.txt
+      }
+
+      if (!existsSync(resultPath)) {
+        return null;
+      }
+
       return readFileSync(resultPath, 'utf-8');
-    }
-    try {
-      return sqliteClient?.readResult(jobId) ?? null;
-    } catch {
-      return null;
-    }
-  };
+    };
 
   if (args.wait) {
     const startMs = Date.now();
@@ -203,4 +209,7 @@ export async function run(): Promise<void> {
   }
 
   process.stdout.write(output);
+  } finally {
+    sqliteClient?.close();
+  }
 }

@@ -7,6 +7,7 @@ import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
   bold,
   dim,
@@ -93,7 +94,20 @@ function parseStatusArgs(argv: string[]): ParsedStatusArgs {
   return { jsonMode, jobId };
 }
 
-function countJobEvents(jobsDir: string, jobId: string): number {
+function countJobEvents(
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  jobsDir: string,
+  jobId: string
+): number {
+  try {
+    const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      return sqliteEvents.length;
+    }
+  } catch {
+    // fallback to events.jsonl
+  }
+
   const eventsFile = join(jobsDir, jobId, 'events.jsonl');
   if (!existsSync(eventsFile)) return 0;
   const raw = readFileSync(eventsFile, 'utf-8').trim();
@@ -163,9 +177,11 @@ export async function run(): Promise<void> {
   }
 
   const { jsonMode, jobId } = parsedArgs;
+  const sqliteClient = createObservabilitySqliteClient();
 
-  // ── Collect all data ────────────────────────────────────────────────────────
-  const loader = new SpecialistLoader();
+  try {
+    // ── Collect all data ────────────────────────────────────────────────────────
+    const loader = new SpecialistLoader();
   const allSpecialists = await loader.list();
 
   const piInstalled = isInstalled('pi');
@@ -209,7 +225,7 @@ export async function run(): Promise<void> {
       process.exit(1);
     }
 
-    const eventCount = countJobEvents(jobsDir, jobId);
+    const eventCount = countJobEvents(sqliteClient, jobsDir, jobId);
 
     if (jsonMode) {
       console.log(JSON.stringify({
@@ -356,4 +372,7 @@ export async function run(): Promise<void> {
   }
 
   console.log();
+  } finally {
+    sqliteClient?.close();
+  }
 }

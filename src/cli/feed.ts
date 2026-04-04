@@ -153,7 +153,7 @@ interface JobMeta {
   startedAtMs: number;
 }
 
-const sqliteClient = createObservabilitySqliteClient();
+type ObservabilitySqliteClient = ReturnType<typeof createObservabilitySqliteClient>;
 
 function readFileFresh(filePath: string): string | null {
   try {
@@ -168,7 +168,11 @@ function readFileFresh(filePath: string): string | null {
   }
 }
 
-function readStatusJson(jobsDir: string, jobId: string): Record<string, unknown> | null {
+function readStatusJson(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string
+): Record<string, unknown> | null {
   try {
     const sqliteStatus = sqliteClient?.readStatus(jobId);
     if (sqliteStatus) return sqliteStatus as unknown as Record<string, unknown>;
@@ -187,13 +191,21 @@ function readStatusJson(jobsDir: string, jobId: string): Record<string, unknown>
   }
 }
 
-function isTerminalJobStatus(jobsDir: string, jobId: string): boolean {
-  const status = readStatusJson(jobsDir, jobId);
+function isTerminalJobStatus(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string
+): boolean {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
   return status?.status === 'done' || status?.status === 'error';
 }
 
-function readJobMeta(jobsDir: string, jobId: string): JobMeta {
-  const status = readStatusJson(jobsDir, jobId);
+function readJobMeta(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string
+): JobMeta {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
   if (!status) return { startedAtMs: Date.now() };
 
   return {
@@ -208,12 +220,13 @@ function readJobMeta(jobsDir: string, jobId: string): JobMeta {
 }
 
 function makeJobMetaReader(
+  sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
   options: { useCache?: boolean } = {}
 ): (jobId: string) => JobMeta {
   const useCache = options.useCache ?? true;
   if (!useCache) {
-    return (jobId: string): JobMeta => readJobMeta(jobsDir, jobId);
+    return (jobId: string): JobMeta => readJobMeta(sqliteClient, jobsDir, jobId);
   }
 
   const cache = new Map<string, JobMeta>();
@@ -221,7 +234,7 @@ function makeJobMetaReader(
     const cached = cache.get(jobId);
     if (cached) return cached;
 
-    const meta = readJobMeta(jobsDir, jobId);
+    const meta = readJobMeta(sqliteClient, jobsDir, jobId);
     cache.set(jobId, meta);
     return meta;
   };
@@ -261,6 +274,7 @@ function parseArgs(argv: string[]): FeedOptions {
 // ============================================================================
 
 function printSnapshot(
+  sqliteClient: ObservabilitySqliteClient,
   merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
   options: FeedOptions,
   jobsDir?: string
@@ -274,7 +288,9 @@ function printSnapshot(
   const colorMap = new JobColorMap();
 
   if (options.json) {
-    const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : (): JobMeta => ({ startedAtMs: Date.now() });
+    const getJobMeta = jobsDir
+      ? makeJobMetaReader(sqliteClient, jobsDir)
+      : (): JobMeta => ({ startedAtMs: Date.now() });
     for (const { jobId, specialist, beadId, event } of merged) {
       const meta = getJobMeta(jobId);
       const model = meta.model ?? (event.type === 'meta' ? event.model : undefined);
@@ -296,7 +312,9 @@ function printSnapshot(
 
   const lastPrintedEventKey = new Map<string, string>();
   const seenMetaKey = new Map<string, string>();
-  const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : (): JobMeta => ({ startedAtMs: Date.now() });
+  const getJobMeta = jobsDir
+    ? makeJobMetaReader(sqliteClient, jobsDir)
+    : (): JobMeta => ({ startedAtMs: Date.now() });
 
   for (const { jobId, specialist, beadId, event } of merged) {
     if (!shouldRenderHumanEvent(event)) continue;
@@ -334,7 +352,11 @@ function filterMergedEventsByCursor(
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
 
-function listMatchingJobIds(jobsDir: string, options: FeedOptions): string[] {
+function listMatchingJobIds(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  options: FeedOptions
+): string[] {
   if (!existsSync(jobsDir)) return [];
 
   const jobIds: string[] = [];
@@ -350,7 +372,7 @@ function listMatchingJobIds(jobsDir: string, options: FeedOptions): string[] {
     if (options.jobId && entry !== options.jobId) continue;
 
     if (options.specialist) {
-      const status = readStatusJson(jobsDir, entry);
+      const status = readStatusJson(sqliteClient, jobsDir, entry);
       const specialist = typeof status?.specialist === 'string' ? status.specialist : undefined;
       if (specialist !== options.specialist) continue;
     }
@@ -361,7 +383,11 @@ function listMatchingJobIds(jobsDir: string, options: FeedOptions): string[] {
   return jobIds;
 }
 
-function readJobEventsFresh(jobsDir: string, jobId: string): TimelineEvent[] {
+function readJobEventsFresh(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string
+): TimelineEvent[] {
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
@@ -388,16 +414,17 @@ function readJobEventsFresh(jobsDir: string, jobId: string): TimelineEvent[] {
 }
 
 function readFilteredBatchesFresh(
+  sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
   options: FeedOptions
 ): Array<{ jobId: string; specialist: string; beadId?: string; events: TimelineEvent[] }> {
   const batches: Array<{ jobId: string; specialist: string; beadId?: string; events: TimelineEvent[] }> = [];
 
-  for (const jobId of listMatchingJobIds(jobsDir, options)) {
-    const status = readStatusJson(jobsDir, jobId);
+  for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
+    const status = readStatusJson(sqliteClient, jobsDir, jobId);
     const specialist = typeof status?.specialist === 'string' ? status.specialist : 'unknown';
     const beadId = typeof status?.bead_id === 'string' ? status.bead_id : undefined;
-    const events = readJobEventsFresh(jobsDir, jobId);
+    const events = readJobEventsFresh(sqliteClient, jobsDir, jobId);
     if (events.length === 0) continue;
     batches.push({ jobId, specialist, beadId, events });
   }
@@ -405,20 +432,24 @@ function readFilteredBatchesFresh(
   return batches;
 }
 
-async function followMerged(jobsDir: string, options: FeedOptions): Promise<void> {
+async function followMerged(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  options: FeedOptions
+): Promise<void> {
   const colorMap = new JobColorMap();
-  const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
+  const getJobMeta = makeJobMetaReader(sqliteClient, jobsDir, { useCache: false });
 
   // Track last seen timestamp per job
   const lastSeenT = new Map<string, number>();
-  const initialMatchingJobIds = listMatchingJobIds(jobsDir, options);
+  const initialMatchingJobIds = listMatchingJobIds(sqliteClient, jobsDir, options);
   const hasInitialMatchingJobs = initialMatchingJobIds.length > 0;
   const trackedJobs = new Set<string>(
-    initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(jobsDir, jobId))
+    initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(sqliteClient, jobsDir, jobId))
   );
   const completedJobs = new Set<string>();
 
-  const filteredBatches = () => readFilteredBatchesFresh(jobsDir, options);
+  const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
 
   // Initial snapshot
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
@@ -428,7 +459,7 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
     limit: options.limit,
   }), options.from);
 
-  printSnapshot(initial, { ...options, json: options.json }, jobsDir);
+  printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
 
   for (const batch of filteredBatches()) {
     if (batch.events.length > 0) {
@@ -470,13 +501,13 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
-      for (const jobId of listMatchingJobIds(jobsDir, options)) {
-        if (!isTerminalJobStatus(jobsDir, jobId)) {
+      for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
+        if (!isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
           trackedJobs.add(jobId);
         }
       }
       for (const jobId of trackedJobs) {
-        if (isTerminalJobStatus(jobsDir, jobId)) {
+        if (isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
           completedJobs.add(jobId);
         }
       }
@@ -503,7 +534,10 @@ async function followMerged(jobsDir: string, options: FeedOptions): Promise<void
         }
 
         // Check completion for jobs that were active during follow.
-        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId))) {
+        if (
+          trackedJobs.has(batch.jobId)
+          && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(sqliteClient, jobsDir, batch.jobId))
+        ) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -577,30 +611,35 @@ Examples:
 
 export async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(3));
+  const sqliteClient = createObservabilitySqliteClient();
 
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  try {
+    const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
-  if (!existsSync(jobsDir)) {
-    console.log(dim('No jobs directory found.'));
-    return;
+    if (!existsSync(jobsDir)) {
+      console.log(dim('No jobs directory found.'));
+      return;
+    }
+
+    if (options.from > 0 && !options.json) {
+      console.log(dim(`Showing events from seq ${options.from}`));
+    }
+
+    if (options.follow) {
+      await followMerged(sqliteClient, jobsDir, options);
+      return;
+    }
+
+    // Snapshot mode
+    const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
+      jobId: options.jobId,
+      specialist: options.specialist,
+      since: options.since,
+      limit: options.limit,
+    }), options.from);
+
+    printSnapshot(sqliteClient, merged, options, jobsDir);
+  } finally {
+    sqliteClient?.close();
   }
-
-  if (options.from > 0 && !options.json) {
-    console.log(dim(`Showing events from seq ${options.from}`));
-  }
-
-  if (options.follow) {
-    await followMerged(jobsDir, options);
-    return;
-  }
-
-  // Snapshot mode
-  const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
-    jobId: options.jobId,
-    specialist: options.specialist,
-    since: options.since,
-    limit: options.limit,
-  }), options.from);
-
-  printSnapshot(merged, options, jobsDir);
 }
