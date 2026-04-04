@@ -18,7 +18,7 @@ specialist:
     response_format: markdown
     output_type: codegen
     permission_required: HIGH
-    thinking_level: medium
+    thinking_level: low
 
   prompt:
     system: |
