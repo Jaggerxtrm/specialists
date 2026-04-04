@@ -41,8 +41,8 @@
 | unitAI-08zd Phase 3 | — | 🔜 unblocked — planner done, executors ready | SQLite dual-write, WAL mode, worktree column. Merge order: A→C→B→D. |
 | unitAI-3chh | cdb342 (planner) | ✅ CLOSED | Decomposed into ky4c/fqxo/afl9/hhs6 + test beads mhra/lcv6/pi8m. Merge order: A→C→B→D. |
 | unitAI-ky4c | e9376f (executor) | ✅ CLOSED — commit aec1c98f | Phase 3A: schema_version(v=1), specialist_jobs +worktree_column +last_output, specialist_events +char_count +text_content. Idempotent migration. |
-| unitAI-fqxo | — | 🔜 unblocked | Phase 3C: WAL+busy_timeout(5000)+retry, --git-common-dir fix, bun:sqlite persistent connection (not execFileSync). |
-| unitAI-afl9 | — | 🔜 blocked on fqxo | Phase 3B: supervisor dual-write. NOTE: g5np added result_raw + gitnexus_summary after planner decomposed 3chh — gitnexus_summary persisted via event_json, result_raw EXCLUDED from SQLite (decision 2026-04-04). |
+| unitAI-fqxo | 4f26a3 (executor) + da3ee4 (fix) | ✅ CLOSED — commit eacf3ace, merged 9bb9bc5f | Phase 3C: WAL+busy_timeout(5000)+retry(5 attempts, exp backoff+jitter), --git-common-dir worktree-safe DB, bun:sqlite persistent connection (lazy-loaded via loadBunDatabase() — returns null under Node/vitest). Reviewer PARTIAL 76→fix→merged. |
+| unitAI-afl9 | — | 🔜 unblocked | Phase 3B: supervisor dual-write. NOTE: g5np added result_raw + gitnexus_summary after planner decomposed 3chh — gitnexus_summary persisted via event_json, result_raw EXCLUDED from SQLite (decision 2026-04-04). |
 | unitAI-hhs6 | — | 🔜 blocked on afl9 | Phase 3D: CLI read paths (feed.ts, status.ts, result.ts) read from SQLite, fall back to files. |
 | unitAI-fdtq | — | 🔜 blocked on hhs6 | Per-turn text capture: accumulate onToken deltas, write text_content on turn_summary. Merged y6x5 (crash recovery). Blocks 69rw. |
 | unitAI-mhra/lcv6/pi8m | — | 🔜 test beads for 3A/3B/3D | Each blocks its impl bead |
@@ -637,7 +637,7 @@ Stage 2 — SQLite Runtime
        ↓
   08zd Phase 3A ky4c (schema)                ✅ commit aec1c98f
        ↓
-  08zd Phase 3C fqxo (WAL + git-common-dir)
+  08zd Phase 3C fqxo (WAL + git-common-dir)  ✅ commit eacf3ace
        ↓
   08zd Phase 3B afl9 (supervisor dual-write)
        ↓
