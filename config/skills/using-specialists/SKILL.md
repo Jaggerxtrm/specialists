@@ -352,11 +352,39 @@ bd close unitAI-task --reason "Reviewer PASS. All findings addressed."
 
 ---
 
-## Merge Protocol (Between Waves)
+## Merge Protocol — Orchestrator Responsibility
 
-**Mandatory.** After every executor wave, merge worktree branches into master before
-starting the next wave. Without this, the next wave's executors branch from stale master
-and won't have upstream code.
+The orchestrator owns merge timing. This is not optional — failing to merge at the right
+time means downstream specialists branch from stale master and miss upstream code.
+
+### When to merge vs when NOT to merge
+
+**Do NOT merge within a chain.** A chain is a sequence of specialists sharing one worktree:
+executor → reviewer → fix → re-review. The worktree stays live throughout. No merge until
+the reviewer says PASS.
+
+```
+executor --worktree --bead impl     ← creates worktree
+reviewer --job <exec-job>           ← enters same worktree (no merge)
+executor --bead fix --job <exec-job> ← re-enters same worktree (no merge)
+reviewer --job <exec-job>           ← re-enters same worktree (no merge)
+PASS → NOW merge the worktree branch into master
+```
+
+**DO merge between waves.** When the next wave's beads depend on this wave's code existing
+on master, you must merge first. The dep graph tells you: beads connected by `--job` are
+one chain (same worktree, no merge). Beads connected by `bd dep add` across different
+file scopes are separate waves (different worktrees, merge between them).
+
+### Planning context upfront
+
+Before dispatching any wave, identify:
+- **Chains** — beads that share a worktree via `--job` (executor → reviewer → fix → re-review)
+- **Waves** — groups of independent chains that can run in parallel
+- **Merge points** — between waves, after all chains in the wave reach PASS
+
+The dep graph encodes this. If bead B depends on bead A and they touch different files,
+they're separate waves with a merge point between them.
 
 ### FIFO — dependency order
 
@@ -499,14 +527,17 @@ specialists run executor --worktree --bead unitAI-impl --context-depth 2 --backg
 
 ### Pi extensions and packages
 
-Pi extensions are global at `~/.pi/agent/extensions/`. Pi packages are global at
-`~/.pi/npm/`. Specialists run with `--no-extensions` and selectively re-enable
-`quality-gates` and `service-skills` from the global extensions directory.
+Pi extensions are global at `~/.pi/agent/extensions/`. Pi packages are global npm installs.
+Specialists run with `--no-extensions` and selectively re-enable:
 
-**Not yet wired:** GitNexus (call-chain tracing) and Serena LSP (token-efficient reads)
-are available as global pi packages but not loaded into specialist sessions. This means
-`gitnexus_summary` in `run_complete` events is always empty — the accumulator works but
-has no data. Tracked as `unitAI-4abv`.
+- `quality-gates` — lint/typecheck enforcement (non-READ_ONLY only)
+- `service-skills` — service catalog activation
+- `pi-gitnexus` — call-chain tracing, blast radius analysis (resolved from global npm)
+- `pi-serena-tools` — token-efficient LSP reads/edits (resolved from global npm)
+
+When gitnexus tools are used during a run, the supervisor accumulates a `gitnexus_summary`
+in the `run_complete` event: `files_touched`, `symbols_analyzed`, `highest_risk`,
+`tool_invocations`.
 
 ---
 
