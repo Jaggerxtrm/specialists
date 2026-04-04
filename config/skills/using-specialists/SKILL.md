@@ -92,10 +92,18 @@ task-abc: "Fix auth token refresh"
   └── abc-fix:  executor   (if reviewer PARTIAL — fix bead, same worktree via --job)
 ```
 
-**How context flows:**
-- `--context-depth 2` on `abc-impl` → specialist sees abc-impl (own bead) + abc-exp (parent, whose notes now contain explorer output) + task-abc (grandparent)
+**How context flows (`--context-depth 2` = own + parent + grandparent = 3 beads):**
+
+| Step | Specialist sees | Via |
+|------|----------------|-----|
+| abc-exp | abc-exp (own) + task-abc (parent) | `--bead abc-exp --context-depth 2` |
+| abc-impl | abc-impl (own) + abc-exp (explorer findings in notes) + task-abc | `--bead abc-impl --context-depth 2` |
+| reviewer | abc-impl bead (with executor output + reviewer verdict in notes) | `--bead abc-impl --job <exec-job>` |
+| abc-fix | abc-fix (own) + abc-impl (executor output + reviewer verdict) + abc-exp | `--bead abc-fix --job <exec-job> --context-depth 2` |
+
 - No copy-paste, no manual note injection between steps
 - Every step has a full audit trail on its own bead
+- The dep graph IS the context graph — self-documenting
 
 ### Complete flow example
 
