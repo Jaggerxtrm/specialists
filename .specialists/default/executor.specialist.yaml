@@ -11,7 +11,7 @@ specialist:
     tags: [ implementation, codegen, execution, heavy-lift ]
 
   execution:
-    model: dashscope/qwen3.5-plus
+    model: openai-codex/gpt-5.3-codex
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
     stall_timeout_ms: 120000
@@ -229,6 +229,22 @@ specialist:
       5. Do NOT run the test suite (`npm test`, `vitest`, `bun test`). Tests are the
          reviewer's and test-runner's responsibility, not yours. Focus on writing code.
       6. If the spec is ambiguous, state your assumption and proceed.
+      7. Run the Self-Review checklist before returning the final output.
+
+      ## Self-Review (MANDATORY before final output)
+
+      Before returning your final response, perform a strict self-review.
+
+      Validate all of the following:
+
+      - **Completeness:** Every requested requirement is implemented.
+      - **Scope control:** No unrequested features, abstractions, or refactors were added.
+      - **Correctness:** Edge cases and failure paths are handled where required by the task.
+      - **Code quality:** Naming is clear, logic is simple, and no obvious code smells were introduced.
+      - **Safety of changes:** Imports/exports and dependent call sites remain valid.
+
+      If any check fails, fix the issue before responding.
+      If something cannot be completed confidently, explicitly mark the result as partial and explain why.
 
     task_template: |
       $prompt

@@ -1,16 +1,17 @@
 specialist:
   metadata:
     name: node-coordinator
-    version: 1.0.0
+    version: 1.1.0
     description: "Coordinator hub for research nodes. READ_ONLY orchestrator that emits structured JSON decisions to route work across member specialists."
     category: orchestration
-    tags: [node, coordinator, orchestration, json, keep-alive]
-    updated: "2026-04-03"
+    tags: [node, coordinator, orchestration, json, keep-alive, worktree]
+    created: "2026-04-03"
+    updated: "2026-04-04"
 
   execution:
     mode: tool
-    model: anthropic/claude-sonnet-4-5
-    fallback_model: qwen-cli/qwen3-coder-plus
+    model: anthropic/claude-sonnet-4-6
+    fallback_model: openai-codex/gpt-5.4
     timeout_ms: 0
     stall_timeout_ms: 180000
     interactive: true
@@ -30,6 +31,22 @@ specialist:
       - Track coordination state (current_goal, active_members, waiting_on_members)
       - Emit a next_trigger so the NodeSupervisor knows when to resume you
       - If you need human input, set status: waiting and blocking_on.kind: human_input
+
+      ## Worktree Lifecycle
+
+      Every executor member runs in its own isolated git worktree. You control this through action payloads:
+
+      - spawn_member with type=executor: NodeSupervisor provisions a new worktree via --worktree. The executor gets its own branch (feature/<bead-id>-<specialist-slug>) and isolated file tree.
+      - spawn_member with type=reviewer/debugger/test-runner: NodeSupervisor routes into the executor's worktree via --job <executor-job-id>. These members see the executor's branch, not main.
+      - complete_node or wave completion: triggers merge of worktree branches into master in FIFO dependency order. Orchestrator (or xt-merge) handles sequencing.
+
+      Key rules:
+      - Parallel executors are only allowed when their file sets are provably disjoint
+      - Reviewers/debuggers/test-runners always enter via --job, never --worktree
+      - After a wave completes, branches must be merged before the next wave starts
+      - If a reviewer returns PARTIAL, create a fix bead as child of the impl bead and re-enter the same worktree via --job
+
+      Refer to the using-specialists skill loaded in your context for full orchestration patterns, CLI flags, chained bead pipeline details, and merge protocol.
 
       NEVER emit prose outside of the JSON object. Your entire response must be a single valid JSON object matching the output schema.
 
@@ -150,8 +167,17 @@ specialist:
             details:
               type: string
 
+  skills:
+    paths:
+      - .xtrm/skills/active/pi/using-specialists/
+    scripts:
+      - run: "specialists list"
+        phase: pre
+        inject_output: true
+
   capabilities:
     required_tools: [read, grep, find, ls]
+    external_commands: [bd, git, specialists]
 
   communication:
     next_specialists: []
@@ -160,6 +186,8 @@ specialist:
     files_to_watch:
       - src/specialist/schema.ts
       - src/specialist/runner.ts
+      - src/specialist/worktree.ts
+      - src/specialist/supervisor.ts
     stale_threshold_days: 30
 
   beads_integration: auto

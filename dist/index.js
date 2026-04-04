@@ -20275,37 +20275,65 @@ class SqliteClient {
     this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
     this.db.run("PRAGMA journal_mode=WAL");
   }
-  upsertStatus(status) {
+  writeStatusRow(status) {
     const statusJson = JSON.stringify(status);
+    this.db.run(`
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        specialist = excluded.specialist,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [status.id, status.specialist, statusJson, Date.now()]);
+  }
+  writeEventRow(jobId, specialist, beadId, event) {
+    const eventJson = JSON.stringify(event);
+    this.db.run(`
+      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+  }
+  writeResultRow(jobId, output) {
+    this.db.run(`
+      INSERT INTO specialist_results (job_id, output, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        output = excluded.output,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [jobId, output, Date.now()]);
+  }
+  upsertStatus(status) {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          specialist = excluded.specialist,
-          status_json = excluded.status_json,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [status.id, status.specialist, statusJson, Date.now()]);
+      this.writeStatusRow(status);
     }, "upsertStatus");
   }
-  appendEvent(jobId, specialist, beadId, event) {
-    const eventJson = JSON.stringify(event);
+  upsertStatusWithEvent(status, event) {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+      });
+      transaction();
+    }, "upsertStatusWithEvent");
+  }
+  upsertStatusWithEventAndResult(status, event, output) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeResultRow(status.id, output);
+      });
+      transaction();
+    }, "upsertStatusWithEventAndResult");
+  }
+  appendEvent(jobId, specialist, beadId, event) {
+    withRetry(() => {
+      this.writeEventRow(jobId, specialist, beadId, event);
     }, "appendEvent");
   }
   upsertResult(jobId, output) {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_results (job_id, output, updated_at_ms)
-        VALUES (?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          output = excluded.output,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [jobId, output, Date.now()]);
+      this.writeResultRow(jobId, output);
     }, "upsertResult");
   }
   readStatus(jobId) {
@@ -21314,12 +21342,15 @@ class Supervisor {
     }
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
-  writeStatusFile(id, data) {
+  writeStatusFileOnly(id, data) {
     mkdirSync3(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + ".tmp";
     writeFileSync4(tmp, JSON.stringify(data, null, 2), "utf-8");
     renameSync2(tmp, path);
+  }
+  writeStatusFile(id, data) {
+    this.writeStatusFileOnly(id, data);
     try {
       this.sqliteClient?.upsertStatus(data);
     } catch {}
@@ -21419,7 +21450,7 @@ class Supervisor {
       ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() }
     };
-    this.writeStatusFile(id, initialStatus);
+    this.writeStatusFileOnly(id, initialStatus);
     writeFileSync4(join12(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     this.opts.onJobStarted?.({ id });
@@ -21451,7 +21482,19 @@ class Supervisor {
         this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
       } catch {}
     };
-    appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
+    const appendTimelineEventFileOnly = (event) => {
+      try {
+        writeSync(eventsFd, JSON.stringify(event) + `
+`);
+      } catch (err) {
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
+    };
+    const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
+    appendTimelineEventFileOnly(runStartEvent);
+    try {
+      this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
+    } catch {}
     const fifoPath = join12(dir, "steer.pipe");
     try {
       execFileSync("mkfifo", [fifoPath]);
@@ -21764,9 +21807,6 @@ class Supervisor {
       latestOutput = result.output;
       mkdirSync3(this.jobDir(id), { recursive: true });
       writeFileSync4(this.resultPath(id), latestOutput, "utf-8");
-      try {
-        this.sqliteClient?.upsertResult(id, latestOutput);
-      } catch {}
       if (keepAliveSession) {
         setStatus({
           status: "waiting",
@@ -21811,22 +21851,25 @@ class Supervisor {
           this.opts.beadsClient?.closeBead(finalResult.beadId, "COMPLETE", finalResult.durationMs, finalResult.model);
         }
       }
-      setStatus({
+      const completedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
         status: "done",
         elapsed_s: elapsed,
-        last_event_at_ms: Date.now(),
+        last_event_at_ms: completedAtMs,
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
         metrics: runMetrics
-      });
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
       const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
         files_touched: [...gitnexusAccumulator.files_touched],
         symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
         highest_risk: gitnexusAccumulator.highest_risk,
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
-      appendTimelineEvent(createRunCompleteEvent("COMPLETE", elapsed, {
+      const runCompleteEvent = createRunCompleteEvent("COMPLETE", elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
@@ -21837,17 +21880,25 @@ class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      }));
+      });
+      appendTimelineEventFileOnly(runCompleteEvent);
+      try {
+        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
+      } catch {}
       this.writeReadyMarker(id);
       return id;
     } catch (err) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const errorMsg = err?.message ?? String(err);
-      setStatus({
+      const failedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
         status: "error",
         elapsed_s: elapsed,
-        error: errorMsg
-      });
+        error: errorMsg,
+        last_event_at_ms: failedAtMs
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
       mergeRunMetrics({
         tool_calls: toolCallNames.length,
         tool_call_names: toolCallNames,
@@ -21859,7 +21910,7 @@ class Supervisor {
         highest_risk: gitnexusAccumulator.highest_risk,
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
-      appendTimelineEvent(createRunCompleteEvent("ERROR", elapsed, {
+      const runCompleteEvent = createRunCompleteEvent("ERROR", elapsed, {
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,
@@ -21867,7 +21918,11 @@ class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      }));
+      });
+      appendTimelineEventFileOnly(runCompleteEvent);
+      try {
+        this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
+      } catch {}
       this.writeReadyMarker(id);
       throw err;
     } finally {
