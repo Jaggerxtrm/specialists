@@ -104,6 +104,41 @@ export function verifyWalMode(db: BunDb): void {
   }
 }
 
+function migrateToV2(db: BunDb): void {
+  const hasV2 = db.query('SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1').get() as { 1?: number } | undefined;
+  if (hasV2) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL');
+    return;
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      status_json     TEXT NOT NULL,
+      bead_id         TEXT,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v2
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        status_json,
+        JSON_EXTRACT(status_json, '$.bead_id'),
+        updated_at_ms,
+        last_output
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (2, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export function initSchema(db: BunDb): void {
   enforceWalMode(db);
 
@@ -144,8 +179,7 @@ export function initSchema(db: BunDb): void {
     );
   `);
 
-  // Step 2: idempotent migration — rebuild specialist_jobs with new columns.
-  // Uses CREATE TABLE replacement so it works on both fresh and existing DBs.
+  // Step 2: idempotent v1 migration — rebuild specialist_jobs with new columns.
   db.run(`
     CREATE TABLE IF NOT EXISTS specialist_jobs_new (
       job_id         TEXT PRIMARY KEY,
@@ -162,6 +196,7 @@ export function initSchema(db: BunDb): void {
     ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
 
+  migrateToV2(db);
   verifyWalMode(db);
 }
 
@@ -196,13 +231,14 @@ class SqliteClient implements ObservabilitySqliteClient {
   private writeStatusRow(status: SupervisorStatus): void {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, bead_id, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         status_json = excluded.status_json,
+        bead_id = excluded.bead_id,
         updated_at_ms = excluded.updated_at_ms;
-    `, [status.id, status.specialist, statusJson, Date.now()]);
+    `, [status.id, status.specialist, statusJson, status.bead_id ?? null, Date.now()]);
   }
 
   private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
