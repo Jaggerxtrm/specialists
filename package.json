@@ -21,7 +21,8 @@
     "lint": "tsc --noEmit",
     "test": "bun --bun vitest run",
     "test:watch": "bun --bun vitest",
-    "test:coverage": "bun --bun vitest run --coverage"
+    "test:coverage": "bun --bun vitest run --coverage",
+    "test:supervisor": "bun --bun vitest run tests/unit/specialist/supervisor.test.ts --no-file-parallelism"
   },
   "keywords": [
     "omnispecialist",

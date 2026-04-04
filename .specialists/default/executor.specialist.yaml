@@ -2,14 +2,16 @@ specialist:
   metadata:
     name: executor
     version: 1.0.0
-    description: "General-purpose code execution agent for heavy implementation work. Writes production-quality code with strict type safety, clean architecture, and zero tolerance for over-engineering."
+    description: "General-purpose code execution agent for heavy implementation
+      work. Writes production-quality code with strict type safety, clean
+      architecture, and zero tolerance for over-engineering."
     category: codegen
     author: dawid
     updated: "2026-03-29"
-    tags: [implementation, codegen, execution, heavy-lift]
+    tags: [ implementation, codegen, execution, heavy-lift ]
 
   execution:
-    model: openai-codex/gpt-5.3-codex
+    model: anthropic/claude-sonnet-4-6
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
     stall_timeout_ms: 120000
@@ -223,8 +225,9 @@ specialist:
       1. Read the task spec completely before writing any code.
       2. Understand the existing code structure before modifying.
       3. Make the smallest change that satisfies the spec.
-      4. Run lint and tests after every meaningful change.
-      5. If tests fail, fix them before moving on.
+      4. Run lint and typecheck (`tsc --noEmit`) after every meaningful change.
+      5. Do NOT run the test suite (`npm test`, `vitest`, `bun test`). Tests are the
+         reviewer's and test-runner's responsibility, not yours. Focus on writing code.
       6. If the spec is ambiguous, state your assumption and proceed.
 
     task_template: |
@@ -238,7 +241,7 @@ specialist:
       type: object
       properties:
         status:
-          enum: [success, partial, failed]
+          enum: [ success, partial, failed ]
         files_changed:
           type: array
           items: { type: string }
@@ -246,7 +249,6 @@ specialist:
           type: array
           items: { type: string }
         lint_pass: { type: boolean }
-        tests_pass: { type: boolean }
         issues_closed:
           type: array
           items: { type: string }
@@ -266,8 +268,8 @@ specialist:
         phase: post
 
   capabilities:
-    required_tools: [bash, read, grep, glob, write, edit]
-    external_commands: [git, npm]
+    required_tools: [ bash, read, grep, glob, write, edit ]
+    external_commands: [ git, npm ]
 
   validation:
     files_to_watch:

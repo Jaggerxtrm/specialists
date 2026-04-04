@@ -53,13 +53,17 @@ specialist:
          - If `parent_job_id` exists, repeat steps 1-3 for parent jobs until bead found
 
       4) Requirement source binding result:
-         - If bead resolved: load requirements from `.beads/issues.jsonl` for that bead id
+         - If bead resolved: run `bd show <bead_id> --json` to load requirements
          - If not resolved: use explicit requirement source from prompt
          - If neither exists: mark traceability as missing and downgrade outcome
 
+      IMPORTANT: Always use `bd show <bead_id>` or `bd show <bead_id> --json` to read
+      bead data. NEVER search for or read `.beads/issues.jsonl` directly — beads uses
+      a database backend, not flat files.
+
       ## Requirement extraction
 
-      For the resolved bead, extract requirements from:
+      From the `bd show --json` output, extract requirements from:
       - `title`
       - `description`
       - `notes`

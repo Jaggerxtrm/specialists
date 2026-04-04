@@ -72,37 +72,85 @@ specialists clean                             # purge old job directories
 specialists doctor                            # health check
 ```
 
-### Typical flow
+### Chained Bead Pipeline (standard workflow)
+
+Every specialist run gets its own child bead, chained via dependencies. Each step's
+output accumulates on its bead. Downstream steps see upstream output via `--context-depth`.
+The bead chain IS the context chain — no manual wiring needed.
+
+```
+task-abc: "Fix auth token refresh"
+  └── abc-exp: explorer        (auto-appends output to bead notes, READ_ONLY)
+  └── abc-impl: executor       (self-appends output to bead notes, closes bead)
+  └── abc-rev: reviewer        (auto-appends findings, READ_ONLY)
+  └── abc-fix: executor        (if reviewer found gaps — fix bead, same worktree)
+```
+
+Each specialist sees its own bead + the previous step's output + one more level up
+via `--context-depth 2`.
 
 ```bash
-# 1. Create a bead describing what you need
+# 1. Create the task bead
 bd create --title "Fix auth token refresh bug" --type bug --priority 2
 # -> unitAI-abc
 
-# 2. Explore first — never skip discovery
-specialists run explorer --bead unitAI-abc --context-depth 2 &
+# 2. Create chained child beads
+bd create --title "Explore: map token refresh code paths" --type task --priority 2
+# -> unitAI-abc-exp
+bd dep add abc-exp abc
+
+bd create --title "Implement: fix token refresh retry on 401" --type task --priority 2
+# -> unitAI-abc-impl
+bd dep add abc-impl abc-exp
+
+# 3. Wave 1 — Explorer
+specialists run explorer --bead abc-exp --context-depth 2 --background
 # -> Job started: e1f2g3
+# (explorer output auto-appends to abc-exp notes)
 
-# 3. Read exploration results, then run implementation
+# 4. Wave 2 — Executor (after explorer completes)
 specialists result e1f2g3
-specialists run executor --bead unitAI-abc --context-depth 2 &
+specialists run executor --bead abc-impl --context-depth 2 --background
 # -> Job started: a1b2c3
+# (executor sees abc-impl + abc-exp findings + abc via context-depth)
+# (executor self-appends output to abc-impl, closes abc-impl)
 
-# 4. Monitor (pick one)
-specialists feed a1b2c3              # check events so far
-specialists feed -f                  # tail all active jobs
-
-# 5. Read results and close
+# 5. Wave 3 — Reviewer (reviews executor's work)
 specialists result a1b2c3
-bd close unitAI-abc --reason "Fixed: token refresh now retries on 401"
+specialists run reviewer --job a1b2c3 --keep-alive --background
+# -> Job started: r4v5w6
+# (reviewer reads task bead from job's status.json automatically)
+# (reviewer auto-appends findings to bead notes)
+
+# 6. Read verdict
+specialists result r4v5w6
+# -> PASS? Close the task bead. PARTIAL/FAIL? Create a fix bead.
+
+# 7. If PARTIAL — fix loop (same worktree, new bead)
+bd create --title "Fix: reviewer gaps on abc" --type bug --priority 1
+# -> unitAI-abc-fix
+bd dep add abc-fix abc-impl
+
+specialists run executor --bead abc-fix --job a1b2c3 --context-depth 2 --background
+# (fixer sees abc-fix + abc-impl (executor output + reviewer findings) + abc-exp)
+# Repeat reviewer → fix until PASS.
+
+# 8. Close when reviewer says PASS
+bd close abc --reason "Fixed: token refresh retries on 401. Reviewer PASS 92/100."
 ```
+
+**Why chaining matters:**
+- Every step's output is preserved on its bead — full audit trail
+- `--context-depth 2` gives each specialist the previous step's findings automatically
+- No copy-pasting results between steps
+- The orchestrator only creates beads and dispatches — zero context injection
 
 ### Bead-first workflow (`--bead` is the prompt)
 
 For tracked work, the bead is not just bookkeeping — it is the specialist's prompt.
 The specialist reads:
 - the bead title + description
-- bead notes
+- bead notes (including output from previous specialists in the chain)
 - parent/ancestor bead context (controlled by `--context-depth`)
 
 `--prompt` and `--bead` cannot be combined. When you need to give a specialist
@@ -115,14 +163,15 @@ source. Read every command in src/cli/ and src/index.ts. Document all flags and 
 specialists run executor --bead unitAI-abc --context-depth 2 &
 ```
 
-This pattern was used extensively in Wave 5 of a real session — 4 executors all received
-writing instructions via bead notes and successfully produced doc files.
-
 **`--context-depth N`** — how many levels of parent-bead context to inject (default: 1).
-Prefer **`--context-depth 2`** for child-bead workflows so downstream waves inherit the
-parent task framing plus the immediate predecessor context.
+Prefer **`--context-depth 2`** for chained bead workflows so each step inherits the
+previous step's output plus one more level of context.
 
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
+
+**`--job <job-id>`** — (planned, unitAI-hgpu) reuse another job's worktree as cwd. For
+READ_ONLY specialists like reviewer, also auto-resolves the job's bead for task context.
+Mutually exclusive with `--worktree`. See "Review and Fix Loop" below.
 
 ---
 
@@ -177,26 +226,45 @@ specialists run specialists-creator --bead unitAI-skill --context-depth 2 --back
 For any task with non-obvious solutions — architecture decisions, tricky bugs, performance problems, API design — run **overthinker before executor**. The overthinker surfaces edge cases, challenges assumptions, and produces a refined solution direction. The executor then implements against that plan rather than guessing.
 
 ```bash
-# 1. Run explorer if context is needed (skip if bead already has scope)
-specialists run explorer --bead unitAI-prob --context-depth 2 --background
+# 1. Chain: task → explore → design → implement
+bd create --title "Redesign auth middleware" --type feature --priority 2
+# -> unitAI-task
 
-# 2. Run overthinker to think through the solution
+bd create --title "Explore: map auth middleware" --type task --priority 2
+# -> unitAI-exp
+bd dep add exp task
+
+bd create --title "Design: auth middleware approach" --type task --priority 2
+# -> unitAI-design
+bd dep add design exp
+
+bd create --title "Implement: auth middleware redesign" --type task --priority 2
+# -> unitAI-impl
+bd dep add impl design
+
+# 2. Explorer (output auto-appends to exp notes)
+specialists run explorer --bead unitAI-exp --context-depth 2 --background
+
+# 3. Overthinker (sees exp findings via context-depth)
 specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
 # -> enters waiting after Phase 4
 
-# 3. Iterate: challenge assumptions, ask follow-ups, refine
+# 4. Iterate: challenge assumptions, ask follow-ups, refine
 specialists resume <job-id> "What about the edge case where X?"
 specialists resume <job-id> "Is option B safer than option A here?"
 
-# 4. Only when satisfied with the design — stop and hand off
+# 5. Only when satisfied with the design — stop overthinker
 specialists stop <job-id>
+# (overthinker output is on unitAI-design notes)
 
-# 5. Update executor bead notes with the agreed solution direction
-bd update unitAI-impl --notes "SOLUTION: <overthinker conclusion here>"
+# 6. Executor sees design + exp + task via context-depth — no manual wiring
 specialists run executor --bead unitAI-impl --context-depth 2 --background
 ```
 
-The overthinker is cheap relative to the cost of an executor implementing the wrong thing. Use it liberally on anything non-trivial. Explorer can run before (to gather context) or its output can inform executor targets after.
+The overthinker is cheap relative to the cost of an executor implementing the wrong thing.
+Use it liberally on anything non-trivial. The chained bead pattern means the executor
+automatically inherits the overthinker's conclusion — no need to copy-paste solutions
+into bead notes.
 
 ### Pi extensions availability (known gap)
 
@@ -293,6 +361,44 @@ Waves themselves are strictly sequential: **never start wave N+1 before wave N c
 3. **Do not overlap waves.** Wait for every job in the current wave to finish, read results, and update beads before launching the next wave.
 4. **Use bead dependencies to encode the pipeline.** The dependency graph should match the wave order.
 5. **Use `--context-depth 2`** for downstream waves so each specialist sees the parent task plus immediate upstream context.
+6. **Merge into master between waves (MANDATORY).** Each wave's worktree branches must be merged into master before the next wave starts. Without this, downstream executors won't have upstream code — they'll run in worktrees branched from stale master.
+
+### Merge protocol (FIFO — first in, first out)
+
+Merge worktree branches in **dependency order**, not completion order. The dep graph
+dictates merge sequence. After each merge, rebase remaining branches onto the updated
+master before continuing.
+
+```bash
+# After Wave N completes and beads are closed:
+
+# 1. Merge in dependency order (FIFO)
+cd /path/to/main/repo
+git merge worktree-branch-a    # first dep
+npm run lint && npx tsc --noEmit   # verify after each merge
+git merge worktree-branch-b    # second dep (if parallel wave)
+npm run lint && npx tsc --noEmit
+
+# 2. If merge conflicts arise:
+#    - Resolve manually in main checkout
+#    - Conflicts are expected when parallel beads duplicate helpers
+#      (e.g. job-root.ts created by both hgpu.1 and hgpu.5)
+#    - Keep the version from the earlier dep in the chain
+#    - Run lint + tsc after resolution
+
+# 3. Rebuild dist after merge (if project uses bundled dist)
+npm run build
+
+# 4. Only then start Wave N+1
+```
+
+**Why FIFO matters:** If bead A blocks bead B, A's code must land first. Merging B
+before A can produce broken imports, missing symbols, or silent type mismatches.
+Parallel beads within a wave can merge in any order since they own disjoint files.
+
+**Common conflict pattern:** Parallel executors in the same wave may both create the
+same utility file (e.g. `job-root.ts`). This is expected — the implementations should
+be identical. Keep one, delete the duplicate during conflict resolution.
 
 ### Polling a wave with `status.json`
 
@@ -313,28 +419,23 @@ A wave is complete only when every job in that wave is in a terminal state (`com
 ### Canonical 4-wave pipeline example
 
 Use this when a task needs investigation, implementation, review, and doc follow-through.
+Each wave gets its own chained bead — the bead graph mirrors the wave dependency graph.
 
 ```bash
-# 0. Create the parent bead
-bd create --title "Improve using-specialists wave orchestration" --type task --priority 2
+# 0. Create the parent bead (the task itself)
+bd create --title "Improve wave orchestration" --type task --priority 2
 # -> unitAI-root
 
-# 1. Create child beads in dependency order
-bd create --title "Explore: map codebase for <task>" --type task --priority 2
+# 1. Create chained child beads — each wave step is a child of the previous
+bd create --title "Explore: map codebase for wave orchestration" --type task --priority 2
 # -> unitAI-exp
 bd dep add unitAI-exp unitAI-root
 
-bd create --title "Implement: <task>" --type task --priority 2
+bd create --title "Implement: wave orchestration improvements" --type task --priority 2
 # -> unitAI-impl
 bd dep add unitAI-impl unitAI-exp
 
-bd create --title "Review: <task> changes" --type task --priority 2
-# -> unitAI-review
-bd dep add unitAI-review unitAI-impl
-
-bd create --title "sync-docs: <task>" --type task --priority 2
-# -> unitAI-docs
-bd dep add unitAI-docs unitAI-review
+# reviewer and sync-docs don't need their own beads — they run via --job
 ```
 
 #### Wave 1 — Explorer
@@ -342,7 +443,7 @@ bd dep add unitAI-docs unitAI-review
 ```bash
 specialists run explorer --bead unitAI-exp --context-depth 2 --background
 # -> Job started: job1
-# (poll until completed, then read result)
+# (explorer output auto-appends to unitAI-exp notes)
 specialists result job1
 ```
 
@@ -353,27 +454,42 @@ Only after Wave 1 is complete:
 ```bash
 specialists run executor --bead unitAI-impl --context-depth 2 --background
 # -> Job started: job2
-# (poll until completed, validate, then advance)
+# (executor sees unitAI-impl + unitAI-exp findings + unitAI-root via context-depth)
+# (executor self-appends output, closes unitAI-impl)
 ```
 
 #### Wave 3 — Reviewer
 
-Only after Wave 2 is complete:
+Only after Wave 2 is complete. Reviewer uses `--job` to review the executor's work —
+no separate bead needed. It reads the task bead from the job's status.json automatically.
 
 ```bash
-specialists run reviewer --bead unitAI-review --context-depth 2 --keep-alive --background
+specialists run reviewer --job job2 --keep-alive --background
 # -> Job started: job3
-# (poll until waiting, read verdict — if changes needed, feed back before advancing)
+# (reviewer reads bead context from job2, auto-appends findings)
+specialists result job3
+# -> PASS? Proceed to Wave 4. PARTIAL? Create fix bead and loop.
+```
+
+**If PARTIAL — fix loop:**
+```bash
+bd create --title "Fix: reviewer gaps on impl" --type bug --priority 1
+# -> unitAI-fix1
+bd dep add unitAI-fix1 unitAI-impl
+
+specialists run executor --bead unitAI-fix1 --job job2 --context-depth 2 --background
+# (fixer runs in same worktree, sees fix1 + impl output + reviewer findings)
+# Repeat reviewer → fix until PASS.
 ```
 
 #### Wave 4 — sync-docs
 
-Only after Wave 3 is complete:
+Only after Wave 3 PASS:
 
 ```bash
-specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --background
+specialists run sync-docs --bead unitAI-root --keep-alive --background
 # -> Job started: job4
-# (poll until waiting — sync-docs audits first; use `resume` to approve or deny)
+# (sync-docs audits root bead context; use `resume` to approve or deny)
 ```
 
 ### Within-wave parallelism example
@@ -424,9 +540,19 @@ Options when a specialist fails:
 - **Switch specialist** (e.g., sync-docs stalls → try explorer or executor)
 - **Stop and report** to the user before doing it yourself
 
-### 4. Close beads and commit between waves
-Keep git clean between waves. Specialists write to the same worktree, so stacking
-uncommitted changes from multiple waves creates merge pain.
+### 4. Merge between waves (CRITICAL)
+After closing beads for a wave, merge all worktree branches into master in dependency
+order before starting the next wave. Without this, the next wave's executors branch
+from stale master and won't have the previous wave's code. See "Merge protocol" above.
+
+```bash
+# After Wave N:
+# 1. Close beads
+# 2. Merge worktree branches into master (FIFO order)
+# 3. Resolve conflicts, lint, tsc
+# 4. npm run build (if bundled dist)
+# 5. Start Wave N+1
+```
 
 ### 5. Run drift detection after doc-heavy sessions
 ```bash
@@ -467,6 +593,9 @@ specialists doctor      # health check: hooks, MCP, zombie jobs
 specialists edit <name> # edit a specialist's YAML config
 ```
 
+- **RPC timeout on job start** (10s, `command id=1`) → pi-core extension is missing or broken.
+  User must run `! xt pi reload` to repair. This re-symlinks `@xtrm/pi-core` and heals
+  `.pi/settings.json`. Cannot be fixed from inside Claude Code — requires user action.
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
