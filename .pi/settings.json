@@ -1,13 +1,5 @@
 {
-  "packages": [
-    "npm:pi-gitnexus",
-    "npm:pi-serena-tools",
-    "npm:@zenobius/pi-worktrees",
-    "npm:@robhowley/pi-structured-return",
-    "npm:@aliou/pi-guardrails"
-  ],
+  "packages": [],
   "extensions": [],
-  "skills": [
-    "../.xtrm/skills/active/pi"
-  ]
+  "skills": ["../.xtrm/skills/active/pi"]
 }
