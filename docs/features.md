@@ -3,9 +3,9 @@ title: Feature Guides
 scope: runtime-features
 category: guide
 version: 1.0.0
-updated: 2026-03-30
-synced_at: 0972c0b0
-description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, stuck detection, and specialist authoring.
+updated: 2026-04-04
+synced_at: ea6c6000
+description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, and specialist authoring.
 source_of_truth_for:
   - "src/cli/run.ts"
   - "src/cli/feed.ts"
@@ -14,6 +14,9 @@ source_of_truth_for:
   - "src/cli/resume.ts"
   - "src/specialist/supervisor.ts"
   - "src/specialist/schema.ts"
+  - "src/specialist/job-root.ts"
+  - "src/specialist/worktree.ts"
+  - "src/specialist/worktree-gc.ts"
 ---
 
 # Feature Guides
@@ -306,6 +309,71 @@ Authoring notes:
 
 ---
 
+---
+
+## 7) Worktree isolation (`--worktree`, `--job`)
+
+Each edit-permission specialist runs in an isolated git worktree (branch). This prevents concurrent file corruption when multiple executors modify overlapping paths, and produces a clean per-task branch that the orchestrator merges in dependency order.
+
+### CLI flags
+
+```bash
+specialists run <name> [--worktree] [--job <id>]
+```
+
+| Flag | Semantics | Creates worktree? |
+|------|-----------|:-:|
+| `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes |
+| `--job <id>` | Reuse the workspace of an existing job | No |
+
+`--worktree` and `--job` are **mutually exclusive**.
+
+### `--worktree` (new isolated workspace)
+
+Requires `--bead <id>` — the bead id drives the deterministic branch name.
+
+```bash
+sp run executor --worktree --bead hgpu.3
+# stderr: [worktree created: /repo/.worktrees/hgpu.3/hgpu.3-executor  branch: feature/hgpu.3-executor]
+```
+
+If a worktree for that branch already exists (e.g. from a prior interrupted run) it is reused:
+
+```bash
+# stderr: [worktree reused: /repo/.worktrees/hgpu.3/hgpu.3-executor  branch: feature/hgpu.3-executor]
+```
+
+### `--job <id>` (reuse existing workspace)
+
+Reads `worktree_path` from the target job's `status.json` and uses that directory as `cwd`. The **caller's** `--bead` remains authoritative — only the workspace is borrowed.
+
+```bash
+sp run reviewer --job 49adda --bead hgpu.3-review
+# stderr: [workspace reused from job 49adda: /repo/.worktrees/hgpu.3/hgpu.3-executor]
+```
+
+Hard fail conditions:
+- `status.json` missing or unreadable for the given job id
+- `worktree_path` absent — the target job was not started with `--worktree`
+
+### Worktree GC
+
+Clean up terminal job worktrees:
+
+```bash
+sp clean            # prunes job dirs AND terminal worktrees
+sp clean --dry-run  # preview removals without deleting
+```
+
+GC candidates must satisfy all conditions:
+1. Job status is `done` or `error` (terminal)
+2. `worktree_path` is recorded in `status.json`
+3. The directory still exists on disk
+4. Job status is **not** `starting`, `running`, or `waiting`
+
+For full technical details, see [worktrees.md](worktrees.md).
+
+---
 ## Quick reference flows
 
 ### CLI async observation flow
@@ -317,7 +385,23 @@ sp feed <job-id> --follow
 sp result <job-id> --wait --timeout 120
 ```
 
+### Worktree isolation flow
+
+```bash
+# 1. Executor provisions worktree, runs implementation
+sp run executor --worktree --bead hgpu.3
+# → job id: 49adda
+
+# 2. Reviewer reuses same workspace (read-only)
+sp run reviewer --job 49adda --bead hgpu.3-review
+
+# 3. Clean up terminal worktrees after review complete
+sp clean --dry-run   # preview
+sp clean             # execute
+```
+
 ### MCP single-run flow
 
 1. `use_specialist` with `name` + `prompt`/`bead_id`
 2. Read final output directly from MCP response
+

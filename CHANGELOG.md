@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- docs(ARCHITECTURE.md): sync with job-root.ts, worktree.ts, supervisor.ts changes — git-common-root anchoring, worktree isolation, GitNexus tracking, FIFO steering, keep-alive sessions, enhanced timeline events
+
 ## [3.5.0] - 2026-04-01
 
 ### Added
