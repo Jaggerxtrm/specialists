@@ -8,6 +8,12 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
+import { resolveJobsDir } from '../specialist/job-root.js';
+import {
+  collectWorktreeGcCandidates,
+  pruneWorktrees,
+  type WorktreeGcCandidate,
+} from '../specialist/worktree-gc.js';
 
 interface CleanOptions {
   removeAllCompleted: boolean;
@@ -223,6 +229,24 @@ function printDryRunPlan(jobs: readonly CompletedJobDirectory[]): void {
   }
 }
 
+function printWorktreeDryRunPlan(candidates: readonly WorktreeGcCandidate[]): void {
+  if (candidates.length === 0) return;
+  console.log('Would remove worktrees:');
+  for (const candidate of candidates) {
+    const label = candidate.branch ? ` (${candidate.branch})` : '';
+    console.log(`  - ${candidate.jobId}${label}: ${candidate.worktreePath}`);
+  }
+}
+
+function printWorktreeGcSummary(
+  removed: readonly WorktreeGcCandidate[],
+  skipped: readonly WorktreeGcCandidate[],
+): void {
+  if (removed.length === 0 && skipped.length === 0) return;
+  const noun = removed.length === 1 ? 'worktree' : 'worktrees';
+  console.log(`Removed ${removed.length} ${noun}` + (skipped.length > 0 ? ` (${skipped.length} skipped)` : '') + '.');
+}
+
 function printUsageAndExit(message: string): never {
   console.error(message);
   console.error('Usage: specialists|sp clean [--all] [--keep <n>] [--dry-run]');
@@ -238,7 +262,7 @@ export async function run(): Promise<void> {
     printUsageAndExit(message);
   }
 
-  const jobsDirectoryPath = join(process.cwd(), '.specialists', 'jobs');
+  const jobsDirectoryPath = resolveJobsDir();
   if (!existsSync(jobsDirectoryPath)) {
     console.log('No jobs directory found.');
     return;
@@ -248,9 +272,12 @@ export async function run(): Promise<void> {
   const jobsToRemove = selectJobsToRemove(completedJobs, options);
   const freedBytes = jobsToRemove.reduce((total, job) => total + job.sizeBytes, 0);
 
+  const worktreeCandidates = collectWorktreeGcCandidates(jobsDirectoryPath);
+
   if (options.dryRun) {
     printDryRunPlan(jobsToRemove);
     console.log(renderSummary(jobsToRemove.length, freedBytes, true));
+    printWorktreeDryRunPlan(worktreeCandidates);
     return;
   }
 
@@ -259,4 +286,9 @@ export async function run(): Promise<void> {
   }
 
   console.log(renderSummary(jobsToRemove.length, freedBytes, false));
+
+  if (worktreeCandidates.length > 0) {
+    const worktreeResult = pruneWorktrees(worktreeCandidates);
+    printWorktreeGcSummary(worktreeResult.removed, worktreeResult.skipped);
+  }
 }
