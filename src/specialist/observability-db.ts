@@ -4,6 +4,7 @@ import { join, sep } from 'node:path';
 
 const OBSERVABILITY_DB_FILENAME = 'observability.db';
 const DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = ['.specialists', 'db'] as const;
+export const OBSERVABILITY_SCHEMA_VERSION = 1;
 
 export interface ObservabilityDbLocation {
   gitRoot: string;
@@ -15,15 +16,28 @@ export interface ObservabilityDbLocation {
 }
 
 function resolveGitRootFrom(cwd: string): string {
-  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+  const commonDirResult = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
     cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
   });
 
-  if (result.status !== 0) return cwd;
+  if (commonDirResult.status === 0) {
+    const commonDir = commonDirResult.stdout.trim();
+    if (commonDir.length > 0 && commonDir.endsWith(`${sep}.git`)) {
+      return commonDir.slice(0, -4);
+    }
+  }
 
-  const gitRoot = result.stdout.trim();
+  const fallbackResult = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+
+  if (fallbackResult.status !== 0) return cwd;
+
+  const gitRoot = fallbackResult.stdout.trim();
   return gitRoot.length > 0 ? gitRoot : cwd;
 }
 
@@ -92,6 +106,43 @@ export function ensureGitignoreHasObservabilityDbEntries(gitRoot: string): { cha
   writeFileSync(gitignorePath, `${existing}${block}`, 'utf-8');
 
   return { changed: true };
+}
+
+function hasSqlite3Binary(): boolean {
+  const result = spawnSync('which', ['sqlite3'], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+export function isObservabilityDbInitialized(location: ObservabilityDbLocation): boolean {
+  if (!existsSync(location.dbPath) || !hasSqlite3Binary()) return false;
+
+  const tableCheckResult = spawnSync('sqlite3', ['-json', location.dbPath, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version') AS has_schema_version_table;"], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+
+  if (tableCheckResult.status !== 0) return false;
+
+  try {
+    const tableCheckRows = JSON.parse(tableCheckResult.stdout.trim()) as Array<{ has_schema_version_table?: number }>;
+    if (tableCheckRows[0]?.has_schema_version_table !== 1) return false;
+  } catch {
+    return false;
+  }
+
+  const versionCheckResult = spawnSync('sqlite3', ['-json', location.dbPath, `SELECT EXISTS(SELECT 1 FROM schema_version WHERE version = ${OBSERVABILITY_SCHEMA_VERSION}) AS has_expected_schema_version;`], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+
+  if (versionCheckResult.status !== 0) return false;
+
+  try {
+    const versionCheckRows = JSON.parse(versionCheckResult.stdout.trim()) as Array<{ has_expected_schema_version?: number }>;
+    return versionCheckRows[0]?.has_expected_schema_version === 1;
+  } catch {
+    return false;
+  }
 }
 
 export function isPathInsideJobsDirectory(pathToCheck: string, gitRoot: string): boolean {

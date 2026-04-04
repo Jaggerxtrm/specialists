@@ -25,7 +25,6 @@ describe('db CLI — setup', () => {
     process.env = { ...ORIGINAL_ENV };
     rmSync(sandboxRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
-    vi.resetModules();
   });
 
   it('creates a shared git-root db at .specialists/db/observability.db', async () => {

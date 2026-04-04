@@ -31,9 +31,11 @@ export default defineConfig({
     exclude: [
       'node_modules',
       'dist',
-      // Quarantined: FIFO keep-alive test hangs vitest workers due to fd cleanup race.
-      // Run in isolation: npx vitest run tests/unit/specialist/supervisor.test.ts
-      // Tracked: unitAI-9n93 (P0), overthinker recommended split + transport abstraction.
+      // bun:sqlite tests — run via `bun test` not vitest (bun: protocol unsupported in Node)
+      'tests/unit/specialist/observability-sqlite.test.ts',
+      'tests/unit/specialist/observability-db.test.ts',
+      'tests/unit/cli/db.test.ts',
+      // FIFO hang in worktree context — run in isolation
       'tests/unit/specialist/supervisor.test.ts',
     ],
     testTimeout: 30000

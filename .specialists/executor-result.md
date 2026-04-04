@@ -1,53 +1,17 @@
-Implemented ✅
+## Machine-readable block
 
-### Changes made
-
-#### 1) Added richer fields to `specialists list` data model + JSON output
-Updated `src/specialist/loader.ts` (`SpecialistSummary`) to include:
-
-- `permission_required`
-- `interactive`
-- `thinking_level`
-- `skills` (from `skills.paths`)
-- `scripts` (from `skills.scripts`)
-- `version` was already present and remains
-
-These now flow through `specialists list --json` with schema-parity naming.
-
----
-
-#### 2) Updated human-readable `specialists list` output
-Updated `src/cli/list.ts` to render:
-
-- permission badge: `[READ_ONLY] | [LOW] | [MEDIUM] | [HIGH]`
-- interactive flag: `[interactive]` or `[non-interactive]`
-- version line: `version: x.y.z`
-- optional thinking level: `thinking: <level>`
-- `skills:` block listing each `skills.paths` entry
-- `scripts:` block listing each script in requested style:
-  - `- run: <cmd-or-path>   phase: <pre|post>   inject_output: true` (shown when true)
-
-Also ensured no tags/category were added to human output.
-
----
-
-#### 3) Updated `sp/specialists list --help` style
-Updated list help in `src/index.ts` to include:
-
-- **Examples** section
-- **More help** section
-
-matching the broader CLI help style convention.
-
----
-
-### Validation run
-
-- `bun test tests/unit/cli/list.test.ts tests/integration/cli/attach.integration.test.ts` ✅
-- `bun run lint` (`tsc --noEmit`) ✅
-
----
-
-Also closed bead:
-
-- `bd close unitAI-ebkf --reason="Implemented richer specialists list output (permission, interactive, version, thinking_level, skills, scripts) and updated list help format."`
+```json
+{
+  "summary": "Fixed fqxo reviewer gaps: (1) Created 20 passing unit tests for enforceWalMode, verifyWalMode, initSchema, isObservabilityDbInitialized, OBSERVABILITY_SCHEMA_VERSION; (2) Migrated from sqlite3 CLI to bun:sqlite with persistent connections, busy_timeout=5000, and bounded retry (5 attempts, exponential backoff + jitter).",
+  "status": "success",
+  "issues_closed": ["unitAI-d4ot"],
+  "issues_created": [],
+  "follow_ups": [],
+  "risks": ["Migration from CLI-based sqlite3 to bun:sqlite changes error handling semantics"],
+  "verification": ["npm run lint passes", "bun test tests/unit/cli/db.test.ts: 2 pass", "bun test tests/unit/specialist/observability-sqlite.test.ts: 7 pass", "bun test tests/unit/specialist/observability-db.test.ts: 13 pass"],
+  "files_changed": ["src/specialist/observability-sqlite.ts", "tests/unit/cli/db.test.ts", "tests/unit/specialist/observability-sqlite.test.ts", "tests/unit/specialist/observability-db.test.ts"],
+  "symbols_modified": ["enforceWalMode", "verifyWalMode", "initSchema", "parseJournalMode", "createObservabilitySqliteClient", "SqliteClient", "withRetry", "calculateRetryDelay"],
+  "lint_pass": true,
+  "tests_pass": true
+}
+```

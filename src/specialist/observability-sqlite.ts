@@ -1,8 +1,29 @@
-import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+
+// bun:sqlite is Bun-only — lazy-load to avoid breaking Node/vitest imports.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type BunDb = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _BunDatabase: (new (path: string) => BunDb) | null = null;
+let _probed = false;
+function loadBunDatabase(): (new (path: string) => BunDb) | null {
+  if (_probed) return _BunDatabase;
+  _probed = true;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _BunDatabase = require('bun:sqlite').Database;
+  } catch {
+    _BunDatabase = null;
+  }
+  return _BunDatabase;
+}
 import { resolveObservabilityDbLocation } from './observability-db.js';
 import type { TimelineEvent } from './timeline-events.js';
 import type { SupervisorStatus } from './supervisor.js';
+
+const BUSY_TIMEOUT_MS = 5000;
+const MAX_RETRY_ATTEMPTS = 5;
+const BASE_RETRY_DELAY_MS = 50;
 
 function quoteSql(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -16,23 +37,78 @@ function toSqlText(value: string | undefined): string {
   return value === undefined ? 'NULL' : quoteSql(value);
 }
 
-function hasSqlite3Binary(): boolean {
-  const probe = spawnSync('which', ['sqlite3'], { stdio: 'ignore' });
-  return probe.status === 0;
+/**
+ * Calculate retry delay with exponential backoff and jitter.
+ * Formula: min(baseDelay * 2^attempt + random(0, baseDelay), busyTimeout)
+ */
+function calculateRetryDelay(attempt: number): number {
+  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
+  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
 }
 
-function runSql(dbPath: string, sql: string): string {
-  return execFileSync('sqlite3', ['-json', dbPath, sql], {
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
+/**
+ * Execute a database operation with bounded retry logic.
+ * Retries on SQLITE_BUSY (5) and SQLITE_LOCKED (6) errors.
+ */
+function withRetry<T>(operation: () => T, context: string): T {
+  let lastError: Error | undefined;
+  
+  for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if it's a retryable SQLite error
+      const isRetryable = 
+        lastError.message.includes('SQLITE_BUSY') ||
+        lastError.message.includes('SQLITE_LOCKED') ||
+        lastError.message.includes('database is locked') ||
+        lastError.message.includes('database is busy');
+      
+      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
+        break;
+      }
+      
+      const delayMs = calculateRetryDelay(attempt);
+      // Synchronous sleep for retry delay
+      const start = Date.now();
+      while (Date.now() - start < delayMs) {
+        // Busy wait - acceptable for short delays in retry scenarios
+      }
+    }
+  }
+  
+  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? 'unknown error'}`);
 }
 
-function initSchema(dbPath: string): void {
+export function parseJournalMode(mode: string | null | undefined): string | null {
+  if (!mode) return null;
+  return mode.toLowerCase();
+}
+
+export function enforceWalMode(db: BunDb): void {
+  const result = db.query('PRAGMA journal_mode=WAL').get() as { journal_mode?: string };
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== 'wal') {
+    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? 'null'})`);
+  }
+}
+
+export function verifyWalMode(db: BunDb): void {
+  const result = db.query('PRAGMA journal_mode').get() as { journal_mode?: string };
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== 'wal') {
+    throw new Error(`WAL journal mode is not active (got: ${mode ?? 'null'})`);
+  }
+}
+
+export function initSchema(db: BunDb): void {
+  enforceWalMode(db);
+
   // Step 1: core tables + schema_version (must run before migration)
-  runSql(dbPath, `
-    PRAGMA journal_mode=WAL;
-
+  db.run(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version     INTEGER PRIMARY KEY,
       applied_at_ms INTEGER NOT NULL
@@ -72,7 +148,7 @@ function initSchema(dbPath: string): void {
 
   // Step 2: idempotent migration — rebuild specialist_jobs with new columns.
   // Uses CREATE TABLE replacement so it works on both fresh and existing DBs.
-  runSql(dbPath, `
+  db.run(`
     CREATE TABLE IF NOT EXISTS specialist_jobs_new (
       job_id         TEXT PRIMARY KEY,
       specialist     TEXT NOT NULL,
@@ -87,6 +163,8 @@ function initSchema(dbPath: string): void {
     DROP TABLE IF EXISTS specialist_jobs;
     ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
+
+  verifyWalMode(db);
 }
 
 export interface ObservabilitySqliteClient {
@@ -97,107 +175,122 @@ export interface ObservabilitySqliteClient {
   listStatuses(): SupervisorStatus[];
   readEvents(jobId: string): TimelineEvent[];
   readResult(jobId: string): string | null;
+  close(): void;
 }
 
 class SqliteClient implements ObservabilitySqliteClient {
-  constructor(private readonly dbPath: string) {}
+  private readonly db: BunDb;
+
+  constructor(dbPath: string) {
+    // Open persistent connection with WAL mode and busy_timeout
+    const Ctor = loadBunDatabase()!;
+    this.db = new Ctor(dbPath);
+    
+    // Set busy_timeout for connection-level locking handling
+    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    
+    // Ensure WAL mode is set (will be no-op if already set by initSchema)
+    this.db.run('PRAGMA journal_mode=WAL');
+  }
 
   upsertStatus(status: SupervisorStatus): void {
-    const statusJson = quoteSql(JSON.stringify(status));
-    const specialist = quoteSql(status.specialist);
-    const sql = `
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-      VALUES (${quoteSql(status.id)}, ${specialist}, ${statusJson}, ${Date.now()})
-      ON CONFLICT(job_id) DO UPDATE SET
-        specialist = excluded.specialist,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms;
-    `;
-    runSql(this.dbPath, sql);
+    const statusJson = JSON.stringify(status);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          specialist = excluded.specialist,
+          status_json = excluded.status_json,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [status.id, status.specialist, statusJson, Date.now()]);
+    }, 'upsertStatus');
   }
 
   appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
-    const eventJson = quoteSql(JSON.stringify(event));
-    const sql = `
-      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-      VALUES (
-        ${quoteSql(jobId)},
-        ${quoteSql(specialist)},
-        ${toSqlText(beadId)},
-        ${toSqlNumber(event.t)},
-        ${quoteSql(event.type)},
-        ${eventJson}
-      );
-    `;
-    runSql(this.dbPath, sql);
+    const eventJson = JSON.stringify(event);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+    }, 'appendEvent');
   }
 
   upsertResult(jobId: string, output: string): void {
-    const sql = `
-      INSERT INTO specialist_results (job_id, output, updated_at_ms)
-      VALUES (${quoteSql(jobId)}, ${quoteSql(output)}, ${Date.now()})
-      ON CONFLICT(job_id) DO UPDATE SET
-        output = excluded.output,
-        updated_at_ms = excluded.updated_at_ms;
-    `;
-    runSql(this.dbPath, sql);
+    withRetry(() => {
+      this.db.run(`
+        INSERT INTO specialist_results (job_id, output, updated_at_ms)
+        VALUES (?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          output = excluded.output,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [jobId, output, Date.now()]);
+    }, 'upsertResult');
   }
 
   readStatus(jobId: string): SupervisorStatus | null {
-    const rowsRaw = runSql(this.dbPath, `SELECT status_json FROM specialist_jobs WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
-    if (!rowsRaw) return null;
-
-    const rows = JSON.parse(rowsRaw) as Array<{ status_json?: string }>;
-    const encoded = rows[0]?.status_json;
-    if (!encoded) return null;
-    return JSON.parse(encoded) as SupervisorStatus;
+    return withRetry(() => {
+      const row = this.db.query('SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId) as { status_json?: string } | undefined;
+      if (!row?.status_json) return null;
+      return JSON.parse(row.status_json) as SupervisorStatus;
+    }, 'readStatus');
   }
 
   listStatuses(): SupervisorStatus[] {
-    const rowsRaw = runSql(this.dbPath, 'SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC;').trim();
-    if (!rowsRaw) return [];
-    const rows = JSON.parse(rowsRaw) as Array<{ status_json?: string }>;
-    const statuses: SupervisorStatus[] = [];
-    for (const row of rows) {
-      if (!row.status_json) continue;
-      try { statuses.push(JSON.parse(row.status_json) as SupervisorStatus); } catch { /* ignore malformed rows */ }
-    }
-    return statuses;
+    return withRetry(() => {
+      const rows = this.db.query('SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC').all() as Array<{ status_json?: string }>;
+      const statuses: SupervisorStatus[] = [];
+      for (const row of rows) {
+        if (!row.status_json) continue;
+        try { statuses.push(JSON.parse(row.status_json) as SupervisorStatus); } catch { /* ignore malformed rows */ }
+      }
+      return statuses;
+    }, 'listStatuses');
   }
 
   readEvents(jobId: string): TimelineEvent[] {
-    const rowsRaw = runSql(this.dbPath, `
-      SELECT event_json FROM specialist_events
-      WHERE job_id = ${quoteSql(jobId)}
-      ORDER BY t ASC, id ASC;
-    `).trim();
-    if (!rowsRaw) return [];
-
-    const rows = JSON.parse(rowsRaw) as Array<{ event_json?: string }>;
-    const events: TimelineEvent[] = [];
-    for (const row of rows) {
-      if (!row.event_json) continue;
-      try { events.push(JSON.parse(row.event_json) as TimelineEvent); } catch { /* ignore malformed rows */ }
-    }
-    return events;
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT event_json FROM specialist_events
+        WHERE job_id = ?
+        ORDER BY t ASC, id ASC;
+      `).all(jobId) as Array<{ event_json?: string }>;
+      const events: TimelineEvent[] = [];
+      for (const row of rows) {
+        if (!row.event_json) continue;
+        try { events.push(JSON.parse(row.event_json) as TimelineEvent); } catch { /* ignore malformed rows */ }
+      }
+      return events;
+    }, 'readEvents');
   }
 
   readResult(jobId: string): string | null {
-    const rowsRaw = runSql(this.dbPath, `SELECT output FROM specialist_results WHERE job_id = ${quoteSql(jobId)} LIMIT 1;`).trim();
-    if (!rowsRaw) return null;
-    const rows = JSON.parse(rowsRaw) as Array<{ output?: string }>;
-    return rows[0]?.output ?? null;
+    return withRetry(() => {
+      const row = this.db.query('SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1').get(jobId) as { output?: string } | undefined;
+      return row?.output ?? null;
+    }, 'readResult');
+  }
+
+  close(): void {
+    this.db.close();
   }
 }
 
 export function createObservabilitySqliteClient(cwd: string = process.cwd()): ObservabilitySqliteClient | null {
-  if (!hasSqlite3Binary()) return null;
-
+  if (!loadBunDatabase()) return null; // Not running under Bun
   const location = resolveObservabilityDbLocation(cwd);
   if (!existsSync(location.dbPath)) return null;
 
   try {
-    initSchema(location.dbPath);
+    // Open DB for schema initialization (temporary connection)
+    const Ctor = loadBunDatabase()!;
+    const initDb = new Ctor(location.dbPath);
+    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    initSchema(initDb);
+    initDb.close();
+
+    // Create persistent client connection
     return new SqliteClient(location.dbPath);
   } catch {
     return null;
