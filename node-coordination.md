@@ -40,14 +40,18 @@
 | unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED — commit 84889edc | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. |
 | unitAI-08zd Phase 3 | — | 🔜 unblocked — planner done, executors ready | SQLite dual-write, WAL mode, worktree column. Merge order: A→C→B→D. |
 | unitAI-3chh | cdb342 (planner) | ✅ CLOSED | Decomposed into ky4c/fqxo/afl9/hhs6 + test beads mhra/lcv6/pi8m. Merge order: A→C→B→D. |
-| unitAI-ky4c | — | 🔜 unblocked — first task | Phase 3A: schema_version table + worktree_column (observability-sqlite.ts) |
-| unitAI-fqxo | — | 🔜 blocked on ky4c | Phase 3C: WAL enforcement + DB exports (observability-sqlite.ts, observability-db.ts) |
-| unitAI-afl9 | — | 🔜 blocked on fqxo | Phase 3B: supervisor dual-write (supervisor.ts) |
-| unitAI-hhs6 | — | 🔜 blocked on afl9 | Phase 3D: CLI read paths (feed.ts, status.ts, result.ts) |
+| unitAI-ky4c | e9376f (executor) | ✅ CLOSED — commit aec1c98f | Phase 3A: schema_version(v=1), specialist_jobs +worktree_column +last_output, specialist_events +char_count +text_content. Idempotent migration. |
+| unitAI-fqxo | — | 🔜 unblocked | Phase 3C: WAL+busy_timeout(5000)+retry, --git-common-dir fix, bun:sqlite persistent connection (not execFileSync). |
+| unitAI-afl9 | — | 🔜 blocked on fqxo | Phase 3B: supervisor dual-write. NOTE: g5np added result_raw + gitnexus_summary after planner decomposed 3chh — gitnexus_summary persisted via event_json, result_raw EXCLUDED from SQLite (decision 2026-04-04). |
+| unitAI-hhs6 | — | 🔜 blocked on afl9 | Phase 3D: CLI read paths (feed.ts, status.ts, result.ts) read from SQLite, fall back to files. |
+| unitAI-fdtq | — | 🔜 blocked on hhs6 | Per-turn text capture: accumulate onToken deltas, write text_content on turn_summary. Merged y6x5 (crash recovery). Blocks 69rw. |
 | unitAI-mhra/lcv6/pi8m | — | 🔜 test beads for 3A/3B/3D | Each blocks its impl bead |
-| unitAI-4qam | — | blocked on Phase 3 | Surface waiting state in feed/result/status |
-| unitAI-hgpu | — | 🔜 open P0 | --worktree CLI flag + Supervisor worktree_path record. Partly depends on Phase 3 (worktree_column). CLI flag can parallel Phase 3 waves. |
-| unitAI-1san | — | ✅ CLOSED | Consistency check passed — no contradictions or dead code. Follow-ups: e90j/brbb/hpjg (P3). |
+| unitAI-4qam | — | blocked on hhs6 | Surface waiting state in feed/result/status (display/UX, not new event type) |
+| unitAI-hgpu | — | 🔜 open P0 | REVISED: `specialists worktree create <bead-id>` CLI subcommand + `--job <id>` targeting + .pi absolute paths + ~/.pi/node_modules symlink. Full design in bead. |
+| unitAI-1san | — | ✅ CLOSED | Consistency check passed. Follow-ups: e90j/brbb/hpjg (P3). |
+| unitAI-x4ms | 604513 (executor) | ✅ CLOSED — commit e651e391 | Runner template var substitution fix for bead runs. |
+| unitAI-sxmy | — | ✅ CLOSED — commit f155f1f9 | Executor bead claim non-fatal when same actor. |
+| unitAI-dhnh | — | ✅ CLOSED — commit 5d9d9ce9 | FIFO fd leak fix — permanent batch test hang. |
 
 ### Stream 3 — Node Persistence (another agent) + Stage 3 Core (post-convergence)
 | Bead | Job | Status | Notes |
@@ -60,7 +64,7 @@
 | unitAI-u9my | — | 🔜 blocked on 69rw | Beads-first reporting + sp node promote flow |
 | unitAI-i6up | — | 🔜 blocked on 16ov✅ + e242 + 22tq | Research node v1A preset definitions |
 
-**Dep chain**: hhs6 → z5ml → 69rw → {iy5g, w0cg, u9my} → {780u}
+**Dep chain**: hhs6 → fdtq → z5ml → 69rw → {iy5g, w0cg, u9my} → {780u}
 
 **Deps wired 2026-04-04**: z5ml→hhs6, 69rw→4qam, w0cg→z5ml, 780u→z5ml, i6up→e242, i6up→22tq
 
@@ -581,6 +585,28 @@ Tracked in unitAI-g5np. Prerequisite for blast radius propagation (impact_report
 
 ---
 
+### Key Decisions (session 2026-04-04)
+
+#### result_raw excluded from SQLite persistence
+`result_raw` (full MCP tool result payload per tool call) is NOT written to SQLite. The `gitnexusAccumulator` in supervisor.ts already distills it into `gitnexus_summary` (files_touched, symbols_analyzed, highest_risk, tool_invocations) which IS persisted on `run_complete`. Storing raw payloads would bloat the DB with redundant data. `events.jsonl` (file fallback) retains `result_raw` for forensics only.
+
+#### Text content baked into Phase 3A schema
+`text_content TEXT` on `specialist_events` and `last_output TEXT` on `specialist_jobs` were added directly to the Phase 3A schema (ky4c) rather than as a later migration. This avoids ALTER TABLE when fdtq lands the accumulation logic. Merged from y6x5 (crash recovery replay needs per-turn text).
+
+#### SQLite is the single source of truth
+After Phase 3, SQLite is primary. `events.jsonl` stays only as a file-based fallback when DB is unavailable — not a parallel debug channel. All feed/status/result reads go through SQLite first (hhs6 scope).
+
+#### FIFO fd leak — permanent fix
+supervisor.ts FIFO readline kept the event loop alive in batch test suites. Fix: hoist `fifoFd` to outer scope, `autoClose: false` on createReadStream, explicit `closeSync(fifoFd)` in finally block before `stream.destroy()`. Commit 5d9d9ce9.
+
+#### Worktree CLI — full design captured in unitAI-hgpu
+`specialists worktree create <bead-id>` is the correct abstraction, not `--worktree` on `specialists run`. Handles: `bd worktree create`, `.pi/settings.json` with absolute paths, `~/.pi/node_modules` symlink, worktree_path on bead. `--job <id>` targeting lets reviewers/explorers reuse an executor's worktree. Full design in hgpu bead notes + design field.
+
+#### Projected SQLite growth
+~950 rows / ~200-300KB per run. 50 runs/day → ~15MB/day. WAL mode + VACUUM handles this. Not tracked in git (binary, gitignored).
+
+---
+
 ## Full Dependency Sequence
 
 ```
@@ -601,18 +627,28 @@ Stage 1 — Config Foundations
   rcxv (sp edit presets: cheap/power/medium)
 
 Stage 2 — SQLite Runtime
-  0c0w (db setup command)
+  0c0w (db setup command)                    ✅
        ↓
-  08zd Phase 1 (RPC completeness)
+  08zd Phase 1 (RPC completeness)            ✅ commit 200b0eb9
        ↓
-  08zd Phase 2 (pipeline linkage)
+  08zd Phase 1b (tool results, compaction)   ✅ commit 98df33a2
        ↓
-  08zd Phase 3 (SQLite migration)
+  08zd Phase 2 (pipeline linkage)            ✅ commit 84889edc
+       ↓
+  08zd Phase 3A ky4c (schema)                ✅ commit aec1c98f
+       ↓
+  08zd Phase 3C fqxo (WAL + git-common-dir)
+       ↓
+  08zd Phase 3B afl9 (supervisor dual-write)
+       ↓
+  08zd Phase 3D hhs6 (CLI reads from SQLite)
+       ↓
+  fdtq (per-turn text capture)
        ↓
   4qam (waiting state visibility)
 
 Stage 3 — Node v1A Core (needs Stage 0 + Stage 2)
-  z5ml (node SQLite persistence model)      ← needs 08zd Phase 3 + 16ov
+  z5ml (node SQLite persistence model)      ← needs fdtq + 16ov
        ↓
   69rw (NodeSupervisor state machine)        ← needs z5ml + 4qam
        ↓
