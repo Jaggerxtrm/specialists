@@ -60,20 +60,33 @@ Everything else — investigation, implementation, review, testing, docs, planni
 ### CLI commands
 
 ```bash
+# Discovery
 specialists list                              # discover available specialists
+specialists doctor                            # health check: hooks, MCP, zombie jobs
+
+# Running
 specialists run <name> --bead <id>            # foreground run (streams output)
 specialists run <name> --bead <id> --background  # background run
+specialists run <name> --bead <id> --worktree    # isolated worktree (edit-capable specialists)
+specialists run <name> --bead <id> --job <job-id> # reuse another job's worktree
 specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
+specialists run <name> --bead <id> --keep-alive  # keep session alive after first turn
+specialists run <name> --bead <id> --context-depth 2  # inject parent bead context
+
+# Monitoring
 specialists feed -f                           # tail merged feed (all jobs)
 specialists feed <job-id>                     # events for a specific job
 specialists result <job-id>                   # final output text
+specialists status --job <job-id>             # single-job detail view
+
+# Interaction
 specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
 specialists resume <job-id> "next task"       # resume a waiting keep-alive job
 specialists stop <job-id>                     # cancel a job
+
+# Management
 specialists edit <name>                       # edit a specialist's YAML config
-specialists status --job <job-id>             # single-job detail view
-specialists clean                             # purge old job dirs AND worktrees
-specialists doctor                            # health check
+specialists clean                             # purge old job dirs + worktree GC
 ```
 
 ---
@@ -484,12 +497,16 @@ specialists stop <job-id>   # when satisfied
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 ```
 
-### Pi extensions availability
+### Pi extensions and packages
 
-GitNexus and Serena are pi extensions at `~/.pi/agent/extensions/`. Specialists run with
-`--no-extensions` and only selectively re-enable `quality-gates` and `service-skills`.
-GitNexus (call-chain tracing) and Serena LSP (token-efficient reads) are not currently
-wired into specialist sessions. Tracked as `unitAI-4abv`.
+Pi extensions are global at `~/.pi/agent/extensions/`. Pi packages are global at
+`~/.pi/npm/`. Specialists run with `--no-extensions` and selectively re-enable
+`quality-gates` and `service-skills` from the global extensions directory.
+
+**Not yet wired:** GitNexus (call-chain tracing) and Serena LSP (token-efficient reads)
+are available as global pi packages but not loaded into specialist sessions. This means
+`gitnexus_summary` in `run_complete` events is always empty — the accumulator works but
+has no data. Tracked as `unitAI-4abv`.
 
 ---
 
@@ -680,11 +697,13 @@ specialists edit <name> # edit a specialist's YAML config
 ```
 
 - **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
-  worktrees, stdout output corrupts the RPC JSON channel. Fix: ensure the worktree's
-  `.pi/npm/node_modules` symlinks to the main repo's (provisioned by `provisionWorktree()`).
-  If symlink is broken: `! xt pi reload` or manually `ln -s <main>/.pi/npm/node_modules <worktree>/.pi/npm/node_modules`.
-- **RPC timeout on non-worktree job** → likely zombie vitest/tinypool processes holding resources.
-  Kill them: `ps aux | grep vitest` then `kill <pids>`. Also try `npm run build` (stale dist).
+  worktrees if `.pi/settings.json` lists local packages. Root cause: worktree gets a stale copy
+  of `.pi/settings.json` from the branch point. Fix: ensure `.pi/settings.json` has
+  `"packages": []` (packages are global now). `provisionWorktree()` also symlinks
+  `.pi/npm/node_modules` to the main repo's as a safety net.
+- **RPC timeout on non-worktree job** → check for: (1) zombie vitest/tinypool processes
+  (`ps aux | grep vitest`, then `kill`), (2) stale dist (`npm run build`),
+  (3) model provider issues (try a different model to isolate).
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
 - **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
