@@ -7,7 +7,7 @@
 //   - No Pi bootstrap logic (extensions are global via ~/.pi/).
 //   - No CLI argument parsing.
 
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -70,20 +70,14 @@ function slugify(s: string): string {
 
 // ── Git helpers ────────────────────────────────────────────────────────────────
 
+import { resolveCommonGitRoot } from './job-root.js';
+
 /**
  * Resolve the git common root so all worktrees converge on the same base.
  * Falls back to `cwd` when git is unavailable (non-git dirs, CI sandboxes).
  */
 export function resolveCommonRoot(cwd: string): string {
-  const result = spawnSync('git', ['rev-parse', '--git-common-dir'], {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  if (result.status !== 0) return cwd;
-  const gitCommonDir = result.stdout?.trim();
-  if (!gitCommonDir) return cwd;
-  return dirname(resolve(cwd, gitCommonDir));
+  return resolveCommonGitRoot(cwd) ?? cwd;
 }
 
 /**

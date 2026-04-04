@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
  * (e.g. `/repo/.git` from a worktree vs. `.git` from the main checkout). Taking
  * `dirname` of its resolved form gives us the common project root in both cases.
  */
-function resolveCommonGitRoot(cwd: string): string | undefined {
+export function resolveCommonGitRoot(cwd: string): string | undefined {
   const result = spawnSync('git', ['rev-parse', '--git-common-dir'], {
     cwd,
     encoding: 'utf-8',
