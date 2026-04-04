@@ -10,6 +10,8 @@ import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor } from '../specialist/supervisor.js';
+import { resolveJobsDir } from '../specialist/job-root.js';
+import { provisionWorktree } from '../specialist/worktree.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
 import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
 import { isTmuxAvailable, buildSessionName, createTmuxSession } from './tmux-utils.js';
@@ -41,12 +43,20 @@ interface RunArgs {
   background: boolean;
   contextDepth: number;
   outputMode: OutputMode;
+  /** Provision (or reuse) an isolated bd-managed worktree for this run. */
+  worktree: boolean;
+  /** Reuse the workspace from a prior job. Mutually exclusive with --worktree. */
+  reuseJobId?: string;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
   const name = argv[0];
   if (!name || name.startsWith('--')) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] [--context-depth <n>] [--model <model>] [--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]');
+    console.error(
+      'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
+      '[--worktree] [--job <id>] [--context-depth <n>] [--model <model>] ' +
+      '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
+    );
     process.exit(1);
   }
 
@@ -59,7 +69,9 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let noKeepAlive = false;
   let background = false;
   let outputMode: OutputMode = 'human';
-  let contextDepth = 1; // default: inject immediate completed blockers when --bead is used
+  let contextDepth = 1;
+  let worktree = false;
+  let reuseJobId: string | undefined;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -72,8 +84,25 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--keep-alive')    { keepAlive    = true; noKeepAlive = false; continue; }
     if (token === '--no-keep-alive') { keepAlive    = undefined; noKeepAlive = true; continue; }
     if (token === '--background')    { background   = true; continue; }
-    if (token === '--json')        { outputMode = 'json'; continue; }
-    if (token === '--raw')         { outputMode = 'raw';  continue; }
+    if (token === '--json')          { outputMode   = 'json'; continue; }
+    if (token === '--raw')           { outputMode   = 'raw';  continue; }
+    if (token === '--worktree')      { worktree     = true; continue; }
+    if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
+  }
+
+  // ── Mutual exclusion ─────────────────────────────────────────────────────────
+  if (worktree && reuseJobId !== undefined) {
+    console.error('Error: --worktree and --job are mutually exclusive. Use one or the other.');
+    process.exit(1);
+  }
+
+  // ── --worktree requires --bead ───────────────────────────────────────────────
+  if (worktree && !beadId) {
+    console.error(
+      'Error: --worktree requires --bead <id> to derive a deterministic branch name.\n' +
+      'Example: specialists run executor --worktree --bead hgpu.3',
+    );
+    process.exit(1);
   }
 
   if (prompt && beadId) {
@@ -95,7 +124,70 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     process.exit(1);
   }
 
-  return { name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive, background, contextDepth, outputMode };
+  return {
+    name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
+    background, contextDepth, outputMode, worktree, reuseJobId,
+  };
+}
+
+// ── Workspace resolution ──────────────────────────────────────────────────────
+
+/**
+ * Resolve the working directory for the run based on --worktree / --job flags.
+ *
+ * --worktree: provisions (or reuses) a bd-managed worktree derived from the
+ *             bead id + specialist name and returns its absolute path.
+ *
+ * --job <id>: reads the target job's status.json to extract `worktree_path`.
+ *             The caller's bead context remains authoritative — this just borrows
+ *             the workspace without stealing the foreign job's bead.
+ *
+ * Returns undefined when neither flag is set (run in current directory).
+ */
+function resolveWorkingDirectory(
+  args: RunArgs,
+  jobsDir: string,
+): string | undefined {
+  if (args.worktree) {
+    // args.beadId is guaranteed non-null here (parseArgs validates this)
+    const info = provisionWorktree({
+      beadId: args.beadId!,
+      specialistName: args.name,
+    });
+    if (info.reused) {
+      process.stderr.write(dim(`[worktree reused: ${info.worktreePath}  branch: ${info.branch}]\n`));
+    } else {
+      process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}]\n`));
+    }
+    return info.worktreePath;
+  }
+
+  if (args.reuseJobId !== undefined) {
+    const statusPath = join(jobsDir, args.reuseJobId, 'status.json');
+    let targetStatus: { worktree_path?: string } | null = null;
+    try {
+      targetStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
+    } catch {
+      console.error(
+        `Error: cannot read status for job '${args.reuseJobId}'. ` +
+        `Check the job id with: specialists poll ${args.reuseJobId} --json`,
+      );
+      process.exit(1);
+    }
+
+    const worktreePath = targetStatus?.worktree_path;
+    if (!worktreePath) {
+      console.error(
+        `Error: job '${args.reuseJobId}' has no worktree_path — it was not started with --worktree.`,
+      );
+      process.exit(1);
+    }
+
+    process.stderr.write(dim(`[workspace reused from job ${args.reuseJobId}: ${worktreePath}]\n`));
+    return worktreePath;
+  }
+
+  return undefined;
 }
 
 // ── Event tailer ───────────────────────────────────────────────────────────────
@@ -173,7 +265,10 @@ export async function run(): Promise<void> {
 
   // ── Background mode: spawn detached child and exit ──────────────────────────
   if (args.background) {
-    const latestPath = join(process.cwd(), '.specialists', 'jobs', 'latest');
+    // Jobs dir may be worktree-anchored, but for the latest-poll we use the
+    // common-root resolved path to stay consistent with the child process.
+    const jobsDir = resolveJobsDir();
+    const latestPath = join(jobsDir, 'latest');
     const oldLatest = (() => { try { return readFileSync(latestPath, 'utf-8').trim(); } catch { return ''; } })();
     const cwd = process.cwd();
     const innerArgs = process.argv.slice(2).filter(a => a !== '--background');
@@ -196,7 +291,7 @@ export async function run(): Promise<void> {
       childPid = child.pid;
     }
 
-    // Wait up to 5s for the child to write a new job ID to .specialists/jobs/latest
+    // Wait up to 5s for the child to write a new job ID to latest
     const deadline = Date.now() + 5000;
     let jobId = '';
     while (Date.now() < deadline) {
@@ -264,8 +359,11 @@ export async function run(): Promise<void> {
     ? false
     : (specialist.specialist.beads_write_notes ?? true);
 
-  // ── Run with Supervisor (creates job files for poll command) ───────────────
-  const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+  // ── Resolve jobs dir and optional working directory ─────────────────────────
+  // Supervisor resolves this internally too, but we need it here for the tailer.
+  const jobsDir = resolveJobsDir();
+
+  const workingDirectory = resolveWorkingDirectory(args, jobsDir);
 
   let stopTailer: (() => void) | undefined;
 
@@ -280,8 +378,10 @@ export async function run(): Promise<void> {
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
       beadsWriteNotes,
+      workingDirectory,
     },
-    jobsDir,
+    // jobsDir intentionally omitted — Supervisor derives it from workingDirectory
+    // via resolveJobsDir() so all worktree sessions share the same state root.
     beadsClient,
     stallDetection: specialist.specialist.stall_detection,
     // raw: stream onProgress deltas (legacy behaviour); others: suppress raw text
@@ -327,7 +427,7 @@ export async function run(): Promise<void> {
 
   process.stderr.write(`\n${green('✓')} ${footer}\n\n`);
   process.stderr.write(dim(`Poll: specialists poll ${jobId} --json\n\n`));
-  
+
   // Exit immediately - all work is done
   process.exit(0);
 }

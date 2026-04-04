@@ -21,6 +21,7 @@ import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
+import { resolveJobsDir, resolveCurrentBranch } from './job-root.js';
 import type { BeadsClient } from './beads.js';
 import {
   type TimelineEvent,
@@ -66,6 +67,7 @@ export interface SupervisorStatus {
   fifo_path?: string;
   tmux_session?: string;
   worktree_path?: string;
+  branch?: string;
   metrics?: SessionRunMetrics;
   error?: string;
 }
@@ -73,7 +75,8 @@ export interface SupervisorStatus {
 export interface SupervisorOptions {
   runner: SpecialistRunner;
   runOptions: RunOptions;
-  jobsDir: string; // absolute path to .specialists/jobs/
+  /** Absolute path to .specialists/jobs/. Defaults to the git-common-root-anchored path. */
+  jobsDir?: string;
   beadsClient?: BeadsClient;
   /** Optional callback to stream progress deltas to stdout/elsewhere */
   onProgress?: (delta: string) => void;
@@ -179,13 +182,18 @@ function extractGitnexusRisk(resultRaw?: Record<string, unknown>): 'LOW' | 'MEDI
 
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
+  private readonly resolvedJobsDir: string;
 
   constructor(private opts: SupervisorOptions) {
     this.sqliteClient = createObservabilitySqliteClient();
+    // Anchor jobs dir to the git common root so worktree sessions share state with
+    // the main checkout. Fall back to cwd-relative path when git is unavailable.
+    const cwd = opts.runOptions?.workingDirectory ?? process.cwd();
+    this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
   }
 
   private jobDir(id: string): string {
-    return join(this.opts.jobsDir, id);
+    return join(this.resolvedJobsDir, id);
   }
 
   private statusPath(id: string): string {
@@ -201,7 +209,7 @@ export class Supervisor {
   }
 
   private readyDir(): string {
-    return join(this.opts.jobsDir, '..', 'ready');
+    return join(this.resolvedJobsDir, '..', 'ready');
   }
 
   private writeReadyMarker(id: string): void {
@@ -233,10 +241,10 @@ export class Supervisor {
       // fallback to file state
     }
 
-    if (!existsSync(this.opts.jobsDir)) return [];
+    if (!existsSync(this.resolvedJobsDir)) return [];
     const jobs: SupervisorStatus[] = [];
-    for (const entry of readdirSync(this.opts.jobsDir)) {
-      const path = join(this.opts.jobsDir, entry, 'status.json');
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const path = join(this.resolvedJobsDir, entry, 'status.json');
       if (!existsSync(path)) continue;
       try { jobs.push(JSON.parse(readFileSync(path, 'utf-8'))); } catch { /* skip */ }
     }
@@ -255,10 +263,10 @@ export class Supervisor {
 
   /** GC: remove job dirs older than JOB_TTL_DAYS. */
   private gc(): void {
-    if (!existsSync(this.opts.jobsDir)) return;
+    if (!existsSync(this.resolvedJobsDir)) return;
     const cutoff = Date.now() - JOB_TTL_DAYS * 86_400_000;
-    for (const entry of readdirSync(this.opts.jobsDir)) {
-      const dir = join(this.opts.jobsDir, entry);
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const dir = join(this.resolvedJobsDir, entry);
       try {
         const stat = statSync(dir);
         if (!stat.isDirectory()) continue;
@@ -269,14 +277,14 @@ export class Supervisor {
 
   /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
-    if (!existsSync(this.opts.jobsDir)) return;
+    if (!existsSync(this.resolvedJobsDir)) return;
     const thresholds: Required<StallDetectionConfig> = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
     };
     const now = Date.now();
-    for (const entry of readdirSync(this.opts.jobsDir)) {
-      const statusPath = join(this.opts.jobsDir, entry, 'status.json');
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const statusPath = join(this.resolvedJobsDir, entry, 'status.json');
       if (!existsSync(statusPath)) continue;
       try {
         const s: SupervisorStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
@@ -313,7 +321,7 @@ export class Supervisor {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join(this.opts.jobsDir, entry, 'events.jsonl');
+            const eventsPath = join(this.resolvedJobsDir, entry, 'events.jsonl');
             const event = createStaleWarningEvent('waiting_stale', {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms,
@@ -351,10 +359,13 @@ export class Supervisor {
       ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
       ...(process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}),
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
+      ...(runOptions.workingDirectory
+        ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
+        : { branch: resolveCurrentBranch() }),
     };
     this.writeStatusFile(id, initialStatus);
     // Persist a latest marker so other processes can discover the active job id immediately
-    writeFileSync(join(this.opts.jobsDir, 'latest'), `${id}\n`, 'utf-8');
+    writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
     this.opts.onJobStarted?.({ id });
 
     let statusSnapshot: SupervisorStatus = initialStatus;
