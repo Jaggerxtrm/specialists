@@ -167,6 +167,8 @@ export function initSchema(db: BunDb): void {
 
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
+  upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
+  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
   appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
   upsertResult(jobId: string, output: string): void;
   readStatus(jobId: string): SupervisorStatus | null;
@@ -191,39 +193,72 @@ class SqliteClient implements ObservabilitySqliteClient {
     this.db.run('PRAGMA journal_mode=WAL');
   }
 
-  upsertStatus(status: SupervisorStatus): void {
+  private writeStatusRow(status: SupervisorStatus): void {
     const statusJson = JSON.stringify(status);
+    this.db.run(`
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        specialist = excluded.specialist,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [status.id, status.specialist, statusJson, Date.now()]);
+  }
+
+  private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
+    const eventJson = JSON.stringify(event);
+    this.db.run(`
+      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+  }
+
+  private writeResultRow(jobId: string, output: string): void {
+    this.db.run(`
+      INSERT INTO specialist_results (job_id, output, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        output = excluded.output,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [jobId, output, Date.now()]);
+  }
+
+  upsertStatus(status: SupervisorStatus): void {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          specialist = excluded.specialist,
-          status_json = excluded.status_json,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [status.id, status.specialist, statusJson, Date.now()]);
+      this.writeStatusRow(status);
     }, 'upsertStatus');
   }
 
-  appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
-    const eventJson = JSON.stringify(event);
+  upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+      });
+      transaction();
+    }, 'upsertStatusWithEvent');
+  }
+
+  upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeResultRow(status.id, output);
+      });
+      transaction();
+    }, 'upsertStatusWithEventAndResult');
+  }
+
+  appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
+    withRetry(() => {
+      this.writeEventRow(jobId, specialist, beadId, event);
     }, 'appendEvent');
   }
 
   upsertResult(jobId: string, output: string): void {
     withRetry(() => {
-      this.db.run(`
-        INSERT INTO specialist_results (job_id, output, updated_at_ms)
-        VALUES (?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          output = excluded.output,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [jobId, output, Date.now()]);
+      this.writeResultRow(jobId, output);
     }, 'upsertResult');
   }
 

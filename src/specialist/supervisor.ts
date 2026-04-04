@@ -251,12 +251,16 @@ export class Supervisor {
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
 
-  private writeStatusFile(id: string, data: SupervisorStatus): void {
+  private writeStatusFileOnly(id: string, data: SupervisorStatus): void {
     mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + '.tmp';
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
     renameSync(tmp, path);
+  }
+
+  private writeStatusFile(id: string, data: SupervisorStatus): void {
+    this.writeStatusFileOnly(id, data);
     try { this.sqliteClient?.upsertStatus(data); } catch { /* best effort */ }
   }
 
@@ -363,7 +367,7 @@ export class Supervisor {
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),
     };
-    this.writeStatusFile(id, initialStatus);
+    this.writeStatusFileOnly(id, initialStatus);
     // Persist a latest marker so other processes can discover the active job id immediately
     writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
     this.opts.onJobStarted?.({ id });
@@ -402,8 +406,23 @@ export class Supervisor {
       }
     };
 
+    const appendTimelineEventFileOnly = (event: TimelineEvent): void => {
+      try {
+        writeSync(eventsFd, JSON.stringify(event) + '\n');
+      } catch (err: any) {
+        // Log but don't crash — event logging is best-effort
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
+    };
+
     // Emit run_start event
-    appendTimelineEvent(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
+    const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
+    appendTimelineEventFileOnly(runStartEvent);
+    try {
+      this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
+    } catch {
+      // best effort
+    }
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
     // Available for all jobs — steering is independent of keep-alive
@@ -786,7 +805,6 @@ export class Supervisor {
       latestOutput = result.output;
       mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
-      try { this.sqliteClient?.upsertResult(id, latestOutput); } catch { /* best effort */ }
 
       if (keepAliveSession) {
         setStatus({
@@ -843,15 +861,18 @@ export class Supervisor {
           this.opts.beadsClient?.closeBead(finalResult.beadId, 'COMPLETE', finalResult.durationMs, finalResult.model);
         }
       }
-      setStatus({
+      const completedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
         status: 'done',
         elapsed_s: elapsed,
-        last_event_at_ms: Date.now(),
+        last_event_at_ms: completedAtMs,
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
         metrics: runMetrics,
-      });
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
 
       const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0
         ? {
@@ -863,7 +884,7 @@ export class Supervisor {
         : undefined;
 
       // Emit run_complete — THE canonical completion event
-      appendTimelineEvent(createRunCompleteEvent('COMPLETE', elapsed, {
+      const runCompleteEvent = createRunCompleteEvent('COMPLETE', elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
@@ -874,7 +895,13 @@ export class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-      }));
+      });
+      appendTimelineEventFileOnly(runCompleteEvent);
+      try {
+        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
+      } catch {
+        // best effort
+      }
 
       // Touch ready marker so hooks can surface completion banners.
       this.writeReadyMarker(id);
@@ -883,11 +910,15 @@ export class Supervisor {
     } catch (err: any) {
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const errorMsg = err?.message ?? String(err);
-      setStatus({
+      const failedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
         status: 'error',
         elapsed_s: elapsed,
         error: errorMsg,
-      });
+        last_event_at_ms: failedAtMs,
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
 
       mergeRunMetrics({
         tool_calls: toolCallNames.length,
@@ -905,7 +936,7 @@ export class Supervisor {
         : undefined;
 
       // Emit run_complete with ERROR status
-      appendTimelineEvent(createRunCompleteEvent('ERROR', elapsed, {
+      const runCompleteEvent = createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,
@@ -913,7 +944,13 @@ export class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-      }));
+      });
+      appendTimelineEventFileOnly(runCompleteEvent);
+      try {
+        this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
+      } catch {
+        // best effort
+      }
 
       // Touch ready marker so hooks can surface failure banners.
       this.writeReadyMarker(id);
