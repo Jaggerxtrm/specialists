@@ -7,6 +7,7 @@
 //   - No Pi bootstrap logic (extensions are global via ~/.pi/).
 //   - No CLI argument parsing.
 
+import { existsSync, symlinkSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 
@@ -139,10 +140,37 @@ export function provisionWorktree(options: WorktreeOptions): WorktreeInfo {
   // ── 3. Create via bd worktree create (hard — no git fallback) ──────────────
   createWorktreeViaBd(worktreePath, branch, commonRoot);
 
+  // ── 4. Symlink .pi/npm to avoid redundant npm install on first pi start ────
+  // Each new worktree would otherwise trigger a full npm install for project
+  // packages (from .pi/settings.json), blocking the RPC channel for 30-60s.
+  // Sharing the main checkout's npm cache skips that startup cost.
+  symlinkPiNpmCache(commonRoot, worktreePath);
+
   return { branch, worktreePath, reused: false };
 }
 
 // ── Internal ───────────────────────────────────────────────────────────────────
+
+
+/**
+ * Symlink <worktreePath>/.pi/npm → <commonRoot>/.pi/npm so new worktrees
+ * reuse the main checkout's pi npm cache and skip redundant npm installs.
+ *
+ * No-ops when:
+ *   - The main checkout has no .pi/npm (nothing to share yet)
+ *   - The worktree already has its own .pi/npm (dir or link)
+ */
+function symlinkPiNpmCache(commonRoot: string, worktreePath: string): void {
+  const source = join(commonRoot, '.pi', 'npm');
+  const target = join(worktreePath, '.pi', 'npm');
+  if (!existsSync(source) || existsSync(target)) return;
+  try {
+    mkdirSync(join(worktreePath, '.pi'), { recursive: true });
+    symlinkSync(source, target);
+  } catch {
+    // Non-fatal: worst case pi does a fresh npm install on first run
+  }
+}
 
 /**
  * Shell out to `bd worktree create <path> --branch <branch>`.

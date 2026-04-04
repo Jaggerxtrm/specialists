@@ -21876,6 +21876,7 @@ var init_supervisor = __esm(() => {
 });
 
 // src/specialist/worktree.ts
+import { existsSync as existsSync13, symlinkSync, mkdirSync as mkdirSync4 } from "node:fs";
 import { join as join13, resolve as resolve4 } from "node:path";
 import { spawnSync as spawnSync10, execFileSync as execFileSync3 } from "node:child_process";
 function deriveBranchName(beadId, specialistName) {
@@ -21915,7 +21916,18 @@ function provisionWorktree(options) {
   const worktreeName = deriveWorktreeName(options.beadId, options.specialistName);
   const worktreePath = resolve4(join13(worktreeBase, worktreeName));
   createWorktreeViaBd(worktreePath, branch, commonRoot);
+  symlinkPiNpmCache(commonRoot, worktreePath);
   return { branch, worktreePath, reused: false };
+}
+function symlinkPiNpmCache(commonRoot, worktreePath) {
+  const source = join13(commonRoot, ".pi", "npm");
+  const target = join13(worktreePath, ".pi", "npm");
+  if (!existsSync13(source) || existsSync13(target))
+    return;
+  try {
+    mkdirSync4(join13(worktreePath, ".pi"), { recursive: true });
+    symlinkSync(source, target);
+  } catch {}
 }
 function createWorktreeViaBd(worktreePath, branch, cwd) {
   try {
@@ -22598,7 +22610,7 @@ __export(exports_status, {
   run: () => run11
 });
 import { spawnSync as spawnSync12 } from "node:child_process";
-import { existsSync as existsSync13, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync14, readFileSync as readFileSync8 } from "node:fs";
 import { join as join15 } from "node:path";
 function ok2(msg) {
   console.log(`  ${green8("✓")} ${msg}`);
@@ -22679,7 +22691,7 @@ function parseStatusArgs(argv) {
 }
 function countJobEvents(jobsDir, jobId) {
   const eventsFile = join15(jobsDir, jobId, "events.jsonl");
-  if (!existsSync13(eventsFile))
+  if (!existsSync14(eventsFile))
     return 0;
   const raw = readFileSync8(eventsFile, "utf-8").trim();
   if (!raw)
@@ -22761,12 +22773,12 @@ async function run11() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const bdInstalled = isInstalled("bd");
   const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync13(join15(process.cwd(), ".beads"));
+  const beadsPresent = existsSync14(join15(process.cwd(), ".beads"));
   const specialistsBin = cmd("which", ["specialists"]);
   const jobsDir = resolveJobsDir();
   let jobs = [];
   let supervisor = null;
-  if (existsSync13(jobsDir)) {
+  if (existsSync14(jobsDir)) {
     supervisor = new Supervisor({
       runner: null,
       runOptions: null,
@@ -22914,7 +22926,7 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run12
 });
-import { existsSync as existsSync14, readFileSync as readFileSync9 } from "node:fs";
+import { existsSync as existsSync15, readFileSync as readFileSync9 } from "node:fs";
 import { join as join16 } from "node:path";
 function parseArgs7(argv) {
   const jobId = argv[0];
@@ -22971,7 +22983,7 @@ async function run12() {
   const sqliteClient = createObservabilitySqliteClient();
   const resultPath = join16(jobsDir, jobId, "result.txt");
   const readResultOutput = () => {
-    if (existsSync14(resultPath)) {
+    if (existsSync15(resultPath)) {
       return readFileSync9(resultPath, "utf-8");
     }
     try {
@@ -23097,7 +23109,7 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync16, readdirSync as readdirSync5, readFileSync as readFileSync10 } from "node:fs";
 import { basename as basename3, join as join17 } from "node:path";
 function readJobEvents(jobDir) {
   const jobId = basename3(jobDir);
@@ -23109,7 +23121,7 @@ function readJobEvents(jobDir) {
     }
   } catch {}
   const eventsPath = join17(jobDir, "events.jsonl");
-  if (!existsSync15(eventsPath))
+  if (!existsSync16(eventsPath))
     return [];
   const content = readFileSync10(eventsPath, "utf-8");
   const lines = content.split(`
@@ -23127,7 +23139,7 @@ function readJobEventsById(jobsDir, jobId) {
   return readJobEvents(join17(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  if (!existsSync15(jobsDir))
+  if (!existsSync16(jobsDir))
     return [];
   const batches = [];
   const entries = readdirSync5(jobsDir);
@@ -23144,7 +23156,7 @@ function readAllJobEvents(jobsDir) {
     const statusPath = join17(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync15(statusPath)) {
+    if (existsSync16(statusPath)) {
       try {
         const status = JSON.parse(readFileSync10(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
@@ -23235,7 +23247,7 @@ __export(exports_feed, {
 });
 import {
   closeSync as closeSync2,
-  existsSync as existsSync16,
+  existsSync as existsSync17,
   openSync as openSync2,
   readFileSync as readFileSync11,
   readdirSync as readdirSync6,
@@ -23478,7 +23490,7 @@ function filterMergedEventsByCursor(merged, from) {
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
 function listMatchingJobIds(jobsDir, options) {
-  if (!existsSync16(jobsDir))
+  if (!existsSync17(jobsDir))
     return [];
   const jobIds = [];
   for (const entry of readdirSync6(jobsDir)) {
@@ -23656,7 +23668,7 @@ async function followMerged(jobsDir, options) {
 async function run13() {
   const options = parseArgs8(process.argv.slice(3));
   const jobsDir = join18(process.cwd(), ".specialists", "jobs");
-  if (!existsSync16(jobsDir)) {
+  if (!existsSync17(jobsDir)) {
     console.log(dim7("No jobs directory found."));
     return;
   }
@@ -23689,7 +23701,7 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run14
 });
-import { existsSync as existsSync17, readFileSync as readFileSync12 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync12 } from "node:fs";
 import { join as join19 } from "node:path";
 function parseArgs9(argv) {
   let jobId;
@@ -23730,14 +23742,14 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
   const jobDir = join19(jobsDir, jobId);
   const statusPath = join19(jobDir, "status.json");
   let status = null;
-  if (existsSync17(statusPath)) {
+  if (existsSync18(statusPath)) {
     try {
       status = JSON.parse(readFileSync12(statusPath, "utf-8"));
     } catch {}
   }
   const resultPath = join19(jobDir, "result.txt");
   let fullOutput = "";
-  if (existsSync17(resultPath)) {
+  if (existsSync18(resultPath)) {
     try {
       fullOutput = readFileSync12(resultPath, "utf-8");
     } catch {}
@@ -23773,7 +23785,7 @@ async function run14() {
   const { jobId, cursor, outputCursor } = parseArgs9(process.argv.slice(3));
   const jobsDir = join19(process.cwd(), ".specialists", "jobs");
   const jobDir = join19(jobsDir, jobId);
-  if (!existsSync17(jobDir)) {
+  if (!existsSync18(jobDir)) {
     const result2 = {
       job_id: jobId,
       status: "error",
@@ -23913,12 +23925,12 @@ async function run17() {
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync18, readdirSync as readdirSync7, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync19, readdirSync as readdirSync7, readFileSync as readFileSync13 } from "node:fs";
 import { join as join20 } from "node:path";
 import { spawnSync as spawnSync13 } from "node:child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join20(jobDir, "status.json");
-  if (!existsSync18(statusPath))
+  if (!existsSync19(statusPath))
     return null;
   try {
     return JSON.parse(readFileSync13(statusPath, "utf-8"));
@@ -23933,7 +23945,7 @@ function isActive(status) {
   return ACTIVE_STATUSES.has(status);
 }
 function collectWorktreeGcCandidates(jobsDir) {
-  if (!existsSync18(jobsDir))
+  if (!existsSync19(jobsDir))
     return [];
   const candidates = [];
   for (const entry of readdirSync7(jobsDir, { withFileTypes: true })) {
@@ -23949,7 +23961,7 @@ function collectWorktreeGcCandidates(jobsDir) {
     const { worktree_path: worktreePath, branch } = status;
     if (!worktreePath)
       continue;
-    if (!existsSync18(worktreePath))
+    if (!existsSync19(worktreePath))
       continue;
     candidates.push({
       jobId: status.id,
@@ -23995,7 +24007,7 @@ __export(exports_clean, {
   run: () => run18
 });
 import {
-  existsSync as existsSync19,
+  existsSync as existsSync20,
   readdirSync as readdirSync8,
   readFileSync as readFileSync14,
   rmSync as rmSync2,
@@ -24089,7 +24101,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   if (containsProtectedSqliteArtifact(directoryPath))
     return null;
   const statusFilePath = join21(directoryPath, "status.json");
-  if (!existsSync19(statusFilePath))
+  if (!existsSync20(statusFilePath))
     return null;
   let statusData;
   try {
@@ -24190,7 +24202,7 @@ async function run18() {
     printUsageAndExit(message);
   }
   const jobsDirectoryPath = resolveJobsDir();
-  if (!existsSync19(jobsDirectoryPath)) {
+  if (!existsSync20(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
   }
@@ -24568,7 +24580,7 @@ __export(exports_doctor, {
   run: () => run22
 });
 import { spawnSync as spawnSync15 } from "node:child_process";
-import { existsSync as existsSync20, mkdirSync as mkdirSync4, readFileSync as readFileSync16, readdirSync as readdirSync9 } from "node:fs";
+import { existsSync as existsSync21, mkdirSync as mkdirSync5, readFileSync as readFileSync16, readdirSync as readdirSync9 } from "node:fs";
 import { join as join24 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green14("✓")} ${msg}`);
@@ -24598,7 +24610,7 @@ function isInstalled2(bin) {
   return spawnSync15("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync20(path))
+  if (!existsSync21(path))
     return null;
   try {
     return JSON.parse(readFileSync16(path, "utf8"));
@@ -24644,7 +24656,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync20(join24(CWD, ".beads")))
+  if (existsSync21(join24(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -24665,7 +24677,7 @@ function checkHooks() {
   let allPresent = true;
   for (const name of HOOK_NAMES) {
     const dest = join24(HOOKS_DIR, name);
-    if (!existsSync20(dest)) {
+    if (!existsSync21(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -24713,16 +24725,16 @@ function checkRuntimeDirs() {
   const jobsDir = join24(rootDir, "jobs");
   const readyDir = join24(rootDir, "ready");
   let allOk = true;
-  if (!existsSync20(rootDir)) {
+  if (!existsSync21(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync20(subDir)) {
+      if (!existsSync21(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
-        mkdirSync4(subDir, { recursive: true });
+        mkdirSync5(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -24734,7 +24746,7 @@ function checkRuntimeDirs() {
 function checkZombieJobs() {
   section3("Background jobs");
   const jobsDir = join24(CWD, ".specialists", "jobs");
-  if (!existsSync20(jobsDir)) {
+  if (!existsSync21(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -24753,7 +24765,7 @@ function checkZombieJobs() {
   let running = 0;
   for (const jobId of entries) {
     const statusPath = join24(jobsDir, jobId, "status.json");
-    if (!existsSync20(statusPath))
+    if (!existsSync21(statusPath))
       continue;
     try {
       const status = JSON.parse(readFileSync16(statusPath, "utf8"));
