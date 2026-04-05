@@ -455,6 +455,7 @@ export class Supervisor {
     };
     let textCharCount = 0;
     let thinkingCharCount = 0;
+    let turnTextAccumulator = '';
     const toolCallNames: string[] = [];
     // Map from toolCallId → {tool, args} for parallel tool call tracking
     const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
@@ -589,6 +590,11 @@ export class Supervisor {
             currentTool = toolMatch[1];
             setStatus({ current_tool: currentTool });
           }
+
+          if (delta !== '✓\n' && !delta.startsWith('\n⚙ ') && !delta.startsWith('💭 ')) {
+            turnTextAccumulator += delta;
+          }
+
           // Stream to caller if callback provided
           this.opts.onProgress?.(delta);
         },
@@ -609,6 +615,10 @@ export class Supervisor {
           if (eventType === 'turn_start') {
             textCharCount = 0;
             thinkingCharCount = 0;
+            turnTextAccumulator = '';
+          }
+          if (eventType === 'message_start_assistant') {
+            turnTextAccumulator = '';
           }
           if (eventType === 'text') {
             textCharCount += details?.charCount ?? 0;
@@ -663,7 +673,9 @@ export class Supervisor {
               metricEvent.turn_index,
               metricEvent.token_usage,
               metricEvent.finish_reason,
+              turnTextAccumulator || undefined,
             ));
+            turnTextAccumulator = '';
             return;
           }
 

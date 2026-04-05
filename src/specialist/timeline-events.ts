@@ -263,6 +263,7 @@ export interface TimelineEventTurnSummary extends TimelineEventBase {
   turn_index: number;
   token_usage?: TimelineTokenUsage;
   finish_reason?: string;
+  text_content?: string;
 }
 
 export interface TimelineEventCompaction extends TimelineEventBase {
@@ -545,6 +546,7 @@ export function createTurnSummaryEvent(
   turn_index: number,
   token_usage?: TimelineTokenUsage,
   finish_reason?: string,
+  textContent?: string,
 ): TimelineEventTurnSummary {
   return {
     t: Date.now(),
@@ -552,6 +554,7 @@ export function createTurnSummaryEvent(
     turn_index,
     ...(token_usage ? { token_usage } : {}),
     ...(finish_reason ? { finish_reason } : {}),
+    ...(textContent ? { text_content: textContent } : {}),
   };
 }
 
