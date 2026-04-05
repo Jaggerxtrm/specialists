@@ -328,12 +328,75 @@ export function initSchema(db: BunDb): void {
   verifyWalMode(db);
 }
 
+export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
+
+export type NodeEventType =
+  | 'node_created'
+  | 'node_started'
+  | 'node_state_changed'
+  | 'member_started'
+  | 'member_state_changed'
+  | 'member_output_received'
+  | 'member_failed'
+  | 'member_recovered'
+  | 'coordinator_resumed'
+  | 'coordinator_output_received'
+  | 'coordinator_output_invalid'
+  | 'memory_updated'
+  | 'action_dispatched'
+  | 'node_waiting'
+  | 'node_done'
+  | 'node_error'
+  | 'node_stopped';
+
+export interface NodeRunRow {
+  id: string;
+  node_name: string;
+  status: NodeRunStatus;
+  coordinator_job_id?: string;
+  started_at_ms?: number;
+  updated_at_ms: number;
+  waiting_on?: string;
+  error?: string;
+  memory_namespace?: string;
+  status_json: string;
+}
+
+export interface NodeMemberRow {
+  node_run_id: string;
+  member_id: string;
+  job_id?: string;
+  specialist: string;
+  model?: string;
+  role?: string;
+  status: string;
+  enabled?: boolean;
+}
+
+export interface NodeMemoryRow {
+  node_run_id: string;
+  namespace?: string;
+  entry_type?: 'fact' | 'question' | 'decision';
+  entry_id?: string;
+  summary?: string;
+  source_member_id?: string;
+  confidence?: number;
+  provenance_json?: string;
+  created_at_ms?: number;
+  updated_at_ms?: number;
+}
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
   appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
   upsertResult(jobId: string, output: string): void;
+  bootstrapNode(nodeRunId: string, nodeName: string, memoryNamespace?: string): void;
+  upsertNodeRun(nodeRun: NodeRunRow): void;
+  upsertNodeMember(member: NodeMemberRow): void;
+  appendNodeEvent(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
+  upsertNodeMemory(entry: NodeMemoryRow): void;
   readStatus(jobId: string): SupervisorStatus | null;
   listStatuses(): SupervisorStatus[];
   readEvents(jobId: string): TimelineEvent[];
@@ -401,6 +464,177 @@ class SqliteClient implements ObservabilitySqliteClient {
     `, [jobId, output, Date.now()]);
   }
 
+  private writeNodeRunRow(nodeRun: NodeRunRow): void {
+    this.db.run(`
+      INSERT INTO node_runs (
+        id,
+        node_name,
+        status,
+        coordinator_job_id,
+        started_at_ms,
+        updated_at_ms,
+        waiting_on,
+        error,
+        memory_namespace,
+        status_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        node_name = excluded.node_name,
+        status = excluded.status,
+        coordinator_job_id = excluded.coordinator_job_id,
+        started_at_ms = excluded.started_at_ms,
+        updated_at_ms = excluded.updated_at_ms,
+        waiting_on = excluded.waiting_on,
+        error = excluded.error,
+        memory_namespace = excluded.memory_namespace,
+        status_json = excluded.status_json;
+    `, [
+      nodeRun.id,
+      nodeRun.node_name,
+      nodeRun.status,
+      nodeRun.coordinator_job_id ?? null,
+      nodeRun.started_at_ms ?? null,
+      nodeRun.updated_at_ms,
+      nodeRun.waiting_on ?? null,
+      nodeRun.error ?? null,
+      nodeRun.memory_namespace ?? null,
+      nodeRun.status_json,
+    ]);
+  }
+
+  private writeNodeMemberRow(member: NodeMemberRow): void {
+    this.db.run(`
+      INSERT INTO node_members (
+        node_run_id,
+        member_id,
+        job_id,
+        specialist,
+        model,
+        role,
+        status,
+        enabled
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(node_run_id, member_id) DO UPDATE SET
+        job_id = excluded.job_id,
+        specialist = excluded.specialist,
+        model = excluded.model,
+        role = excluded.role,
+        status = excluded.status,
+        enabled = excluded.enabled;
+    `, [
+      member.node_run_id,
+      member.member_id,
+      member.job_id ?? null,
+      member.specialist,
+      member.model ?? null,
+      member.role ?? null,
+      member.status,
+      member.enabled === undefined ? 1 : (member.enabled ? 1 : 0),
+    ]);
+  }
+
+  private writeNodeEventRow(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void {
+    this.db.run(`
+      INSERT INTO node_events (node_run_id, t, type, event_json)
+      VALUES (?, ?, ?, ?)
+    `, [nodeRunId, t, type, JSON.stringify(eventJson)]);
+  }
+
+  private writeNodeMemoryRow(entry: NodeMemoryRow): void {
+    const now = Date.now();
+    const createdAtMs = entry.created_at_ms ?? now;
+    const updatedAtMs = entry.updated_at_ms ?? now;
+
+    if (entry.entry_id) {
+      this.db.run(`
+        UPDATE node_memory
+        SET
+          namespace = ?,
+          entry_type = ?,
+          summary = ?,
+          source_member_id = ?,
+          confidence = ?,
+          provenance_json = ?,
+          created_at_ms = ?,
+          updated_at_ms = ?
+        WHERE node_run_id = ? AND entry_id = ?
+      `, [
+        entry.namespace ?? null,
+        entry.entry_type ?? null,
+        entry.summary ?? null,
+        entry.source_member_id ?? null,
+        entry.confidence ?? null,
+        entry.provenance_json ?? null,
+        createdAtMs,
+        updatedAtMs,
+        entry.node_run_id,
+        entry.entry_id,
+      ]);
+
+      this.db.run(`
+        INSERT INTO node_memory (
+          node_run_id,
+          namespace,
+          entry_type,
+          entry_id,
+          summary,
+          source_member_id,
+          confidence,
+          provenance_json,
+          created_at_ms,
+          updated_at_ms
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1 FROM node_memory WHERE node_run_id = ? AND entry_id = ?
+        )
+      `, [
+        entry.node_run_id,
+        entry.namespace ?? null,
+        entry.entry_type ?? null,
+        entry.entry_id,
+        entry.summary ?? null,
+        entry.source_member_id ?? null,
+        entry.confidence ?? null,
+        entry.provenance_json ?? null,
+        createdAtMs,
+        updatedAtMs,
+        entry.node_run_id,
+        entry.entry_id,
+      ]);
+      return;
+    }
+
+    this.db.run(`
+      INSERT INTO node_memory (
+        node_run_id,
+        namespace,
+        entry_type,
+        entry_id,
+        summary,
+        source_member_id,
+        confidence,
+        provenance_json,
+        created_at_ms,
+        updated_at_ms
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      entry.node_run_id,
+      entry.namespace ?? null,
+      entry.entry_type ?? null,
+      null,
+      entry.summary ?? null,
+      entry.source_member_id ?? null,
+      entry.confidence ?? null,
+      entry.provenance_json ?? null,
+      createdAtMs,
+      updatedAtMs,
+    ]);
+  }
+
   upsertStatus(status: SupervisorStatus): void {
     withRetry(() => {
       this.writeStatusRow(status);
@@ -442,6 +676,50 @@ class SqliteClient implements ObservabilitySqliteClient {
         UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
       `, [output, jobId]);
     }, 'upsertResult');
+  }
+
+  bootstrapNode(nodeRunId: string, nodeName: string, memoryNamespace?: string): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        const now = Date.now();
+        this.writeNodeRunRow({
+          id: nodeRunId,
+          node_name: nodeName,
+          status: 'created',
+          started_at_ms: now,
+          updated_at_ms: now,
+          memory_namespace: memoryNamespace,
+          status_json: JSON.stringify({ status: 'created' }),
+        });
+        this.writeNodeEventRow(nodeRunId, now, 'node_created', { node_run_id: nodeRunId, node_name: nodeName });
+        this.writeNodeEventRow(nodeRunId, now + 1, 'node_started', { node_run_id: nodeRunId, node_name: nodeName });
+      });
+      transaction();
+    }, 'bootstrapNode');
+  }
+
+  upsertNodeRun(nodeRun: NodeRunRow): void {
+    withRetry(() => {
+      this.writeNodeRunRow(nodeRun);
+    }, 'upsertNodeRun');
+  }
+
+  upsertNodeMember(member: NodeMemberRow): void {
+    withRetry(() => {
+      this.writeNodeMemberRow(member);
+    }, 'upsertNodeMember');
+  }
+
+  appendNodeEvent(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void {
+    withRetry(() => {
+      this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+    }, 'appendNodeEvent');
+  }
+
+  upsertNodeMemory(entry: NodeMemoryRow): void {
+    withRetry(() => {
+      this.writeNodeMemoryRow(entry);
+    }, 'upsertNodeMemory');
   }
 
   readStatus(jobId: string): SupervisorStatus | null {
