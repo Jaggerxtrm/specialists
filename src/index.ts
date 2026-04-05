@@ -313,6 +313,30 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'node') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists node <run|status> [options]',
+        '',
+        'Commands:',
+        '  run <node-config-file> [--inline JSON] [--json]   Start a NodeSupervisor run',
+        '  status [--node <node-id>] [--json]                 Show node runs from SQLite',
+        '',
+        'Examples:',
+        '  specialists node run ./config/research.node.json',
+        '  specialists node run --inline "{\"name\":\"research\",...}" --json',
+        '  specialists node status',
+        '  specialists node status --node research-abc123',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { handleNodeCommand } = await import('./cli/node.js');
+    await handleNodeCommand(process.argv.slice(3));
+    process.exit(0);
+  }
+
   if (sub === 'status') {
     if (wantsHelp()) {
       console.log([

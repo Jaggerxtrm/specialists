@@ -13,6 +13,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['validate', 'Validate a specialist YAML against the schema'],
   ['config', 'Batch get/set specialist YAML keys in config/specialists/'],
   ['run', 'Run a specialist; --json for NDJSON event stream, --raw for legacy text'],
+  ['node', 'Run and inspect NodeSupervisor nodes (run/status)'],
   ['feed', 'Tail job events; use -f to follow all jobs'],
   ['poll', 'Machine-readable job status polling (for scripts/Claude Code)'],
   ['result', 'Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit'],
