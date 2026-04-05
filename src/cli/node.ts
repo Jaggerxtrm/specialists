@@ -236,13 +236,9 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
 
     const nodeId = `${config.name}-${randomUUID().slice(0, 8)}`;
 
-    const nodeSupervisorModulePath = '../specialist/node-supervisor.js';
-    const module = await import(nodeSupervisorModulePath);
-    const NodeSupervisorCtor = module.NodeSupervisor as new (opts: Record<string, unknown>) => {
-      run(initialPrompt: string): Promise<unknown>;
-    };
+    const { NodeSupervisor } = await import('../specialist/node-supervisor.js');
 
-    const supervisor = new NodeSupervisorCtor({
+    const supervisor = new NodeSupervisor({
       nodeId,
       nodeName: config.name,
       coordinatorSpecialist: config.coordinator,
@@ -252,10 +248,8 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
       sqliteClient,
       runner,
       runOptions: {
-        name: config.coordinator,
-        prompt: config.initialPrompt,
         inputBeadId: args.beadId,
-      },
+      } as any,
     });
 
     let cursor = 0;

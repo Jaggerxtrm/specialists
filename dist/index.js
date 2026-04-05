@@ -23298,15 +23298,829 @@ var init_run = __esm(() => {
   init_tmux_utils();
 });
 
+// src/specialist/job-control.ts
+import { existsSync as existsSync14, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join15 } from "node:path";
+
+class JobControl {
+  supervisor;
+  jobId = null;
+  runner;
+  baseRunOptions;
+  jobsDir;
+  sqliteClient;
+  constructor(opts) {
+    this.runner = opts.runner;
+    this.baseRunOptions = opts.runOptions;
+    this.jobsDir = opts.jobsDir ?? resolveJobsDir(opts.runOptions.workingDirectory ?? process.cwd());
+    this.sqliteClient = createObservabilitySqliteClient();
+    this.supervisor = new Supervisor({
+      runner: this.runner,
+      runOptions: this.baseRunOptions,
+      jobsDir: this.jobsDir
+    });
+  }
+  async startJob(opts) {
+    const runOptions = {
+      ...this.baseRunOptions,
+      variables: {
+        ...this.baseRunOptions.variables ?? {},
+        node_id: opts.nodeId,
+        member_id: opts.memberId
+      }
+    };
+    let resolveJobId;
+    const jobIdPromise = new Promise((resolve5) => {
+      resolveJobId = resolve5;
+    });
+    this.supervisor = new Supervisor({
+      runner: this.runner,
+      runOptions,
+      jobsDir: this.jobsDir,
+      onJobStarted: ({ id }) => {
+        this.jobId = id;
+        resolveJobId?.(id);
+      }
+    });
+    this.supervisor.run().catch(() => {});
+    return jobIdPromise;
+  }
+  async resumeJob(jobId, prompt) {
+    this.writeFifoMessage(jobId, { type: "resume", task: prompt });
+  }
+  async steerJob(jobId, message) {
+    this.writeFifoMessage(jobId, { type: "steer", message });
+  }
+  async stopJob(jobId) {
+    this.writeFifoMessage(jobId, { type: "close" });
+  }
+  readStatus(jobId) {
+    return this.supervisor.readStatus(jobId);
+  }
+  readResult(jobId) {
+    try {
+      const sqliteResult = this.sqliteClient?.readResult(jobId) ?? null;
+      if (sqliteResult)
+        return sqliteResult;
+    } catch {}
+    const resultPath = this.resultPath(jobId);
+    if (!existsSync14(resultPath))
+      return null;
+    try {
+      return readFileSync8(resultPath, "utf-8");
+    } catch {
+      return null;
+    }
+  }
+  async waitForTerminal(jobId, timeoutMs) {
+    const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+    let backoffMs = INITIAL_BACKOFF_MS;
+    while (true) {
+      const status = this.readStatus(jobId);
+      if (!status) {
+        throw new Error(`No job found: ${jobId}`);
+      }
+      if (TERMINAL_STATUSES.has(status.status)) {
+        return status;
+      }
+      if (deadline !== undefined && Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for terminal status for job ${jobId}`);
+      }
+      await new Promise((resolve5) => setTimeout(resolve5, backoffMs));
+      backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+    }
+  }
+  writeFifoMessage(jobId, payload) {
+    const status = this.readStatus(jobId);
+    if (!status) {
+      throw new Error(`No job found: ${jobId}`);
+    }
+    if (!status.fifo_path) {
+      throw new Error(`Job ${jobId} has no steer pipe`);
+    }
+    const jsonLine = `${JSON.stringify(payload)}
+`;
+    writeFileSync5(status.fifo_path, jsonLine, { flag: "a" });
+  }
+  resultPath(jobId) {
+    return join15(this.jobsDir, jobId, "result.txt");
+  }
+}
+var TERMINAL_STATUSES, INITIAL_BACKOFF_MS = 100, MAX_BACKOFF_MS = 2000;
+var init_job_control = __esm(() => {
+  init_job_root();
+  init_observability_sqlite();
+  init_supervisor();
+  TERMINAL_STATUSES = new Set(["done", "error", "stopped"]);
+});
+
+// src/specialist/node-supervisor.ts
+var exports_node_supervisor = {};
+__export(exports_node_supervisor, {
+  NodeSupervisor: () => NodeSupervisor
+});
+import { createHash as createHash2 } from "node:crypto";
+import { spawnSync as spawnSync11 } from "node:child_process";
+function hashOutput(output) {
+  if (!output)
+    return null;
+  return createHash2("sha256").update(output).digest("hex");
+}
+function sleep2(ms) {
+  return new Promise((resolve5) => setTimeout(resolve5, ms));
+}
+function toContextHealth(contextPct) {
+  if (contextPct === null)
+    return "UNKNOWN";
+  if (contextPct < 60)
+    return "OK";
+  if (contextPct <= 75)
+    return "MONITOR";
+  if (contextPct <= 90)
+    return "WARN";
+  return "CRITICAL";
+}
+
+class NodeSupervisor {
+  status = "created";
+  members;
+  coordinatorJobId = null;
+  dispatchQueue = [];
+  opts;
+  memberControllers = new Map;
+  coordinatorController = null;
+  queuedActionKeys = new Set;
+  resumePending = false;
+  constructor(opts) {
+    this.opts = opts;
+    this.members = new Map(opts.members.map((member) => [
+      member.memberId,
+      {
+        memberId: member.memberId,
+        jobId: null,
+        specialist: member.specialist,
+        model: member.model,
+        role: member.role,
+        status: "created",
+        enabled: true,
+        lastSeenOutputHash: null,
+        generation: 0
+      }
+    ]));
+  }
+  async bootstrap() {
+    try {
+      this.opts.sqliteClient.bootstrapNode(this.opts.nodeId, this.opts.nodeName, this.opts.memoryNamespace);
+    } catch {}
+    for (const member of this.members.values()) {
+      try {
+        this.opts.sqliteClient.upsertNodeMember({
+          node_run_id: this.opts.nodeId,
+          member_id: member.memberId,
+          job_id: member.jobId ?? undefined,
+          specialist: member.specialist,
+          model: member.model,
+          role: member.role,
+          status: member.status,
+          enabled: member.enabled
+        });
+      } catch {}
+    }
+  }
+  validateTransition(to) {
+    const validTargets = VALID_TRANSITIONS[this.status];
+    if (!validTargets.includes(to)) {
+      throw new Error(`Invalid NodeSupervisor transition: ${this.status} -> ${to}`);
+    }
+  }
+  transition(to, reason) {
+    this.validateTransition(to);
+    const previousStatus = this.status;
+    this.status = to;
+    try {
+      const now = Date.now();
+      this.opts.sqliteClient.upsertNodeRun({
+        id: this.opts.nodeId,
+        node_name: this.opts.nodeName,
+        status: to,
+        coordinator_job_id: this.coordinatorJobId ?? undefined,
+        started_at_ms: now,
+        updated_at_ms: now,
+        error: to === "error" ? reason : undefined,
+        memory_namespace: this.opts.memoryNamespace,
+        status_json: JSON.stringify({
+          node_id: this.opts.nodeId,
+          previous_status: previousStatus,
+          status: to,
+          reason,
+          coordinator_job_id: this.coordinatorJobId
+        })
+      });
+    } catch {}
+    try {
+      const now = Date.now();
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now, "node_state_changed", {
+        node_id: this.opts.nodeId,
+        previous_status: previousStatus,
+        status: to,
+        reason
+      });
+      if (to === "done") {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_done", { node_id: this.opts.nodeId, reason });
+      }
+      if (to === "error") {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_error", { node_id: this.opts.nodeId, reason });
+      }
+      if (to === "stopped") {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_stopped", { node_id: this.opts.nodeId, reason });
+      }
+    } catch {}
+  }
+  createBaseRunOptions(specialist, prompt) {
+    const runOptions = this.opts.runOptions;
+    if (!this.opts.runner || !runOptions) {
+      throw new Error("NodeSupervisor requires opts.runner and opts.runOptions to spawn jobs");
+    }
+    return {
+      ...runOptions,
+      name: specialist,
+      prompt,
+      keepAlive: true,
+      noKeepAlive: false,
+      variables: {
+        ...runOptions.variables ?? {},
+        node_id: this.opts.nodeId,
+        SPECIALISTS_NODE_ID: this.opts.nodeId
+      }
+    };
+  }
+  async spawnMembers() {
+    for (const member of this.members.values()) {
+      const prompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+      const runOptions = this.createBaseRunOptions(member.specialist, prompt);
+      const controller = new JobControl({
+        runner: this.opts.runner,
+        runOptions,
+        jobsDir: this.opts.jobsDir
+      });
+      const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+      member.jobId = jobId;
+      member.status = "starting";
+      member.generation += 1;
+      this.memberControllers.set(member.memberId, controller);
+      try {
+        this.opts.sqliteClient.upsertNodeMember({
+          node_run_id: this.opts.nodeId,
+          member_id: member.memberId,
+          job_id: member.jobId,
+          specialist: member.specialist,
+          model: member.model,
+          role: member.role,
+          status: member.status,
+          enabled: member.enabled
+        });
+      } catch {}
+      try {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "member_started", {
+          node_id: this.opts.nodeId,
+          member_id: member.memberId,
+          job_id: jobId,
+          specialist: member.specialist
+        });
+      } catch {}
+    }
+  }
+  async spawnCoordinator(initialPrompt) {
+    const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, initialPrompt);
+    const controller = new JobControl({
+      runner: this.opts.runner,
+      runOptions,
+      jobsDir: this.opts.jobsDir
+    });
+    this.coordinatorJobId = await controller.startJob({
+      nodeId: this.opts.nodeId,
+      memberId: "coordinator"
+    });
+    this.coordinatorController = controller;
+    try {
+      this.opts.sqliteClient.upsertNodeRun({
+        id: this.opts.nodeId,
+        node_name: this.opts.nodeName,
+        status: this.status,
+        coordinator_job_id: this.coordinatorJobId,
+        started_at_ms: Date.now(),
+        updated_at_ms: Date.now(),
+        memory_namespace: this.opts.memoryNamespace,
+        status_json: JSON.stringify({ status: this.status, coordinator_job_id: this.coordinatorJobId })
+      });
+    } catch {}
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "node_started", {
+        node_id: this.opts.nodeId,
+        coordinator_job_id: this.coordinatorJobId
+      });
+    } catch {}
+  }
+  async pollMemberStatuses() {
+    const changes = [];
+    const persistedRows = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
+    for (const row of persistedRows) {
+      const member = this.members.get(row.member_id);
+      if (!member || !member.enabled)
+        continue;
+      if (row.job_id && !member.jobId) {
+        member.jobId = row.job_id;
+      }
+      if (!member.jobId)
+        continue;
+      const status = this.opts.sqliteClient.readStatus(member.jobId);
+      if (!status)
+        continue;
+      const output = this.memberControllers.get(member.memberId)?.readResult(member.jobId) ?? null;
+      const outputHash = hashOutput(output);
+      const statusChanged = member.status !== status.status;
+      const outputChanged = member.lastSeenOutputHash !== outputHash;
+      if (!statusChanged && !outputChanged)
+        continue;
+      changes.push({
+        memberId: member.memberId,
+        prevStatus: member.status,
+        newStatus: status.status,
+        output: output ?? undefined
+      });
+      member.status = status.status;
+      member.lastSeenOutputHash = outputHash;
+    }
+    return changes;
+  }
+  buildResumePayload(changes) {
+    const memberUpdates = changes.map((change) => {
+      const member = this.members.get(change.memberId);
+      const contextPct = member?.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+      const contextHealth = toContextHealth(contextPct);
+      return {
+        memberId: change.memberId,
+        status: change.newStatus,
+        context_pct: contextPct,
+        context_health: contextHealth,
+        output_summary: change.output ? change.output.slice(0, 500) : null
+      };
+    });
+    const registrySnapshot = this.getMembers().map((member) => ({
+      memberId: member.memberId,
+      status: member.status,
+      enabled: member.enabled,
+      specialist: member.specialist,
+      role: member.role,
+      jobId: member.jobId
+    }));
+    const memoryPatchSummary = this.opts.sqliteClient.readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined).slice(-MAX_MEMORY_ENTRIES_IN_RESUME).map((entry) => ({
+      entry_id: entry.entry_id ?? null,
+      entry_type: entry.entry_type ?? null,
+      summary: entry.summary ?? null,
+      source_member_id: entry.source_member_id ?? null,
+      confidence: entry.confidence ?? null
+    }));
+    return [
+      "node_resume_payload:",
+      JSON.stringify({
+        node_id: this.opts.nodeId,
+        member_updates: memberUpdates,
+        registry_snapshot: registrySnapshot,
+        memory_patch_summary: memoryPatchSummary
+      }, null, 2)
+    ].join(`
+`);
+  }
+  getActionKey(action) {
+    return JSON.stringify(action);
+  }
+  async dispatchAction(action) {
+    const actionKey = this.getActionKey(action);
+    if (this.queuedActionKeys.has(actionKey))
+      return;
+    this.dispatchQueue.push(action);
+    this.queuedActionKeys.add(actionKey);
+    while (this.dispatchQueue.length > 0) {
+      const nextAction = this.dispatchQueue.shift();
+      if (!nextAction)
+        continue;
+      const nextActionKey = this.getActionKey(nextAction);
+      try {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "action_dispatched", {
+          node_id: this.opts.nodeId,
+          action: nextAction
+        });
+      } catch {}
+      const controller = this.memberControllers.get(nextAction.memberId);
+      const member = this.members.get(nextAction.memberId);
+      if (!controller || !member?.jobId) {
+        this.queuedActionKeys.delete(nextActionKey);
+        continue;
+      }
+      if (nextAction.type === "resume") {
+        await controller.resumeJob(member.jobId, nextAction.task ?? "Continue.");
+      } else if (nextAction.type === "steer") {
+        await controller.steerJob(member.jobId, nextAction.message ?? "");
+      } else {
+        await controller.stopJob(member.jobId);
+      }
+      this.queuedActionKeys.delete(nextActionKey);
+    }
+  }
+  appendNodeEvent(type, event) {
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), type, event);
+    } catch {}
+  }
+  buildCoordinatorRepairPrompt(args) {
+    const remainingAttempts = 3 - args.attempt;
+    return [
+      "coordinator_output_repair_required:",
+      `attempt=${args.attempt}`,
+      `failure_class=${args.failureClass}`,
+      `details=${args.details}`,
+      "Return ONLY strict JSON matching this contract:",
+      '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
+      "actions allowed:",
+      '- {"type":"resume","memberId":string,"task":string}',
+      '- {"type":"steer","memberId":string,"message":string}',
+      '- {"type":"stop","memberId":string}',
+      "memory_patch entries:",
+      '- {"entry_type":"fact|question|decision","summary":string,"entry_id"?:string,"source_member_id"?:string,"confidence"?:number,"provenance"?:object}',
+      `remaining_attempts=${remainingAttempts}`
+    ].join(`
+`);
+  }
+  validateActionRuntimeState(actions) {
+    for (const action of actions) {
+      const member = this.members.get(action.memberId);
+      if (!member) {
+        return `Unknown memberId '${action.memberId}'.`;
+      }
+      if (!member.enabled) {
+        return `Member '${action.memberId}' is disabled.`;
+      }
+      if (!member.jobId) {
+        return `Member '${action.memberId}' has no active jobId.`;
+      }
+      if (!this.memberControllers.has(action.memberId)) {
+        return `Member '${action.memberId}' has no active controller.`;
+      }
+    }
+    return null;
+  }
+  applyMemoryPatch(memoryPatch) {
+    for (const entry of memoryPatch) {
+      try {
+        this.opts.sqliteClient.upsertNodeMemory({
+          node_run_id: this.opts.nodeId,
+          namespace: this.opts.memoryNamespace,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id,
+          summary: entry.summary,
+          source_member_id: entry.source_member_id,
+          confidence: entry.confidence,
+          provenance_json: entry.provenance ? JSON.stringify(entry.provenance) : undefined,
+          updated_at_ms: Date.now()
+        });
+        this.appendNodeEvent("memory_updated", {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          source_member_id: entry.source_member_id ?? null
+        });
+      } catch {}
+    }
+  }
+  waitForCoordinatorOutput(previousOutputHash) {
+    const maxWaitMs = 15000;
+    const pollEveryMs = 500;
+    const startedAt = Date.now();
+    return new Promise((resolve5) => {
+      const timer = setInterval(() => {
+        const latestOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null : null;
+        if (latestOutput && hashOutput(latestOutput) !== previousOutputHash) {
+          clearInterval(timer);
+          resolve5(latestOutput);
+          return;
+        }
+        if (Date.now() - startedAt >= maxWaitMs) {
+          clearInterval(timer);
+          resolve5(null);
+        }
+      }, pollEveryMs);
+    });
+  }
+  async handleCoordinatorOutput(output) {
+    let currentOutput = output;
+    for (let attempt = 1;attempt <= 3; attempt += 1) {
+      if (!currentOutput) {
+        this.appendNodeEvent("coordinator_output_invalid", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "runtime_state_mismatch",
+          details: "No coordinator output available for validation."
+        });
+        if (attempt === 3) {
+          this.transition("error", "coordinator_output_invalid_after_3_attempts");
+          return;
+        }
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition("error", "coordinator_controller_missing_for_repair");
+          return;
+        }
+        await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
+          failureClass: "runtime_state_mismatch",
+          details: "No coordinator output available for validation.",
+          attempt
+        }));
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(currentOutput);
+      } catch (error2) {
+        const details = error2 instanceof Error ? error2.message : "Unable to parse coordinator output as JSON.";
+        this.appendNodeEvent("coordinator_output_invalid", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "invalid_json",
+          details
+        });
+        if (attempt === 3) {
+          this.transition("error", "coordinator_output_invalid_after_3_attempts");
+          return;
+        }
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition("error", "coordinator_controller_missing_for_repair");
+          return;
+        }
+        await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
+          failureClass: "invalid_json",
+          details,
+          attempt
+        }));
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+      const parseResult = coordinatorOutputSchema.safeParse(parsedJson);
+      if (!parseResult.success) {
+        const details = parseResult.error.issues.map((issue2) => `${issue2.path.join(".") || "<root>"}: ${issue2.message}`).join("; ");
+        this.appendNodeEvent("coordinator_output_invalid", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "schema_validation_failure",
+          details
+        });
+        if (attempt === 3) {
+          this.transition("error", "coordinator_output_invalid_after_3_attempts");
+          return;
+        }
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition("error", "coordinator_controller_missing_for_repair");
+          return;
+        }
+        await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
+          failureClass: "schema_validation_failure",
+          details,
+          attempt
+        }));
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+      const coordinatorOutput = parseResult.data;
+      const runtimeMismatch = this.validateActionRuntimeState(coordinatorOutput.actions);
+      if (runtimeMismatch) {
+        this.appendNodeEvent("coordinator_output_invalid", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "runtime_state_mismatch",
+          details: runtimeMismatch
+        });
+        if (attempt === 3) {
+          this.transition("error", "coordinator_output_invalid_after_3_attempts");
+          return;
+        }
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition("error", "coordinator_controller_missing_for_repair");
+          return;
+        }
+        await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
+          failureClass: "runtime_state_mismatch",
+          details: runtimeMismatch,
+          attempt
+        }));
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+      this.appendNodeEvent("coordinator_output_received", {
+        node_id: this.opts.nodeId,
+        summary: coordinatorOutput.summary,
+        action_count: coordinatorOutput.actions.length,
+        memory_patch_count: coordinatorOutput.memory_patch.length
+      });
+      this.applyMemoryPatch(coordinatorOutput.memory_patch);
+      for (const action of coordinatorOutput.actions) {
+        await this.dispatchAction(action);
+      }
+      return;
+    }
+    this.transition("error", "coordinator_output_invalid_after_3_attempts");
+  }
+  buildCompletionSummary() {
+    const coordinatorOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? "" : "";
+    const memberSummary = this.getMembers().map((member) => `- ${member.memberId}: ${member.status}`).join(`
+`);
+    return [
+      "Node run completed",
+      `node_id: ${this.opts.nodeId}`,
+      `node_name: ${this.opts.nodeName}`,
+      `status: ${this.status}`,
+      this.coordinatorJobId ? `coordinator_job_id: ${this.coordinatorJobId}` : "coordinator_job_id: -",
+      "",
+      "Member status:",
+      memberSummary || "- none",
+      "",
+      "Final coordinator summary:",
+      coordinatorOutput.trim() || "(empty)"
+    ].join(`
+`);
+  }
+  appendCompletionSummaryToBead() {
+    if (!this.opts.sourceBeadId)
+      return;
+    const notes = this.buildCompletionSummary();
+    const result = spawnSync11("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
+      throw new Error(errorMessage);
+    }
+  }
+  async run(initialPrompt) {
+    await this.bootstrap();
+    this.transition("starting", "node_supervisor_run_started");
+    try {
+      await this.spawnMembers();
+      await this.spawnCoordinator(initialPrompt);
+      this.transition("running", "members_and_coordinator_spawned");
+      let coordinatorOutputHash = null;
+      while (!TERMINAL_NODE_STATUSES.has(this.status)) {
+        const changes = await this.pollMemberStatuses();
+        for (const change of changes) {
+          const member = this.members.get(change.memberId);
+          if (!member)
+            continue;
+          try {
+            this.opts.sqliteClient.upsertNodeMember({
+              node_run_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? undefined,
+              specialist: member.specialist,
+              model: member.model,
+              role: member.role,
+              status: member.status,
+              enabled: member.enabled
+            });
+          } catch {}
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "member_state_changed", {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              prev_status: change.prevStatus,
+              status: change.newStatus,
+              output_present: Boolean(change.output)
+            });
+          } catch {}
+          const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+          if (change.newStatus === "error" || toContextHealth(contextPct) === "CRITICAL") {
+            if (this.status === "running" || this.status === "waiting") {
+              this.transition("degraded", "member_error_or_critical_context");
+            }
+          } else if (this.status === "degraded") {
+            this.transition("running", "member_recovered_or_context_normalized");
+          }
+        }
+        const coordinatorStatus = this.coordinatorJobId ? this.opts.sqliteClient.readStatus(this.coordinatorJobId) : null;
+        if (coordinatorStatus?.status === "error") {
+          this.transition("error", "coordinator_crash");
+          break;
+        }
+        const coordinatorOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null : null;
+        const nextCoordinatorOutputHash = hashOutput(coordinatorOutput);
+        if (coordinatorOutput && nextCoordinatorOutputHash !== coordinatorOutputHash) {
+          coordinatorOutputHash = nextCoordinatorOutputHash;
+          await this.handleCoordinatorOutput(coordinatorOutput);
+        }
+        if (changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && this.coordinatorJobId && this.coordinatorController) {
+          this.resumePending = true;
+          const payload = this.buildResumePayload(changes);
+          await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
+          this.resumePending = false;
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resumed", {
+              node_id: this.opts.nodeId,
+              coordinator_job_id: this.coordinatorJobId,
+              member_update_count: changes.length
+            });
+          } catch {}
+          if (this.status === "running") {
+            this.transition("waiting", "coordinator_resumed_waiting_for_actions");
+          }
+        }
+        const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        if (allTerminal) {
+          this.transition("done", "all_members_terminal");
+          this.appendCompletionSummaryToBead();
+          break;
+        }
+        await sleep2(POLL_INTERVAL_MS);
+      }
+    } catch (error2) {
+      this.transition("error", error2 instanceof Error ? error2.message : String(error2));
+    }
+    return {
+      nodeId: this.opts.nodeId,
+      status: this.status,
+      coordinatorJobId: this.coordinatorJobId,
+      members: this.getMembers()
+    };
+  }
+  getStatus() {
+    return this.status;
+  }
+  getMembers() {
+    return [...this.members.values()].map((member) => ({ ...member }));
+  }
+}
+var POLL_INTERVAL_MS = 5000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
+var init_node_supervisor = __esm(() => {
+  init_zod();
+  init_job_control();
+  VALID_TRANSITIONS = {
+    created: ["starting", "stopped"],
+    starting: ["running", "error", "stopped"],
+    running: ["waiting", "degraded", "done", "error", "stopped"],
+    waiting: ["running", "degraded", "done", "error", "stopped"],
+    degraded: ["running", "error", "stopped"],
+    error: [],
+    done: [],
+    stopped: []
+  };
+  TERMINAL_NODE_STATUSES = new Set(["error", "done", "stopped"]);
+  TERMINAL_MEMBER_STATUSES = new Set(["done", "error", "stopped"]);
+  coordinatorActionSchema = discriminatedUnionType("type", [
+    objectType({
+      type: literalType("resume"),
+      memberId: stringType().min(1),
+      task: stringType().min(1)
+    }),
+    objectType({
+      type: literalType("steer"),
+      memberId: stringType().min(1),
+      message: stringType().min(1)
+    }),
+    objectType({
+      type: literalType("stop"),
+      memberId: stringType().min(1)
+    })
+  ]);
+  coordinatorMemoryPatchEntrySchema = objectType({
+    entry_type: enumType(["fact", "question", "decision"]),
+    entry_id: stringType().min(1).optional(),
+    summary: stringType().min(1),
+    source_member_id: stringType().min(1).optional(),
+    confidence: numberType().min(0).max(1).optional(),
+    provenance: recordType(stringType(), unknownType()).optional()
+  });
+  coordinatorOutputSchema = objectType({
+    summary: stringType().min(1),
+    memory_patch: arrayType(coordinatorMemoryPatchEntrySchema).default([]),
+    actions: arrayType(coordinatorActionSchema).default([]),
+    validation: objectType({
+      ok: booleanType().optional(),
+      issues: arrayType(stringType()).optional(),
+      notes: stringType().optional()
+    }).passthrough()
+  });
+});
+
 // src/cli/node.ts
 var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { readFileSync as readFileSync8 } from "node:fs";
+import { readFileSync as readFileSync9 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { spawnSync as spawnSync11 } from "node:child_process";
-import { join as join15 } from "node:path";
+import { spawnSync as spawnSync12 } from "node:child_process";
+import { join as join16 } from "node:path";
 function parseNodeArgs(argv) {
   const command = argv[0];
   if (command !== "run" && command !== "status" && command !== "feed" && command !== "promote") {
@@ -23465,19 +24279,17 @@ async function handleNodeRun(args) {
     throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
   }
   try {
-    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync8(args.nodeConfigFile, "utf-8");
+    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync9(args.nodeConfigFile, "utf-8");
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
     const runner = new SpecialistRunner({
       loader,
-      hooks: new HookEmitter({ tracePath: join15(process.cwd(), ".specialists", "trace.jsonl") }),
+      hooks: new HookEmitter({ tracePath: join16(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
     const nodeId = `${config2.name}-${randomUUID().slice(0, 8)}`;
-    const nodeSupervisorModulePath = "../specialist/node-supervisor.js";
-    const module = await import(nodeSupervisorModulePath);
-    const NodeSupervisorCtor = module.NodeSupervisor;
-    const supervisor = new NodeSupervisorCtor({
+    const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
+    const supervisor = new NodeSupervisor2({
       nodeId,
       nodeName: config2.name,
       coordinatorSpecialist: config2.coordinator,
@@ -23487,8 +24299,6 @@ async function handleNodeRun(args) {
       sqliteClient,
       runner,
       runOptions: {
-        name: config2.coordinator,
-        prompt: config2.initialPrompt,
         inputBeadId: args.beadId
       }
     });
@@ -23660,7 +24470,7 @@ function buildFindingNotes(nodeId, findingId, summary) {
 `);
 }
 function promoteFindingToBead(beadId, notes) {
-  const result = spawnSync11("bd", ["update", beadId, "--notes", notes], {
+  const result = spawnSync12("bd", ["update", beadId, "--notes", notes], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -23742,9 +24552,9 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run11
 });
-import { spawnSync as spawnSync12 } from "node:child_process";
-import { existsSync as existsSync14, readFileSync as readFileSync9 } from "node:fs";
-import { join as join16 } from "node:path";
+import { spawnSync as spawnSync13 } from "node:child_process";
+import { existsSync as existsSync15, readFileSync as readFileSync10 } from "node:fs";
+import { join as join17 } from "node:path";
 function ok2(msg) {
   console.log(`  ${green8("✓")} ${msg}`);
 }
@@ -23763,7 +24573,7 @@ function section(label) {
 ${bold8(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync12(bin, args, {
+  const r = spawnSync13(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -23771,7 +24581,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled(bin) {
-  return spawnSync12("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync13("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -23831,10 +24641,10 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
       return sqliteEvents.length;
     }
   } catch {}
-  const eventsFile = join16(jobsDir, jobId, "events.jsonl");
-  if (!existsSync14(eventsFile))
+  const eventsFile = join17(jobsDir, jobId, "events.jsonl");
+  if (!existsSync15(eventsFile))
     return 0;
-  const raw = readFileSync9(eventsFile, "utf-8").trim();
+  const raw = readFileSync10(eventsFile, "utf-8").trim();
   if (!raw)
     return 0;
   return raw.split(`
@@ -23863,10 +24673,10 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
         return snapshot;
     }
   } catch {}
-  const eventsFile = join16(jobsDir, jobId, "events.jsonl");
-  if (!existsSync14(eventsFile))
+  const eventsFile = join17(jobsDir, jobId, "events.jsonl");
+  if (!existsSync15(eventsFile))
     return null;
-  const lines = readFileSync9(eventsFile, "utf-8").split(`
+  const lines = readFileSync10(eventsFile, "utf-8").split(`
 `);
   for (let index = lines.length - 1;index >= 0; index -= 1) {
     const line = lines[index].trim();
@@ -23968,12 +24778,12 @@ async function run11() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
     const bdInstalled = isInstalled("bd");
     const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-    const beadsPresent = existsSync14(join16(process.cwd(), ".beads"));
+    const beadsPresent = existsSync15(join17(process.cwd(), ".beads"));
     const specialistsBin = cmd("which", ["specialists"]);
     const jobsDir = resolveJobsDir();
     let jobs = [];
     let supervisor = null;
-    if (existsSync14(jobsDir)) {
+    if (existsSync15(jobsDir)) {
       supervisor = new Supervisor({
         runner: null,
         runOptions: null,
@@ -24127,8 +24937,8 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run12
 });
-import { existsSync as existsSync15, readFileSync as readFileSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { existsSync as existsSync16, readFileSync as readFileSync11 } from "node:fs";
+import { join as join18 } from "node:path";
 function parseArgs7(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
@@ -24179,21 +24989,21 @@ async function run12() {
       error: error2
     }, null, 2));
   };
-  const jobsDir = join17(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
   try {
-    const resultPath = join17(jobsDir, jobId, "result.txt");
+    const resultPath = join18(jobsDir, jobId, "result.txt");
     const readResultOutput = () => {
       try {
         const sqliteResult = sqliteClient?.readResult(jobId) ?? null;
         if (sqliteResult)
           return sqliteResult;
       } catch {}
-      if (!existsSync15(resultPath)) {
+      if (!existsSync16(resultPath)) {
         return null;
       }
-      return readFileSync10(resultPath, "utf-8");
+      return readFileSync11(resultPath, "utf-8");
     };
     if (args.wait) {
       const startMs = Date.now();
@@ -24338,8 +25148,8 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync16, readdirSync as readdirSync5, readFileSync as readFileSync11 } from "node:fs";
-import { basename as basename3, join as join18 } from "node:path";
+import { existsSync as existsSync17, readdirSync as readdirSync5, readFileSync as readFileSync12 } from "node:fs";
+import { basename as basename3, join as join19 } from "node:path";
 function readJobEvents(jobDir) {
   const jobId = basename3(jobDir);
   try {
@@ -24349,10 +25159,10 @@ function readJobEvents(jobDir) {
       return sqliteEvents;
     }
   } catch {}
-  const eventsPath = join18(jobDir, "events.jsonl");
-  if (!existsSync16(eventsPath))
+  const eventsPath = join19(jobDir, "events.jsonl");
+  if (!existsSync17(eventsPath))
     return [];
-  const content = readFileSync11(eventsPath, "utf-8");
+  const content = readFileSync12(eventsPath, "utf-8");
   const lines = content.split(`
 `).filter(Boolean);
   const events = [];
@@ -24365,15 +25175,15 @@ function readJobEvents(jobDir) {
   return events;
 }
 function readJobEventsById(jobsDir, jobId) {
-  return readJobEvents(join18(jobsDir, jobId));
+  return readJobEvents(join19(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  if (!existsSync16(jobsDir))
+  if (!existsSync17(jobsDir))
     return [];
   const batches = [];
   const entries = readdirSync5(jobsDir);
   for (const entry of entries) {
-    const jobDir = join18(jobsDir, entry);
+    const jobDir = join19(jobsDir, entry);
     try {
       const stat2 = __require("node:fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -24382,12 +25192,12 @@ function readAllJobEvents(jobsDir) {
       continue;
     }
     const jobId = entry;
-    const statusPath = join18(jobDir, "status.json");
+    const statusPath = join19(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync16(statusPath)) {
+    if (existsSync17(statusPath)) {
       try {
-        const status = JSON.parse(readFileSync11(statusPath, "utf-8"));
+        const status = JSON.parse(readFileSync12(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
         beadId = status.bead_id;
       } catch {}
@@ -24476,13 +25286,13 @@ __export(exports_feed, {
 });
 import {
   closeSync as closeSync2,
-  existsSync as existsSync17,
+  existsSync as existsSync18,
   openSync as openSync2,
-  readFileSync as readFileSync12,
+  readFileSync as readFileSync13,
   readdirSync as readdirSync6,
   statSync as statSync2
 } from "node:fs";
-import { join as join19 } from "node:path";
+import { join as join20 } from "node:path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -24567,7 +25377,7 @@ function readFileFresh(filePath) {
   try {
     const fd = openSync2(filePath, "r");
     try {
-      return readFileSync12(fd, "utf-8");
+      return readFileSync13(fd, "utf-8");
     } finally {
       closeSync2(fd);
     }
@@ -24581,7 +25391,7 @@ function readStatusJson(sqliteClient, jobsDir, jobId) {
     if (sqliteStatus)
       return sqliteStatus;
   } catch {}
-  const statusPath = join19(jobsDir, jobId, "status.json");
+  const statusPath = join20(jobsDir, jobId, "status.json");
   const raw = readFileFresh(statusPath);
   if (!raw)
     return null;
@@ -24738,11 +25548,11 @@ function filterStandaloneMergedEvents(sqliteClient, jobsDir, merged) {
   return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
 }
 function listMatchingJobIds(sqliteClient, jobsDir, options) {
-  if (!existsSync17(jobsDir))
+  if (!existsSync18(jobsDir))
     return [];
   const jobIds = [];
   for (const entry of readdirSync6(jobsDir)) {
-    const jobDir = join19(jobsDir, entry);
+    const jobDir = join20(jobsDir, entry);
     try {
       if (!statSync2(jobDir).isDirectory())
         continue;
@@ -24771,7 +25581,7 @@ function readJobEventsFresh(sqliteClient, jobsDir, jobId) {
       return sqliteEvents;
     }
   } catch {}
-  const eventsPath = join19(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join20(jobsDir, jobId, "events.jsonl");
   const content = readFileFresh(eventsPath);
   if (!content)
     return [];
@@ -24923,8 +25733,8 @@ async function run13() {
   const options = parseArgs8(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
-    const jobsDir = join19(process.cwd(), ".specialists", "jobs");
-    if (!existsSync17(jobsDir)) {
+    const jobsDir = join20(process.cwd(), ".specialists", "jobs");
+    if (!existsSync18(jobsDir)) {
       console.log(dim7("No jobs directory found."));
       return;
     }
@@ -24958,8 +25768,8 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run14
 });
-import { existsSync as existsSync18, readFileSync as readFileSync13 } from "node:fs";
-import { join as join20 } from "node:path";
+import { existsSync as existsSync19, readFileSync as readFileSync14 } from "node:fs";
+import { join as join21 } from "node:path";
 function parseArgs9(argv) {
   let jobId;
   let cursor = 0;
@@ -24996,19 +25806,19 @@ function parseArgs9(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
-  const jobDir = join20(jobsDir, jobId);
-  const statusPath = join20(jobDir, "status.json");
+  const jobDir = join21(jobsDir, jobId);
+  const statusPath = join21(jobDir, "status.json");
   let status = null;
-  if (existsSync18(statusPath)) {
+  if (existsSync19(statusPath)) {
     try {
-      status = JSON.parse(readFileSync13(statusPath, "utf-8"));
+      status = JSON.parse(readFileSync14(statusPath, "utf-8"));
     } catch {}
   }
-  const resultPath = join20(jobDir, "result.txt");
+  const resultPath = join21(jobDir, "result.txt");
   let fullOutput = "";
-  if (existsSync18(resultPath)) {
+  if (existsSync19(resultPath)) {
     try {
-      fullOutput = readFileSync13(resultPath, "utf-8");
+      fullOutput = readFileSync14(resultPath, "utf-8");
     } catch {}
   }
   const events = readJobEventsById(jobsDir, jobId);
@@ -25040,9 +25850,9 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
 }
 async function run14() {
   const { jobId, cursor, outputCursor } = parseArgs9(process.argv.slice(3));
-  const jobsDir = join20(process.cwd(), ".specialists", "jobs");
-  const jobDir = join20(jobsDir, jobId);
-  if (!existsSync18(jobDir)) {
+  const jobsDir = join21(process.cwd(), ".specialists", "jobs");
+  const jobDir = join21(jobsDir, jobId);
+  if (!existsSync19(jobDir)) {
     const result2 = {
       job_id: jobId,
       status: "error",
@@ -25073,7 +25883,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run15
 });
-import { writeFileSync as writeFileSync5 } from "node:fs";
+import { writeFileSync as writeFileSync6 } from "node:fs";
 async function run15() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -25103,7 +25913,7 @@ async function run15() {
   try {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-    writeFileSync5(status.fifo_path, payload, { flag: "a" });
+    writeFileSync6(status.fifo_path, payload, { flag: "a" });
     process.stdout.write(`${green10("✓")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
@@ -25123,7 +25933,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run16
 });
-import { writeFileSync as writeFileSync6 } from "node:fs";
+import { writeFileSync as writeFileSync7 } from "node:fs";
 async function run16() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -25153,7 +25963,7 @@ async function run16() {
   try {
     const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-    writeFileSync6(status.fifo_path, payload, { flag: "a" });
+    writeFileSync7(status.fifo_path, payload, { flag: "a" });
     process.stdout.write(`${green11("✓")} Resume sent to job ${jobId}
 `);
     process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
@@ -25182,33 +25992,33 @@ async function run17() {
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync19, readdirSync as readdirSync7, readFileSync as readFileSync14 } from "node:fs";
-import { join as join21 } from "node:path";
-import { spawnSync as spawnSync13 } from "node:child_process";
+import { existsSync as existsSync20, readdirSync as readdirSync7, readFileSync as readFileSync15 } from "node:fs";
+import { join as join22 } from "node:path";
+import { spawnSync as spawnSync14 } from "node:child_process";
 function readJobStatus2(jobDir) {
-  const statusPath = join21(jobDir, "status.json");
-  if (!existsSync19(statusPath))
+  const statusPath = join22(jobDir, "status.json");
+  if (!existsSync20(statusPath))
     return null;
   try {
-    return JSON.parse(readFileSync14(statusPath, "utf-8"));
+    return JSON.parse(readFileSync15(statusPath, "utf-8"));
   } catch {
     return null;
   }
 }
 function isTerminal2(status) {
-  return TERMINAL_STATUSES.has(status);
+  return TERMINAL_STATUSES2.has(status);
 }
 function isActive(status) {
   return ACTIVE_STATUSES.has(status);
 }
 function collectWorktreeGcCandidates(jobsDir) {
-  if (!existsSync19(jobsDir))
+  if (!existsSync20(jobsDir))
     return [];
   const candidates = [];
   for (const entry of readdirSync7(jobsDir, { withFileTypes: true })) {
     if (!entry.isDirectory())
       continue;
-    const status = readJobStatus2(join21(jobsDir, entry.name));
+    const status = readJobStatus2(join22(jobsDir, entry.name));
     if (!status)
       continue;
     if (isActive(status.status))
@@ -25218,7 +26028,7 @@ function collectWorktreeGcCandidates(jobsDir) {
     const { worktree_path: worktreePath, branch } = status;
     if (!worktreePath)
       continue;
-    if (!existsSync19(worktreePath))
+    if (!existsSync20(worktreePath))
       continue;
     candidates.push({
       jobId: status.id,
@@ -25230,7 +26040,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync13("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync14("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -25252,9 +26062,9 @@ function pruneWorktrees(candidates) {
   }
   return { removed, skipped };
 }
-var TERMINAL_STATUSES, ACTIVE_STATUSES;
+var TERMINAL_STATUSES2, ACTIVE_STATUSES;
 var init_worktree_gc = __esm(() => {
-  TERMINAL_STATUSES = new Set(["done", "error"]);
+  TERMINAL_STATUSES2 = new Set(["done", "error"]);
   ACTIVE_STATUSES = new Set(["starting", "running", "waiting"]);
 });
 
@@ -25264,13 +26074,13 @@ __export(exports_clean, {
   run: () => run18
 });
 import {
-  existsSync as existsSync20,
+  existsSync as existsSync21,
   readdirSync as readdirSync8,
-  readFileSync as readFileSync15,
+  readFileSync as readFileSync16,
   rmSync as rmSync2,
   statSync as statSync3
 } from "node:fs";
-import { join as join22 } from "node:path";
+import { join as join23 } from "node:path";
 function parseTtlDaysFromEnvironment() {
   const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
   if (!rawValue)
@@ -25326,7 +26136,7 @@ function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   const entries = readdirSync8(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
-    const entryPath = join22(directoryPath, entry.name);
+    const entryPath = join23(directoryPath, entry.name);
     const stats = statSync3(entryPath);
     if (stats.isDirectory()) {
       totalBytes += readDirectorySizeBytes(entryPath);
@@ -25339,7 +26149,7 @@ function readDirectorySizeBytes(directoryPath) {
 function containsProtectedSqliteArtifact(directoryPath) {
   const entries = readdirSync8(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
-    const entryPath = join22(directoryPath, entry.name);
+    const entryPath = join23(directoryPath, entry.name);
     if (entry.isDirectory()) {
       if (containsProtectedSqliteArtifact(entryPath))
         return true;
@@ -25354,15 +26164,15 @@ function containsProtectedSqliteArtifact(directoryPath) {
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
-  const directoryPath = join22(baseDirectory, entry.name);
+  const directoryPath = join23(baseDirectory, entry.name);
   if (containsProtectedSqliteArtifact(directoryPath))
     return null;
-  const statusFilePath = join22(directoryPath, "status.json");
-  if (!existsSync20(statusFilePath))
+  const statusFilePath = join23(directoryPath, "status.json");
+  if (!existsSync21(statusFilePath))
     return null;
   let statusData;
   try {
-    statusData = JSON.parse(readFileSync15(statusFilePath, "utf-8"));
+    statusData = JSON.parse(readFileSync16(statusFilePath, "utf-8"));
   } catch {
     return null;
   }
@@ -25459,7 +26269,7 @@ async function run18() {
     printUsageAndExit(message);
   }
   const jobsDirectoryPath = resolveJobsDir();
-  if (!existsSync20(jobsDirectoryPath)) {
+  if (!existsSync21(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
   }
@@ -25495,14 +26305,14 @@ var exports_stop = {};
 __export(exports_stop, {
   run: () => run19
 });
-import { join as join23 } from "node:path";
+import { join as join24 } from "node:path";
 async function run19() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join23(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join24(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const status = supervisor.readStatus(jobId);
   if (!status) {
@@ -25556,16 +26366,16 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run20
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync14 } from "node:child_process";
-import { readFileSync as readFileSync16 } from "node:fs";
-import { join as join24 } from "node:path";
+import { execFileSync as execFileSync3, spawnSync as spawnSync15 } from "node:child_process";
+import { readFileSync as readFileSync17 } from "node:fs";
+import { join as join25 } from "node:path";
 function exitWithError(message) {
   console.error(message);
   process.exit(1);
 }
 function readStatus(statusPath, jobId) {
   try {
-    return JSON.parse(readFileSync16(statusPath, "utf-8"));
+    return JSON.parse(readFileSync17(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
       exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
@@ -25579,8 +26389,8 @@ async function run20() {
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
   }
-  const jobsDir = join24(process.cwd(), ".specialists", "jobs");
-  const statusPath = join24(jobsDir, jobId, "status.json");
+  const jobsDir = join25(process.cwd(), ".specialists", "jobs");
+  const statusPath = join25(jobsDir, jobId, "status.json");
   const status = readStatus(statusPath, jobId);
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
@@ -25589,7 +26399,7 @@ async function run20() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync14("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync15("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
@@ -25836,9 +26646,9 @@ var exports_doctor = {};
 __export(exports_doctor, {
   run: () => run22
 });
-import { spawnSync as spawnSync15 } from "node:child_process";
-import { existsSync as existsSync21, mkdirSync as mkdirSync5, readFileSync as readFileSync17, readdirSync as readdirSync9 } from "node:fs";
-import { join as join25 } from "node:path";
+import { spawnSync as spawnSync16 } from "node:child_process";
+import { existsSync as existsSync22, mkdirSync as mkdirSync5, readFileSync as readFileSync18, readdirSync as readdirSync9 } from "node:fs";
+import { join as join26 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green14("✓")} ${msg}`);
 }
@@ -25860,17 +26670,17 @@ function section3(label) {
 ${bold11(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync15(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync16(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync15("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync16("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync21(path))
+  if (!existsSync22(path))
     return null;
   try {
-    return JSON.parse(readFileSync17(path, "utf8"));
+    return JSON.parse(readFileSync18(path, "utf8"));
   } catch {
     return null;
   }
@@ -25913,7 +26723,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim12(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync21(join25(CWD, ".beads")))
+  if (existsSync22(join26(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -25933,8 +26743,8 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join25(HOOKS_DIR, name);
-    if (!existsSync21(dest)) {
+    const dest = join26(HOOKS_DIR, name);
+    if (!existsSync22(dest)) {
       fail2(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -25978,18 +26788,18 @@ function checkMCP() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join25(CWD, ".specialists");
-  const jobsDir = join25(rootDir, "jobs");
-  const readyDir = join25(rootDir, "ready");
+  const rootDir = join26(CWD, ".specialists");
+  const jobsDir = join26(rootDir, "jobs");
+  const readyDir = join26(rootDir, "ready");
   let allOk = true;
-  if (!existsSync21(rootDir)) {
+  if (!existsSync22(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync21(subDir)) {
+      if (!existsSync22(subDir)) {
         warn2(`.specialists/${label}/ missing — auto-creating`);
         mkdirSync5(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
@@ -26002,8 +26812,8 @@ function checkRuntimeDirs() {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join25(CWD, ".specialists", "jobs");
-  if (!existsSync21(jobsDir)) {
+  const jobsDir = join26(CWD, ".specialists", "jobs");
+  if (!existsSync22(jobsDir)) {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
@@ -26021,11 +26831,11 @@ function checkZombieJobs() {
   let total = 0;
   let running = 0;
   for (const jobId of entries) {
-    const statusPath = join25(jobsDir, jobId, "status.json");
-    if (!existsSync21(statusPath))
+    const statusPath = join26(jobsDir, jobId, "status.json");
+    if (!existsSync22(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync17(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync18(statusPath, "utf8"));
       total++;
       if (status.status === "running" || status.status === "starting") {
         const pid = status.pid;
@@ -26077,11 +26887,11 @@ ${bold11("specialists doctor")}
 var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join25(CWD, ".claude");
-  SPECIALISTS_DIR = join25(CWD, ".specialists");
-  HOOKS_DIR = join25(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join25(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join25(CWD, ".mcp.json");
+  CLAUDE_DIR = join26(CWD, ".claude");
+  SPECIALISTS_DIR = join26(CWD, ".specialists");
+  HOOKS_DIR = join26(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join26(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join26(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
