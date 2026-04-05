@@ -139,6 +139,50 @@ function migrateToV2(db: BunDb): void {
   `);
 }
 
+function migrateToV3(db: BunDb): void {
+  const hasV3 = db.query('SELECT 1 FROM schema_version WHERE version = 3 LIMIT 1').get() as { 1?: number } | undefined;
+  if (hasV3) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL');
+    db.run('CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC)');
+    return;
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v3 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      bead_id         TEXT,
+      node_id         TEXT,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v3
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        bead_id,
+        NULL,
+        COALESCE(JSON_EXTRACT(status_json, '$.status'), 'starting'),
+        status_json,
+        updated_at_ms,
+        last_output
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v3 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (3, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export function initSchema(db: BunDb): void {
   enforceWalMode(db);
 
@@ -197,6 +241,7 @@ export function initSchema(db: BunDb): void {
   `);
 
   migrateToV2(db);
+  migrateToV3(db);
   verifyWalMode(db);
 }
 
@@ -231,16 +276,28 @@ class SqliteClient implements ObservabilitySqliteClient {
   private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, bead_id, worktree_column, updated_at_ms, last_output)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, status, status_json, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
-        status_json = excluded.status_json,
-        bead_id = excluded.bead_id,
         worktree_column = excluded.worktree_column,
+        bead_id = excluded.bead_id,
+        node_id = excluded.node_id,
+        status = excluded.status,
+        status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
         last_output = COALESCE(excluded.last_output, specialist_jobs.last_output);
-    `, [status.id, status.specialist, statusJson, status.bead_id ?? null, status.worktree_path ?? null, Date.now(), lastOutput ?? null]);
+    `, [
+      status.id,
+      status.specialist,
+      status.worktree_path ?? null,
+      status.bead_id ?? null,
+      status.node_id ?? null,
+      status.status,
+      statusJson,
+      Date.now(),
+      lastOutput ?? null,
+    ]);
   }
 
   private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {

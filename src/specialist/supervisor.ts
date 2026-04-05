@@ -64,6 +64,7 @@ export interface SupervisorStatus {
   elapsed_s?: number;
   last_event_at_ms?: number;
   bead_id?: string;
+  node_id?: string;
   session_file?: string;
   fifo_path?: string;
   tmux_session?: string;
