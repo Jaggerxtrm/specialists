@@ -57,21 +57,23 @@
 ### Stream 3 — Node Persistence (another agent) + Stage 3 Core (post-convergence)
 | Bead | Job | Status | Notes |
 |------|-----|--------|-------|
-| unitAI-z5ml | — | 🔜 blocked on hhs6 (Phase 3D) | Node SQLite tables: node_runs, node_members, node_events, node_memory, action_dispatch_log. Circular FK: coordinator_job_id nullable, 4-step bootstrap. |
-| unitAI-69rw | — | 🔜 blocked on z5ml + 4qam | NodeSupervisor state machine: spawn/resume/pause/rotate members, member_id→job_id registry, member_health every turn |
+| unitAI-z5ml | mat6+z5ml.1+z5ml.2+z5ml.3 (executors) | ✅ CLOSED — commits 512a2d18 + 8d2581ef + 804bb451 + e79c66b0 | [EPIC] 4 tables (node_runs, node_members, node_events, node_memory). action_dispatch_log DROPPED (use node_events type='action_dispatched'). JSON-first (event_json). 16 event types. Schema v4. Write+read paths. 20 tests pass. initSchema idempotency bug fixed. |
+| unitAI-ftu5 | e2d337 (executor) | ✅ CLOSED — commit 758c338a | Schema v3: promoted status + node_id columns. Overthinker consensus: JSON-first, promote only hot selectors. |
+| unitAI-ze8d | 06eca9 (executor) | ✅ CLOSED — commit 010d3668 | context_pct + context_health on every turn_summary. Standard job feature (not node-only). Live-tested. |
+| unitAI-69rw | — | 🔜 unblocked | NodeSupervisor state machine. All deps closed (4qam✅, fdtq✅, z5ml✅, ze8d✅). Context health read from specialist_events (ze8d). |
 | unitAI-iy5g | — | 🔜 blocked on 69rw | Coordinator JSON contract enforcement + 3-attempt repair loop |
-| unitAI-w0cg | — | 🔜 blocked on 69rw + z5ml | Node feed isolation: sp node feed, node_id tagging in member jobs |
-| unitAI-780u | — | 🔜 blocked on iy5g + z5ml | Shared memory patch validation + SQLite persistence (node_memory table) |
+| unitAI-w0cg | — | 🔜 blocked on 69rw | Node feed isolation: sp node feed, node_id tagging in member jobs. node_id column exists (ftu5). |
+| unitAI-780u | — | 🔜 blocked on iy5g | Shared memory patch validation + SQLite persistence (node_memory table ready from z5ml). |
 | unitAI-u9my | — | 🔜 blocked on 69rw | Beads-first reporting + sp node promote flow |
 | unitAI-i6up | — | 🔜 blocked on 16ov✅ + e242 + 22tq | Research node v1A preset definitions |
 
-**Dep chain**: hhs6 → fdtq → z5ml → 69rw → {iy5g, w0cg, u9my} → {780u}
+**Dep chain**: ~~hhs6 → fdtq → z5ml~~ ALL DONE → 69rw → {iy5g, w0cg, u9my} → {780u}
 
-**Deps wired 2026-04-04**: z5ml→hhs6, 69rw→4qam, w0cg→z5ml, 780u→z5ml, i6up→e242, i6up→22tq
+**Next**: 69rw is the gate for all remaining Stage 3 work.
 
 ---
 
-### Stream 3 — Node Persistence (another agent)
+### Stream 3 — Node Persistence — ✅ COMPLETE
 | Bead | Job | Status | Notes |
 |------|-----|--------|-------|
 | unitAI-z5ml | — | 🔜 design done, awaiting implementation | Snapshot+append-log schema. Circular FK: coordinator_job_id nullable, 4-step bootstrap. See z5ml bead notes. Blocked on 08zd Phase 3. |
@@ -685,14 +687,16 @@ Stage 2 — SQLite Runtime
        ↓
   fdtq (per-turn text capture)                ✅ commit 0c900174
        ↓
-  ftu5 (enriched specialist_jobs v2→v3)       ← adds node_id + all queryable columns
+  ftu5 (enriched specialist_jobs v2→v3)       ✅ commit 758c338a (status + node_id only)
        ↓
-  4qam (waiting state visibility)
+  ze8d (context window tracking)              ✅ commit 010d3668
+       ↓
+  4qam (waiting state visibility)             ✅ closed
 
 Stage 3 — Node v1A Core (needs Stage 0 + Stage 2)
-  z5ml [EPIC] (node SQLite persistence)     ← needs ftu5 (node_id column) + 16ov
+  z5ml [EPIC] (node SQLite persistence)       ✅ commits 512a2d18 + 8d2581ef + 804bb451 + e79c66b0
        ↓
-  69rw (NodeSupervisor state machine)        ← needs z5ml + 4qam
+  69rw (NodeSupervisor state machine)        ← ALL DEPS CLOSED — ready to start
        ↓
   iy5g (coordinator contract + repair loop)  ← needs 69rw
   w0cg (feed isolation + node_id tagging)    ← needs z5ml + 69rw
