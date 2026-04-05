@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as z from 'zod';
 import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
@@ -66,6 +67,47 @@ export interface NodeRunResult {
   coordinatorJobId: string | null;
   members: NodeMemberEntry[];
 }
+
+const coordinatorActionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('resume'),
+    memberId: z.string().min(1),
+    task: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('steer'),
+    memberId: z.string().min(1),
+    message: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('stop'),
+    memberId: z.string().min(1),
+  }),
+]);
+
+const coordinatorMemoryPatchEntrySchema = z.object({
+  entry_type: z.enum(['fact', 'question', 'decision']),
+  entry_id: z.string().min(1).optional(),
+  summary: z.string().min(1),
+  source_member_id: z.string().min(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  provenance: z.record(z.string(), z.unknown()).optional(),
+});
+
+const coordinatorOutputSchema = z.object({
+  summary: z.string().min(1),
+  memory_patch: z.array(coordinatorMemoryPatchEntrySchema).default([]),
+  actions: z.array(coordinatorActionSchema).default([]),
+  validation: z
+    .object({
+      ok: z.boolean().optional(),
+      issues: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+    })
+    .passthrough(),
+});
+
+type CoordinatorOutputContract = z.infer<typeof coordinatorOutputSchema>;
 
 function hashOutput(output: string | null): string | null {
   if (!output) return null;
@@ -429,24 +471,263 @@ export class NodeSupervisor {
     }
   }
 
-  private async handleCoordinatorOutput(output: string): Promise<void> {
-    let parsed: unknown;
+  private appendNodeEvent(type: 'coordinator_output_invalid' | 'memory_updated' | 'coordinator_output_received', event: Record<string, unknown>): void {
     try {
-      parsed = JSON.parse(output);
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), type, event);
     } catch {
+      // best-effort persistence; orchestration remains live
+    }
+  }
+
+  private buildCoordinatorRepairPrompt(args: {
+    failureClass: 'invalid_json' | 'schema_validation_failure' | 'runtime_state_mismatch';
+    details: string;
+    attempt: number;
+  }): string {
+    const remainingAttempts = 3 - args.attempt;
+    return [
+      'coordinator_output_repair_required:',
+      `attempt=${args.attempt}`,
+      `failure_class=${args.failureClass}`,
+      `details=${args.details}`,
+      'Return ONLY strict JSON matching this contract:',
+      '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
+      'actions allowed:',
+      '- {"type":"resume","memberId":string,"task":string}',
+      '- {"type":"steer","memberId":string,"message":string}',
+      '- {"type":"stop","memberId":string}',
+      'memory_patch entries:',
+      '- {"entry_type":"fact|question|decision","summary":string,"entry_id"?:string,"source_member_id"?:string,"confidence"?:number,"provenance"?:object}',
+      `remaining_attempts=${remainingAttempts}`,
+    ].join('\n');
+  }
+
+  private validateActionRuntimeState(actions: NodeDispatchAction[]): string | null {
+    for (const action of actions) {
+      const member = this.members.get(action.memberId);
+      if (!member) {
+        return `Unknown memberId '${action.memberId}'.`;
+      }
+
+      if (!member.enabled) {
+        return `Member '${action.memberId}' is disabled.`;
+      }
+
+      if (!member.jobId) {
+        return `Member '${action.memberId}' has no active jobId.`;
+      }
+
+      if (!this.memberControllers.has(action.memberId)) {
+        return `Member '${action.memberId}' has no active controller.`;
+      }
+    }
+
+    return null;
+  }
+
+  private applyMemoryPatch(memoryPatch: CoordinatorOutputContract['memory_patch']): void {
+    for (const entry of memoryPatch) {
+      try {
+        this.opts.sqliteClient.upsertNodeMemory({
+          node_run_id: this.opts.nodeId,
+          namespace: this.opts.memoryNamespace,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id,
+          summary: entry.summary,
+          source_member_id: entry.source_member_id,
+          confidence: entry.confidence,
+          provenance_json: entry.provenance ? JSON.stringify(entry.provenance) : undefined,
+          updated_at_ms: Date.now(),
+        });
+
+        this.appendNodeEvent('memory_updated', {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          source_member_id: entry.source_member_id ?? null,
+        });
+      } catch {
+        // best-effort persistence; orchestration remains live
+      }
+    }
+  }
+
+  private waitForCoordinatorOutput(previousOutputHash: string | null): Promise<string | null> {
+    const maxWaitMs = 15_000;
+    const pollEveryMs = 500;
+    const startedAt = Date.now();
+
+    return new Promise((resolve) => {
+      const timer = setInterval(() => {
+        const latestOutput = this.coordinatorJobId
+          ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null
+          : null;
+
+        if (latestOutput && hashOutput(latestOutput) !== previousOutputHash) {
+          clearInterval(timer);
+          resolve(latestOutput);
+          return;
+        }
+
+        if (Date.now() - startedAt >= maxWaitMs) {
+          clearInterval(timer);
+          resolve(null);
+        }
+      }, pollEveryMs);
+    });
+  }
+
+  private async handleCoordinatorOutput(output: string): Promise<void> {
+    let currentOutput: string | null = output;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      if (!currentOutput) {
+        this.appendNodeEvent('coordinator_output_invalid', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'runtime_state_mismatch',
+          details: 'No coordinator output available for validation.',
+        });
+
+        if (attempt === 3) {
+          this.transition('error', 'coordinator_output_invalid_after_3_attempts');
+          return;
+        }
+
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition('error', 'coordinator_controller_missing_for_repair');
+          return;
+        }
+
+        await this.coordinatorController.resumeJob(
+          this.coordinatorJobId,
+          this.buildCoordinatorRepairPrompt({
+            failureClass: 'runtime_state_mismatch',
+            details: 'No coordinator output available for validation.',
+            attempt,
+          }),
+        );
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+
+      let parsedJson: unknown;
+      try {
+        parsedJson = JSON.parse(currentOutput);
+      } catch (error) {
+        const details = error instanceof Error ? error.message : 'Unable to parse coordinator output as JSON.';
+        this.appendNodeEvent('coordinator_output_invalid', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'invalid_json',
+          details,
+        });
+
+        if (attempt === 3) {
+          this.transition('error', 'coordinator_output_invalid_after_3_attempts');
+          return;
+        }
+
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition('error', 'coordinator_controller_missing_for_repair');
+          return;
+        }
+
+        await this.coordinatorController.resumeJob(
+          this.coordinatorJobId,
+          this.buildCoordinatorRepairPrompt({
+            failureClass: 'invalid_json',
+            details,
+            attempt,
+          }),
+        );
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+
+      const parseResult = coordinatorOutputSchema.safeParse(parsedJson);
+      if (!parseResult.success) {
+        const details = parseResult.error.issues
+          .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+          .join('; ');
+
+        this.appendNodeEvent('coordinator_output_invalid', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'schema_validation_failure',
+          details,
+        });
+
+        if (attempt === 3) {
+          this.transition('error', 'coordinator_output_invalid_after_3_attempts');
+          return;
+        }
+
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition('error', 'coordinator_controller_missing_for_repair');
+          return;
+        }
+
+        await this.coordinatorController.resumeJob(
+          this.coordinatorJobId,
+          this.buildCoordinatorRepairPrompt({
+            failureClass: 'schema_validation_failure',
+            details,
+            attempt,
+          }),
+        );
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+
+      const coordinatorOutput = parseResult.data;
+      const runtimeMismatch = this.validateActionRuntimeState(coordinatorOutput.actions as NodeDispatchAction[]);
+      if (runtimeMismatch) {
+        this.appendNodeEvent('coordinator_output_invalid', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'runtime_state_mismatch',
+          details: runtimeMismatch,
+        });
+
+        if (attempt === 3) {
+          this.transition('error', 'coordinator_output_invalid_after_3_attempts');
+          return;
+        }
+
+        if (!this.coordinatorJobId || !this.coordinatorController) {
+          this.transition('error', 'coordinator_controller_missing_for_repair');
+          return;
+        }
+
+        await this.coordinatorController.resumeJob(
+          this.coordinatorJobId,
+          this.buildCoordinatorRepairPrompt({
+            failureClass: 'runtime_state_mismatch',
+            details: runtimeMismatch,
+            attempt,
+          }),
+        );
+        currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
+        continue;
+      }
+
+      this.appendNodeEvent('coordinator_output_received', {
+        node_id: this.opts.nodeId,
+        summary: coordinatorOutput.summary,
+        action_count: coordinatorOutput.actions.length,
+        memory_patch_count: coordinatorOutput.memory_patch.length,
+      });
+
+      this.applyMemoryPatch(coordinatorOutput.memory_patch);
+      for (const action of coordinatorOutput.actions as NodeDispatchAction[]) {
+        await this.dispatchAction(action);
+      }
+
       return;
     }
 
-    if (!parsed || typeof parsed !== 'object') return;
-    const parsedObject = parsed as { actions?: unknown };
-    if (!Array.isArray(parsedObject.actions)) return;
-
-    for (const rawAction of parsedObject.actions) {
-      if (!rawAction || typeof rawAction !== 'object') continue;
-      const action = rawAction as NodeDispatchAction;
-      if (!action.memberId || !action.type) continue;
-      await this.dispatchAction(action);
-    }
+    this.transition('error', 'coordinator_output_invalid_after_3_attempts');
   }
 
   async run(initialPrompt: string): Promise<NodeRunResult> {
