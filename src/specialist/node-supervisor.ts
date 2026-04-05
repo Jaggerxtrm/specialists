@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as z from 'zod';
+import { spawnSync } from 'node:child_process';
 import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
@@ -41,6 +42,7 @@ export interface NodeSupervisorOptions {
   coordinatorSpecialist: string;
   members: Array<{ memberId: string; specialist: string; model?: string; role?: string }>;
   memoryNamespace?: string;
+  sourceBeadId?: string;
   sqliteClient: ObservabilitySqliteClient;
   jobsDir?: string;
   runner?: SpecialistRunner;
@@ -730,6 +732,48 @@ export class NodeSupervisor {
     this.transition('error', 'coordinator_output_invalid_after_3_attempts');
   }
 
+  private buildCompletionSummary(): string {
+    const coordinatorOutput = this.coordinatorJobId
+      ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? ''
+      : '';
+    const memberSummary = this.getMembers()
+      .map((member) => `- ${member.memberId}: ${member.status}`)
+      .join('\n');
+
+    return [
+      'Node run completed',
+      `node_id: ${this.opts.nodeId}`,
+      `node_name: ${this.opts.nodeName}`,
+      `status: ${this.status}`,
+      this.coordinatorJobId ? `coordinator_job_id: ${this.coordinatorJobId}` : 'coordinator_job_id: -',
+      '',
+      'Member status:',
+      memberSummary || '- none',
+      '',
+      'Final coordinator summary:',
+      coordinatorOutput.trim() || '(empty)',
+    ].join('\n');
+  }
+
+  private appendCompletionSummaryToBead(): void {
+    if (!this.opts.sourceBeadId) return;
+
+    const notes = this.buildCompletionSummary();
+    const result = spawnSync('bd', ['update', this.opts.sourceBeadId, '--notes', notes], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
+      throw new Error(errorMessage);
+    }
+  }
+
   async run(initialPrompt: string): Promise<NodeRunResult> {
     await this.bootstrap();
     this.transition('starting', 'node_supervisor_run_started');
@@ -827,6 +871,7 @@ export class NodeSupervisor {
         const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
         if (allTerminal) {
           this.transition('done', 'all_members_terminal');
+          this.appendCompletionSummaryToBead();
           break;
         }
 
