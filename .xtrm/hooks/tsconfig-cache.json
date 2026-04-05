@@ -1,4 +1,14 @@
 {
-  "hashes": {},
-  "mappings": {}
+  "hashes": {
+    "/home/dawid/projects/specialists/tsconfig.json": "84f37aa64b949b7aaba41974cb6137341a36730b7d3e174803cb9289eae1e7c7"
+  },
+  "mappings": {
+    "src/**/*": {
+      "configPath": "/home/dawid/projects/specialists/tsconfig.json",
+      "excludes": [
+        "node_modules",
+        "dist"
+      ]
+    }
+  }
 }
