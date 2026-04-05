@@ -166,6 +166,12 @@ export interface TimelineEventTurn extends TimelineEventBase {
   phase: 'start' | 'end';
 }
 
+export interface TimelineEventStatusChange extends TimelineEventBase {
+  type: 'status_change';
+  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+  previous_status?: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+}
+
 /**
  * Run completion event.
  * THE CANONICAL COMPLETION SIGNAL FOR FEED V2.
@@ -297,6 +303,7 @@ export type TimelineEvent =
   | TimelineEventText
   | TimelineEventMessage
   | TimelineEventTurn
+  | TimelineEventStatusChange
   | TimelineEventRunComplete
   | TimelineEventStaleWarning
   | TimelineEventTokenUsage
@@ -318,6 +325,7 @@ export const TIMELINE_EVENT_TYPES = {
   TEXT: 'text',
   MESSAGE: 'message',
   TURN: 'turn',
+  STATUS_CHANGE: 'status_change',
   RUN_COMPLETE: 'run_complete',
   STALE_WARNING: 'stale_warning',
   TOKEN_USAGE: 'token_usage',
@@ -504,6 +512,18 @@ export function createMetaEvent(
  * Create a stale_warning event.
  * Emitted when stuck detection thresholds are crossed.
  */
+export function createStatusChangeEvent(
+  status: TimelineEventStatusChange['status'],
+  previousStatus?: TimelineEventStatusChange['previous_status']
+): TimelineEventStatusChange {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...(previousStatus !== undefined ? { previous_status: previousStatus } : {}),
+  };
+}
+
 export function createStaleWarningEvent(
   reason: TimelineEventStaleWarning['reason'],
   options: { silence_ms: number; threshold_ms: number; tool?: string }

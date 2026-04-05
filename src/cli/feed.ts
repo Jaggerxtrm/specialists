@@ -34,7 +34,9 @@ import { createObservabilitySqliteClient } from '../specialist/observability-sql
 import { queryTimeline } from '../specialist/timeline-query.js';
 import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
+  bold,
   dim,
+  magenta,
   JobColorMap,
   formatEventLine,
 } from './format-helpers.js';
@@ -68,6 +70,8 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `message:${event.role}:${event.phase}`;
     case 'turn':
       return `turn:${event.phase}`;
+    case 'status_change':
+      return `status_change:${event.previous_status ?? ''}:${event.status}`;
     case 'run_start':
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':
@@ -123,6 +127,15 @@ function shouldSkipHumanEvent(
   if (lastPrintedEventKey.get(jobId) === key) return true;
   lastPrintedEventKey.set(jobId, key);
   return false;
+}
+
+function isWaitingStatusChangeEvent(event: TimelineEvent): event is Extract<TimelineEvent, { type: 'status_change' }> {
+  return event.type === 'status_change' && event.status === 'waiting';
+}
+
+function formatWaitingBanner(jobId: string, specialist: string): string {
+  const prefix = magenta(bold('WAIT'));
+  return `${prefix} ${specialist} (${jobId}) is waiting for input. Use: specialists resume ${jobId} "..."`;
 }
 
 function parseSince(value: string): number | undefined {
@@ -322,6 +335,12 @@ function printSnapshot(
     const colorize = colorMap.get(jobId);
     const meta = getJobMeta(jobId);
     const specialistDisplay = formatSpecialistModel(specialist, meta.model ?? (event.type === 'meta' ? event.model : undefined));
+
+    if (isWaitingStatusChangeEvent(event)) {
+      console.log(formatWaitingBanner(jobId, specialistDisplay));
+      continue;
+    }
+
     console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
   }
 }
@@ -567,6 +586,12 @@ async function followMerged(
           if (shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey)) continue;
           const colorize = colorMap.get(jobId);
           const specialistDisplay = formatSpecialistModel(specialist, model);
+
+          if (isWaitingStatusChangeEvent(event)) {
+            console.log(formatWaitingBanner(jobId, specialistDisplay));
+            continue;
+          }
+
           console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
         }
       }

@@ -163,7 +163,7 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
-  if (status.status === 'running' || status.status === 'starting' || status.status === 'waiting') {
+  if (status.status === 'running' || status.status === 'starting') {
     const output = readResultOutput();
     if (!output) {
       const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
@@ -180,6 +180,29 @@ export async function run(): Promise<void> {
     } else {
       process.stderr.write(`${dim(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}\n`);
       process.stdout.write(output);
+    }
+    return;
+  }
+
+  if (status.status === 'waiting') {
+    const output = readResultOutput();
+    if (!output) {
+      const message = `Job ${jobId} is waiting for input. Use: specialists resume ${jobId} "..."`;
+      if (args.json) {
+        emitJson(status, null, message);
+      } else {
+        process.stderr.write(`${dim(message)}\n`);
+      }
+      process.exit(1);
+    }
+
+    const waitingFooter = `\n--- Session is waiting for your input. Use: specialists resume ${jobId} "..." ---\n`;
+
+    if (args.json) {
+      emitJson(status, `${output}${waitingFooter}`, null);
+    } else {
+      process.stdout.write(output);
+      process.stderr.write(dim(waitingFooter));
     }
     return;
   }

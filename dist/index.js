@@ -21104,6 +21104,14 @@ function createMetaEvent(model, backend) {
     backend
   };
 }
+function createStatusChangeEvent(status, previousStatus) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
+  };
+}
 function createStaleWarningEvent(reason, options) {
   return {
     t: Date.now(),
@@ -21210,6 +21218,7 @@ var init_timeline_events = __esm(() => {
     TEXT: "text",
     MESSAGE: "message",
     TURN: "turn",
+    STATUS_CHANGE: "status_change",
     RUN_COMPLETE: "run_complete",
     STALE_WARNING: "stale_warning",
     TOKEN_USAGE: "token_usage",
@@ -21241,7 +21250,7 @@ import {
 import { join as join12 } from "node:path";
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
-import { spawnSync as spawnSync8, execFileSync } from "node:child_process";
+import { spawn as spawn2, spawnSync as spawnSync8, execFileSync } from "node:child_process";
 function getCurrentGitSha() {
   const result = spawnSync8("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
@@ -21317,6 +21326,17 @@ function extractGitnexusRisk(resultRaw) {
     return normalizeGitnexusRisk(blastRadiusRecord.risk_level) ?? normalizeGitnexusRisk(blastRadiusRecord.riskLevel) ?? normalizeGitnexusRisk(blastRadiusRecord.highest_risk) ?? normalizeGitnexusRisk(blastRadiusRecord.risk);
   }
   return;
+}
+function isGitnexusAnalyzeRequired(permissionRequired) {
+  return permissionRequired === "MEDIUM" || permissionRequired === "HIGH";
+}
+function startDetachedGitnexusAnalyze(cwd) {
+  const child = spawn2("npx", ["gitnexus", "analyze"], {
+    cwd,
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
 }
 
 class Supervisor {
@@ -21531,6 +21551,20 @@ class Supervisor {
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
     };
+    const setWaitingStatus = (updates) => {
+      const previousStatus = statusSnapshot.status;
+      const waitingAt = Date.now();
+      setStatus({
+        status: "waiting",
+        current_event: "waiting",
+        elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
+        last_event_at_ms: waitingAt,
+        ...updates
+      });
+      if (previousStatus !== "waiting") {
+        appendTimelineEvent(createStatusChangeEvent("waiting", previousStatus));
+      }
+    };
     const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
     appendTimelineEventFileOnly(runStartEvent);
     try {
@@ -21600,13 +21634,7 @@ class Supervisor {
         try {
           this.sqliteClient?.upsertResult(id, output);
         } catch {}
-        const waitingAt = Date.now();
-        setStatus({
-          status: "waiting",
-          current_event: "waiting",
-          elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
-          last_event_at_ms: waitingAt
-        });
+        setWaitingStatus();
       } catch (err) {
         const error2 = err instanceof Error ? err : new Error(String(err));
         setStatus({ status: "error", error: error2.message });
@@ -21799,7 +21827,7 @@ class Supervisor {
         keepAliveSession = true;
         resumeFn = rFn;
         closeFn = cFn;
-        setStatus({ status: "waiting", current_event: "waiting", last_event_at_ms: Date.now() });
+        setWaitingStatus();
       }, (tool, args, toolCallId) => {
         currentTool = tool;
         currentToolArgs = args;
@@ -21860,11 +21888,7 @@ class Supervisor {
       mkdirSync3(this.jobDir(id), { recursive: true });
       writeFileSync4(this.resultPath(id), latestOutput, "utf-8");
       if (keepAliveSession) {
-        setStatus({
-          status: "waiting",
-          current_event: "waiting",
-          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-          last_event_at_ms: Date.now(),
+        setWaitingStatus({
           model: result.model,
           backend: result.backend,
           bead_id: result.beadId
@@ -21937,6 +21961,24 @@ class Supervisor {
       try {
         this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
       } catch {}
+      if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
+        try {
+          startDetachedGitnexusAnalyze(runOptions.workingDirectory ?? process.cwd());
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: "gitnexus_analyze_started",
+            backend: "supervisor"
+          });
+        } catch (err) {
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: "gitnexus_analyze_start_failed",
+            backend: String(err?.message ?? err)
+          });
+        }
+      }
       this.writeReadyMarker(id);
       return id;
     } catch (err) {
@@ -22252,6 +22294,10 @@ function formatEventLine(event, options) {
       detailParts.push(`reason=${event.finish_reason}`);
     if (event.token_usage?.total_tokens !== undefined) {
       detailParts.push(`total=${event.token_usage.total_tokens}`);
+    }
+    if (event.text_content) {
+      const preview = event.text_content.replace(/\n/g, " ").slice(0, 80);
+      detailParts.push(`"${preview}${event.text_content.length > 80 ? "…" : ""}"`);
     }
   } else if (event.type === "compaction" || event.type === "retry") {
     detailParts.push(`phase=${event.phase}`);
@@ -22809,6 +22855,8 @@ function statusColor(status) {
       return red2(status);
     case "starting":
       return yellow9(status);
+    case "waiting":
+      return magenta2(status);
     default:
       return status;
   }
@@ -22890,6 +22938,9 @@ ${bold8("specialists status")}
   console.log(`  elapsed      ${formatElapsed2(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? "n/a"}`);
   console.log(`  events       ${eventCount}`);
+  if (job.status === "waiting") {
+    console.log(`  action       ${magenta2(`specialists resume ${job.id} "..."`)}`);
+  }
   if (job.metrics?.finish_reason)
     console.log(`  finish       ${job.metrics.finish_reason}`);
   if (job.metrics?.exit_reason)
@@ -23068,7 +23119,7 @@ ${bold8("specialists status")}
       for (const job of jobs) {
         const elapsed = formatElapsed2(job);
         const metricsInline = formatMetricsInline(job.metrics);
-        const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : metricsInline ? dim7(metricsInline) : dim7(job.current_event ?? "");
+        const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.status === "waiting" ? magenta2(`resume: specialists resume ${job.id} "..."`) : job.current_tool ? dim7(`tool: ${job.current_tool}`) : metricsInline ? dim7(metricsInline) : dim7(job.current_event ?? "");
         console.log(`  ${dim7(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
       }
     }
@@ -23222,7 +23273,7 @@ async function run12() {
       }
       process.exit(1);
     }
-    if (status.status === "running" || status.status === "starting" || status.status === "waiting") {
+    if (status.status === "running" || status.status === "starting") {
       const output2 = readResultOutput();
       if (!output2) {
         const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
@@ -23240,6 +23291,29 @@ async function run12() {
         process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
         process.stdout.write(output2);
+      }
+      return;
+    }
+    if (status.status === "waiting") {
+      const output2 = readResultOutput();
+      if (!output2) {
+        const message = `Job ${jobId} is waiting for input. Use: specialists resume ${jobId} "..."`;
+        if (args.json) {
+          emitJson(status, null, message);
+        } else {
+          process.stderr.write(`${dim9(message)}
+`);
+        }
+        process.exit(1);
+      }
+      const waitingFooter = `
+--- Session is waiting for your input. Use: specialists resume ${jobId} "..." ---
+`;
+      if (args.json) {
+        emitJson(status, `${output2}${waitingFooter}`, null);
+      } else {
+        process.stdout.write(output2);
+        process.stderr.write(dim9(waitingFooter));
       }
       return;
     }
@@ -23437,6 +23511,8 @@ function getHumanEventKey(event) {
       return `message:${event.role}:${event.phase}`;
     case "turn":
       return `turn:${event.phase}`;
+    case "status_change":
+      return `status_change:${event.previous_status ?? ""}:${event.status}`;
     case "run_start":
       return `run_start:${event.specialist}:${event.bead_id ?? ""}`;
     case "run_complete":
@@ -23480,6 +23556,13 @@ function shouldSkipHumanEvent(event, jobId, lastPrintedEventKey, seenMetaKey) {
     return true;
   lastPrintedEventKey.set(jobId, key);
   return false;
+}
+function isWaitingStatusChangeEvent(event) {
+  return event.type === "status_change" && event.status === "waiting";
+}
+function formatWaitingBanner(jobId, specialist) {
+  const prefix = magenta2(bold8("WAIT"));
+  return `${prefix} ${specialist} (${jobId}) is waiting for input. Use: specialists resume ${jobId} "..."`;
 }
 function parseSince(value) {
   if (value.includes("T") || value.includes("-")) {
@@ -23639,6 +23722,10 @@ function printSnapshot(sqliteClient, merged, options, jobsDir) {
     const colorize = colorMap.get(jobId);
     const meta = getJobMeta(jobId);
     const specialistDisplay = formatSpecialistModel(specialist, meta.model ?? (event.type === "meta" ? event.model : undefined));
+    if (isWaitingStatusChangeEvent(event)) {
+      console.log(formatWaitingBanner(jobId, specialistDisplay));
+      continue;
+    }
     console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
   }
 }
@@ -23824,6 +23911,10 @@ async function followMerged(sqliteClient, jobsDir, options) {
             continue;
           const colorize = colorMap.get(jobId);
           const specialistDisplay = formatSpecialistModel(specialist, model);
+          if (isWaitingStatusChangeEvent(event)) {
+            console.log(formatWaitingBanner(jobId, specialistDisplay));
+            continue;
+          }
           console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
         }
       }

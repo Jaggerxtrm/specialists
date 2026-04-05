@@ -19,7 +19,7 @@ import {
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createReadStream } from 'node:fs';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
 import { resolveJobsDir, resolveCurrentBranch } from './job-root.js';
 import type { BeadsClient } from './beads.js';
@@ -29,6 +29,7 @@ import {
   createRunStartEvent,
   createMetaEvent,
   createRunCompleteEvent,
+  createStatusChangeEvent,
   createStaleWarningEvent,
   createTokenUsageEvent,
   createFinishReasonEvent,
@@ -179,6 +180,18 @@ function extractGitnexusRisk(resultRaw?: Record<string, unknown>): 'LOW' | 'MEDI
   return undefined;
 }
 
+function isGitnexusAnalyzeRequired(permissionRequired: string | undefined): boolean {
+  return permissionRequired === 'MEDIUM' || permissionRequired === 'HIGH';
+}
+
+function startDetachedGitnexusAnalyze(cwd: string): void {
+  const child = spawn('npx', ['gitnexus', 'analyze'], {
+    cwd,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+}
 
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
@@ -415,6 +428,21 @@ export class Supervisor {
       }
     };
 
+    const setWaitingStatus = (updates?: Partial<SupervisorStatus>): void => {
+      const previousStatus = statusSnapshot.status;
+      const waitingAt = Date.now();
+      setStatus({
+        status: 'waiting',
+        current_event: 'waiting',
+        elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
+        last_event_at_ms: waitingAt,
+        ...updates,
+      });
+      if (previousStatus !== 'waiting') {
+        appendTimelineEvent(createStatusChangeEvent('waiting', previousStatus));
+      }
+    };
+
     // Emit run_start event
     const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
     appendTimelineEventFileOnly(runStartEvent);
@@ -494,13 +522,7 @@ export class Supervisor {
         writeFileSync(this.resultPath(id), output, 'utf-8');
         try { this.sqliteClient?.upsertResult(id, output); } catch { /* best effort */ }
 
-        const waitingAt = Date.now();
-        setStatus({
-          status: 'waiting',
-          current_event: 'waiting',
-          elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
-          last_event_at_ms: waitingAt,
-        });
+        setWaitingStatus();
       } catch (err: any) {
         const error = err instanceof Error ? err : new Error(String(err));
         setStatus({ status: 'error', error: error.message });
@@ -746,7 +768,7 @@ export class Supervisor {
           keepAliveSession = true;
           resumeFn = rFn;
           closeFn = cFn;
-          setStatus({ status: 'waiting', current_event: 'waiting', last_event_at_ms: Date.now() });
+          setWaitingStatus();
         },
         // onToolStartCallback — capture tool name, args, and call ID for timeline event fidelity
         (tool, args, toolCallId) => {
@@ -819,11 +841,7 @@ export class Supervisor {
       writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
 
       if (keepAliveSession) {
-        setStatus({
-          status: 'waiting',
-          current_event: 'waiting',
-          elapsed_s: Math.round((Date.now() - startedAtMs) / 1000),
-          last_event_at_ms: Date.now(),
+        setWaitingStatus({
           model: result.model,
           backend: result.backend,
           bead_id: result.beadId,
@@ -913,6 +931,25 @@ export class Supervisor {
         this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
       } catch {
         // best effort
+      }
+
+      if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
+        try {
+          startDetachedGitnexusAnalyze(runOptions.workingDirectory ?? process.cwd());
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: 'gitnexus_analyze_started',
+            backend: 'supervisor',
+          });
+        } catch (err: any) {
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: 'gitnexus_analyze_start_failed',
+            backend: String(err?.message ?? err),
+          });
+        }
       }
 
       // Touch ready marker so hooks can surface completion banners.

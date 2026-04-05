@@ -15,6 +15,7 @@ import {
   yellow,
   red,
   cyan,
+  magenta,
   formatCostUsd,
 } from './format-helpers.js';
 
@@ -54,6 +55,7 @@ function statusColor(status: string): string {
     case 'done':     return green(status);
     case 'error':    return red(status);
     case 'starting': return yellow(status);
+    case 'waiting':  return magenta(status);
     default:         return status;
   }
 }
@@ -147,6 +149,9 @@ function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
   console.log(`  elapsed      ${formatElapsed(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? 'n/a'}`);
   console.log(`  events       ${eventCount}`);
+  if (job.status === 'waiting') {
+    console.log(`  action       ${magenta(`specialists resume ${job.id} "..."`)}`);
+  }
   if (job.metrics?.finish_reason) console.log(`  finish       ${job.metrics.finish_reason}`);
   if (job.metrics?.exit_reason) console.log(`  exit_reason  ${job.metrics.exit_reason}`);
   if (job.metrics?.turns !== undefined) console.log(`  turns        ${job.metrics.turns}`);
@@ -360,11 +365,13 @@ export async function run(): Promise<void> {
       const metricsInline = formatMetricsInline(job.metrics);
       const detail = job.status === 'error'
         ? red(job.error?.slice(0, 40) ?? 'error')
-        : job.current_tool
-          ? dim(`tool: ${job.current_tool}`)
-          : metricsInline
-            ? dim(metricsInline)
-            : dim(job.current_event ?? '');
+        : job.status === 'waiting'
+          ? magenta(`resume: specialists resume ${job.id} "..."`)
+          : job.current_tool
+            ? dim(`tool: ${job.current_tool}`)
+            : metricsInline
+              ? dim(metricsInline)
+              : dim(job.current_event ?? '');
       console.log(
         `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
       );
