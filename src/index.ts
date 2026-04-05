@@ -317,17 +317,19 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists node <run|status> [options]',
+        'Usage: specialists node <run|status|promote> [options]',
         '',
         'Commands:',
-        '  run <node-config-file> [--inline JSON] [--json]   Start a NodeSupervisor run',
-        '  status [--node <node-id>] [--json]                 Show node runs from SQLite',
+        '  run <node-config-file> [--inline JSON] [--bead <bead-id>] [--json]   Start a NodeSupervisor run',
+        '  status [--node <node-id>] [--json]                                Show node runs from SQLite',
+        '  promote <node-id> <finding-id> --to-bead <bead-id> [--json]      Promote a finding to bead notes',
         '',
         'Examples:',
         '  specialists node run ./config/research.node.json',
         '  specialists node run --inline "{\"name\":\"research\",...}" --json',
         '  specialists node status',
         '  specialists node status --node research-abc123',
+        '  specialists node promote research-abc123 finding-1 --to-bead unitAI-123',
         '',
       ].join('\n'));
       return;

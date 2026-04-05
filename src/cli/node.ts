@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
@@ -26,22 +27,28 @@ interface NodeConfig {
 }
 
 interface ParsedNodeArgs {
-  command: 'run' | 'status';
+  command: 'run' | 'status' | 'promote';
   nodeConfigFile?: string;
   inlineJson?: string;
   nodeId?: string;
+  findingId?: string;
+  toBead?: string;
+  beadId?: string;
   jsonMode: boolean;
 }
 
 function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   const command = argv[0];
-  if (command !== 'run' && command !== 'status') {
-    throw new Error('Usage: specialists node <run|status> [options]');
+  if (command !== 'run' && command !== 'status' && command !== 'promote') {
+    throw new Error('Usage: specialists node <run|status|promote> [options]');
   }
 
   let nodeConfigFile: string | undefined;
   let inlineJson: string | undefined;
   let nodeId: string | undefined;
+  let findingId: string | undefined;
+  let toBead: string | undefined;
+  let beadId: string | undefined;
   let jsonMode = false;
 
   for (let i = 1; i < argv.length; i += 1) {
@@ -72,8 +79,38 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
+    if (token === '--to-bead') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--to-bead requires a bead id value');
+      }
+      toBead = value;
+      i += 1;
+      continue;
+    }
+
+    if (token === '--bead') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--bead requires a bead id value');
+      }
+      beadId = value;
+      i += 1;
+      continue;
+    }
+
     if (!token.startsWith('--') && command === 'run' && !nodeConfigFile) {
       nodeConfigFile = token;
+      continue;
+    }
+
+    if (!token.startsWith('--') && command === 'promote' && !nodeId) {
+      nodeId = token;
+      continue;
+    }
+
+    if (!token.startsWith('--') && command === 'promote' && !findingId) {
+      findingId = token;
       continue;
     }
 
@@ -81,7 +118,13 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   }
 
   if (command === 'run' && !nodeConfigFile && !inlineJson) {
-    throw new Error('Usage: specialists node run <node-config-file> [--inline JSON] [--json]');
+    throw new Error('Usage: specialists node run <node-config-file> [--inline JSON] [--bead <bead-id>] [--json]');
+  }
+
+  if (command === 'promote') {
+    if (!nodeId || !findingId || !toBead) {
+      throw new Error('Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]');
+    }
   }
 
   return {
@@ -89,6 +132,9 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     nodeConfigFile,
     inlineJson,
     nodeId,
+    findingId,
+    toBead,
+    beadId,
     jsonMode,
   };
 }
@@ -198,11 +244,13 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
       coordinatorSpecialist: config.coordinator,
       members: config.members,
       memoryNamespace: config.memoryNamespace,
+      sourceBeadId: args.beadId,
       sqliteClient,
       runner,
       runOptions: {
         name: config.coordinator,
         prompt: config.initialPrompt,
+        inputBeadId: args.beadId,
       },
     });
 
@@ -344,6 +392,73 @@ async function handleNodeStatus(args: ParsedNodeArgs): Promise<void> {
   }
 }
 
+function buildFindingNotes(nodeId: string, findingId: string, summary: string): string {
+  return [
+    'Node finding promoted',
+    `node_id: ${nodeId}`,
+    `finding_id: ${findingId}`,
+    '',
+    summary,
+  ].join('\n');
+}
+
+function promoteFindingToBead(beadId: string, notes: string): void {
+  const result = spawnSync('bd', ['update', beadId, '--notes', notes], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
+    throw new Error(errorMessage);
+  }
+}
+
+async function handleNodePromote(args: ParsedNodeArgs): Promise<void> {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+  }
+
+  try {
+    const nodeId = args.nodeId!;
+    const findingId = args.findingId!;
+    const beadId = args.toBead!;
+
+    const finding = sqliteClient.readNodeMemory(nodeId).find((entry) => entry.entry_id === findingId);
+    if (!finding) {
+      throw new Error(`Finding not found: node=${nodeId}, finding=${findingId}`);
+    }
+
+    const findingSummary = finding.summary?.trim();
+    if (!findingSummary) {
+      throw new Error(`Finding ${findingId} has no summary to promote`);
+    }
+
+    const notes = buildFindingNotes(nodeId, findingId, findingSummary);
+    promoteFindingToBead(beadId, notes);
+
+    if (args.jsonMode) {
+      console.log(JSON.stringify({
+        type: 'node_promote',
+        node_id: nodeId,
+        finding_id: findingId,
+        bead_id: beadId,
+        promoted: true,
+      }));
+      return;
+    }
+
+    console.log(`Promoted finding ${findingId} from ${nodeId} to bead ${beadId}`);
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 export async function handleNodeCommand(argv: string[]): Promise<void> {
   let parsed: ParsedNodeArgs;
   try {
@@ -356,6 +471,11 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
 
   if (parsed.command === 'run') {
     await handleNodeRun(parsed);
+    return;
+  }
+
+  if (parsed.command === 'promote') {
+    await handleNodePromote(parsed);
     return;
   }
 
