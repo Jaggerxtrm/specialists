@@ -460,7 +460,7 @@ Run `specialists list` to see what's available. Match by task type:
 |-----------|----------------|-----|
 | Architecture exploration / initial discovery | **explorer** (claude-haiku) | Fast codebase mapping, READ_ONLY. Output auto-appends to bead. |
 | Live docs / library lookup / code discovery | **researcher** (claude-haiku) | Targeted (ctx7/deepwiki) or discovery (ghgrep → deepwiki) modes. `--keep-alive`. |
-| Bug fix / feature implementation | **executor** (gpt-codex) | HIGH perms, writes code, runs lint+tsc, closes beads. |
+| Bug fix / feature implementation | **executor** (gpt-codex) | HIGH perms, writes code, runs lint+tsc, closes beads. `interactive: true` by default — enters `waiting` after first turn, orchestrator must stop explicitly. |
 | Bug investigation / "why is X broken" | **debugger** (claude-sonnet) | 4-phase debug-fix-verify cycle. HIGH perms, keep-alive. GitNexus-first. |
 | Complex design / tradeoff analysis | **overthinker** (gpt-4) | 4-phase: analysis → devil's advocate → synthesis → conclusion. `--keep-alive`. |
 | Code review / compliance | **reviewer** (claude-sonnet) | PASS/PARTIAL/FAIL verdict. Use via `--job <exec-job>`. `--keep-alive`. |
@@ -474,6 +474,7 @@ Run `specialists list` to see what's available. Match by task type:
 ### Specialist selection notes
 
 - **executor does not run tests** — it runs `lint + tsc` only. Tests belong to the reviewer or test-runner phase.
+- **executor enters `waiting` after first turn** — `interactive: true` is now default. If executor bails early (e.g. GitNexus CRITICAL risk warning), orchestrator can `resume` with "proceed, this is additive" instead of re-dispatching. Always `stop` executor explicitly when work is complete.
 - **explorer** is READ_ONLY — its output auto-appends to the input bead's notes. No implementation.
 - **reviewer** is best dispatched via `--job <exec-job>` rather than `--bead` — it enters the same worktree to see exactly what was written.
 - **debugger** over **explorer** when you need root cause analysis — GitNexus call-chain tracing, ranked hypotheses, evidence-backed remediation.
@@ -561,6 +562,7 @@ specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
 
 | Specialist | Enters `waiting` after | What to send via `resume` |
 |-----------|----------------------|--------------------------|
+| **executor** | First turn completion (may be partial if bailed early) | "proceed, this is additive", "address the risk warning and continue", or "done, close bead" |
 | **researcher** | Delivering research findings | Follow-up question, new angle, or "done, thanks" |
 | **reviewer** | Delivering verdict (PASS/PARTIAL/FAIL) | Your response, clarification, or "accepted, close out" |
 | **overthinker** | Phase 4 conclusion | Follow-up question, counter-argument, or "done, thanks" |
