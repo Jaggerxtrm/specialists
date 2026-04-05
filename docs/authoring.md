@@ -2,9 +2,9 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.5.0
-updated: 2026-03-30
-synced_at: 490e0f83
+version: 1.6.0
+updated: 2026-04-05
+synced_at: a7dee4b5
 description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
   - "config/skills/specialists-creator/SKILL.md"
@@ -66,7 +66,7 @@ specialist:
 | `stall_timeout_ms` | number | unset | kill if no event for N ms |
 | `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists |
 | `response_format` | `text \| json \| markdown` | `text` | output contract hint |
-| `output_type` | `codegen \| analysis \| review \| synthesis \| orchestration \| workflow \| research \| custom` | `custom` | semantic archetype (`codegen` implementation/change manifests, `analysis` architecture/exploration, `review` compliance/verdicts, `synthesis` multi-source decisions, `orchestration` coordinator handoffs, `workflow` procedural run outputs, `research` source-backed findings, `custom` no built-in extension) |
+| `output_type` | enum | `custom` | semantic archetype: `codegen`, `analysis`, `review`, `synthesis`, `orchestration`, `workflow`, `research`, `custom` |
 | `permission_required` | `READ_ONLY \| LOW \| MEDIUM \| HIGH` | `READ_ONLY` | tool-access tier |
 | `thinking_level` | `off \| minimal \| low \| medium \| high \| xhigh` | unset | forwarded to thinking-capable models |
 
@@ -96,8 +96,70 @@ Effective keep-alive order is:
 | `task_template` | string | yes | rendered with `$variables` |
 | `system` | string | no | system prompt content |
 | `skill_inherit` | string | no | single skill folder/file injected via `--skill` |
-| `output_schema` | object | no | JSON schema for structured output |
+| `output_schema` | object | no | JSON schema for structured output — runner-injected, warn-only validation |
 | `examples` | array | no | few-shot examples |
+
+### Output contract precedence
+
+**Order:** `response_format` → `output_type` → `output_schema`
+
+**`response_format` behavior:**
+- `text`: no report template injected (raw behavior)
+- `json`: specialist must return one parseable JSON object
+- `markdown`: specialist must use canonical report sections:
+  - `## Summary`, `## Status`, `## Changes`, `## Verification`, `## Risks`, `## Follow-ups`, `## Beads`
+  - Optional: `## Architecture`, `## Acceptance Criteria`, `## Machine-readable block`
+
+**`output_type` (semantic archetype):**
+- `codegen`: implementation/change manifests
+- `analysis`: architecture/exploration reports
+- `review`: compliance/review verdicts
+- `synthesis`: decision summaries across multiple findings
+- `orchestration`: coordinator actions/state handoffs
+- `workflow`: procedural/operational run outputs
+- `research`: source-backed findings with confidence
+- `custom`: no built-in extension
+
+**`output_schema` guidance:** Add when output must be machine-readable. Schema is injected into system prompt; post-run validation is warn-only.
+
+**Mandatory markdown+schema rule:** If `response_format: markdown` and `output_schema` present, output must include `## Machine-readable block` with exactly one JSON object in a ` ```json ` fenced block matching the schema.
+
+**Standard schemas by specialist type:**
+
+```yaml
+# executor — change manifest
+prompt:
+  output_schema:
+    type: object
+    properties:
+      status: { enum: [success, partial, failed] }
+      files_changed: { type: array, items: { type: string } }
+      symbols_modified: { type: array, items: { type: string } }
+      lint_pass: { type: boolean }
+      tests_pass: { type: boolean }
+      issues_closed: { type: array, items: { type: string } }
+      follow_ups: { type: array, items: { type: string } }
+
+# explorer — analysis report
+prompt:
+  output_schema:
+    type: object
+    properties:
+      summary: { type: string }
+      key_files: { type: array, items: { type: string } }
+      architecture_notes: { type: string }
+      recommendations: { type: array, items: { type: string } }
+
+# planner — epic result
+prompt:
+  output_schema:
+    type: object
+    properties:
+      epic_id: { type: string }
+      children: { type: array, items: { type: string } }
+      test_issues: { type: array, items: { type: string } }
+      first_task: { type: string }
+```
 
 ---
 
@@ -322,6 +384,39 @@ The validator prints `OK <file>` on success and field-level errors on failure.
 | `Required` on `category` | missing metadata category | add `metadata.category` |
 | Valid YAML but poor results | `task_template` never uses `$prompt` | include `$prompt` in template |
 | `defaults` key unrecognized | unsupported top-level key | remove `defaults`; pass runtime values via `--variables` |
+
+---
+
+## Context Window & Lifecycle Design
+
+Specialists run as long-lived Pi sessions. Context management is not optional — ignoring it causes silent quality degradation before any hard limit is hit.
+
+### Context rot starts before the window fills
+
+Quality degrades as the context grows — compressed early context causes inconsistency, missed facts, and instruction drift. Design for bounded, coherent runs rather than arbitrarily long ones.
+
+### Model context windows
+
+| Model family | Context window |
+|--------------|----------------|
+| Gemini 3.1 Pro | 1,000,000 tokens |
+| Qwen3.5 / GLM-5 | 128,000 tokens |
+| Claude (all) | 200,000 tokens |
+
+### Context health thresholds
+
+| Utilization | Health | Action |
+|-------------|--------|--------|
+| < 40% | OK | Normal operation |
+| 40–65% | MONITOR | Watch for degradation |
+| 65–80% | WARN | Consider wrap-up |
+| > 80% | CRITICAL | High risk of quality loss |
+
+### Design patterns
+
+1. **Phase-bounded runs**: Split large tasks into discrete phases with explicit completion points
+2. **Checkpoint handoffs**: Use `next_specialists` to transfer state to fresh sessions
+3. **Summarization gates**: Emit structured summaries at phase boundaries for downstream context injection
 
 ---
 

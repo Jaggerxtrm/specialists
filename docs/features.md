@@ -2,10 +2,10 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.0.0
-updated: 2026-04-04
-synced_at: ea6c6000
-description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, and specialist authoring.
+version: 1.1.0
+updated: 2026-04-05
+synced_at: a7dee4b5
+description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, and specialist authoring.
 source_of_truth_for:
   - "src/cli/run.ts"
   - "src/cli/feed.ts"
@@ -90,6 +90,7 @@ sp feed --json --since 5m --limit 200
 - Snapshot mode: replay matching events
 - Follow mode (`-f`): polls and appends new events in chronological order
 - JSON mode outputs NDJSON envelopes with job metadata + event payload
+- **Waiting state**: when a keep-alive job enters `waiting` status, feed displays a magenta `WAIT` banner with resume instructions
 
 ### `poll` (machine snapshot + cursors)
 
@@ -116,6 +117,7 @@ sp result <job-id> --wait --timeout 120
 - Prints `result.txt`
 - `--wait` polls until `done`/`error`
 - `--timeout` applies only with `--wait`
+- **Waiting state**: when status is `waiting`, result prints a footer with resume instructions
 
 Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
 
@@ -189,6 +191,7 @@ Supervisor behavior in keep-alive mode:
 
 - Creates FIFO: `.specialists/jobs/<job-id>/steer.pipe`
 - On first turn completion, job status becomes `waiting`
+- Emits `status_change` timeline event with `status: "waiting"` and `previous_status: "running"`
 - Session stays alive with full conversation history retained
 
 Resume with a next-turn task:
@@ -203,6 +206,37 @@ Rules:
 - If status is `running`, use `steer`/`steer_specialist` (mid-turn guidance)
 - `resume` writes `{type:"resume", task:"..."}` to FIFO
 - After resume turn finishes, status returns to `waiting` until closed
+
+### Waiting state observability
+
+When a keep-alive job enters the `waiting` state, the system provides multiple observation signals:
+
+**Timeline event** (`events.jsonl`):
+```json
+{"t": 1743883200000, "type": "status_change", "status": "waiting", "previous_status": "running"}
+```
+
+**Feed output** (`sp feed <job-id>`):
+```
+WAIT executor (49adda) is waiting for input. Use: specialists resume 49adda "..."
+```
+- Displayed in **magenta** to distinguish from running/done states
+- Shows specialist name, job ID, and exact resume command
+
+**Status output** (`sp status --job <job-id>`):
+```
+  status       waiting
+  action       specialists resume 49adda "..."
+```
+- Status field rendered in magenta
+- `action` row shows the resume command to use
+
+**Result footer** (`sp result <job-id>`):
+```
+--- Session is waiting for your input. Use: specialists resume 49adda "..." ---
+```
+- Appended to result output when status is `waiting`
+- Printed to stderr in dimmed text
 
 Use `--no-keep-alive` for a one-off run even when the specialist is interactive:
 
@@ -305,13 +339,113 @@ Authoring notes:
 - `response_format` controls requested format (`text|json|markdown`) at specialist config level
 - `stall_timeout_ms` handles session protocol silence
 - `stall_detection` handles Supervisor state/timeline warnings and error promotion
+- `permission_required` controls post-job GitNexus reindex (see below)
 - For bead-driven specialists, rely on `$bead_context` / `$bead_id` in templates
 
 ---
 
+## 8) Auto GitNexus reindex after high-permission jobs
+
+Supervisor automatically triggers a GitNexus reindex after jobs with elevated file access complete.
+
+### Trigger conditions
+
+```yaml
+specialist:
+  execution:
+    permission_required: MEDIUM  # or HIGH
+```
+
+When `permission_required` is `MEDIUM` or `HIGH`, the supervisor spawns a detached `npx gitnexus analyze` process after job completion.
+
+### Behavior
+
+- **Detached execution**: reindex runs in background, does not block job completion
+- **Working directory**: analyze runs in the job's worktree (if applicable) or main checkout
+- **Timeline event**: emits a `meta` event with `model: "gitnexus_analyze_started"` or `model: "gitnexus_analyze_start_failed"`
+- **Failure handling**: if spawn fails, error is logged to timeline but job still completes
+
+### Example timeline events
+
+```json
+{"t": 1743883200000, "type": "meta", "model": "gitnexus_analyze_started", "backend": "supervisor"}
+```
+
+### Rationale
+
+High-permission specialists (`MEDIUM`/`HIGH`) typically modify source code. Auto-reindex ensures the GitNexus knowledge graph stays current without requiring manual intervention or separate CI steps.
+
+### Disabling
+
+To disable auto-reindex for a high-permission specialist, set `permission_required` to `LOW` or omit it (defaults to `LOW`).
+
 ---
 
-## 7) Worktree isolation (`--worktree`, `--job`)
+## 9) Debugger v2.0 — Keep-alive iterative debugging
+
+The `debugger` specialist was upgraded to v2.0 with enhanced capabilities for iterative debug-fix-verify cycles.
+
+### Configuration
+
+```yaml
+specialist:
+  metadata:
+    name: debugger
+    version: 2.0.0
+    description: >-
+      Autonomous debugger: given any symptom, error, or stack trace, systematically
+      traces call chains with GitNexus, identifies root cause at file:line precision,
+      applies targeted fixes, and verifies the fix works. Keep-alive for iterative
+      debug-fix-verify cycles.
+
+  execution:
+    permission_required: HIGH
+    interactive: true  # enables keep-alive
+```
+
+### Key changes in v2.0
+
+| Feature | v1.0 | v2.0 |
+|---------|------|------|
+| Permission level | MEDIUM | **HIGH** |
+| Keep-alive | No | **Yes** (`interactive: true`) |
+| Workflow | Single-pass | **Iterative cycles** |
+
+### Iterative workflow
+
+1. **Initial run**: `sp run debugger --bead bd-123`
+   - Investigates root cause using GitNexus
+   - Applies targeted fix
+   - Verifies fix works
+   - Enters `waiting` state
+
+2. **Resume if needed**: `sp resume <job-id> "Fix didn't work, error is now..."`
+   - Re-diagnoses with new evidence
+   - Applies corrected fix
+   - Re-verifies
+   - Returns to `waiting`
+
+3. **Repeat** until issue is resolved
+
+### When to use
+
+- Complex bugs requiring multiple fix attempts
+- Issues where the initial hypothesis may be wrong
+- Debugging sessions that need human verification between attempts
+
+### Observation
+
+Use standard observation commands:
+
+```bash
+sp feed <job-id> --follow   # Watch investigation progress
+sp status --job <job-id>    # Check waiting state
+sp result <job-id>          # Read bug report + resume footer
+```
+
+---
+
+## 10) Worktree isolation (`--worktree`, `--job`)
 
 Each edit-permission specialist runs in an isolated git worktree (branch). This prevents concurrent file corruption when multiple executors modify overlapping paths, and produces a clean per-task branch that the orchestrator merges in dependency order.
 

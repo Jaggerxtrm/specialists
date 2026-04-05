@@ -2,14 +2,15 @@ specialist:
   metadata:
     name: sync-docs
     version: 2.0.0
-    description: "Mode-routed documentation sync: targeted docs, area-scoped time-window, or full audit. Commit-based context, not PR-based."
+    description: "Mode-routed documentation sync: targeted docs, area-scoped
+      time-window, or full audit. Commit-based context, not PR-based."
     category: documentation
     updated: "2026-04-05"
-    tags: [docs, sync, drift, audit, targeted, changelog]
+    tags: [ docs, sync, drift, audit, targeted, changelog ]
 
   execution:
     mode: tool
-    model: anthropic/claude-sonnet-4-6
+    model: dashscope/qwen3.5-plus
     fallback_model: google-gemini-cli/gemini-3-flash-preview
     timeout_ms: 0
     stall_timeout_ms: 120000
@@ -172,8 +173,8 @@ specialist:
         inject_output: true
 
   capabilities:
-    required_tools: [bash, read, grep, glob, edit]
-    external_commands: [git, bd, xtrm]
+    required_tools: [ bash, read, grep, glob, edit ]
+    external_commands: [ git, bd, xtrm ]
 
   validation:
     files_to_watch:
@@ -184,7 +185,7 @@ specialist:
     stale_threshold_days: 30
 
   communication:
-    next_specialists: [reviewer]
+    next_specialists: [ reviewer ]
 
   output_file: .specialists/sync-docs-report.md
   beads_integration: auto

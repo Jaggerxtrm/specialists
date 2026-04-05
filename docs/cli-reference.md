@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.5.0
-updated: 2026-04-04
-synced_at: b7fb256a
+version: 1.6.0
+updated: 2026-04-05
+synced_at: a7dee4b5
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -133,6 +133,14 @@ specialists feed --specialist debugger --since 1h --limit 200
 specialists feed --job a1b2c3 --json
 ```
 
+### Output
+
+When a specialist enters the `waiting` state, a **WAIT** banner is displayed:
+
+```
+WAIT  <specialist> (<job-id>) is waiting for input. Use: specialists resume <job-id> "..."
+```
+
 ### Exit codes
 
 - `0`: Success (including no events found).
@@ -195,6 +203,14 @@ specialists result a1b2c3 --wait --timeout 120
 specialists result a1b2c3 > output.md
 ```
 
+### Output
+
+When a job is in the `waiting` state, an explicit message is shown:
+
+```
+--- Session is waiting for your input. Use: specialists resume <job-id> "..." ---
+```
+
 ### Exit codes
 
 - `0`: Result printed.
@@ -214,6 +230,20 @@ specialists status [--json] [--job <id> | --job=<id>]
 
 - `--json`: Machine-readable status.
 - `--job <id>` / `--job=<id>`: Show one job only.
+
+### Output
+
+Waiting jobs are shown in **magenta** with a resume hint:
+
+```
+action  specialists resume <job-id> "..."
+```
+
+In the job list, waiting status includes an inline action:
+
+```
+<id>  <specialist>  waiting  <elapsed>  resume: specialists resume <id> "..."
+```
 
 ### Examples
 
@@ -297,6 +327,10 @@ specialists steer <job-id> "<message>"
 ### Flags
 
 No flags.
+
+### Notes
+
+Works for **all running jobs** (not just keep-alive sessions). Accepts steering messages for jobs in `running`, `starting`, or `waiting` states.
 
 ### Examples
 

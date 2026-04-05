@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.0.0
-updated: 2026-04-04
-synced_at: b7fb256a
+version: 2.1.0
+updated: 2026-04-05
+synced_at: a7dee4b5
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, stuck detection, GitNexus tracking, worktree isolation, and bead ownership semantics.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -56,15 +56,22 @@ Specialists does **not** redefine protocol semantics. It consumes Pi events and 
 - Emits normalized callbacks for Supervisor/Runner (`onEvent`, `onToolStart`, `onToolEnd`, `onMeta`)
 - Enforces liveness timeout (`stallTimeoutMs`) at session level
 - Pins absolute cwd at spawn time to prevent TMUX path drift in worktrees
+- Resolves npm package extensions (gitnexus, serena) from global node_modules
 
 ### ID-mapped dispatch + ack checks
 
 - `sendCommand()` assigns incrementing IDs (`_nextRequestId`) and stores resolver/rejecter in `_pendingRequests`
 - `_handleEvent()` matches `type === "response"` with `event.id` and resolves the matching pending request
-- timeouts reject outstanding calls with `RPC timeout...`
+- timeouts reject outstanding calls with `RPC timeout...` (default timeout: 30s)
 - command methods enforce explicit ack success:
   - `prompt()` throws if `response.success === false`
   - `steer()` throws if `response.success === false`
+
+### Extension resolution
+
+npm package extensions (gitnexus, serena) are resolved from global node_modules:
+- gitnexus: `~/.nvm/versions/node/<version>/lib/node_modules/pi-gitnexus`
+- serena: `~/.nvm/versions/node/<version>/lib/node_modules/pi-serena-tools`
 
 This is the key adapter contract: **transport-level correctness and command acknowledgement**, not durable job semantics.
 
@@ -75,7 +82,7 @@ This is the key adapter contract: **transport-level correctness and command ackn
 ### `resolveJobsDir()` — common-root anchoring
 
 ```typescript
-function resolveCommonGitRoot(cwd: string): string | undefined {
+export function resolveCommonGitRoot(cwd: string): string | undefined {
   const result = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf-8' });
   // Returns the main repo root from any worktree
   return dirname(resolve(cwd, result.stdout.trim()));
@@ -86,6 +93,8 @@ export function resolveJobsDir(cwd = process.cwd()): string {
   return join(commonRoot, '.specialists', 'jobs');
 }
 ```
+
+**Note:** `resolveCommonGitRoot` is exported for reuse (e.g., worktree.ts deduplication).
 
 **Why this matters:** In a worktree, `git rev-parse --git-common-dir` returns the shared `.git/` directory in the main checkout. Taking `dirname` gives us the common project root, so all worktrees read/write `.specialists/jobs/` at the same absolute path.
 
@@ -136,7 +145,7 @@ Parses `git worktree list --porcelain` output into a `Map<branch, absolute-path>
 
 For each run (`.specialists/jobs/<id>/`):
 
-- `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch)
+- `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch, **`node_id`**)
 - `events.jsonl` — append-only timeline stream (SQLite-backed when available)
 - `result.txt` — final assistant output text (SQLite-backed when available)
 
@@ -209,6 +218,29 @@ Supervisor supports non-streaming keep-alive sessions via `onResumeReady` callba
 - `waiting` → alive, awaiting next-turn action (valid: `resume`, `close`)
 - `done` → terminal, session closed
 - `error` → terminal, session closed with error
+
+### Context window tracking
+
+Supervisor tracks context utilization for long-running sessions:
+
+```typescript
+type ContextHealth = 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL';
+
+const MODEL_CONTEXT_WINDOWS: Array<{ matcher: (model: string) => boolean; windowTokens: number }> = [
+  { matcher: (model) => model.includes('gemini-3.1-pro'), windowTokens: 1_000_000 },
+  { matcher: (model) => model.includes('qwen3.5') || model.includes('glm-5'), windowTokens: 128_000 },
+  { matcher: (model) => model.includes('claude'), windowTokens: 200_000 },
+];
+
+function getContextHealth(contextPct: number): ContextHealth {
+  if (contextPct < 40) return 'OK';
+  if (contextPct <= 65) return 'MONITOR';
+  if (contextPct <= 80) return 'WARN';
+  return 'CRITICAL';
+}
+```
+
+Context utilization (`context_pct`) is captured on `turn_summary` events and emitted via `status` events for observability.
 
 ### Stuck detection model
 
@@ -299,7 +331,7 @@ This prevents sub-bead/lifecycle conflicts and keeps orchestrator ownership expl
 | `turn` (start/end) | Turn boundary | `phase` |
 | `token_usage` | Token metrics from RPC | `token_usage`, `source` |
 | `finish_reason` | Finish reason from RPC | `finish_reason`, `source` |
-| `turn_summary` | Turn completion | `turn_index`, `token_usage`, `finish_reason` |
+| `turn_summary` | Turn completion | `turn_index`, `token_usage`, `finish_reason`, **`context_pct`** |
 | `compaction` (start/end) | Context compaction | `phase` |
 | `retry` | Auto-retry event | `phase` |
 | `stale_warning` | Stuck detection | `reason`, `silence_ms`, `threshold_ms`, `tool` |
