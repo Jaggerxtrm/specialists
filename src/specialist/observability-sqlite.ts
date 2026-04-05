@@ -183,6 +183,88 @@ function migrateToV3(db: BunDb): void {
   `);
 }
 
+function migrateToV4(db: BunDb): void {
+  const hasV4 = db.query('SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1').get() as { 1?: number } | undefined;
+  if (hasV4) {
+    db.run('CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)');
+
+    db.run('CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)');
+
+    db.run('CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)');
+
+    db.run('CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL');
+    return;
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS node_runs (
+      id                 TEXT PRIMARY KEY,
+      node_name          TEXT NOT NULL,
+      status             TEXT NOT NULL,
+      coordinator_job_id TEXT,
+      started_at_ms      INTEGER,
+      updated_at_ms      INTEGER NOT NULL,
+      waiting_on         TEXT,
+      error              TEXT,
+      memory_namespace   TEXT,
+      status_json        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status);
+
+    CREATE TABLE IF NOT EXISTS node_members (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      member_id    TEXT NOT NULL,
+      job_id       TEXT,
+      specialist   TEXT NOT NULL,
+      model        TEXT,
+      role         TEXT,
+      status       TEXT NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id);
+
+    CREATE TABLE IF NOT EXISTS node_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id);
+    CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
+
+    CREATE TABLE IF NOT EXISTS node_memory (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id      TEXT NOT NULL,
+      namespace        TEXT,
+      entry_type       TEXT,
+      entry_id         TEXT,
+      summary          TEXT,
+      source_member_id TEXT,
+      confidence       REAL,
+      provenance_json  TEXT,
+      created_at_ms    INTEGER,
+      updated_at_ms    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL;
+
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (4, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export function initSchema(db: BunDb): void {
   enforceWalMode(db);
 
@@ -242,6 +324,7 @@ export function initSchema(db: BunDb): void {
 
   migrateToV2(db);
   migrateToV3(db);
+  migrateToV4(db);
   verifyWalMode(db);
 }
 
