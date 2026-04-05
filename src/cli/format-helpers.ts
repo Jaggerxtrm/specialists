@@ -328,6 +328,13 @@ export function formatEventLine(
     if (event.token_usage?.total_tokens !== undefined) {
       detailParts.push(`total=${event.token_usage.total_tokens}`);
     }
+    if (
+      event.context_pct !== undefined
+      && (event.context_health === 'WARN' || event.context_health === 'CRITICAL')
+    ) {
+      detailParts.push(`context=${event.context_pct.toFixed(2)}%`);
+      detailParts.push(`health=${event.context_health}`);
+    }
     if (event.text_content) {
       const preview = event.text_content.replace(/\n/g, ' ').slice(0, 80);
       detailParts.push(`"${preview}${event.text_content.length > 80 ? '…' : ''}"`);

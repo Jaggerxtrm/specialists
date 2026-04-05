@@ -117,6 +117,57 @@ function countJobEvents(
   return raw.split('\n').filter(line => line.trim().length > 0).length;
 }
 
+interface ContextSnapshot {
+  context_pct: number;
+  context_health?: 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL';
+}
+
+function toContextSnapshot(event: unknown): ContextSnapshot | null {
+  if (!event || typeof event !== 'object') return null;
+  const summary = event as Record<string, unknown>;
+  if (summary.type !== 'turn_summary') return null;
+  if (typeof summary.context_pct !== 'number' || !Number.isFinite(summary.context_pct)) return null;
+
+  const contextHealth = summary.context_health;
+  return {
+    context_pct: summary.context_pct,
+    ...(typeof contextHealth === 'string' ? { context_health: contextHealth as ContextSnapshot['context_health'] } : {}),
+  };
+}
+
+function getLatestContextSnapshot(
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+  jobsDir: string,
+  jobId: string,
+): ContextSnapshot | null {
+  try {
+    const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
+    for (let index = sqliteEvents.length - 1; index >= 0; index -= 1) {
+      const snapshot = toContextSnapshot(sqliteEvents[index]);
+      if (snapshot) return snapshot;
+    }
+  } catch {
+    // fallback to events.jsonl
+  }
+
+  const eventsFile = join(jobsDir, jobId, 'events.jsonl');
+  if (!existsSync(eventsFile)) return null;
+
+  const lines = readFileSync(eventsFile, 'utf-8').split('\n');
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    try {
+      const snapshot = toContextSnapshot(JSON.parse(line));
+      if (snapshot) return snapshot;
+    } catch {
+      // skip malformed line
+    }
+  }
+
+  return null;
+}
+
 function formatMetricsInline(metrics: SupervisorStatus['metrics']): string {
   if (!metrics) return '';
   const parts: string[] = [];
@@ -139,7 +190,11 @@ function formatMetricsInline(metrics: SupervisorStatus['metrics']): string {
   return parts.join(' ');
 }
 
-function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
+function renderJobDetail(
+  job: SupervisorStatus,
+  eventCount: number,
+  contextSnapshot: ContextSnapshot | null,
+): void {
   console.log(`\n${bold('specialists status')}\n`);
   section(`Job ${job.id}`);
   console.log(`  specialist   ${job.specialist}`);
@@ -163,6 +218,12 @@ function renderJobDetail(job: SupervisorStatus, eventCount: number): void {
   if (job.metrics?.token_usage?.cost_usd !== undefined) {
     const cost = formatCostUsd(job.metrics.token_usage.cost_usd);
     console.log(`  cost_usd     ${cost ?? job.metrics.token_usage.cost_usd}`);
+  }
+  if (contextSnapshot) {
+    console.log(`  context_pct  ${contextSnapshot.context_pct.toFixed(2)}%`);
+    if (contextSnapshot.context_health) {
+      console.log(`  context_health ${contextSnapshot.context_health}`);
+    }
   }
   if (job.session_file) console.log(`  session_file ${job.session_file}`);
   if (job.error) console.log(`  error        ${red(job.error)}`);
@@ -231,18 +292,20 @@ export async function run(): Promise<void> {
     }
 
     const eventCount = countJobEvents(sqliteClient, jobsDir, jobId);
+    const contextSnapshot = getLatestContextSnapshot(sqliteClient, jobsDir, jobId);
 
     if (jsonMode) {
       console.log(JSON.stringify({
         job: {
           ...selectedJob,
           event_count: eventCount,
+          context: contextSnapshot,
         },
       }, null, 2));
       return;
     }
 
-    renderJobDetail(selectedJob, eventCount);
+    renderJobDetail(selectedJob, eventCount, contextSnapshot);
     return;
   }
 

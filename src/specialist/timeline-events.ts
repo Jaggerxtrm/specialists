@@ -270,6 +270,8 @@ export interface TimelineEventTurnSummary extends TimelineEventBase {
   token_usage?: TimelineTokenUsage;
   finish_reason?: string;
   text_content?: string;
+  context_pct?: number;
+  context_health?: 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL';
 }
 
 export interface TimelineEventCompaction extends TimelineEventBase {
@@ -567,6 +569,8 @@ export function createTurnSummaryEvent(
   token_usage?: TimelineTokenUsage,
   finish_reason?: string,
   textContent?: string,
+  contextPct?: number,
+  contextHealth?: 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL',
 ): TimelineEventTurnSummary {
   return {
     t: Date.now(),
@@ -575,6 +579,8 @@ export function createTurnSummaryEvent(
     ...(token_usage ? { token_usage } : {}),
     ...(finish_reason ? { finish_reason } : {}),
     ...(textContent ? { text_content: textContent } : {}),
+    ...(contextPct !== undefined ? { context_pct: contextPct } : {}),
+    ...(contextHealth ? { context_health: contextHealth } : {}),
   };
 }
 

@@ -120,6 +120,41 @@ const GITNEXUS_RISK_ORDER: Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number
   CRITICAL: 3,
 };
 
+type ContextHealth = 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL';
+
+const MODEL_CONTEXT_WINDOWS: Array<{ matcher: (model: string) => boolean; windowTokens: number }> = [
+  { matcher: (model) => model.includes('gemini-3.1-pro'), windowTokens: 1_000_000 },
+  { matcher: (model) => model.includes('qwen3.5') || model.includes('glm-5'), windowTokens: 128_000 },
+  { matcher: (model) => model.includes('claude'), windowTokens: 200_000 },
+];
+
+function getModelContextWindow(model: string | undefined): number | undefined {
+  if (!model) return undefined;
+  const normalizedModel = model.toLowerCase();
+  return MODEL_CONTEXT_WINDOWS.find(({ matcher }) => matcher(normalizedModel))?.windowTokens;
+}
+
+function getContextHealth(contextPct: number): ContextHealth {
+  if (contextPct < 40) return 'OK';
+  if (contextPct <= 65) return 'MONITOR';
+  if (contextPct <= 80) return 'WARN';
+  return 'CRITICAL';
+}
+
+function calculateContextUtilization(
+  cumulativeInputTokens: number,
+  model: string | undefined,
+): { context_pct: number; context_health: ContextHealth } | undefined {
+  const contextWindow = getModelContextWindow(model);
+  if (!contextWindow || cumulativeInputTokens < 0) return undefined;
+
+  const contextPct = (cumulativeInputTokens / contextWindow) * 100;
+  return {
+    context_pct: Number(contextPct.toFixed(2)),
+    context_health: getContextHealth(contextPct),
+  };
+}
+
 function normalizeGitnexusRisk(value: unknown): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toUpperCase();
@@ -485,6 +520,7 @@ export class Supervisor {
     let textCharCount = 0;
     let thinkingCharCount = 0;
     let turnTextAccumulator = '';
+    let cumulativeInputTokens = 0;
     const toolCallNames: string[] = [];
     // Map from toolCallId → {tool, args} for parallel tool call tracking
     const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
@@ -676,6 +712,7 @@ export class Supervisor {
         (metricEvent: SessionMetricEvent) => {
           if (metricEvent.type === 'token_usage') {
             mergeRunMetrics({ token_usage: metricEvent.token_usage });
+            cumulativeInputTokens += metricEvent.token_usage.input_tokens ?? 0;
             appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
             return;
           }
@@ -692,11 +729,14 @@ export class Supervisor {
               ...(metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {}),
               ...(metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}),
             });
+            const contextUtilization = calculateContextUtilization(cumulativeInputTokens, statusSnapshot.model);
             appendTimelineEvent(createTurnSummaryEvent(
               metricEvent.turn_index,
               metricEvent.token_usage,
               metricEvent.finish_reason,
               turnTextAccumulator || undefined,
+              contextUtilization?.context_pct,
+              contextUtilization?.context_health,
             ));
             turnTextAccumulator = '';
             return;
