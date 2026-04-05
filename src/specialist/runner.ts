@@ -11,7 +11,7 @@ import {
 } from '../pi/session.js';
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
-import { isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
+import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 
 export interface RunOptions {
   name: string;
@@ -221,14 +221,10 @@ function getRetryDelayMs(attemptNumber: number): number {
   return Math.max(0, Math.round(baseDelay * jitterMultiplier));
 }
 
-function isAuthError(error: unknown): boolean {
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : JSON.stringify(error);
-
-  return /\b(401|403|unauthorized|forbidden|authentication|auth|invalid api key|api key)\b/i.test(message);
+function sanitizeBeadIdForPrompt(beadId: string): string {
+  const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, '');
+  const withoutBackticks = withoutControlChars.replace(/`/g, '');
+  return withoutBackticks.replace(/[^A-Za-z0-9-]/g, '');
 }
 
 type ResponseFormat = 'text' | 'json' | 'markdown';
@@ -703,8 +699,11 @@ export class SpecialistRunner {
     // - CLAUDE.md often says "run specialists init" — specialists must NEVER do this
     // - CLAUDE.md edit-gate rules say "bd create before editing" — not applicable inside a specialist
     {
-      const beadInstructions = options.inputBeadId
-        ? `\n- Your task bead is: ${options.inputBeadId}\n- Claim it: \`bd update ${options.inputBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${options.inputBeadId} --reason="..."\``
+      const sanitizedBeadId = options.inputBeadId
+        ? sanitizeBeadIdForPrompt(options.inputBeadId)
+        : '';
+      const beadInstructions = sanitizedBeadId
+        ? `\n- Your task bead is: ${sanitizedBeadId}\n- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\``
         : '';
       agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
 - GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.\n- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths — but never leave.${beadInstructions}\n---\n`;
@@ -842,7 +841,8 @@ export class SpecialistRunner {
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {
       const isCancelled = err instanceof SessionKilledError;
-      if (!isCancelled) {
+      const authError = isAuthError(err);
+      if (!isCancelled && !authError) {
         // Only record a circuit-breaker failure for real backend errors
         circuitBreaker.recordFailure(model);
       }

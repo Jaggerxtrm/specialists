@@ -26,6 +26,17 @@ const TRANSIENT_ERROR_PATTERNS = [
   /gateway timeout/i,
 ] as const;
 
+const AUTH_ERROR_PATTERNS = [
+  /\b401\b/,
+  /\b403\b/,
+  /unauthorized/i,
+  /forbidden/i,
+  /authentication/i,
+  /\bauth\b/i,
+  /invalid api key/i,
+  /api key/i,
+] as const;
+
 export function isTransientError(error: unknown): boolean {
   if (!error) return false;
 
@@ -42,6 +53,24 @@ export function isTransientError(error: unknown): boolean {
       : JSON.stringify(error);
 
   return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+export function isAuthError(error: unknown): boolean {
+  if (!error) return false;
+
+  const status = (error as { status?: unknown; statusCode?: unknown }).status
+    ?? (error as { statusCode?: unknown }).statusCode;
+  if (status === 401 || status === 403) {
+    return true;
+  }
+
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : JSON.stringify(error);
+
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 export class CircuitBreaker {

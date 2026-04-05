@@ -9,8 +9,8 @@ export const useSpecialistSchema = z.object({
   bead_id: z.string().optional().describe('Use an existing bead as the specialist prompt'),
   variables: z.record(z.string()).optional().describe('Additional $variable substitutions'),
   backend_override: z.string().optional().describe('Force a specific backend (gemini, qwen, anthropic)'),
-  autonomy_level: z.string().optional().describe('Override permission level for this invocation'),
-  context_depth: z.number().optional().describe('Depth of blocker context injection (0 = none, 1 = immediate blockers, etc.)'),
+  autonomy_level: z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']).optional().describe('Override permission level for this invocation'),
+  context_depth: z.number().min(0).max(10).optional().describe('Depth of blocker context injection (0 = none, 1 = immediate blockers, etc.)'),
 }).refine((input) => Boolean(input.prompt?.trim() || input.bead_id), {
   message: 'Either prompt or bead_id is required',
   path: ['prompt'],
@@ -38,7 +38,10 @@ export function createUseSpecialistTool(runner: SpecialistRunner) {
         const beadsClient = new BeadsClient();
         const bead = beadsClient.readBead(input.bead_id);
         if (!bead) {
-          throw new Error(`Unable to read bead '${input.bead_id}' via bd show --json`);
+          return {
+            status: 'error' as const,
+            error: `Unable to read bead '${input.bead_id}' via bd show --json`,
+          };
         }
         const beadContext = buildBeadContext(bead);
         prompt = beadContext;
