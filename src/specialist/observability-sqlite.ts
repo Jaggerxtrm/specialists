@@ -397,6 +397,12 @@ export interface ObservabilitySqliteClient {
   upsertNodeMember(member: NodeMemberRow): void;
   appendNodeEvent(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
   upsertNodeMemory(entry: NodeMemoryRow): void;
+  readNodeRun(nodeRunId: string): NodeRunRow | null;
+  listNodeRuns(filter?: { status?: NodeRunStatus }): NodeRunRow[];
+  readNodeMembers(nodeRunId: string): NodeMemberRow[];
+  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; t: number; type: string; event_json: string }>;
+  readNodeMemory(nodeRunId: string, opts?: { namespace?: string; entry_type?: 'fact' | 'question' | 'decision' }): NodeMemoryRow[];
+  queryMemberContextHealth(jobId: string): number | null;
   readStatus(jobId: string): SupervisorStatus | null;
   listStatuses(): SupervisorStatus[];
   readEvents(jobId: string): TimelineEvent[];
@@ -720,6 +726,119 @@ class SqliteClient implements ObservabilitySqliteClient {
     withRetry(() => {
       this.writeNodeMemoryRow(entry);
     }, 'upsertNodeMemory');
+  }
+
+  readNodeRun(nodeRunId: string): NodeRunRow | null {
+    return withRetry(() => {
+      const row = this.db.query('SELECT * FROM node_runs WHERE id = ? LIMIT 1').get(nodeRunId) as NodeRunRow | undefined;
+      if (!row) return null;
+      return {
+        ...row,
+        status: row.status as NodeRunStatus,
+      };
+    }, 'readNodeRun');
+  }
+
+  listNodeRuns(filter?: { status?: NodeRunStatus }): NodeRunRow[] {
+    return withRetry(() => {
+      const query = filter?.status
+        ? 'SELECT * FROM node_runs WHERE status = ? ORDER BY updated_at_ms DESC'
+        : 'SELECT * FROM node_runs ORDER BY updated_at_ms DESC';
+      const rows = filter?.status
+        ? this.db.query(query).all(filter.status)
+        : this.db.query(query).all();
+      return (rows as NodeRunRow[]).map((row) => ({
+        ...row,
+        status: row.status as NodeRunStatus,
+      }));
+    }, 'listNodeRuns');
+  }
+
+  readNodeMembers(nodeRunId: string): NodeMemberRow[] {
+    return withRetry(() => {
+      const rows = this.db.query('SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC').all(nodeRunId) as Array<NodeMemberRow & { enabled?: number | boolean }>;
+      return rows.map((row) => ({
+        node_run_id: row.node_run_id,
+        member_id: row.member_id,
+        job_id: row.job_id ?? undefined,
+        specialist: row.specialist,
+        model: row.model ?? undefined,
+        role: row.role ?? undefined,
+        status: row.status,
+        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
+      }));
+    }, 'readNodeMembers');
+  }
+
+  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; t: number; type: string; event_json: string }> {
+    return withRetry(() => {
+      const whereClauses = ['node_run_id = ?'];
+      const params: Array<string | number> = [nodeRunId];
+
+      if (opts?.type) {
+        whereClauses.push('type = ?');
+        params.push(opts.type);
+      }
+
+      let query = `
+        SELECT id, t, type, event_json
+        FROM node_events
+        WHERE ${whereClauses.join(' AND ')}
+        ORDER BY t ASC, id ASC
+      `;
+
+      if (opts?.limit !== undefined) {
+        query += ' LIMIT ?';
+        params.push(opts.limit);
+      }
+
+      return this.db.query(query).all(...params) as Array<{ id: number; t: number; type: string; event_json: string }>;
+    }, 'readNodeEvents');
+  }
+
+  readNodeMemory(nodeRunId: string, opts?: { namespace?: string; entry_type?: 'fact' | 'question' | 'decision' }): NodeMemoryRow[] {
+    return withRetry(() => {
+      const whereClauses = ['node_run_id = ?'];
+      const params: Array<string> = [nodeRunId];
+
+      if (opts?.namespace) {
+        whereClauses.push('namespace = ?');
+        params.push(opts.namespace);
+      }
+
+      if (opts?.entry_type) {
+        whereClauses.push('entry_type = ?');
+        params.push(opts.entry_type);
+      }
+
+      const query = `
+        SELECT *
+        FROM node_memory
+        WHERE ${whereClauses.join(' AND ')}
+        ORDER BY created_at_ms ASC
+      `;
+
+      return this.db.query(query).all(...params) as NodeMemoryRow[];
+    }, 'readNodeMemory');
+  }
+
+  queryMemberContextHealth(jobId: string): number | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT json_extract(event_json, '$.context_pct') AS context_pct
+        FROM specialist_events
+        WHERE job_id = ? AND type = 'turn_summary'
+        ORDER BY t DESC, id DESC
+        LIMIT 1
+      `).get(jobId) as { context_pct?: number | string | null } | undefined;
+
+      if (!row || row.context_pct === null || row.context_pct === undefined) {
+        return null;
+      }
+
+      const contextPct = typeof row.context_pct === 'number' ? row.context_pct : Number(row.context_pct);
+      return Number.isFinite(contextPct) ? contextPct : null;
+    }, 'queryMemberContextHealth');
   }
 
   readStatus(jobId: string): SupervisorStatus | null {
