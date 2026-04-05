@@ -461,13 +461,13 @@ Run `specialists list` to see what's available. Match by task type:
 | Architecture exploration / initial discovery | **explorer** (claude-haiku) | Fast codebase mapping, READ_ONLY. Output auto-appends to bead. |
 | Live docs / library lookup / code discovery | **researcher** (claude-haiku) | Targeted (ctx7/deepwiki) or discovery (ghgrep → deepwiki) modes. `--keep-alive`. |
 | Bug fix / feature implementation | **executor** (gpt-codex) | HIGH perms, writes code, runs lint+tsc, closes beads. |
-| Bug investigation / "why is X broken" | **debugger** (claude-sonnet) | 5-phase GitNexus-first root-cause analysis. Use for ANY "why is X broken". |
+| Bug investigation / "why is X broken" | **debugger** (claude-sonnet) | 4-phase debug-fix-verify cycle. HIGH perms, keep-alive. GitNexus-first. |
 | Complex design / tradeoff analysis | **overthinker** (gpt-4) | 4-phase: analysis → devil's advocate → synthesis → conclusion. `--keep-alive`. |
 | Code review / compliance | **reviewer** (claude-sonnet) | PASS/PARTIAL/FAIL verdict. Use via `--job <exec-job>`. `--keep-alive`. |
 | Multi-backend review | **parallel-review** (claude-sonnet) | Concurrent review across multiple backends |
 | Planning / scoping | **planner** (claude-sonnet) | Structured issue breakdown with deps |
-| Doc audit / drift detection | **sync-docs** (claude-sonnet) | Audits first, then waits. `--keep-alive`. |
-| Doc writing / updates | **executor** (gpt-codex) | sync-docs defaults to audit; executor writes files |
+| Doc audit / drift detection / targeted sync | **sync-docs** (qwen3.5-plus) | 3-mode: targeted (named docs), area (time-window), full audit. MEDIUM perms, `--keep-alive`. |
+| Doc writing / updates | **executor** (gpt-codex) | For heavy doc rewrites; sync-docs handles targeted updates directly |
 | Test generation / suite execution | **test-runner** (claude-haiku) | Runs suites, interprets failures |
 | Specialist authoring | **specialists-creator** (claude-sonnet) | Guides YAML creation against schema |
 
@@ -564,7 +564,8 @@ specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
 | **researcher** | Delivering research findings | Follow-up question, new angle, or "done, thanks" |
 | **reviewer** | Delivering verdict (PASS/PARTIAL/FAIL) | Your response, clarification, or "accepted, close out" |
 | **overthinker** | Phase 4 conclusion | Follow-up question, counter-argument, or "done, thanks" |
-| **sync-docs** | Audit report | "approve", "deny", or specific instructions |
+| **debugger** | Phase 3 fix attempt or Phase 4 verify result | Follow-up fix, "try different approach", or "done" |
+| **sync-docs** | Audit report or targeted update result | "approve", "deny", or specific instructions |
 
 > **Warning:** A job in `waiting` looks identical to a stalled job. **Always check `status.json`
 > before killing a keep-alive job.**
@@ -695,8 +696,8 @@ See Merge Protocol above. No exceptions.
 
 ### 5. Run drift detection after doc-heavy sessions
 ```bash
-python3 .agents/skills/sync-docs/scripts/drift_detector.py scan --json
-python3 .agents/skills/sync-docs/scripts/drift_detector.py update-sync <file>
+python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py scan --json
+python3 .xtrm/skills/default/sync-docs/scripts/drift_detector.py update-sync <file>
 ```
 
 ---
@@ -713,10 +714,9 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 
 ## Known Issues
 
-- **sync-docs defaults to audit mode** on `--bead` runs. Use executor for doc writing, or steer: `specialists steer <id> "Execute all phases. Write the files."` Tracked as `unitAI-rnea`.
 - **READ_ONLY output auto-appends** to the input bead after completion (via Supervisor). Output also available via `specialists result`.
 - **`--bead` and `--prompt` conflict** by design. For tracked work, update bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
-- **Job in `waiting` looks stalled** — always check `status.json` before stopping a keep-alive job. Tracked as `unitAI-4qam`.
+- **Job in `waiting` now shows magenta status** with resume hint in `status`, WAIT banner in `feed`, and resume footer in `result`. Always check before stopping a keep-alive job.
 
 ---
 
