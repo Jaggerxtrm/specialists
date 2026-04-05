@@ -228,17 +228,19 @@ class SqliteClient implements ObservabilitySqliteClient {
     this.db.run('PRAGMA journal_mode=WAL');
   }
 
-  private writeStatusRow(status: SupervisorStatus): void {
+  private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, bead_id, updated_at_ms)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, bead_id, worktree_column, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         status_json = excluded.status_json,
         bead_id = excluded.bead_id,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [status.id, status.specialist, statusJson, status.bead_id ?? null, Date.now()]);
+        worktree_column = excluded.worktree_column,
+        updated_at_ms = excluded.updated_at_ms,
+        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output);
+    `, [status.id, status.specialist, statusJson, status.bead_id ?? null, status.worktree_path ?? null, Date.now(), lastOutput ?? null]);
   }
 
   private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
@@ -278,7 +280,7 @@ class SqliteClient implements ObservabilitySqliteClient {
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status);
+        this.writeStatusRow(status, output);
         this.writeEventRow(status.id, status.specialist, status.bead_id, event);
         this.writeResultRow(status.id, output);
       });
@@ -295,6 +297,10 @@ class SqliteClient implements ObservabilitySqliteClient {
   upsertResult(jobId: string, output: string): void {
     withRetry(() => {
       this.writeResultRow(jobId, output);
+      // Also update last_output on the job row for quick access
+      this.db.run(`
+        UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
+      `, [output, jobId]);
     }, 'upsertResult');
   }
 
