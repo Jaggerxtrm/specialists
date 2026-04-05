@@ -49,6 +49,7 @@ export class ArgParseError extends Error {
 
 function toLiveJob(status: SupervisorStatus | null): LiveJob | null {
   if (!status) return null;
+  if (status.node_id) return null;
   if ((status.status !== 'running' && status.status !== 'waiting') || !status.tmux_session) {
     return null;
   }

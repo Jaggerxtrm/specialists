@@ -168,6 +168,10 @@ function getLatestContextSnapshot(
   return null;
 }
 
+function isStandaloneJob(job: SupervisorStatus): boolean {
+  return !job.node_id;
+}
+
 function formatMetricsInline(metrics: SupervisorStatus['metrics']): string {
   if (!metrics) return '';
   const parts: string[] = [];
@@ -277,12 +281,12 @@ export async function run(): Promise<void> {
       runOptions: null as any,
       jobsDir,
     });
-    jobs = supervisor.listJobs();
+    jobs = supervisor.listJobs().filter(isStandaloneJob);
   }
 
   if (jobId) {
     const selectedJob = supervisor?.readStatus(jobId) ?? null;
-    if (!selectedJob) {
+    if (!selectedJob || !isStandaloneJob(selectedJob)) {
       if (jsonMode) {
         console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
       } else {

@@ -26,7 +26,7 @@ interface NodeConfig {
 }
 
 interface ParsedNodeArgs {
-  command: 'run' | 'status';
+  command: 'run' | 'status' | 'feed';
   nodeConfigFile?: string;
   inlineJson?: string;
   nodeId?: string;
@@ -35,8 +35,8 @@ interface ParsedNodeArgs {
 
 function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   const command = argv[0];
-  if (command !== 'run' && command !== 'status') {
-    throw new Error('Usage: specialists node <run|status> [options]');
+  if (command !== 'run' && command !== 'status' && command !== 'feed') {
+    throw new Error('Usage: specialists node <run|status|feed> [options]');
   }
 
   let nodeConfigFile: string | undefined;
@@ -77,11 +77,20 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
+    if (!token.startsWith('--') && command === 'feed' && !nodeId) {
+      nodeId = token;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${token}`);
   }
 
   if (command === 'run' && !nodeConfigFile && !inlineJson) {
     throw new Error('Usage: specialists node run <node-config-file> [--inline JSON] [--json]');
+  }
+
+  if (command === 'feed' && !nodeId) {
+    throw new Error('Usage: specialists node feed <node-id> [--json]');
   }
 
   return {
@@ -285,6 +294,43 @@ function printNodeRunDetail(row: NodeRunRow): void {
   }
 }
 
+async function handleNodeFeed(args: ParsedNodeArgs): Promise<void> {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+  }
+
+  try {
+    const nodeId = args.nodeId!;
+    const events = sqliteClient.readNodeEvents(nodeId);
+
+    if (args.jsonMode) {
+      for (const event of events) {
+        console.log(JSON.stringify({
+          type: 'node_event',
+          node_id: nodeId,
+          id: event.id,
+          t: event.t,
+          event_type: event.type,
+          event_json: JSON.parse(event.event_json),
+        }));
+      }
+      return;
+    }
+
+    if (events.length === 0) {
+      console.log(`No node events found for ${nodeId}.`);
+      return;
+    }
+
+    for (const event of events) {
+      console.log(`[${new Date(event.t).toISOString()}] ${event.type}`);
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 async function handleNodeStatus(args: ParsedNodeArgs): Promise<void> {
   const sqliteClient = createObservabilitySqliteClient();
   if (!sqliteClient) {
@@ -356,6 +402,11 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
 
   if (parsed.command === 'run') {
     await handleNodeRun(parsed);
+    return;
+  }
+
+  if (parsed.command === 'feed') {
+    await handleNodeFeed(parsed);
     return;
   }
 
