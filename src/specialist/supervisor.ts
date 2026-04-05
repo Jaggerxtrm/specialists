@@ -232,6 +232,7 @@ function startDetachedGitnexusAnalyze(cwd: string): void {
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
   private readonly resolvedJobsDir: string;
+  private isDisposed = false;
 
   constructor(private opts: SupervisorOptions) {
     this.sqliteClient = createObservabilitySqliteClient();
@@ -239,6 +240,17 @@ export class Supervisor {
     // the main checkout. Fall back to cwd-relative path when git is unavailable.
     const cwd = opts.runOptions?.workingDirectory ?? process.cwd();
     this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
+  }
+
+  dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+    if (!this.sqliteClient) return;
+    try {
+      this.sqliteClient.close();
+    } catch (error: unknown) {
+      console.warn(`[supervisor] Failed to close sqlite client: ${String(error)}`);
+    }
   }
 
   private jobDir(id: string): string {
@@ -270,8 +282,8 @@ export class Supervisor {
     try {
       const sqliteStatus = this.sqliteClient?.readStatus(id);
       if (sqliteStatus) return sqliteStatus;
-    } catch {
-      // fallback to file state
+    } catch (error: unknown) {
+      console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error)}`);
     }
 
     const path = this.statusPath(id);
@@ -286,8 +298,8 @@ export class Supervisor {
       if (sqliteJobs.length > 0) {
         return sqliteJobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
       }
-    } catch {
-      // fallback to file state
+    } catch (error: unknown) {
+      console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error)}`);
     }
 
     if (!existsSync(this.resolvedJobsDir)) return [];
@@ -310,7 +322,11 @@ export class Supervisor {
 
   private writeStatusFile(id: string, data: SupervisorStatus): void {
     this.writeStatusFileOnly(id, data);
-    try { this.sqliteClient?.upsertStatus(data); } catch { /* best effort */ }
+    try {
+      this.sqliteClient?.upsertStatus(data);
+    } catch (error: unknown) {
+      console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);
+    }
   }
 
 
@@ -452,8 +468,8 @@ export class Supervisor {
 
       try {
         this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
-      } catch {
-        // best effort
+      } catch (error: unknown) {
+        console.warn(`[supervisor] SQLite appendEvent failed: ${String(error)}`);
       }
     };
 
@@ -486,8 +502,8 @@ export class Supervisor {
     appendTimelineEventFileOnly(runStartEvent);
     try {
       this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
-    } catch {
-      // best effort
+    } catch (error: unknown) {
+      console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during run start: ${String(error)}`);
     }
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
@@ -550,8 +566,8 @@ export class Supervisor {
     const handleResumeTurn = async (task: string): Promise<void> => {
       if (!resumeFn) return;
       const now = Date.now();
-      setStatus({ status: 'running', current_event: 'starting', last_event_at_ms: now });
       lastActivityMs = now;
+      setStatus({ status: 'running', current_event: 'starting', last_event_at_ms: now });
       silenceWarnEmitted = false;
 
       try {
@@ -559,7 +575,11 @@ export class Supervisor {
         latestOutput = output;
         mkdirSync(this.jobDir(id), { recursive: true });
         writeFileSync(this.resultPath(id), output, 'utf-8');
-        try { this.sqliteClient?.upsertResult(id, output); } catch { /* best effort */ }
+        try {
+          this.sqliteClient?.upsertResult(id, output);
+        } catch (error: unknown) {
+          console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error)}`);
+        }
 
         setWaitingStatus();
       } catch (err: any) {
@@ -804,7 +824,9 @@ export class Supervisor {
                 }
               } catch { /* ignore malformed lines */ }
             });
-          fifoReadline.on('error', () => {}); // ignore FIFO errors
+          fifoReadline.on('error', (error) => {
+            console.error(`[supervisor] FIFO read error: ${String(error)}`);
+          });
         },
         // onResumeReady — keep-alive: session stays alive after first agent_end
         (rFn, cFn) => {
@@ -972,8 +994,8 @@ export class Supervisor {
       appendTimelineEventFileOnly(runCompleteEvent);
       try {
         this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
-      } catch {
-        // best effort
+      } catch (error: unknown) {
+        console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error)}`);
       }
 
       if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
@@ -1040,8 +1062,8 @@ export class Supervisor {
       appendTimelineEventFileOnly(runCompleteEvent);
       try {
         this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
-      } catch {
-        // best effort
+      } catch (error: unknown) {
+        console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error)}`);
       }
 
       // Touch ready marker so hooks can surface failure banners.
@@ -1065,6 +1087,7 @@ export class Supervisor {
       if (statusSnapshot.tmux_session) {
         spawnSync('tmux', ['kill-session', '-t', statusSnapshot.tmux_session], { stdio: 'ignore' });
       }
+      this.dispose();
     }
   }
 }
