@@ -19,6 +19,7 @@ specialist:
     output_type: codegen
     permission_required: HIGH
     thinking_level: low
+    interactive: true
 
   prompt:
     system: |
