@@ -403,6 +403,7 @@ export class Supervisor {
     mkdirSync(dir, { recursive: true });
     mkdirSync(this.readyDir(), { recursive: true });
 
+    const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
     const initialStatus: SupervisorStatus = {
       id,
       specialist: runOptions.name,
@@ -410,6 +411,7 @@ export class Supervisor {
       started_at_ms: startedAtMs,
       pid: process.pid,
       ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
+      ...(nodeId ? { node_id: nodeId } : {}),
       ...(process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}),
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
       ...(runOptions.workingDirectory

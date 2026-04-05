@@ -204,6 +204,10 @@ function readStatusJson(
   }
 }
 
+function isStandaloneJobStatus(status: Record<string, unknown> | null): boolean {
+  return typeof status?.node_id !== 'string' || status.node_id.trim() === '';
+}
+
 function isTerminalJobStatus(
   sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
@@ -371,6 +375,14 @@ function filterMergedEventsByCursor(
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
 
+function filterStandaloneMergedEvents(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>
+): Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }> {
+  return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
+}
+
 function listMatchingJobIds(
   sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
@@ -390,8 +402,10 @@ function listMatchingJobIds(
 
     if (options.jobId && entry !== options.jobId) continue;
 
+    const status = readStatusJson(sqliteClient, jobsDir, entry);
+    if (!isStandaloneJobStatus(status)) continue;
+
     if (options.specialist) {
-      const status = readStatusJson(sqliteClient, jobsDir, entry);
       const specialist = typeof status?.specialist === 'string' ? status.specialist : undefined;
       if (specialist !== options.specialist) continue;
     }
@@ -471,12 +485,15 @@ async function followMerged(
   const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
 
   // Initial snapshot
-  const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
-    jobId: options.jobId,
-    specialist: options.specialist,
-    since: options.since,
-    limit: options.limit,
-  }), options.from);
+  const initial = filterMergedEventsByCursor(
+    filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
+      jobId: options.jobId,
+      specialist: options.specialist,
+      since: options.since,
+      limit: options.limit,
+    })),
+    options.from,
+  );
 
   printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
 
@@ -656,12 +673,15 @@ export async function run(): Promise<void> {
     }
 
     // Snapshot mode
-    const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
-      jobId: options.jobId,
-      specialist: options.specialist,
-      since: options.since,
-      limit: options.limit,
-    }), options.from);
+    const merged = filterMergedEventsByCursor(
+      filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
+        jobId: options.jobId,
+        specialist: options.specialist,
+        since: options.since,
+        limit: options.limit,
+      })),
+      options.from,
+    );
 
     printSnapshot(sqliteClient, merged, options, jobsDir);
   } finally {
