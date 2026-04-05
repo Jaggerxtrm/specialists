@@ -38,16 +38,17 @@
 | unitAI-30k2 review | d8fb3c (reviewer, keep-alive) | ✅ PASS 82/100 | Phase 1 approved. Gaps: no schema migration, cwd not passed to SQLite client, auto_compaction dead-end, output_type not in run_complete. |
 | unitAI-9twy explore | c1c2fc (explorer) | ✅ CLOSED | Phase 2 scope: CLI surface only — format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json mode, tests. |
 | unitAI-08zd Phase 2 | 4726a6 (executor) | ✅ CLOSED — commit 84889edc | format-helpers.ts (cost_usd/turns/tool_calls), status.ts metrics display, result.ts --json, tests. |
-| unitAI-08zd Phase 3 | — | 🔜 unblocked — planner done, executors ready | SQLite dual-write, WAL mode, worktree column. Merge order: A→C→B→D. |
+| unitAI-08zd Phase 3 | — | ✅ ALL PHASES COMPLETE | A→C→B→D all merged + fdtq. Live-tested. |
 | unitAI-3chh | cdb342 (planner) | ✅ CLOSED | Decomposed into ky4c/fqxo/afl9/hhs6 + test beads mhra/lcv6/pi8m. Merge order: A→C→B→D. |
 | unitAI-ky4c | e9376f (executor) | ✅ CLOSED — commit aec1c98f | Phase 3A: schema_version(v=1), specialist_jobs +worktree_column +last_output, specialist_events +char_count +text_content. Idempotent migration. |
 | unitAI-fqxo | 4f26a3 (executor) + da3ee4 (fix) | ✅ CLOSED — commit eacf3ace, merged 9bb9bc5f | Phase 3C: WAL+busy_timeout(5000)+retry(5 attempts, exp backoff+jitter), --git-common-dir worktree-safe DB, bun:sqlite persistent connection (lazy-loaded via loadBunDatabase() — returns null under Node/vitest). Reviewer PARTIAL 76→fix→merged. |
-| unitAI-afl9 | — | 🔜 unblocked | Phase 3B: supervisor dual-write. NOTE: g5np added result_raw + gitnexus_summary after planner decomposed 3chh — gitnexus_summary persisted via event_json, result_raw EXCLUDED from SQLite (decision 2026-04-04). |
-| unitAI-hhs6 | — | 🔜 blocked on afl9 | Phase 3D: CLI read paths (feed.ts, status.ts, result.ts) read from SQLite, fall back to files. |
-| unitAI-fdtq | — | 🔜 blocked on hhs6 | Per-turn text capture: accumulate onToken deltas, write text_content on turn_summary. Merged y6x5 (crash recovery). Blocks 69rw. |
+| unitAI-afl9 | bdca41 (executor) + 5c05a0 (reviewer) | ✅ CLOSED — commit a86f05ef | Phase 3B: atomic dual-write via db.transaction() at job start + completion. writeStatusRow/writeEventRow/writeResultRow private helpers. Reviewer PASS 96/100. |
+| unitAI-hhs6 | c718cf (schema exec) + 03c239 (CLI exec) + ba941e (reviewer) | ✅ CLOSED — commits e7c740dd + cb6eab3b | Phase 3D: schema v2 (bead_id column on specialist_jobs), CLI reads SQLite-first with file fallback. Reviewers PASS 95+96/100. |
+| unitAI-fdtq | 2ea02b (executor) | ✅ CLOSED — commit 0c900174 | Per-turn text capture: turnTextAccumulator in supervisor.ts, text_content on turn_summary events. Live-tested: 4212 chars captured on final turn, tool-only turns correctly empty. Feed preview added (commit f3e68132). |
+| unitAI-ftu5 | — | 🔜 unblocked | Enriched specialist_jobs schema v2→v3: all queryable columns promoted. Must land BEFORE z5ml (provides node_id column). |
 | unitAI-mhra/lcv6/pi8m | — | 🔜 test beads for 3A/3B/3D | Each blocks its impl bead |
-| unitAI-4qam | — | blocked on hhs6 | Surface waiting state in feed/result/status (display/UX, not new event type) |
-| unitAI-hgpu | — | 🔜 open P0 | REVISED: `specialists worktree create <bead-id>` CLI subcommand + `--job <id>` targeting + .pi absolute paths + ~/.pi/node_modules symlink. Full design in bead. |
+| unitAI-4qam | — | 🔜 unblocked | Surface waiting state in feed/result/status (display/UX, not new event type) |
+| unitAI-hgpu | — | 🔜 CLOSED | REVISED: `specialists worktree create <bead-id>` CLI subcommand + `--job <id>` targeting + .pi absolute paths + ~/.pi/node_modules symlink. Full design in bead. |
 | unitAI-1san | — | ✅ CLOSED | Consistency check passed. Follow-ups: e90j/brbb/hpjg (P3). |
 | unitAI-x4ms | 604513 (executor) | ✅ CLOSED — commit e651e391 | Runner template var substitution fix for bead runs. |
 | unitAI-sxmy | — | ✅ CLOSED — commit f155f1f9 | Executor bead claim non-fatal when same actor. |
@@ -614,6 +615,34 @@ specialist_events uses `event_json TEXT` as canonical payload — no denormalize
 #### Atomic dual-write (afl9 requirement)
 `db.transaction()` required for status + event writes. Crash between individual writes leaves orphaned state. CLI readers must each set `PRAGMA busy_timeout=5000` on their own connection.
 
+### Key Decisions (session 2026-04-05b — Phase 3B→3D + fdtq)
+
+#### Phase 3B atomic dual-write pattern (commit a86f05ef)
+Private row helpers (`writeStatusRow`, `writeEventRow`, `writeResultRow`) deduplicate SQL across standalone and transactional writes. `upsertStatusWithEvent` and `upsertStatusWithEventAndResult` use `db.transaction()` at job start and completion boundaries. Mid-run standalone writes remain non-transactional (acceptable — individual events are independent).
+
+#### Schema v2 — bead_id on specialist_jobs (commit e7c740dd)
+`bead_id TEXT` column added to `specialist_jobs` via idempotent recreate-table migration. Backfilled from `JSON_EXTRACT(status_json, '$.bead_id')`. Partial index `idx_jobs_bead` for filtered queries. `writeStatusRow` persists `status.bead_id` on every upsert.
+
+#### CLI reads SQLite-first (commit cb6eab3b)
+All 3 CLI commands (feed, status, result) now try SQLite first, fall back to files. Per-command client lifecycle with `try/finally close()`. Module-level singleton removed from feed.ts. `result.ts` priority flipped from file-first to SQLite-first.
+
+#### worktree_column + last_output populated (commit 5086e1ab)
+`writeStatusRow` now persists `worktree_path` and `last_output`. COALESCE prevents mid-run nulling. `upsertResult` also updates `last_output` on the jobs row (keep-alive path).
+
+#### Per-turn text capture (commit 0c900174)
+`turnTextAccumulator` in supervisor.ts collects streamed text deltas per assistant message. Emitted as `text_content` on `turn_summary` events in `event_json`. No schema changes (JSON-first). Live-tested: tool-only turns correctly empty, text turns captured. Feed preview added (commit f3e68132).
+
+#### ftu5 before z5ml ordering
+ftu5 (enriched specialist_jobs v2→v3) must land before z5ml (node tables). Reason: z5ml needs `node_id` FK on specialist_jobs — ftu5 adds it alongside all other enriched columns in one migration, avoiding two incremental table recreates.
+
+#### z5ml promoted to epic
+5 new tables + circular FK bootstrap + design alignment with JSON-first decisions. Sub-beads needed for: (1) overthinker on stale design elements, (2) schema creation, (3) write paths, (4) read paths.
+
+#### z5ml stale design elements to resolve
+- `node_events.data` → rename to `event_json`, match specialist_events pattern
+- `action_dispatch_log` → evaluate if separate table or just `node_events` with `type='action_dispatched'`
+- `node_memory.provenance` → store in blob, not separate column (JSON-first)
+
 ---
 
 ## Full Dependency Sequence
@@ -648,16 +677,20 @@ Stage 2 — SQLite Runtime
        ↓
   08zd Phase 3C fqxo (WAL + git-common-dir)  ✅ commit eacf3ace
        ↓
-  08zd Phase 3B afl9 (supervisor dual-write)
+  08zd Phase 3B afl9 (supervisor dual-write)  ✅ commit a86f05ef
        ↓
-  08zd Phase 3D hhs6 (CLI reads from SQLite)
+  08zd Phase 3D hhs6 (CLI reads from SQLite)  ✅ commits e7c740dd + cb6eab3b
        ↓
-  fdtq (per-turn text capture)
+  fix: populate worktree_column + last_output ✅ commit 5086e1ab
+       ↓
+  fdtq (per-turn text capture)                ✅ commit 0c900174
+       ↓
+  ftu5 (enriched specialist_jobs v2→v3)       ← adds node_id + all queryable columns
        ↓
   4qam (waiting state visibility)
 
 Stage 3 — Node v1A Core (needs Stage 0 + Stage 2)
-  z5ml (node SQLite persistence model)      ← needs fdtq + 16ov
+  z5ml [EPIC] (node SQLite persistence)     ← needs ftu5 (node_id column) + 16ov
        ↓
   69rw (NodeSupervisor state machine)        ← needs z5ml + 4qam
        ↓
