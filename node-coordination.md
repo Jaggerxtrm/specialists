@@ -60,16 +60,23 @@
 | unitAI-z5ml | mat6+z5ml.1+z5ml.2+z5ml.3 (executors) | ✅ CLOSED — commits 512a2d18 + 8d2581ef + 804bb451 + e79c66b0 | [EPIC] 4 tables (node_runs, node_members, node_events, node_memory). action_dispatch_log DROPPED (use node_events type='action_dispatched'). JSON-first (event_json). 16 event types. Schema v4. Write+read paths. 20 tests pass. initSchema idempotency bug fixed. |
 | unitAI-ftu5 | e2d337 (executor) | ✅ CLOSED — commit 758c338a | Schema v3: promoted status + node_id columns. Overthinker consensus: JSON-first, promote only hot selectors. |
 | unitAI-ze8d | 06eca9 (executor) | ✅ CLOSED — commit 010d3668 | context_pct + context_health on every turn_summary. Standard job feature (not node-only). Live-tested. |
-| unitAI-69rw | — | 🔜 unblocked | NodeSupervisor state machine. All deps closed (4qam✅, fdtq✅, z5ml✅, ze8d✅). Context health read from specialist_events (ze8d). |
-| unitAI-iy5g | — | 🔜 blocked on 69rw | Coordinator JSON contract enforcement + 3-attempt repair loop |
-| unitAI-w0cg | — | 🔜 blocked on 69rw | Node feed isolation: sp node feed, node_id tagging in member jobs. node_id column exists (ftu5). |
-| unitAI-780u | — | 🔜 blocked on iy5g | Shared memory patch validation + SQLite persistence (node_memory table ready from z5ml). |
-| unitAI-u9my | — | 🔜 blocked on 69rw | Beads-first reporting + sp node promote flow |
+| unitAI-69rw | ce5cd8 (planner) → usy9 (epic) | ✅ CLOSED | Decomposed into epic usy9 with 5 children. Overthinker-validated composition architecture (l8lj). |
+| unitAI-usy9 | — | ✅ CLOSED (EPIC) | 5 children: dv08, x77p, 36s6, ef7b, yldo. All closed. |
+| unitAI-dv08 | 013652 (executor) | ✅ CLOSED — commit c91adfbc | JobControl adapter (144 lines). Thin Supervisor wrapper: startJob/resumeJob/steerJob/stopJob/readStatus/readResult/waitForTerminal. Reviewer PASS 88/100. Fixed: 'stopped' added to TERMINAL_STATUSES post-review. |
+| unitAI-x77p | 8171d4 (executor) | ✅ CLOSED — commit d4155e98 | NodeSupervisor class (573 lines). 8 states, 17 validated transitions, member registry with generation tracking, FIFO dispatch queue with dedup, auto-resume with output hash dedupe, context health injection, degraded recovery. Reviewer PASS 91/100. |
+| unitAI-36s6 | b4c616 (executor) | ✅ CLOSED — commit 733a6ead | `specialists node run/status` CLI (363 lines). Wired into src/index.ts + help.ts. |
+| unitAI-ef7b | 4647ff (executor) | ✅ CLOSED — commit 29387cbb | 93 state machine transition tests. All 17 valid transitions + terminal state validation. |
+| unitAI-yldo | 95aff1 (executor) | ✅ CLOSED — commit 0b48b702 | 6 orchestration tests (registry, poll, resume, dispatch). 3 mock wiring fixes applied post-merge. |
+| unitAI-iy5g | 8a04a3 (executor) + fc147c (reviewer) | ✅ CLOSED — commit 94766ded | Coordinator JSON contract enforcement: Zod schema (summary, memory_patch, actions), 3-attempt repair loop with explicit error prompts, node→error after 3 failures. 293 lines added to node-supervisor.ts. Reviewer PASS 95/100. |
+| unitAI-w0cg | d5aafa (executor) + 961113 (reviewer) | ✅ CLOSED — commit 4dabf5ad | Node feed isolation: `sp node feed <node-id>`, node_id filtering in feed/status/list, member jobs get node_id in status.json. 96 lines changed across 5 files. Reviewer PASS 94/100. |
+| unitAI-u9my | eb42ca (executor) | ✅ CLOSED — commit 0a4c8859 | `sp node promote <node-id> <finding-id> --to-bead`, bead summary append on node completion, --bead support on node run. 174 lines. Conflict resolution with iy5g+w0cg (commit 52d375a7). |
+| unitAI-780u | — | 🔜 unblocked (iy5g✅) | Shared memory patch validation + SQLite persistence (node_memory table ready from z5ml). |
+| unitAI-vfad | — | 🔜 unblocked (iy5g✅ + w0cg✅ + u9my✅) | **E2E validation**: run NodeSupervisor with real specialists, validate full lifecycle (bootstrap→spawn→poll→resume→dispatch→completion→bead append). No unit tests cover this path. |
 | unitAI-i6up | — | 🔜 blocked on 16ov✅ + e242 + 22tq | Research node v1A preset definitions |
 
-**Dep chain**: ~~hhs6 → fdtq → z5ml~~ ALL DONE → 69rw → {iy5g, w0cg, u9my} → {780u}
+**Dep chain**: ~~69rw → {iy5g, w0cg, u9my}~~ ALL DONE → {780u, vfad} → i6up
 
-**Next**: 69rw is the gate for all remaining Stage 3 work.
+**Next**: 780u (shared memory patch) + vfad (E2E validation) are unblocked. i6up waiting on config pipeline (e242+22tq).
 
 ---
 
@@ -696,13 +703,15 @@ Stage 2 — SQLite Runtime
 Stage 3 — Node v1A Core (needs Stage 0 + Stage 2)
   z5ml [EPIC] (node SQLite persistence)       ✅ commits 512a2d18 + 8d2581ef + 804bb451 + e79c66b0
        ↓
-  69rw (NodeSupervisor state machine)        ← ALL DEPS CLOSED — ready to start
+  69rw [EPIC usy9] (NodeSupervisor)           ✅ 5 children: dv08 (JobControl), x77p (NodeSupervisor 573L), 36s6 (CLI), ef7b (93 tests), yldo (6 tests)
        ↓
-  iy5g (coordinator contract + repair loop)  ← needs 69rw
-  w0cg (feed isolation + node_id tagging)    ← needs z5ml + 69rw
-  780u (memory patch pipeline)               ← needs z5ml + iy5g
-  u9my (beads promotion / sp node promote)   ← needs 69rw
-  i6up (v1A preset definitions)              ← needs 16ov + e242 + 22tq
+  iy5g (coordinator contract + repair loop)   ✅ commit 94766ded — Zod schema + 3-attempt repair
+  w0cg (feed isolation + node_id tagging)     ✅ commit 4dabf5ad — sp node feed, filtering in feed/status/list
+  u9my (beads promotion / sp node promote)    ✅ commit 0a4c8859 — sp node promote + bead append on completion
+       ↓
+  780u (memory patch pipeline)               ← unblocked (iy5g✅)
+  vfad (E2E: real NodeSupervisor run)        ← unblocked (iy5g✅ + w0cg✅ + u9my✅) — CRITICAL: no real run yet
+  i6up (v1A preset definitions)              ← needs 16ov✅ + e242 + 22tq
 
 Stage 4 — Node v1B Researcher (needs Stage 3 + MCP wiring)
   gzrx (centralized manifest)
