@@ -305,23 +305,53 @@ export function initSchema(db: BunDb): void {
     );
   `);
 
-  // Step 2: idempotent v1 migration — rebuild specialist_jobs with new columns.
+  const specialistJobsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  const missingSpecialistJobsColumns: Array<{ name: string; definition: string }> = [
+    { name: 'worktree_column', definition: 'TEXT' },
+    { name: 'bead_id', definition: 'TEXT' },
+    { name: 'node_id', definition: 'TEXT' },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'starting'" },
+    { name: 'last_output', definition: 'TEXT' },
+  ].filter(({ name }) => !specialistJobsColumns.has(name));
+
+  for (const missingColumn of missingSpecialistJobsColumns) {
+    db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
+  }
+
+  // Step 2: idempotent v1 migration — rebuild specialist_jobs with a superset
+  // of columns so subsequent migrations can run safely on repeated initSchema calls.
   db.run(`
     CREATE TABLE IF NOT EXISTS specialist_jobs_new (
-      job_id         TEXT PRIMARY KEY,
-      specialist     TEXT NOT NULL,
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
       worktree_column TEXT,
-      status_json    TEXT NOT NULL,
-      updated_at_ms  INTEGER NOT NULL,
-      last_output    TEXT
+      bead_id         TEXT,
+      node_id         TEXT,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT
     );
     INSERT OR IGNORE INTO specialist_jobs_new
-      SELECT job_id, specialist, NULL, status_json, updated_at_ms, NULL
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        bead_id,
+        node_id,
+        COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
+        status_json,
+        updated_at_ms,
+        last_output
       FROM specialist_jobs;
     DROP TABLE IF EXISTS specialist_jobs;
     ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
-
   migrateToV2(db);
   migrateToV3(db);
   migrateToV4(db);
