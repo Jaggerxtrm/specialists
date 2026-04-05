@@ -63,6 +63,8 @@ specialist:
     paths:
       - .xtrm/skills/active/pi/using-quality-gates/SKILL.md
       - .xtrm/skills/active/pi/clean-code/SKILL.md
+      - .xtrm/skills/active/pi/gitnexus-refactoring/SKILL.md
+      - .xtrm/skills/active/pi/gitnexus-impact-analysis/SKILL.md
 
   validation:
     files_to_watch:

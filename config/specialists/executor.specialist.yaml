@@ -11,7 +11,7 @@ specialist:
     tags: [ implementation, codegen, execution, heavy-lift ]
 
   execution:
-    model: dashscope/qwen3.5-plus
+    model: openai-codex/gpt-5.3-codex
     fallback_model: anthropic/claude-sonnet-4-6
     timeout_ms: 0
     stall_timeout_ms: 120000

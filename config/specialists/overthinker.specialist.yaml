@@ -67,6 +67,7 @@ specialist:
       - .xtrm/skills/active/pi/deepwiki/
       - .xtrm/skills/active/pi/find-docs/
       - .xtrm/skills/active/pi/github-search/
+      - .xtrm/skills/active/pi/gitnexus-exploring/SKILL.md
   validation:
     files_to_watch:
       - src/specialist/schema.ts

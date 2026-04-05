@@ -54,6 +54,7 @@ specialist:
   skills:
     paths:
       - ~/.agents/skills/sync-docs/SKILL.md
+      - .xtrm/skills/active/pi/gitnexus-exploring/SKILL.md
 
   validation:
     files_to_watch:

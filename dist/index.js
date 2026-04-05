@@ -20212,6 +20212,39 @@ function verifyWalMode(db) {
     throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
   }
 }
+function migrateToV2(db) {
+  const hasV2 = db.query("SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1").get();
+  if (hasV2) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      status_json     TEXT NOT NULL,
+      bead_id         TEXT,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v2
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        status_json,
+        JSON_EXTRACT(status_json, '$.bead_id'),
+        updated_at_ms,
+        last_output
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (2, strftime('%s', 'now') * 1000);
+  `);
+}
 function initSchema(db) {
   enforceWalMode(db);
   db.run(`
@@ -20264,6 +20297,7 @@ function initSchema(db) {
     DROP TABLE IF EXISTS specialist_jobs;
     ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
   `);
+  migrateToV2(db);
   verifyWalMode(db);
 }
 
@@ -20275,16 +20309,19 @@ class SqliteClient {
     this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
     this.db.run("PRAGMA journal_mode=WAL");
   }
-  writeStatusRow(status) {
+  writeStatusRow(status, lastOutput) {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, status_json, updated_at_ms)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, status_json, bead_id, worktree_column, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [status.id, status.specialist, statusJson, Date.now()]);
+        bead_id = excluded.bead_id,
+        worktree_column = excluded.worktree_column,
+        updated_at_ms = excluded.updated_at_ms,
+        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output);
+    `, [status.id, status.specialist, statusJson, status.bead_id ?? null, status.worktree_path ?? null, Date.now(), lastOutput ?? null]);
   }
   writeEventRow(jobId, specialist, beadId, event) {
     const eventJson = JSON.stringify(event);
@@ -20319,7 +20356,7 @@ class SqliteClient {
   upsertStatusWithEventAndResult(status, event, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status);
+        this.writeStatusRow(status, output);
         this.writeEventRow(status.id, status.specialist, status.bead_id, event);
         this.writeResultRow(status.id, output);
       });
@@ -20334,6 +20371,9 @@ class SqliteClient {
   upsertResult(jobId, output) {
     withRetry(() => {
       this.writeResultRow(jobId, output);
+      this.db.run(`
+        UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
+      `, [output, jobId]);
     }, "upsertResult");
   }
   readStatus(jobId) {
@@ -21090,13 +21130,14 @@ function createFinishReasonEvent(finish_reason, source) {
     source
   };
 }
-function createTurnSummaryEvent(turn_index, token_usage, finish_reason) {
+function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent) {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
     turn_index,
     ...token_usage ? { token_usage } : {},
-    ...finish_reason ? { finish_reason } : {}
+    ...finish_reason ? { finish_reason } : {},
+    ...textContent ? { text_content: textContent } : {}
   };
 }
 function createCompactionEvent(phase) {
@@ -21521,6 +21562,7 @@ class Supervisor {
     };
     let textCharCount = 0;
     let thinkingCharCount = 0;
+    let turnTextAccumulator = "";
     const toolCallNames = [];
     const activeToolCalls = new Map;
     let killFn;
@@ -21645,6 +21687,11 @@ class Supervisor {
           currentTool = toolMatch[1];
           setStatus({ current_tool: currentTool });
         }
+        if (delta !== `✓
+` && !delta.startsWith(`
+⚙ `) && !delta.startsWith("\uD83D\uDCAD ")) {
+          turnTextAccumulator += delta;
+        }
         this.opts.onProgress?.(delta);
       }, (eventType, details) => {
         const now = Date.now();
@@ -21659,6 +21706,10 @@ class Supervisor {
         if (eventType === "turn_start") {
           textCharCount = 0;
           thinkingCharCount = 0;
+          turnTextAccumulator = "";
+        }
+        if (eventType === "message_start_assistant") {
+          turnTextAccumulator = "";
         }
         if (eventType === "text") {
           textCharCount += details?.charCount ?? 0;
@@ -21698,7 +21749,8 @@ class Supervisor {
             ...metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {},
             ...metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}
           });
-          appendTimelineEvent(createTurnSummaryEvent(metricEvent.turn_index, metricEvent.token_usage, metricEvent.finish_reason));
+          appendTimelineEvent(createTurnSummaryEvent(metricEvent.turn_index, metricEvent.token_usage, metricEvent.finish_reason, turnTextAccumulator || undefined));
+          turnTextAccumulator = "";
           return;
         }
         if (metricEvent.type === "compaction") {
@@ -22789,7 +22841,13 @@ function parseStatusArgs(argv) {
   }
   return { jsonMode, jobId };
 }
-function countJobEvents(jobsDir, jobId) {
+function countJobEvents(sqliteClient, jobsDir, jobId) {
+  try {
+    const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
+    if (sqliteEvents.length > 0) {
+      return sqliteEvents.length;
+    }
+  } catch {}
   const eventsFile = join15(jobsDir, jobId, "events.jsonl");
   if (!existsSync14(eventsFile))
     return 0;
@@ -22864,160 +22922,166 @@ async function run11() {
     process.exit(1);
   }
   const { jsonMode, jobId } = parsedArgs;
-  const loader = new SpecialistLoader;
-  const allSpecialists = await loader.list();
-  const piInstalled = isInstalled("pi");
-  const piVersion = piInstalled ? cmd("pi", ["--version"]) : null;
-  const piModels = piInstalled ? cmd("pi", ["--list-models"]) : null;
-  const piProviders = piModels ? new Set(piModels.stdout.split(`
+  const sqliteClient = createObservabilitySqliteClient();
+  try {
+    const loader = new SpecialistLoader;
+    const allSpecialists = await loader.list();
+    const piInstalled = isInstalled("pi");
+    const piVersion = piInstalled ? cmd("pi", ["--version"]) : null;
+    const piModels = piInstalled ? cmd("pi", ["--list-models"]) : null;
+    const piProviders = piModels ? new Set(piModels.stdout.split(`
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
-  const bdInstalled = isInstalled("bd");
-  const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-  const beadsPresent = existsSync14(join15(process.cwd(), ".beads"));
-  const specialistsBin = cmd("which", ["specialists"]);
-  const jobsDir = resolveJobsDir();
-  let jobs = [];
-  let supervisor = null;
-  if (existsSync14(jobsDir)) {
-    supervisor = new Supervisor({
-      runner: null,
-      runOptions: null,
-      jobsDir
-    });
-    jobs = supervisor.listJobs();
-  }
-  if (jobId) {
-    const selectedJob = supervisor?.readStatus(jobId) ?? null;
-    if (!selectedJob) {
-      if (jsonMode) {
-        console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
-      } else {
-        fail(`job not found: ${jobId}`);
-      }
-      process.exit(1);
+    const bdInstalled = isInstalled("bd");
+    const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
+    const beadsPresent = existsSync14(join15(process.cwd(), ".beads"));
+    const specialistsBin = cmd("which", ["specialists"]);
+    const jobsDir = resolveJobsDir();
+    let jobs = [];
+    let supervisor = null;
+    if (existsSync14(jobsDir)) {
+      supervisor = new Supervisor({
+        runner: null,
+        runOptions: null,
+        jobsDir
+      });
+      jobs = supervisor.listJobs();
     }
-    const eventCount = countJobEvents(jobsDir, jobId);
-    if (jsonMode) {
-      console.log(JSON.stringify({
-        job: {
-          ...selectedJob,
-          event_count: eventCount
+    if (jobId) {
+      const selectedJob = supervisor?.readStatus(jobId) ?? null;
+      if (!selectedJob) {
+        if (jsonMode) {
+          console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
+        } else {
+          fail(`job not found: ${jobId}`);
         }
-      }, null, 2));
+        process.exit(1);
+      }
+      const eventCount = countJobEvents(sqliteClient, jobsDir, jobId);
+      if (jsonMode) {
+        console.log(JSON.stringify({
+          job: {
+            ...selectedJob,
+            event_count: eventCount
+          }
+        }, null, 2));
+        return;
+      }
+      renderJobDetail(selectedJob, eventCount);
       return;
     }
-    renderJobDetail(selectedJob, eventCount);
-    return;
-  }
-  const stalenessMap = {};
-  for (const s of allSpecialists) {
-    stalenessMap[s.name] = await checkStaleness(s);
-  }
-  if (jsonMode) {
-    const output = {
-      specialists: {
-        count: allSpecialists.length,
-        items: allSpecialists.map((s) => ({
-          name: s.name,
-          scope: s.scope,
-          model: s.model,
-          description: s.description,
-          staleness: stalenessMap[s.name]
+    const stalenessMap = {};
+    for (const s of allSpecialists) {
+      stalenessMap[s.name] = await checkStaleness(s);
+    }
+    if (jsonMode) {
+      const output = {
+        specialists: {
+          count: allSpecialists.length,
+          items: allSpecialists.map((s) => ({
+            name: s.name,
+            scope: s.scope,
+            model: s.model,
+            description: s.description,
+            staleness: stalenessMap[s.name]
+          }))
+        },
+        pi: {
+          installed: piInstalled,
+          version: piVersion?.stdout ?? null,
+          providers: [...piProviders]
+        },
+        beads: {
+          installed: bdInstalled,
+          version: bdVersion?.stdout ?? null,
+          initialized: beadsPresent
+        },
+        mcp: {
+          specialists_installed: specialistsBin.ok,
+          binary_path: specialistsBin.ok ? specialistsBin.stdout : null
+        },
+        jobs: jobs.map((j) => ({
+          id: j.id,
+          specialist: j.specialist,
+          status: j.status,
+          elapsed_s: j.elapsed_s,
+          current_tool: j.current_tool ?? null,
+          metrics: j.metrics ?? null,
+          error: j.error ?? null
         }))
-      },
-      pi: {
-        installed: piInstalled,
-        version: piVersion?.stdout ?? null,
-        providers: [...piProviders]
-      },
-      beads: {
-        installed: bdInstalled,
-        version: bdVersion?.stdout ?? null,
-        initialized: beadsPresent
-      },
-      mcp: {
-        specialists_installed: specialistsBin.ok,
-        binary_path: specialistsBin.ok ? specialistsBin.stdout : null
-      },
-      jobs: jobs.map((j) => ({
-        id: j.id,
-        specialist: j.specialist,
-        status: j.status,
-        elapsed_s: j.elapsed_s,
-        current_tool: j.current_tool ?? null,
-        metrics: j.metrics ?? null,
-        error: j.error ?? null
-      }))
-    };
-    console.log(JSON.stringify(output, null, 2));
-    return;
-  }
-  console.log(`
+      };
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`
 ${bold8("specialists status")}
 `);
-  section("Specialists");
-  if (allSpecialists.length === 0) {
-    warn(`no specialists found — run ${yellow9("specialists init")} to scaffold`);
-  } else {
-    const byScope = allSpecialists.reduce((acc, s) => {
-      acc[s.scope] = (acc[s.scope] ?? 0) + 1;
-      return acc;
-    }, {});
-    const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
-    ok2(`${allSpecialists.length} found  ${dim7(`(${scopeSummary})`)}`);
-    for (const s of allSpecialists) {
-      const staleness = stalenessMap[s.name];
-      if (staleness === "AGED") {
-        warn(`${s.name}  ${red2("AGED")}  ${dim7(s.scope)}`);
-      } else if (staleness === "STALE") {
-        warn(`${s.name}  ${yellow9("STALE")}  ${dim7(s.scope)}`);
+    section("Specialists");
+    if (allSpecialists.length === 0) {
+      warn(`no specialists found — run ${yellow9("specialists init")} to scaffold`);
+    } else {
+      const byScope = allSpecialists.reduce((acc, s) => {
+        acc[s.scope] = (acc[s.scope] ?? 0) + 1;
+        return acc;
+      }, {});
+      const scopeSummary = Object.entries(byScope).map(([scope, n]) => `${n} ${scope}`).join(", ");
+      ok2(`${allSpecialists.length} found  ${dim7(`(${scopeSummary})`)}`);
+      for (const s of allSpecialists) {
+        const staleness = stalenessMap[s.name];
+        if (staleness === "AGED") {
+          warn(`${s.name}  ${red2("AGED")}  ${dim7(s.scope)}`);
+        } else if (staleness === "STALE") {
+          warn(`${s.name}  ${yellow9("STALE")}  ${dim7(s.scope)}`);
+        }
       }
     }
-  }
-  section("pi  (coding agent runtime)");
-  if (!piInstalled) {
-    fail(`pi not installed — install ${yellow9("pi")} first`);
-  } else {
-    const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
-    const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim7(`(${[...piProviders].join(", ")})`)} ` : yellow9("no providers configured — run pi config");
-    ok2(`${vStr}  —  ${pStr}`);
-  }
-  section("beads  (issue tracker)");
-  if (!bdInstalled) {
-    fail(`bd not installed — install ${yellow9("bd")} first`);
-  } else {
-    ok2(`bd installed${bdVersion?.ok ? `  ${dim7(bdVersion.stdout)}` : ""}`);
-    if (beadsPresent) {
-      ok2(".beads/ present in project");
+    section("pi  (coding agent runtime)");
+    if (!piInstalled) {
+      fail(`pi not installed — install ${yellow9("pi")} first`);
     } else {
-      warn(`.beads/ not found — run ${yellow9("bd init")} to enable issue tracking`);
+      const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
+      const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim7(`(${[...piProviders].join(", ")})`)} ` : yellow9("no providers configured — run pi config");
+      ok2(`${vStr}  —  ${pStr}`);
     }
-  }
-  section("MCP");
-  if (!specialistsBin.ok) {
-    fail(`specialists not installed globally — run ${yellow9("npm install -g @jaggerxtrm/specialists")}`);
-  } else {
-    ok2(`specialists binary installed  ${dim7(specialistsBin.stdout)}`);
-    info(`verify registration: claude mcp get specialists`);
-    info(`re-register:         specialists install`);
-  }
-  section("Active Jobs");
-  if (jobs.length === 0) {
-    info("  (none)");
-  } else {
-    for (const job of jobs) {
-      const elapsed = formatElapsed2(job);
-      const metricsInline = formatMetricsInline(job.metrics);
-      const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : metricsInline ? dim7(metricsInline) : dim7(job.current_event ?? "");
-      console.log(`  ${dim7(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
+    section("beads  (issue tracker)");
+    if (!bdInstalled) {
+      fail(`bd not installed — install ${yellow9("bd")} first`);
+    } else {
+      ok2(`bd installed${bdVersion?.ok ? `  ${dim7(bdVersion.stdout)}` : ""}`);
+      if (beadsPresent) {
+        ok2(".beads/ present in project");
+      } else {
+        warn(`.beads/ not found — run ${yellow9("bd init")} to enable issue tracking`);
+      }
     }
+    section("MCP");
+    if (!specialistsBin.ok) {
+      fail(`specialists not installed globally — run ${yellow9("npm install -g @jaggerxtrm/specialists")}`);
+    } else {
+      ok2(`specialists binary installed  ${dim7(specialistsBin.stdout)}`);
+      info(`verify registration: claude mcp get specialists`);
+      info(`re-register:         specialists install`);
+    }
+    section("Active Jobs");
+    if (jobs.length === 0) {
+      info("  (none)");
+    } else {
+      for (const job of jobs) {
+        const elapsed = formatElapsed2(job);
+        const metricsInline = formatMetricsInline(job.metrics);
+        const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.current_tool ? dim7(`tool: ${job.current_tool}`) : metricsInline ? dim7(metricsInline) : dim7(job.current_event ?? "");
+        console.log(`  ${dim7(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
+      }
+    }
+    console.log();
+  } finally {
+    sqliteClient?.close();
   }
-  console.log();
 }
 var init_status = __esm(() => {
   init_loader();
   init_supervisor();
   init_job_root();
+  init_observability_sqlite();
   init_format_helpers();
 });
 
@@ -23062,145 +23126,150 @@ function parseArgs7(argv) {
 async function run12() {
   const args = parseArgs7(process.argv.slice(3));
   const { jobId } = args;
-  const emitJson = (status2, output2, error2) => {
+  const emitJson = (status, output, error2) => {
     console.log(JSON.stringify({
-      job: status2 ? {
-        id: status2.id,
-        specialist: status2.specialist,
-        status: status2.status,
-        model: status2.model ?? null,
-        backend: status2.backend ?? null,
-        bead_id: status2.bead_id ?? null,
-        metrics: status2.metrics ?? null,
-        error: status2.error ?? null
+      job: status ? {
+        id: status.id,
+        specialist: status.specialist,
+        status: status.status,
+        model: status.model ?? null,
+        backend: status.backend ?? null,
+        bead_id: status.bead_id ?? null,
+        metrics: status.metrics ?? null,
+        error: status.error ?? null
       } : null,
-      output: output2,
+      output,
       error: error2
     }, null, 2));
   };
   const jobsDir = join16(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
-  const resultPath = join16(jobsDir, jobId, "result.txt");
-  const readResultOutput = () => {
-    if (existsSync15(resultPath)) {
+  try {
+    const resultPath = join16(jobsDir, jobId, "result.txt");
+    const readResultOutput = () => {
+      try {
+        const sqliteResult = sqliteClient?.readResult(jobId) ?? null;
+        if (sqliteResult)
+          return sqliteResult;
+      } catch {}
+      if (!existsSync15(resultPath)) {
+        return null;
+      }
       return readFileSync9(resultPath, "utf-8");
-    }
-    try {
-      return sqliteClient?.readResult(jobId) ?? null;
-    } catch {
-      return null;
-    }
-  };
-  if (args.wait) {
-    const startMs = Date.now();
-    while (true) {
-      const status2 = supervisor.readStatus(jobId);
-      if (!status2) {
-        if (args.json) {
-          emitJson(null, null, `No job found: ${jobId}`);
-        } else {
-          console.error(`No job found: ${jobId}`);
-        }
-        process.exit(1);
-      }
-      if (status2.status === "done") {
-        const output2 = readResultOutput();
-        if (!output2) {
+    };
+    if (args.wait) {
+      const startMs = Date.now();
+      while (true) {
+        const status2 = supervisor.readStatus(jobId);
+        if (!status2) {
           if (args.json) {
-            emitJson(status2, null, `Result not found for job ${jobId}`);
+            emitJson(null, null, `No job found: ${jobId}`);
           } else {
-            console.error(`Result not found for job ${jobId}`);
+            console.error(`No job found: ${jobId}`);
           }
           process.exit(1);
         }
-        if (args.json) {
-          emitJson(status2, output2, null);
-        } else {
-          process.stdout.write(output2);
-        }
-        return;
-      }
-      if (status2.status === "error") {
-        const message = `Job ${jobId} failed: ${status2.error ?? "unknown error"}`;
-        if (args.json) {
-          emitJson(status2, null, message);
-        } else {
-          process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status2.error ?? "unknown error"}
-`);
-        }
-        process.exit(1);
-      }
-      if (args.timeout !== undefined) {
-        const elapsedSecs = (Date.now() - startMs) / 1000;
-        if (elapsedSecs >= args.timeout) {
-          const timeoutMessage = `Timeout: job ${jobId} did not complete within ${args.timeout}s`;
+        if (status2.status === "done") {
+          const output2 = readResultOutput();
+          if (!output2) {
+            if (args.json) {
+              emitJson(status2, null, `Result not found for job ${jobId}`);
+            } else {
+              console.error(`Result not found for job ${jobId}`);
+            }
+            process.exit(1);
+          }
           if (args.json) {
-            emitJson(status2, null, timeoutMessage);
+            emitJson(status2, output2, null);
           } else {
-            process.stderr.write(`${timeoutMessage}
+            process.stdout.write(output2);
+          }
+          return;
+        }
+        if (status2.status === "error") {
+          const message = `Job ${jobId} failed: ${status2.error ?? "unknown error"}`;
+          if (args.json) {
+            emitJson(status2, null, message);
+          } else {
+            process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status2.error ?? "unknown error"}
 `);
           }
           process.exit(1);
         }
+        if (args.timeout !== undefined) {
+          const elapsedSecs = (Date.now() - startMs) / 1000;
+          if (elapsedSecs >= args.timeout) {
+            const timeoutMessage = `Timeout: job ${jobId} did not complete within ${args.timeout}s`;
+            if (args.json) {
+              emitJson(status2, null, timeoutMessage);
+            } else {
+              process.stderr.write(`${timeoutMessage}
+`);
+            }
+            process.exit(1);
+          }
+        }
+        await new Promise((r) => setTimeout(r, 1000));
       }
-      await new Promise((r) => setTimeout(r, 1000));
     }
-  }
-  const status = supervisor.readStatus(jobId);
-  if (!status) {
-    if (args.json) {
-      emitJson(null, null, `No job found: ${jobId}`);
-    } else {
-      console.error(`No job found: ${jobId}`);
+    const status = supervisor.readStatus(jobId);
+    if (!status) {
+      if (args.json) {
+        emitJson(null, null, `No job found: ${jobId}`);
+      } else {
+        console.error(`No job found: ${jobId}`);
+      }
+      process.exit(1);
     }
-    process.exit(1);
-  }
-  if (status.status === "running" || status.status === "starting" || status.status === "waiting") {
-    const output2 = readResultOutput();
-    if (!output2) {
-      const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
+    if (status.status === "running" || status.status === "starting" || status.status === "waiting") {
+      const output2 = readResultOutput();
+      if (!output2) {
+        const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
+        if (args.json) {
+          emitJson(status, null, message);
+        } else {
+          process.stderr.write(`${dim9(message)}
+`);
+        }
+        process.exit(1);
+      }
+      if (args.json) {
+        emitJson(status, output2, null);
+      } else {
+        process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
+`);
+        process.stdout.write(output2);
+      }
+      return;
+    }
+    if (status.status === "error") {
+      const message = `Job ${jobId} failed: ${status.error ?? "unknown error"}`;
       if (args.json) {
         emitJson(status, null, message);
       } else {
-        process.stderr.write(`${dim9(message)}
+        process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
 `);
       }
       process.exit(1);
     }
-    if (args.json) {
-      emitJson(status, output2, null);
-    } else {
-      process.stderr.write(`${dim9(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
-`);
-      process.stdout.write(output2);
+    const output = readResultOutput();
+    if (!output) {
+      if (args.json) {
+        emitJson(status, null, `Result not found for job ${jobId}`);
+      } else {
+        console.error(`Result not found for job ${jobId}`);
+      }
+      process.exit(1);
     }
-    return;
-  }
-  if (status.status === "error") {
-    const message = `Job ${jobId} failed: ${status.error ?? "unknown error"}`;
     if (args.json) {
-      emitJson(status, null, message);
-    } else {
-      process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
-`);
+      emitJson(status, output, null);
+      return;
     }
-    process.exit(1);
+    process.stdout.write(output);
+  } finally {
+    sqliteClient?.close();
   }
-  const output = readResultOutput();
-  if (!output) {
-    if (args.json) {
-      emitJson(status, null, `Result not found for job ${jobId}`);
-    } else {
-      console.error(`Result not found for job ${jobId}`);
-    }
-    process.exit(1);
-  }
-  if (args.json) {
-    emitJson(status, output, null);
-    return;
-  }
-  process.stdout.write(output);
 }
 var dim9 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
@@ -23437,7 +23506,7 @@ function readFileFresh(filePath) {
     return null;
   }
 }
-function readStatusJson(jobsDir, jobId) {
+function readStatusJson(sqliteClient, jobsDir, jobId) {
   try {
     const sqliteStatus = sqliteClient?.readStatus(jobId);
     if (sqliteStatus)
@@ -23453,12 +23522,12 @@ function readStatusJson(jobsDir, jobId) {
     return null;
   }
 }
-function isTerminalJobStatus(jobsDir, jobId) {
-  const status = readStatusJson(jobsDir, jobId);
+function isTerminalJobStatus(sqliteClient, jobsDir, jobId) {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
   return status?.status === "done" || status?.status === "error";
 }
-function readJobMeta(jobsDir, jobId) {
-  const status = readStatusJson(jobsDir, jobId);
+function readJobMeta(sqliteClient, jobsDir, jobId) {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
   if (!status)
     return { startedAtMs: Date.now() };
   return {
@@ -23469,17 +23538,17 @@ function readJobMeta(jobsDir, jobId) {
     startedAtMs: typeof status.started_at_ms === "number" ? status.started_at_ms : Date.now()
   };
 }
-function makeJobMetaReader(jobsDir, options = {}) {
+function makeJobMetaReader(sqliteClient, jobsDir, options = {}) {
   const useCache = options.useCache ?? true;
   if (!useCache) {
-    return (jobId) => readJobMeta(jobsDir, jobId);
+    return (jobId) => readJobMeta(sqliteClient, jobsDir, jobId);
   }
   const cache = new Map;
   return (jobId) => {
     const cached2 = cache.get(jobId);
     if (cached2)
       return cached2;
-    const meta = readJobMeta(jobsDir, jobId);
+    const meta = readJobMeta(sqliteClient, jobsDir, jobId);
     cache.set(jobId, meta);
     return meta;
   };
@@ -23532,7 +23601,7 @@ function parseArgs8(argv) {
   }
   return { jobId, specialist, since, from, limit, follow, forever, json };
 }
-function printSnapshot(merged, options, jobsDir) {
+function printSnapshot(sqliteClient, merged, options, jobsDir) {
   if (merged.length === 0) {
     if (!options.json)
       console.log(dim7("No events found."));
@@ -23540,7 +23609,7 @@ function printSnapshot(merged, options, jobsDir) {
   }
   const colorMap = new JobColorMap;
   if (options.json) {
-    const getJobMeta2 = jobsDir ? makeJobMetaReader(jobsDir) : () => ({ startedAtMs: Date.now() });
+    const getJobMeta2 = jobsDir ? makeJobMetaReader(sqliteClient, jobsDir) : () => ({ startedAtMs: Date.now() });
     for (const { jobId, specialist, beadId, event } of merged) {
       const meta = getJobMeta2(jobId);
       const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
@@ -23561,7 +23630,7 @@ function printSnapshot(merged, options, jobsDir) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
-  const getJobMeta = jobsDir ? makeJobMetaReader(jobsDir) : () => ({ startedAtMs: Date.now() });
+  const getJobMeta = jobsDir ? makeJobMetaReader(sqliteClient, jobsDir) : () => ({ startedAtMs: Date.now() });
   for (const { jobId, specialist, beadId, event } of merged) {
     if (!shouldRenderHumanEvent(event))
       continue;
@@ -23589,7 +23658,7 @@ function filterMergedEventsByCursor(merged, from) {
     return merged;
   return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
 }
-function listMatchingJobIds(jobsDir, options) {
+function listMatchingJobIds(sqliteClient, jobsDir, options) {
   if (!existsSync17(jobsDir))
     return [];
   const jobIds = [];
@@ -23604,7 +23673,7 @@ function listMatchingJobIds(jobsDir, options) {
     if (options.jobId && entry !== options.jobId)
       continue;
     if (options.specialist) {
-      const status = readStatusJson(jobsDir, entry);
+      const status = readStatusJson(sqliteClient, jobsDir, entry);
       const specialist = typeof status?.specialist === "string" ? status.specialist : undefined;
       if (specialist !== options.specialist)
         continue;
@@ -23613,7 +23682,7 @@ function listMatchingJobIds(jobsDir, options) {
   }
   return jobIds;
 }
-function readJobEventsFresh(jobsDir, jobId) {
+function readJobEventsFresh(sqliteClient, jobsDir, jobId) {
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
@@ -23637,35 +23706,35 @@ function readJobEventsFresh(jobsDir, jobId) {
   events.sort((a, b) => a.t - b.t);
   return events;
 }
-function readFilteredBatchesFresh(jobsDir, options) {
+function readFilteredBatchesFresh(sqliteClient, jobsDir, options) {
   const batches = [];
-  for (const jobId of listMatchingJobIds(jobsDir, options)) {
-    const status = readStatusJson(jobsDir, jobId);
+  for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
+    const status = readStatusJson(sqliteClient, jobsDir, jobId);
     const specialist = typeof status?.specialist === "string" ? status.specialist : "unknown";
     const beadId = typeof status?.bead_id === "string" ? status.bead_id : undefined;
-    const events = readJobEventsFresh(jobsDir, jobId);
+    const events = readJobEventsFresh(sqliteClient, jobsDir, jobId);
     if (events.length === 0)
       continue;
     batches.push({ jobId, specialist, beadId, events });
   }
   return batches;
 }
-async function followMerged(jobsDir, options) {
+async function followMerged(sqliteClient, jobsDir, options) {
   const colorMap = new JobColorMap;
-  const getJobMeta = makeJobMetaReader(jobsDir, { useCache: false });
+  const getJobMeta = makeJobMetaReader(sqliteClient, jobsDir, { useCache: false });
   const lastSeenT = new Map;
-  const initialMatchingJobIds = listMatchingJobIds(jobsDir, options);
+  const initialMatchingJobIds = listMatchingJobIds(sqliteClient, jobsDir, options);
   const hasInitialMatchingJobs = initialMatchingJobIds.length > 0;
-  const trackedJobs = new Set(initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(jobsDir, jobId)));
+  const trackedJobs = new Set(initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(sqliteClient, jobsDir, jobId)));
   const completedJobs = new Set;
-  const filteredBatches = () => readFilteredBatchesFresh(jobsDir, options);
+  const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
   const initial = filterMergedEventsByCursor(queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit
   }), options.from);
-  printSnapshot(initial, { ...options, json: options.json }, jobsDir);
+  printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
   for (const batch of filteredBatches()) {
     if (batch.events.length > 0) {
       const maxT = Math.max(...batch.events.map((event) => event.t));
@@ -23700,13 +23769,13 @@ async function followMerged(jobsDir, options) {
   await new Promise((resolve5) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
-      for (const jobId of listMatchingJobIds(jobsDir, options)) {
-        if (!isTerminalJobStatus(jobsDir, jobId)) {
+      for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
+        if (!isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
           trackedJobs.add(jobId);
         }
       }
       for (const jobId of trackedJobs) {
-        if (isTerminalJobStatus(jobsDir, jobId)) {
+        if (isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
           completedJobs.add(jobId);
         }
       }
@@ -23727,7 +23796,7 @@ async function followMerged(jobsDir, options) {
           const maxT = Math.max(...batch.events.map((e) => e.t));
           lastSeenT.set(batch.jobId, maxT);
         }
-        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(jobsDir, batch.jobId))) {
+        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(sqliteClient, jobsDir, batch.jobId))) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -23767,33 +23836,36 @@ async function followMerged(jobsDir, options) {
 }
 async function run13() {
   const options = parseArgs8(process.argv.slice(3));
-  const jobsDir = join18(process.cwd(), ".specialists", "jobs");
-  if (!existsSync17(jobsDir)) {
-    console.log(dim7("No jobs directory found."));
-    return;
+  const sqliteClient = createObservabilitySqliteClient();
+  try {
+    const jobsDir = join18(process.cwd(), ".specialists", "jobs");
+    if (!existsSync17(jobsDir)) {
+      console.log(dim7("No jobs directory found."));
+      return;
+    }
+    if (options.from > 0 && !options.json) {
+      console.log(dim7(`Showing events from seq ${options.from}`));
+    }
+    if (options.follow) {
+      await followMerged(sqliteClient, jobsDir, options);
+      return;
+    }
+    const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
+      jobId: options.jobId,
+      specialist: options.specialist,
+      since: options.since,
+      limit: options.limit
+    }), options.from);
+    printSnapshot(sqliteClient, merged, options, jobsDir);
+  } finally {
+    sqliteClient?.close();
   }
-  if (options.from > 0 && !options.json) {
-    console.log(dim7(`Showing events from seq ${options.from}`));
-  }
-  if (options.follow) {
-    await followMerged(jobsDir, options);
-    return;
-  }
-  const merged = filterMergedEventsByCursor(queryTimeline(jobsDir, {
-    jobId: options.jobId,
-    specialist: options.specialist,
-    since: options.since,
-    limit: options.limit
-  }), options.from);
-  printSnapshot(merged, options, jobsDir);
 }
-var sqliteClient;
 var init_feed = __esm(() => {
   init_timeline_events();
   init_observability_sqlite();
   init_timeline_query();
   init_format_helpers();
-  sqliteClient = createObservabilitySqliteClient();
 });
 
 // src/cli/poll.ts
