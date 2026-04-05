@@ -77,8 +77,8 @@ export async function run(): Promise<void> {
       try {
         const sqliteResult = sqliteClient?.readResult(jobId) ?? null;
         if (sqliteResult) return sqliteResult;
-      } catch {
-        // fallback to result.txt
+      } catch (error) {
+        console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error);
       }
 
       if (!existsSync(resultPath)) {

@@ -106,8 +106,8 @@ function countJobEvents(
     if (sqliteEvents.length > 0) {
       return sqliteEvents.length;
     }
-  } catch {
-    // fallback to events.jsonl
+  } catch (error) {
+    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
   }
 
   const eventsFile = join(jobsDir, jobId, 'events.jsonl');
@@ -146,8 +146,8 @@ function getLatestContextSnapshot(
       const snapshot = toContextSnapshot(sqliteEvents[index]);
       if (snapshot) return snapshot;
     }
-  } catch {
-    // fallback to events.jsonl
+  } catch (error) {
+    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
   }
 
   const eventsFile = join(jobsDir, jobId, 'events.jsonl');

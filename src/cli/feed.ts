@@ -169,15 +169,17 @@ interface JobMeta {
 type ObservabilitySqliteClient = ReturnType<typeof createObservabilitySqliteClient>;
 
 function readFileFresh(filePath: string): string | null {
+  let fd: number | null = null;
+
   try {
-    const fd = openSync(filePath, 'r');
-    try {
-      return readFileSync(fd, 'utf-8');
-    } finally {
-      closeSync(fd);
-    }
+    fd = openSync(filePath, 'r');
+    return readFileSync(fd, 'utf-8');
   } catch {
     return null;
+  } finally {
+    if (fd !== null) {
+      closeSync(fd);
+    }
   }
 }
 
@@ -189,8 +191,8 @@ function readStatusJson(
   try {
     const sqliteStatus = sqliteClient?.readStatus(jobId);
     if (sqliteStatus) return sqliteStatus as unknown as Record<string, unknown>;
-  } catch {
-    // fallback to status.json
+  } catch (error) {
+    console.warn(`SQLite status read failed for job ${jobId}; falling back to status.json`, error);
   }
 
   const statusPath = join(jobsDir, jobId, 'status.json');
@@ -363,7 +365,10 @@ function isEventAtOrAfterCursor(event: TimelineEvent, from: number): boolean {
   if (from <= 0) return true;
 
   const seq = (event as { seq?: unknown }).seq;
-  if (typeof seq !== 'number') return true;
+  if (typeof seq !== 'number') {
+    return event.t >= from;
+  }
+
   return seq >= from;
 }
 
@@ -427,8 +432,8 @@ function readJobEventsFresh(
       sqliteEvents.sort((a, b) => a.t - b.t);
       return sqliteEvents;
     }
-  } catch {
-    // fallback to events.jsonl
+  } catch (error) {
+    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
   }
 
   const eventsPath = join(jobsDir, jobId, 'events.jsonl');
@@ -552,6 +557,14 @@ async function followMerged(
       const newEvents: MergedEvent[] = [];
       for (const batch of batches) {
         const lastT = lastSeenT.get(batch.jobId) ?? 0;
+        const maxT = batch.events.length > 0
+          ? Math.max(...batch.events.map((event) => event.t))
+          : null;
+
+        if (maxT !== null) {
+          lastSeenT.set(batch.jobId, maxT);
+        }
+
         for (const event of batch.events) {
           if (event.t > lastT && isEventAtOrAfterCursor(event, options.from)) {
             newEvents.push({
@@ -561,12 +574,6 @@ async function followMerged(
               event,
             });
           }
-        }
-
-        // Update last seen
-        if (batch.events.length > 0) {
-          const maxT = Math.max(...batch.events.map((e) => e.t));
-          lastSeenT.set(batch.jobId, maxT);
         }
 
         // Check completion for jobs that were active during follow.
