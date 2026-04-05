@@ -25,16 +25,8 @@ const BUSY_TIMEOUT_MS = 5000;
 const MAX_RETRY_ATTEMPTS = 5;
 const BASE_RETRY_DELAY_MS = 50;
 
-function quoteSql(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
 function toSqlNumber(value: number | undefined): string {
   return value === undefined ? 'NULL' : String(value);
-}
-
-function toSqlText(value: string | undefined): string {
-  return value === undefined ? 'NULL' : quoteSql(value);
 }
 
 /**
@@ -72,11 +64,7 @@ function withRetry<T>(operation: () => T, context: string): T {
       }
       
       const delayMs = calculateRetryDelay(attempt);
-      // Synchronous sleep for retry delay
-      const start = Date.now();
-      while (Date.now() - start < delayMs) {
-        // Busy wait - acceptable for short delays in retry scenarios
-      }
+      Bun.sleepSync(delayMs);
     }
   }
   
@@ -201,6 +189,7 @@ function migrateToV4(db: BunDb): void {
     db.run('CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_node_memory_run_entry ON node_memory(node_run_id, entry_id) WHERE entry_id IS NOT NULL');
     return;
   }
 
@@ -585,31 +574,6 @@ class SqliteClient implements ObservabilitySqliteClient {
 
     if (entry.entry_id) {
       this.db.run(`
-        UPDATE node_memory
-        SET
-          namespace = ?,
-          entry_type = ?,
-          summary = ?,
-          source_member_id = ?,
-          confidence = ?,
-          provenance_json = ?,
-          created_at_ms = ?,
-          updated_at_ms = ?
-        WHERE node_run_id = ? AND entry_id = ?
-      `, [
-        entry.namespace ?? null,
-        entry.entry_type ?? null,
-        entry.summary ?? null,
-        entry.source_member_id ?? null,
-        entry.confidence ?? null,
-        entry.provenance_json ?? null,
-        createdAtMs,
-        updatedAtMs,
-        entry.node_run_id,
-        entry.entry_id,
-      ]);
-
-      this.db.run(`
         INSERT INTO node_memory (
           node_run_id,
           namespace,
@@ -622,10 +586,16 @@ class SqliteClient implements ObservabilitySqliteClient {
           created_at_ms,
           updated_at_ms
         )
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        WHERE NOT EXISTS (
-          SELECT 1 FROM node_memory WHERE node_run_id = ? AND entry_id = ?
-        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(node_run_id, entry_id) DO UPDATE SET
+          namespace = excluded.namespace,
+          entry_type = excluded.entry_type,
+          summary = excluded.summary,
+          source_member_id = excluded.source_member_id,
+          confidence = excluded.confidence,
+          provenance_json = excluded.provenance_json,
+          created_at_ms = excluded.created_at_ms,
+          updated_at_ms = excluded.updated_at_ms
       `, [
         entry.node_run_id,
         entry.namespace ?? null,
@@ -637,8 +607,6 @@ class SqliteClient implements ObservabilitySqliteClient {
         entry.provenance_json ?? null,
         createdAtMs,
         updatedAtMs,
-        entry.node_run_id,
-        entry.entry_id,
       ]);
       return;
     }
@@ -706,11 +674,14 @@ class SqliteClient implements ObservabilitySqliteClient {
 
   upsertResult(jobId: string, output: string): void {
     withRetry(() => {
-      this.writeResultRow(jobId, output);
-      // Also update last_output on the job row for quick access
-      this.db.run(`
-        UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
-      `, [output, jobId]);
+      const transaction = this.db.transaction(() => {
+        this.writeResultRow(jobId, output);
+        // Also update last_output on the job row for quick access
+        this.db.run(`
+          UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
+        `, [output, jobId]);
+      });
+      transaction();
     }, 'upsertResult');
   }
 
