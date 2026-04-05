@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.1.0
+version: 1.2.0
 updated: 2026-04-05
-synced_at: a7dee4b5
+synced_at: 8d2581ef
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, and specialist authoring.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -77,6 +77,16 @@ All observation reads Supervisor artifacts under:
   result.txt
 ```
 
+### SQLite persistence (schema v4)
+
+When SQLite is available, Supervisor uses it as the primary storage backend with file-based fallback:
+
+- **`specialist_jobs` table**: status, bead_id, node_id, worktree_path, branch, last_output, elapsed_ms
+- **`specialist_events` table**: append-only timeline with event_json (JSON-first design)
+- **Node tables** (schema v4): `node_runs`, `node_members`, `node_events`, `node_memory` for orchestrator tracking
+- **Dual-write**: atomic transactions at job start/completion; mid-run writes are standalone for resilience
+- **Backward compatible**: file-based storage remains functional when SQLite is unavailable
+
 ### `feed` (timeline-first)
 
 ```bash
@@ -91,6 +101,8 @@ sp feed --json --since 5m --limit 200
 - Follow mode (`-f`): polls and appends new events in chronological order
 - JSON mode outputs NDJSON envelopes with job metadata + event payload
 - **Waiting state**: when a keep-alive job enters `waiting` status, feed displays a magenta `WAIT` banner with resume instructions
+- **Text preview**: `TURN+` lines show 80-char preview of accumulated text content
+- **Context warnings**: feed displays context utilization warnings at WARN/CRITICAL thresholds
 
 ### `poll` (machine snapshot + cursors)
 
@@ -106,6 +118,7 @@ sp poll <job-id> --cursor 12 --output-cursor 340
   - `output_delta` since `output_cursor`
   - next cursors (`cursor`, `output_cursor`)
 - Good for script-driven incremental polling
+- **SQLite-first**: reads from `specialist_events` table when available, falls back to `events.jsonl`
 
 ### `result` (final text)
 
@@ -118,6 +131,7 @@ sp result <job-id> --wait --timeout 120
 - `--wait` polls until `done`/`error`
 - `--timeout` applies only with `--wait`
 - **Waiting state**: when status is `waiting`, result prints a footer with resume instructions
+- **SQLite-backed**: reads from `specialist_jobs.last_output` column when available
 
 Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
 
@@ -139,6 +153,7 @@ Behavior:
   - `$bead_context`
   - `$bead_id`
 - Adds `bead_id` to status and timeline (`run_start`, status footer)
+- **Schema v2**: `bead_id` persisted as dedicated column in `specialist_jobs` table (backfilled from status_json)
 
 ### Dependency context injection
 

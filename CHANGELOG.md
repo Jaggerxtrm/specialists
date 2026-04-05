@@ -7,8 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 3A — SQLite schema foundation (fdtq/ftu5 stream)** (`aec1c98f`) — added initial SQLite schema and persistence columns (`schema_version`, `worktree_column`, text-capture fields) to bootstrap job/session persistence.
+- **Phase 3B — atomic SQLite dual-write at job boundaries** (`a86f05ef`) — introduced atomic dual-write behavior so lifecycle boundary updates are persisted consistently.
+- **Phase 3C — SQLite durability + connection model hardening** (`eacf3ace`) — enforced WAL mode, added `--git-common-dir` handling, and switched to persistent `bun:sqlite` connections.
+- **Phase 3D — SQLite-first reads with fallback** (`cb6eab3b`) — updated CLI read path to prefer SQLite and fall back to file-based state when needed.
+- **Per-turn text capture (fdtq)** (`0c900174`) — accumulated turn text deltas and emitted captured text on `turn_summary`.
+- **Schema v3 enrichment (ftu5)** (`758c338a`) — promoted `status` and `node_id` from JSON metadata into first-class relational columns.
+- **Context window tracking (ze8d)** (`010d3668`) — added `context_pct` on `turn_summary` for context-window utilization visibility.
+- **Node tables schema v4 (z5ml)** (`512a2d18`) — introduced `node_runs`, `node_members`, `node_events`, and `node_memory` tables.
+
 ### Changed
-- docs(ARCHITECTURE.md): sync with job-root.ts, worktree.ts, supervisor.ts changes — git-common-root anchoring, worktree isolation, GitNexus tracking, FIFO steering, keep-alive sessions, enhanced timeline events
+
+**Documentation sync**
+- `docs/features.md` — SQLite persistence (schema v4), per-turn text accumulation, context tracking, bead_id schema v2
+- `docs/ARCHITECTURE.md` — Dual-write atomic transactions, node tables (v4), context window tracking, per-turn text accumulation
+- `docs/cli-reference.md` — `sp status` context_pct/health, `sp feed` text preview + context warnings, SQLite-first reads on poll/result/feed
+- `CHANGELOG.md` — Phase 3A-3D + fdtq/ftu5/ze8d/z5ml entries
+
+**Schema evolution**
+- v1→v2: Added `bead_id` column with backfill from `status_json.$.bead_id`
+- v2→v3: Promoted `status` + `node_id` to real columns; added composite indexes
+- v3→v4: Created node runtime tables (`node_runs`, `node_members`, `node_events`, `node_memory`)
+
+**CLI observation**
+- `sp feed` — Shows 80-char text preview on `TURN+` lines; context warnings at WARN/CRITICAL
+- `sp status` — Displays `context_pct` and `context_health` for all jobs
+- `sp poll` / `sp result` / `sp feed` — All read SQLite-first with file fallback
 
 ## [3.5.0] - 2026-04-01
 

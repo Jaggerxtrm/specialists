@@ -2,10 +2,10 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.1.0
+version: 2.2.0
 updated: 2026-04-05
-synced_at: a7dee4b5
-description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, stuck detection, GitNexus tracking, worktree isolation, and bead ownership semantics.
+synced_at: 8d2581ef
+description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, and worktree/bead ownership semantics.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
   - "src/specialist/worktree.ts"
@@ -146,18 +146,62 @@ Parses `git worktree list --porcelain` output into a `Map<branch, absolute-path>
 For each run (`.specialists/jobs/<id>/`):
 
 - `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch, **`node_id`**)
-- `events.jsonl` — append-only timeline stream (SQLite-backed when available)
-- `result.txt` — final assistant output text (SQLite-backed when available)
+- `events.jsonl` — append-only canonical timeline stream (JSON-first source of truth)
+- `result.txt` — final assistant output text
+
+### JSON-first storage + atomic dual-write
+
+Persistence is **JSON-first**:
+
+- Files under `.specialists/jobs/<id>/` are the canonical write path and crash-recovery source.
+- SQLite mirrors the same payloads (`status_json`, `event_json`) for fast listing/querying and node-level analytics.
+
+Dual-write behavior is intentionally split by durability role:
+
+1. Write canonical file artifact (`status.json`, `events.jsonl`, `result.txt`).
+2. Best-effort mirror into SQLite.
+
+For coupled SQLite rows, writes are atomic inside a DB transaction:
+
+- `upsertStatusWithEvent(...)` → status + event in one transaction
+- `upsertStatusWithEventAndResult(...)` → status + event + result in one transaction
+
+This yields: canonical durability from files, atomic relational consistency inside SQLite, and resilient operation when SQLite is unavailable.
 
 ### SQLite integration
 
 Supervisor optionally uses `ObservabilitySqliteClient` for:
 
-- Status persistence (`upsertStatus`) — faster reads, atomic writes
-- Event append (`appendEvent`) — durable timeline storage
-- Result storage (`upsertResult`) — final output persistence
+- Status mirror (`upsertStatus`) — indexed reads by status/bead/node
+- Event mirror (`appendEvent`) — ordered timeline queries from `event_json`
+- Result mirror (`upsertResult`) — quick result retrieval without reading `result.txt`
+- Transactional compound updates (`upsertStatusWithEvent*`) — single-commit relational state changes
 
-File-based storage remains as fallback when SQLite is unavailable.
+File-based storage remains authoritative and always available.
+
+### Observability schema evolution (`schema_version` v1 → v4)
+
+`src/specialist/observability-sqlite.ts` initializes and migrates schema idempotently through:
+
+- **v1**: base observability tables (`schema_version`, `specialist_jobs`, `specialist_events`, `specialist_results`) + v1 rebuild of `specialist_jobs` to normalized columns (`worktree_column`, `last_output`).
+- **v2**: bead-aware indexing (`bead_id` in jobs + `idx_jobs_bead`).
+- **v3**: explicit job lifecycle indexing (`status`, `node_id`, `idx_jobs_status_updated`) and status denormalization for faster list/filter operations.
+- **v4**: node-runtime observability tables:
+  - `node_runs`
+  - `node_members`
+  - `node_events`
+  - `node_memory`
+
+Migrations are safe to rerun: each step checks `schema_version`, applies forward-only DDL, and recreates required indexes with `IF NOT EXISTS`.
+
+### Node runtime tables (v4)
+
+v4 adds first-class storage for multi-member node orchestration state:
+
+- `node_runs` — coordinator-level run status (`node_name`, `status`, `coordinator_job_id`, `waiting_on`, `memory_namespace`, `status_json`)
+- `node_members` — per-member participation (`member_id`, linked `job_id`, `specialist`, `model`, `role`, `status`, `enabled`)
+- `node_events` — node-scoped timeline stream (`type`, `event_json`, ordered by `t,id`)
+- `node_memory` — node memory/materialization (`namespace`, `entry_type`, `entry_id`, `summary`, `source_member_id`, `confidence`, `provenance_json`)
 
 ### Lifecycle ownership rules
 
@@ -240,7 +284,13 @@ function getContextHealth(contextPct: number): ContextHealth {
 }
 ```
 
-Context utilization (`context_pct`) is captured on `turn_summary` events and emitted via `status` events for observability.
+Context utilization (`context_pct`) is captured on every `turn_summary` event, rounded/validated into status snapshots, and surfaced by CLI/status views for long-run monitoring and compaction risk detection.
+
+**Per-turn text accumulation**:
+- `turnTextAccumulator` collects streamed `text` deltas per assistant message
+- Emits as `text_content` on `turn_summary` events (survives crashes via JSON persistence in `event_json`)
+- Feed displays 80-char preview on `TURN+` lines
+- Context health warnings shown at WARN (80%) and CRITICAL (95%) thresholds
 
 ### Stuck detection model
 
@@ -331,7 +381,7 @@ This prevents sub-bead/lifecycle conflicts and keeps orchestrator ownership expl
 | `turn` (start/end) | Turn boundary | `phase` |
 | `token_usage` | Token metrics from RPC | `token_usage`, `source` |
 | `finish_reason` | Finish reason from RPC | `finish_reason`, `source` |
-| `turn_summary` | Turn completion | `turn_index`, `token_usage`, `finish_reason`, **`context_pct`** |
+| `turn_summary` | Turn completion | `turn_index`, `token_usage`, `finish_reason`, **`context_pct`**, **`text_content`** |
 | `compaction` (start/end) | Context compaction | `phase` |
 | `retry` | Auto-retry event | `phase` |
 | `stale_warning` | Stuck detection | `reason`, `silence_ms`, `threshold_ms`, `tool` |
@@ -353,6 +403,16 @@ The `run_complete` event is emitted once per job and contains:
 - GitNexus summary if any `gitnexus_*` tools were invoked
 
 Legacy completion events (`done`, `agent_end`) are parse-compatible for old history but ignored on the write path.
+
+### Bun SQLite loading model
+
+`ObservabilitySqliteClient` is Bun-aware and lazy-loaded:
+
+- `bun:sqlite` is required dynamically (`require('bun:sqlite')`) only on first probe.
+- Under Node/vitest (where `bun:sqlite` is unavailable), the probe returns `null` and runtime continues file-only.
+- If SQLite exists, schema init (`initSchema`) runs first, then a persistent client is opened with WAL + busy timeout.
+
+This keeps tests/tooling portable while enabling SQLite acceleration in Bun environments.
 
 ### `mapCallbackEventToTimelineEvent()` — mapping table
 

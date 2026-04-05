@@ -4,7 +4,7 @@ scope: cli
 category: reference
 version: 1.6.0
 updated: 2026-04-05
-synced_at: a7dee4b5
+synced_at: 8d2581ef
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -141,6 +141,10 @@ When a specialist enters the `waiting` state, a **WAIT** banner is displayed:
 WAIT  <specialist> (<job-id>) is waiting for input. Use: specialists resume <job-id> "..."
 ```
 
+For streamed turn output, `TURN+` lines include an 80-character text preview. When context usage crosses warning thresholds, feed prints context warnings at `WARN` and `CRITICAL` levels.
+
+`feed` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
+
 ### Exit codes
 
 - `0`: Success (including no events found).
@@ -178,6 +182,7 @@ specialists poll a1b2c3 --json
 
 Notes:
 - `--follow`/`-f` is removed from `poll`; use `specialists feed --follow`.
+- `poll` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
 
 ---
 
@@ -216,6 +221,8 @@ When a job is in the `waiting` state, an explicit message is shown:
 - `0`: Result printed.
 - `1`: Job missing, still running with no result file, failed job, timeout, or invalid args.
 
+`result` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
+
 ---
 
 ## `specialists status`
@@ -244,6 +251,12 @@ In the job list, waiting status includes an inline action:
 ```
 <id>  <specialist>  waiting  <elapsed>  resume: specialists resume <id> "..."
 ```
+
+Status output also includes context telemetry fields:
+- `context_pct`: current context usage percentage.
+- `context_health`: health classification derived from context usage.
+
+`status` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
 
 ### Examples
 
