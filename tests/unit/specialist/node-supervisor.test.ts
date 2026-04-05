@@ -16,13 +16,14 @@ const jobControlInstances: Array<{
 }> = [];
 
 vi.mock('../../../src/specialist/job-control.js', () => {
+  let instanceCounter = 0;
   class MockJobControl {
-    startJob = vi.fn();
+    startJob = vi.fn().mockResolvedValue(`job-${++instanceCounter}`);
     resumeJob = vi.fn();
     steerJob = vi.fn();
     stopJob = vi.fn();
     readStatus = vi.fn();
-    readResult = vi.fn();
+    readResult = vi.fn().mockReturnValue(null);
 
     constructor() {
       jobControlInstances.push(this);
@@ -102,20 +103,28 @@ describe('NodeSupervisor orchestration', () => {
       const supervisor = new NodeSupervisor(baseOptions as any);
       await (supervisor as any).spawnMembers();
 
-      const registry = supervisor.getMembers();
-      const member = registry[0];
-      member.jobId = 'job-1';
-      (supervisor as any).members.set(member.memberId, member);
+      // readNodeMembers must return rows with member_id + job_id for poll to work
+      const memberRows = [
+        { member_id: 'member-a', job_id: 'job-1' },
+        { member_id: 'member-b', job_id: 'job-2' },
+      ];
+      mockSqliteClient.readNodeMembers.mockReturnValue(memberRows);
 
-      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running', output: 'hello' } as MockStatus);
+      // First poll: status changes from 'created' → 'running'
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
       const first = await (supervisor as any).pollMemberStatuses();
-      expect(Array.isArray(first)).toBe(true);
+      expect(first.length).toBeGreaterThanOrEqual(1);
 
-      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running', output: 'hello' } as MockStatus);
+      // Second poll: same status, no output change → no changes
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
       const second = await (supervisor as any).pollMemberStatuses();
       expect(second).toHaveLength(0);
 
-      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'done', output: 'hello' } as MockStatus);
+      // Third poll: status changes running → done
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'done' });
+      mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
       const third = await (supervisor as any).pollMemberStatuses();
       expect(third.length).toBeGreaterThanOrEqual(1);
     });
@@ -171,21 +180,25 @@ describe('NodeSupervisor orchestration', () => {
 
       const { NodeSupervisor } = mod;
       const supervisor = new NodeSupervisor(baseOptions as any);
+      await (supervisor as any).spawnMembers();
 
-      const executeOrder: string[] = [];
-      (supervisor as any).executeDispatchAction = vi.fn(async (action: { type: string }) => {
-        executeOrder.push(action.type);
-      });
+      // Dispatch two resume actions to different members
+      await (supervisor as any).dispatchAction({ type: 'resume', memberId: 'member-a', task: 'one' });
+      await (supervisor as any).dispatchAction({ type: 'resume', memberId: 'member-b', task: 'two' });
 
-      await (supervisor as any).dispatchAction({ type: 'resume_member', memberId: 'member-a', payload: 'one' });
-      await (supervisor as any).dispatchAction({ type: 'resume_member', memberId: 'member-b', payload: 'two' });
-
+      // action_dispatched events should be logged
       expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
         expect.any(String),
+        expect.any(Number),
         'action_dispatched',
         expect.any(Object),
       );
-      expect(executeOrder).toEqual(['resume_member', 'resume_member']);
+
+      // JobControl.resumeJob should have been called on both members
+      const controllerA = jobControlInstances.find((_c, i) => i === 0);
+      const controllerB = jobControlInstances.find((_c, i) => i === 1);
+      expect(controllerA?.resumeJob).toHaveBeenCalled();
+      expect(controllerB?.resumeJob).toHaveBeenCalled();
     });
   });
 

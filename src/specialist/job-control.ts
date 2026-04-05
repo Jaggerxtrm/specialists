@@ -5,7 +5,7 @@ import { resolveJobsDir } from './job-root.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { Supervisor, type SupervisorStatus } from './supervisor.js';
 
-const TERMINAL_STATUSES: ReadonlySet<SupervisorStatus['status']> = new Set(['done', 'error']);
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['done', 'error', 'stopped']);
 const INITIAL_BACKOFF_MS = 100;
 const MAX_BACKOFF_MS = 2_000;
 
