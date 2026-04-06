@@ -85,7 +85,7 @@ specialists resume <job-id> "next task"       # resume a waiting keep-alive job
 specialists stop <job-id>                     # cancel a job
 
 # Management
-specialists edit <name>                       # edit a specialist's YAML config
+specialists edit <name>                       # edit specialist config (dot-path, --preset)
 specialists clean                             # purge old job dirs + worktree GC
 ```
 
@@ -469,7 +469,7 @@ Run `specialists list` to see what's available. Match by task type:
 | Doc audit / drift detection / targeted sync | **sync-docs** (qwen3.5-plus) | 3-mode: targeted (named docs), area (time-window), full audit. MEDIUM perms, `--keep-alive`. |
 | Doc writing / updates | **executor** (gpt-codex) | For heavy doc rewrites; sync-docs handles targeted updates directly |
 | Test generation / suite execution | **test-runner** (claude-haiku) | Runs suites, interprets failures |
-| Specialist authoring | **specialists-creator** (claude-sonnet) | Guides YAML creation against schema |
+| Specialist authoring | **specialists-creator** (claude-sonnet) | Guides JSON creation against schema |
 
 ### Specialist selection notes
 
@@ -726,7 +726,7 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 
 ```bash
 specialists doctor      # health check: hooks, MCP, zombie jobs
-specialists edit <name> # edit a specialist's YAML config
+specialists edit <name> # edit specialist config (dot-path, --preset)
 ```
 
 - **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
@@ -739,7 +739,7 @@ specialists edit <name> # edit a specialist's YAML config
   (3) model provider issues (try a different model to isolate).
 - **"specialist not found"** → `specialists list` (project-scope only)
 - **Job hangs** → `specialists steer <id> "finish up"` or `specialists stop <id>`
-- **YAML skipped** → stderr shows `[specialists] skipping <file>: <reason>`
+- **Config skipped** → stderr shows `[specialists] skipping <file>: <reason>`
 - **Stall timeout** → specialist hit 120s inactivity. Check `specialists feed <id>`, then retry or switch.
 - **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
 - **Worktree already exists** → it will be reused (not recreated). Safe to re-run.
