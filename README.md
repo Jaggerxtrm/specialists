@@ -81,6 +81,7 @@ specialists doctor
 | xtrm / worktree integration | [docs/worktree.md](docs/worktree.md) |
 | RPC mode notes | [docs/pi-rpc.md](docs/pi-rpc.md) |
 | Pi subprocess isolation and extensions | [docs/pi-session.md](docs/pi-session.md) |
+| NodeSupervisor architecture, node lifecycle, and `sp node` CLI | [docs/nodes.md](docs/nodes.md) |
 
 ## Project structure
 
