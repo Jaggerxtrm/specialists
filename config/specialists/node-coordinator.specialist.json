@@ -14,8 +14,7 @@
         "worktree"
       ],
       "created": "2026-04-03",
-      "updated": "2026-04-04",
-      "author": null
+      "updated": "2026-04-04"
     },
     "execution": {
       "mode": "tool",
@@ -270,13 +269,7 @@
       "stale_threshold_days": 30
     },
     "beads_integration": "auto",
-    "stall_detection": {
-      "running_silence_warn_ms": null,
-      "running_silence_error_ms": null,
-      "waiting_stale_ms": null,
-      "tool_duration_warn_ms": null
-    },
-    "beads_write_notes": true,
-    "output_file": null
+    "stall_detection": {},
+    "beads_write_notes": true
   }
 }

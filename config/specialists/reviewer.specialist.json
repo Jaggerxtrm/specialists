@@ -12,9 +12,7 @@
         "bead",
         "post-run"
       ],
-      "updated": "2026-03-30",
-      "author": null,
-      "created": null
+      "updated": "2026-03-30"
     },
     "execution": {
       "mode": "tool",
@@ -54,15 +52,9 @@
       "required_tools": [],
       "external_commands": []
     },
-    "stall_detection": {
-      "running_silence_warn_ms": null,
-      "running_silence_error_ms": null,
-      "waiting_stale_ms": null,
-      "tool_duration_warn_ms": null
-    },
+    "stall_detection": {},
     "beads_integration": "auto",
     "beads_write_notes": true,
-    "output_file": null,
     "communication": {}
   }
 }

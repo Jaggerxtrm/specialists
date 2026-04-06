@@ -2,10 +2,10 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.2.0
-updated: 2026-04-05
-synced_at: 8d2581ef
-description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, and specialist authoring.
+version: 1.3.0
+updated: 2026-04-06
+synced_at: 9648ffae
+description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, and JSON-first configuration.
 source_of_truth_for:
   - "src/cli/run.ts"
   - "src/cli/feed.ts"
@@ -17,6 +17,8 @@ source_of_truth_for:
   - "src/specialist/job-root.ts"
   - "src/specialist/worktree.ts"
   - "src/specialist/worktree-gc.ts"
+  - "src/cli/edit.ts"
+  - "src/specialist/loader.ts"
 ---
 
 # Feature Guides
@@ -315,61 +317,154 @@ Supervisor outcomes:
 
 ## 6) Specialist authoring example (executor-style)
 
-Example with structured-friendly settings and stall controls:
+Example with structured-friendly settings and stall controls (JSON format):
 
-```yaml
-specialist:
-  metadata:
-    name: executor
-    version: 1.0.0
-    description: "General-purpose execution specialist"
-    category: codegen
-
-  execution:
-    model: openai-codex/gpt-5.3-codex
-    fallback_model: anthropic/claude-sonnet-4-6
-    timeout_ms: 0
-    stall_timeout_ms: 120000
-    response_format: text
-    permission_required: HIGH
-    thinking_level: medium
-
-  prompt:
-    system: |
-      You are a production implementation specialist.
-    task_template: |
-      $prompt
-
-      Working directory: $cwd
-
-  stall_detection:
-    running_silence_warn_ms: 60000
-    running_silence_error_ms: 300000
-    waiting_stale_ms: 3600000
-    tool_duration_warn_ms: 120000
+```json
+{
+  "specialist": {
+    "metadata": {
+      "name": "executor",
+      "version": "1.0.0",
+      "description": "General-purpose execution specialist",
+      "category": "codegen"
+    },
+    "execution": {
+      "model": "openai-codex/gpt-5.3-codex",
+      "fallback_model": "anthropic/claude-sonnet-4-6",
+      "timeout_ms": 0,
+      "stall_timeout_ms": 120000,
+      "response_format": "text",
+      "permission_required": "HIGH",
+      "thinking_level": "medium"
+    },
+    "prompt": {
+      "system": "You are a production implementation specialist.",
+      "task_template": "$prompt\n\nWorking directory: $cwd"
+    },
+    "stall_detection": {
+      "running_silence_warn_ms": 60000,
+      "running_silence_error_ms": 300000,
+      "waiting_stale_ms": 3600000,
+      "tool_duration_warn_ms": 120000
+    }
+  }
+}
 ```
 
 Authoring notes:
 
+- **JSON-first**: Specialist configs use `.specialist.json` format (YAML deprecated but supported)
 - `response_format` controls requested format (`text|json|markdown`) at specialist config level
 - `stall_timeout_ms` handles session protocol silence
 - `stall_detection` handles Supervisor state/timeline warnings and error promotion
 - `permission_required` controls post-job GitNexus reindex (see below)
 - For bead-driven specialists, rely on `$bead_context` / `$bead_id` in templates
+- Additional fields: `author`, `tags`, `created`, `output_type`, `max_retries`, `beads_write_notes`, `communication`
+
 
 ---
 
-## 8) Auto GitNexus reindex after high-permission jobs
+## 7) Configuration presets (`--preset`)
+
+Presets provide one-shot configuration profiles for quick adaptation to different task types without editing specialist configs.
+
+### Available presets
+
+Presets are defined in `config/presets.json`:
+
+| Preset | Model | Thinking | Stall Timeout | Use Case |
+|--------|-------|----------|---------------|----------|
+| `cheap` | `dashscope/qwen3.5-plus` | `off` | 60s | Exploration, simple tasks, quick lookups |
+| `medium` | `anthropic/claude-sonnet-4-6` | `low` | 120s | Balanced cost/quality — default for most tasks |
+| `power` | `openai-codex/gpt-5.4` | `high` | 300s | Complex implementation, deep reasoning |
+
+### Usage
+
+Apply a preset to a specialist config:
+
+```bash
+sp edit executor --preset cheap
+sp edit executor --preset medium
+sp edit executor --preset power
+```
+
+This mutates the specialist's JSON config in place, updating:
+- `specialist.execution.model`
+- `specialist.execution.thinking_level`
+- `specialist.execution.stall_timeout_ms`
+
+### When to use
+
+- **cheap**: Quick exploration, documentation lookups, simple refactors
+- **medium**: Standard implementation work, bug fixes, feature development
+- **power**: Complex architecture changes, multi-file refactors, difficult debugging
+
+---
+
+## 8) Configuration format: JSON-first with YAML fallback
+
+Specialist configurations migrated from YAML to JSON in v2.1.15+.
+
+### File locations
+
+Specialist configs live in:
+- `config/specialists/<name>.specialist.json` (canonical)
+- `.specialists/default/<name>.specialist.json` (project-local defaults)
+- `.specialists/user/<name>.specialist.json` (user overrides)
+
+### Loading precedence
+
+The loader uses **JSON-first** with **YAML fallback**:
+
+1. Look for `<name>.specialist.json` — use if found
+2. Fall back to `<name>.specialist.yaml` — use if JSON missing (deprecated)
+3. Emit warning to stderr when YAML is used:
+   ```
+   [specialists] DEPRECATED: YAML specialist config detected at <path>. Please migrate to .specialist.json
+   ```
+
+### Migration from YAML
+
+YAML configs remain functional but are deprecated. To migrate:
+
+```bash
+# YAML (deprecated)
+config/specialists/executor.specialist.yaml
+
+# JSON (preferred)
+config/specialists/executor.specialist.json
+```
+
+JSON supports all YAML fields plus additional metadata:
+- `author`: Config author
+- `tags`: Array of categorization tags
+- `created`: Creation date
+- `output_type`: Expected output format
+- `max_retries`: Retry count for transient failures
+- `beads_write_notes`: Whether to write bead notes
+- `communication`: Communication preferences
+
+### Schema validation
+
+All configs are validated against `src/specialist/schema.ts` at load time. Invalid configs are skipped with an error message.
+
+---
+## 9) Auto GitNexus reindex after high-permission jobs
 
 Supervisor automatically triggers a GitNexus reindex after jobs with elevated file access complete.
-
 ### Trigger conditions
 
-```yaml
-specialist:
-  execution:
-    permission_required: MEDIUM  # or HIGH
+```json
+{
+  "specialist": {
+    "execution": {
+      "permission_required": "MEDIUM"
+    }
+  }
+}
 ```
+
+When `permission_required` is `MEDIUM` or `HIGH`
 
 When `permission_required` is `MEDIUM` or `HIGH`, the supervisor spawns a detached `npx gitnexus analyze` process after job completion.
 
@@ -396,26 +491,26 @@ To disable auto-reindex for a high-permission specialist, set `permission_requir
 
 ---
 
-## 9) Debugger v2.0 — Keep-alive iterative debugging
+## 10) Debugger v2.0 — Keep-alive iterative debugging
 
 The `debugger` specialist was upgraded to v2.0 with enhanced capabilities for iterative debug-fix-verify cycles.
 
 ### Configuration
 
-```yaml
-specialist:
-  metadata:
-    name: debugger
-    version: 2.0.0
-    description: >-
-      Autonomous debugger: given any symptom, error, or stack trace, systematically
-      traces call chains with GitNexus, identifies root cause at file:line precision,
-      applies targeted fixes, and verifies the fix works. Keep-alive for iterative
-      debug-fix-verify cycles.
-
-  execution:
-    permission_required: HIGH
-    interactive: true  # enables keep-alive
+```json
+{
+  "specialist": {
+    "metadata": {
+      "name": "debugger",
+      "version": "2.0.0",
+      "description": "Autonomous debugger: given any symptom, error, or stack trace, systematically traces call chains with GitNexus, identifies root cause at file:line precision, applies targeted fixes, and verifies the fix works. Keep-alive for iterative debug-fix-verify cycles."
+    },
+    "execution": {
+      "permission_required": "HIGH",
+      "interactive": true
+    }
+  }
+}
 ```
 
 ### Key changes in v2.0
@@ -460,7 +555,7 @@ sp result <job-id>          # Read bug report + resume footer
 
 ---
 
-## 10) Worktree isolation (`--worktree`, `--job`)
+## 11) Worktree isolation (`--worktree`, `--job`)
 
 Each edit-permission specialist runs in an isolated git worktree (branch). This prevents concurrent file corruption when multiple executors modify overlapping paths, and produces a clean per-task branch that the orchestrator merges in dependency order.
 

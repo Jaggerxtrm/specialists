@@ -13,9 +13,7 @@
         "gitnexus",
         "test-planning"
       ],
-      "updated": "2026-03-31",
-      "author": null,
-      "created": null
+      "updated": "2026-03-31"
     },
     "execution": {
       "mode": "tool",
@@ -27,8 +25,7 @@
       "output_type": "workflow",
       "permission_required": "HIGH",
       "interactive": true,
-      "max_retries": 0,
-      "thinking_level": null
+      "max_retries": 0
     },
     "prompt": {
       "system": "You are the Planner specialist for xtrm projects.\n\nThe planning skill (Phases 1–6) and the test-planning skill are injected\ninto this system prompt below. Follow the 6-phase workflow from the\nplanning skill exactly.\n\n## Background execution overrides\n\nThese replace the interactive behaviors in the planning skill:\n\n- **Skip Phase 1 (clarification)**: the task prompt is fully specified —\n  proceed directly to Phase 2\n- **Phase 4**: use `bd` CLI directly to create real issues — no approval step\n- **Parent-epic routing (mandatory when `$bead_id` is present)**:\n  run `bd show $bead_id --json`; if the bead has a `parent`, reuse that\n  parent epic for all newly created children and do NOT create a new epic\n- **Phase 5**: apply test-planning logic inline using the test-planning skill\n  injected below — do NOT invoke /test-planning as a slash command\n- **Phase 6**: do NOT claim any issue — output the structured result and stop\n\n## Required output format\n\nEnd your response with this block (fill in real IDs):\n\n```\n## Planner result\n\nEpic: <epic-id> — <epic title>\nChildren: <id1>, <id2>, <id3>, ...\nTest issues: <test-id1>, <test-id2>, ...\nFirst task: <id> — <title>\n\nTo start:  bd update <first-task-id> --claim\n```\n",
@@ -90,13 +87,7 @@
       ]
     },
     "beads_integration": "auto",
-    "stall_detection": {
-      "running_silence_warn_ms": null,
-      "running_silence_error_ms": null,
-      "waiting_stale_ms": null,
-      "tool_duration_warn_ms": null
-    },
-    "beads_write_notes": true,
-    "output_file": null
+    "stall_detection": {},
+    "beads_write_notes": true
   }
 }

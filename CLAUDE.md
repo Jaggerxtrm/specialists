@@ -158,7 +158,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ## Project Overview
 
-**Specialists** is a project-scoped MCP server that discovers `.specialist.yaml` files and executes them through `pi` RPC sessions. The runtime is bead-first: when a run is bead-linked, the bead is the task source and run metadata keeps bead linkage throughout execution and feed output.
+**Specialists** is a project-scoped MCP server that discovers `.specialist.json` files and executes them through `pi` RPC sessions. The runtime is bead-first: when a run is bead-linked, the bead is the task source and run metadata keeps bead linkage throughout execution and feed output.
 
 ## Architecture (current)
 
@@ -202,7 +202,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - `src/specialist/runner.ts` — execution, retry logic, output contract injection, bead-aware prompt
 - `src/specialist/supervisor.ts` — job lifecycle, FIFO creation, READ_ONLY output auto-append
 - `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
-- `src/specialist/schema.ts` — YAML schema incl. `max_retries`, `response_format`, `output_schema`
+- `src/specialist/schema.ts` — JSON schema incl. `max_retries`, `response_format`, `output_schema`
 - `src/tools/specialist/use_specialist.tool.ts` — foreground MCP run (`bead_id` aware)
 
 ## Operator Notes
@@ -212,9 +212,11 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
 - Observe jobs with `specialists feed -f`
 - Use `specialists result <job-id>` for final output text
-- Edit specialist configs: `specialists edit <name>`
+- Edit specialist configs with dot-path syntax: `specialists edit <name> specialist.execution.model anthropic/claude-sonnet-4-6`
+- Apply presets for common configurations: `specialists edit <name> --preset cheap|medium|power`
+- List available presets: `specialists edit --list-presets`
 - READ_ONLY specialist output auto-appends to input bead notes
-- `max_retries` in YAML controls transient error retry (default: 0)
+- `max_retries` in JSON controls transient error retry (default: 0)
 
 ## Documentation
 
@@ -227,7 +229,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (2345 symbols, 4835 relationships, 196 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (2482 symbols, 5390 relationships, 208 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

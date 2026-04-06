@@ -12,8 +12,7 @@
         "codegen",
         "execution",
         "heavy-lift"
-      ],
-      "created": null
+      ]
     },
     "execution": {
       "model": "openai-codex/gpt-5.3-codex",
@@ -110,12 +109,7 @@
     },
     "output_file": ".specialists/executor-result.md",
     "beads_integration": "auto",
-    "stall_detection": {
-      "running_silence_warn_ms": null,
-      "running_silence_error_ms": null,
-      "waiting_stale_ms": null,
-      "tool_duration_warn_ms": null
-    },
+    "stall_detection": {},
     "beads_write_notes": true,
     "communication": {}
   }
