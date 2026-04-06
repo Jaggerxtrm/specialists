@@ -49,7 +49,7 @@ async function initGitRepo(tempDir: string): Promise<void> {
 async function writeSpecialist(dir: string, name: string, model = 'gemini'): Promise<void> {
   await mkdir(join(dir, 'specialists'), { recursive: true });
   await writeFile(
-    join(dir, 'specialists', `${name}.specialist.yaml`),
+    join(dir, 'specialists', `${name}.specialist.json`),
     [
       'specialist:',
       '  metadata:',

@@ -45,7 +45,7 @@ export async function run(): Promise<void> {
   lines.push('');
   lines.push(`  What this creates:`);
   lines.push(`  ${dim('.specialists/default/')} — canonical specialists (from init)`);
-  lines.push(`  ${dim('.specialists/user/')}    — custom .specialist.yaml files`);
+  lines.push(`  ${dim('.specialists/user/')}    — custom .specialist.json files`);
   lines.push(`  ${dim('.specialists/jobs|ready')} — runtime data — gitignored`);
   lines.push(`  ${dim('AGENTS.md')}          — context block injected into Claude sessions`);
   lines.push('');
@@ -60,8 +60,8 @@ export async function run(): Promise<void> {
   lines.push(`  ${cmd('specialists list')} ${flag('--json')}                     # machine-readable JSON`);
   lines.push('');
   lines.push(`  Scopes (searched in order, user wins on name collision):`);
-  lines.push(`  ${blue('user')}      .specialists/user/*.specialist.yaml`);
-  lines.push(`  ${blue('default')}   .specialists/default/*.specialist.yaml`);
+  lines.push(`  ${blue('user')}      .specialists/user/*.specialist.json`);
+  lines.push(`  ${blue('default')}   .specialists/default/*.specialist.json`);
   lines.push('');
 
   // ── 4. Running a specialist ────────────────────────────────────────────────
@@ -133,8 +133,8 @@ export async function run(): Promise<void> {
   lines.push(`  ${cmd('specialists edit code-review')} ${flag('--model')} ${dim('...')} ${flag('--dry-run')}`);
   lines.push('');
 
-  // ── 7. .specialist.yaml schema ────────────────────────────────────────────
-  lines.push(section('7. .specialist.yaml Schema'));
+  // ── 7. .specialist.json schema ────────────────────────────────────────────
+  lines.push(section('7. .specialist.json Schema'));
   lines.push('');
   lines.push(`  Full annotated example:`);
   lines.push('');

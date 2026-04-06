@@ -18,7 +18,7 @@ function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.en
 
 async function writeSpecialist(tempDir: string, name: string, model = 'invalid/model') {
   await mkdir(join(tempDir, 'specialists'), { recursive: true });
-  await writeFile(join(tempDir, 'specialists', `${name}.specialist.yaml`), [
+  await writeFile(join(tempDir, 'specialists', `${name}.specialist.json`), [
     'specialist:',
     '  metadata:',
     `    name: ${name}`,
@@ -90,7 +90,7 @@ describe('integration: specialists run', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-'));
     await mkdir(join(tempDir, '.specialists'), { recursive: true });
     await mkdir(join(tempDir, 'specialists'), { recursive: true });
-    await writeFile(join(tempDir, 'specialists', 'code-review.specialist.yaml'), [
+    await writeFile(join(tempDir, 'specialists', 'code-review.specialist.json'), [
       'specialist:',
       '  metadata:',
       '    name: code-review',

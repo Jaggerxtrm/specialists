@@ -1,6 +1,5 @@
 // src/specialist/schema.ts
 import * as z from 'zod';
-import { parse as parseYaml } from 'yaml';
 
 const KebabCase = z.string().regex(/^[a-z][a-z0-9-]*$/, 'Must be kebab-case');
 const Semver = z.string().regex(/^\d+\.\d+\.\d+$/, 'Must be semver (e.g. 1.0.0)');
@@ -184,23 +183,22 @@ function getFriendlyMessage(issue: z.ZodIssue): string {
 }
 
 /**
- * Validate a specialist YAML content and return structured results.
+ * Validate specialist JSON content and return structured results.
  * Use this for CLI validation and friendly error messages.
  */
-export async function validateSpecialist(yamlContent: string): Promise<ValidationResult> {
+export async function validateSpecialist(jsonContent: string): Promise<ValidationResult> {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
-  
-  // Try to parse YAML first
+
   let raw: unknown;
   try {
-    raw = parseYaml(yamlContent);
+    raw = JSON.parse(jsonContent);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push({
-      path: 'yaml',
-      message: `YAML parse error: ${msg}`,
-      code: 'yaml_parse_error',
+      path: 'json',
+      message: `JSON parse error: ${msg}`,
+      code: 'json_parse_error',
     });
     return { valid: false, errors, warnings };
   }
@@ -239,8 +237,8 @@ export async function validateSpecialist(yamlContent: string): Promise<Validatio
   
   return { valid: errors.length === 0, errors, warnings };
 }
-export async function parseSpecialist(yamlContent: string): Promise<Specialist> {
-  const result = await validateSpecialist(yamlContent);
+export async function parseSpecialist(jsonContent: string): Promise<Specialist> {
+  const result = await validateSpecialist(jsonContent);
   
   if (!result.valid) {
     const errorList = result.errors.map(e => `  • ${e.message}`).join('\n');
@@ -253,6 +251,6 @@ export async function parseSpecialist(yamlContent: string): Promise<Specialist> 
   }
   
   // Safe to parse now (we know it's valid)
-  const raw = parseYaml(yamlContent);
+  const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }

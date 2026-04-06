@@ -1,6 +1,6 @@
 // src/cli/validate.ts
 //
-// Validate a specialist YAML file against the schema.
+// Validate a specialist config file against the schema.
 
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -52,9 +52,15 @@ function findSpecialistFile(name: string): string | undefined {
   ];
   
   for (const dir of scanDirs) {
-    const candidate = join(dir, `${name}.specialist.yaml`);
-    if (existsSync(candidate)) {
-      return candidate;
+    const jsonCandidate = join(dir, `${name}.specialist.json`);
+    if (existsSync(jsonCandidate)) {
+      return jsonCandidate;
+    }
+
+    const yamlCandidate = join(dir, `${name}.specialist.json`);
+    if (existsSync(yamlCandidate)) {
+      process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${yamlCandidate}. Please migrate to .specialist.json\n`);
+      return yamlCandidate;
     }
   }
   
@@ -125,7 +131,7 @@ export async function run(): Promise<void> {
     console.log(`${red('✗')} Schema validation failed:\n`);
     for (const error of result.errors) {
       console.log(`  ${red('•')} ${error.message}`);
-      if (error.path && error.path !== 'yaml') {
+      if (error.path && error.path !== 'json') {
         console.log(`    ${dim(`path: ${error.path}`)}`);
       }
     }

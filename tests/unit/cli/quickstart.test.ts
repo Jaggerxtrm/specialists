@@ -30,7 +30,7 @@ describe('quickstart CLI — run()', () => {
       '4. Running a Specialist',
       '5. Async Job Lifecycle',
       '6. Editing Specialists',
-      '7. .specialist.yaml Schema',
+      '7. .specialist.json Schema',
       '8. Hook System',
       '9. MCP Integration',
       '10. Common Workflows',

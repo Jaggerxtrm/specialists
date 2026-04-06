@@ -34,7 +34,7 @@ async function writeStatus(
 
 async function writeSpecialist(tempDir: string, name: string): Promise<void> {
   await mkdir(join(tempDir, 'specialists'), { recursive: true });
-  await writeFile(join(tempDir, 'specialists', `${name}.specialist.yaml`), [
+  await writeFile(join(tempDir, 'specialists', `${name}.specialist.json`), [
     'specialist:',
     '  metadata:',
     `    name: ${name}`,

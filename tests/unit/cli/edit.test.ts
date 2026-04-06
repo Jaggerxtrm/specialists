@@ -89,7 +89,7 @@ describe('edit CLI — run() YAML mutations', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-edit-test-'));
     const specialistsDir = join(tempDir, 'specialists');
     await mkdir(specialistsDir, { recursive: true });
-    specPath = join(specialistsDir, 'test-spec.specialist.yaml');
+    specPath = join(specialistsDir, 'test-spec.specialist.json');
     await writeFile(specPath, MINIMAL_YAML, 'utf-8');
 
     vi.spyOn(console, 'log').mockImplementation(() => {});

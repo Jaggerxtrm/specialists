@@ -1,6 +1,6 @@
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { parseSpecialist, type ScriptEntry, type Specialist } from './schema.js';
 
@@ -84,20 +84,42 @@ export class SpecialistLoader {
     return dirs.filter(d => existsSync(d.path));
   }
 
+  private resolveSpecialistPath(dirPath: string, specialistName: string): { filePath: string; deprecatedYaml: boolean } | null {
+    const jsonPath = join(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync(jsonPath)) {
+      return { filePath: jsonPath, deprecatedYaml: false };
+    }
+
+    const yamlPath = join(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync(yamlPath)) {
+      return { filePath: yamlPath, deprecatedYaml: true };
+    }
+
+    return null;
+  }
+
   async list(category?: string): Promise<SpecialistSummary[]> {
     const results: SpecialistSummary[] = [];
     const seen = new Set<string>();
 
     for (const dir of this.getScanDirs()) {
       const files = await readdir(dir.path).catch(() => []);
-      for (const file of files.filter(f => f.endsWith('.specialist.yaml'))) {
-        const filePath = join(dir.path, file);
+      for (const file of files.filter(f => f.endsWith('.specialist.json') || f.endsWith('.specialist.json'))) {
+        const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, '');
+        if (seen.has(specialistName)) continue;
+
+        const resolved = this.resolveSpecialistPath(dir.path, specialistName);
+        if (!resolved) continue;
+
         try {
-          const content = await readFile(filePath, 'utf-8');
+          const content = await readFile(resolved.filePath, 'utf-8');
           const spec = await parseSpecialist(content);
           const { name, description, category: cat, version, updated } = spec.specialist.metadata;
           if (seen.has(name)) continue; // first wins (user overrides default)
           if (category && cat !== category) continue;
+          if (resolved.deprecatedYaml) {
+            process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolved.filePath}. Please migrate to .specialist.json\n`);
+          }
           seen.add(name);
           results.push({
             name,
@@ -111,7 +133,7 @@ export class SpecialistLoader {
             skills: spec.specialist.skills?.paths ?? [],
             scripts: spec.specialist.skills?.scripts ?? [],
             scope: dir.scope,
-            filePath,
+            filePath: resolved.filePath,
             updated,
             filestoWatch: spec.specialist.validation?.files_to_watch,
             staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
@@ -119,7 +141,7 @@ export class SpecialistLoader {
           });
         } catch (e: unknown) {
           const reason = e instanceof Error ? e.message : String(e);
-          process.stderr.write(`[specialists] skipping ${filePath}: ${reason}\n`);
+          process.stderr.write(`[specialists] skipping ${resolved.filePath}: ${reason}\n`);
         }
       }
     }
@@ -130,26 +152,30 @@ export class SpecialistLoader {
     if (this.cache.has(name)) return this.cache.get(name)!;
 
     for (const dir of this.getScanDirs()) {
-      const filePath = join(dir.path, `${name}.specialist.yaml`);
-      if (existsSync(filePath)) {
-        const content = await readFile(filePath, 'utf-8');
-        const spec = await parseSpecialist(content);
+      const resolvedPath = this.resolveSpecialistPath(dir.path, name);
+      if (!resolvedPath) continue;
 
-        // Resolve skills.paths at load time (~/..., ./..., absolute)
-        const rawPaths = spec.specialist.skills?.paths;
-        if (rawPaths?.length) {
-          const fileDir = dir.path;
-          const resolved = rawPaths.map(p => {
-            if (p.startsWith('~/')) return join(process.env.HOME || '', p.slice(2));
-            if (p.startsWith('./')) return join(fileDir, p.slice(2));
-            return p; // absolute
-          });
-          (spec.specialist.skills as any).paths = resolved;
-        }
+      const content = await readFile(resolvedPath.filePath, 'utf-8');
+      const spec = await parseSpecialist(content);
 
-        this.cache.set(name, spec);
-        return spec;
+      if (resolvedPath.deprecatedYaml) {
+        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolvedPath.filePath}. Please migrate to .specialist.json\n`);
       }
+
+      // Resolve skills.paths at load time (~/..., ./..., absolute)
+      const rawPaths = spec.specialist.skills?.paths;
+      if (rawPaths?.length) {
+        const fileDir = dir.path;
+        const resolved = rawPaths.map(p => {
+          if (p.startsWith('~/')) return join(process.env.HOME || '', p.slice(2));
+          if (p.startsWith('./')) return join(fileDir, p.slice(2));
+          return p; // absolute
+        });
+        (spec.specialist.skills as any).paths = resolved;
+      }
+
+      this.cache.set(name, spec);
+      return spec;
     }
     throw new Error(`Specialist not found: ${name}`);
   }
