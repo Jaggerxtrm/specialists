@@ -6,6 +6,14 @@
  *              status, result, feed, poll, clean, stop, attach, quickstart, help
  */
 
+// Suppress EBADF errors from bun's internal fd handling on named pipes.
+// These are benign — the fd was already closed by our explicit closeSync().
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EBADF' && err.syscall === 'close') return;
+  console.error('[specialists] [ERROR] Fatal error:', err);
+  process.exit(1);
+});
+
 import { SpecialistsServer } from "./server.js";
 import { logger } from "./utils/logger.js";
 
@@ -205,6 +213,8 @@ async function run() {
         '       specialists edit --all --get <dot.path>',
         '       specialists edit --all --set <dot.path> <value> [options]',
         '       specialists edit --all',
+        '       specialists edit <name> --preset <preset> [--dry-run]',
+        '       specialists edit --list-presets',
         '',
         'Edit specialist YAML fields via schema-validated dot-paths.',
         '',
@@ -212,6 +222,8 @@ async function run() {
         '  --append                 Append value(s) to array field',
         '  --remove                 Remove value(s) from array field',
         '  --file <path>            Read value from file (prompt.system/task_template)',
+        '  --preset <name>          Apply a preset (bundle of field values)',
+        '  --list-presets            Show available presets',
         '  --dry-run                Preview change without writing',
         '  --scope <default|user>   Disambiguate duplicate names across scopes',
         '  --all                    Target all specialists (or open all in $EDITOR when used alone)',
@@ -224,7 +236,10 @@ async function run() {
         '  specialists edit code-review --get specialist.execution.timeout_ms',
         '  specialists edit code-review --set specialist.metadata.tags review,security --append',
         '  specialists edit code-review --set specialist.prompt.system _ --file ./prompt.txt',
+        '  specialists edit code-review --preset power',
+        '  specialists edit code-review --preset cheap --dry-run',
         '  specialists edit --all --get specialist.execution.mode',
+        '  specialists edit --list-presets',
         '  specialists edit --all',
         '',
       ].join('\n'));
