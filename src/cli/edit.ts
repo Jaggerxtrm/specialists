@@ -608,16 +608,16 @@ export async function run(): Promise<void> {
     const targets = await resolveTargets(args);
     for (const target of targets) {
       const raw = readFileSync(target.filePath, 'utf-8');
-      const doc = parseDocument(raw);
+      const doc = JSON.parse(raw) as Record<string, unknown>;
 
       for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
         const resolved = resolvePath(fieldPath);
         const rawVal = typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue);
         const typedValue = coerceValue(resolved.schema, rawVal);
-        doc.setIn(resolved.segments, typedValue);
+        setAtPath(doc, resolved.segments, typedValue);
       }
 
-      const updated = doc.toString();
+      const updated = `${JSON.stringify(doc, null, 2)}\n`;
       if (args.dryRun) {
         printDryRun(target.filePath, raw, updated);
         continue;
