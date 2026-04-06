@@ -27645,7 +27645,9 @@ async function run25() {
     bold14("Examples:"),
     "  specialists init",
     "  specialists list",
-    "  specialists config get specialist.execution.stall_timeout_ms",
+    "  specialists view explorer --section prompt",
+    "  specialists edit executor --preset power",
+    "  specialists edit explorer --get specialist.execution.model",
     "  specialists run debugger --bead unitAI-123",
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
     "  specialists poll abc123 --json                  # check job status",
@@ -27660,6 +27662,8 @@ async function run25() {
     "",
     bold14("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
+    "  specialists view --help        View specialist configs",
+    "  specialists edit --help        Edit specialist fields (dot-path, presets)",
     "  specialists run --help         Run command details and flags",
     "  specialists poll --help        Job status polling details",
     "  specialists steer --help       Mid-run steering details",
@@ -27678,8 +27682,9 @@ var init_help = __esm(() => {
   CORE_COMMANDS = [
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
     ["list", "List specialists; --live for interactive tmux session picker"],
-    ["validate", "Validate a specialist YAML against the schema"],
-    ["config", "Batch get/set specialist YAML keys in config/specialists/"],
+    ["view", "Pretty-print specialist config with readable prompts; --section, --raw"],
+    ["edit", "Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets"],
+    ["validate", "Validate a specialist JSON config against the schema"],
     ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
     ["node", "Run and inspect NodeSupervisor nodes (run/status)"],
     ["feed", "Tail job events; use -f to follow all jobs"],
@@ -27688,7 +27693,6 @@ var init_help = __esm(() => {
     ["clean", "Purge completed job directories (TTL, --all, --keep, --dry-run)"],
     ["steer", "Send a mid-run message to a running job"],
     ["resume", "Resume a waiting keep-alive session with a next-turn prompt (retains full context)"],
-    ["follow-up", "[deprecated] Use resume instead"],
     ["stop", "Stop a running job"],
     ["attach", "Attach terminal to a running background job tmux session"],
     ["report", "Generate/show/list/diff session reports in .xtrm/reports/"],
@@ -27699,9 +27703,10 @@ var init_help = __esm(() => {
   ];
   EXTENDED_COMMANDS = [
     ["db setup", "Human-only: provision shared observability SQLite database"],
-    ["edit", "Edit a specialist field such as model or description"],
+    ["config", "[deprecated] Use sp edit --get/--set instead"],
     ["models", "List models available on pi"],
     ["version", "Print installed version"],
+    ["follow-up", "[deprecated] Use resume instead"],
     ["setup", "[deprecated] Use specialists init instead"],
     ["install", "[deprecated] Use specialists init instead"]
   ];
