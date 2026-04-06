@@ -2,6 +2,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
 import { parseSpecialist, type ScriptEntry, type Specialist } from './schema.js';
 
 export interface StallDetectionConfig {
@@ -84,13 +85,18 @@ export class SpecialistLoader {
     return dirs.filter(d => existsSync(d.path));
   }
 
+  private toJson(content: string, isYaml: boolean): string {
+    if (!isYaml) return content;
+    return JSON.stringify(parseYaml(content));
+  }
+
   private resolveSpecialistPath(dirPath: string, specialistName: string): { filePath: string; deprecatedYaml: boolean } | null {
     const jsonPath = join(dirPath, `${specialistName}.specialist.json`);
     if (existsSync(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
 
-    const yamlPath = join(dirPath, `${specialistName}.specialist.json`);
+    const yamlPath = join(dirPath, `${specialistName}.specialist.yaml`);
     if (existsSync(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
@@ -104,7 +110,7 @@ export class SpecialistLoader {
 
     for (const dir of this.getScanDirs()) {
       const files = await readdir(dir.path).catch(() => []);
-      for (const file of files.filter(f => f.endsWith('.specialist.json') || f.endsWith('.specialist.json'))) {
+      for (const file of files.filter(f => f.endsWith('.specialist.json') || f.endsWith('.specialist.yaml'))) {
         const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, '');
         if (seen.has(specialistName)) continue;
 
@@ -113,7 +119,7 @@ export class SpecialistLoader {
 
         try {
           const content = await readFile(resolved.filePath, 'utf-8');
-          const spec = await parseSpecialist(content);
+          const spec = await parseSpecialist(this.toJson(content, resolved.deprecatedYaml));
           const { name, description, category: cat, version, updated } = spec.specialist.metadata;
           if (seen.has(name)) continue; // first wins (user overrides default)
           if (category && cat !== category) continue;
@@ -156,7 +162,7 @@ export class SpecialistLoader {
       if (!resolvedPath) continue;
 
       const content = await readFile(resolvedPath.filePath, 'utf-8');
-      const spec = await parseSpecialist(content);
+      const spec = await parseSpecialist(this.toJson(content, resolvedPath.deprecatedYaml));
 
       if (resolvedPath.deprecatedYaml) {
         process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolvedPath.filePath}. Please migrate to .specialist.json\n`);
