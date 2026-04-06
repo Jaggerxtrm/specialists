@@ -1,0 +1,26 @@
+{
+  "cheap": {
+    "description": "Low-cost, fast responses — best for exploration and simple tasks",
+    "fields": {
+      "specialist.execution.model": "dashscope/qwen3.5-plus",
+      "specialist.execution.thinking_level": "off",
+      "specialist.execution.stall_timeout_ms": 60000
+    }
+  },
+  "medium": {
+    "description": "Balanced cost/quality — good default for most tasks",
+    "fields": {
+      "specialist.execution.model": "anthropic/claude-sonnet-4-6",
+      "specialist.execution.thinking_level": "low",
+      "specialist.execution.stall_timeout_ms": 120000
+    }
+  },
+  "power": {
+    "description": "Maximum capability — complex implementation and reasoning",
+    "fields": {
+      "specialist.execution.model": "openai-codex/gpt-5.4",
+      "specialist.execution.thinking_level": "high",
+      "specialist.execution.stall_timeout_ms": 300000
+    }
+  }
+}

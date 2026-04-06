@@ -34,7 +34,30 @@ const MULTILINE_FILE_PATHS = new Set([
   'specialist.prompt.task_template',
 ]);
 
-type Action = 'get' | 'set' | 'append' | 'remove' | 'open-all';
+interface PresetDefinition {
+  description: string;
+  fields: Record<string, unknown>;
+}
+
+function loadPresets(): Record<string, PresetDefinition> {
+  const paths = [
+    join(process.cwd(), 'config', 'presets.json'),
+    join(process.cwd(), 'config', 'specialists', 'presets.json'),
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      try {
+        const data = JSON.parse(readFileSync(p, 'utf-8'));
+        return data as Record<string, PresetDefinition>;
+      } catch {
+        return {};
+      }
+    }
+  }
+  return {};
+}
+
+type Action = 'get' | 'set' | 'append' | 'remove' | 'open-all' | 'list-presets' | 'preset';
 
 interface ParsedArgs {
   name?: string;
@@ -45,6 +68,7 @@ interface ParsedArgs {
   path?: string;
   value?: string;
   filePath?: string;
+  preset?: string;
 }
 
 interface ResolvedPath {
@@ -63,11 +87,15 @@ function usage(): string {
     '  specialists edit --all --set <dot.path> <value> [options]',
     '  specialists edit --all --get <dot.path>',
     '  specialists edit --all',
+    '  specialists edit <name> --preset <preset> [--dry-run]',
+    '  specialists edit --list-presets',
     '',
     'Options:',
     '  --append              Append value(s) to array field',
     '  --remove              Remove value(s) from array field',
     '  --file <path>         Read value from file (prompt.system/task_template)',
+    '  --preset <name>       Apply a preset (bundle of field values)',
+    '  --list-presets         Show available presets',
     '  --dry-run             Preview the change without writing',
     '  --scope <scope>       default | user',
     '  --name <specialist>   Alias for positional <name> (compat)',
@@ -86,6 +114,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     return { all: true, dryRun: false, action: 'open-all' };
   }
 
+  if (argv.includes('--list-presets')) {
+    return { all: false, dryRun: false, action: 'list-presets' };
+  }
+
   let name: string | undefined;
   let all = false;
   let scope: 'default' | 'user' | undefined;
@@ -95,6 +127,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let value: string | undefined;
   let filePath: string | undefined;
   let pendingArrayOp: 'append' | 'remove' | undefined;
+  let preset: string | undefined;
 
   const positional: string[] = [];
 
@@ -141,6 +174,16 @@ function parseArgs(argv: string[]): ParsedArgs {
         fail(`Error: --name requires a specialist name\n\n${usage()}`);
       }
       name = rawName;
+      continue;
+    }
+
+    if (token === '--preset') {
+      const presetName = argv[++i];
+      if (!presetName || presetName.startsWith('--')) {
+        fail(`Error: --preset requires a preset name\n\n${usage()}`);
+      }
+      preset = presetName;
+      action = 'preset';
       continue;
     }
 
@@ -215,6 +258,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: missing specialist name. Use <name> or --all\n\n${usage()}`);
   }
 
+  if (action === 'preset') {
+    return { name, all, scope, dryRun, action, path, value, filePath, preset };
+  }
+
   if (!path) {
     fail(`Error: missing dot-path\n\n${usage()}`);
   }
@@ -231,7 +278,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: file not found: ${filePath}`);
   }
 
-  return { name, all, scope, dryRun, action, path, value, filePath };
+  return { name, all, scope, dryRun, action, path, value, filePath, preset };
 }
 
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -510,6 +557,55 @@ export async function run(): Promise<void> {
 
   if (args.action === 'open-all') {
     openAllConfigSpecialistsInEditor();
+    return;
+  }
+
+  if (args.action === 'list-presets') {
+    const presets = loadPresets();
+    const entries = Object.entries(presets);
+    if (entries.length === 0) {
+      console.log('No presets found. Create config/presets.json to define presets.');
+      return;
+    }
+    for (const [name, preset] of entries) {
+      console.log(`${bold(name)}  ${dim(preset.description ?? '')}`);
+      for (const [field, val] of Object.entries(preset.fields)) {
+        console.log(`  ${yellow(field)} = ${formatOutputValue(val)}`);
+      }
+    }
+    return;
+  }
+
+  if (args.action === 'preset') {
+    const presets = loadPresets();
+    const preset = presets[args.preset!];
+    if (!preset) {
+      const available = Object.keys(presets).join(', ');
+      fail(`Error: preset "${args.preset}" not found. Available: ${available || 'none'}`);
+    }
+
+    const targets = await resolveTargets(args);
+    for (const target of targets) {
+      const raw = readFileSync(target.filePath, 'utf-8');
+      const doc = parseDocument(raw);
+
+      for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
+        const resolved = resolvePath(fieldPath);
+        const rawVal = typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue);
+        const typedValue = coerceValue(resolved.schema, rawVal);
+        doc.setIn(resolved.segments, typedValue);
+      }
+
+      const updated = doc.toString();
+      if (args.dryRun) {
+        printDryRun(target.filePath, raw, updated);
+        continue;
+      }
+
+      writeFileSync(target.filePath, updated, 'utf-8');
+      const fieldList = Object.keys(preset.fields).map(f => yellow(f)).join(', ');
+      console.log(`${green('✓')} ${bold(target.name)}: applied preset ${bold(args.preset!)} (${fieldList})`);
+    }
     return;
   }
 
