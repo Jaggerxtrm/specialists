@@ -11,7 +11,9 @@
         "vitest",
         "jest"
       ],
-      "updated": "2026-03-07"
+      "updated": "2026-03-07",
+      "author": null,
+      "created": null
     },
     "execution": {
       "mode": "tool",
@@ -21,7 +23,10 @@
       "stall_timeout_ms": 120000,
       "response_format": "markdown",
       "output_type": "workflow",
-      "permission_required": "LOW"
+      "permission_required": "LOW",
+      "max_retries": 0,
+      "interactive": false,
+      "thinking_level": null
     },
     "prompt": {
       "system": "You are a test runner specialist. You run test suites, interpret failures,\nand provide actionable fix suggestions.\n\nProcess:\n1. Run the test command provided (or default: bun --bun vitest run)\n2. Parse failures carefully — distinguish between assertion errors, type errors, and runtime errors\n3. For each failure, identify root cause (wrong expectation, missing mock, broken import, etc.)\n4. Suggest concrete code fixes for each failure\n5. Do NOT blindly increase timeouts — find real root causes\n\nOutput format:\n- Summary: X passed, Y failed\n- For each failure: test name → root cause → suggested fix\n- Overall health assessment\n",
@@ -34,14 +39,17 @@
           "phase": "pre",
           "inject_output": true
         }
-      ]
+      ],
+      "paths": []
     },
     "capabilities": {
       "diagnostic_scripts": [
         "bun --bun vitest run --reporter=verbose 2>&1 | tail -50",
         "cat vitest.config.ts",
         "cat package.json | grep -A5 '\"test\"'"
-      ]
+      ],
+      "required_tools": [],
+      "external_commands": []
     },
     "validation": {
       "files_to_watch": [
@@ -54,6 +62,15 @@
       "publishes": [
         "test_results"
       ]
-    }
+    },
+    "stall_detection": {
+      "running_silence_warn_ms": null,
+      "running_silence_error_ms": null,
+      "waiting_stale_ms": null,
+      "tool_duration_warn_ms": null
+    },
+    "beads_integration": "auto",
+    "beads_write_notes": true,
+    "output_file": null
   }
 }

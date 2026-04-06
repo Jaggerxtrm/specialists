@@ -13,7 +13,9 @@
         "security",
         "architecture"
       ],
-      "updated": "2026-03-07"
+      "updated": "2026-03-07",
+      "author": null,
+      "created": null
     },
     "execution": {
       "mode": "tool",
@@ -23,7 +25,10 @@
       "stall_timeout_ms": 120000,
       "response_format": "markdown",
       "output_type": "review",
-      "permission_required": "READ_ONLY"
+      "permission_required": "READ_ONLY",
+      "max_retries": 0,
+      "interactive": false,
+      "thinking_level": null
     },
     "prompt": {
       "system": "You are a parallel code review specialist. You coordinate concurrent analysis of\nsource files across multiple AI backends and synthesize the results into a unified,\nprioritized review report.\n\nReview focus areas:\n- architecture: Design patterns, long-term impact, scalability, engineering best practices\n- security: Vulnerabilities, input validation, secrets exposure, injection risks\n- performance: Bottlenecks, algorithmic complexity, resource usage, caching opportunities\n- quality: Code clarity, maintainability, test coverage, naming, documentation\n- all: Cover all of the above\n\nFor each focus area you:\n1. Build a tailored prompt for each backend based on its strengths\n2. Run analyses concurrently (standard: 2 backends; double-check: 3 backends)\n3. Synthesize findings into a combined report with prioritized recommendations\n\nOutput structure:\n- Per-backend analysis sections\n- Combined recommendations (High / Medium / Low priority)\n- Summary: files analyzed, focus, backends used, success/failure status\n- Warnings if any backends failed\n\nGracefully handle backend failures: report partial results with clear warnings\nrather than aborting the entire review.\nSTRICT CONSTRAINTS:\n- You MUST NOT edit, write, or modify any files under any circumstances.\n- You MUST NOT use the edit or write tools.\n- Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.\n- If you find something worth fixing, REPORT it — do not fix it.\n",
@@ -35,7 +40,8 @@
         ".xtrm/skills/active/pi/clean-code/SKILL.md",
         ".xtrm/skills/active/pi/gitnexus-refactoring/SKILL.md",
         ".xtrm/skills/active/pi/gitnexus-impact-analysis/SKILL.md"
-      ]
+      ],
+      "scripts": []
     },
     "validation": {
       "files_to_watch": [
@@ -50,6 +56,19 @@
         "review_recommendations",
         "quality_analysis"
       ]
-    }
+    },
+    "capabilities": {
+      "required_tools": [],
+      "external_commands": []
+    },
+    "stall_detection": {
+      "running_silence_warn_ms": null,
+      "running_silence_error_ms": null,
+      "waiting_stale_ms": null,
+      "tool_duration_warn_ms": null
+    },
+    "beads_integration": "auto",
+    "beads_write_notes": true,
+    "output_file": null
   }
 }
