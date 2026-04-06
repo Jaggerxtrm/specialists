@@ -2,7 +2,7 @@
 
 /**
  * Specialists MCP Server — entry point
- * Subcommands: install, version, list, models, init, db, validate, edit, config, run,
+ * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
  *              status, result, feed, poll, clean, stop, attach, quickstart, help
  */
 
@@ -85,6 +85,35 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/list.js');
+    return handler();
+  }
+
+  if (sub === 'view') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists view <name> [options]',
+        '       specialists view [--all]',
+        '',
+        'Inspect specialist config with readable prompt rendering.',
+        '',
+        'Modes:',
+        '  specialists view <name>         Render one specialist in human-friendly sections',
+        '  specialists view --section X    Render one section only (metadata/execution/prompt/...)',
+        '  specialists view --raw          Print raw source config for piping',
+        '  specialists view --all          Show detailed catalog for all specialists',
+        '  specialists view                Show catalog, then prompt to pick a specialist',
+        '',
+        'Examples:',
+        '  specialists view debugger',
+        '  specialists view debugger --section prompt',
+        '  specialists view debugger --raw',
+        '  specialists view --all',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/view.js');
     return handler();
   }
 
