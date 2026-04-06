@@ -26,8 +26,8 @@ describe('config CLI', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-config-test-'));
     const configDir = join(tempDir, 'config', 'specialists');
     await mkdir(configDir, { recursive: true });
-    await writeFile(join(configDir, 'executor.specialist.yaml'), EXECUTOR_YAML, 'utf-8');
-    await writeFile(join(configDir, 'explorer.specialist.yaml'), EXPLORER_YAML, 'utf-8');
+    await writeFile(join(configDir, 'executor.specialist.json'), EXECUTOR_YAML, 'utf-8');
+    await writeFile(join(configDir, 'explorer.specialist.json'), EXPLORER_YAML, 'utf-8');
 
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -60,8 +60,8 @@ describe('config CLI', () => {
     const { run } = await import('../../../src/cli/config.js');
     await run();
 
-    const executor = await readFile(join(tempDir, 'config', 'specialists', 'executor.specialist.yaml'), 'utf-8');
-    const explorer = await readFile(join(tempDir, 'config', 'specialists', 'explorer.specialist.yaml'), 'utf-8');
+    const executor = await readFile(join(tempDir, 'config', 'specialists', 'executor.specialist.json'), 'utf-8');
+    const explorer = await readFile(join(tempDir, 'config', 'specialists', 'explorer.specialist.json'), 'utf-8');
 
     expect(executor).toContain('stall_timeout_ms: 180000');
     expect(explorer).toContain('stall_timeout_ms: 180000');
@@ -82,8 +82,8 @@ describe('config CLI', () => {
     const { run } = await import('../../../src/cli/config.js');
     await run();
 
-    const executor = await readFile(join(tempDir, 'config', 'specialists', 'executor.specialist.yaml'), 'utf-8');
-    const explorer = await readFile(join(tempDir, 'config', 'specialists', 'explorer.specialist.yaml'), 'utf-8');
+    const executor = await readFile(join(tempDir, 'config', 'specialists', 'executor.specialist.json'), 'utf-8');
+    const explorer = await readFile(join(tempDir, 'config', 'specialists', 'explorer.specialist.json'), 'utf-8');
 
     expect(executor).toContain('stall_timeout_ms: 210000');
     expect(explorer).toContain('stall_timeout_ms: 150000');

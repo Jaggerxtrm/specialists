@@ -113,7 +113,7 @@ describe('init CLI — run()', () => {
     await runInit(tempDir);
     const specialistsDir = join(tempDir, '.specialists', 'default');
     const files = await readdir(specialistsDir).catch(() => []);
-    const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
+    const yamlFiles = files.filter(f => f.endsWith('.specialist.json'));
     expect(yamlFiles.length).toBe(0);
   });
 
@@ -121,12 +121,12 @@ describe('init CLI — run()', () => {
     await runInit(tempDir, { syncDefaults: true });
     const specialistsDir = join(tempDir, '.specialists', 'default');
     const files = await readdir(specialistsDir).catch(() => []);
-    const yamlFiles = files.filter(f => f.endsWith('.specialist.yaml'));
+    const yamlFiles = files.filter(f => f.endsWith('.specialist.json'));
     
     expect(yamlFiles.length).toBeGreaterThan(0);
-    expect(yamlFiles).toContain('debugger.specialist.yaml');
-    expect(yamlFiles).toContain('explorer.specialist.yaml');
-    expect(yamlFiles).toContain('overthinker.specialist.yaml');
+    expect(yamlFiles).toContain('debugger.specialist.json');
+    expect(yamlFiles).toContain('explorer.specialist.json');
+    expect(yamlFiles).toContain('overthinker.specialist.json');
   });
 
   it('migrates legacy nested specialists directories to flattened layout', async () => {
@@ -136,16 +136,16 @@ describe('init CLI — run()', () => {
     await mkdir(legacyDefaultDir, { recursive: true });
     await mkdir(legacyUserDir, { recursive: true });
 
-    const legacyDefaultPath = join(legacyDefaultDir, 'legacy-default.specialist.yaml');
-    const legacyUserPath = join(legacyUserDir, 'legacy-user.specialist.yaml');
+    const legacyDefaultPath = join(legacyDefaultDir, 'legacy-default.specialist.json');
+    const legacyUserPath = join(legacyUserDir, 'legacy-user.specialist.json');
     await writeFile(legacyDefaultPath, `specialist:\n  metadata:\n    name: legacy-default\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
     await writeFile(legacyUserPath, `specialist:\n  metadata:\n    name: legacy-user\n    version: 1.0.0\n    description: legacy\n    category: test\n  execution:\n    model: test-model\n  prompt:\n    task_template: test\n`);
 
     // default migration only runs with --sync-defaults; user migration always runs
     await runInit(tempDir, { syncDefaults: true });
 
-    expect(existsSync(join(tempDir, '.specialists', 'default', 'legacy-default.specialist.yaml'))).toBe(true);
-    expect(existsSync(join(tempDir, '.specialists', 'user', 'legacy-user.specialist.yaml'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'default', 'legacy-default.specialist.json'))).toBe(true);
+    expect(existsSync(join(tempDir, '.specialists', 'user', 'legacy-user.specialist.json'))).toBe(true);
     expect(existsSync(legacyDefaultPath)).toBe(false);
     expect(existsSync(legacyUserPath)).toBe(false);
   });
@@ -164,12 +164,12 @@ describe('init CLI — run()', () => {
   prompt:
     task_template: "custom"
 `;
-    await writeFile(join(specialistsDir, 'debugger.specialist.yaml'), customContent, 'utf-8');
+    await writeFile(join(specialistsDir, 'debugger.specialist.json'), customContent, 'utf-8');
 
     await runInit(tempDir, { syncDefaults: true });
 
     // The custom file should NOT be overwritten
-    const content = await readFile(join(specialistsDir, 'debugger.specialist.yaml'), 'utf-8');
+    const content = await readFile(join(specialistsDir, 'debugger.specialist.json'), 'utf-8');
     expect(content).toContain('99.0.0');
     expect(content).toContain('Custom bug hunt');
   });
@@ -177,14 +177,14 @@ describe('init CLI — run()', () => {
   it('plain init never touches .specialists/default/ even when PI_SESSION_ID is set', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');
     await mkdir(specialistsDir, { recursive: true });
-    await writeFile(join(specialistsDir, 'custom.specialist.yaml'), 'custom', 'utf-8');
+    await writeFile(join(specialistsDir, 'custom.specialist.json'), 'custom', 'utf-8');
 
     process.env.PI_SESSION_ID = 'pi-session-test';
     await runInit(tempDir); // no syncDefaults — always safe
     delete process.env.PI_SESSION_ID;
 
     const files = await readdir(specialistsDir);
-    expect(files).toEqual(['custom.specialist.yaml']); // no additions
+    expect(files).toEqual(['custom.specialist.json']); // no additions
   });
 
   it('installs hooks to .claude/hooks/ (project-local for Claude)', async () => {

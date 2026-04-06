@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseDocument } from 'yaml';
 import * as z from 'zod';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistSchema } from '../specialist/schema.js';
@@ -449,12 +448,12 @@ function openAllConfigSpecialistsInEditor(): void {
   }
 
   const files = readdirSync(configDir)
-    .filter(file => file.endsWith('.specialist.yaml'))
+    .filter(file => file.endsWith('.specialist.json'))
     .sort()
     .map(file => join(configDir, file));
 
   if (files.length === 0) {
-    fail('Error: no specialist YAML files found in config/specialists/');
+    fail('Error: no specialist JSON files found in config/specialists/');
   }
 
   const editor = process.env.VISUAL ?? process.env.EDITOR ?? 'vi';
@@ -477,19 +476,41 @@ function getRawValue(args: ParsedArgs, resolvedPath: ResolvedPath): string {
   return readFileSync(args.filePath, 'utf-8');
 }
 
+function getAtPath(root: unknown, segments: string[]): unknown {
+  let current = root as Record<string, unknown> | undefined;
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = current[segment] as Record<string, unknown> | undefined;
+  }
+  return current;
+}
+
+function setAtPath(root: Record<string, unknown>, segments: string[], value: unknown): void {
+  let current = root;
+  for (let index = 0; index < segments.length - 1; index++) {
+    const segment = segments[index]!;
+    const next = current[segment];
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) {
+      current[segment] = {};
+    }
+    current = current[segment] as Record<string, unknown>;
+  }
+  current[segments[segments.length - 1]!] = value;
+}
+
 function applyMutation(
-  doc: ReturnType<typeof parseDocument>,
+  jsonDoc: Record<string, unknown>,
   args: ParsedArgs,
   resolvedPath: ResolvedPath,
 ): unknown {
   if (args.action === 'get') {
-    return doc.getIn(resolvedPath.segments);
+    return getAtPath(jsonDoc, resolvedPath.segments);
   }
 
   const rawValue = getRawValue(args, resolvedPath);
 
   if (args.action === 'append' || args.action === 'remove') {
-    const current = doc.getIn(resolvedPath.segments);
+    const current = getAtPath(jsonDoc, resolvedPath.segments);
     const currentArray = Array.isArray(current) ? [...current] : [];
     const values = normalizeArrayValues(resolvedPath.schema, rawValue);
 
@@ -497,7 +518,7 @@ function applyMutation(
       ? [...currentArray, ...values]
       : currentArray.filter(item => !values.some(value => deepEqual(item, value)));
 
-    doc.setIn(resolvedPath.segments, next);
+    setAtPath(jsonDoc, resolvedPath.segments, next);
     return next;
   }
 
@@ -509,7 +530,7 @@ function applyMutation(
     }
   }
 
-  doc.setIn(resolvedPath.segments, typedValue);
+  setAtPath(jsonDoc, resolvedPath.segments, typedValue);
   return typedValue;
 }
 
@@ -618,16 +639,27 @@ export async function run(): Promise<void> {
 
   for (const target of targets) {
     const raw = readFileSync(target.filePath, 'utf-8');
-    const doc = parseDocument(raw);
+    let doc: Record<string, unknown>;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        fail(`Error: specialist file must contain a JSON object (${target.filePath})`);
+      }
+      doc = parsed as Record<string, unknown>;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fail(`Error: failed to parse JSON in ${target.filePath}: ${message}`);
+    }
 
     if (args.action === 'get') {
-      const value = doc.getIn(resolvedPath.segments);
+      const value = getAtPath(doc, resolvedPath.segments);
       console.log(`${yellow(target.name)}: ${formatOutputValue(value)}`);
       continue;
     }
 
     const nextValue = applyMutation(doc, args, resolvedPath);
-    const updated = doc.toString();
+    const updated = `${JSON.stringify(doc, null, 2)}\n`;
 
     if (args.dryRun) {
       printDryRun(target.filePath, raw, updated);

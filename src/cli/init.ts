@@ -98,7 +98,9 @@ function migrateLegacySpecialists(cwd: string, scope: 'default' | 'user'): void 
     mkdirSync(targetDir, { recursive: true });
   }
 
-  const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.yaml'));
+  const files = readdirSync(sourceDir).filter(
+    f => f.endsWith('.specialist.json') || f.endsWith('.specialist.json'),
+  );
   if (files.length === 0) return;
 
   let moved = 0;
@@ -137,7 +139,7 @@ function copyCanonicalSpecialists(cwd: string): void {
   }
 
   const targetDir = join(cwd, '.specialists', 'default');
-  const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.yaml'));
+  const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.json'));
   
   if (files.length === 0) {
     skip('no specialist files found in package');

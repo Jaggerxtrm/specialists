@@ -59,7 +59,7 @@ describe('start_specialist tool', () => {
   it('applies execution.interactive default as keepAlive=true', async () => {
     mkdirSync(join(tempDir, '.specialists', 'default', 'specialists'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.yaml'),
+      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.json'),
       `specialist:\n  metadata:\n    name: architect\n    version: 1.0.0\n    description: test\n    category: test\n  execution:\n    model: anthropic/claude-sonnet-4-6\n    interactive: true\n  prompt:\n    task_template: \"$prompt\"\n`,
       'utf-8',
     );
@@ -77,7 +77,7 @@ describe('start_specialist tool', () => {
   it('allows no_keep_alive override for interactive specialists', async () => {
     mkdirSync(join(tempDir, '.specialists', 'default', 'specialists'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.yaml'),
+      join(tempDir, '.specialists', 'default', 'specialists', 'architect.specialist.json'),
       `specialist:\n  metadata:\n    name: architect\n    version: 1.0.0\n    description: test\n    category: test\n  execution:\n    model: anthropic/claude-sonnet-4-6\n    interactive: true\n  prompt:\n    task_template: "$prompt"\n`,
       'utf-8',
     );

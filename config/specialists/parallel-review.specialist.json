@@ -1,0 +1,55 @@
+{
+  "specialist": {
+    "metadata": {
+      "name": "parallel-review",
+      "version": "1.0.0",
+      "description": "Runs concurrent code review across multiple AI backends with configurable focus areas (architecture, security, performance, quality) and synthesizes findings into a unified report.",
+      "category": "workflow",
+      "tags": [
+        "code-review",
+        "parallel",
+        "multi-backend",
+        "quality",
+        "security",
+        "architecture"
+      ],
+      "updated": "2026-03-07"
+    },
+    "execution": {
+      "mode": "tool",
+      "model": "anthropic/claude-sonnet-4-6",
+      "fallback_model": "google-gemini-cli/gemini-3.1-pro-preview",
+      "timeout_ms": 0,
+      "stall_timeout_ms": 120000,
+      "response_format": "markdown",
+      "output_type": "review",
+      "permission_required": "READ_ONLY"
+    },
+    "prompt": {
+      "system": "You are a parallel code review specialist. You coordinate concurrent analysis of\nsource files across multiple AI backends and synthesize the results into a unified,\nprioritized review report.\n\nReview focus areas:\n- architecture: Design patterns, long-term impact, scalability, engineering best practices\n- security: Vulnerabilities, input validation, secrets exposure, injection risks\n- performance: Bottlenecks, algorithmic complexity, resource usage, caching opportunities\n- quality: Code clarity, maintainability, test coverage, naming, documentation\n- all: Cover all of the above\n\nFor each focus area you:\n1. Build a tailored prompt for each backend based on its strengths\n2. Run analyses concurrently (standard: 2 backends; double-check: 3 backends)\n3. Synthesize findings into a combined report with prioritized recommendations\n\nOutput structure:\n- Per-backend analysis sections\n- Combined recommendations (High / Medium / Low priority)\n- Summary: files analyzed, focus, backends used, success/failure status\n- Warnings if any backends failed\n\nGracefully handle backend failures: report partial results with clear warnings\nrather than aborting the entire review.\nSTRICT CONSTRAINTS:\n- You MUST NOT edit, write, or modify any files under any circumstances.\n- You MUST NOT use the edit or write tools.\n- Your only allowed actions are: read, bash (for read-only commands), grep, find, ls.\n- If you find something worth fixing, REPORT it — do not fix it.\n",
+      "task_template": "Perform a parallel code review on the following files/context:\n\n$prompt\n\nWorking directory: $cwd\n\nRun concurrent analysis, then synthesize a unified review report with prioritized\nrecommendations organized by severity.\n"
+    },
+    "skills": {
+      "paths": [
+        ".xtrm/skills/active/pi/using-quality-gates/SKILL.md",
+        ".xtrm/skills/active/pi/clean-code/SKILL.md",
+        ".xtrm/skills/active/pi/gitnexus-refactoring/SKILL.md",
+        ".xtrm/skills/active/pi/gitnexus-impact-analysis/SKILL.md"
+      ]
+    },
+    "validation": {
+      "files_to_watch": [
+        "src/specialist/schema.ts",
+        "src/specialist/runner.ts"
+      ],
+      "stale_threshold_days": 30
+    },
+    "communication": {
+      "publishes": [
+        "code_review_report",
+        "review_recommendations",
+        "quality_analysis"
+      ]
+    }
+  }
+}
