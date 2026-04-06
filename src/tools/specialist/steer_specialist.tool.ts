@@ -6,17 +6,17 @@ import { Supervisor } from '../../specialist/supervisor.js';
 import { resolveJobsDir } from '../../specialist/job-root.js';
 
 export const steerSpecialistSchema = z.object({
-  job_id: z.string().describe('Job ID returned by start_specialist or printed by specialists run'),
+  job_id: z.string().describe('Job ID printed by specialists run'),
   message: z.string().describe('Steering instruction to send to the running agent (e.g. "focus only on supervisor.ts")'),
 });
 
 export function createSteerSpecialistTool(registry: JobRegistry) {
   return {
     name: 'steer_specialist' as const,
-    description: 'Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call. Works for both in-process jobs (start_specialist) and CLI-started jobs (specialists run).',
+    description: 'Send a mid-run steering message to a running specialist job. The agent receives the message after its current tool calls finish, before the next LLM call.',
     inputSchema: steerSpecialistSchema,
     async execute(input: z.infer<typeof steerSpecialistSchema>) {
-      // Try in-process registry first (start_specialist jobs)
+      // Try in-process registry first
       const snap = registry.snapshot(input.job_id);
       if (snap) {
         const result = await registry.steer(input.job_id, input.message);

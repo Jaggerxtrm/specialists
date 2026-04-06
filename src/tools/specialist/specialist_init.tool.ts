@@ -33,7 +33,7 @@ export function createSpecialistInitTool(loader: SpecialistLoader, deps?: Specia
     description:
       'Call this first at session start. Returns available specialists and initializes beads ' +
       'tracking (runs `bd init` if not already set up). ' +
-      'Response includes: specialists[] (use with use_specialist/start_specialist), ' +
+      'Response includes: specialists[] (use with use_specialist), ' +
       'beads.available (bool), beads.initialized (bool). ' +
       'If beads.available is true, specialists with permission LOW/MEDIUM/HIGH will auto-create ' +
       'a beads issue when they run — no action needed from you.',

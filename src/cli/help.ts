@@ -87,7 +87,7 @@ export async function run(): Promise<void> {
     '    specialists run <name> --prompt "..." --raw    # legacy: raw LLM text deltas',
     '',
     '  Async patterns',
-    '    MCP:   start_specialist + feed_specialist',
+    '    MCP:   use_specialist (foreground, returns result directly)',
     '    CLI:   specialists run <name> --prompt "..."       # job ID prints on stderr',
     '           specialists feed|poll|result <job-id>         # observe/progress/final output',
     '    Shell: specialists run <name> --prompt "..." &      # native shell backgrounding',

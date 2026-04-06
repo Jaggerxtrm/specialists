@@ -87,7 +87,7 @@ export async function run(): Promise<void> {
   // ── 5. Background job lifecycle ────────────────────────────────────────────
   lines.push(section('5. Async Job Lifecycle'));
   lines.push('');
-  lines.push(`  ${bold('MCP pattern')}: ${cmd('start_specialist')} → ${cmd('feed_specialist')} (returns job_id directly)`);
+  lines.push(`  ${bold('MCP pattern')}: ${cmd('use_specialist')} (foreground, returns result directly)`);
   lines.push(`  ${bold('CLI pattern')}: ${cmd('specialists run <name> --prompt "..."')} prints ${dim('[job started: <id>]')} to stderr`);
   lines.push(`  ${bold('Shell pattern')}: ${cmd('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push('');
@@ -209,8 +209,6 @@ export async function run(): Promise<void> {
   lines.push(`  ${bold('specialist_init')}    — bootstrap: bd init + list specialists`);
   lines.push(`  ${bold('list_specialists')}   — discover specialists (project/user/system)`);
   lines.push(`  ${bold('use_specialist')}     — full lifecycle: load → agents.md → run → output`);
-  lines.push(`  ${bold('run_parallel')}       — concurrent or pipeline execution`);
-  lines.push(`  ${bold('start_specialist')}   — async job start, returns job ID`);
   lines.push(`  ${bold('feed_specialist')}    — stream events/output by job ID`);
   lines.push(`  ${bold('steer_specialist')}      — send a mid-run message to a running job`);
   lines.push(`  ${bold('resume_specialist')}    — resume a waiting keep-alive session with a next-turn prompt`);

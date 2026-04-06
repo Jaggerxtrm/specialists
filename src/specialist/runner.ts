@@ -907,7 +907,7 @@ export class SpecialistRunner {
 
   /**
    * @deprecated Legacy in-memory async path.
-   * start_specialist now uses Supervisor-backed jobs under .specialists/jobs.
+   * Now uses Supervisor-backed jobs under .specialists/jobs.
    */
   async startAsync(options: RunOptions, registry: import('./jobRegistry.js').JobRegistry): Promise<string> {
     const jobId = crypto.randomUUID();

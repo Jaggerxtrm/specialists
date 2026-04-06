@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { Supervisor } from '../../specialist/supervisor.js';
 
 export const stopSpecialistSchema = z.object({
-  job_id: z.string().describe('Job ID returned by start_specialist'),
+  job_id: z.string().describe('Job ID printed by specialists run'),
 });
 
 export function createStopSpecialistTool() {
   return {
     name: 'stop_specialist' as const,
-    description: 'Cancel a running specialist job by sending SIGTERM to its recorded process. Works for jobs started via start_specialist and CLI background runs.',
+    description: 'Cancel a running specialist job by sending SIGTERM to its recorded process.',
     inputSchema: stopSpecialistSchema,
     async execute(input: z.infer<typeof stopSpecialistSchema>) {
       const jobsDir = join(process.cwd(), '.specialists', 'jobs');

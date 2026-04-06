@@ -1,7 +1,7 @@
 // src/specialist/jobRegistry.ts
 //
 // LEGACY: in-memory registry for async specialist sessions.
-// start_specialist now uses Supervisor-backed file jobs in .specialists/jobs.
+// Now uses Supervisor-backed file jobs in .specialists/jobs.
 // This registry remains only as a compatibility layer for old in-process control paths.
 //
 import type { RunResult } from './runner.js';

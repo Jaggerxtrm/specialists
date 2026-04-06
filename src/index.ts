@@ -347,7 +347,7 @@ async function run() {
         '  --worktree requires --bead to derive a deterministic branch name.',
         '',
         'Async execution patterns:',
-        '  MCP:   start_specialist + feed_specialist',
+        '  MCP:   use_specialist (foreground, returns result directly)',
         '  CLI:   run prints [job started: <id>] on stderr, then use feed/poll/result',
         '  Shell: specialists run <name> --prompt "..." &',
         '',

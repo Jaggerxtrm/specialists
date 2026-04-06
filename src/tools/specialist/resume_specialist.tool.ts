@@ -20,7 +20,7 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
       'Use steer_specialist for mid-run steering of running jobs.',
     inputSchema: resumeSpecialistSchema,
     async execute(input: z.infer<typeof resumeSpecialistSchema>) {
-      // Try in-process registry first (start_specialist jobs with keepAlive)
+      // Try in-process registry first
       const snap = registry.snapshot(input.job_id);
       if (snap) {
         if (snap.status !== 'waiting') {
