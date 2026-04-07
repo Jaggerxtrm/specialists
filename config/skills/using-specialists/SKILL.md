@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.0
+version: 4.1
 ---
 
 # Specialists Usage
@@ -87,6 +87,9 @@ specialists stop <job-id>                     # cancel a job
 # Management
 specialists edit <name>                       # edit specialist config (dot-path, --preset)
 specialists clean                             # purge old job dirs + worktree GC
+specialists clean --processes                 # kill all running/starting specialist jobs
+specialists init --sync-skills                # re-sync skills only (no full init)
+specialists init --no-xtrm-check              # skip xtrm prerequisite check (CI/testing)
 ```
 
 ---
@@ -150,8 +153,8 @@ specialists run executor --worktree --bead abc-impl --context-depth 2 --backgrou
 
 # 6. [MERGE] Merge abc-impl worktree branch into master
 
-# 7. Wave 3 — Reviewer (no separate bead — uses --job to enter executor's worktree)
-specialists run reviewer --job a1b2c3 --keep-alive --background
+# 7. Wave 3 — Reviewer (no separate bead — uses --job + --prompt to enter executor's worktree)
+specialists run reviewer --job a1b2c3 --keep-alive --background --prompt "Review the token refresh fix"
 # -> Job started: r4v5w6
 # Reviewer reads task bead from job a1b2c3's status.json automatically
 # Reviewer auto-appends verdict to bead notes (READ_ONLY)
@@ -326,8 +329,8 @@ The review → fix loop is the mechanism for iterative quality improvement withi
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 # -> Job started: exec-job (e.g. 49adda)
 
-# Step 2 — Reviewer enters same worktree
-specialists run reviewer --job 49adda --keep-alive --background
+# Step 2 — Reviewer enters same worktree (--prompt required when no --bead)
+specialists run reviewer --job 49adda --keep-alive --background --prompt "Review impl changes"
 # -> Job started: rev-job
 specialists result rev-job
 # PARTIAL → go to step 3b
@@ -339,7 +342,7 @@ bd dep add fix1 impl
 specialists run executor --bead fix1 --job 49adda --context-depth 2 --background
 
 # Re-review
-specialists run reviewer --job 49adda --keep-alive --background
+specialists run reviewer --job 49adda --keep-alive --background --prompt "Re-review after fix"
 # PASS → close parent
 bd close unitAI-task --reason "Reviewer PASS. All findings addressed."
 ```
@@ -424,6 +427,13 @@ npm run build
 utility file (e.g. `job-root.ts`). This is expected — implementations should be identical.
 Keep one, delete the duplicate during conflict resolution.
 
+**File overlap conflict:** If two parallel executors modify the **same file** (e.g. both touch
+`init.ts`), their worktree branches will conflict on merge. Either sequence them as separate
+waves, or accept manual conflict resolution. When resolving: copy the incoming version from
+the worktree (`cat /path/to/.worktrees/.../file > main/file`), then re-apply missing changes
+from the other branch. **Always verify your cwd is the main repo** — shell state can drift
+into a worktree directory after merge operations.
+
 ---
 
 ## Bead-First Workflow (`--bead` is the prompt)
@@ -476,7 +486,7 @@ Run `specialists list` to see what's available. Match by task type:
 - **executor does not run tests** — it runs `lint + tsc` only. Tests belong to the reviewer or test-runner phase.
 - **executor enters `waiting` after first turn** — `interactive: true` is now default. If executor bails early (e.g. GitNexus CRITICAL risk warning), orchestrator can `resume` with "proceed, this is additive" instead of re-dispatching. Always `stop` executor explicitly when work is complete.
 - **explorer** is READ_ONLY — its output auto-appends to the input bead's notes. No implementation.
-- **reviewer** is best dispatched via `--job <exec-job>` rather than `--bead` — it enters the same worktree to see exactly what was written.
+- **reviewer** is best dispatched via `--job <exec-job> --prompt "..."` — it enters the same worktree to see exactly what was written. `--job` alone is not enough; `--prompt` or `--bead` is always required.
 - **debugger** over **explorer** when you need root cause analysis — GitNexus call-chain tracing, ranked hypotheses, evidence-backed remediation.
 - **overthinker** before **executor** for any non-trivial task — surfaces edge cases, challenges assumptions, produces solution direction. Cheap relative to wrong implementation.
 - **researcher** is the docs specialist — never look up library docs yourself, delegate to researcher.
@@ -491,7 +501,7 @@ specialists run debugger --bead unitAI-bug --context-depth 2 --background
 specialists run planner --bead unitAI-scope --context-depth 2 --background
 specialists run overthinker --bead unitAI-design --context-depth 2 --keep-alive --background
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
-specialists run reviewer --job <exec-job-id> --keep-alive --background
+specialists run reviewer --job <exec-job-id> --keep-alive --background --prompt "Review the <feature> implementation"
 specialists run sync-docs --bead unitAI-docs --context-depth 2 --keep-alive --background
 specialists run test-runner --bead unitAI-tests --context-depth 2 --background
 specialists run specialists-creator --bead unitAI-skill --context-depth 2 --background
@@ -719,14 +729,18 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 - **READ_ONLY output auto-appends** to the input bead after completion (via Supervisor). Output also available via `specialists result`.
 - **`--bead` and `--prompt` conflict** by design. For tracked work, update bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
 - **Job in `waiting` now shows magenta status** with resume hint in `status`, WAIT banner in `feed`, and resume footer in `result`. Always check before stopping a keep-alive job.
+- **Explorer (qwen) may produce empty output** — the model sometimes completes tool calls but fails to emit a final text summary. The bead notes will be empty. If this happens, either re-run with a different model or do the investigation yourself.
+- **`specialists init` requires xtrm** — `.xtrm/` directory and `xt` CLI must exist. Use `--no-xtrm-check` to bypass in CI/testing.
+- **`specialists doctor` now detects skill drift** — compares `config/skills/` hashes against `.xtrm/skills/default/` and validates symlink chains.
 
 ---
 
 ## Troubleshooting
 
 ```bash
-specialists doctor      # health check: hooks, MCP, zombie jobs
+specialists doctor      # health check: hooks, MCP, zombie jobs, skill drift detection
 specialists edit <name> # edit specialist config (dot-path, --preset)
+specialists clean --processes  # kill stale/zombie specialist processes
 ```
 
 - **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
@@ -744,3 +758,7 @@ specialists edit <name> # edit specialist config (dot-path, --preset)
 - **`--prompt` and `--bead` conflict** → use bead notes: `bd update <id> --notes "INSTRUCTION: ..."` then `--bead` only.
 - **Worktree already exists** → it will be reused (not recreated). Safe to re-run.
 - **`--job` fails: worktree_path missing** → target job was not started with `--worktree`. Use `--worktree` on the next run.
+- **`--job` without `--prompt` or `--bead`** → reviewer/executor requires one of these. Use `--prompt "Review the X implementation"` with `--job`.
+- **Stale specialist processes** → SessionStart hook warns about old binary versions. Run `specialists clean --processes` to kill them all.
+- **`specialists init` fails with xtrm error** → xtrm must be installed first: `npm install -g xtrm-tools && xt install`. Use `--no-xtrm-check` in CI.
+- **Skill drift detected by doctor** → Run `specialists init --sync-skills` to re-sync canonical skills to `.xtrm/skills/default/` and refresh active symlinks.

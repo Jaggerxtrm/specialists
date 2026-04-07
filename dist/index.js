@@ -20231,19 +20231,25 @@ function assertSkillRootSymlink(rootPath, expectedTargetPath) {
   }
 }
 function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
-  if (existsSync6(activeLinkPath)) {
-    const stats = lstatSync(activeLinkPath);
-    if (!stats.isSymbolicLink()) {
-      throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+  let stats;
+  try {
+    stats = lstatSync(activeLinkPath);
+  } catch (error2) {
+    const fileError = error2;
+    if (fileError.code === "ENOENT") {
+      const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
+      symlinkSync(relativeTarget, activeLinkPath, "dir");
+      return;
     }
-    const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
-    if (currentTarget !== resolve3(defaultSkillPath)) {
-      throw new Error(`${activeLinkPath} points to an unexpected target.`);
-    }
-    return;
+    throw error2;
   }
-  const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
-  symlinkSync(relativeTarget, activeLinkPath, "dir");
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+  }
+  const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
+  if (currentTarget !== resolve3(defaultSkillPath)) {
+    throw new Error(`${activeLinkPath} points to an unexpected target.`);
+  }
 }
 function installProjectSkills(cwd, syncSkills) {
   const xtrmRoot = join6(cwd, ".xtrm");
@@ -28177,11 +28183,16 @@ var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, y
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
-  run: () => run23
+  setStatusError: () => setStatusError,
+  run: () => run23,
+  renderProcessSummary: () => renderProcessSummary,
+  parseVersionTuple: () => parseVersionTuple,
+  compareVersions: () => compareVersions,
+  cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash3 } from "node:crypto";
 import { spawnSync as spawnSync17 } from "node:child_process";
-import { existsSync as existsSync21, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync9, readFileSync as readFileSync18, readlinkSync as readlinkSync2 } from "node:fs";
+import { existsSync as existsSync21, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync9, readFileSync as readFileSync18, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
 import { dirname as dirname5, join as join25, relative, resolve as resolve6 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green14("✓")} ${msg}`);
@@ -28493,6 +28504,85 @@ function checkRuntimeDirs() {
   }
   return allOk;
 }
+function parseVersionTuple(value) {
+  const normalized = value.trim().replace(/^v/i, "");
+  const match = normalized.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match)
+    return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function compareVersions(left, right) {
+  const leftTuple = parseVersionTuple(left);
+  const rightTuple = parseVersionTuple(right);
+  if (!leftTuple || !rightTuple)
+    return 0;
+  for (let index = 0;index < 3; index += 1) {
+    if (leftTuple[index] > rightTuple[index])
+      return 1;
+    if (leftTuple[index] < rightTuple[index])
+      return -1;
+  }
+  return 0;
+}
+function setStatusError(statusPath) {
+  try {
+    const raw = readFileSync18(statusPath, "utf8");
+    const status = JSON.parse(raw);
+    status.status = "error";
+    writeFileSync8(statusPath, `${JSON.stringify(status, null, 2)}
+`, "utf8");
+  } catch {}
+}
+function cleanupProcesses(jobsDir, dryRun) {
+  let entries;
+  try {
+    entries = readdirSync9(jobsDir);
+  } catch {
+    entries = [];
+  }
+  const result = {
+    total: 0,
+    running: 0,
+    zombies: 0,
+    updated: 0,
+    zombieJobIds: []
+  };
+  for (const jobId of entries) {
+    const statusPath = join25(jobsDir, jobId, "status.json");
+    if (!existsSync21(statusPath))
+      continue;
+    try {
+      const status = JSON.parse(readFileSync18(statusPath, "utf8"));
+      result.total += 1;
+      if (status.status !== "running" && status.status !== "starting")
+        continue;
+      if (!status.pid)
+        continue;
+      try {
+        process.kill(status.pid, 0);
+        result.running += 1;
+      } catch {
+        result.zombies += 1;
+        result.zombieJobIds.push(jobId);
+        if (!dryRun) {
+          setStatusError(statusPath);
+          result.updated += 1;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return result;
+}
+function renderProcessSummary(result, dryRun) {
+  if (result.zombies === 0) {
+    const detail = result.running > 0 ? `, ${result.running} currently running` : ", none currently running";
+    return `${result.total} job${result.total !== 1 ? "s" : ""} checked${detail}`;
+  }
+  const action = dryRun ? "would be marked error" : "marked error";
+  return `${result.zombies} zombie job${result.zombies === 1 ? "" : "s"} found (${result.updated} ${action})`;
+}
 function checkZombieJobs() {
   section3("Background jobs");
   const jobsDir = join25(CWD, ".specialists", "jobs");
@@ -28500,50 +28590,19 @@ function checkZombieJobs() {
     hint("No .specialists/jobs/ — skipping");
     return true;
   }
-  let entries;
-  try {
-    entries = readdirSync9(jobsDir);
-  } catch {
-    entries = [];
-  }
-  if (entries.length === 0) {
+  const result = cleanupProcesses(jobsDir, false);
+  if (result.total === 0) {
     ok3("No jobs found");
     return true;
   }
-  let zombies = 0;
-  let total = 0;
-  let running = 0;
-  for (const jobId of entries) {
-    const statusPath = join25(jobsDir, jobId, "status.json");
-    if (!existsSync21(statusPath))
-      continue;
-    try {
-      const status = JSON.parse(readFileSync18(statusPath, "utf8"));
-      total++;
-      if (status.status === "running" || status.status === "starting") {
-        const pid = status.pid;
-        if (pid) {
-          let alive = false;
-          try {
-            process.kill(pid, 0);
-            alive = true;
-          } catch {}
-          if (alive)
-            running++;
-          else {
-            zombies++;
-            warn2(`${jobId}  ${yellow12("ZOMBIE")}  ${dim13(`pid ${pid} not found, status=${status.status}`)}`);
-            fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
-          }
-        }
-      }
-    } catch {}
+  for (const jobId of result.zombieJobIds) {
+    warn2(`${jobId}  ${yellow12("ZOMBIE")}  ${dim13("pid not found for running job")}`);
+    fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
   }
-  if (zombies === 0) {
-    const detail = running > 0 ? `, ${running} currently running` : ", none currently running";
-    ok3(`${total} job${total !== 1 ? "s" : ""} checked${detail}`);
+  if (result.zombies === 0) {
+    ok3(renderProcessSummary(result, false));
   }
-  return zombies === 0;
+  return result.zombies === 0;
 }
 async function run23() {
   console.log(`
@@ -36360,7 +36419,7 @@ async function run26() {
         "",
         "Usage: specialists init [--sync-defaults] [--sync-skills] [--no-xtrm-check]",
         "",
-        "Bootstrap a project for specialists. This is the sole onboarding command.",
+        "Bootstrap a project for specialists. This is the specialists onboarding command.",
         "",
         "What it does (always safe, idempotent):",
         "  • creates .specialists/user/ for custom specialists",
@@ -36385,6 +36444,9 @@ async function run26() {
         "",
         "Notes:",
         "  setup and install are deprecated; use specialists init.",
+        "  Prerequisite: .claude/skills and .pi/skills must already be symlinks to",
+        "  .xtrm/skills/active/ (created by xt install). specialists init does not",
+        "  create those top-level symlinks.",
         "  MCP missing → specialists init (safe for anyone to call).",
         "  Specialists missing → specialists init --sync-defaults.",
         "  Skill sync only → specialists init --sync-skills.",
