@@ -35,17 +35,11 @@ interface JobNode {
   children: JobNode[];
 }
 
-interface NodeGroup {
-  kind: 'node';
-  node_id: string;
-  children: JobNode[];
-}
-
 interface WorktreeTree {
   owner_job_id: string;
   worktree_path?: string;
   branch?: string;
-  children: Array<JobNode | NodeGroup>;
+  children: JobNode[];
 }
 
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
@@ -185,31 +179,12 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
 
   for (const [ownerJobId, treeJobs] of sortedGroups) {
     const representative = treeJobs.find((job) => job.id === ownerJobId) ?? treeJobs[0];
-    const nonNodeJobs = treeJobs.filter((job) => !job.node_id);
-    const nodeBuckets = new Map<string, SupervisorStatus[]>();
-
-    for (const nodeJob of treeJobs.filter((job) => Boolean(job.node_id))) {
-      const nodeId = nodeJob.node_id!;
-      if (!nodeBuckets.has(nodeId)) nodeBuckets.set(nodeId, []);
-      nodeBuckets.get(nodeId)!.push(nodeJob);
-    }
-
-    const children: Array<JobNode | NodeGroup> = [
-      ...buildReuseForest(nonNodeJobs),
-      ...[...nodeBuckets.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([nodeId, nodeJobs]) => ({
-          kind: 'node' as const,
-          node_id: nodeId,
-          children: buildReuseForest(nodeJobs),
-        })),
-    ];
 
     trees.push({
       owner_job_id: ownerJobId,
       worktree_path: representative.worktree_path,
       branch: representative.branch,
-      children,
+      children: buildReuseForest(treeJobs),
     });
   }
 
@@ -323,17 +298,16 @@ function renderJobLine(job: JobNode, beadTitles: Map<string, string>, prefix = '
   console.log(`${prefix}${dim(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}${livenessLabel}`);
 }
 
-function renderTreeJobs(items: Array<JobNode | NodeGroup>, beadTitles: Map<string, string>, indent = ''): void {
-  for (const item of items) {
-    if (item.kind === 'node') {
-      console.log(`${indent}${bold(`node:${item.node_id}`)}`);
-      renderTreeJobs(item.children, beadTitles, `${indent}  `);
-      continue;
-    }
+function renderTreeJobs(items: JobNode[], beadTitles: Map<string, string>, indent = ''): void {
+  items.forEach((item, index) => {
+    const isLast = index === items.length - 1;
+    const branchPrefix = `${indent}${isLast ? '└─ ' : '├─ '}`;
+    renderJobLine(item, beadTitles, branchPrefix);
 
-    renderJobLine(item, beadTitles, `${indent}- `);
-    if (item.children.length > 0) renderTreeJobs(item.children, beadTitles, `${indent}  `);
-  }
+    if (item.children.length === 0) return;
+    const childIndent = `${indent}${isLast ? '   ' : '│  '}`;
+    renderTreeJobs(item.children, beadTitles, childIndent);
+  });
 }
 
 function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
