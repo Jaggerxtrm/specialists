@@ -285,25 +285,34 @@ const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonS
       actions: {
         type: 'array',
         items: {
-          type: 'object',
-          properties: {
-            type: {
-              enum: [
-                'resume_member',
-                'steer_member',
-                'request_human_input',
-                'spawn_member',
-                'stop_member',
-                'mark_blocked',
-                'complete_node',
-              ],
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                type: { enum: ['resume'] },
+                memberId: { type: 'string' },
+                task: { type: 'string' },
+              },
+              required: ['type', 'memberId', 'task'],
             },
-            target: { type: 'string' },
-            payload: { type: 'string' },
-            reason: { type: 'string' },
-            priority: { type: 'number' },
-          },
-          required: ['type', 'target', 'payload', 'reason'],
+            {
+              type: 'object',
+              properties: {
+                type: { enum: ['steer'] },
+                memberId: { type: 'string' },
+                message: { type: 'string' },
+              },
+              required: ['type', 'memberId', 'message'],
+            },
+            {
+              type: 'object',
+              properties: {
+                type: { enum: ['stop'] },
+                memberId: { type: 'string' },
+              },
+              required: ['type', 'memberId'],
+            },
+          ],
         },
       },
       blocking_on: {
@@ -316,12 +325,18 @@ const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonS
         required: ['kind'],
       },
       memory_patch: {
-        type: 'object',
-        properties: {
-          facts: { type: 'array', items: { type: 'string' } },
-          questions: { type: 'array', items: { type: 'string' } },
-          decisions: { type: 'array', items: { type: 'string' } },
-          handoff_summary: { type: 'string' },
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            entry_type: { enum: ['fact', 'question', 'decision'] },
+            entry_id: { type: 'string' },
+            summary: { type: 'string' },
+            source_member_id: { type: 'string' },
+            confidence: { type: 'number' },
+            provenance: { type: 'object' },
+          },
+          required: ['entry_type', 'summary'],
         },
       },
       coordination_state: {

@@ -8,6 +8,7 @@ import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { HookEmitter } from '../specialist/hooks.js';
 import {
   createObservabilitySqliteClient,
+  type NodeMemoryRow,
   type NodeRunRow,
 } from '../specialist/observability-sqlite.js';
 
@@ -427,14 +428,47 @@ async function handleNodeStatus(args: ParsedNodeArgs): Promise<void> {
   }
 }
 
-function buildFindingNotes(nodeId: string, findingId: string, summary: string): string {
-  return [
+function buildFindingNotes(nodeId: string, findingId: string, finding: NodeMemoryRow): string {
+  const lines = [
     'Node finding promoted',
     `node_id: ${nodeId}`,
     `finding_id: ${findingId}`,
+    `memory_entry_id: ${finding.entry_id ?? findingId}`,
+    `source_member_id: ${finding.source_member_id ?? 'unknown'}`,
+    `confidence: ${finding.confidence ?? 'unknown'}`,
     '',
-    summary,
-  ].join('\n');
+    '## Summary',
+    finding.summary?.trim() || '(no summary)',
+  ];
+
+  if (finding.provenance_json?.trim()) {
+    lines.push('', '## Provenance', '```json');
+    try {
+      const parsed = JSON.parse(finding.provenance_json);
+      lines.push(JSON.stringify(parsed, null, 2));
+    } catch {
+      lines.push(finding.provenance_json);
+    }
+    lines.push('```');
+  }
+
+  lines.push(
+    '',
+    '<!-- node_finding_provenance:start -->',
+    JSON.stringify({
+      node_id: nodeId,
+      finding_id: findingId,
+      memory_entry_id: finding.entry_id ?? findingId,
+      source_member_id: finding.source_member_id ?? null,
+      confidence: finding.confidence ?? null,
+      provenance_json: finding.provenance_json ?? null,
+      created_at_ms: finding.created_at_ms ?? null,
+      updated_at_ms: finding.updated_at_ms ?? null,
+    }),
+    '<!-- node_finding_provenance:end -->',
+  );
+
+  return lines.join('\n');
 }
 
 function promoteFindingToBead(beadId: string, notes: string): void {
@@ -474,7 +508,7 @@ async function handleNodePromote(args: ParsedNodeArgs): Promise<void> {
       throw new Error(`Finding ${findingId} has no summary to promote`);
     }
 
-    const notes = buildFindingNotes(nodeId, findingId, findingSummary);
+    const notes = buildFindingNotes(nodeId, findingId, finding);
     promoteFindingToBead(beadId, notes);
 
     if (args.jsonMode) {

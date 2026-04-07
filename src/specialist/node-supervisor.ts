@@ -21,6 +21,7 @@ const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = {
 
 const TERMINAL_NODE_STATUSES: ReadonlySet<NodeRunStatus> = new Set(['error', 'done', 'stopped']);
 const TERMINAL_MEMBER_STATUSES: ReadonlySet<string> = new Set(['done', 'error', 'stopped']);
+const TERMINAL_JOB_STATUSES: ReadonlySet<string> = new Set(['done', 'error', 'stopped']);
 
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
 
@@ -61,6 +62,18 @@ export interface NodeDispatchAction {
   memberId: string;
   task?: string;
   message?: string;
+  actionId?: string;
+  targetGeneration?: number;
+  dependsOnActionId?: string;
+}
+
+type ActionLifecycleState = 'queued' | 'written' | 'observed' | 'superseded' | 'completed' | 'failed';
+
+interface DispatchActionEnvelope {
+  actionId: string;
+  targetGeneration: number;
+  dependsOnActionId?: string;
+  action: NodeDispatchAction;
 }
 
 export interface NodeRunResult {
@@ -132,12 +145,18 @@ export class NodeSupervisor {
   private status: NodeRunStatus = 'created';
   private members: Map<string, NodeMemberEntry>;
   private coordinatorJobId: string | null = null;
-  private dispatchQueue: NodeDispatchAction[] = [];
+  private dispatchQueue: DispatchActionEnvelope[] = [];
 
   private readonly opts: NodeSupervisorOptions;
   private readonly memberControllers = new Map<string, JobControl>();
   private coordinatorController: JobControl | null = null;
   private readonly queuedActionKeys = new Set<string>();
+  private readonly actionLifecycle = new Map<string, ActionLifecycleState>();
+  private readonly completedActionIds = new Set<string>();
+  private readonly memberPendingAction = new Map<string, string>();
+  private readonly actionById = new Map<string, DispatchActionEnvelope>();
+  private nextActionSequence = 0;
+  private isDrainingDispatchQueue = false;
   private resumePending = false;
 
   constructor(opts: NodeSupervisorOptions) {
@@ -167,6 +186,97 @@ export class NodeSupervisor {
       // best-effort persistence; orchestration remains live
     }
 
+    const nodeRun = this.opts.sqliteClient.readNodeRun(this.opts.nodeId);
+    const recovering = Boolean(nodeRun && nodeRun.status !== 'created');
+
+    if (recovering) {
+      if (nodeRun) {
+        this.status = nodeRun.status;
+      }
+
+      if (nodeRun?.coordinator_job_id) {
+        this.coordinatorJobId = nodeRun.coordinator_job_id;
+      }
+
+      const persistedMembers = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
+      for (const row of persistedMembers) {
+        const member = this.members.get(row.member_id);
+        if (!member) continue;
+        member.jobId = row.job_id ?? null;
+        member.status = row.status;
+        member.enabled = row.enabled ?? true;
+      }
+
+      const lifecycleByActionId = new Map<string, DispatchActionEnvelope>();
+      const events = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId);
+      for (const event of events) {
+        if (!event.type.startsWith('action_')) continue;
+        let payload: Record<string, unknown>;
+        try {
+          payload = JSON.parse(event.event_json) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        const actionId = typeof payload.action_id === 'string' ? payload.action_id : null;
+        const memberId = typeof payload.member_id === 'string' ? payload.member_id : null;
+        const actionType = payload.action_type;
+        if (!actionId || !memberId || (actionType !== 'resume' && actionType !== 'steer' && actionType !== 'stop')) continue;
+
+        const envelope = lifecycleByActionId.get(actionId) ?? {
+          actionId,
+          targetGeneration: typeof payload.target_generation === 'number' ? payload.target_generation : 0,
+          dependsOnActionId: typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined,
+          action: {
+            type: actionType,
+            memberId,
+            actionId,
+            targetGeneration: typeof payload.target_generation === 'number' ? payload.target_generation : 0,
+            dependsOnActionId: typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined,
+          },
+        } satisfies DispatchActionEnvelope;
+
+        lifecycleByActionId.set(actionId, envelope);
+
+        if (event.type === 'action_completed') {
+          this.completedActionIds.add(actionId);
+          this.memberPendingAction.delete(memberId);
+        } else if (event.type === 'action_written') {
+          this.memberPendingAction.set(memberId, actionId);
+        }
+
+        this.actionLifecycle.set(actionId, event.type.replace('action_', '') as ActionLifecycleState);
+      }
+
+      const terminalStates = new Set<ActionLifecycleState>(['completed', 'failed', 'superseded']);
+      for (const envelope of lifecycleByActionId.values()) {
+        const state = this.actionLifecycle.get(envelope.actionId);
+        if (!state || terminalStates.has(state)) continue;
+        this.dispatchQueue.push(envelope);
+        this.queuedActionKeys.add(this.getActionKey(envelope.action));
+      }
+
+      const latestCoordinatorOutputEvent = [...events].reverse().find((event) => event.type === 'coordinator_output_received');
+      if (latestCoordinatorOutputEvent) {
+        try {
+          const payload = JSON.parse(latestCoordinatorOutputEvent.event_json) as { output_hash?: string };
+          if (payload.output_hash) {
+            this.opts.sqliteClient.upsertNodeRun({
+              id: this.opts.nodeId,
+              node_name: this.opts.nodeName,
+              status: nodeRun?.status ?? this.status,
+              coordinator_job_id: this.coordinatorJobId ?? undefined,
+              updated_at_ms: Date.now(),
+              memory_namespace: this.opts.memoryNamespace,
+              status_json: JSON.stringify({ output_hash: payload.output_hash }),
+            });
+          }
+        } catch {
+          // ignore malformed payload
+        }
+      }
+    }
+
     for (const member of this.members.values()) {
       try {
         this.opts.sqliteClient.upsertNodeMember({
@@ -178,6 +288,7 @@ export class NodeSupervisor {
           role: member.role,
           status: member.status,
           enabled: member.enabled,
+          generation: member.generation,
         });
       } catch {
         // best-effort persistence; orchestration remains live
@@ -273,6 +384,8 @@ export class NodeSupervisor {
         jobsDir: this.opts.jobsDir,
       });
 
+      const previousGeneration = member.generation;
+      const previousJobId = member.jobId;
       const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
       member.jobId = jobId;
       member.status = 'starting';
@@ -289,6 +402,7 @@ export class NodeSupervisor {
           role: member.role,
           status: member.status,
           enabled: member.enabled,
+          generation: member.generation,
         });
       } catch {
         // best-effort persistence; orchestration remains live
@@ -300,9 +414,25 @@ export class NodeSupervisor {
           member_id: member.memberId,
           job_id: jobId,
           specialist: member.specialist,
+          generation: member.generation,
         });
       } catch {
         // best-effort persistence; orchestration remains live
+      }
+
+      if (previousGeneration > 0 || previousJobId) {
+        try {
+          this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'member_respawned', {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            previous_job_id: previousJobId,
+            job_id: member.jobId,
+            previous_generation: previousGeneration,
+            generation: member.generation,
+          });
+        } catch {
+          // best-effort persistence; orchestration remains live
+        }
       }
     }
   }
@@ -354,8 +484,29 @@ export class NodeSupervisor {
       const member = this.members.get(row.member_id);
       if (!member || !member.enabled) continue;
 
-      if (row.job_id && !member.jobId) {
+      const rowGeneration = row.generation ?? 0;
+      if (rowGeneration < member.generation) {
+        continue;
+      }
+
+      if (rowGeneration !== member.generation) {
+        member.generation = rowGeneration;
+      }
+
+      if (row.job_id && row.job_id !== member.jobId) {
+        const previousJobId = member.jobId;
         member.jobId = row.job_id;
+        try {
+          this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'member_job_rebound', {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            previous_job_id: previousJobId,
+            job_id: member.jobId,
+            generation: member.generation,
+          });
+        } catch {
+          // best-effort persistence; orchestration remains live
+        }
       }
 
       if (!member.jobId) continue;
@@ -379,9 +530,35 @@ export class NodeSupervisor {
 
       member.status = status.status;
       member.lastSeenOutputHash = outputHash;
+      this.maybeAcknowledgeMemberAction(member.memberId);
     }
 
     return changes;
+  }
+
+  private recomputeNodeHealth(): NodeRunStatus {
+    for (const member of this.members.values()) {
+      if (!member.enabled) continue;
+      if (member.status === 'error') return 'degraded';
+      const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+      if (toContextHealth(contextPct) === 'CRITICAL') return 'degraded';
+    }
+
+    return 'running';
+  }
+
+  private maybeAcknowledgeMemberAction(memberId: string): void {
+    const pendingActionId = this.memberPendingAction.get(memberId);
+    if (!pendingActionId) return;
+
+    const lifecycle = this.actionLifecycle.get(pendingActionId);
+    const envelope = this.actionById.get(pendingActionId);
+    if (lifecycle === 'written' && envelope) {
+      this.appendActionLifecycleEvent(envelope, 'observed');
+      this.appendActionLifecycleEvent(envelope, 'completed');
+      this.completedActionIds.add(pendingActionId);
+      this.memberPendingAction.delete(memberId);
+    }
   }
 
   private buildResumePayload(changes: MemberStateChange[]): string {
@@ -391,6 +568,7 @@ export class NodeSupervisor {
       const contextHealth = toContextHealth(contextPct);
       return {
         memberId: change.memberId,
+        generation: member?.generation ?? 0,
         status: change.newStatus,
         context_pct: contextPct,
         context_health: contextHealth,
@@ -400,6 +578,7 @@ export class NodeSupervisor {
 
     const registrySnapshot = this.getMembers().map((member) => ({
       memberId: member.memberId,
+      generation: member.generation,
       status: member.status,
       enabled: member.enabled,
       specialist: member.specialist,
@@ -430,46 +609,129 @@ export class NodeSupervisor {
   }
 
   private getActionKey(action: NodeDispatchAction): string {
-    return JSON.stringify(action);
+    const stableAction = {
+      ...action,
+      actionId: undefined,
+      targetGeneration: action.targetGeneration ?? undefined,
+      dependsOnActionId: action.dependsOnActionId ?? undefined,
+    };
+    return JSON.stringify(stableAction);
   }
 
-  private async dispatchAction(action: NodeDispatchAction): Promise<void> {
-    const actionKey = this.getActionKey(action);
-    if (this.queuedActionKeys.has(actionKey)) return;
+  private nextActionId(): string {
+    this.nextActionSequence += 1;
+    return `${this.opts.nodeId}:${Date.now()}:${this.nextActionSequence}`;
+  }
 
-    this.dispatchQueue.push(action);
+  private appendActionLifecycleEvent(envelope: DispatchActionEnvelope, state: ActionLifecycleState, extra?: Record<string, unknown>): void {
+    this.actionLifecycle.set(envelope.actionId, state);
+
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), `action_${state}` as never, {
+        node_id: this.opts.nodeId,
+        action_id: envelope.actionId,
+        member_id: envelope.action.memberId,
+        action_type: envelope.action.type,
+        target_generation: envelope.targetGeneration,
+        depends_on_action_id: envelope.dependsOnActionId ?? null,
+        ...extra,
+      });
+    } catch {
+      // best-effort persistence; orchestration remains live
+    }
+  }
+
+  private async dispatchAction(action: NodeDispatchAction): Promise<string | null> {
+    const envelope: DispatchActionEnvelope = {
+      action: {
+        ...action,
+      },
+      actionId: action.actionId ?? this.nextActionId(),
+      targetGeneration: action.targetGeneration ?? (this.members.get(action.memberId)?.generation ?? 0),
+      dependsOnActionId: action.dependsOnActionId,
+    };
+    envelope.action.actionId = envelope.actionId;
+    envelope.action.targetGeneration = envelope.targetGeneration;
+
+    const actionKey = this.getActionKey(envelope.action);
+    if (this.queuedActionKeys.has(actionKey)) return null;
+
+    this.dispatchQueue.push(envelope);
+    this.actionById.set(envelope.actionId, envelope);
     this.queuedActionKeys.add(actionKey);
+    this.appendActionLifecycleEvent(envelope, 'queued', { action: envelope.action });
 
-    while (this.dispatchQueue.length > 0) {
-      const nextAction = this.dispatchQueue.shift();
-      if (!nextAction) continue;
-      const nextActionKey = this.getActionKey(nextAction);
+    await this.drainDispatchQueue();
+    return envelope.actionId;
+  }
 
-      try {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'action_dispatched', {
-          node_id: this.opts.nodeId,
-          action: nextAction,
-        });
-      } catch {
-        // best-effort persistence; orchestration remains live
+  private async drainDispatchQueue(): Promise<void> {
+    if (this.isDrainingDispatchQueue) return;
+    this.isDrainingDispatchQueue = true;
+
+    try {
+      while (this.dispatchQueue.length > 0) {
+        const nextEnvelope = this.dispatchQueue.shift();
+        if (!nextEnvelope) continue;
+        const nextAction = nextEnvelope.action;
+        const nextActionKey = this.getActionKey(nextAction);
+
+        const controller = this.memberControllers.get(nextAction.memberId);
+        const member = this.members.get(nextAction.memberId);
+        if (!controller || !member?.jobId) {
+          this.appendActionLifecycleEvent(nextEnvelope, 'failed', { reason: 'missing_controller_or_job' });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+
+        if (member.generation !== nextEnvelope.targetGeneration) {
+          this.appendActionLifecycleEvent(nextEnvelope, 'superseded', {
+            reason: 'member_generation_mismatch',
+            observed_generation: member.generation,
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+
+        if (nextEnvelope.dependsOnActionId && !this.completedActionIds.has(nextEnvelope.dependsOnActionId)) {
+          this.appendActionLifecycleEvent(nextEnvelope, 'failed', {
+            reason: 'dependency_not_completed',
+            dependency_action_id: nextEnvelope.dependsOnActionId,
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+
+        const pendingActionId = this.memberPendingAction.get(nextAction.memberId);
+        if (pendingActionId && !this.completedActionIds.has(pendingActionId)) {
+          this.appendActionLifecycleEvent(nextEnvelope, 'failed', {
+            reason: 'member_has_pending_action',
+            pending_action_id: pendingActionId,
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+
+        try {
+          if (nextAction.type === 'resume') {
+            await controller.resumeJob(member.jobId, nextAction.task ?? 'Continue.');
+          } else if (nextAction.type === 'steer') {
+            await controller.steerJob(member.jobId, nextAction.message ?? '');
+          } else {
+            await controller.stopJob(member.jobId);
+          }
+          this.memberPendingAction.set(nextAction.memberId, nextEnvelope.actionId);
+          this.appendActionLifecycleEvent(nextEnvelope, 'written');
+        } catch (error) {
+          this.appendActionLifecycleEvent(nextEnvelope, 'failed', {
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          this.queuedActionKeys.delete(nextActionKey);
+        }
       }
-
-      const controller = this.memberControllers.get(nextAction.memberId);
-      const member = this.members.get(nextAction.memberId);
-      if (!controller || !member?.jobId) {
-        this.queuedActionKeys.delete(nextActionKey);
-        continue;
-      }
-
-      if (nextAction.type === 'resume') {
-        await controller.resumeJob(member.jobId, nextAction.task ?? 'Continue.');
-      } else if (nextAction.type === 'steer') {
-        await controller.steerJob(member.jobId, nextAction.message ?? '');
-      } else {
-        await controller.stopJob(member.jobId);
-      }
-
-      this.queuedActionKeys.delete(nextActionKey);
+    } finally {
+      this.isDrainingDispatchQueue = false;
     }
   }
 
@@ -521,6 +783,18 @@ export class NodeSupervisor {
 
       if (!this.memberControllers.has(action.memberId)) {
         return `Member '${action.memberId}' has no active controller.`;
+      }
+
+      if (action.type === 'resume' && member.status !== 'waiting') {
+        return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
+      }
+
+      if (action.type === 'steer' && member.status !== 'running' && member.status !== 'waiting') {
+        return `Member '${action.memberId}' must be running/waiting before steer (current=${member.status}).`;
+      }
+
+      if (action.type === 'stop' && TERMINAL_MEMBER_STATUSES.has(member.status)) {
+        return `Member '${action.memberId}' is already terminal (current=${member.status}).`;
       }
     }
 
@@ -719,11 +993,19 @@ export class NodeSupervisor {
         summary: coordinatorOutput.summary,
         action_count: coordinatorOutput.actions.length,
         memory_patch_count: coordinatorOutput.memory_patch.length,
+        output_hash: hashOutput(currentOutput),
       });
 
       this.applyMemoryPatch(coordinatorOutput.memory_patch);
+      let predecessorActionId: string | null = null;
       for (const action of coordinatorOutput.actions as NodeDispatchAction[]) {
-        await this.dispatchAction(action);
+        const actionId = await this.dispatchAction({
+          ...action,
+          dependsOnActionId: action.dependsOnActionId ?? predecessorActionId ?? undefined,
+        });
+        if (actionId) {
+          predecessorActionId = actionId;
+        }
       }
 
       return;
@@ -774,16 +1056,93 @@ export class NodeSupervisor {
     }
   }
 
+  private async cleanupJobs(): Promise<string[]> {
+    const cleanupErrors: string[] = [];
+
+    if (this.coordinatorJobId && this.coordinatorController) {
+      try {
+        const status = this.coordinatorController.readStatus(this.coordinatorJobId)?.status;
+        if (status && !TERMINAL_JOB_STATUSES.has(status)) {
+          await this.coordinatorController.stopJob(this.coordinatorJobId);
+          await this.coordinatorController.waitForTerminal(this.coordinatorJobId, 5_000);
+        }
+      } catch (error) {
+        cleanupErrors.push(`coordinator: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    for (const member of this.members.values()) {
+      if (!member.jobId) continue;
+      const controller = this.memberControllers.get(member.memberId);
+      if (!controller) continue;
+
+      try {
+        const status = controller.readStatus(member.jobId)?.status ?? member.status;
+        if (TERMINAL_JOB_STATUSES.has(status)) continue;
+
+        await controller.stopJob(member.jobId);
+        await controller.waitForTerminal(member.jobId, 3_000);
+      } catch (error) {
+        cleanupErrors.push(`member:${member.memberId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    this.memberControllers.clear();
+    this.coordinatorController = null;
+    this.dispatchQueue = [];
+    this.queuedActionKeys.clear();
+    this.resumePending = false;
+
+    return cleanupErrors;
+  }
+
   async run(initialPrompt: string): Promise<NodeRunResult> {
     await this.bootstrap();
-    this.transition('starting', 'node_supervisor_run_started');
+
+    const recovering = Boolean(this.coordinatorJobId);
+    if (!recovering) {
+      this.transition('starting', 'node_supervisor_run_started');
+    }
 
     try {
-      await this.spawnMembers();
-      await this.spawnCoordinator(initialPrompt);
-      this.transition('running', 'members_and_coordinator_spawned');
+      if (!recovering) {
+        await this.spawnMembers();
+        await this.spawnCoordinator(initialPrompt);
+        this.transition('running', 'members_and_coordinator_spawned');
+      } else {
+        const coordinatorPrompt = this.createBaseRunOptions(this.opts.coordinatorSpecialist, initialPrompt);
+        this.coordinatorController = new JobControl({
+          runner: this.opts.runner!,
+          runOptions: coordinatorPrompt,
+          jobsDir: this.opts.jobsDir,
+        });
+
+        for (const member of this.members.values()) {
+          const memberPrompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+          this.memberControllers.set(
+            member.memberId,
+            new JobControl({
+              runner: this.opts.runner!,
+              runOptions: this.createBaseRunOptions(member.specialist, memberPrompt),
+              jobsDir: this.opts.jobsDir,
+            }),
+          );
+        }
+
+        await this.drainDispatchQueue();
+      }
 
       let coordinatorOutputHash: string | null = null;
+      const lastCoordinatorOutput = this.opts.sqliteClient
+        .readNodeEvents(this.opts.nodeId, { type: 'coordinator_output_received', limit: 1 })
+        .at(0);
+      if (lastCoordinatorOutput) {
+        try {
+          coordinatorOutputHash = (JSON.parse(lastCoordinatorOutput.event_json) as { output_hash?: string }).output_hash ?? null;
+        } catch {
+          coordinatorOutputHash = null;
+        }
+      }
 
       while (!TERMINAL_NODE_STATUSES.has(this.status)) {
         const changes = await this.pollMemberStatuses();
@@ -824,8 +1183,8 @@ export class NodeSupervisor {
             if (this.status === 'running' || this.status === 'waiting') {
               this.transition('degraded', 'member_error_or_critical_context');
             }
-          } else if (this.status === 'degraded') {
-            this.transition('running', 'member_recovered_or_context_normalized');
+          } else if (this.status === 'degraded' && this.recomputeNodeHealth() === 'running') {
+            this.transition('running', 'all_members_healthy');
           }
         }
 
@@ -871,14 +1230,36 @@ export class NodeSupervisor {
         const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
         if (allTerminal) {
           this.transition('done', 'all_members_terminal');
-          this.appendCompletionSummaryToBead();
+          try {
+            this.appendCompletionSummaryToBead();
+          } catch {
+            console.warn('failed to append completion summary to bead; node already done', {
+              nodeId: this.opts.nodeId,
+            });
+          }
           break;
         }
 
         await sleep(POLL_INTERVAL_MS);
       }
     } catch (error) {
-      this.transition('error', error instanceof Error ? error.message : String(error));
+      if (!TERMINAL_NODE_STATUSES.has(this.status)) {
+        this.transition('error', error instanceof Error ? error.message : String(error));
+      } else {
+        console.warn('non-fatal error after terminal node state', {
+          nodeId: this.opts.nodeId,
+          status: this.status,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } finally {
+      const cleanupErrors = await this.cleanupJobs();
+      if (cleanupErrors.length > 0) {
+        console.warn('node supervisor cleanup completed with errors', {
+          nodeId: this.opts.nodeId,
+          errors: cleanupErrors,
+        });
+      }
     }
 
     return {

@@ -76,6 +76,19 @@ export class JobControl {
   }
 
   async stopJob(jobId: string): Promise<void> {
+    const status = this.readStatus(jobId);
+    if (!status) {
+      throw new Error(`No job found: ${jobId}`);
+    }
+
+    if (TERMINAL_STATUSES.has(status.status)) {
+      return;
+    }
+
+    if (!status.fifo_path) {
+      return;
+    }
+
     this.writeFifoMessage(jobId, { type: 'close' });
   }
 

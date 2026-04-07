@@ -174,7 +174,7 @@ describe('NodeSupervisor orchestration', () => {
   });
 
   describe('FIFO dispatch', () => {
-    it('dispatches actions in order and logs action_dispatched before execution', async () => {
+    it('dispatches actions in order and tracks queued/written lifecycle', async () => {
       const mod = await loadNodeSupervisorModule();
       if (!mod) return;
 
@@ -186,11 +186,17 @@ describe('NodeSupervisor orchestration', () => {
       await (supervisor as any).dispatchAction({ type: 'resume', memberId: 'member-a', task: 'one' });
       await (supervisor as any).dispatchAction({ type: 'resume', memberId: 'member-b', task: 'two' });
 
-      // action_dispatched events should be logged
+      // lifecycle events should be logged
       expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Number),
-        'action_dispatched',
+        'action_queued',
+        expect.any(Object),
+      );
+      expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Number),
+        'action_written',
         expect.any(Object),
       );
 

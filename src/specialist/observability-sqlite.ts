@@ -177,7 +177,7 @@ function migrateToV4(db: BunDb): void {
     db.run('CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)');
 
-    db.run('CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)');
+    db.run('CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL');
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)');
@@ -217,7 +217,8 @@ function migrateToV4(db: BunDb): void {
       model        TEXT,
       role         TEXT,
       status       TEXT NOT NULL,
-      enabled      INTEGER NOT NULL DEFAULT 1
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      generation   INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
     CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
@@ -344,7 +345,27 @@ export function initSchema(db: BunDb): void {
   migrateToV2(db);
   migrateToV3(db);
   migrateToV4(db);
+  migrateToV5(db);
   verifyWalMode(db);
+}
+
+function migrateToV5(db: BunDb): void {
+  const hasV5 = db.query('SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1').get() as { 1?: number } | undefined;
+  if (!hasV5) {
+    const nodeMemberColumns = new Set(
+      (db.query('PRAGMA table_info(node_members)').all() as Array<{ name?: string }>)
+        .map((column) => column.name)
+        .filter((name): name is string => typeof name === 'string' && name.length > 0),
+    );
+    if (!nodeMemberColumns.has('generation')) {
+      db.run('ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
+    }
+
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (5, strftime('%s', 'now') * 1000);
+    `);
+  }
 }
 
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
@@ -358,11 +379,20 @@ export type NodeEventType =
   | 'member_output_received'
   | 'member_failed'
   | 'member_recovered'
+  | 'member_respawned'
+  | 'member_job_rebound'
   | 'coordinator_resumed'
   | 'coordinator_output_received'
   | 'coordinator_output_invalid'
   | 'memory_updated'
   | 'action_dispatched'
+  | 'action_queued'
+  | 'action_written'
+  | 'action_observed'
+  | 'action_superseded'
+  | 'action_completed'
+  | 'action_failed'
+  | 'node_recovered'
   | 'node_waiting'
   | 'node_done'
   | 'node_error'
@@ -390,6 +420,7 @@ export interface NodeMemberRow {
   role?: string;
   status: string;
   enabled?: boolean;
+  generation?: number;
 }
 
 export interface NodeMemoryRow {
@@ -538,16 +569,18 @@ class SqliteClient implements ObservabilitySqliteClient {
         model,
         role,
         status,
-        enabled
+        enabled,
+        generation
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(node_run_id, member_id) DO UPDATE SET
         job_id = excluded.job_id,
         specialist = excluded.specialist,
         model = excluded.model,
         role = excluded.role,
         status = excluded.status,
-        enabled = excluded.enabled;
+        enabled = excluded.enabled,
+        generation = excluded.generation;
     `, [
       member.node_run_id,
       member.member_id,
@@ -557,6 +590,7 @@ class SqliteClient implements ObservabilitySqliteClient {
       member.role ?? null,
       member.status,
       member.enabled === undefined ? 1 : (member.enabled ? 1 : 0),
+      member.generation ?? 0,
     ]);
   }
 
@@ -767,6 +801,7 @@ class SqliteClient implements ObservabilitySqliteClient {
         role: row.role ?? undefined,
         status: row.status,
         enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
+        generation: row.generation ?? 0,
       }));
     }, 'readNodeMembers');
   }
