@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 1.8.0
-updated: 2026-04-06
-synced_at: e42dadd4
+version: 1.9.0
+updated: 2026-04-07
+synced_at: 2cff034c
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -62,7 +62,7 @@ source_of_truth_for:
 
 ```bash
 specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] \
-  [--context-depth <n>] [--model <provider/model>] [--no-beads] \
+  [--no-worktree] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
   [--keep-alive|--no-keep-alive] [--json | --raw]
 ```
 
@@ -72,6 +72,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--bead <id>`: Read prompt/context from bead.
 - `--worktree`: Provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
 - `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`.
+- `--no-worktree`: Bypass the worktree guard for `MEDIUM`/`HIGH`-permission specialists (see [Worktree guard](#worktree-guard) below). The caller accepts last-writer-wins risk.
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
 - `--model <provider/model>`: Per-run model override.
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
@@ -93,6 +94,24 @@ specialists run executor --worktree --bead hgpu.3
 specialists run executor --job a1b2c3 --bead hgpu.4
 ```
 
+### Worktree guard
+
+Specialists with `permission_required = MEDIUM` or `HIGH` can edit files. Running them in the main checkout risks concurrent write conflicts. To prevent this, `specialists run` enforces an **isolation guard**: when none of `--worktree`, `--job`, or `--no-worktree` is supplied, the command exits immediately with:
+
+```
+Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
+Edit-capable specialists must run in isolation. Use one of:
+  --worktree      provision an isolated worktree (recommended)
+  --job <id>      reuse an existing job's worktree
+  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+```
+
+`--no-worktree` is the explicit escape hatch. Use it when:
+- Running a single specialist on a clean checkout with no concurrent runners.
+- CI environments where worktree provisioning is unavailable.
+
+Specialists with `permission_required = READ_ONLY` (or unset) are **not** affected — the guard only triggers on edit-capable permissions.
+
 ### Exit codes
 
 - `0`: Run completed.
@@ -102,6 +121,7 @@ Notes:
 - `--prompt` and `--bead` are mutually exclusive.
 - `--worktree` and `--job` are mutually exclusive.
 - `--worktree` requires `--bead <id>` to derive a deterministic branch name.
+- `--no-worktree` bypasses the worktree guard — only for `MEDIUM`/`HIGH` specialists when isolation is not feasible.
 - Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
 - `--background` is removed and exits with error.

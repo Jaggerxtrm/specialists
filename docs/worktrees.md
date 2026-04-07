@@ -2,8 +2,9 @@
 title: Worktree Isolation
 scope: worktrees
 category: reference
-version: 1.0.0
-updated: 2026-04-04
+version: 1.1.0
+updated: 2026-04-07
+synced_at: 2cff034c
 description: Technical reference for worktree-per-executor isolation — CLI flags, job registry, GC, and chained bead patterns.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -28,15 +29,56 @@ Each edit-permission specialist runs in an isolated git worktree (branch). This 
 ## CLI flags
 
 ```
-specialists run <name> [--worktree] [--job <id>]
+specialists run <name> [--worktree] [--job <id>] [--no-worktree]
 ```
 
 | Flag | Semantics | Creates worktree? |
 |------|-----------|:-:|
 | `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes |
 | `--job <id>` | Reuse the workspace of an existing job | No |
+| `--no-worktree` | Bypass the isolation guard; caller accepts last-writer-wins risk | No |
 
 `--worktree` and `--job` are **mutually exclusive**. Specifying both exits with an error.
+
+---
+
+## Isolation guard for edit-capable specialists
+
+Specialists with `permission_required = MEDIUM` or `HIGH` can modify files. Launching them in the main checkout creates last-writer-wins races when multiple specialists run concurrently. The **worktree guard** (`unitAI-fdvt`) blocks these runs unless an isolation option is supplied.
+
+### Trigger condition
+
+The guard fires when **all** of the following are true:
+
+1. `specialist.execution.permission_required` is `MEDIUM` or `HIGH`.
+2. Neither `--worktree`, `--job <id>`, nor `--no-worktree` was passed.
+
+### Error message
+
+```
+Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
+Edit-capable specialists must run in isolation. Use one of:
+  --worktree      provision an isolated worktree (recommended)
+  --job <id>      reuse an existing job's worktree
+  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+```
+
+The process exits with code `1`.
+
+### Bypass with `--no-worktree`
+
+Pass `--no-worktree` to skip the guard explicitly:
+
+```bash
+# Single executor run on a clean checkout — no concurrent writers
+specialists run executor --bead hgpu.3 --no-worktree
+```
+
+The specialist runs in the current directory (no branch isolation). Use only when:
+- There is a single specialist running at a time (no concurrency risk).
+- Worktree provisioning is unavailable (e.g., certain CI environments).
+
+`READ_ONLY` specialists are **never** gated — the guard does not apply to them.
 
 ### `--worktree`
 

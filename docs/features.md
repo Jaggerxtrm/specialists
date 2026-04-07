@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.3.0
-updated: 2026-04-06
-synced_at: 9648ffae
+version: 1.4.0
+updated: 2026-04-07
+synced_at: 2cff034c
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, and JSON-first configuration.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -569,8 +569,23 @@ specialists run <name> [--worktree] [--job <id>]
 |------|-----------|:-:|
 | `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes |
 | `--job <id>` | Reuse the workspace of an existing job | No |
+| `--no-worktree` | Bypass the isolation guard; caller accepts last-writer-wins risk | No |
 
 `--worktree` and `--job` are **mutually exclusive**.
+
+### Worktree guard (MEDIUM/HIGH permission specialists)
+
+Specialists with `permission_required = MEDIUM` or `HIGH` **cannot** run without an isolation option. Omitting all three flags (`--worktree`, `--job`, `--no-worktree`) triggers the guard and exits with:
+
+```
+Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
+Edit-capable specialists must run in isolation. Use one of:
+  --worktree      provision an isolated worktree (recommended)
+  --job <id>      reuse an existing job's worktree
+  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+```
+
+Use `--no-worktree` only for single-specialist runs with no concurrency risk. `READ_ONLY` specialists are never gated.
 
 ### `--worktree` (new isolated workspace)
 
