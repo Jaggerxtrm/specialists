@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, mkdir, writeFile, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import type { InitOptions } from '../../../src/cli/init.js';
@@ -187,19 +187,22 @@ describe('init CLI — run()', () => {
     expect(files).toEqual(['custom.specialist.json']); // no additions
   });
 
-  it('installs hooks to .claude/hooks/ (project-local for Claude)', async () => {
+  it('installs specialists hooks to .xtrm/hooks/specialists/ and symlinks .claude/hooks/', async () => {
     await runInit(tempDir);
-    const hooksDir = join(tempDir, '.claude', 'hooks');
-    const files = await readdir(hooksDir).catch(() => []);
-    const mjsFiles = files.filter(f => f.endsWith('.mjs'));
-    
-    expect(mjsFiles.length).toBeGreaterThan(0);
-    expect(mjsFiles).toContain('specialists-complete.mjs');
-    // check-open-specialists.mjs is project-local (not a shipped asset)
-    expect(mjsFiles.length).toBeGreaterThan(0);
+
+    const xtrmHooksDir = join(tempDir, '.xtrm', 'hooks', 'specialists');
+    const xtrmHooks = await readdir(xtrmHooksDir).catch(() => []);
+    expect(xtrmHooks).toContain('specialists-complete.mjs');
+    expect(xtrmHooks).toContain('specialists-session-start.mjs');
+
+    const claudeHookPath = join(tempDir, '.claude', 'hooks', 'specialists-complete.mjs');
+    expect(lstatSync(claudeHookPath).isSymbolicLink()).toBe(true);
+
+    const resolvedTarget = join(dirname(claudeHookPath), readlinkSync(claudeHookPath));
+    expect(resolvedTarget).toBe(join(tempDir, '.xtrm', 'hooks', 'specialists', 'specialists-complete.mjs'));
   });
 
-  it('wires hooks in .claude/settings.json with paths to .claude/hooks/', async () => {
+  it('wires hooks in .claude/settings.json with symlinked .claude/hooks paths', async () => {
     await runInit(tempDir);
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
@@ -259,14 +262,13 @@ describe('init CLI — run()', () => {
     expect(gitignore).toContain('.specialists/db/*.db-shm');
   });
 
-  it('does not overwrite existing hook files', async () => {
-    // Create a custom hook with the same name
-    const hooksDir = join(tempDir, '.claude', 'hooks');
+  it('does not overwrite existing .xtrm hook files', async () => {
+    const hooksDir = join(tempDir, '.xtrm', 'hooks', 'specialists');
     await mkdir(hooksDir, { recursive: true });
     await writeFile(join(hooksDir, 'specialists-complete.mjs'), '// custom hook', 'utf-8');
-    
+
     await runInit(tempDir);
-    
+
     const content = await readFile(join(hooksDir, 'specialists-complete.mjs'), 'utf-8');
     expect(content).toBe('// custom hook');
   });
