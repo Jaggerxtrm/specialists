@@ -266,6 +266,25 @@ function shellQuote(value: string): string {
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
+  const loader = new SpecialistLoader();
+  const specialist = await loader.get(args.name).catch((err: any) => {
+    process.stderr.write(`Error: ${err?.message ?? err}\n`);
+    process.exit(1);
+  });
+
+  // ── Worktree guard for edit-capable specialists ────────────────────────────
+  const perm = specialist.specialist.execution.permission_required ?? 'READ_ONLY';
+  const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
+  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+    process.stderr.write(
+      `Error: specialist '${args.name}' has permission_required=${perm} and can edit files.\n` +
+      `Edit-capable specialists must run in isolation. Use one of:\n` +
+      `  --worktree      provision an isolated worktree (recommended)\n` +
+      `  --job <id>      reuse an existing job's worktree\n` +
+      `  --no-worktree   bypass this guard (you accept last-writer-wins risk)\n`,
+    );
+    process.exit(1);
+  }
 
   // ── Background mode: spawn detached child and exit ──────────────────────────
   if (args.background) {
@@ -315,7 +334,6 @@ export async function run(): Promise<void> {
     process.exit(0);
   }
 
-  const loader         = new SpecialistLoader();
   const circuitBreaker = new CircuitBreaker();
   const hooks          = new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') });
   const beadsClient = args.noBeads ? undefined : new BeadsClient();
@@ -346,25 +364,6 @@ export async function run(): Promise<void> {
       bead_context: beadContext,
       bead_id: args.beadId,
     };
-  }
-
-  const specialist = await loader.get(args.name).catch((err: any) => {
-    process.stderr.write(`Error: ${err?.message ?? err}\n`);
-    process.exit(1);
-  });
-
-  // ── Worktree guard for edit-capable specialists ────────────────────────────
-  const perm = specialist.specialist.execution.permission_required ?? 'READ_ONLY';
-  const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
-  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
-    process.stderr.write(
-      `Error: specialist '${args.name}' has permission_required=${perm} and can edit files.\n` +
-      `Edit-capable specialists must run in isolation. Use one of:\n` +
-      `  --worktree      provision an isolated worktree (recommended)\n` +
-      `  --job <id>      reuse an existing job's worktree\n` +
-      `  --no-worktree   bypass this guard (you accept last-writer-wins risk)\n`,
-    );
-    process.exit(1);
   }
 
   const runner = new SpecialistRunner({
