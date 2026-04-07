@@ -179,6 +179,7 @@ interface JobMeta {
   backend?: string;
   beadId?: string;
   metrics?: Record<string, unknown>;
+  contextPct?: number;
   startedAtMs: number;
 }
 
@@ -243,6 +244,11 @@ function readJobMeta(
   const status = readStatusJson(sqliteClient, jobsDir, jobId);
   if (!status) return { startedAtMs: Date.now() };
 
+  const rawContextPct = status.context_pct;
+  const contextPct = typeof rawContextPct === 'number'
+    ? rawContextPct
+    : (typeof rawContextPct === 'string' ? Number(rawContextPct) : undefined);
+
   return {
     model: typeof status.model === 'string' ? status.model : undefined,
     backend: typeof status.backend === 'string' ? status.backend : undefined,
@@ -250,6 +256,7 @@ function readJobMeta(
     metrics: typeof status.metrics === 'object' && status.metrics !== null
       ? status.metrics as Record<string, unknown>
       : undefined,
+    contextPct: Number.isFinite(contextPct) ? contextPct : undefined,
     startedAtMs: typeof status.started_at_ms === 'number' ? status.started_at_ms : Date.now(),
   };
 }
@@ -371,7 +378,13 @@ function printSnapshot(
       continue;
     }
 
-    console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
+    console.log(formatEventLine(event, {
+      jobId,
+      specialist: specialistDisplay,
+      beadId,
+      contextPct: meta.contextPct,
+      colorize,
+    }));
   }
 }
 
@@ -649,7 +662,13 @@ async function followMerged(
             continue;
           }
 
-          console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
+          console.log(formatEventLine(event, {
+            jobId,
+            specialist: specialistDisplay,
+            beadId,
+            contextPct: meta.contextPct,
+            colorize,
+          }));
         }
       }
 
