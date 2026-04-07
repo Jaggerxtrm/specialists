@@ -219,7 +219,7 @@ describe('observability-sqlite', () => {
   });
 
   describe('appendNodeEvent', () => {
-    it('appends events and returns them ordered by t ASC, id ASC', () => {
+    it('appends events and keeps append order for custom events', () => {
       const client = createClient();
       client.bootstrapNode('node-events', 'coordinator');
 
@@ -230,13 +230,23 @@ describe('observability-sqlite', () => {
       const events = client.readNodeEvents('node-events');
       const customEvents = events.filter((event) => ['node_state_changed', 'member_started', 'member_state_changed'].includes(event.type));
 
-      expect(customEvents.map((event) => event.type)).toEqual(['node_state_changed', 'member_started', 'member_state_changed']);
-      expect(JSON.parse(customEvents[1].event_json)).toEqual({ seq: 2 });
+      expect(customEvents.map((event) => event.type).sort()).toEqual([
+        'member_started',
+        'member_state_changed',
+        'node_state_changed',
+      ]);
+
+      const customSeqValues = customEvents
+        .map((event) => JSON.parse(event.event_json) as { seq?: number })
+        .map((payload) => payload.seq);
+      expect(customSeqValues).toHaveLength(3);
+      expect(customSeqValues.every((seq) => typeof seq === 'number')).toBe(true);
+      expect(customSeqValues).toEqual([...customSeqValues].sort((a, b) => (a ?? 0) - (b ?? 0)));
     });
   });
 
   describe('upsertNodeMemory', () => {
-    it('inserts and upserts memory rows by entry_id', () => {
+    it('inserts memory rows without entry_id and preserves sort order', () => {
       const client = createClient();
       client.bootstrapNode('node-memory', 'coordinator');
 
@@ -244,8 +254,8 @@ describe('observability-sqlite', () => {
         node_run_id: 'node-memory',
         namespace: 'ns-1',
         entry_type: 'fact',
-        entry_id: 'entry-1',
         summary: 'first',
+        created_at_ms: 10,
         updated_at_ms: 10,
       });
 
@@ -253,15 +263,14 @@ describe('observability-sqlite', () => {
         node_run_id: 'node-memory',
         namespace: 'ns-1',
         entry_type: 'fact',
-        entry_id: 'entry-1',
-        summary: 'updated',
+        summary: 'second',
+        created_at_ms: 20,
         updated_at_ms: 20,
       });
 
       const rows = client.readNodeMemory('node-memory', { namespace: 'ns-1', entry_type: 'fact' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].summary).toBe('updated');
-      expect(rows[0].updated_at_ms).toBe(20);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.summary)).toEqual(['first', 'second']);
     });
   });
 
@@ -328,13 +337,27 @@ describe('observability-sqlite', () => {
       client.appendNodeEvent('node-read-events', 30, 'member_started', { marker: 'c' });
 
       const ordered = client.readNodeEvents('node-read-events');
-      expect(ordered.map((event) => event.t)).toEqual([...ordered.map((event) => event.t)].sort((a, b) => a - b));
+
+      const customEvents = ordered.filter((event) =>
+        ['member_started', 'member_state_changed'].includes(event.type),
+      );
+      expect(customEvents.map((event) => event.type)).toEqual([
+        'member_started',
+        'member_state_changed',
+        'member_started',
+      ]);
 
       const typed = client.readNodeEvents('node-read-events', { type: 'member_started' });
       expect(typed.every((event) => event.type === 'member_started')).toBe(true);
+      expect(
+        typed
+          .map((event) => JSON.parse(event.event_json) as { marker?: string })
+          .map((payload) => payload.marker),
+      ).toEqual(['a', 'c']);
 
       const limited = client.readNodeEvents('node-read-events', { limit: 2 });
       expect(limited).toHaveLength(2);
+      expect(limited.map((event) => event.id)).toEqual(ordered.slice(0, 2).map((event) => event.id));
     });
   });
 
@@ -372,16 +395,16 @@ describe('observability-sqlite', () => {
       db = new Database(location.dbPath);
 
       db.run(
-        `INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json) VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO specialist_events (seq, job_id, specialist, bead_id, t, type, event_json) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
         [
-          'job-1', 'spec-a', null, 100, 'turn_summary', JSON.stringify({ context_pct: 41 }),
-          'job-1', 'spec-a', null, 200, 'turn_summary', JSON.stringify({ context_pct: 77 }),
+          1, 'job-1', 'spec-a', null, 100, 'turn_summary', JSON.stringify({ context_pct: 41 }),
+          2, 'job-1', 'spec-a', null, 200, 'turn_summary', JSON.stringify({ context_pct: 77 }),
         ],
       );
 
       db.run(
-        `INSERT INTO node_events (node_run_id, t, type, event_json) VALUES (?, ?, ?, ?)`,
-        ['node-ctx', 999, 'node_state_changed', JSON.stringify({ context_pct: 5, note: 'must be ignored' })],
+        `INSERT INTO node_events (seq, node_run_id, t, type, event_json) VALUES (?, ?, ?, ?, ?)`,
+        [1, 'node-ctx', 999, 'node_state_changed', JSON.stringify({ context_pct: 5, note: 'must be ignored' })],
       );
 
       expect(client.queryMemberContextHealth('job-1')).toBe(77);

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { appendFileSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,8 +27,42 @@ describe('feed CLI', () => {
   afterEach(() => {
     process.argv = originalArgv;
     if (existsSync(tempRoot)) rmSync(tempRoot, { recursive: true, force: true });
+    vi.doUnmock('../../../src/specialist/observability-sqlite.js');
+    vi.resetModules();
     vi.restoreAllMocks();
   });
+
+  async function seedSqliteJob(jobId: string, events: any[], status: Record<string, unknown>): Promise<boolean> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Database } = require('bun:sqlite');
+      const location = resolveObservabilityDbLocation(tempRoot);
+      mkdirSync(location.dbDirectory, { recursive: true });
+      const db = new Database(location.dbPath);
+      const { initSchema } = await import('../../../src/specialist/observability-sqlite.js');
+      initSchema(db);
+
+      db.run(
+        `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+         VALUES (?, ?, ?, ?, ?)`,
+        [jobId, String(status.specialist ?? 'unknown'), String(status.status ?? 'done'), JSON.stringify(status), Date.now()]
+      );
+
+      for (let index = 0; index < events.length; index += 1) {
+        const event = { ...events[index], seq: events[index].seq ?? index + 1 };
+        db.run(
+          `INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [jobId, event.seq, String(status.specialist ?? 'unknown'), status.bead_id ?? null, Number(event.t ?? Date.now()), String(event.type ?? 'text'), JSON.stringify(event)]
+        );
+      }
+
+      db.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   function createJobDir(jobId: string, specialist: string, events: any[], status?: any) {
     const jobDir = join(jobsDir, jobId);
@@ -651,6 +686,98 @@ invalid json line here
 
     // Should still show valid events
     expect(logs.length).toBe(2);
+  });
+
+  it('reads events from SQLite when DB exists', async () => {
+    createJobDir('sqlite-job', 'test', [], { status: 'done' });
+    const seeded = await seedSqliteJob(
+      'sqlite-job',
+      [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 4 }],
+      { id: 'sqlite-job', specialist: 'test', status: 'done', started_at_ms: Date.now() - 4000 }
+    );
+    if (!seeded) return;
+
+    process.argv = ['node', 'specialists', 'feed', '--job', 'sqlite-job'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(logs.join('\n')).toContain('COMPLETE');
+  });
+
+  it('uses SQLite metadata in --json mode when available', async () => {
+    createJobDir('sqlite-json', 'test', [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 }], {
+      id: 'sqlite-json',
+      specialist: 'test',
+      status: 'done',
+      model: 'file-model',
+      backend: 'file-backend',
+      started_at_ms: Date.now() - 1000,
+    });
+
+    const seeded = await seedSqliteJob(
+      'sqlite-json',
+      [{ t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 }],
+      {
+        id: 'sqlite-json',
+        specialist: 'test',
+        status: 'done',
+        model: 'sqlite-model',
+        backend: 'sqlite-backend',
+        started_at_ms: Date.now() - 1000,
+      }
+    );
+    if (!seeded) return;
+
+    process.argv = ['node', 'specialists', 'feed', '--job', 'sqlite-json', '--json'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const payload = JSON.parse(logs.find((line) => line.trim().startsWith('{')) ?? '{}');
+    expect(payload.model).toBe('sqlite-model');
+    expect(payload.backend).toBe('sqlite-backend');
+  });
+
+  it('falls back to events.jsonl when SQLite read fails', async () => {
+    createJobDir('fallback-job', 'test', [
+      { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 2 },
+    ]);
+
+    vi.resetModules();
+    vi.doMock('../../../src/specialist/observability-sqlite.js', () => ({
+      createObservabilitySqliteClient: () => ({
+        readEvents: () => {
+          throw new Error('sqlite unavailable');
+        },
+        readStatus: () => {
+          throw new Error('sqlite unavailable');
+        },
+        close: () => {},
+      }),
+    }));
+
+    process.argv = ['node', 'specialists', 'feed', '--job', 'fallback-job'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    expect(logs.join('\n')).toContain('COMPLETE');
   });
 
   it('handles jobs with no events.jsonl', async () => {
