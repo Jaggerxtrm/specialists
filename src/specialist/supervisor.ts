@@ -73,6 +73,8 @@ export interface SupervisorStatus {
   worktree_owner_job_id?: string;
   branch?: string;
   metrics?: SessionRunMetrics;
+  context_pct?: number;
+  context_health?: ContextHealth;
   error?: string;
 }
 
@@ -902,6 +904,10 @@ export class Supervisor {
               ...(metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}),
             });
             const contextUtilization = calculateContextUtilization(cumulativeInputTokens, statusSnapshot.model);
+            setStatus({
+              context_pct: contextUtilization?.context_pct,
+              context_health: contextUtilization?.context_health,
+            });
             appendTimelineEvent(createTurnSummaryEvent(
               metricEvent.turn_index,
               metricEvent.token_usage,
