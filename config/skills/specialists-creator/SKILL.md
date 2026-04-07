@@ -147,45 +147,46 @@ specialists models  # confirm assignments look balanced
 ### For a new specialist (single model selection)
 
 > **See [⛔ MANDATORY FIRST STEP](#-mandatory-first-step--verify-models-before-writing-any-json) at the top of this skill.**
-> Use `pi --list-models` (not `specialists models`) to discover models, ping both before writing JSON.
+> Use `pi --list-models` (not `specialists models`) to discover models, ping both before mutating config.
 
 ```bash
 # 1. pi --list-models            — see exactly what's available on pi right now
 # 2. Pick tier + pick highest version in family
 # 3. pi --model <primary>  --print "ping"   — must return "pong"
 # 4. pi --model <fallback> --print "ping"   — must return "pong"
-# 5. Write JSON with verified model strings
+# 5. Run scaffold-specialist.ts first (pre-script already wired in specialists-creator)
+# 6. Use sp edit for field-by-field mutations
 ```
 
 **Rule:** Never hardcode a model without pinging it. If ping fails, try the next best in that tier.
 
 ---
 
-## Quick Start: Minimal Skeleton
+## Quick Start: Scaffold + `sp edit`
 
-```json
-{
-  "specialist": {
-    "metadata": {
-      "name": "my-specialist",
-      "version": "1.0.0",
-      "description": "One sentence.",
-      "category": "workflow"
-    },
-    "execution": {
-      "model": "anthropic/claude-sonnet-4-6",
-      "permission_required": "READ_ONLY"
-    },
-    "prompt": {
-      "task_template": "$prompt\n\nWorking directory: $cwd\n"
-    }
-  }
-}
-```
-
-Validate before committing:
 ```bash
-bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.json
+# 1. Create/normalize the specialist JSON with all schema sections present
+node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
+
+# 2. Apply a preset for common model/thinking defaults (optional but preferred)
+sp edit my-specialist --preset standard
+
+# 3. Set individual fields via dot.path (primary mutation workflow)
+sp edit my-specialist specialist.metadata.name my-specialist
+sp edit my-specialist specialist.metadata.version 1.0.0
+sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6
+sp edit my-specialist specialist.execution.fallback_model google-gemini-cli/gemini-3.1-pro-preview
+sp edit my-specialist specialist.execution.permission_required READ_ONLY
+
+# 4. Use --file only for multiline prompt fields
+sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt
+sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.prompt.txt
+
+# 5. Verify materialized JSON
+sp view my-specialist
+
+# 6. Validate schema
+bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
 ```
 
 ---
@@ -676,15 +677,28 @@ pi --list-models
 pi --model <provider>/<primary-model-id>  --print "ping"   # must return "pong"
 pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 
-# 2. Write the JSON with the verified model strings
+# 2. Scaffold first (fills missing schema sections/fields)
+node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
 
-# 3. Validate schema with the bundled helper
-bun skills/specialist-author/scripts/validate-specialist.ts specialists/my-specialist.specialist.json
+# 3. Mutate with sp edit (dot.path + presets)
+sp edit my-specialist --preset standard
+sp edit my-specialist specialist.execution.model <provider>/<primary-model-id>
+sp edit my-specialist specialist.execution.fallback_model <provider>/<fallback-model-id>
 
-# 4. List to confirm discovery
+# 4. Use --file only for multiline prompt fields
+sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt
+sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.prompt.txt
+
+# 5. Verify rendered config
+sp view my-specialist
+
+# 6. Validate schema with the bundled helper
+bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
+
+# 7. List to confirm discovery
 specialists list
 
-# 5. Smoke test
+# 8. Smoke test
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
