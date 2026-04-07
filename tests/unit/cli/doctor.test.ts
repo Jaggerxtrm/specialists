@@ -26,6 +26,7 @@ describe('doctor CLI — run()', () => {
     expect(combined).toContain('xtrm-tools');
     expect(combined).toContain('Claude Code hooks');
     expect(combined).toContain('MCP');
+    expect(combined).toContain('Skill drift');
     expect(combined).toContain('Background jobs');
   });
 
