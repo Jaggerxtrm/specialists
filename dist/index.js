@@ -20023,14 +20023,26 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run6
 });
-import { copyFileSync, cpSync, existsSync as existsSync6, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
-import { join as join6 } from "node:path";
+import { copyFileSync, cpSync, existsSync as existsSync6, lstatSync, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, readlinkSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { basename as basename3, dirname as dirname3, join as join6, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function ok(msg) {
   console.log(`  ${green4("✓")} ${msg}`);
 }
 function skip(msg) {
   console.log(`  ${yellow5("○")} ${msg}`);
+}
+function isInstalled(bin) {
+  return spawnSync5("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+}
+function assertXtrmPrerequisites(cwd) {
+  const hasXtrmDir = existsSync6(join6(cwd, ".xtrm"));
+  const hasXtCli = isInstalled("xt");
+  if (hasXtrmDir && hasXtCli)
+    return;
+  console.error("specialists requires xtrm. Run: npm install -g xtrm-tools && xt install");
+  process.exit(1);
 }
 function loadJson(path, fallback) {
   if (!existsSync6(path))
@@ -20180,7 +20192,41 @@ function ensureProjectHookWiring(cwd) {
     skip(".claude/settings.json already has specialists hooks");
   }
 }
-function installProjectSkills(cwd) {
+function assertSkillRootSymlink(rootPath, expectedTargetPath) {
+  if (!existsSync6(rootPath)) {
+    throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
+  }
+  const stats = lstatSync(rootPath);
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
+  }
+  const linkTarget = readlinkSync(rootPath);
+  const resolvedTarget = resolve3(dirname3(rootPath), linkTarget);
+  const resolvedExpected = resolve3(expectedTargetPath);
+  if (resolvedTarget !== resolvedExpected) {
+    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
+  }
+}
+function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
+  if (existsSync6(activeLinkPath)) {
+    const stats = lstatSync(activeLinkPath);
+    if (!stats.isSymbolicLink()) {
+      throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+    }
+    const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
+    if (currentTarget !== resolve3(defaultSkillPath)) {
+      throw new Error(`${activeLinkPath} points to an unexpected target.`);
+    }
+    return;
+  }
+  const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
+  symlinkSync(relativeTarget, activeLinkPath, "dir");
+}
+function installProjectSkills(cwd, syncSkills) {
+  const xtrmRoot = join6(cwd, ".xtrm");
+  if (!existsSync6(xtrmRoot)) {
+    throw new Error(".xtrm/ is missing. Install xtrm first, then run specialists init.");
+  }
   const sourceDir = resolvePackagePath("skills");
   if (!sourceDir) {
     skip("no canonical skills found in package");
@@ -20191,33 +20237,36 @@ function installProjectSkills(cwd) {
     skip("no skill directories found in package");
     return;
   }
-  const targetDirs = [
-    join6(cwd, ".claude", "skills"),
-    join6(cwd, ".pi", "skills")
-  ];
-  let totalCopied = 0;
-  let totalSkipped = 0;
-  for (const targetDir of targetDirs) {
-    if (!existsSync6(targetDir)) {
-      mkdirSync(targetDir, { recursive: true });
-    }
-    for (const skill of skills) {
-      const src = join6(sourceDir, skill);
-      const dest = join6(targetDir, skill);
-      if (existsSync6(dest)) {
-        totalSkipped++;
-      } else {
-        cpSync(src, dest, { recursive: true });
-        totalCopied++;
+  const defaultRoot = join6(cwd, ".xtrm", "skills", "default");
+  const activeClaudeRoot = join6(cwd, ".xtrm", "skills", "active", "claude");
+  const activePiRoot = join6(cwd, ".xtrm", "skills", "active", "pi");
+  mkdirSync(defaultRoot, { recursive: true });
+  mkdirSync(activeClaudeRoot, { recursive: true });
+  mkdirSync(activePiRoot, { recursive: true });
+  assertSkillRootSymlink(join6(cwd, ".claude", "skills"), activeClaudeRoot);
+  assertSkillRootSymlink(join6(cwd, ".pi", "skills"), activePiRoot);
+  let copied = 0;
+  let refreshed = 0;
+  for (const skill of skills) {
+    const src = join6(sourceDir, skill);
+    const defaultSkillPath = join6(defaultRoot, skill);
+    if (existsSync6(defaultSkillPath)) {
+      if (syncSkills) {
+        cpSync(src, defaultSkillPath, { recursive: true, force: true });
+        refreshed++;
       }
+    } else {
+      cpSync(src, defaultSkillPath, { recursive: true });
+      copied++;
     }
+    ensureActiveSkillSymlink(defaultSkillPath, join6(activeClaudeRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join6(activePiRoot, skill));
   }
-  if (totalCopied > 0) {
-    ok(`installed ${skills.length} skill${skills.length === 1 ? "" : "s"} to .claude/skills/ and .pi/skills/`);
-  }
-  if (totalSkipped > 0) {
-    skip(`${totalSkipped} skill location${totalSkipped === 1 ? "" : "s"} already exist (not overwritten)`);
-  }
+  if (copied > 0)
+    ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
+  if (refreshed > 0)
+    ok(`re-synced ${refreshed} skill${refreshed === 1 ? "" : "s"} in .xtrm/skills/default/`);
+  ok("verified active skill symlinks in .xtrm/skills/active/{claude,pi}/");
 }
 function createSpecialistsDirs(cwd) {
   const defaultDir = join6(cwd, ".specialists", "default");
@@ -20311,7 +20360,19 @@ async function run6(opts = {}) {
   console.log(`
 ${bold5("specialists init")}
 `);
-  const { syncDefaults = false } = opts;
+  const { syncDefaults = false, syncSkills = false, noXtrmCheck = false } = opts;
+  if (!noXtrmCheck) {
+    assertXtrmPrerequisites(cwd);
+  }
+  if (syncSkills) {
+    installProjectSkills(cwd, true);
+    console.log(`
+${bold5("Done!")}
+`);
+    console.log(`  ${dim5("Skills re-synced via .xtrm symlink pattern only.")}
+`);
+    return;
+  }
   if (syncDefaults) {
     migrateLegacySpecialists(cwd, "default");
     copyCanonicalSpecialists(cwd);
@@ -20326,15 +20387,17 @@ ${bold5("specialists init")}
   ensureProjectMcp(cwd);
   installProjectHooks(cwd);
   ensureProjectHookWiring(cwd);
-  installProjectSkills(cwd);
+  installProjectSkills(cwd, false);
   console.log(`
 ${bold5("Done!")}
 `);
   console.log(`  ${dim5("Project-local installation:")}`);
   console.log(`  .claude/hooks/         ${dim5("# hooks (Claude Code)")}`);
   console.log(`  .claude/settings.json  ${dim5("# hook wiring")}`);
-  console.log(`  .claude/skills/        ${dim5("# skills (Claude Code)")}`);
-  console.log(`  .pi/skills/            ${dim5("# skills (pi)")}`);
+  console.log(`  .xtrm/skills/default/  ${dim5("# canonical skills")}`);
+  console.log(`  .xtrm/skills/active/   ${dim5("# active symlink roots for claude/pi")}`);
+  console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active/claude")}`);
+  console.log(`  .pi/skills/            ${dim5("# symlink -> .xtrm/skills/active/pi")}`);
   console.log("");
   console.log(`  ${dim5(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
@@ -20390,10 +20453,10 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 
 // src/specialist/observability-db.ts
 import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import { join as join7, sep } from "node:path";
 function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync5("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+  const commonDirResult = spawnSync6("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20404,7 +20467,7 @@ function resolveGitRootFrom(cwd) {
       return commonDir.slice(0, -4);
     }
   }
-  const fallbackResult = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
+  const fallbackResult = spawnSync6("git", ["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -21523,7 +21586,7 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run9
 });
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join9 } from "node:path";
 function loadPresets() {
@@ -21875,7 +21938,7 @@ function openAllConfigSpecialistsInEditor() {
     fail("Error: no specialist JSON files found in config/specialists/");
   }
   const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-  const result = spawnSync6(editor, files, { stdio: "inherit", shell: true });
+  const result = spawnSync7(editor, files, { stdio: "inherit", shell: true });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
@@ -22166,10 +22229,10 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/job-root.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
-import { dirname as dirname3, join as join10, resolve as resolve3 } from "node:path";
+import { spawnSync as spawnSync8 } from "node:child_process";
+import { dirname as dirname4, join as join10, resolve as resolve4 } from "node:path";
 function resolveCommonGitRoot(cwd) {
-  const result = spawnSync7("git", ["rev-parse", "--git-common-dir"], {
+  const result = spawnSync8("git", ["rev-parse", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -22179,14 +22242,14 @@ function resolveCommonGitRoot(cwd) {
   const gitCommonDir = result.stdout?.trim();
   if (!gitCommonDir)
     return;
-  return dirname3(resolve3(cwd, gitCommonDir));
+  return dirname4(resolve4(cwd, gitCommonDir));
 }
 function resolveJobsDir(cwd = process.cwd()) {
   const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
   return join10(commonRoot, ".specialists", "jobs");
 }
 function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync7("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+  const result = spawnSync8("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -22453,9 +22516,9 @@ import {
 import { join as join11 } from "node:path";
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
-import { spawn as spawn2, spawnSync as spawnSync8, execFileSync } from "node:child_process";
+import { spawn as spawn2, spawnSync as spawnSync9, execFileSync } from "node:child_process";
 function getCurrentGitSha() {
-  const result = spawnSync8("git", ["rev-parse", "HEAD"], {
+  const result = spawnSync9("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -22875,8 +22938,8 @@ class Supervisor {
     let latestOutput = "";
     let keepAliveExitResolved = false;
     let resolveKeepAliveExit;
-    const keepAliveExitPromise = new Promise((resolve4) => {
-      resolveKeepAliveExit = resolve4;
+    const keepAliveExitPromise = new Promise((resolve5) => {
+      resolveKeepAliveExit = resolve5;
     });
     const finishKeepAlive = (exit) => {
       if (keepAliveExitResolved)
@@ -23328,7 +23391,7 @@ class Supervisor {
           rmSync(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
-        spawnSync8("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+        spawnSync9("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
       }
       this.dispose();
     }
@@ -23360,9 +23423,9 @@ var init_supervisor = __esm(() => {
 });
 
 // src/specialist/worktree.ts
-import { existsSync as existsSync12, symlinkSync, mkdirSync as mkdirSync4 } from "node:fs";
-import { join as join12, resolve as resolve4 } from "node:path";
-import { spawnSync as spawnSync9, execFileSync as execFileSync2 } from "node:child_process";
+import { existsSync as existsSync12, symlinkSync as symlinkSync2, mkdirSync as mkdirSync4 } from "node:fs";
+import { join as join12, resolve as resolve5 } from "node:path";
+import { spawnSync as spawnSync10, execFileSync as execFileSync2 } from "node:child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -23376,7 +23439,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync9("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync10("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -23394,11 +23457,11 @@ function provisionWorktree(options) {
   const branch = deriveBranchName(options.beadId, options.specialistName);
   const existingPath = findExistingWorktree(branch, cwd);
   if (existingPath) {
-    return { branch, worktreePath: resolve4(existingPath), reused: true };
+    return { branch, worktreePath: resolve5(existingPath), reused: true };
   }
   const worktreeBase = options.worktreeBase ?? join12(commonRoot, ".worktrees", options.beadId);
   const worktreeName = deriveWorktreeName(options.beadId, options.specialistName);
-  const worktreePath = resolve4(join12(worktreeBase, worktreeName));
+  const worktreePath = resolve5(join12(worktreeBase, worktreeName));
   createWorktreeViaBd(worktreePath, branch, commonRoot);
   symlinkPiNpmCache(commonRoot, worktreePath);
   return { branch, worktreePath, reused: false };
@@ -23410,7 +23473,7 @@ function symlinkPiNpmCache(commonRoot, worktreePath) {
     return;
   try {
     mkdirSync4(join12(worktreePath, ".pi"), { recursive: true });
-    symlinkSync(source, target);
+    symlinkSync2(source, target);
   } catch {}
 }
 function createWorktreeViaBd(worktreePath, branch, cwd) {
@@ -23666,7 +23729,7 @@ var init_format_helpers = __esm(() => {
 });
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -23674,7 +23737,7 @@ function quoteShellValue(value) {
   return `'${escapeForSingleQuotedBash(value)}'`;
 }
 function isTmuxAvailable() {
-  return spawnSync10("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync11("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function buildSessionName(specialist, suffix) {
   return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
@@ -23689,14 +23752,14 @@ function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
   }
   const startupScript = `${exports.join("; ")}; exec ${cmd}`;
   const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync10("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  const result = spawnSync11("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
   if (result.status !== 0) {
     const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
     throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
   }
 }
 function killTmuxSession(name) {
-  spawnSync10("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+  spawnSync11("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
 }
 var TMUX_SESSION_PREFIX = "sp";
 var init_tmux_utils = () => {};
@@ -23804,13 +23867,13 @@ async function parseArgs6(argv) {
     process.exit(1);
   }
   if (!prompt && !beadId && !process.stdin.isTTY) {
-    prompt = await new Promise((resolve5) => {
+    prompt = await new Promise((resolve6) => {
       let buf = "";
       process.stdin.setEncoding("utf-8");
       process.stdin.on("data", (chunk) => {
         buf += chunk;
       });
-      process.stdin.on("end", () => resolve5(buf.trim()));
+      process.stdin.on("end", () => resolve6(buf.trim()));
     });
   }
   if (!prompt && !beadId) {
@@ -24145,8 +24208,8 @@ class JobControl {
       }
     };
     let resolveJobId;
-    const jobIdPromise = new Promise((resolve5) => {
-      resolveJobId = resolve5;
+    const jobIdPromise = new Promise((resolve6) => {
+      resolveJobId = resolve6;
     });
     this.supervisor = new Supervisor({
       runner: this.runner,
@@ -24211,7 +24274,7 @@ class JobControl {
       if (deadline !== undefined && Date.now() >= deadline) {
         throw new Error(`Timed out waiting for terminal status for job ${jobId}`);
       }
-      await new Promise((resolve5) => setTimeout(resolve5, backoffMs));
+      await new Promise((resolve6) => setTimeout(resolve6, backoffMs));
       backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
     }
   }
@@ -24245,7 +24308,7 @@ __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
 import { createHash as createHash2 } from "node:crypto";
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync12 } from "node:child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -24300,7 +24363,7 @@ function normalizeCoordinatorJsonPayload(output2) {
   };
 }
 function sleep2(ms) {
-  return new Promise((resolve5) => setTimeout(resolve5, ms));
+  return new Promise((resolve6) => setTimeout(resolve6, ms));
 }
 function toContextHealth(contextPct) {
   if (contextPct === null)
@@ -25025,17 +25088,17 @@ class NodeSupervisor {
     const maxWaitMs = 15000;
     const pollEveryMs = 500;
     const startedAt = Date.now();
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const timer = setInterval(() => {
         const latestOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null : null;
         if (latestOutput && hashOutput(latestOutput) !== previousOutputHash) {
           clearInterval(timer);
-          resolve5(latestOutput);
+          resolve6(latestOutput);
           return;
         }
         if (Date.now() - startedAt >= maxWaitMs) {
           clearInterval(timer);
-          resolve5(null);
+          resolve6(null);
         }
       }, pollEveryMs);
     });
@@ -25192,7 +25255,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary();
-    const result = spawnSync11("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync12("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -25493,7 +25556,7 @@ __export(exports_node, {
 });
 import { readFileSync as readFileSync9 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { spawnSync as spawnSync13 } from "node:child_process";
 import { join as join15 } from "node:path";
 function parseNodeArgs(argv) {
   const command = argv[0];
@@ -25869,7 +25932,7 @@ function buildFindingNotes(nodeId, findingId, finding) {
 `);
 }
 function promoteFindingToBead(beadId, notes) {
-  const result = spawnSync12("bd", ["update", beadId, "--notes", notes], {
+  const result = spawnSync13("bd", ["update", beadId, "--notes", notes], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -25951,7 +26014,7 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run12
 });
-import { spawnSync as spawnSync13 } from "node:child_process";
+import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync14, readFileSync as readFileSync10 } from "node:fs";
 import { join as join16 } from "node:path";
 function ok2(msg) {
@@ -25972,15 +26035,15 @@ function section(label) {
 ${bold9(`── ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync13(bin, args, {
+  const r = spawnSync14(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
   });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
-function isInstalled(bin) {
-  return spawnSync13("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+function isInstalled2(bin) {
+  return spawnSync14("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -26174,12 +26237,12 @@ async function run12() {
   try {
     const loader = new SpecialistLoader;
     const allSpecialists = await loader.list();
-    const piInstalled = isInstalled("pi");
+    const piInstalled = isInstalled2("pi");
     const piVersion = piInstalled ? cmd("pi", ["--version"]) : null;
     const piModels = piInstalled ? cmd("pi", ["--list-models"]) : null;
     const piProviders = piModels ? new Set(piModels.stdout.split(`
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
-    const bdInstalled = isInstalled("bd");
+    const bdInstalled = isInstalled2("bd");
     const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
     const beadsPresent = existsSync14(join16(process.cwd(), ".beads"));
     const specialistsBin = cmd("which", ["specialists"]);
@@ -26554,9 +26617,9 @@ var init_result = __esm(() => {
 
 // src/specialist/timeline-query.ts
 import { existsSync as existsSync16, readdirSync as readdirSync5, readFileSync as readFileSync12 } from "node:fs";
-import { basename as basename3, join as join18 } from "node:path";
+import { basename as basename4, join as join18 } from "node:path";
 function readJobEvents(jobDir) {
-  const jobId = basename3(jobDir);
+  const jobId = basename4(jobDir);
   try {
     const sqliteEvents = createObservabilitySqliteClient()?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
@@ -27105,7 +27168,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
-  await new Promise((resolve5) => {
+  await new Promise((resolve6) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
       for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
@@ -27172,7 +27235,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
       }
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
-        resolve5();
+        resolve6();
       }
     }, 500);
   });
@@ -27442,7 +27505,7 @@ async function run18() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync19, readdirSync as readdirSync7, readFileSync as readFileSync15 } from "node:fs";
 import { join as join21 } from "node:path";
-import { spawnSync as spawnSync14 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join21(jobDir, "status.json");
   if (!existsSync19(statusPath))
@@ -27488,7 +27551,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync14("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync15("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -27814,7 +27877,7 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run21
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync15 } from "node:child_process";
+import { execFileSync as execFileSync3, spawnSync as spawnSync16 } from "node:child_process";
 import { readFileSync as readFileSync17 } from "node:fs";
 import { join as join24 } from "node:path";
 function exitWithError(message) {
@@ -27847,7 +27910,7 @@ async function run21() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync15("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync16("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
@@ -28092,7 +28155,7 @@ var exports_doctor = {};
 __export(exports_doctor, {
   run: () => run23
 });
-import { spawnSync as spawnSync16 } from "node:child_process";
+import { spawnSync as spawnSync17 } from "node:child_process";
 import { existsSync as existsSync21, mkdirSync as mkdirSync5, readFileSync as readFileSync18, readdirSync as readdirSync9 } from "node:fs";
 import { join as join25 } from "node:path";
 function ok3(msg) {
@@ -28116,11 +28179,11 @@ function section3(label) {
 ${bold12(`── ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync16(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync17(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
-function isInstalled2(bin) {
-  return spawnSync16("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+function isInstalled3(bin) {
+  return spawnSync17("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
   if (!existsSync21(path))
@@ -28133,7 +28196,7 @@ function loadJson2(path) {
 }
 function checkPi() {
   section3("pi  (coding agent runtime)");
-  if (!isInstalled2("pi")) {
+  if (!isInstalled3("pi")) {
     fail4("pi not installed");
     fix("install pi first");
     return false;
@@ -28153,7 +28216,7 @@ function checkPi() {
 }
 function checkSpAlias() {
   section3("sp alias  (specialists shortcut)");
-  if (isInstalled2("sp")) {
+  if (isInstalled3("sp")) {
     ok3("sp alias installed");
     return true;
   }
@@ -28163,7 +28226,7 @@ function checkSpAlias() {
 }
 function checkBd() {
   section3("beads  (issue tracker)");
-  if (!isInstalled2("bd")) {
+  if (!isInstalled3("bd")) {
     fail4("bd not installed");
     fix("install beads (bd) first");
     return false;
@@ -28177,7 +28240,7 @@ function checkBd() {
 }
 function checkXt() {
   section3("xtrm-tools");
-  if (!isInstalled2("xt")) {
+  if (!isInstalled3("xt")) {
     fail4("xt not installed");
     fix("install xtrm-tools first");
     return false;
@@ -36113,7 +36176,7 @@ async function run26() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists init [--sync-defaults]",
+        "Usage: specialists init [--sync-defaults] [--sync-skills] [--no-xtrm-check]",
         "",
         "Bootstrap a project for specialists. This is the sole onboarding command.",
         "",
@@ -36124,28 +36187,35 @@ async function run26() {
         "  • injects the Specialists section into AGENTS.md",
         "  • registers the Specialists MCP server at project scope (.mcp.json)",
         "  • installs hooks to .claude/hooks/ and wires .claude/settings.json",
-        "  • installs skills to .claude/skills/ and .pi/skills/",
+        "  • syncs skills into .xtrm/skills/default/ and wires active symlinks",
         "",
         "Options:",
         "  --sync-defaults    Also copy canonical specialists to .specialists/default/.",
         "                     Human-only: rewrites default specialist YAML files.",
+        "  --sync-skills      Re-sync skills only (.xtrm/default + active symlinks).",
+        "                     Skips full init flow.",
+        "  --no-xtrm-check    Skip .xtrm/ + xt CLI prerequisite checks (CI/testing).",
         "",
         "Examples:",
-        "  specialists init                 # safe for agents to call",
-        "  specialists init --sync-defaults # human-only: sync canonical specialists",
+        "  specialists init                  # full bootstrap",
+        "  specialists init --sync-defaults  # sync canonical specialists",
+        "  specialists init --sync-skills    # re-sync skills only",
         "",
         "Notes:",
         "  setup and install are deprecated; use specialists init.",
         "  MCP missing → specialists init (safe for anyone to call).",
-        "  Specialists missing → specialists init --sync-defaults (human-only).",
+        "  Specialists missing → specialists init --sync-defaults.",
+        "  Skill sync only → specialists init --sync-skills.",
         ""
       ].join(`
 `));
       return;
     }
     const syncDefaults = process.argv.includes("--sync-defaults");
+    const syncSkills = process.argv.includes("--sync-skills");
+    const noXtrmCheck = process.argv.includes("--no-xtrm-check");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
-    return handler({ syncDefaults });
+    return handler({ syncDefaults, syncSkills, noXtrmCheck });
   }
   if (sub === "db") {
     if (wantsHelp()) {

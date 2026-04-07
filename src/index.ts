@@ -138,7 +138,7 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists init [--sync-defaults]',
+        'Usage: specialists init [--sync-defaults] [--sync-skills] [--no-xtrm-check]',
         '',
         'Bootstrap a project for specialists. This is the sole onboarding command.',
         '',
@@ -149,27 +149,34 @@ async function run() {
         '  • injects the Specialists section into AGENTS.md',
         '  • registers the Specialists MCP server at project scope (.mcp.json)',
         '  • installs hooks to .claude/hooks/ and wires .claude/settings.json',
-        '  • installs skills to .claude/skills/ and .pi/skills/',
+        '  • syncs skills into .xtrm/skills/default/ and wires active symlinks',
         '',
         'Options:',
         '  --sync-defaults    Also copy canonical specialists to .specialists/default/.',
         '                     Human-only: rewrites default specialist YAML files.',
+        '  --sync-skills      Re-sync skills only (.xtrm/default + active symlinks).',
+        '                     Skips full init flow.',
+        '  --no-xtrm-check    Skip .xtrm/ + xt CLI prerequisite checks (CI/testing).',
         '',
         'Examples:',
-        '  specialists init                 # safe for agents to call',
-        '  specialists init --sync-defaults # human-only: sync canonical specialists',
+        '  specialists init                  # full bootstrap',
+        '  specialists init --sync-defaults  # sync canonical specialists',
+        '  specialists init --sync-skills    # re-sync skills only',
         '',
         'Notes:',
         '  setup and install are deprecated; use specialists init.',
         '  MCP missing → specialists init (safe for anyone to call).',
-        '  Specialists missing → specialists init --sync-defaults (human-only).',
+        '  Specialists missing → specialists init --sync-defaults.',
+        '  Skill sync only → specialists init --sync-skills.',
         '',
       ].join('\n'));
       return;
     }
     const syncDefaults = process.argv.includes('--sync-defaults');
+    const syncSkills = process.argv.includes('--sync-skills');
+    const noXtrmCheck = process.argv.includes('--no-xtrm-check');
     const { run: handler } = await import('./cli/init.js');
-    return handler({ syncDefaults });
+    return handler({ syncDefaults, syncSkills, noXtrmCheck });
   }
 
   if (sub === 'db') {

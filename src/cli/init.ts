@@ -1,7 +1,8 @@
 // src/cli/init.ts
 
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -12,6 +13,20 @@ const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
 
 function ok(msg: string)   { console.log(`  ${green('✓')} ${msg}`); }
 function skip(msg: string) { console.log(`  ${yellow('○')} ${msg}`); }
+
+function isInstalled(bin: string): boolean {
+  return spawnSync('which', [bin], { encoding: 'utf8', timeout: 2000 }).status === 0;
+}
+
+function assertXtrmPrerequisites(cwd: string): void {
+  const hasXtrmDir = existsSync(join(cwd, '.xtrm'));
+  const hasXtCli = isInstalled('xt');
+
+  if (hasXtrmDir && hasXtCli) return;
+
+  console.error('specialists requires xtrm. Run: npm install -g xtrm-tools && xt install');
+  process.exit(1);
+}
 
 const AGENTS_BLOCK = `
 ## Specialists
@@ -265,11 +280,54 @@ function ensureProjectHookWiring(cwd: string): void {
 }
 
 /**
- * Install skills to .claude/skills/ and .pi/skills/ (project-local for both agents)
+ * Ensure .claude/skills and .pi/skills are symlinks to .xtrm active skill roots.
  */
-function installProjectSkills(cwd: string): void {
+function assertSkillRootSymlink(rootPath: string, expectedTargetPath: string): void {
+  if (!existsSync(rootPath)) {
+    throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
+  }
+
+  const stats = lstatSync(rootPath);
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
+  }
+
+  const linkTarget = readlinkSync(rootPath);
+  const resolvedTarget = resolve(dirname(rootPath), linkTarget);
+  const resolvedExpected = resolve(expectedTargetPath);
+  if (resolvedTarget !== resolvedExpected) {
+    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
+  }
+}
+
+function ensureActiveSkillSymlink(defaultSkillPath: string, activeLinkPath: string): void {
+  if (existsSync(activeLinkPath)) {
+    const stats = lstatSync(activeLinkPath);
+    if (!stats.isSymbolicLink()) {
+      throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+    }
+
+    const currentTarget = resolve(dirname(activeLinkPath), readlinkSync(activeLinkPath));
+    if (currentTarget !== resolve(defaultSkillPath)) {
+      throw new Error(`${activeLinkPath} points to an unexpected target.`);
+    }
+    return;
+  }
+
+  const relativeTarget = `../../default/${basename(defaultSkillPath)}`;
+  symlinkSync(relativeTarget, activeLinkPath, 'dir');
+}
+
+/**
+ * Sync canonical skills into .xtrm skill roots and wire active symlinks.
+ */
+function installProjectSkills(cwd: string, syncSkills: boolean): void {
+  const xtrmRoot = join(cwd, '.xtrm');
+  if (!existsSync(xtrmRoot)) {
+    throw new Error('.xtrm/ is missing. Install xtrm first, then run specialists init.');
+  }
+
   const sourceDir = resolvePackagePath('skills');
-  
   if (!sourceDir) {
     skip('no canonical skills found in package');
     return;
@@ -278,46 +336,47 @@ function installProjectSkills(cwd: string): void {
   const skills = readdirSync(sourceDir, { withFileTypes: true })
     .filter(d => d.isDirectory())
     .map(d => d.name);
-  
+
   if (skills.length === 0) {
     skip('no skill directories found in package');
     return;
   }
 
-  // Install to both .claude/skills/ and .pi/skills/
-  const targetDirs = [
-    join(cwd, '.claude', 'skills'),
-    join(cwd, '.pi', 'skills'),
-  ];
+  const defaultRoot = join(cwd, '.xtrm', 'skills', 'default');
+  const activeClaudeRoot = join(cwd, '.xtrm', 'skills', 'active', 'claude');
+  const activePiRoot = join(cwd, '.xtrm', 'skills', 'active', 'pi');
 
-  let totalCopied = 0;
-  let totalSkipped = 0;
+  mkdirSync(defaultRoot, { recursive: true });
+  mkdirSync(activeClaudeRoot, { recursive: true });
+  mkdirSync(activePiRoot, { recursive: true });
 
-  for (const targetDir of targetDirs) {
-    // Create target directory
-    if (!existsSync(targetDir)) {
-      mkdirSync(targetDir, { recursive: true });
-    }
+  assertSkillRootSymlink(join(cwd, '.claude', 'skills'), activeClaudeRoot);
+  assertSkillRootSymlink(join(cwd, '.pi', 'skills'), activePiRoot);
 
-    for (const skill of skills) {
-      const src = join(sourceDir, skill);
-      const dest = join(targetDir, skill);
-      
-      if (existsSync(dest)) {
-        totalSkipped++;
-      } else {
-        cpSync(src, dest, { recursive: true });
-        totalCopied++;
+  let copied = 0;
+  let refreshed = 0;
+
+  for (const skill of skills) {
+    const src = join(sourceDir, skill);
+    const defaultSkillPath = join(defaultRoot, skill);
+
+    if (existsSync(defaultSkillPath)) {
+      if (syncSkills) {
+        cpSync(src, defaultSkillPath, { recursive: true, force: true });
+        refreshed++;
       }
+    } else {
+      cpSync(src, defaultSkillPath, { recursive: true });
+      copied++;
     }
+
+    ensureActiveSkillSymlink(defaultSkillPath, join(activeClaudeRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join(activePiRoot, skill));
   }
 
-  if (totalCopied > 0) {
-    ok(`installed ${skills.length} skill${skills.length === 1 ? '' : 's'} to .claude/skills/ and .pi/skills/`);
-  }
-  if (totalSkipped > 0) {
-    skip(`${totalSkipped} skill location${totalSkipped === 1 ? '' : 's'} already exist (not overwritten)`);
-  }
+  if (copied > 0) ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .xtrm/skills/default/`);
+  if (refreshed > 0) ok(`re-synced ${refreshed} skill${refreshed === 1 ? '' : 's'} in .xtrm/skills/default/`);
+  ok('verified active skill symlinks in .xtrm/skills/active/{claude,pi}/');
 }
 
 /**
@@ -425,6 +484,10 @@ function ensureAgentsMd(cwd: string): void {
 export interface InitOptions {
   /** When true, copy canonical specialists to .specialists/default/ and migrate legacy layouts. */
   syncDefaults?: boolean;
+  /** When true, overwrite canonical skills in .xtrm/skills/default/ and refresh active symlinks only. */
+  syncSkills?: boolean;
+  /** Skip xtrm prerequisites (.xtrm dir + xt CLI). Useful for CI/testing. */
+  noXtrmCheck?: boolean;
 }
 
 export async function run(opts: InitOptions = {}): Promise<void> {
@@ -447,7 +510,18 @@ export async function run(opts: InitOptions = {}): Promise<void> {
 
   console.log(`\n${bold('specialists init')}\n`);
 
-  const { syncDefaults = false } = opts;
+  const { syncDefaults = false, syncSkills = false, noXtrmCheck = false } = opts;
+
+  if (!noXtrmCheck) {
+    assertXtrmPrerequisites(cwd);
+  }
+
+  if (syncSkills) {
+    installProjectSkills(cwd, true);
+    console.log(`\n${bold('Done!')}\n`);
+    console.log(`  ${dim('Skills re-synced via .xtrm symlink pattern only.')}\n`);
+    return;
+  }
 
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
   if (syncDefaults) {
@@ -474,16 +548,18 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   installProjectHooks(cwd);
   ensureProjectHookWiring(cwd);
 
-  // ── 6. Install skills to .claude/skills/ and .pi/skills/ ──────────────────
-  installProjectSkills(cwd);
+  // ── 6. Install skills via .xtrm default + active symlink roots ────────────
+  installProjectSkills(cwd, false);
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
   console.log(`  ${dim('Project-local installation:')}`);
   console.log(`  .claude/hooks/         ${dim('# hooks (Claude Code)')}`);
   console.log(`  .claude/settings.json  ${dim('# hook wiring')}`);
-  console.log(`  .claude/skills/        ${dim('# skills (Claude Code)')}`);
-  console.log(`  .pi/skills/            ${dim('# skills (pi)')}`);
+  console.log(`  .xtrm/skills/default/  ${dim('# canonical skills')}`);
+  console.log(`  .xtrm/skills/active/   ${dim('# active symlink roots for claude/pi')}`);
+  console.log(`  .claude/skills/        ${dim('# symlink -> .xtrm/skills/active/claude')}`);
+  console.log(`  .pi/skills/            ${dim('# symlink -> .xtrm/skills/active/pi')}`);
   console.log('');
   console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);
