@@ -20137,33 +20137,56 @@ function installProjectHooks(cwd) {
     skip("no canonical hooks found in package");
     return;
   }
-  const targetDir = join6(cwd, ".claude", "hooks");
+  const xtrmHooksDir = join6(cwd, ".xtrm", "hooks");
+  const targetDir = join6(xtrmHooksDir, "specialists");
+  const claudeHooksDir = join6(cwd, ".claude", "hooks");
   const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
     return;
   }
-  if (!existsSync6(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
+  mkdirSync(targetDir, { recursive: true });
+  mkdirSync(claudeHooksDir, { recursive: true });
   let copied = 0;
-  let skipped = 0;
+  let skippedCopies = 0;
+  let linked = 0;
+  let skippedLinks = 0;
   for (const file of hooks) {
     const src = join6(sourceDir, file);
-    const dest = join6(targetDir, file);
-    if (existsSync6(dest)) {
-      skipped++;
+    const xtrmDest = join6(targetDir, file);
+    if (existsSync6(xtrmDest)) {
+      skippedCopies++;
     } else {
-      copyFileSync(src, dest);
+      copyFileSync(src, xtrmDest);
       copied++;
     }
+    const claudeHookPath = join6(claudeHooksDir, file);
+    if (existsSync6(claudeHookPath)) {
+      const stats = lstatSync(claudeHookPath);
+      if (!stats.isSymbolicLink()) {
+        skippedLinks++;
+        continue;
+      }
+      const currentTarget = resolve3(dirname3(claudeHookPath), readlinkSync(claudeHookPath));
+      if (currentTarget !== xtrmDest) {
+        skippedLinks++;
+        continue;
+      }
+      skippedLinks++;
+      continue;
+    }
+    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
+    symlinkSync(relativeTarget, claudeHookPath);
+    linked++;
   }
-  if (copied > 0) {
-    ok(`installed ${copied} hook${copied === 1 ? "" : "s"} to .claude/hooks/`);
-  }
-  if (skipped > 0) {
-    skip(`${skipped} hook${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
-  }
+  if (copied > 0)
+    ok(`installed ${copied} hook${copied === 1 ? "" : "s"} to .xtrm/hooks/specialists/`);
+  if (skippedCopies > 0)
+    skip(`${skippedCopies} hook${skippedCopies === 1 ? "" : "s"} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
+  if (linked > 0)
+    ok(`linked ${linked} hook${linked === 1 ? "" : "s"} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+  if (skippedLinks > 0)
+    skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
 }
 function ensureProjectHookWiring(cwd) {
   const settingsPath = join6(cwd, ".claude", "settings.json");
@@ -20392,8 +20415,9 @@ ${bold5("Done!")}
 ${bold5("Done!")}
 `);
   console.log(`  ${dim5("Project-local installation:")}`);
-  console.log(`  .claude/hooks/         ${dim5("# hooks (Claude Code)")}`);
-  console.log(`  .claude/settings.json  ${dim5("# hook wiring")}`);
+  console.log(`  .xtrm/hooks/specialists/ ${dim5("# canonical specialists hooks")}`);
+  console.log(`  .claude/hooks/            ${dim5("# symlinks -> .xtrm/hooks/specialists")}`);
+  console.log(`  .claude/settings.json     ${dim5("# hook wiring")}`);
   console.log(`  .xtrm/skills/default/  ${dim5("# canonical skills")}`);
   console.log(`  .xtrm/skills/active/   ${dim5("# active symlink roots for claude/pi")}`);
   console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active/claude")}`);
@@ -28155,9 +28179,10 @@ var exports_doctor = {};
 __export(exports_doctor, {
   run: () => run23
 });
+import { createHash as createHash3 } from "node:crypto";
 import { spawnSync as spawnSync17 } from "node:child_process";
-import { existsSync as existsSync21, mkdirSync as mkdirSync5, readFileSync as readFileSync18, readdirSync as readdirSync9 } from "node:fs";
-import { join as join25 } from "node:path";
+import { existsSync as existsSync21, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync9, readFileSync as readFileSync18, readlinkSync as readlinkSync2 } from "node:fs";
+import { dirname as dirname5, join as join25, relative, resolve as resolve6 } from "node:path";
 function ok3(msg) {
   console.log(`  ${green14("✓")} ${msg}`);
 }
@@ -28267,10 +28292,9 @@ function checkHooks() {
     fix("specialists install");
     return false;
   }
-  const wiredCommands = new Set([
-    ...settings.UserPromptSubmit ?? [],
-    ...settings.SessionStart ?? []
-  ].flatMap((entry) => (entry.hooks ?? []).map((h) => h.command ?? "")));
+  const userPromptSubmit = settings.UserPromptSubmit ?? [];
+  const sessionStart = settings.SessionStart ?? [];
+  const wiredCommands = new Set([...userPromptSubmit, ...sessionStart].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
   for (const name of HOOK_NAMES) {
     const expectedRelative = `node .specialists/default/hooks/${name}`;
     if (!wiredCommands.has(expectedRelative)) {
@@ -28294,6 +28318,156 @@ function checkMCP() {
   }
   ok3(`MCP server 'specialists' registered in ${MCP_FILE2}`);
   return true;
+}
+function hashFile(path) {
+  const hash = createHash3("sha256");
+  hash.update(readFileSync18(path));
+  return hash.digest("hex");
+}
+function collectFileHashes(rootDir) {
+  const hashes = new Map;
+  const visit2 = (dir) => {
+    for (const entry of readdirSync9(dir, { withFileTypes: true })) {
+      const fullPath = join25(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit2(fullPath);
+        continue;
+      }
+      if (!entry.isFile())
+        continue;
+      const relPath = relative(rootDir, fullPath);
+      hashes.set(relPath, hashFile(fullPath));
+    }
+  };
+  if (existsSync21(rootDir))
+    visit2(rootDir);
+  return hashes;
+}
+function isSymlinkTo(linkPath, expectedTargetPath) {
+  if (!existsSync21(linkPath))
+    return { ok: false, reason: "missing" };
+  let stats;
+  try {
+    stats = lstatSync2(linkPath);
+  } catch {
+    return { ok: false, reason: "broken" };
+  }
+  if (!stats.isSymbolicLink())
+    return { ok: false, reason: "not-symlink" };
+  try {
+    const rawTarget = readlinkSync2(linkPath);
+    const resolvedTarget = resolve6(dirname5(linkPath), rawTarget);
+    const resolvedExpected = resolve6(expectedTargetPath);
+    if (resolvedTarget !== resolvedExpected) {
+      return { ok: false, reason: "wrong-target", target: rawTarget };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "broken" };
+  }
+}
+function checkSkillDrift() {
+  section3("Skill drift  (.xtrm skill sync)");
+  if (!existsSync21(CONFIG_SKILLS_DIR)) {
+    fail4("config/skills/ missing");
+    fix("restore config/skills/ from git");
+    return false;
+  }
+  if (!existsSync21(XTRM_DEFAULT_SKILLS_DIR)) {
+    fail4(".xtrm/skills/default/ missing");
+    fix("specialists init --sync-skills");
+    return false;
+  }
+  const canonicalHashes = collectFileHashes(CONFIG_SKILLS_DIR);
+  const defaultHashes = collectFileHashes(XTRM_DEFAULT_SKILLS_DIR);
+  const drifted = [];
+  const missingInDefault = [];
+  const extraInDefault = [];
+  for (const [relPath, canonicalHash] of canonicalHashes) {
+    const defaultHash = defaultHashes.get(relPath);
+    if (!defaultHash) {
+      missingInDefault.push(relPath);
+      continue;
+    }
+    if (canonicalHash !== defaultHash)
+      drifted.push(relPath);
+  }
+  for (const relPath of defaultHashes.keys()) {
+    if (!canonicalHashes.has(relPath))
+      extraInDefault.push(relPath);
+  }
+  if (drifted.length === 0 && missingInDefault.length === 0 && extraInDefault.length === 0) {
+    ok3("config/skills/ and .xtrm/skills/default/ are in sync");
+  } else {
+    if (drifted.length > 0) {
+      fail4(`${drifted.length} drifted file${drifted.length === 1 ? "" : "s"} between config/skills and .xtrm/skills/default`);
+      hint(`example: ${drifted.slice(0, 3).join(", ")}${drifted.length > 3 ? ", ..." : ""}`);
+    }
+    if (missingInDefault.length > 0) {
+      fail4(`${missingInDefault.length} file${missingInDefault.length === 1 ? "" : "s"} missing from .xtrm/skills/default`);
+      hint(`example: ${missingInDefault.slice(0, 3).join(", ")}${missingInDefault.length > 3 ? ", ..." : ""}`);
+    }
+    if (extraInDefault.length > 0) {
+      warn2(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? "" : "s"} found only in .xtrm/skills/default`);
+      hint(`example: ${extraInDefault.slice(0, 3).join(", ")}${extraInDefault.length > 3 ? ", ..." : ""}`);
+    }
+    fix("specialists init --sync-skills");
+  }
+  let linksOk = true;
+  for (const scope of ["claude", "pi"]) {
+    const activeRoot = join25(XTRM_ACTIVE_SKILLS_DIR, scope);
+    if (!existsSync21(activeRoot)) {
+      fail4(`${relative(CWD, activeRoot)}/ missing`);
+      fix("specialists init --sync-skills");
+      linksOk = false;
+      continue;
+    }
+    const defaultSkills = readdirSync9(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    for (const skillName of defaultSkills) {
+      const activeLinkPath = join25(activeRoot, skillName);
+      const expectedTarget = join25(XTRM_DEFAULT_SKILLS_DIR, skillName);
+      const state = isSymlinkTo(activeLinkPath, expectedTarget);
+      if (state.ok)
+        continue;
+      linksOk = false;
+      const relLink = relative(CWD, activeLinkPath);
+      if (state.reason === "missing") {
+        fail4(`${relLink} missing`);
+      } else if (state.reason === "not-symlink") {
+        fail4(`${relLink} is not a symlink`);
+      } else if (state.reason === "wrong-target") {
+        fail4(`${relLink} points to ${state.target ?? "unknown target"}`);
+      } else {
+        fail4(`${relLink} is broken`);
+      }
+      fix("specialists init --sync-skills");
+    }
+  }
+  const skillRootChecks = [
+    { root: join25(CLAUDE_DIR, "skills"), expected: ACTIVE_CLAUDE_SKILLS_DIR },
+    { root: join25(PI_DIR, "skills"), expected: ACTIVE_PI_SKILLS_DIR }
+  ];
+  let rootLinksOk = true;
+  for (const check2 of skillRootChecks) {
+    const state = isSymlinkTo(check2.root, check2.expected);
+    if (state.ok) {
+      ok3(`${relative(CWD, check2.root)} -> ${relative(dirname5(check2.root), check2.expected)}`);
+      continue;
+    }
+    rootLinksOk = false;
+    const relRoot = relative(CWD, check2.root);
+    if (state.reason === "missing") {
+      fail4(`${relRoot} missing`);
+    } else if (state.reason === "not-symlink") {
+      fail4(`${relRoot} is not a symlink`);
+    } else if (state.reason === "wrong-target") {
+      fail4(`${relRoot} points to ${state.target ?? "unknown target"}`);
+    } else {
+      fail4(`${relRoot} is broken`);
+    }
+    fix("specialists init --sync-skills");
+  }
+  return drifted.length === 0 && missingInDefault.length === 0 && linksOk && rootLinksOk;
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
@@ -28381,22 +28555,30 @@ ${bold12("specialists doctor")}
   const xtOk = checkXt();
   const hooksOk = checkHooks();
   const mcpOk = checkMCP();
+  const skillDriftOk = checkSkillDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
-  const allOk = piOk && bdOk && xtOk && hooksOk && mcpOk && dirsOk && jobsOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
     console.log(`  ${green14("✓")} ${bold12("All checks passed")}  — specialists is healthy`);
   } else {
     console.log(`  ${yellow12("○")} ${bold12("Some checks failed")}  — follow the fix hints above`);
-    console.log(`  ${dim13("specialists install fixes hook + MCP registration; pi, bd, and xt must be installed separately.")}`);
+    console.log(`  ${dim13("specialists install fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.")}`);
   }
   console.log("");
 }
-var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join25(CWD, ".claude");
+  PI_DIR = join25(CWD, ".pi");
+  XTRM_SKILLS_DIR = join25(CWD, ".xtrm", "skills");
+  XTRM_DEFAULT_SKILLS_DIR = join25(XTRM_SKILLS_DIR, "default");
+  XTRM_ACTIVE_SKILLS_DIR = join25(XTRM_SKILLS_DIR, "active");
+  ACTIVE_CLAUDE_SKILLS_DIR = join25(XTRM_ACTIVE_SKILLS_DIR, "claude");
+  ACTIVE_PI_SKILLS_DIR = join25(XTRM_ACTIVE_SKILLS_DIR, "pi");
+  CONFIG_SKILLS_DIR = join25(CWD, "config", "skills");
   SPECIALISTS_DIR = join25(CWD, ".specialists");
   HOOKS_DIR = join25(SPECIALISTS_DIR, "default", "hooks");
   SETTINGS_FILE = join25(CLAUDE_DIR, "settings.json");
