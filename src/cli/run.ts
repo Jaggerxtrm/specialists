@@ -151,7 +151,11 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 function resolveWorkingDirectory(
   args: RunArgs,
   jobsDir: string,
-): string | undefined {
+): {
+  workingDirectory?: string;
+  reusedFromJobId?: string;
+  worktreeOwnerJobId?: string;
+} {
   if (args.worktree) {
     // args.beadId is guaranteed non-null here (parseArgs validates this)
     const info = provisionWorktree({
@@ -163,12 +167,18 @@ function resolveWorkingDirectory(
     } else {
       process.stderr.write(dim(`[worktree created: ${info.worktreePath}  branch: ${info.branch}]\n`));
     }
-    return info.worktreePath;
+    return {
+      workingDirectory: info.worktreePath,
+    };
   }
 
   if (args.reuseJobId !== undefined) {
     const statusPath = join(jobsDir, args.reuseJobId, 'status.json');
-    let targetStatus: { worktree_path?: string } | null = null;
+    let targetStatus: {
+      id?: string;
+      worktree_path?: string;
+      worktree_owner_job_id?: string;
+    } | null = null;
     try {
       targetStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
     } catch {
@@ -187,11 +197,17 @@ function resolveWorkingDirectory(
       process.exit(1);
     }
 
+    const worktreeOwnerJobId = targetStatus?.worktree_owner_job_id ?? targetStatus?.id ?? args.reuseJobId;
+
     process.stderr.write(dim(`[workspace reused from job ${args.reuseJobId}: ${worktreePath}]\n`));
-    return worktreePath;
+    return {
+      workingDirectory: worktreePath,
+      reusedFromJobId: args.reuseJobId,
+      worktreeOwnerJobId,
+    };
   }
 
-  return undefined;
+  return {};
 }
 
 // ── Event tailer ───────────────────────────────────────────────────────────────
@@ -380,7 +396,11 @@ export async function run(): Promise<void> {
   // Supervisor resolves this internally too, but we need it here for the tailer.
   const jobsDir = resolveJobsDir();
 
-  const workingDirectory = resolveWorkingDirectory(args, jobsDir);
+  const {
+    workingDirectory,
+    reusedFromJobId,
+    worktreeOwnerJobId,
+  } = resolveWorkingDirectory(args, jobsDir);
 
   let stopTailer: (() => void) | undefined;
 
@@ -396,6 +416,8 @@ export async function run(): Promise<void> {
       noKeepAlive: args.noKeepAlive,
       beadsWriteNotes,
       workingDirectory,
+      reusedFromJobId,
+      worktreeOwnerJobId,
     },
     // jobsDir intentionally omitted — Supervisor derives it from workingDirectory
     // via resolveJobsDir() so all worktree sessions share the same state root.

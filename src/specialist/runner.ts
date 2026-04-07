@@ -23,6 +23,10 @@ export interface RunOptions {
   workingDirectory?: string;
   /** Existing bead whose content should be used as the task prompt. */
   inputBeadId?: string;
+  /** Lineage: set when --job <id> is used to reuse another job's worktree. */
+  reusedFromJobId?: string;
+  /** Lineage: root job id that originally created the reused worktree. */
+  worktreeOwnerJobId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
   sessionPath?: string;
   /**

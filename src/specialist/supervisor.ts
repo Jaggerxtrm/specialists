@@ -69,6 +69,8 @@ export interface SupervisorStatus {
   fifo_path?: string;
   tmux_session?: string;
   worktree_path?: string;
+  reused_from_job_id?: string;
+  worktree_owner_job_id?: string;
   branch?: string;
   metrics?: SessionRunMetrics;
   error?: string;
@@ -412,18 +414,29 @@ export class Supervisor {
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
 
+  private withStatusLineageDefaults(id: string, status: SupervisorStatus): SupervisorStatus {
+    if (!status.worktree_path) return status;
+    if (status.worktree_owner_job_id) return status;
+    return {
+      ...status,
+      worktree_owner_job_id: id,
+    };
+  }
+
   private writeStatusFileOnly(id: string, data: SupervisorStatus): void {
+    const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + '.tmp';
-    writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    writeFileSync(tmp, JSON.stringify(normalizedStatus, null, 2), 'utf-8');
     renameSync(tmp, path);
   }
 
   private writeStatusFile(id: string, data: SupervisorStatus): void {
-    this.writeStatusFileOnly(id, data);
+    const normalizedStatus = this.withStatusLineageDefaults(id, data);
+    this.writeStatusFileOnly(id, normalizedStatus);
     try {
-      this.sqliteClient?.upsertStatus(data);
+      this.sqliteClient?.upsertStatus(normalizedStatus);
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);
     }
@@ -537,6 +550,8 @@ export class Supervisor {
       ...(nodeId ? { node_id: nodeId } : {}),
       ...(process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {}),
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
+      ...(runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {}),
+      ...(runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {}),
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),
