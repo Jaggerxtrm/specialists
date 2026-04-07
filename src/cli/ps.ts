@@ -44,6 +44,13 @@ interface WorktreeTree {
 }
 
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
+const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
+  waiting: 3,
+  running: 2,
+  starting: 1,
+  done: 0,
+  error: 0,
+};
 
 function parseArgs(argv: string[]): PsArgs {
   return {
@@ -136,6 +143,14 @@ function buildReuseForest(jobs: SupervisorStatus[]): JobNode[] {
   return roots;
 }
 
+function getTreeUrgency(jobs: readonly SupervisorStatus[]): number {
+  return jobs.reduce((highest, job) => Math.max(highest, STATUS_PRIORITY[job.status]), 0);
+}
+
+function getTreeNewestStart(jobs: readonly SupervisorStatus[]): number {
+  return jobs.reduce((latest, job) => Math.max(latest, job.started_at_ms), 0);
+}
+
 function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
   const groups = new Map<string, SupervisorStatus[]>();
 
@@ -145,9 +160,19 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
     groups.get(ownerId)!.push(job);
   }
 
+  const sortedGroups = [...groups.entries()].sort(([ownerA, jobsA], [ownerB, jobsB]) => {
+    const urgencyDelta = getTreeUrgency(jobsB) - getTreeUrgency(jobsA);
+    if (urgencyDelta !== 0) return urgencyDelta;
+
+    const startDelta = getTreeNewestStart(jobsB) - getTreeNewestStart(jobsA);
+    if (startDelta !== 0) return startDelta;
+
+    return ownerA.localeCompare(ownerB);
+  });
+
   const trees: WorktreeTree[] = [];
 
-  for (const [ownerJobId, treeJobs] of groups.entries()) {
+  for (const [ownerJobId, treeJobs] of sortedGroups) {
     const representative = treeJobs.find((job) => job.id === ownerJobId) ?? treeJobs[0];
     const nonNodeJobs = treeJobs.filter((job) => !job.node_id);
     const nodeBuckets = new Map<string, SupervisorStatus[]>();
@@ -177,7 +202,7 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
     });
   }
 
-  return trees.sort((a, b) => a.owner_job_id.localeCompare(b.owner_job_id));
+  return trees;
 }
 
 function statusLabel(status: JobState): string {
