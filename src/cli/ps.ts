@@ -18,6 +18,8 @@ interface JobNode {
   id: string;
   specialist: string;
   status: JobState;
+  current_event?: string;
+  current_tool?: string;
   node_id?: string;
   worktree_owner_job_id?: string;
   reused_from_job_id?: string;
@@ -44,6 +46,7 @@ interface WorktreeTree {
 }
 
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
+const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⣺', '⣹', '⣸', '⣷', '⣶'] as const;
 
 function parseArgs(argv: string[]): PsArgs {
   return {
@@ -99,6 +102,8 @@ function toJobNode(job: SupervisorStatus): JobNode {
     id: job.id,
     specialist: job.specialist,
     status: job.status,
+    current_event: job.current_event,
+    current_tool: job.current_tool,
     node_id: job.node_id,
     worktree_owner_job_id: job.worktree_owner_job_id,
     reused_from_job_id: job.reused_from_job_id,
@@ -188,31 +193,53 @@ function statusLabel(status: JobState): string {
   return yellow(status);
 }
 
-function renderJobLine(job: JobNode, prefix = ''): void {
+function getStatusIcon(job: JobNode, frame: number): string {
+  if (job.status === 'running') return cyan(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]);
+  if (job.status === 'waiting') return magenta('⏸');
+  if (job.status === 'done') return green('✓');
+  if (job.status === 'error') return red('✖');
+  return yellow('…');
+}
+
+function getElapsedSeconds(job: JobNode, nowMs: number): number {
+  if (job.status === 'running' || job.status === 'waiting' || job.status === 'starting') {
+    return Math.max(0, Math.floor((nowMs - job.started_at_ms) / 1000));
+  }
+  return Math.max(0, job.elapsed_s ?? 0);
+}
+
+function getActivity(job: JobNode): string {
+  if (job.current_tool) return dim(` tool=${job.current_tool}`);
+  if (job.current_event) return dim(` event=${job.current_event}`);
+  return '';
+}
+
+function renderJobLine(job: JobNode, nowMs: number, frame: number, prefix = ''): void {
   const context = typeof job.context_pct === 'number'
     ? dim(` context=${job.context_pct.toFixed(2)}%${job.context_health ? `(${job.context_health})` : ''}`)
     : '';
-  const elapsed = job.elapsed_s !== undefined ? dim(` ${job.elapsed_s}s`) : '';
-  console.log(`${prefix}${dim(job.id)} ${job.specialist} ${statusLabel(job.status)}${elapsed}${context}`);
+  const elapsed = dim(` ${getElapsedSeconds(job, nowMs)}s`);
+  console.log(`${prefix}${getStatusIcon(job, frame)} ${dim(job.id)} ${job.specialist} ${statusLabel(job.status)}${elapsed}${getActivity(job)}${context}`);
 }
 
-function renderTreeJobs(items: Array<JobNode | NodeGroup>, indent = ''): void {
+function renderTreeJobs(items: Array<JobNode | NodeGroup>, nowMs: number, frame: number, indent = ''): void {
   for (const item of items) {
     if (item.kind === 'node') {
       console.log(`${indent}${bold(`node:${item.node_id}`)}`);
-      renderTreeJobs(item.children, `${indent}  `);
+      renderTreeJobs(item.children, nowMs, frame, `${indent}  `);
       continue;
     }
 
-    renderJobLine(item, `${indent}- `);
-    if (item.children.length > 0) renderTreeJobs(item.children, `${indent}  `);
+    renderJobLine(item, nowMs, frame, `${indent}- `);
+    if (item.children.length > 0) renderTreeJobs(item.children, nowMs, frame, `${indent}  `);
   }
 }
 
-function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
-  console.log(`\n${bold(all ? 'Jobs' : 'Active jobs')} (${jobs.length})\n`);
+function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean, frame = 0): void {
+  const nowMs = Date.now();
+  console.log(`\n${bold(all ? 'Jobs' : 'Active jobs')} (${jobs.length}) ${dim(new Date(nowMs).toLocaleTimeString())}\n`);
   for (const job of jobs) {
-    renderJobLine(toJobNode(job));
+    renderJobLine(toJobNode(job), nowMs, frame);
   }
 
   console.log(`\n${bold('Worktree trees')} (${trees.length})\n`);
@@ -220,7 +247,7 @@ function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boole
     const where = tree.worktree_path ? dim(` ${tree.worktree_path}`) : '';
     const branch = tree.branch ? dim(` (${tree.branch})`) : '';
     console.log(`${bold(tree.owner_job_id)}${branch}${where}`);
-    renderTreeJobs(tree.children, '  ');
+    renderTreeJobs(tree.children, nowMs, frame, '  ');
     console.log('');
   }
 }
@@ -237,6 +264,8 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
       id: job.id,
       specialist: job.specialist,
       status: job.status,
+      current_event: job.current_event,
+      current_tool: job.current_tool,
       node_id: job.node_id,
       worktree_owner_job_id: job.worktree_owner_job_id,
       reused_from_job_id: job.reused_from_job_id,
@@ -251,7 +280,7 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
   }, null, 2));
 }
 
-function render(args: PsArgs): void {
+function render(args: PsArgs, frame = 0): void {
   const statuses = loadStatuses().filter((job) => isVisibleStatus(job.status, args.all));
   const trees = groupByTree(statuses);
 
@@ -260,23 +289,33 @@ function render(args: PsArgs): void {
     return;
   }
 
-  renderHuman(statuses, trees, args.all);
+  renderHuman(statuses, trees, args.all, frame);
 }
 
 async function follow(args: PsArgs): Promise<void> {
-  render(args);
+  if (args.json) {
+    render(args);
+    return;
+  }
+
+  process.stdout.write('\x1B[?25l');
+  let frame = 0;
 
   await new Promise<void>(() => {
     setInterval(() => {
       process.stdout.write('\x1Bc');
-      render(args);
-    }, 1000);
+      render(args, frame);
+      frame += 1;
+    }, 120);
   });
 }
 
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
   if (args.follow) {
+    process.on('exit', () => {
+      process.stdout.write('\x1B[?25h');
+    });
     await follow(args);
     return;
   }
