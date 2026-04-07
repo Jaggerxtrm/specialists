@@ -2,16 +2,17 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.2.0
-updated: 2026-04-05
-synced_at: 8d2581ef
-description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, and worktree/bead ownership semantics.
+version: 2.3.0
+updated: 2026-04-08
+synced_at: 86c4baba
+description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, and worktree/bead ownership semantics.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
   - "src/specialist/worktree.ts"
   - "src/specialist/timeline-events.ts"
   - "src/pi/session.ts"
   - "src/specialist/supervisor.ts"
+  - "src/cli/ps.ts"
   - "pi/rpc/"
 domain:
   - architecture
@@ -263,6 +264,34 @@ Supervisor supports non-streaming keep-alive sessions via `onResumeReady` callba
 - `done` → terminal, session closed
 - `error` → terminal, session closed with error
 
+### Job lineage fields
+
+When `--job <id>` is passed at run time, Supervisor persists two lineage fields in `status.json` (and mirrors them to SQLite):
+
+```typescript
+interface SupervisorStatus {
+  reused_from_job_id?: string;      // the job whose workspace was borrowed via --job
+  worktree_owner_job_id?: string;   // the transitive root owner of the worktree
+}
+```
+
+The resolver walks the target job's `status.json`: if it already carries a `worktree_owner_job_id`, that value is inherited; otherwise the target job's own `id` becomes the owner. This keeps ownership consistent across arbitrarily deep reuse chains.
+
+These fields are the primary inputs for `sp ps` tree construction — they replace fragile `worktree_path` inference.
+
+### Context denormalization in `status.json`
+
+On every `turn_summary` metric event, Supervisor writes `context_pct` and `context_health` directly into `status.json` via `setStatus()`:
+
+```typescript
+setStatus({
+  context_pct: contextUtilization?.context_pct,
+  context_health: contextUtilization?.context_health,
+});
+```
+
+This avoids event-log scanning for any consumer that only needs the latest value (e.g. `sp ps` reads `status.json` and displays a `ctx%` column without touching `events.jsonl`).
+
 ### Context window tracking
 
 Supervisor tracks context utilization for long-running sessions:
@@ -457,6 +486,7 @@ Result: **Pi provides protocol events; Session adapts transport; Supervisor pers
 | RPC adapter | `src/pi/session.ts` | Spawns Pi, parses NDJSON, correlates requests |
 | Job registry | `src/specialist/job-root.ts` | Git-common-root-anchored jobs dir |
 | Worktree isolation | `src/specialist/worktree.ts` | Provisioning, branch naming, reuse detection |
-| Durable lifecycle | `src/specialist/supervisor.ts` | Status, events, results, GitNexus tracking, FIFO steering |
+| Durable lifecycle | `src/specialist/supervisor.ts` | Status, events, results, GitNexus tracking, FIFO steering, lineage fields, context denorm |
 | Timeline schema | `src/specialist/timeline-events.ts` | Feed v2 event vocabulary, mapping, constructors |
+| Process snapshot CLI | `src/cli/ps.ts` | Job tree view, context%, bead titles, urgency sort, JSON output |
 | Worktree docs | `docs/worktrees.md` | Operator-facing worktree isolation reference |

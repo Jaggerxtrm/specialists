@@ -2,10 +2,10 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.4.0
-updated: 2026-04-07
-synced_at: 2cff034c
-description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, and JSON-first configuration.
+version: 1.5.0
+updated: 2026-04-08
+synced_at: 86c4baba
+description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
   - "src/cli/feed.ts"
@@ -19,6 +19,7 @@ source_of_truth_for:
   - "src/specialist/worktree-gc.ts"
   - "src/cli/edit.ts"
   - "src/specialist/loader.ts"
+  - "src/cli/ps.ts"
 ---
 
 # Feature Guides
@@ -633,6 +634,88 @@ GC candidates must satisfy all conditions:
 For full technical details, see [worktrees.md](worktrees.md).
 
 ---
+## 12) Context denormalization in `status.json`
+
+Context utilization fields are denormalized directly into `status.json` on every `turn_summary` event, so any consumer reading `status.json` gets the latest context percentage without having to scan `events.jsonl`.
+
+### Fields
+
+```typescript
+interface SupervisorStatus {
+  // ... existing fields ...
+  context_pct?: number;        // context window utilization (0-100)
+  context_health?: 'OK' | 'MONITOR' | 'WARN' | 'CRITICAL';
+}
+```
+
+### Health classification thresholds
+
+| Range | Health |
+|-------|--------|
+| < 40% | `OK` |
+| 40–65% | `MONITOR` |
+| 65–80% | `WARN` |
+| > 80% | `CRITICAL` |
+
+### Model context windows
+
+| Model pattern | Window |
+|---------------|--------|
+| `gemini-3.1-pro` | 1M tokens |
+| `qwen3.5` / `glm-5` | 128K tokens |
+| `claude` | 200K tokens |
+
+### Where context is surfaced
+
+- `sp status` / `sp status --job <id>` — renders `context_pct` and `context_health`
+- `sp ps` — shows `ctx%` column on every job row (from `status.json` directly)
+- `sp feed` — prints WARN/CRITICAL banners when thresholds are crossed
+- `sp ps --json` — includes `context_pct` and `context_health` in `flat[]` array
+
+---
+
+## 13) Job lineage tracking (`reused_from_job_id`, `worktree_owner_job_id`)
+
+When `--job <id>` is used, the new job records two lineage fields in its `status.json`. These enable `sp ps` to reconstruct worktree trees reliably without guessing from directory paths.
+
+### Fields
+
+```typescript
+interface SupervisorStatus {
+  reused_from_job_id?: string;       // the job whose workspace was borrowed via --job
+  worktree_owner_job_id?: string;    // the root job that owns the worktree
+}
+```
+
+### Semantics
+
+| Field | Set when | Value |
+|-------|----------|-------|
+| `reused_from_job_id` | `--job <id>` is used | The explicit `--job` argument |
+| `worktree_owner_job_id` | `--job <id>` is used | The transitive root owner of the worktree: resolves `worktree_owner_job_id` from the target status, falling back to the target job's `id` |
+
+### Example
+
+```bash
+# Executor provisions the worktree (owner)
+sp run executor --worktree --bead unitAI-55d
+# → job a1b2c3, worktree_owner_job_id=a1b2c3
+
+# Reviewer reuses the executor's workspace
+sp run reviewer --job a1b2c3 --bead unitAI-55d-review
+# → new job d4e5f6, reused_from_job_id=a1b2c3, worktree_owner_job_id=a1b2c3
+
+# Second reviewer reuses the first reviewer's job (chained reuse)
+sp run validator --job d4e5f6 --bead unitAI-55d-validate
+# → new job g7h8i9, reused_from_job_id=d4e5f6, worktree_owner_job_id=a1b2c3 (resolved transitively)
+```
+
+### Tree reconstruction in `sp ps`
+
+`sp ps` groups all jobs sharing the same `worktree_owner_job_id` into one worktree tree. Jobs are further arranged as a reuse forest: parent → child edges follow `reused_from_job_id` pointers.
+
+---
+
 ## Quick reference flows
 
 ### CLI async observation flow
@@ -642,6 +725,22 @@ sp run executor --prompt "Task" --json
 # capture job id from stderr
 sp feed <job-id> --follow
 sp result <job-id> --wait --timeout 120
+```
+
+### Process dashboard flow
+
+```bash
+# Live view of all active jobs
+sp ps --follow
+
+# Snapshot with context% and bead titles
+sp ps
+
+# Include completed jobs
+sp ps --all
+
+# Machine-readable for scripting
+sp ps --json | jq '.flat[] | select(.status == "waiting")'
 ```
 
 ### Worktree isolation flow

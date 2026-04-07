@@ -164,7 +164,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ### Core surfaces
 
-- **CLI**: `specialists run|resume|steer|feed|result|status|stop|list|init|edit|doctor`
+- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|doctor`
 - **MCP tools**: `use_specialist` only (foreground, returns result directly to conversation context)
 - **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
 
@@ -199,6 +199,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - `src/cli/steer.ts` — mid-run steering via FIFO pipe (all running jobs)
 - `src/cli/feed.ts` — merged feed stream, envelope metadata, cursor behavior
 - `src/cli/status.ts` — health check + `--job <id>` single-job detail view
+- `src/cli/ps.ts` — process snapshot: worktree trees, context%, bead titles, urgency sort, follow mode
 - `src/specialist/runner.ts` — execution, retry logic, output contract injection, bead-aware prompt
 - `src/specialist/supervisor.ts` — job lifecycle, FIFO creation, READ_ONLY output auto-append
 - `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
@@ -211,6 +212,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - Steer running specialists: `specialists steer <job-id> "new direction"`
 - Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
 - Observe jobs with `specialists feed -f`
+- Monitor all active jobs: `specialists ps` (live: `specialists ps --follow`)
 - Use `specialists result <job-id>` for final output text
 - Edit specialist configs with dot-path syntax: `specialists edit <name> specialist.execution.model anthropic/claude-sonnet-4-6`
 - Apply presets for common configurations: `specialists edit <name> --preset cheap|medium|power`
