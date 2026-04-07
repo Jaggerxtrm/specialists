@@ -47,6 +47,8 @@ interface RunArgs {
   worktree: boolean;
   /** Reuse the workspace from a prior job. Mutually exclusive with --worktree. */
   reuseJobId?: string;
+  /** Explicitly bypass the worktree requirement for edit-capable specialists. */
+  noWorktree: boolean;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
@@ -71,6 +73,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let outputMode: OutputMode = 'human';
   let contextDepth = 1;
   let worktree = false;
+  let noWorktree = false;
   let reuseJobId: string | undefined;
 
   for (let i = 1; i < argv.length; i++) {
@@ -87,6 +90,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--json')          { outputMode   = 'json'; continue; }
     if (token === '--raw')           { outputMode   = 'raw';  continue; }
     if (token === '--worktree')      { worktree     = true; continue; }
+    if (token === '--no-worktree')   { noWorktree   = true; continue; }
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
   }
 
@@ -126,7 +130,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId,
+    background, contextDepth, outputMode, worktree, reuseJobId, noWorktree,
   };
 }
 
@@ -348,6 +352,20 @@ export async function run(): Promise<void> {
     process.stderr.write(`Error: ${err?.message ?? err}\n`);
     process.exit(1);
   });
+
+  // ── Worktree guard for edit-capable specialists ────────────────────────────
+  const perm = specialist.specialist.execution.permission_required ?? 'READ_ONLY';
+  const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
+  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+    process.stderr.write(
+      `Error: specialist '${args.name}' has permission_required=${perm} and can edit files.\n` +
+      `Edit-capable specialists must run in isolation. Use one of:\n` +
+      `  --worktree      provision an isolated worktree (recommended)\n` +
+      `  --job <id>      reuse an existing job's worktree\n` +
+      `  --no-worktree   bypass this guard (you accept last-writer-wins risk)\n`,
+    );
+    process.exit(1);
+  }
 
   const runner = new SpecialistRunner({
     loader,
