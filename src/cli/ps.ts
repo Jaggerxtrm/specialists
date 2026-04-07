@@ -19,6 +19,8 @@ interface JobNode {
   id: string;
   specialist: string;
   status: JobState;
+  pid?: number;
+  is_dead?: boolean;
   bead_id?: string;
   bead_title?: string;
   node_id?: string;
@@ -105,7 +107,7 @@ function loadStatuses(): SupervisorStatus[] {
   return readStatusesFromFiles(jobsDir);
 }
 
-function toJobNode(job: SupervisorStatus): JobNode {
+function toJobNode(job: SupervisorStatus & { is_dead?: boolean }): JobNode {
   const beadAwareStatus = job as SupervisorStatus & { bead_title?: string };
 
   return {
@@ -113,6 +115,8 @@ function toJobNode(job: SupervisorStatus): JobNode {
     id: job.id,
     specialist: job.specialist,
     status: job.status,
+    pid: job.pid,
+    is_dead: job.is_dead,
     bead_id: job.bead_id,
     bead_title: beadAwareStatus.bead_title,
     node_id: job.node_id,
@@ -220,6 +224,28 @@ function statusLabel(status: JobState): string {
   return yellow(status);
 }
 
+function isPidAlive(pid: number | undefined): boolean {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isDeadActiveJob(job: SupervisorStatus): boolean {
+  if (job.status !== 'running' && job.status !== 'waiting') return false;
+  return !isPidAlive(job.pid);
+}
+
+function withPidLiveness(statuses: SupervisorStatus[]): Array<SupervisorStatus & { is_dead: boolean }> {
+  return statuses.map((job) => ({
+    ...job,
+    is_dead: isDeadActiveJob(job),
+  }));
+}
+
 function formatElapsed(seconds: number | undefined): string {
   if (seconds === undefined || !Number.isFinite(seconds)) return '--';
   if (seconds < 60) return `${seconds}s`;
@@ -293,7 +319,8 @@ function renderJobLine(job: JobNode, beadTitles: Map<string, string>, prefix = '
     : '-';
   const context = dim(formatContextPct(job.context_pct).padStart(4));
   const elapsed = dim(formatElapsed(job.elapsed_s).padStart(6));
-  console.log(`${prefix}${dim(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}`);
+  const livenessLabel = job.is_dead ? ` ${red('dead')}` : '';
+  console.log(`${prefix}${dim(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}${livenessLabel}`);
 }
 
 function renderTreeJobs(items: Array<JobNode | NodeGroup>, beadTitles: Map<string, string>, indent = ''): void {
@@ -327,7 +354,7 @@ function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boole
   }
 }
 
-function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
+function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, trees: WorktreeTree[], all: boolean): void {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: all,
@@ -339,6 +366,8 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
       id: job.id,
       specialist: job.specialist,
       status: job.status,
+      pid: job.pid,
+      is_dead: job.is_dead,
       bead_id: job.bead_id,
       bead_title: (job as SupervisorStatus & { bead_title?: string }).bead_title,
       node_id: job.node_id,
@@ -356,15 +385,20 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
 }
 
 function render(args: PsArgs): void {
-  const statuses = loadStatuses().filter((job) => isVisibleStatus(job.status, args.all));
-  const trees = groupByTree(statuses);
+  const statusesWithLiveness = withPidLiveness(loadStatuses());
+  const visibleStatuses = statusesWithLiveness.filter((job) => {
+    if (!isVisibleStatus(job.status, args.all)) return false;
+    if (args.all) return true;
+    return !job.is_dead;
+  });
+  const trees = groupByTree(visibleStatuses);
 
   if (args.json) {
-    renderJson(statuses, trees, args.all);
+    renderJson(visibleStatuses, trees, args.all);
     return;
   }
 
-  renderHuman(statuses, trees, args.all);
+  renderHuman(visibleStatuses, trees, args.all);
 }
 
 async function follow(args: PsArgs): Promise<void> {
