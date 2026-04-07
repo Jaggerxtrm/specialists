@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bold, cyan, dim, green, magenta, red, yellow } from './format-helpers.js';
@@ -18,8 +19,8 @@ interface JobNode {
   id: string;
   specialist: string;
   status: JobState;
-  current_event?: string;
-  current_tool?: string;
+  bead_id?: string;
+  bead_title?: string;
   node_id?: string;
   worktree_owner_job_id?: string;
   reused_from_job_id?: string;
@@ -46,6 +47,7 @@ interface WorktreeTree {
 }
 
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
+const BEAD_TITLE_CACHE = new Map<string, string>();
 const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
   waiting: 3,
   running: 2,
@@ -104,13 +106,15 @@ function loadStatuses(): SupervisorStatus[] {
 }
 
 function toJobNode(job: SupervisorStatus): JobNode {
+  const beadAwareStatus = job as SupervisorStatus & { bead_title?: string };
+
   return {
     kind: 'job',
     id: job.id,
     specialist: job.specialist,
     status: job.status,
-    current_event: job.current_event,
-    current_tool: job.current_tool,
+    bead_id: job.bead_id,
+    bead_title: beadAwareStatus.bead_title,
     node_id: job.node_id,
     worktree_owner_job_id: job.worktree_owner_job_id,
     reused_from_job_id: job.reused_from_job_id,
@@ -165,17 +169,15 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
     groups.get(ownerId)!.push(job);
   }
 
+  const trees: WorktreeTree[] = [];
+
   const sortedGroups = [...groups.entries()].sort(([ownerA, jobsA], [ownerB, jobsB]) => {
     const urgencyDelta = getTreeUrgency(jobsB) - getTreeUrgency(jobsA);
     if (urgencyDelta !== 0) return urgencyDelta;
-
     const startDelta = getTreeNewestStart(jobsB) - getTreeNewestStart(jobsA);
     if (startDelta !== 0) return startDelta;
-
     return ownerA.localeCompare(ownerB);
   });
-
-  const trees: WorktreeTree[] = [];
 
   for (const [ownerJobId, treeJobs] of sortedGroups) {
     const representative = treeJobs.find((job) => job.id === ownerJobId) ?? treeJobs[0];
@@ -218,53 +220,101 @@ function statusLabel(status: JobState): string {
   return yellow(status);
 }
 
-function getStatusIcon(job: JobNode, frame: number): string {
-  if (job.status === 'running') return cyan(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]);
-  if (job.status === 'waiting') return magenta('⏸');
-  if (job.status === 'done') return green('✓');
-  if (job.status === 'error') return red('✖');
-  return yellow('…');
+function formatElapsed(seconds: number | undefined): string {
+  if (seconds === undefined || !Number.isFinite(seconds)) return '--';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}m${String(remainder).padStart(2, '0')}s`;
 }
 
-function getElapsedSeconds(job: JobNode, nowMs: number): number {
-  if (job.status === 'running' || job.status === 'waiting' || job.status === 'starting') {
-    return Math.max(0, Math.floor((nowMs - job.started_at_ms) / 1000));
+function formatContextPct(contextPct: number | undefined): string {
+  if (contextPct === undefined || !Number.isFinite(contextPct)) return '--';
+  return `${Math.round(contextPct)}%`;
+}
+
+function getBeadTitleFromBd(beadId: string): string | null {
+  const result = spawnSync('bd', ['show', beadId, '--json'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 1500,
+  });
+
+  if (result.status !== 0 || !result.stdout) return null;
+
+  try {
+    const parsed = JSON.parse(result.stdout) as unknown;
+    const payload = (Array.isArray(parsed) ? parsed[0] : parsed) as {
+      title?: unknown;
+      issue?: { title?: unknown };
+    };
+
+    if (typeof payload?.title === 'string' && payload.title.trim().length > 0) return payload.title.trim();
+    if (typeof payload?.issue?.title === 'string' && payload.issue.title.trim().length > 0) {
+      return payload.issue.title.trim();
+    }
+  } catch {
+    return null;
   }
-  return Math.max(0, job.elapsed_s ?? 0);
+
+  return null;
 }
 
-function getActivity(job: JobNode): string {
-  if (job.current_tool) return dim(` tool=${job.current_tool}`);
-  if (job.current_event) return dim(` event=${job.current_event}`);
-  return '';
-}
+function buildBeadTitleCache(jobs: SupervisorStatus[]): Map<string, string> {
+  const titles = new Map(BEAD_TITLE_CACHE);
 
-function renderJobLine(job: JobNode, nowMs: number, frame: number, prefix = ''): void {
-  const context = typeof job.context_pct === 'number'
-    ? dim(` context=${job.context_pct.toFixed(2)}%${job.context_health ? `(${job.context_health})` : ''}`)
-    : '';
-  const elapsed = dim(` ${getElapsedSeconds(job, nowMs)}s`);
-  console.log(`${prefix}${getStatusIcon(job, frame)} ${dim(job.id)} ${job.specialist} ${statusLabel(job.status)}${elapsed}${getActivity(job)}${context}`);
-}
+  for (const job of jobs) {
+    const beadAwareStatus = job as SupervisorStatus & { bead_title?: string };
+    const beadId = job.bead_id;
+    if (!beadId || titles.has(beadId)) continue;
 
-function renderTreeJobs(items: Array<JobNode | NodeGroup>, nowMs: number, frame: number, indent = ''): void {
-  for (const item of items) {
-    if (item.kind === 'node') {
-      console.log(`${indent}${bold(`node:${item.node_id}`)}`);
-      renderTreeJobs(item.children, nowMs, frame, `${indent}  `);
+    const cachedTitle = beadAwareStatus.bead_title;
+    if (typeof cachedTitle === 'string' && cachedTitle.trim().length > 0) {
+      const title = cachedTitle.trim();
+      titles.set(beadId, title);
+      BEAD_TITLE_CACHE.set(beadId, title);
       continue;
     }
 
-    renderJobLine(item, nowMs, frame, `${indent}- `);
-    if (item.children.length > 0) renderTreeJobs(item.children, nowMs, frame, `${indent}  `);
+    const resolvedTitle = getBeadTitleFromBd(beadId);
+    if (resolvedTitle) {
+      titles.set(beadId, resolvedTitle);
+      BEAD_TITLE_CACHE.set(beadId, resolvedTitle);
+    }
+  }
+
+  return titles;
+}
+
+function renderJobLine(job: JobNode, beadTitles: Map<string, string>, prefix = ''): void {
+  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+  const beadLabel = job.bead_id
+    ? `${job.bead_id}${beadTitle ? ` ${beadTitle}` : ''}`
+    : '-';
+  const context = dim(formatContextPct(job.context_pct).padStart(4));
+  const elapsed = dim(formatElapsed(job.elapsed_s).padStart(6));
+  console.log(`${prefix}${dim(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}`);
+}
+
+function renderTreeJobs(items: Array<JobNode | NodeGroup>, beadTitles: Map<string, string>, indent = ''): void {
+  for (const item of items) {
+    if (item.kind === 'node') {
+      console.log(`${indent}${bold(`node:${item.node_id}`)}`);
+      renderTreeJobs(item.children, beadTitles, `${indent}  `);
+      continue;
+    }
+
+    renderJobLine(item, beadTitles, `${indent}- `);
+    if (item.children.length > 0) renderTreeJobs(item.children, beadTitles, `${indent}  `);
   }
 }
 
-function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean, frame = 0): void {
-  const nowMs = Date.now();
-  console.log(`\n${bold(all ? 'Jobs' : 'Active jobs')} (${jobs.length}) ${dim(new Date(nowMs).toLocaleTimeString())}\n`);
+function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
+  const beadTitles = buildBeadTitleCache(jobs);
+
+  console.log(`\n${bold(all ? 'Jobs' : 'Active jobs')} (${jobs.length})\n`);
   for (const job of jobs) {
-    renderJobLine(toJobNode(job), nowMs, frame);
+    renderJobLine(toJobNode(job), beadTitles);
   }
 
   console.log(`\n${bold('Worktree trees')} (${trees.length})\n`);
@@ -272,7 +322,7 @@ function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boole
     const where = tree.worktree_path ? dim(` ${tree.worktree_path}`) : '';
     const branch = tree.branch ? dim(` (${tree.branch})`) : '';
     console.log(`${bold(tree.owner_job_id)}${branch}${where}`);
-    renderTreeJobs(tree.children, nowMs, frame, '  ');
+    renderTreeJobs(tree.children, beadTitles, '  ');
     console.log('');
   }
 }
@@ -289,8 +339,8 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
       id: job.id,
       specialist: job.specialist,
       status: job.status,
-      current_event: job.current_event,
-      current_tool: job.current_tool,
+      bead_id: job.bead_id,
+      bead_title: (job as SupervisorStatus & { bead_title?: string }).bead_title,
       node_id: job.node_id,
       worktree_owner_job_id: job.worktree_owner_job_id,
       reused_from_job_id: job.reused_from_job_id,
@@ -305,7 +355,7 @@ function renderJson(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolea
   }, null, 2));
 }
 
-function render(args: PsArgs, frame = 0): void {
+function render(args: PsArgs): void {
   const statuses = loadStatuses().filter((job) => isVisibleStatus(job.status, args.all));
   const trees = groupByTree(statuses);
 
@@ -314,33 +364,23 @@ function render(args: PsArgs, frame = 0): void {
     return;
   }
 
-  renderHuman(statuses, trees, args.all, frame);
+  renderHuman(statuses, trees, args.all);
 }
 
 async function follow(args: PsArgs): Promise<void> {
-  if (args.json) {
-    render(args);
-    return;
-  }
-
-  process.stdout.write('\x1B[?25l');
-  let frame = 0;
+  render(args);
 
   await new Promise<void>(() => {
     setInterval(() => {
       process.stdout.write('\x1Bc');
-      render(args, frame);
-      frame += 1;
-    }, 120);
+      render(args);
+    }, 1000);
   });
 }
 
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
   if (args.follow) {
-    process.on('exit', () => {
-      process.stdout.write('\x1B[?25h');
-    });
     await follow(args);
     return;
   }
