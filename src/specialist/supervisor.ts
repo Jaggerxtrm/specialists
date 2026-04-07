@@ -807,12 +807,17 @@ export class Supervisor {
           // Reset silence timer on any activity
           lastActivityMs = now;
           silenceWarnEmitted = false;
-          setStatus({
-            status: 'running',
-            current_event: eventType,
-            last_event_at_ms: now,
-            elapsed_s: Math.round((now - startedAtMs) / 1000),
-          });
+          const keepAliveTurnCompleted = keepAliveSession && eventType === 'agent_end';
+          if (keepAliveTurnCompleted) {
+            setWaitingStatus();
+          } else {
+            setStatus({
+              status: 'running',
+              current_event: eventType,
+              last_event_at_ms: now,
+              elapsed_s: Math.round((now - startedAtMs) / 1000),
+            });
+          }
 
           // Map callback event to timeline event using the canonical model
           if (eventType === 'turn_start') {
