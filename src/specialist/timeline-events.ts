@@ -69,6 +69,8 @@
 export interface TimelineEventBase {
   /** Unix timestamp in milliseconds when the event was written */
   t: number;
+  /** Per-job monotonic sequence assigned on write */
+  seq?: number;
   /** Event type (see TimelineEventType constants) */
   type: string;
 }
@@ -125,6 +127,8 @@ export interface TimelineEventTool extends TimelineEventBase {
   phase: 'start' | 'update' | 'end';
   /** Tool call ID for correlation across start/end events */
   tool_call_id?: string;
+  /** True when tool event cannot be correlated to a concrete tool call ID */
+  uncorrelated?: boolean;
   /** Whether execution resulted in error */
   is_error?: boolean;
   /** tool_use.input payload forwarded from tool_execution_start */
@@ -399,6 +403,7 @@ export function mapCallbackEventToTimelineEvent(
         tool: context.tool ?? 'unknown',
         phase: 'start',
         tool_call_id: context.toolCallId,
+        ...(context.toolCallId ? {} : { uncorrelated: true }),
         args: context.args,
         started_at: new Date(t).toISOString(),
       };
@@ -411,6 +416,7 @@ export function mapCallbackEventToTimelineEvent(
         tool: context.tool ?? 'unknown',
         phase: 'update',
         tool_call_id: context.toolCallId,
+        ...(context.toolCallId ? {} : { uncorrelated: true }),
       };
 
     case 'tool_execution_end': {
@@ -422,6 +428,7 @@ export function mapCallbackEventToTimelineEvent(
         tool: context.tool ?? 'unknown',
         phase: 'end',
         tool_call_id: context.toolCallId,
+        ...(context.toolCallId ? {} : { uncorrelated: true }),
         is_error: context.isError,
         ...(resultSummary ? { result_summary: resultSummary } : {}),
         ...(context.resultRaw ? { result_raw: context.resultRaw } : {}),
@@ -702,7 +709,9 @@ export function isToolEvent(event: TimelineEvent): event is TimelineEventTool {
  * For events with identical timestamps, the order is preserved (stable sort).
  */
 export function compareTimelineEvents(a: TimelineEvent, b: TimelineEvent): number {
-  return a.t - b.t;
+  const timeDiff = a.t - b.t;
+  if (timeDiff !== 0) return timeDiff;
+  return (a.seq ?? 0) - (b.seq ?? 0);
 }
 
 /**
@@ -727,8 +736,14 @@ export function mergeTimelineEvents(
     }
   }
 
-  // Sort by timestamp ascending
-  merged.sort((a, b) => compareTimelineEvents(a.event, b.event));
+  // Sort globally by (t, job_id, seq)
+  merged.sort((a, b) => {
+    const timeDiff = a.event.t - b.event.t;
+    if (timeDiff !== 0) return timeDiff;
+    const jobDiff = a.jobId.localeCompare(b.jobId);
+    if (jobDiff !== 0) return jobDiff;
+    return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+  });
 
   return merged;
 }

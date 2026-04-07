@@ -9,7 +9,7 @@
  *   --job <id>         Filter to a specific job
  *   --specialist <name> Filter by specialist name
  *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
- *   --from <n>         Show only events with seq >= n
+ *   --from <job:seq>   Show only events at/after cursor tuple (job_id:seq)
  *   --limit <n>        Max recent events to show (default: 100)
  *   --follow, -f       Live follow mode (append new events at bottom)
  *   --forever          Stay open even when all jobs complete
@@ -45,11 +45,16 @@ import {
 // CLI Options
 // ============================================================================
 
+interface FeedCursor {
+  jobId: string;
+  seq: number;
+}
+
 interface FeedOptions {
   jobId?: string;
   specialist?: string;
   since?: number;
-  from: number;
+  from?: FeedCursor;
   limit: number;
   follow: boolean;
   forever: boolean;
@@ -152,6 +157,17 @@ function parseSince(value: string): number | undefined {
     return Date.now() - num * multipliers[unit];
   }
   return undefined;
+}
+
+function parseCursor(value: string, defaultJobId?: string): FeedCursor | undefined {
+  const tupleMatch = value.match(/^([^:]+):(\d+)$/);
+  if (tupleMatch) {
+    return { jobId: tupleMatch[1], seq: Number(tupleMatch[2]) };
+  }
+
+  const seq = Number(value);
+  if (!Number.isFinite(seq) || seq < 0 || !defaultJobId) return undefined;
+  return { jobId: defaultJobId, seq };
 }
 
 // ============================================================================
@@ -263,7 +279,7 @@ function parseArgs(argv: string[]): FeedOptions {
   let jobId: string | undefined;
   let specialist: string | undefined;
   let since: number | undefined;
-  let from = 0;
+  let fromRaw: string | undefined;
   let limit = 100;
   let follow = false;
   let forever = false;
@@ -274,8 +290,7 @@ function parseArgs(argv: string[]): FeedOptions {
     if (argv[i] === '--specialist' && argv[i + 1]) { specialist = argv[++i]; continue; }
     if (argv[i] === '--since' && argv[i + 1]) { since = parseSince(argv[++i]); continue; }
     if (argv[i] === '--from' && argv[i + 1]) {
-      const parsedFrom = parseInt(argv[++i], 10);
-      from = Number.isFinite(parsedFrom) && parsedFrom >= 0 ? parsedFrom : 0;
+      fromRaw = argv[++i];
       continue;
     }
     if (argv[i] === '--limit' && argv[i + 1]) { limit = parseInt(argv[++i], 10); continue; }
@@ -285,7 +300,16 @@ function parseArgs(argv: string[]): FeedOptions {
     if (!jobId && !argv[i].startsWith('--')) jobId = argv[i];
   }
 
-  return { jobId, specialist, since, from, limit, follow, forever, json };
+  return {
+    jobId,
+    specialist,
+    since,
+    from: fromRaw ? parseCursor(fromRaw, jobId) : undefined,
+    limit,
+    follow,
+    forever,
+    json,
+  };
 }
 
 // ============================================================================
@@ -357,27 +381,36 @@ function printSnapshot(
 
 type MergedEvent = { jobId: string; specialist: string; beadId?: string; event: TimelineEvent };
 
+function compareMergedEvents(a: MergedEvent, b: MergedEvent): number {
+  const timeDiff = a.event.t - b.event.t;
+  if (timeDiff !== 0) return timeDiff;
+  const jobDiff = a.jobId.localeCompare(b.jobId);
+  if (jobDiff !== 0) return jobDiff;
+  return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+}
+
 function isCompletionEvent(event: TimelineEvent): boolean {
   return isRunCompleteEvent(event);
 }
 
-function isEventAtOrAfterCursor(event: TimelineEvent, from: number): boolean {
-  if (from <= 0) return true;
+function isEventAtOrAfterCursor(jobId: string, event: TimelineEvent, from?: FeedCursor): boolean {
+  if (!from) return true;
+  if (jobId !== from.jobId) return false;
 
-  const seq = (event as { seq?: unknown }).seq;
+  const seq = event.seq;
   if (typeof seq !== 'number') {
-    return event.t >= from;
+    return false;
   }
 
-  return seq >= from;
+  return seq >= from.seq;
 }
 
 function filterMergedEventsByCursor(
   merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
-  from: number
+  from?: FeedCursor
 ): Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }> {
-  if (from <= 0) return merged;
-  return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
+  if (!from) return merged;
+  return merged.filter(({ jobId, event }) => isEventAtOrAfterCursor(jobId, event, from));
 }
 
 function filterStandaloneMergedEvents(
@@ -429,7 +462,7 @@ function readJobEventsFresh(
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
-      sqliteEvents.sort((a, b) => a.t - b.t);
+      sqliteEvents.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
       return sqliteEvents;
     }
   } catch (error) {
@@ -447,7 +480,7 @@ function readJobEventsFresh(
     if (parsed) events.push(parsed);
   }
 
-  events.sort((a, b) => a.t - b.t);
+  events.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
   return events;
 }
 
@@ -566,7 +599,7 @@ async function followMerged(
         }
 
         for (const event of batch.events) {
-          if (event.t > lastT && isEventAtOrAfterCursor(event, options.from)) {
+          if (event.t > lastT && isEventAtOrAfterCursor(batch.jobId, event, options.from)) {
             newEvents.push({
               jobId: batch.jobId,
               specialist: batch.specialist,
@@ -586,7 +619,7 @@ async function followMerged(
       }
 
       // Sort and print new events
-      newEvents.sort((a, b) => a.event.t - b.event.t);
+      newEvents.sort(compareMergedEvents);
 
       for (const { jobId, specialist, beadId, event } of newEvents) {
         const meta = getJobMeta(jobId);
@@ -645,13 +678,13 @@ Modes:
   specialists feed -f              Follow all jobs globally
 
 Options:
-  --from <n>     Show only events with seq >= <n>
+  --from <job:seq> Show only events at/after cursor tuple
   -f, --follow   Follow live updates
   --forever      Keep following in global mode even when all jobs complete
 
 Examples:
   specialists feed 49adda
-  specialists feed 49adda --from 15
+  specialists feed 49adda --from 49adda:15
   specialists feed 49adda --follow
   specialists feed -f
   specialists feed -f --forever
@@ -670,8 +703,8 @@ export async function run(): Promise<void> {
       return;
     }
 
-    if (options.from > 0 && !options.json) {
-      console.log(dim(`Showing events from seq ${options.from}`));
+    if (options.from && !options.json) {
+      console.log(dim(`Showing events from cursor ${options.from.jobId}:${options.from.seq}`));
     }
 
     if (options.follow) {

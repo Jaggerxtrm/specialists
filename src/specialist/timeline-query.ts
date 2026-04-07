@@ -161,8 +161,14 @@ export function mergeTimelineEvents(
     }
   }
 
-  // Sort by timestamp ascending
-  merged.sort((a, b) => compareTimelineEvents(a.event, b.event));
+  // Sort globally by (t, job_id, seq)
+  merged.sort((a, b) => {
+    const timeDiff = compareTimelineEvents(a.event, b.event);
+    if (timeDiff !== 0) return timeDiff;
+    const jobDiff = a.jobId.localeCompare(b.jobId);
+    if (jobDiff !== 0) return jobDiff;
+    return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+  });
 
   return merged;
 }

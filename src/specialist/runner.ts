@@ -623,7 +623,7 @@ export class SpecialistRunner {
   async run(
     options: RunOptions,
     onProgress?: (msg: string) => void,
-    onEvent?: (type: string, details?: { charCount?: number }) => void,
+    onEvent?: (type: string, details?: { charCount?: number; toolCallId?: string }) => void,
     onMetric?: (event: SessionMetricEvent) => void,
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,

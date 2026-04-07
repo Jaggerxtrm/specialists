@@ -97,7 +97,7 @@ export interface PiSessionOptions {
   /** Called with tool name, error flag, optional tool call ID, summarized result content, and optional raw result payload */
   onToolEnd?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string, resultRaw?: Record<string, unknown>) => void;
   /** Called with the raw pi event type (for job status tracking) */
-  onEvent?: (type: string, details?: { charCount?: number }) => void;
+  onEvent?: (type: string, details?: { charCount?: number; toolCallId?: string }) => void;
   /** Called with additive observability metrics derived from RPC events */
   onMetric?: (event: SessionMetricEvent) => void;
   /** Called once with actual backend/model from the first assistant message_start */
@@ -529,11 +529,11 @@ export class PiAgentSession {
         event.args as Record<string, unknown> | undefined,
         event.toolCallId as string | undefined,
       );
-      this.options.onEvent?.('tool_execution_start');
+      this.options.onEvent?.('tool_execution_start', { toolCallId: event.toolCallId as string | undefined });
       return;
     }
     if (type === 'tool_execution_update') {
-      this.options.onEvent?.('tool_execution_update');
+      this.options.onEvent?.('tool_execution_update', { toolCallId: event.toolCallId as string | undefined });
       return;
     }
     if (type === 'tool_execution_end') {
@@ -544,7 +544,7 @@ export class PiAgentSession {
         findToolResultContent(event),
         findToolResultRaw(event),
       );
-      this.options.onEvent?.('tool_execution_end');
+      this.options.onEvent?.('tool_execution_end', { toolCallId: event.toolCallId as string | undefined });
       return;
     }
 

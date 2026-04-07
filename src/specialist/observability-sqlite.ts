@@ -182,8 +182,9 @@ function migrateToV4(db: BunDb): void {
     db.run('CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL');
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)');
 
-    db.run('CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)');
-    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id)');
+    db.run('CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)');
 
     db.run('CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)');
@@ -227,11 +228,13 @@ function migrateToV4(db: BunDb): void {
     CREATE TABLE IF NOT EXISTS node_events (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       node_run_id  TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
       event_json   TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
     CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
 
     CREATE TABLE IF NOT EXISTS node_memory (
@@ -279,14 +282,17 @@ export function initSchema(db: BunDb): void {
     CREATE TABLE IF NOT EXISTS specialist_events (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id       TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
       specialist   TEXT NOT NULL,
       bead_id      TEXT,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
       event_json   TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq
+      ON specialist_events(job_id, seq);
     CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
-      ON specialist_events(job_id, t, id);
+      ON specialist_events(job_id, t, seq, id);
 
     CREATE TABLE IF NOT EXISTS specialist_results (
       job_id        TEXT PRIMARY KEY,
@@ -346,6 +352,7 @@ export function initSchema(db: BunDb): void {
   migrateToV3(db);
   migrateToV4(db);
   migrateToV5(db);
+  migrateToV6(db);
   verifyWalMode(db);
 }
 
@@ -366,6 +373,66 @@ function migrateToV5(db: BunDb): void {
         VALUES (5, strftime('%s', 'now') * 1000);
     `);
   }
+}
+
+function migrateToV6(db: BunDb): void {
+  const hasV6 = db.query('SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1').get() as { 1?: number } | undefined;
+  if (hasV6) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)');
+    return;
+  }
+
+  const specialistEventColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_events)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  if (!specialistEventColumns.has('seq')) {
+    db.run('ALTER TABLE specialist_events ADD COLUMN seq INTEGER');
+  }
+  db.run(`
+    UPDATE specialist_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM specialist_events prior
+      WHERE prior.job_id = specialist_events.job_id
+        AND prior.id <= specialist_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)');
+
+  const nodeEventColumns = new Set(
+    (db.query('PRAGMA table_info(node_events)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  if (!nodeEventColumns.has('seq')) {
+    db.run('ALTER TABLE node_events ADD COLUMN seq INTEGER');
+  }
+  db.run(`
+    UPDATE node_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM node_events prior
+      WHERE prior.node_run_id = node_events.node_run_id
+        AND prior.id <= node_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)');
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (6, strftime('%s', 'now') * 1000);
+  `);
 }
 
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
@@ -451,7 +518,7 @@ export interface ObservabilitySqliteClient {
   readNodeRun(nodeRunId: string): NodeRunRow | null;
   listNodeRuns(filter?: { status?: NodeRunStatus }): NodeRunRow[];
   readNodeMembers(nodeRunId: string): NodeMemberRow[];
-  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; t: number; type: string; event_json: string }>;
+  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; seq: number; t: number; type: string; event_json: string }>;
   readNodeMemory(nodeRunId: string, opts?: { namespace?: string; entry_type?: 'fact' | 'question' | 'decision' }): NodeMemoryRow[];
   queryMemberContextHealth(jobId: string): number | null;
   readStatus(jobId: string): SupervisorStatus | null;
@@ -503,12 +570,23 @@ class SqliteClient implements ObservabilitySqliteClient {
     ]);
   }
 
+  private getNextSpecialistEventSeq(jobId: string): number {
+    const row = this.db.query('SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?').get(jobId) as { next_seq?: number } | undefined;
+    return row?.next_seq ?? 1;
+  }
+
+  private getNextNodeEventSeq(nodeRunId: string): number {
+    const row = this.db.query('SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?').get(nodeRunId) as { next_seq?: number } | undefined;
+    return row?.next_seq ?? 1;
+  }
+
   private writeEventRow(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void {
-    const eventJson = JSON.stringify(event);
+    const seq = typeof event.seq === 'number' && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const eventJson = JSON.stringify({ ...event, seq });
     this.db.run(`
-      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
   }
 
   private writeResultRow(jobId: string, output: string): void {
@@ -596,10 +674,14 @@ class SqliteClient implements ObservabilitySqliteClient {
   }
 
   private writeNodeEventRow(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void {
+    const seq = this.getNextNodeEventSeq(nodeRunId);
+    const payload = typeof eventJson === 'object' && eventJson !== null
+      ? { ...(eventJson as Record<string, unknown>), seq }
+      : { value: eventJson, seq };
     this.db.run(`
-      INSERT INTO node_events (node_run_id, t, type, event_json)
-      VALUES (?, ?, ?, ?)
-    `, [nodeRunId, t, type, JSON.stringify(eventJson)]);
+      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?)
+    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
   }
 
   private writeNodeMemoryRow(entry: NodeMemoryRow): void {
@@ -807,7 +889,7 @@ class SqliteClient implements ObservabilitySqliteClient {
     }, 'readNodeMembers');
   }
 
-  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; t: number; type: string; event_json: string }> {
+  readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; seq: number; t: number; type: string; event_json: string }> {
     return withRetry(() => {
       const whereClauses = ['node_run_id = ?'];
       const params: Array<string | number> = [nodeRunId];
@@ -818,10 +900,10 @@ class SqliteClient implements ObservabilitySqliteClient {
       }
 
       let query = `
-        SELECT id, t, type, event_json
+        SELECT id, seq, t, type, event_json
         FROM node_events
         WHERE ${whereClauses.join(' AND ')}
-        ORDER BY t ASC, id ASC
+        ORDER BY seq ASC, id ASC
       `;
 
       if (opts?.limit !== undefined) {
@@ -829,7 +911,7 @@ class SqliteClient implements ObservabilitySqliteClient {
         params.push(opts.limit);
       }
 
-      return this.db.query(query).all(...params) as Array<{ id: number; t: number; type: string; event_json: string }>;
+      return this.db.query(query).all(...params) as Array<{ id: number; seq: number; t: number; type: string; event_json: string }>;
     }, 'readNodeEvents');
   }
 
@@ -865,7 +947,7 @@ class SqliteClient implements ObservabilitySqliteClient {
         SELECT json_extract(event_json, '$.context_pct') AS context_pct
         FROM specialist_events
         WHERE job_id = ? AND type = 'turn_summary'
-        ORDER BY t DESC, id DESC
+        ORDER BY seq DESC, id DESC
         LIMIT 1
       `).get(jobId) as { context_pct?: number | string | null } | undefined;
 
@@ -901,14 +983,19 @@ class SqliteClient implements ObservabilitySqliteClient {
   readEvents(jobId: string): TimelineEvent[] {
     return withRetry(() => {
       const rows = this.db.query(`
-        SELECT event_json FROM specialist_events
+        SELECT seq, event_json FROM specialist_events
         WHERE job_id = ?
-        ORDER BY t ASC, id ASC;
-      `).all(jobId) as Array<{ event_json?: string }>;
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId) as Array<{ seq?: number; event_json?: string }>;
       const events: TimelineEvent[] = [];
       for (const row of rows) {
         if (!row.event_json) continue;
-        try { events.push(JSON.parse(row.event_json) as TimelineEvent); } catch { /* ignore malformed rows */ }
+        try {
+          const parsed = JSON.parse(row.event_json) as TimelineEvent;
+          events.push(typeof parsed.seq === 'number' ? parsed : { ...parsed, seq: row.seq });
+        } catch {
+          /* ignore malformed rows */
+        }
       }
       return events;
     }, 'readEvents');

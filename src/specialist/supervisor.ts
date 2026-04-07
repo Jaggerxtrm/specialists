@@ -465,28 +465,40 @@ export class Supervisor {
 
     // Keep events.jsonl fd open for the job lifetime
     const eventsFd = openSync(this.eventsPath(id), 'a');
+    let nextTimelineSeq = 1;
+    const assignTimelineSeq = (event: TimelineEvent): TimelineEvent => {
+      if (typeof event.seq === 'number' && Number.isFinite(event.seq) && event.seq > 0) {
+        nextTimelineSeq = Math.max(nextTimelineSeq, event.seq + 1);
+        return event;
+      }
+      return { ...event, seq: nextTimelineSeq++ };
+    };
+
     const appendTimelineEvent = (event: TimelineEvent): void => {
+      const sequencedEvent = assignTimelineSeq(event);
       try {
-        writeSync(eventsFd, JSON.stringify(event) + '\n');
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + '\n');
       } catch (err: any) {
         // Log but don't crash — event logging is best-effort
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
 
       try {
-        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
+        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite appendEvent failed: ${String(error)}`);
       }
     };
 
-    const appendTimelineEventFileOnly = (event: TimelineEvent): void => {
+    const appendTimelineEventFileOnly = (event: TimelineEvent): TimelineEvent => {
+      const sequencedEvent = assignTimelineSeq(event);
       try {
-        writeSync(eventsFd, JSON.stringify(event) + '\n');
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + '\n');
       } catch (err: any) {
         // Log but don't crash — event logging is best-effort
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
+      return sequencedEvent;
     };
 
     const setWaitingStatus = (updates?: Partial<SupervisorStatus>): void => {
@@ -505,8 +517,7 @@ export class Supervisor {
     };
 
     // Emit run_start event
-    const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
-    appendTimelineEventFileOnly(runStartEvent);
+    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
     try {
       this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
     } catch (error: unknown) {
@@ -524,18 +535,12 @@ export class Supervisor {
     }
 
     let textLogged = false;
-    let currentTool = '';
-    let currentToolResultContent: string | undefined;
-    let currentToolResultRaw: Record<string, unknown> | undefined;
     let runMetrics: SessionRunMetrics = {
       turns: 0,
       tool_calls: 0,
       auto_compactions: 0,
       auto_retries: 0,
     };
-    let currentToolCallId = '';
-    let currentToolArgs: Record<string, unknown> | undefined;
-    let currentToolIsError = false;
     const gitnexusAccumulator = {
       files_touched: new Set<string>(),
       symbols_analyzed: new Set<string>(),
@@ -547,8 +552,17 @@ export class Supervisor {
     let turnTextAccumulator = '';
     let cumulativeInputTokens = 0;
     const toolCallNames: string[] = [];
-    // Map from toolCallId → {tool, args} for parallel tool call tracking
-    const activeToolCalls = new Map<string, { tool: string; args?: Record<string, unknown> }>();
+    type ActiveToolCallState = {
+      tool: string;
+      args?: Record<string, unknown>;
+      isError?: boolean;
+      resultContent?: string;
+      resultRaw?: Record<string, unknown>;
+    };
+
+    // Map from toolCallId → tool state for parallel tool call tracking.
+    const activeToolCalls = new Map<string, ActiveToolCallState>();
+    let latestUncorrelatedToolState: ActiveToolCallState | undefined;
     let killFn: (() => void) | undefined;
     let steerFn: ((msg: string) => Promise<void>) | undefined;
     let resumeFn: ((msg: string) => Promise<string>) | undefined;
@@ -650,10 +664,11 @@ export class Supervisor {
         const toolDurationMs = now - toolStartMs;
         if (toolDurationMs > thresholds.tool_duration_warn_ms) {
           toolDurationWarnEmitted = true;
+          const activeToolName = activeToolCalls.values().next().value?.tool ?? latestUncorrelatedToolState?.tool ?? 'unknown';
           appendTimelineEvent(createStaleWarningEvent('tool_duration', {
             silence_ms: toolDurationMs,
             threshold_ms: thresholds.tool_duration_warn_ms,
-            tool: currentTool,
+            tool: activeToolName,
           }));
         }
       }
@@ -675,8 +690,7 @@ export class Supervisor {
         (delta) => {
           const toolMatch = delta.match(/⚙ (.+?)…/);
           if (toolMatch) {
-            currentTool = toolMatch[1];
-            setStatus({ current_tool: currentTool });
+            setStatus({ current_tool: toolMatch[1] });
           }
 
           if (delta !== '✓\n' && !delta.startsWith('\n⚙ ') && !delta.startsWith('💭 ')) {
@@ -715,13 +729,18 @@ export class Supervisor {
             thinkingCharCount += details?.charCount ?? 0;
           }
 
+          const toolCallId = details?.toolCallId;
+          const toolState = toolCallId
+            ? activeToolCalls.get(toolCallId)
+            : latestUncorrelatedToolState;
+
           const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
-            tool: currentTool,
-            toolCallId: currentToolCallId || undefined,
-            args: currentToolArgs,
-            isError: currentToolIsError,
-            resultContent: currentToolResultContent,
-            resultRaw: currentToolResultRaw,
+            tool: toolState?.tool,
+            toolCallId,
+            args: toolState?.args,
+            isError: toolState?.isError,
+            resultContent: toolState?.resultContent,
+            resultRaw: toolState?.resultRaw,
             charCount: eventType === 'text'
               ? textCharCount
               : eventType === 'thinking'
@@ -731,6 +750,9 @@ export class Supervisor {
 
           if (timelineEvent) {
             appendTimelineEvent(timelineEvent);
+            if (eventType === 'tool_execution_end' && toolCallId) {
+              activeToolCalls.delete(toolCallId);
+            }
           } else if (eventType === 'text' && !textLogged) {
             // Text presence event (not streaming deltas)
             textLogged = true;
@@ -844,12 +866,20 @@ export class Supervisor {
         },
         // onToolStartCallback — capture tool name, args, and call ID for timeline event fidelity
         (tool, args, toolCallId) => {
-          currentTool = tool;
-          currentToolArgs = args;
-          currentToolCallId = toolCallId ?? '';
-          currentToolIsError = false; // reset on new tool start
-          currentToolResultContent = undefined;
-          currentToolResultRaw = undefined;
+          const toolState: ActiveToolCallState = {
+            tool,
+            args,
+            isError: false,
+            resultContent: undefined,
+            resultRaw: undefined,
+          };
+
+          if (toolCallId) {
+            activeToolCalls.set(toolCallId, toolState);
+          } else {
+            latestUncorrelatedToolState = toolState;
+          }
+
           toolStartMs = Date.now();
           toolDurationWarnEmitted = false;
           toolCallNames.push(tool);
@@ -858,42 +888,48 @@ export class Supervisor {
             tool_call_names: toolCallNames,
           });
           setStatus({ current_tool: tool });
-          if (toolCallId) {
-            activeToolCalls.set(toolCallId, { tool, args });
-          }
         },
         // onToolEndCallback — restore correct per-call context before onEvent('tool_execution_end') fires
         (tool, isError, toolCallId, resultContent, resultRaw) => {
-          if (toolCallId && activeToolCalls.has(toolCallId)) {
-            const entry = activeToolCalls.get(toolCallId)!;
-            currentTool = entry.tool;
-            currentToolArgs = entry.args;
-            currentToolCallId = toolCallId;
-            activeToolCalls.delete(toolCallId);
+          const resolvedToolState: ActiveToolCallState = toolCallId
+            ? activeToolCalls.get(toolCallId) ?? { tool }
+            : latestUncorrelatedToolState ?? { tool };
+
+          const finalizedToolState: ActiveToolCallState = {
+            ...resolvedToolState,
+            tool: resolvedToolState.tool ?? tool,
+            isError,
+            resultContent,
+            resultRaw,
+          };
+
+          if (toolCallId) {
+            activeToolCalls.set(toolCallId, finalizedToolState);
           } else {
-            currentTool = tool;
+            latestUncorrelatedToolState = finalizedToolState;
           }
-          currentToolIsError = isError;
-          currentToolResultContent = resultContent;
-          currentToolResultRaw = resultRaw;
+
           toolStartMs = undefined;
           toolDurationWarnEmitted = false;
 
-          if (tool === 'edit' || tool === 'write') {
+          const resolvedToolName = finalizedToolState.tool;
+          const resolvedToolArgs = finalizedToolState.args;
+
+          if (resolvedToolName === 'edit' || resolvedToolName === 'write') {
             const path = resultRaw?.path;
             if (typeof path === 'string' && path.trim().length > 0) {
               gitnexusAccumulator.files_touched.add(path);
             }
           }
 
-          if (tool.startsWith('gitnexus_')) {
+          if (resolvedToolName.startsWith('gitnexus_')) {
             gitnexusAccumulator.tool_invocations += 1;
 
-            for (const file of extractGitnexusFiles(tool, resultRaw)) {
+            for (const file of extractGitnexusFiles(resolvedToolName, resultRaw)) {
               gitnexusAccumulator.files_touched.add(file);
             }
 
-            for (const symbol of extractGitnexusSymbols(resultRaw, currentToolArgs)) {
+            for (const symbol of extractGitnexusSymbols(resultRaw, resolvedToolArgs)) {
               gitnexusAccumulator.symbols_analyzed.add(symbol);
             }
 
@@ -986,7 +1022,7 @@ export class Supervisor {
         : undefined;
 
       // Emit run_complete — THE canonical completion event
-      const runCompleteEvent = createRunCompleteEvent('COMPLETE', elapsed, {
+      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent('COMPLETE', elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
@@ -997,8 +1033,7 @@ export class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-      });
-      appendTimelineEventFileOnly(runCompleteEvent);
+      }));
       try {
         this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
       } catch (error: unknown) {
@@ -1057,7 +1092,7 @@ export class Supervisor {
         : undefined;
 
       // Emit run_complete with ERROR status
-      const runCompleteEvent = createRunCompleteEvent('ERROR', elapsed, {
+      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent('ERROR', elapsed, {
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,
@@ -1065,8 +1100,7 @@ export class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-      });
-      appendTimelineEventFileOnly(runCompleteEvent);
+      }));
       try {
         this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
       } catch (error: unknown) {
