@@ -5,8 +5,14 @@ import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
 
-const POLL_INTERVAL_MS = 5_000;
+const BASE_POLL_INTERVAL_MS = 5_000;
+const MIN_POLL_INTERVAL_MS = 1_000;
+const MAX_POLL_INTERVAL_MS = 15_000;
 const MAX_MEMORY_ENTRIES_IN_RESUME = 5;
+const MAX_ACTION_LEDGER_ENTRIES = 20;
+const MAX_QUEUED_ACTIONS_PER_MEMBER = 5;
+const MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2;
+const MAX_DEGRADED_COORDINATOR_RESUMES = 1;
 
 const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = {
   created: ['starting', 'stopped'],
@@ -124,9 +130,65 @@ const coordinatorOutputSchema = z.object({
 
 type CoordinatorOutputContract = z.infer<typeof coordinatorOutputSchema>;
 
-function hashOutput(output: string | null): string | null {
+function hashOutput(output: string | null, salt?: string): string | null {
   if (!output) return null;
-  return createHash('sha256').update(output).digest('hex');
+  const value = salt ? `${salt}:${output}` : output;
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function extractFirstJsonObject(raw: string): string | null {
+  const start = raw.indexOf('{');
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeCoordinatorJsonPayload(output: string): { normalized: string; excerpt: string } {
+  const trimmed = output.trim();
+  const noFence = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const extracted = extractFirstJsonObject(noFence) ?? noFence;
+  return {
+    normalized: extracted,
+    excerpt: trimmed.slice(0, 500),
+  };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -159,6 +221,10 @@ export class NodeSupervisor {
   private isDrainingDispatchQueue = false;
   private resumePending = false;
   private recoveredCoordinatorOutputHash: string | null = null;
+  private pollSequence = 0;
+  private lastActivityAtMs = Date.now();
+  private coordinatorResumesInFlight = 0;
+  private degradedResumeCount = 0;
 
   constructor(opts: NodeSupervisorOptions) {
     this.opts = opts;
@@ -540,6 +606,7 @@ export class NodeSupervisor {
 
   private async pollMemberStatuses(): Promise<MemberStateChange[]> {
     const changes: MemberStateChange[] = [];
+    this.pollSequence += 1;
     const persistedRows = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
 
     for (const row of persistedRows) {
@@ -577,7 +644,7 @@ export class NodeSupervisor {
       if (!status) continue;
 
       const output = this.memberControllers.get(member.memberId)?.readResult(member.jobId) ?? null;
-      const outputHash = hashOutput(output);
+      const outputHash = hashOutput(output, `${member.generation}:${this.pollSequence}`);
       const statusChanged = member.status !== status.status;
       const outputChanged = member.lastSeenOutputHash !== outputHash;
 
@@ -623,6 +690,47 @@ export class NodeSupervisor {
     }
   }
 
+  private buildStateDigest(memoryEntries: ReturnType<ObservabilitySqliteClient['readNodeMemory']>): Record<string, unknown> {
+    let completed = 0;
+    let failed = 0;
+    let superseded = 0;
+    for (const state of this.actionLifecycle.values()) {
+      if (state === 'completed') completed += 1;
+      if (state === 'failed') failed += 1;
+      if (state === 'superseded') superseded += 1;
+    }
+
+    return {
+      node_status: this.status,
+      poll_sequence: this.pollSequence,
+      members_total: this.members.size,
+      members_enabled: [...this.members.values()].filter((member) => member.enabled).length,
+      actions_total: this.actionLifecycle.size,
+      actions_completed: completed,
+      actions_failed: failed,
+      actions_superseded: superseded,
+      memory_entries_total: memoryEntries.length,
+    };
+  }
+
+  private buildActionLedgerSummary(): Array<Record<string, unknown>> {
+    const actionEvents = this.opts.sqliteClient
+      .readNodeEvents(this.opts.nodeId)
+      .filter((event) => event.type === 'action_completed' || event.type === 'action_failed' || event.type === 'action_superseded')
+      .slice(-MAX_ACTION_LEDGER_ENTRIES);
+
+    return actionEvents.map((event) => {
+      const envelope = this.restoreActionFromEvent(event.event_json);
+      return {
+        action_id: envelope?.actionId ?? null,
+        member_id: envelope?.action.memberId ?? null,
+        action_type: envelope?.action.type ?? null,
+        lifecycle_state: event.type.replace('action_', ''),
+        observed_at_ms: event.t,
+      };
+    });
+  }
+
   private buildResumePayload(changes: MemberStateChange[]): string {
     const memberUpdates = changes.map((change) => {
       const member = this.members.get(change.memberId);
@@ -648,8 +756,10 @@ export class NodeSupervisor {
       jobId: member.jobId,
     }));
 
-    const memoryPatchSummary = this.opts.sqliteClient
-      .readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined)
+    const memoryEntries = this.opts.sqliteClient
+      .readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined);
+
+    const memoryPatchSummary = memoryEntries
       .slice(-MAX_MEMORY_ENTRIES_IN_RESUME)
       .map((entry) => ({
         entry_id: entry.entry_id ?? null,
@@ -659,6 +769,16 @@ export class NodeSupervisor {
         confidence: entry.confidence ?? null,
       }));
 
+    const unresolvedDecisions = memoryEntries
+      .filter((entry) => entry.entry_type === 'decision')
+      .slice(-MAX_MEMORY_ENTRIES_IN_RESUME)
+      .map((entry) => ({
+        entry_id: entry.entry_id ?? null,
+        summary: entry.summary ?? null,
+        source_member_id: entry.source_member_id ?? null,
+        created_at_ms: entry.created_at_ms ?? null,
+      }));
+
     return [
       'node_resume_payload:',
       JSON.stringify({
@@ -666,6 +786,9 @@ export class NodeSupervisor {
         member_updates: memberUpdates,
         registry_snapshot: registrySnapshot,
         memory_patch_summary: memoryPatchSummary,
+        state_digest: this.buildStateDigest(memoryEntries),
+        unresolved_decisions: unresolvedDecisions,
+        action_ledger_summary: this.buildActionLedgerSummary(),
       }, null, 2),
     ].join('\n');
   }
@@ -704,6 +827,15 @@ export class NodeSupervisor {
   }
 
   private async dispatchAction(action: NodeDispatchAction): Promise<string | null> {
+    if (this.status === 'degraded' && action.type === 'resume') {
+      return null;
+    }
+
+    const queuedForMember = this.dispatchQueue.filter((queued) => queued.action.memberId === action.memberId).length;
+    if (queuedForMember >= MAX_QUEUED_ACTIONS_PER_MEMBER) {
+      return null;
+    }
+
     const envelope: DispatchActionEnvelope = {
       action: {
         ...action,
@@ -723,8 +855,15 @@ export class NodeSupervisor {
     this.queuedActionKeys.add(actionKey);
     this.appendActionLifecycleEvent(envelope, 'queued', { action: envelope.action });
 
-    await this.drainDispatchQueue();
-    return envelope.actionId;
+    try {
+      await this.drainDispatchQueue();
+      return envelope.actionId;
+    } finally {
+      const lifecycle = this.actionLifecycle.get(envelope.actionId);
+      if (lifecycle === 'failed' || lifecycle === 'completed' || lifecycle === 'superseded') {
+        this.queuedActionKeys.delete(actionKey);
+      }
+    }
   }
 
   private async drainDispatchQueue(): Promise<void> {
@@ -847,6 +986,10 @@ export class NodeSupervisor {
         return `Member '${action.memberId}' has no active controller.`;
       }
 
+      if (action.type === 'resume' && this.status === 'degraded') {
+        return `Node is degraded; resume actions are paused for member '${action.memberId}'.`;
+      }
+
       if (action.type === 'resume' && member.status !== 'waiting') {
         return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
       }
@@ -949,9 +1092,10 @@ export class NodeSupervisor {
         continue;
       }
 
+      const normalizedPayload = normalizeCoordinatorJsonPayload(currentOutput);
       let parsedJson: unknown;
       try {
-        parsedJson = JSON.parse(currentOutput);
+        parsedJson = JSON.parse(normalizedPayload.normalized);
       } catch (error) {
         const details = error instanceof Error ? error.message : 'Unable to parse coordinator output as JSON.';
         this.appendNodeEvent('coordinator_output_invalid', {
@@ -959,6 +1103,7 @@ export class NodeSupervisor {
           attempt,
           failure_class: 'invalid_json',
           details,
+          payload_excerpt: normalizedPayload.excerpt,
         });
 
         if (attempt === 3) {
@@ -994,6 +1139,7 @@ export class NodeSupervisor {
           attempt,
           failure_class: 'schema_validation_failure',
           details,
+          payload_excerpt: normalizedPayload.excerpt,
         });
 
         if (attempt === 3) {
@@ -1026,6 +1172,7 @@ export class NodeSupervisor {
           attempt,
           failure_class: 'runtime_state_mismatch',
           details: runtimeMismatch,
+          payload_excerpt: normalizedPayload.excerpt,
         });
 
         if (attempt === 3) {
@@ -1116,6 +1263,27 @@ export class NodeSupervisor {
       const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
       throw new Error(errorMessage);
     }
+  }
+
+  private getNextPollIntervalMs(changesCount: number): number {
+    if (changesCount > 0 || this.dispatchQueue.length > 0) {
+      this.lastActivityAtMs = Date.now();
+    }
+
+    if (this.status === 'degraded') {
+      return Math.max(MIN_POLL_INTERVAL_MS, Math.floor(BASE_POLL_INTERVAL_MS / 2));
+    }
+
+    const idleForMs = Date.now() - this.lastActivityAtMs;
+    if (idleForMs > 30_000) {
+      return MAX_POLL_INTERVAL_MS;
+    }
+
+    if (idleForMs > 10_000) {
+      return Math.min(MAX_POLL_INTERVAL_MS, BASE_POLL_INTERVAL_MS * 2);
+    }
+
+    return BASE_POLL_INTERVAL_MS;
   }
 
   private async cleanupJobs(): Promise<string[]> {
@@ -1244,12 +1412,18 @@ export class NodeSupervisor {
           }
 
           const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+          if (change.newStatus === 'error') {
+            member.enabled = false;
+          }
+
           if (change.newStatus === 'error' || toContextHealth(contextPct) === 'CRITICAL') {
             if (this.status === 'running' || this.status === 'waiting') {
               this.transition('degraded', 'member_error_or_critical_context');
+              this.degradedResumeCount = 0;
             }
           } else if (this.status === 'degraded' && this.recomputeNodeHealth() === 'running') {
             this.transition('running', 'all_members_healthy');
+            this.degradedResumeCount = 0;
           }
         }
 
@@ -1271,8 +1445,12 @@ export class NodeSupervisor {
           await this.handleCoordinatorOutput(coordinatorOutput);
         }
 
-        if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && this.coordinatorJobId && this.coordinatorController) {
+        const degradedResumeLimitReached = this.status === 'degraded' && this.degradedResumeCount >= MAX_DEGRADED_COORDINATOR_RESUMES;
+        const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
+
+        if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && !degradedResumeLimitReached && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
+          this.coordinatorResumesInFlight += 1;
           try {
             this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
               node_id: this.opts.nodeId,
@@ -1282,9 +1460,16 @@ export class NodeSupervisor {
             // best-effort persistence; orchestration remains live
           }
 
-          const payload = this.buildResumePayload(changes);
-          await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
-          this.resumePending = false;
+          try {
+            const payload = this.buildResumePayload(changes);
+            await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
+            if (this.status === 'degraded') {
+              this.degradedResumeCount += 1;
+            }
+          } finally {
+            this.resumePending = false;
+            this.coordinatorResumesInFlight = Math.max(0, this.coordinatorResumesInFlight - 1);
+          }
 
           try {
             this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
@@ -1300,6 +1485,7 @@ export class NodeSupervisor {
               node_id: this.opts.nodeId,
               coordinator_job_id: this.coordinatorJobId,
               member_update_count: changes.length,
+              degraded_resume_count: this.degradedResumeCount,
             });
           } catch {
             // best-effort persistence; orchestration remains live
@@ -1323,7 +1509,7 @@ export class NodeSupervisor {
           break;
         }
 
-        await sleep(POLL_INTERVAL_MS);
+        await sleep(this.getNextPollIntervalMs(changes.length));
       }
     } catch (error) {
       if (!TERMINAL_NODE_STATUSES.has(this.status)) {
