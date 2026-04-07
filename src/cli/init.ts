@@ -324,21 +324,27 @@ function assertSkillRootSymlink(rootPath: string, expectedTargetPath: string): v
 }
 
 function ensureActiveSkillSymlink(defaultSkillPath: string, activeLinkPath: string): void {
-  if (existsSync(activeLinkPath)) {
-    const stats = lstatSync(activeLinkPath);
-    if (!stats.isSymbolicLink()) {
-      throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+  let stats;
+  try {
+    stats = lstatSync(activeLinkPath);
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code === 'ENOENT') {
+      const relativeTarget = `../../default/${basename(defaultSkillPath)}`;
+      symlinkSync(relativeTarget, activeLinkPath, 'dir');
+      return;
     }
-
-    const currentTarget = resolve(dirname(activeLinkPath), readlinkSync(activeLinkPath));
-    if (currentTarget !== resolve(defaultSkillPath)) {
-      throw new Error(`${activeLinkPath} points to an unexpected target.`);
-    }
-    return;
+    throw error;
   }
 
-  const relativeTarget = `../../default/${basename(defaultSkillPath)}`;
-  symlinkSync(relativeTarget, activeLinkPath, 'dir');
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+  }
+
+  const currentTarget = resolve(dirname(activeLinkPath), readlinkSync(activeLinkPath));
+  if (currentTarget !== resolve(defaultSkillPath)) {
+    throw new Error(`${activeLinkPath} points to an unexpected target.`);
+  }
 }
 
 /**
