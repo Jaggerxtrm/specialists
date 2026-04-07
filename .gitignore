@@ -60,3 +60,12 @@ g5np-rpc-extraction/
 
 # Claude Code
 .claude/scheduled_tasks.lock
+.claude/hooks/tsconfig-cache.json
+
+# Specialists runtime artifacts
+.specialists/executor-result.md
+.specialists/trace.jsonl
+.specialists/sync-docs-report.md
+
+# Beads interaction log (runtime, not source)
+.beads/interactions.jsonl
