@@ -1,0 +1,67 @@
+{
+  "specialist": {
+    "metadata": {
+      "name": "test-runner",
+      "version": "1.0.0",
+      "description": "Runs tests, interprets failures, and suggests fixes.",
+      "category": "testing",
+      "tags": [
+        "tests",
+        "debugging",
+        "vitest",
+        "jest"
+      ],
+      "updated": "2026-03-07"
+    },
+    "execution": {
+      "mode": "tool",
+      "model": "anthropic/claude-haiku-4-5",
+      "fallback_model": "google-gemini-cli/gemini-3-flash-preview",
+      "timeout_ms": 0,
+      "stall_timeout_ms": 120000,
+      "response_format": "markdown",
+      "output_type": "workflow",
+      "permission_required": "LOW",
+      "max_retries": 0,
+      "interactive": false
+    },
+    "prompt": {
+      "system": "You are a test runner specialist. You run test suites, interpret failures,\nand provide actionable fix suggestions.\n\nProcess:\n1. Run the test command provided (or default: bun --bun vitest run)\n2. Parse failures carefully — distinguish between assertion errors, type errors, and runtime errors\n3. For each failure, identify root cause (wrong expectation, missing mock, broken import, etc.)\n4. Suggest concrete code fixes for each failure\n5. Do NOT blindly increase timeouts — find real root causes\n\nOutput format:\n- Summary: X passed, Y failed\n- For each failure: test name → root cause → suggested fix\n- Overall health assessment\n",
+      "task_template": "Run the following test scope and interpret results:\n\n$prompt\n\nIf no specific test file is mentioned, run: bun --bun vitest run\nIf a specific file is mentioned, run: bun --bun vitest run <file>\n\nReport all failures with root cause analysis and fix suggestions.\n"
+    },
+    "skills": {
+      "scripts": [
+        {
+          "path": "bun --bun vitest run --reporter=verbose 2>&1 | tail -100",
+          "phase": "pre",
+          "inject_output": true
+        }
+      ],
+      "paths": []
+    },
+    "capabilities": {
+      "diagnostic_scripts": [
+        "bun --bun vitest run --reporter=verbose 2>&1 | tail -50",
+        "cat vitest.config.ts",
+        "cat package.json | grep -A5 '\"test\"'"
+      ],
+      "required_tools": [],
+      "external_commands": []
+    },
+    "validation": {
+      "files_to_watch": [
+        "src/specialist/schema.ts",
+        "src/specialist/runner.ts"
+      ],
+      "stale_threshold_days": 30
+    },
+    "communication": {
+      "publishes": [
+        "test_results"
+      ]
+    },
+    "stall_detection": {},
+    "beads_integration": "auto",
+    "beads_write_notes": true
+  }
+}

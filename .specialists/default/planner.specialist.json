@@ -1,0 +1,95 @@
+{
+  "specialist": {
+    "metadata": {
+      "name": "planner",
+      "version": "1.1.0",
+      "description": "Structured planning specialist for xtrm projects. Explores the codebase (GitNexus + Serena), creates a phased bd issue board with rich descriptions, and applies test-planning per layer. Outputs a ready-to-implement epic: child issues created, dependencies wired, test issues generated. Fully autonomous — give it a task description and get back an epic ID and first task to claim.",
+      "category": "workflow",
+      "tags": [
+        "planning",
+        "bd",
+        "issues",
+        "epic",
+        "gitnexus",
+        "test-planning"
+      ],
+      "updated": "2026-03-31"
+    },
+    "execution": {
+      "mode": "tool",
+      "model": "anthropic/claude-sonnet-4-6",
+      "fallback_model": "google-gemini-cli/gemini-3.1-pro-preview",
+      "timeout_ms": 0,
+      "stall_timeout_ms": 120000,
+      "response_format": "markdown",
+      "output_type": "workflow",
+      "permission_required": "HIGH",
+      "interactive": true,
+      "max_retries": 0
+    },
+    "prompt": {
+      "system": "You are the Planner specialist for xtrm projects.\n\nThe planning skill (Phases 1–6) and the test-planning skill are injected\ninto this system prompt below. Follow the 6-phase workflow from the\nplanning skill exactly.\n\n## Background execution overrides\n\nThese replace the interactive behaviors in the planning skill:\n\n- **Skip Phase 1 (clarification)**: the task prompt is fully specified —\n  proceed directly to Phase 2\n- **Phase 4**: use `bd` CLI directly to create real issues — no approval step\n- **Parent-epic routing (mandatory when `$bead_id` is present)**:\n  run `bd show $bead_id --json`; if the bead has a `parent`, reuse that\n  parent epic for all newly created children and do NOT create a new epic\n- **Phase 5**: apply test-planning logic inline using the test-planning skill\n  injected below — do NOT invoke /test-planning as a slash command\n- **Phase 6**: do NOT claim any issue — output the structured result and stop\n\n## Required output format\n\nEnd your response with this block (fill in real IDs):\n\n```\n## Planner result\n\nEpic: <epic-id> — <epic title>\nChildren: <id1>, <id2>, <id3>, ...\nTest issues: <test-id1>, <test-id2>, ...\nFirst task: <id> — <title>\n\nTo start:  bd update <first-task-id> --claim\n```\n",
+      "task_template": "Plan the following task and create a bd issue board:\n\nTask: $prompt\n\nWorking directory: $cwd\n\nFollow the planning skill workflow (Phases 2–6). Explore the codebase with\nGitNexus and Serena before creating any issues. Create real bd issues via\nthe bd CLI. Apply test-planning logic (from the injected test-planning skill)\nto add test issues per layer. End with the structured \"## Planner result\" block.\n",
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "epic_id": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "test_issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "first_task": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "skills": {
+      "paths": [
+        ".xtrm/skills/active/pi/planning/SKILL.md",
+        ".xtrm/skills/active/pi/test-planning/SKILL.md",
+        ".xtrm/skills/active/pi/gitnexus-exploring/SKILL.md",
+        ".xtrm/skills/active/pi/gitnexus-refactoring/SKILL.md",
+        ".xtrm/skills/active/pi/gitnexus-impact-analysis/SKILL.md"
+      ],
+      "scripts": []
+    },
+    "capabilities": {
+      "required_tools": [
+        "bash",
+        "read",
+        "grep",
+        "glob"
+      ],
+      "external_commands": [
+        "bd",
+        "git"
+      ]
+    },
+    "validation": {
+      "files_to_watch": [
+        "src/specialist/schema.ts",
+        "src/specialist/runner.ts"
+      ],
+      "stale_threshold_days": 30
+    },
+    "communication": {
+      "next_specialists": [
+        "executor"
+      ]
+    },
+    "beads_integration": "auto",
+    "stall_detection": {},
+    "beads_write_notes": true
+  }
+}
