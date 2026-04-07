@@ -158,6 +158,7 @@ export class NodeSupervisor {
   private nextActionSequence = 0;
   private isDrainingDispatchQueue = false;
   private resumePending = false;
+  private recoveredCoordinatorOutputHash: string | null = null;
 
   constructor(opts: NodeSupervisorOptions) {
     this.opts = opts;
@@ -179,6 +180,86 @@ export class NodeSupervisor {
     );
   }
 
+  private restoreActionFromEvent(eventJson: string): DispatchActionEnvelope | null {
+    try {
+      const payload = JSON.parse(eventJson) as Record<string, unknown>;
+      const nestedAction = payload.action;
+
+      if (nestedAction && typeof nestedAction === 'object' && !Array.isArray(nestedAction)) {
+        const action = nestedAction as Partial<NodeDispatchAction>;
+        if (!action.memberId || !action.type) return null;
+        const actionId = typeof action.actionId === 'string' ? action.actionId : (typeof payload.action_id === 'string' ? payload.action_id : null);
+        if (!actionId) return null;
+
+        const targetGeneration = typeof action.targetGeneration === 'number'
+          ? action.targetGeneration
+          : (typeof payload.target_generation === 'number' ? payload.target_generation : 0);
+
+        const dependsOnActionId = typeof action.dependsOnActionId === 'string'
+          ? action.dependsOnActionId
+          : (typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined);
+
+        return {
+          actionId,
+          targetGeneration,
+          dependsOnActionId,
+          action: {
+            type: action.type,
+            memberId: action.memberId,
+            task: typeof action.task === 'string' ? action.task : undefined,
+            message: typeof action.message === 'string' ? action.message : undefined,
+            actionId,
+            targetGeneration,
+            dependsOnActionId,
+          },
+        };
+      }
+
+      const actionId = typeof payload.action_id === 'string' ? payload.action_id : null;
+      const memberId = typeof payload.member_id === 'string' ? payload.member_id : null;
+      const actionType = payload.action_type;
+      if (!actionId || !memberId || (actionType !== 'resume' && actionType !== 'steer' && actionType !== 'stop')) return null;
+
+      const targetGeneration = typeof payload.target_generation === 'number' ? payload.target_generation : 0;
+      const dependsOnActionId = typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined;
+
+      return {
+        actionId,
+        targetGeneration,
+        dependsOnActionId,
+        action: {
+          type: actionType,
+          memberId,
+          task: typeof payload.task === 'string' ? payload.task : undefined,
+          message: typeof payload.message === 'string' ? payload.message : undefined,
+          actionId,
+          targetGeneration,
+          dependsOnActionId,
+        },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private restoreCoordinatorOutputHashFromEvent(eventJson: string): string | null {
+    try {
+      const payload = JSON.parse(eventJson) as { output_hash?: string };
+      return payload.output_hash ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private restoreResumePendingFromEvent(eventJson: string): boolean | null {
+    try {
+      const payload = JSON.parse(eventJson) as { resume_pending?: boolean };
+      return typeof payload.resume_pending === 'boolean' ? payload.resume_pending : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async bootstrap(): Promise<void> {
     try {
       this.opts.sqliteClient.bootstrapNode(this.opts.nodeId, this.opts.nodeName, this.opts.memoryNamespace);
@@ -190,13 +271,8 @@ export class NodeSupervisor {
     const recovering = Boolean(nodeRun && nodeRun.status !== 'created');
 
     if (recovering) {
-      if (nodeRun) {
-        this.status = nodeRun.status;
-      }
-
-      if (nodeRun?.coordinator_job_id) {
-        this.coordinatorJobId = nodeRun.coordinator_job_id;
-      }
+      this.status = nodeRun?.status ?? this.status;
+      this.coordinatorJobId = nodeRun?.coordinator_job_id ?? null;
 
       const persistedMembers = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
       for (const row of persistedMembers) {
@@ -205,75 +281,61 @@ export class NodeSupervisor {
         member.jobId = row.job_id ?? null;
         member.status = row.status;
         member.enabled = row.enabled ?? true;
+        member.generation = row.generation ?? member.generation;
       }
 
       const lifecycleByActionId = new Map<string, DispatchActionEnvelope>();
       const events = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId);
       for (const event of events) {
-        if (!event.type.startsWith('action_')) continue;
-        let payload: Record<string, unknown>;
-        try {
-          payload = JSON.parse(event.event_json) as Record<string, unknown>;
-        } catch {
+        if (event.type === 'coordinator_output_received') {
+          this.recoveredCoordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(event.event_json);
           continue;
         }
 
-        const actionId = typeof payload.action_id === 'string' ? payload.action_id : null;
-        const memberId = typeof payload.member_id === 'string' ? payload.member_id : null;
-        const actionType = payload.action_type;
-        if (!actionId || !memberId || (actionType !== 'resume' && actionType !== 'steer' && actionType !== 'stop')) continue;
-
-        const envelope = lifecycleByActionId.get(actionId) ?? {
-          actionId,
-          targetGeneration: typeof payload.target_generation === 'number' ? payload.target_generation : 0,
-          dependsOnActionId: typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined,
-          action: {
-            type: actionType,
-            memberId,
-            actionId,
-            targetGeneration: typeof payload.target_generation === 'number' ? payload.target_generation : 0,
-            dependsOnActionId: typeof payload.depends_on_action_id === 'string' ? payload.depends_on_action_id : undefined,
-          },
-        } satisfies DispatchActionEnvelope;
-
-        lifecycleByActionId.set(actionId, envelope);
-
-        if (event.type === 'action_completed') {
-          this.completedActionIds.add(actionId);
-          this.memberPendingAction.delete(memberId);
-        } else if (event.type === 'action_written') {
-          this.memberPendingAction.set(memberId, actionId);
+        if (event.type === 'coordinator_resume_state') {
+          const restoredResumePending = this.restoreResumePendingFromEvent(event.event_json);
+          if (restoredResumePending !== null) {
+            this.resumePending = restoredResumePending;
+          }
+          continue;
         }
 
-        this.actionLifecycle.set(actionId, event.type.replace('action_', '') as ActionLifecycleState);
+        if (!event.type.startsWith('action_')) continue;
+        const envelope = this.restoreActionFromEvent(event.event_json);
+        if (!envelope) continue;
+
+        lifecycleByActionId.set(envelope.actionId, envelope);
+        this.actionById.set(envelope.actionId, envelope);
+
+        if (event.type === 'action_completed') {
+          this.completedActionIds.add(envelope.actionId);
+          this.memberPendingAction.delete(envelope.action.memberId);
+        } else if (event.type === 'action_written') {
+          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+        }
+
+        this.actionLifecycle.set(envelope.actionId, event.type.replace('action_', '') as ActionLifecycleState);
       }
 
       const terminalStates = new Set<ActionLifecycleState>(['completed', 'failed', 'superseded']);
       for (const envelope of lifecycleByActionId.values()) {
         const state = this.actionLifecycle.get(envelope.actionId);
         if (!state || terminalStates.has(state)) continue;
+
         this.dispatchQueue.push(envelope);
         this.queuedActionKeys.add(this.getActionKey(envelope.action));
       }
 
-      const latestCoordinatorOutputEvent = [...events].reverse().find((event) => event.type === 'coordinator_output_received');
-      if (latestCoordinatorOutputEvent) {
-        try {
-          const payload = JSON.parse(latestCoordinatorOutputEvent.event_json) as { output_hash?: string };
-          if (payload.output_hash) {
-            this.opts.sqliteClient.upsertNodeRun({
-              id: this.opts.nodeId,
-              node_name: this.opts.nodeName,
-              status: nodeRun?.status ?? this.status,
-              coordinator_job_id: this.coordinatorJobId ?? undefined,
-              updated_at_ms: Date.now(),
-              memory_namespace: this.opts.memoryNamespace,
-              status_json: JSON.stringify({ output_hash: payload.output_hash }),
-            });
-          }
-        } catch {
-          // ignore malformed payload
-        }
+      try {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'node_recovered', {
+          node_id: this.opts.nodeId,
+          status: this.status,
+          coordinator_job_id: this.coordinatorJobId,
+          recovered_action_count: this.dispatchQueue.length,
+          resume_pending: this.resumePending,
+        });
+      } catch {
+        // best-effort persistence; orchestration remains live
       }
     }
 
@@ -1092,6 +1154,7 @@ export class NodeSupervisor {
     this.dispatchQueue = [];
     this.queuedActionKeys.clear();
     this.resumePending = false;
+    this.recoveredCoordinatorOutputHash = null;
 
     return cleanupErrors;
   }
@@ -1099,7 +1162,7 @@ export class NodeSupervisor {
   async run(initialPrompt: string): Promise<NodeRunResult> {
     await this.bootstrap();
 
-    const recovering = Boolean(this.coordinatorJobId);
+    const recovering = this.coordinatorJobId !== null || [...this.members.values()].some((member) => member.jobId !== null);
     if (!recovering) {
       this.transition('starting', 'node_supervisor_run_started');
     }
@@ -1130,17 +1193,19 @@ export class NodeSupervisor {
         }
 
         await this.drainDispatchQueue();
+
+        if (this.status === 'created' || this.status === 'starting') {
+          this.transition('running', 'node_supervisor_recovered');
+        }
       }
 
-      let coordinatorOutputHash: string | null = null;
-      const lastCoordinatorOutput = this.opts.sqliteClient
-        .readNodeEvents(this.opts.nodeId, { type: 'coordinator_output_received', limit: 1 })
-        .at(0);
-      if (lastCoordinatorOutput) {
-        try {
-          coordinatorOutputHash = (JSON.parse(lastCoordinatorOutput.event_json) as { output_hash?: string }).output_hash ?? null;
-        } catch {
-          coordinatorOutputHash = null;
+      let coordinatorOutputHash: string | null = this.recoveredCoordinatorOutputHash;
+      if (!coordinatorOutputHash) {
+        const lastCoordinatorOutput = this.opts.sqliteClient
+          .readNodeEvents(this.opts.nodeId, { type: 'coordinator_output_received', limit: 1 })
+          .at(0);
+        if (lastCoordinatorOutput) {
+          coordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(lastCoordinatorOutput.event_json);
         }
       }
 
@@ -1208,9 +1273,27 @@ export class NodeSupervisor {
 
         if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
+              node_id: this.opts.nodeId,
+              resume_pending: true,
+            });
+          } catch {
+            // best-effort persistence; orchestration remains live
+          }
+
           const payload = this.buildResumePayload(changes);
           await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
           this.resumePending = false;
+
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
+              node_id: this.opts.nodeId,
+              resume_pending: false,
+            });
+          } catch {
+            // best-effort persistence; orchestration remains live
+          }
 
           try {
             this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resumed', {

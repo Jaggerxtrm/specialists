@@ -38,7 +38,9 @@ const mockSqliteClient = {
   upsertNodeRun: vi.fn(),
   upsertNodeMember: vi.fn(),
   appendNodeEvent: vi.fn(),
+  readNodeRun: vi.fn().mockReturnValue(null),
   readNodeMembers: vi.fn().mockReturnValue([]),
+  readNodeEvents: vi.fn().mockReturnValue([]),
   readStatus: vi.fn().mockReturnValue(null),
   queryMemberContextHealth: vi.fn().mockReturnValue(null),
   readNodeMemory: vi.fn().mockReturnValue([]),
@@ -205,6 +207,58 @@ describe('NodeSupervisor orchestration', () => {
       const controllerB = jobControlInstances.find((_c, i) => i === 1);
       expect(controllerA?.resumeJob).toHaveBeenCalled();
       expect(controllerB?.resumeJob).toHaveBeenCalled();
+    });
+  });
+
+  describe('recovery bootstrap', () => {
+    it('restores pending queue and resume state from node events', async () => {
+      const mod = await loadNodeSupervisorModule();
+      if (!mod) return;
+
+      const { NodeSupervisor } = mod;
+      mockSqliteClient.readNodeRun.mockReturnValue({
+        id: 'node-1',
+        node_name: 'node test',
+        status: 'running',
+        coordinator_job_id: 'job-3',
+        updated_at_ms: Date.now(),
+        status_json: '{}',
+      });
+      mockSqliteClient.readNodeMembers.mockReturnValue([
+        { member_id: 'member-a', job_id: 'job-1', status: 'waiting', enabled: 1, generation: 1 },
+      ]);
+      mockSqliteClient.readNodeEvents.mockReturnValue([
+        {
+          id: 1,
+          t: Date.now(),
+          type: 'action_queued',
+          event_json: JSON.stringify({
+            action_id: 'action-1',
+            member_id: 'member-a',
+            action_type: 'resume',
+            target_generation: 1,
+            action: { type: 'resume', memberId: 'member-a', task: 'continue', actionId: 'action-1', targetGeneration: 1 },
+          }),
+        },
+        {
+          id: 2,
+          t: Date.now(),
+          type: 'coordinator_resume_state',
+          event_json: JSON.stringify({ resume_pending: true }),
+        },
+      ]);
+
+      const supervisor = new NodeSupervisor(baseOptions as any);
+      await (supervisor as any).bootstrap();
+
+      expect((supervisor as any).dispatchQueue).toHaveLength(1);
+      expect((supervisor as any).resumePending).toBe(true);
+      expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
+        'node-1',
+        expect.any(Number),
+        'node_recovered',
+        expect.objectContaining({ node_id: 'node-1' }),
+      );
     });
   });
 

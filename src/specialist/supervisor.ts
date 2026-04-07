@@ -365,9 +365,16 @@ export class Supervisor {
             pidAlive = false;
           }
           if (!pidAlive) {
-            // PID is dead — mark as crashed
             const tmp = statusPath + '.tmp';
-            const updated: SupervisorStatus = { ...s, status: 'error', error: 'Process crashed or was killed' };
+            const updated: SupervisorStatus = s.node_id
+              ? {
+                  ...s,
+                  status: 'waiting',
+                  current_event: 'recovery_pending',
+                  last_event_at_ms: now,
+                  error: undefined,
+                }
+              : { ...s, status: 'error', error: 'Process crashed or was killed' };
             writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
             renameSync(tmp, statusPath);
           } else if (s.status === 'running') {

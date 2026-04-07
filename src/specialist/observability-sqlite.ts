@@ -382,6 +382,7 @@ export type NodeEventType =
   | 'member_respawned'
   | 'member_job_rebound'
   | 'coordinator_resumed'
+  | 'coordinator_resume_state'
   | 'coordinator_output_received'
   | 'coordinator_output_invalid'
   | 'memory_updated'
