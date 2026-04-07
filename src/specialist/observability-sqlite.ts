@@ -515,6 +515,9 @@ export interface ObservabilitySqliteClient {
   upsertNodeMember(member: NodeMemberRow): void;
   appendNodeEvent(nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
   upsertNodeMemory(entry: NodeMemoryRow): void;
+  upsertNodeRunWithEvent(nodeRun: NodeRunRow, t: number, type: NodeEventType, eventJson: unknown): void;
+  upsertNodeMemberWithEvent(member: NodeMemberRow, nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
+  upsertNodeMemoryWithEvent(entry: NodeMemoryRow, nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
   readNodeRun(nodeRunId: string): NodeRunRow | null;
   listNodeRuns(filter?: { status?: NodeRunStatus }): NodeRunRow[];
   readNodeMembers(nodeRunId: string): NodeMemberRow[];
@@ -844,6 +847,36 @@ class SqliteClient implements ObservabilitySqliteClient {
     withRetry(() => {
       this.writeNodeMemoryRow(entry);
     }, 'upsertNodeMemory');
+  }
+
+  upsertNodeRunWithEvent(nodeRun: NodeRunRow, t: number, type: NodeEventType, eventJson: unknown): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeRunRow(nodeRun);
+        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
+      });
+      transaction();
+    }, 'upsertNodeRunWithEvent');
+  }
+
+  upsertNodeMemberWithEvent(member: NodeMemberRow, nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemberRow(member);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, 'upsertNodeMemberWithEvent');
+  }
+
+  upsertNodeMemoryWithEvent(entry: NodeMemoryRow, nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemoryRow(entry);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, 'upsertNodeMemoryWithEvent');
   }
 
   readNodeRun(nodeRunId: string): NodeRunRow | null {
