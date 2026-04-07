@@ -38,6 +38,11 @@
           "run": "pi --list-models",
           "phase": "pre",
           "inject_output": true
+        },
+        {
+          "run": "node config/skills/specialists-creator/scripts/scaffold-specialist.ts $SPECIALIST_PATH",
+          "phase": "pre",
+          "inject_output": true
         }
       ]
     },
