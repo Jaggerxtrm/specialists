@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -361,6 +361,96 @@ function checkRuntimeDirs(): boolean {
   return allOk;
 }
 
+export function parseVersionTuple(value: string): [number, number, number] | null {
+  const normalized = value.trim().replace(/^v/i, '');
+  const match = normalized.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+export function compareVersions(left: string, right: string): number {
+  const leftTuple = parseVersionTuple(left);
+  const rightTuple = parseVersionTuple(right);
+  if (!leftTuple || !rightTuple) return 0;
+
+  for (let index = 0; index < 3; index += 1) {
+    if (leftTuple[index] > rightTuple[index]) return 1;
+    if (leftTuple[index] < rightTuple[index]) return -1;
+  }
+
+  return 0;
+}
+
+export function setStatusError(statusPath: string): void {
+  try {
+    const raw = readFileSync(statusPath, 'utf8');
+    const status = JSON.parse(raw) as Record<string, unknown>;
+    status.status = 'error';
+    writeFileSync(statusPath, `${JSON.stringify(status, null, 2)}\n`, 'utf8');
+  } catch {
+    // best-effort repair for corrupt status files
+  }
+}
+
+interface CleanupProcessesResult {
+  total: number;
+  running: number;
+  zombies: number;
+  updated: number;
+  zombieJobIds: string[];
+}
+
+export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProcessesResult {
+  let entries: string[];
+  try { entries = readdirSync(jobsDir); } catch { entries = []; }
+
+  const result: CleanupProcessesResult = {
+    total: 0,
+    running: 0,
+    zombies: 0,
+    updated: 0,
+    zombieJobIds: [],
+  };
+
+  for (const jobId of entries) {
+    const statusPath = join(jobsDir, jobId, 'status.json');
+    if (!existsSync(statusPath)) continue;
+
+    try {
+      const status = JSON.parse(readFileSync(statusPath, 'utf8')) as { status?: string; pid?: number };
+      result.total += 1;
+      if (status.status !== 'running' && status.status !== 'starting') continue;
+      if (!status.pid) continue;
+
+      try {
+        process.kill(status.pid, 0);
+        result.running += 1;
+      } catch {
+        result.zombies += 1;
+        result.zombieJobIds.push(jobId);
+        if (!dryRun) {
+          setStatusError(statusPath);
+          result.updated += 1;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return result;
+}
+
+export function renderProcessSummary(result: CleanupProcessesResult, dryRun: boolean): string {
+  if (result.zombies === 0) {
+    const detail = result.running > 0 ? `, ${result.running} currently running` : ', none currently running';
+    return `${result.total} job${result.total !== 1 ? 's' : ''} checked${detail}`;
+  }
+
+  const action = dryRun ? 'would be marked error' : 'marked error';
+  return `${result.zombies} zombie job${result.zombies === 1 ? '' : 's'} found (${result.updated} ${action})`;
+}
+
 function checkZombieJobs(): boolean {
   section('Background jobs');
   const jobsDir = join(CWD, '.specialists', 'jobs');
@@ -369,43 +459,23 @@ function checkZombieJobs(): boolean {
     return true;
   }
 
-  let entries: string[];
-  try { entries = readdirSync(jobsDir); } catch { entries = []; }
-  if (entries.length === 0) {
+  const result = cleanupProcesses(jobsDir, false);
+
+  if (result.total === 0) {
     ok('No jobs found');
     return true;
   }
 
-  let zombies = 0;
-  let total = 0;
-  let running = 0;
-  for (const jobId of entries) {
-    const statusPath = join(jobsDir, jobId, 'status.json');
-    if (!existsSync(statusPath)) continue;
-    try {
-      const status = JSON.parse(readFileSync(statusPath, 'utf8')) as { status?: string; pid?: number };
-      total++;
-      if (status.status === 'running' || status.status === 'starting') {
-        const pid = status.pid;
-        if (pid) {
-          let alive = false;
-          try { process.kill(pid, 0); alive = true; } catch {}
-          if (alive) running++;
-          else {
-            zombies++;
-            warn(`${jobId}  ${yellow('ZOMBIE')}  ${dim(`pid ${pid} not found, status=${status.status}`)}`);
-            fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
-          }
-        }
-      }
-    } catch {}
+  for (const jobId of result.zombieJobIds) {
+    warn(`${jobId}  ${yellow('ZOMBIE')}  ${dim('pid not found for running job')}`);
+    fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
   }
 
-  if (zombies === 0) {
-    const detail = running > 0 ? `, ${running} currently running` : ', none currently running';
-    ok(`${total} job${total !== 1 ? 's' : ''} checked${detail}`);
+  if (result.zombies === 0) {
+    ok(renderProcessSummary(result, false));
   }
-  return zombies === 0;
+
+  return result.zombies === 0;
 }
 
 export async function run(): Promise<void> {
