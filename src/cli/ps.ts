@@ -287,45 +287,72 @@ function buildBeadTitleCache(jobs: SupervisorStatus[]): Map<string, string> {
   return titles;
 }
 
-function renderJobLine(job: JobNode, beadTitles: Map<string, string>, prefix = ''): void {
-  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-  const beadLabel = job.bead_id
-    ? `${job.bead_id}${beadTitle ? ` ${beadTitle}` : ''}`
-    : '-';
-  const context = dim(formatContextPct(job.context_pct).padStart(4));
-  const elapsed = dim(formatElapsed(job.elapsed_s).padStart(6));
-  const livenessLabel = job.is_dead ? ` ${red('dead')}` : '';
-  console.log(`${prefix}${dim(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}${livenessLabel}`);
+function getStatusIcon(job: JobNode): string {
+  if (job.is_dead) return red('◉');
+  if (job.status === 'running') return cyan('◉');
+  if (job.status === 'waiting') return magenta('◐');
+  if (job.status === 'starting') return yellow('◐');
+  if (job.status === 'done') return green('○');
+  if (job.status === 'error') return red('○');
+  return dim('○');
 }
 
-function renderTreeJobs(items: JobNode[], beadTitles: Map<string, string>, indent = ''): void {
-  items.forEach((item, index) => {
-    const isLast = index === items.length - 1;
-    const branchPrefix = `${indent}${isLast ? '└─ ' : '├─ '}`;
-    renderJobLine(item, beadTitles, branchPrefix);
+function getNextAction(job: JobNode): string {
+  if (job.is_dead) return 'sp clean --zombies';
+  if (job.status === 'running' || job.status === 'starting') return `sp feed -f ${job.id}`;
+  if (job.status === 'waiting') return `sp resume ${job.id} "next task"`;
+  if (job.status === 'done') return `sp result ${job.id}`;
+  return `sp result ${job.id}`;
+}
 
-    if (item.children.length === 0) return;
-    const childIndent = `${indent}${isLast ? '   ' : '│  '}`;
-    renderTreeJobs(item.children, beadTitles, childIndent);
-  });
+function flattenJobs(items: readonly JobNode[]): JobNode[] {
+  const result: JobNode[] = [];
+  const stack = [...items].reverse();
+
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!item) continue;
+    result.push(item);
+    for (let index = item.children.length - 1; index >= 0; index -= 1) {
+      stack.push(item.children[index]!);
+    }
+  }
+
+  return result;
 }
 
 function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
   const beadTitles = buildBeadTitleCache(jobs);
 
-  console.log(`\n${bold(all ? 'Jobs' : 'Active jobs')} (${jobs.length})\n`);
-  for (const job of jobs) {
-    renderJobLine(toJobNode(job), beadTitles);
+  console.log(`\n${bold(all ? 'jobs' : 'active jobs')}`);
+  console.log(dim('st  id       specialist     ctx%  next'));
+
+  let runningCount = 0;
+  let waitingCount = 0;
+
+  for (const tree of trees) {
+    const location = tree.worktree_path ?? '(no worktree)';
+    const branch = tree.branch ? ` (${tree.branch})` : '';
+    console.log(`\n${dim(`worktree ${location}${branch}`)}`);
+
+    const treeJobs = flattenJobs(tree.children);
+    for (const job of treeJobs) {
+      const context = formatContextPct(job.context_pct).padStart(4);
+      const nextAction = getNextAction(job);
+      const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+      const beadLabel = job.bead_id ? ` ${dim(`[${job.bead_id}${beadTitle ? ` ${beadTitle}` : ''}]`)}` : '';
+      const deadLabel = job.is_dead ? ` ${red('dead')}` : '';
+      const idCell = job.id.slice(0, 8).padEnd(8);
+      const specialistCell = job.specialist.slice(0, 14).padEnd(14);
+
+      if (job.status === 'running') runningCount += 1;
+      if (job.status === 'waiting') waitingCount += 1;
+
+      console.log(`${getStatusIcon(job)}  ${idCell} ${specialistCell} ${context}  ${nextAction}${beadLabel}${deadLabel}`);
+    }
   }
 
-  console.log(`\n${bold('Worktree trees')} (${trees.length})\n`);
-  for (const tree of trees) {
-    const where = tree.worktree_path ? dim(` ${tree.worktree_path}`) : '';
-    const branch = tree.branch ? dim(` (${tree.branch})`) : '';
-    console.log(`${bold(tree.owner_job_id)}${branch}${where}`);
-    renderTreeJobs(tree.children, beadTitles, '  ');
-    console.log('');
-  }
+  console.log(`\n${dim(`summary: ${jobs.length} jobs • ${trees.length} worktrees • ${runningCount} running • ${waitingCount} waiting`)}`);
 }
 
 function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, trees: WorktreeTree[], all: boolean): void {

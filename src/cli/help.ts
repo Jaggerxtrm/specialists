@@ -25,7 +25,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['attach', 'Attach terminal to a running background job tmux session'],
   ['report', 'Generate/show/list/diff session reports in .xtrm/reports/'],
   ['status', 'Show health, MCP state, and active jobs'],
-  ['ps', 'Show flat jobs + worktree trees; --json, --all, --follow'],
+  ['ps', 'Show urgency-sorted worktree view with ctx% and NEXT action; --json, --all, --follow'],
   ['doctor', 'Diagnose installation/runtime problems'],
   ['quickstart', 'Full getting-started guide'],
   ['help', 'Show this help'],
