@@ -2,14 +2,14 @@
 title: Specialists Catalog
 scope: specialists-catalog
 category: overview
-version: 1.3.0
-updated: 2026-04-05
-synced_at: a7dee4b5
+version: 1.4.0
+updated: 2026-04-07
+synced_at: acd30061
 description: Current project specialists and what each one is for.
 source_of_truth_for:
-  - "config/specialists/*.specialist.yaml"
-  - ".specialists/default/*.specialist.yaml"
-  - ".specialists/user/*.specialist.yaml"
+  - "config/specialists/*.specialist.json"
+  - ".specialists/default/*.specialist.json"
+  - ".specialists/user/*.specialist.json"
 domain:
   - specialists
 ---
@@ -20,24 +20,26 @@ Current specialists are loaded from:
 - `.specialists/user/` (project custom)
 - `.specialists/default/` (canonical defaults)
 
-Canonical definitions are sourced from `config/specialists/*.specialist.yaml` during init/update flows.
+Canonical definitions are sourced from `config/specialists/*.specialist.json` during init/update flows.
 
 ## Current specialists
 
 | Name | Version | Primary model | Permission | Typical use |
 |---|---|---|---|---|
 | `debugger` | v2.0 | `anthropic/claude-sonnet-4-6` | HIGH | deep bug investigation, keep-alive, 4-phase debug-fix-verify workflow |
-| `executor` | v1.0 | `openai-codex/gpt-5.3-codex` | MEDIUM | implementation and fixes |
-| `explorer` | v1.0 | `anthropic/claude-haiku-4-5` | LOW | architecture/codebase mapping |
-| `memory-processor` | v1.0 | `dashscope/glm-5` | LOW | synthesize memories + commits |
-| `node-coordinator` | v1.1 | `anthropic/claude-sonnet-4-6` | MEDIUM | worktree lifecycle coordination |
-| `overthinker` | v1.0 | `openai-codex/gpt-5.4` | MEDIUM | multi-phase deep reasoning |
-| `parallel-review` | v1.0 | `anthropic/claude-sonnet-4-6` | MEDIUM | concurrent review passes |
-| `planner` | v1.0 | `anthropic/claude-sonnet-4-6` | MEDIUM | task decomposition and planning |
-| `specialists-creator` | v1.0 | `anthropic/claude-sonnet-4-6` | LOW | create/fix specialist YAMLs |
+| `executor` | v1.0 | `openai-codex/gpt-5.3-codex` | HIGH | production-quality implementation, strict type safety |
+| `explorer` | v1.1 | `dashscope/qwen3.5-plus` | READ_ONLY | architecture/codebase mapping |
+| `memory-processor` | v1.1 | `dashscope/qwen3.5-plus` | MEDIUM | synthesize memories + commits |
+| `node-coordinator` | v1.1 | `anthropic/claude-sonnet-4-6` | READ_ONLY | worktree lifecycle coordination |
+| `overthinker` | v1.0 | `openai-codex/gpt-5.4` | READ_ONLY | multi-phase deep reasoning |
+| `parallel-review` | v1.0 | `anthropic/claude-sonnet-4-6` | READ_ONLY | concurrent review passes |
+| `planner` | v1.1 | `anthropic/claude-sonnet-4-6` | HIGH | task decomposition, phased bd issue board, test-planning per layer |
+| `researcher` | v1.1 | `anthropic/claude-haiku-4-5` | LOW | library docs lookup + GitHub code discovery, keep-alive |
+| `reviewer` | v1.0 | `anthropic/claude-sonnet-4-6` | READ_ONLY | post-run requirement compliance audit |
+| `specialists-creator` | v1.2 | `anthropic/claude-sonnet-4-6` | HIGH | create/fix specialist JSONs |
 | `sync-docs` | v2.0 | `anthropic/claude-sonnet-4-6` | MEDIUM | documentation drift sync, 3-mode routing |
 | `test-runner` | v1.0 | `anthropic/claude-haiku-4-5` | LOW | test execution + summary |
-| `xt-merge` | v1.0 | `anthropic/claude-sonnet-4-6` | MEDIUM | merge queued xt PRs |
+| `xt-merge` | v1.1 | `anthropic/claude-sonnet-4-6` | MEDIUM | merge queued xt PRs |
 
 ## Timeout baseline
 
@@ -47,13 +49,21 @@ Canonical definitions are sourced from `config/specialists/*.specialist.yaml` du
 
 All specialists now have GitNexus skills wired for code intelligence:
 
-| Specialist | GitNexus skills |
+| Specialist | Skills |
 |---|---|
-| `planner` | `gitnexus-exploring` |
-| `parallel-review` | `gitnexus-refactoring`, `gitnexus-impact-analysis` |
-| `overthinker` | `gitnexus-exploring` |
-| `executor` | `gitnexus-impact-analysis` |
-| `debugger` | `gitnexus-debugging`, `systematic-debugging` |
+| `debugger` | `xt-debugging`, `gitnexus-debugging`, `systematic-debugging` |
+| `executor` | `gitnexus-impact-analysis`, `clean-code` |
+| `explorer` | `gitnexus-exploring` |
+| `memory-processor` | `documenting`, `using-xtrm` |
+| `node-coordinator` | `using-specialists` |
+| `overthinker` | `gitnexus-exploring`, `deepwiki`, `find-docs`, `github-search` |
+| `parallel-review` | `gitnexus-refactoring`, `gitnexus-impact-analysis`, `using-quality-gates`, `clean-code` |
+| `planner` | `planning`, `test-planning`, `gitnexus-exploring` |
+| `researcher` | `find-docs`, `deepwiki`, `github-search` |
+| `reviewer` | `using-quality-gates`, `clean-code`, `gitnexus-refactoring`, `gitnexus-impact-analysis` |
+| `specialists-creator` | `specialists-creator` |
+| `sync-docs` | `sync-docs`, `gitnexus-exploring` |
+| `xt-merge` | `xt-merge` |
 
 ## Version highlights
 
@@ -61,7 +71,35 @@ All specialists now have GitNexus skills wired for code intelligence:
 - **Permission**: HIGH
 - **Mode**: keep-alive (long-running debug sessions)
 - **Workflow**: 4-phase debug-fix-verify cycle
-- **Skills**: `gitnexus-debugging`, `systematic-debugging`
+- **Skills**: `gitnexus-debugging`, `xt-debugging`, `systematic-debugging`
+
+### planner v1.1
+- **Permission**: HIGH (elevated for bd issue creation)
+- **Mode**: keep-alive (interactive)
+- **Workflow**: GitNexus codebase exploration → phased bd issue board → test-planning per layer → epic ID output
+- **Skills**: `planning`, `test-planning`, `gitnexus-exploring`
+
+### specialists-creator v1.2
+- **Permission**: HIGH
+- **Config format**: JSON (`.specialist.json`) — YAML no longer supported
+- **Skills**: `specialists-creator`
+
+### xt-merge v1.1
+- **Model**: `anthropic/claude-sonnet-4-6`
+- **Workflow**: FIFO PR drain — pre-flight, CI check, merge with rebase, cascade rebase of remaining branches, push verify
+
+### researcher v1.1
+- **Permission**: LOW
+- **Mode**: keep-alive (interactive, multi-turn research)
+- **Two modes**: targeted (ctx7/deepwiki for specific library docs) and discovery (ghgrep → deepwiki for ecosystem patterns)
+- **Tools**: `ctx7`, `deepwiki`, `ghgrep`
+- **Skills**: `find-docs`, `deepwiki`, `github-search`
+
+### reviewer v1.0
+- **Permission**: READ_ONLY
+- **Purpose**: post-run compliance audit — resolves bead requirements, grades output 0-100
+- **Scoring**: coverage (0-70) + evidence quality (0-20) + traceability integrity (0-10)
+- **Skills**: `using-quality-gates`, `clean-code`, `gitnexus-refactoring`, `gitnexus-impact-analysis`
 
 ### sync-docs v2.0
 - **Permission**: MEDIUM
@@ -71,6 +109,7 @@ All specialists now have GitNexus skills wired for code intelligence:
 
 ### node-coordinator v1.1
 - **Model**: `anthropic/claude-sonnet-4-6`
+- **Permission**: READ_ONLY
 - **Scope**: worktree lifecycle management
 - **Skills**: `using-specialists`
 - **Pre-script**: `sp list` for catalog discovery

@@ -2,9 +2,9 @@
 title: Skills Catalog
 scope: skills
 category: overview
-version: 1.2.0
-updated: 2026-03-23
-synced_at: 047a28c3
+version: 1.3.0
+updated: 2026-04-07
+synced_at: acd30061
 description: Skills shipped in this repo and what they are for.
 source_of_truth_for:
   - "config/skills/**/*.md"
@@ -34,12 +34,39 @@ Location: `config/skills/using-specialists/SKILL.md`
 
 Purpose:
 
-- when to delegate to specialists vs doing the work directly
-- CLI usage patterns
-- background job workflow
-- MCP usage patterns
+- orchestrator model — route 99% of tasks to specialists; zero discovery or implementation by orchestrator
+- when to delegate vs act directly (one-liners and trivial config only)
+- full CLI surface: `run`, `feed`, `result`, `resume`, `steer`, `stop`, `status`, `doctor`, `clean`, `edit`
+- chained bead pipeline with `--bead`, `--context-depth`, `--worktree`, `--job` flags
+- wave orchestration and mandatory merge protocol between waves
+- review → fix loop using `--job` to share a worktree
+- background job pattern and sleep-timer discipline
+- MCP (minimal: `use_specialist` only; orchestration stays on CLI)
 
-Note: a dedicated skill/doc synchronization follow-up is tracked separately.
+Specialist routing table (run `specialists list` for current set):
+
+| Task | Specialist | Notes |
+|------|-----------|-------|
+| Architecture exploration | explorer | READ_ONLY, auto-appends to bead |
+| Library/docs lookup | researcher | `--keep-alive` |
+| Bug fix / feature implementation | executor | HIGH perms, lint+tsc only (no tests) |
+| Bug root-cause | debugger | 4-phase GitNexus-first cycle, HIGH perms |
+| Complex design | overthinker | 4-phase analysis, `--keep-alive` |
+| Code review | reviewer | PASS/PARTIAL/FAIL via `--job` |
+| Multi-backend review | parallel-review | — |
+| Planning/scoping | planner | structured issue breakdown |
+| Doc audit/drift/targeted sync | sync-docs | 3-mode, MEDIUM perms, `--keep-alive` |
+| Doc writing | executor | sync-docs audits; executor writes |
+| Test generation/execution | test-runner | suite runs, failure interpretation |
+| Specialist authoring | specialists-creator | JSON creation against schema |
+
+Key workflow patterns:
+
+- **Chained bead pipeline** — create child beads upfront, run explorer → executor → reviewer in waves, each with `--context-depth 2`
+- **`--worktree`** provisions an isolated git worktree for executor; `--job` re-enters an existing one
+- **Merge between waves is mandatory** — merge in FIFO/dep order; never start wave N+1 before merging wave N
+- **Steer/resume** — `steer` redirects any running job; `resume` continues a `waiting` keep-alive job
+- **`--bead` and `--prompt` are mutually exclusive** — for tracked work update bead notes, then `--bead` only
 
 ### `specialists-creator`
 
@@ -47,17 +74,21 @@ Location: `config/skills/specialists-creator/SKILL.md`
 
 Purpose:
 
-- write valid `.specialist.yaml` files
-- model setup and rebalance workflow
+- write valid `.specialist.json` files (YAML format deprecated; `.specialist.yaml` still accepted but prints warnings)
+- mandatory ping-models-first workflow before writing any JSON
+- model setup and rebalance across all specialists
 - schema guidance and common validation fixes
 - capability, permission, and beads integration references
 
 Key areas covered:
 
-- minimal skeleton and validation loop
-- model inventory and assignment strategy
-- schema sections (`metadata`, `execution`, `prompt`, `skills`, `capabilities`, `beads_integration`)
-- common error patterns and fixes
+- **MANDATORY first step**: `pi --list-models` → pick models → `pi --model <x> --print "ping"` on both primary and fallback before writing anything
+- model rebalancing with `specialists models` (view all assignments) and `specialists edit <name> --model <v> --fallback-model <v>`
+- minimal JSON skeleton and validation loop: `specialists validate` / `bun src/specialist/validate.ts`
+- model tier classification (Heavy / Standard / Light) with provider-diversity rules
+- schema sections: `metadata`, `execution` (incl. `interactive`, `thinking_level`, `stall_timeout_ms`), `prompt` (incl. `output_schema`), `skills`, `capabilities`, `communication`, `validation`, `stall_detection`, `beads_integration`
+- `output_schema` standard patterns by specialist type (executor, explorer, planner)
+- common error patterns and fixes (JSON syntax, `READ_WRITE` invalid, missing `task_template`)
 
 ## Referencing a skill
 

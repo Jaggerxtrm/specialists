@@ -2,9 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.2.0
-updated: 2026-03-27
-synced_at: 047a28c3
+version: 1.3.0
+updated: 2026-04-07
+synced_at: acd30061
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -45,7 +45,7 @@ npm install -g @jaggerxtrm/specialists
 
 ## Bootstrap a project
 
-`specialists init` is **safe for anyone to call** — agents included. It only writes idempotent, non-destructive files.
+> **Human-only command.** `specialists init` detects agent sessions (missing TTY, `PI_SESSION_ID`, `PI_RPC_SOCKET`, `SPECIALISTS_JOB_ID`, etc.) and exits with an error. Run it yourself from an interactive terminal — do not invoke it from scripts, hooks, or agent sessions.
 
 ```bash
 specialists init
@@ -55,7 +55,10 @@ What it does (always safe, idempotent):
 
 1. creates `.specialists/user/` for custom specialists
 2. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
-3. adds `.specialists/jobs/` and `.specialists/ready/` to `.gitignore`
+3. adds runtime and db paths to `.gitignore`:
+   - `.specialists/jobs/`
+   - `.specialists/ready/`
+   - `.specialists/db/*.db` / `*.db-wal` / `*.db-shm`
 4. injects the Specialists section into `AGENTS.md`
 5. registers Specialists in `.mcp.json`
 6. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`
@@ -63,7 +66,7 @@ What it does (always safe, idempotent):
 
 ## Sync canonical specialists (human-only)
 
-To copy the canonical specialist YAML files to `.specialists/default/`, pass `--sync-defaults`. This is a **human-only** operation — it writes files that your team manages and commits.
+To copy the canonical specialist JSON files to `.specialists/default/`, pass `--sync-defaults`. This is a **human-only** operation — it writes files that your team manages and commits.
 
 ```bash
 specialists init --sync-defaults
@@ -72,7 +75,7 @@ specialists init --sync-defaults
 Additional step performed:
 
 - copies canonical specialists to `.specialists/default/`
-- migrates any legacy nested layout (`default/specialists/*.yaml`) to the flat `default/*.yaml` layout
+- migrates any legacy nested layout (`default/specialists/*.specialist.json`) to the flat `default/*.specialist.json` layout
 
 > **Do not run `--sync-defaults` from automated agents.** Agents that need MCP wiring should call plain `specialists init`.
 
@@ -90,7 +93,7 @@ Specialists live in `.specialists/` in the project root. Skills and hooks are pr
 └── skills/        # skills for pi
 
 .specialists/
-├── default/       # canonical specialists (from init)
+├── default/       # canonical specialists (from init --sync-defaults)
 ├── user/          # custom specialists
 ├── jobs/          # runtime (gitignored)
 └── ready/         # runtime (gitignored)
