@@ -18158,16 +18158,16 @@ class PiAgentSession {
     if (type === "tool_execution_start") {
       this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
       this.options.onToolStart?.(event.toolName ?? event.name ?? "tool", event.args, event.toolCallId);
-      this.options.onEvent?.("tool_execution_start");
+      this.options.onEvent?.("tool_execution_start", { toolCallId: event.toolCallId });
       return;
     }
     if (type === "tool_execution_update") {
-      this.options.onEvent?.("tool_execution_update");
+      this.options.onEvent?.("tool_execution_update", { toolCallId: event.toolCallId });
       return;
     }
     if (type === "tool_execution_end") {
       this.options.onToolEnd?.(event.toolName ?? event.name ?? "tool", event.isError ?? false, event.toolCallId, findToolResultContent(event), findToolResultRaw(event));
-      this.options.onEvent?.("tool_execution_end");
+      this.options.onEvent?.("tool_execution_end", { toolCallId: event.toolCallId });
       return;
     }
     if (type === "auto_compaction_start" || type === "auto_compaction_end") {
@@ -19231,25 +19231,34 @@ var init_runner = __esm(() => {
         actions: {
           type: "array",
           items: {
-            type: "object",
-            properties: {
-              type: {
-                enum: [
-                  "resume_member",
-                  "steer_member",
-                  "request_human_input",
-                  "spawn_member",
-                  "stop_member",
-                  "mark_blocked",
-                  "complete_node"
-                ]
+            oneOf: [
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["resume"] },
+                  memberId: { type: "string" },
+                  task: { type: "string" }
+                },
+                required: ["type", "memberId", "task"]
               },
-              target: { type: "string" },
-              payload: { type: "string" },
-              reason: { type: "string" },
-              priority: { type: "number" }
-            },
-            required: ["type", "target", "payload", "reason"]
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["steer"] },
+                  memberId: { type: "string" },
+                  message: { type: "string" }
+                },
+                required: ["type", "memberId", "message"]
+              },
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["stop"] },
+                  memberId: { type: "string" }
+                },
+                required: ["type", "memberId"]
+              }
+            ]
           }
         },
         blocking_on: {
@@ -19262,12 +19271,18 @@ var init_runner = __esm(() => {
           required: ["kind"]
         },
         memory_patch: {
-          type: "object",
-          properties: {
-            facts: { type: "array", items: { type: "string" } },
-            questions: { type: "array", items: { type: "string" } },
-            decisions: { type: "array", items: { type: "string" } },
-            handoff_summary: { type: "string" }
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              entry_type: { enum: ["fact", "question", "decision"] },
+              entry_id: { type: "string" },
+              summary: { type: "string" },
+              source_member_id: { type: "string" },
+              confidence: { type: "number" },
+              provenance: { type: "object" }
+            },
+            required: ["entry_type", "summary"]
           }
         },
         coordination_state: {
@@ -20599,12 +20614,13 @@ function migrateToV4(db) {
   if (hasV4) {
     db.run("CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)");
     db.run("CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)");
-    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1)");
+    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)");
     db.run("CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL");
     db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)");
-    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id)");
+    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)");
     db.run("CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)");
     db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)");
@@ -20636,7 +20652,8 @@ function migrateToV4(db) {
       model        TEXT,
       role         TEXT,
       status       TEXT NOT NULL,
-      enabled      INTEGER NOT NULL DEFAULT 1
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      generation   INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
     CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
@@ -20645,11 +20662,13 @@ function migrateToV4(db) {
     CREATE TABLE IF NOT EXISTS node_events (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       node_run_id  TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
       event_json   TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, id);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
     CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
 
     CREATE TABLE IF NOT EXISTS node_memory (
@@ -20694,14 +20713,17 @@ function initSchema(db) {
     CREATE TABLE IF NOT EXISTS specialist_events (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id       TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
       specialist   TEXT NOT NULL,
       bead_id      TEXT,
       t            INTEGER NOT NULL,
       type         TEXT NOT NULL,
       event_json   TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq
+      ON specialist_events(job_id, seq);
     CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
-      ON specialist_events(job_id, t, id);
+      ON specialist_events(job_id, t, seq, id);
 
     CREATE TABLE IF NOT EXISTS specialist_results (
       job_id        TEXT PRIMARY KEY,
@@ -20750,7 +20772,68 @@ function initSchema(db) {
   migrateToV2(db);
   migrateToV3(db);
   migrateToV4(db);
+  migrateToV5(db);
+  migrateToV6(db);
   verifyWalMode(db);
+}
+function migrateToV5(db) {
+  const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
+  if (!hasV5) {
+    const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+    if (!nodeMemberColumns.has("generation")) {
+      db.run("ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0");
+    }
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (5, strftime('%s', 'now') * 1000);
+    `);
+  }
+}
+function migrateToV6(db) {
+  const hasV6 = db.query("SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1").get();
+  if (hasV6) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+    return;
+  }
+  const specialistEventColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!specialistEventColumns.has("seq")) {
+    db.run("ALTER TABLE specialist_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE specialist_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM specialist_events prior
+      WHERE prior.job_id = specialist_events.job_id
+        AND prior.id <= specialist_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+  const nodeEventColumns = new Set(db.query("PRAGMA table_info(node_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!nodeEventColumns.has("seq")) {
+    db.run("ALTER TABLE node_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE node_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM node_events prior
+      WHERE prior.node_run_id = node_events.node_run_id
+        AND prior.id <= node_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (6, strftime('%s', 'now') * 1000);
+  `);
 }
 
 class SqliteClient {
@@ -20787,12 +20870,21 @@ class SqliteClient {
       lastOutput ?? null
     ]);
   }
+  getNextSpecialistEventSeq(jobId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
+    return row?.next_seq ?? 1;
+  }
+  getNextNodeEventSeq(nodeRunId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
+    return row?.next_seq ?? 1;
+  }
   writeEventRow(jobId, specialist, beadId, event) {
-    const eventJson = JSON.stringify(event);
+    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const eventJson = JSON.stringify({ ...event, seq });
     this.db.run(`
-      INSERT INTO specialist_events (job_id, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [jobId, specialist, beadId ?? null, event.t, event.type, eventJson]);
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
   }
   writeResultRow(jobId, output2) {
     this.db.run(`
@@ -20851,16 +20943,18 @@ class SqliteClient {
         model,
         role,
         status,
-        enabled
+        enabled,
+        generation
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(node_run_id, member_id) DO UPDATE SET
         job_id = excluded.job_id,
         specialist = excluded.specialist,
         model = excluded.model,
         role = excluded.role,
         status = excluded.status,
-        enabled = excluded.enabled;
+        enabled = excluded.enabled,
+        generation = excluded.generation;
     `, [
       member.node_run_id,
       member.member_id,
@@ -20869,14 +20963,17 @@ class SqliteClient {
       member.model ?? null,
       member.role ?? null,
       member.status,
-      member.enabled === undefined ? 1 : member.enabled ? 1 : 0
+      member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
+      member.generation ?? 0
     ]);
   }
   writeNodeEventRow(nodeRunId, t, type, eventJson) {
+    const seq = this.getNextNodeEventSeq(nodeRunId);
+    const payload = typeof eventJson === "object" && eventJson !== null ? { ...eventJson, seq } : { value: eventJson, seq };
     this.db.run(`
-      INSERT INTO node_events (node_run_id, t, type, event_json)
-      VALUES (?, ?, ?, ?)
-    `, [nodeRunId, t, type, JSON.stringify(eventJson)]);
+      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?)
+    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
   }
   writeNodeMemoryRow(entry) {
     const now = Date.now();
@@ -21026,6 +21123,33 @@ class SqliteClient {
       this.writeNodeMemoryRow(entry);
     }, "upsertNodeMemory");
   }
+  upsertNodeRunWithEvent(nodeRun, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeRunRow(nodeRun);
+        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeRunWithEvent");
+  }
+  upsertNodeMemberWithEvent(member, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemberRow(member);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemberWithEvent");
+  }
+  upsertNodeMemoryWithEvent(entry, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemoryRow(entry);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemoryWithEvent");
+  }
   readNodeRun(nodeRunId) {
     return withRetry(() => {
       const row = this.db.query("SELECT * FROM node_runs WHERE id = ? LIMIT 1").get(nodeRunId);
@@ -21058,7 +21182,8 @@ class SqliteClient {
         model: row.model ?? undefined,
         role: row.role ?? undefined,
         status: row.status,
-        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled)
+        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
+        generation: row.generation ?? 0
       }));
     }, "readNodeMembers");
   }
@@ -21071,10 +21196,10 @@ class SqliteClient {
         params.push(opts.type);
       }
       let query = `
-        SELECT id, t, type, event_json
+        SELECT id, seq, t, type, event_json
         FROM node_events
         WHERE ${whereClauses.join(" AND ")}
-        ORDER BY t ASC, id ASC
+        ORDER BY seq ASC, id ASC
       `;
       if (opts?.limit !== undefined) {
         query += " LIMIT ?";
@@ -21110,7 +21235,7 @@ class SqliteClient {
         SELECT json_extract(event_json, '$.context_pct') AS context_pct
         FROM specialist_events
         WHERE job_id = ? AND type = 'turn_summary'
-        ORDER BY t DESC, id DESC
+        ORDER BY seq DESC, id DESC
         LIMIT 1
       `).get(jobId);
       if (!row || row.context_pct === null || row.context_pct === undefined) {
@@ -21145,16 +21270,17 @@ class SqliteClient {
   readEvents(jobId) {
     return withRetry(() => {
       const rows = this.db.query(`
-        SELECT event_json FROM specialist_events
+        SELECT seq, event_json FROM specialist_events
         WHERE job_id = ?
-        ORDER BY t ASC, id ASC;
+        ORDER BY seq ASC, id ASC;
       `).all(jobId);
       const events = [];
       for (const row of rows) {
         if (!row.event_json)
           continue;
         try {
-          events.push(JSON.parse(row.event_json));
+          const parsed = JSON.parse(row.event_json);
+          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
         } catch {}
       }
       return events;
@@ -22099,6 +22225,7 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         tool: context.tool ?? "unknown",
         phase: "start",
         tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
         args: context.args,
         started_at: new Date(t).toISOString()
       };
@@ -22109,7 +22236,8 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         type: TIMELINE_EVENT_TYPES.TOOL,
         tool: context.tool ?? "unknown",
         phase: "update",
-        tool_call_id: context.toolCallId
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true }
       };
     case "tool_execution_end": {
       const resultSummary = summarizeToolResult(context.resultContent);
@@ -22119,6 +22247,7 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         tool: context.tool ?? "unknown",
         phase: "end",
         tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
         is_error: context.isError,
         ...resultSummary ? { result_summary: resultSummary } : {},
         ...context.resultRaw ? { result_raw: context.resultRaw } : {}
@@ -22277,7 +22406,10 @@ function isRunCompleteEvent(event) {
   return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
 }
 function compareTimelineEvents(a, b) {
-  return a.t - b.t;
+  const timeDiff = a.t - b.t;
+  if (timeDiff !== 0)
+    return timeDiff;
+  return (a.seq ?? 0) - (b.seq ?? 0);
 }
 var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
 var init_timeline_events = __esm(() => {
@@ -22571,7 +22703,13 @@ class Supervisor {
           }
           if (!pidAlive) {
             const tmp = statusPath + ".tmp";
-            const updated = { ...s, status: "error", error: "Process crashed or was killed" };
+            const updated = s.node_id ? {
+              ...s,
+              status: "waiting",
+              current_event: "recovery_pending",
+              last_event_at_ms: now,
+              error: undefined
+            } : { ...s, status: "error", error: "Process crashed or was killed" };
             writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
             renameSync2(tmp, statusPath);
           } else if (s.status === "running") {
@@ -22649,26 +22787,37 @@ class Supervisor {
       setStatus({ metrics: runMetrics });
     };
     const eventsFd = openSync(this.eventsPath(id), "a");
+    let nextTimelineSeq = 1;
+    const assignTimelineSeq = (event) => {
+      if (typeof event.seq === "number" && Number.isFinite(event.seq) && event.seq > 0) {
+        nextTimelineSeq = Math.max(nextTimelineSeq, event.seq + 1);
+        return event;
+      }
+      return { ...event, seq: nextTimelineSeq++ };
+    };
     const appendTimelineEvent = (event) => {
+      const sequencedEvent = assignTimelineSeq(event);
       try {
-        writeSync(eventsFd, JSON.stringify(event) + `
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
 `);
       } catch (err) {
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
       try {
-        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, event);
+        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
       } catch (error2) {
         console.warn(`[supervisor] SQLite appendEvent failed: ${String(error2)}`);
       }
     };
     const appendTimelineEventFileOnly = (event) => {
+      const sequencedEvent = assignTimelineSeq(event);
       try {
-        writeSync(eventsFd, JSON.stringify(event) + `
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
 `);
       } catch (err) {
         console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
+      return sequencedEvent;
     };
     const setWaitingStatus = (updates) => {
       const previousStatus = statusSnapshot.status;
@@ -22684,8 +22833,7 @@ class Supervisor {
         appendTimelineEvent(createStatusChangeEvent("waiting", previousStatus));
       }
     };
-    const runStartEvent = createRunStartEvent(runOptions.name, runOptions.inputBeadId);
-    appendTimelineEventFileOnly(runStartEvent);
+    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
     try {
       this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
     } catch (error2) {
@@ -22697,18 +22845,12 @@ class Supervisor {
       setStatus({ fifo_path: fifoPath });
     } catch {}
     let textLogged = false;
-    let currentTool = "";
-    let currentToolResultContent;
-    let currentToolResultRaw;
     let runMetrics = {
       turns: 0,
       tool_calls: 0,
       auto_compactions: 0,
       auto_retries: 0
     };
-    let currentToolCallId = "";
-    let currentToolArgs;
-    let currentToolIsError = false;
     const gitnexusAccumulator = {
       files_touched: new Set,
       symbols_analyzed: new Set,
@@ -22721,6 +22863,7 @@ class Supervisor {
     let cumulativeInputTokens = 0;
     const toolCallNames = [];
     const activeToolCalls = new Map;
+    let latestUncorrelatedToolState;
     let killFn;
     let steerFn;
     let resumeFn;
@@ -22816,10 +22959,11 @@ class Supervisor {
         const toolDurationMs = now - toolStartMs;
         if (toolDurationMs > thresholds.tool_duration_warn_ms) {
           toolDurationWarnEmitted = true;
+          const activeToolName = activeToolCalls.values().next().value?.tool ?? latestUncorrelatedToolState?.tool ?? "unknown";
           appendTimelineEvent(createStaleWarningEvent("tool_duration", {
             silence_ms: toolDurationMs,
             threshold_ms: thresholds.tool_duration_warn_ms,
-            tool: currentTool
+            tool: activeToolName
           }));
         }
       }
@@ -22836,8 +22980,7 @@ class Supervisor {
       const result = await runner.run(runOptions, (delta) => {
         const toolMatch = delta.match(/⚙ (.+?)…/);
         if (toolMatch) {
-          currentTool = toolMatch[1];
-          setStatus({ current_tool: currentTool });
+          setStatus({ current_tool: toolMatch[1] });
         }
         if (delta !== `✓
 ` && !delta.startsWith(`
@@ -22869,17 +23012,22 @@ class Supervisor {
         if (eventType === "thinking") {
           thinkingCharCount += details?.charCount ?? 0;
         }
+        const toolCallId = details?.toolCallId;
+        const toolState = toolCallId ? activeToolCalls.get(toolCallId) : latestUncorrelatedToolState;
         const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
-          tool: currentTool,
-          toolCallId: currentToolCallId || undefined,
-          args: currentToolArgs,
-          isError: currentToolIsError,
-          resultContent: currentToolResultContent,
-          resultRaw: currentToolResultRaw,
+          tool: toolState?.tool,
+          toolCallId,
+          args: toolState?.args,
+          isError: toolState?.isError,
+          resultContent: toolState?.resultContent,
+          resultRaw: toolState?.resultRaw,
           charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount
         });
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
+          if (eventType === "tool_execution_end" && toolCallId) {
+            activeToolCalls.delete(toolCallId);
+          }
         } else if (eventType === "text" && !textLogged) {
           textLogged = true;
           appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
@@ -22957,12 +23105,18 @@ class Supervisor {
         closeFn = cFn;
         setWaitingStatus();
       }, (tool, args, toolCallId) => {
-        currentTool = tool;
-        currentToolArgs = args;
-        currentToolCallId = toolCallId ?? "";
-        currentToolIsError = false;
-        currentToolResultContent = undefined;
-        currentToolResultRaw = undefined;
+        const toolState = {
+          tool,
+          args,
+          isError: false,
+          resultContent: undefined,
+          resultRaw: undefined
+        };
+        if (toolCallId) {
+          activeToolCalls.set(toolCallId, toolState);
+        } else {
+          latestUncorrelatedToolState = toolState;
+        }
         toolStartMs = Date.now();
         toolDurationWarnEmitted = false;
         toolCallNames.push(tool);
@@ -22971,36 +23125,36 @@ class Supervisor {
           tool_call_names: toolCallNames
         });
         setStatus({ current_tool: tool });
-        if (toolCallId) {
-          activeToolCalls.set(toolCallId, { tool, args });
-        }
       }, (tool, isError, toolCallId, resultContent, resultRaw) => {
-        if (toolCallId && activeToolCalls.has(toolCallId)) {
-          const entry = activeToolCalls.get(toolCallId);
-          currentTool = entry.tool;
-          currentToolArgs = entry.args;
-          currentToolCallId = toolCallId;
-          activeToolCalls.delete(toolCallId);
+        const resolvedToolState = toolCallId ? activeToolCalls.get(toolCallId) ?? { tool } : latestUncorrelatedToolState ?? { tool };
+        const finalizedToolState = {
+          ...resolvedToolState,
+          tool: resolvedToolState.tool ?? tool,
+          isError,
+          resultContent,
+          resultRaw
+        };
+        if (toolCallId) {
+          activeToolCalls.set(toolCallId, finalizedToolState);
         } else {
-          currentTool = tool;
+          latestUncorrelatedToolState = finalizedToolState;
         }
-        currentToolIsError = isError;
-        currentToolResultContent = resultContent;
-        currentToolResultRaw = resultRaw;
         toolStartMs = undefined;
         toolDurationWarnEmitted = false;
-        if (tool === "edit" || tool === "write") {
+        const resolvedToolName = finalizedToolState.tool;
+        const resolvedToolArgs = finalizedToolState.args;
+        if (resolvedToolName === "edit" || resolvedToolName === "write") {
           const path = resultRaw?.path;
           if (typeof path === "string" && path.trim().length > 0) {
             gitnexusAccumulator.files_touched.add(path);
           }
         }
-        if (tool.startsWith("gitnexus_")) {
+        if (resolvedToolName.startsWith("gitnexus_")) {
           gitnexusAccumulator.tool_invocations += 1;
-          for (const file of extractGitnexusFiles(tool, resultRaw)) {
+          for (const file of extractGitnexusFiles(resolvedToolName, resultRaw)) {
             gitnexusAccumulator.files_touched.add(file);
           }
-          for (const symbol of extractGitnexusSymbols(resultRaw, currentToolArgs)) {
+          for (const symbol of extractGitnexusSymbols(resultRaw, resolvedToolArgs)) {
             gitnexusAccumulator.symbols_analyzed.add(symbol);
           }
           const risk = extractGitnexusRisk(resultRaw);
@@ -23073,7 +23227,7 @@ class Supervisor {
         highest_risk: gitnexusAccumulator.highest_risk,
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
-      const runCompleteEvent = createRunCompleteEvent("COMPLETE", elapsed, {
+      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("COMPLETE", elapsed, {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
@@ -23084,8 +23238,7 @@ class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      });
-      appendTimelineEventFileOnly(runCompleteEvent);
+      }));
       try {
         this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
       } catch (error2) {
@@ -23134,7 +23287,7 @@ class Supervisor {
         highest_risk: gitnexusAccumulator.highest_risk,
         tool_invocations: gitnexusAccumulator.tool_invocations
       } : undefined;
-      const runCompleteEvent = createRunCompleteEvent("ERROR", elapsed, {
+      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("ERROR", elapsed, {
         error: errorMsg,
         token_usage: runMetrics.token_usage,
         finish_reason: runMetrics.finish_reason,
@@ -23142,8 +23295,7 @@ class Supervisor {
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
         ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      });
-      appendTimelineEventFileOnly(runCompleteEvent);
+      }));
       try {
         this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
       } catch (error2) {
@@ -23575,6 +23727,7 @@ async function parseArgs6(argv) {
   let outputMode = "human";
   let contextDepth = 1;
   let worktree = false;
+  let noWorktree = false;
   let reuseJobId;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
@@ -23628,6 +23781,10 @@ async function parseArgs6(argv) {
       worktree = true;
       continue;
     }
+    if (token === "--no-worktree") {
+      noWorktree = true;
+      continue;
+    }
     if (token === "--job" && argv[i + 1]) {
       reuseJobId = argv[++i];
       continue;
@@ -23673,7 +23830,8 @@ async function parseArgs6(argv) {
     contextDepth,
     outputMode,
     worktree,
-    reuseJobId
+    reuseJobId,
+    noWorktree
   };
 }
 function resolveWorkingDirectory(args, jobsDir) {
@@ -23860,6 +24018,17 @@ async function run11() {
 `);
     process.exit(1);
   });
+  const perm = specialist.specialist.execution.permission_required ?? "READ_ONLY";
+  const editCapable = perm === "MEDIUM" || perm === "HIGH";
+  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+    process.stderr.write(`Error: specialist '${args.name}' has permission_required=${perm} and can edit files.
+` + `Edit-capable specialists must run in isolation. Use one of:
+` + `  --worktree      provision an isolated worktree (recommended)
+` + `  --job <id>      reuse an existing job's worktree
+` + `  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+`);
+    process.exit(1);
+  }
   const runner = new SpecialistRunner({
     loader,
     hooks,
@@ -23998,6 +24167,16 @@ class JobControl {
     this.writeFifoMessage(jobId, { type: "steer", message });
   }
   async stopJob(jobId) {
+    const status = this.readStatus(jobId);
+    if (!status) {
+      throw new Error(`No job found: ${jobId}`);
+    }
+    if (TERMINAL_STATUSES.has(status.status)) {
+      return;
+    }
+    if (!status.fifo_path) {
+      return;
+    }
     this.writeFifoMessage(jobId, { type: "close" });
   }
   readStatus(jobId) {
@@ -24067,10 +24246,58 @@ __export(exports_node_supervisor, {
 });
 import { createHash as createHash2 } from "node:crypto";
 import { spawnSync as spawnSync11 } from "node:child_process";
-function hashOutput(output2) {
+function hashOutput(output2, salt) {
   if (!output2)
     return null;
-  return createHash2("sha256").update(output2).digest("hex");
+  const value = salt ? `${salt}:${output2}` : output2;
+  return createHash2("sha256").update(value).digest("hex");
+}
+function extractFirstJsonObject(raw) {
+  const start = raw.indexOf("{");
+  if (start < 0)
+    return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start;i < raw.length; i += 1) {
+    const char = raw[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{")
+      depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function normalizeCoordinatorJsonPayload(output2) {
+  const trimmed = output2.trim();
+  const noFence = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const extracted = extractFirstJsonObject(noFence) ?? noFence;
+  return {
+    normalized: extracted,
+    excerpt: trimmed.slice(0, 500)
+  };
 }
 function sleep2(ms) {
   return new Promise((resolve5) => setTimeout(resolve5, ms));
@@ -24096,7 +24323,18 @@ class NodeSupervisor {
   memberControllers = new Map;
   coordinatorController = null;
   queuedActionKeys = new Set;
+  actionLifecycle = new Map;
+  completedActionIds = new Set;
+  memberPendingAction = new Map;
+  actionById = new Map;
+  nextActionSequence = 0;
+  isDrainingDispatchQueue = false;
   resumePending = false;
+  recoveredCoordinatorOutputHash = null;
+  pollSequence = 0;
+  lastActivityAtMs = Date.now();
+  coordinatorResumesInFlight = 0;
+  degradedResumeCount = 0;
   constructor(opts) {
     this.opts = opts;
     this.members = new Map(opts.members.map((member) => [
@@ -24114,10 +24352,141 @@ class NodeSupervisor {
       }
     ]));
   }
+  restoreActionFromEvent(eventJson) {
+    try {
+      const payload = JSON.parse(eventJson);
+      const nestedAction = payload.action;
+      if (nestedAction && typeof nestedAction === "object" && !Array.isArray(nestedAction)) {
+        const action = nestedAction;
+        if (!action.memberId || !action.type)
+          return null;
+        const actionId2 = typeof action.actionId === "string" ? action.actionId : typeof payload.action_id === "string" ? payload.action_id : null;
+        if (!actionId2)
+          return null;
+        const targetGeneration2 = typeof action.targetGeneration === "number" ? action.targetGeneration : typeof payload.target_generation === "number" ? payload.target_generation : 0;
+        const dependsOnActionId2 = typeof action.dependsOnActionId === "string" ? action.dependsOnActionId : typeof payload.depends_on_action_id === "string" ? payload.depends_on_action_id : undefined;
+        return {
+          actionId: actionId2,
+          targetGeneration: targetGeneration2,
+          dependsOnActionId: dependsOnActionId2,
+          action: {
+            type: action.type,
+            memberId: action.memberId,
+            task: typeof action.task === "string" ? action.task : undefined,
+            message: typeof action.message === "string" ? action.message : undefined,
+            actionId: actionId2,
+            targetGeneration: targetGeneration2,
+            dependsOnActionId: dependsOnActionId2
+          }
+        };
+      }
+      const actionId = typeof payload.action_id === "string" ? payload.action_id : null;
+      const memberId = typeof payload.member_id === "string" ? payload.member_id : null;
+      const actionType = payload.action_type;
+      if (!actionId || !memberId || actionType !== "resume" && actionType !== "steer" && actionType !== "stop")
+        return null;
+      const targetGeneration = typeof payload.target_generation === "number" ? payload.target_generation : 0;
+      const dependsOnActionId = typeof payload.depends_on_action_id === "string" ? payload.depends_on_action_id : undefined;
+      return {
+        actionId,
+        targetGeneration,
+        dependsOnActionId,
+        action: {
+          type: actionType,
+          memberId,
+          task: typeof payload.task === "string" ? payload.task : undefined,
+          message: typeof payload.message === "string" ? payload.message : undefined,
+          actionId,
+          targetGeneration,
+          dependsOnActionId
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+  restoreCoordinatorOutputHashFromEvent(eventJson) {
+    try {
+      const payload = JSON.parse(eventJson);
+      return payload.output_hash ?? null;
+    } catch {
+      return null;
+    }
+  }
+  restoreResumePendingFromEvent(eventJson) {
+    try {
+      const payload = JSON.parse(eventJson);
+      return typeof payload.resume_pending === "boolean" ? payload.resume_pending : null;
+    } catch {
+      return null;
+    }
+  }
   async bootstrap() {
     try {
       this.opts.sqliteClient.bootstrapNode(this.opts.nodeId, this.opts.nodeName, this.opts.memoryNamespace);
     } catch {}
+    const nodeRun = this.opts.sqliteClient.readNodeRun(this.opts.nodeId);
+    const recovering = Boolean(nodeRun && nodeRun.status !== "created");
+    if (recovering) {
+      this.status = nodeRun?.status ?? this.status;
+      this.coordinatorJobId = nodeRun?.coordinator_job_id ?? null;
+      const persistedMembers = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
+      for (const row of persistedMembers) {
+        const member = this.members.get(row.member_id);
+        if (!member)
+          continue;
+        member.jobId = row.job_id ?? null;
+        member.status = row.status;
+        member.enabled = row.enabled ?? true;
+        member.generation = row.generation ?? member.generation;
+      }
+      const lifecycleByActionId = new Map;
+      const events = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId);
+      for (const event of events) {
+        if (event.type === "coordinator_output_received") {
+          this.recoveredCoordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(event.event_json);
+          continue;
+        }
+        if (event.type === "coordinator_resume_state") {
+          const restoredResumePending = this.restoreResumePendingFromEvent(event.event_json);
+          if (restoredResumePending !== null) {
+            this.resumePending = restoredResumePending;
+          }
+          continue;
+        }
+        if (!event.type.startsWith("action_"))
+          continue;
+        const envelope = this.restoreActionFromEvent(event.event_json);
+        if (!envelope)
+          continue;
+        lifecycleByActionId.set(envelope.actionId, envelope);
+        this.actionById.set(envelope.actionId, envelope);
+        if (event.type === "action_completed") {
+          this.completedActionIds.add(envelope.actionId);
+          this.memberPendingAction.delete(envelope.action.memberId);
+        } else if (event.type === "action_written") {
+          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+        }
+        this.actionLifecycle.set(envelope.actionId, event.type.replace("action_", ""));
+      }
+      const terminalStates = new Set(["completed", "failed", "superseded"]);
+      for (const envelope of lifecycleByActionId.values()) {
+        const state = this.actionLifecycle.get(envelope.actionId);
+        if (!state || terminalStates.has(state))
+          continue;
+        this.dispatchQueue.push(envelope);
+        this.queuedActionKeys.add(this.getActionKey(envelope.action));
+      }
+      try {
+        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "node_recovered", {
+          node_id: this.opts.nodeId,
+          status: this.status,
+          coordinator_job_id: this.coordinatorJobId,
+          recovered_action_count: this.dispatchQueue.length,
+          resume_pending: this.resumePending
+        });
+      } catch {}
+    }
     for (const member of this.members.values()) {
       try {
         this.opts.sqliteClient.upsertNodeMember({
@@ -24128,7 +24497,8 @@ class NodeSupervisor {
           model: member.model,
           role: member.role,
           status: member.status,
-          enabled: member.enabled
+          enabled: member.enabled,
+          generation: member.generation
         });
       } catch {}
     }
@@ -24209,6 +24579,8 @@ class NodeSupervisor {
         runOptions,
         jobsDir: this.opts.jobsDir
       });
+      const previousGeneration = member.generation;
+      const previousJobId = member.jobId;
       const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
       member.jobId = jobId;
       member.status = "starting";
@@ -24223,7 +24595,8 @@ class NodeSupervisor {
           model: member.model,
           role: member.role,
           status: member.status,
-          enabled: member.enabled
+          enabled: member.enabled,
+          generation: member.generation
         });
       } catch {}
       try {
@@ -24231,9 +24604,22 @@ class NodeSupervisor {
           node_id: this.opts.nodeId,
           member_id: member.memberId,
           job_id: jobId,
-          specialist: member.specialist
+          specialist: member.specialist,
+          generation: member.generation
         });
       } catch {}
+      if (previousGeneration > 0 || previousJobId) {
+        try {
+          this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "member_respawned", {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            previous_job_id: previousJobId,
+            job_id: member.jobId,
+            previous_generation: previousGeneration,
+            generation: member.generation
+          });
+        } catch {}
+      }
     }
   }
   async spawnCoordinator(initialPrompt) {
@@ -24269,13 +24655,31 @@ class NodeSupervisor {
   }
   async pollMemberStatuses() {
     const changes = [];
+    this.pollSequence += 1;
     const persistedRows = this.opts.sqliteClient.readNodeMembers(this.opts.nodeId);
     for (const row of persistedRows) {
       const member = this.members.get(row.member_id);
       if (!member || !member.enabled)
         continue;
-      if (row.job_id && !member.jobId) {
+      const rowGeneration = row.generation ?? 0;
+      if (rowGeneration < member.generation) {
+        continue;
+      }
+      if (rowGeneration !== member.generation) {
+        member.generation = rowGeneration;
+      }
+      if (row.job_id && row.job_id !== member.jobId) {
+        const previousJobId = member.jobId;
         member.jobId = row.job_id;
+        try {
+          this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "member_job_rebound", {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            previous_job_id: previousJobId,
+            job_id: member.jobId,
+            generation: member.generation
+          });
+        } catch {}
       }
       if (!member.jobId)
         continue;
@@ -24283,7 +24687,7 @@ class NodeSupervisor {
       if (!status)
         continue;
       const output2 = this.memberControllers.get(member.memberId)?.readResult(member.jobId) ?? null;
-      const outputHash = hashOutput(output2);
+      const outputHash = hashOutput(output2, `${member.generation}:${this.pollSequence}`);
       const statusChanged = member.status !== status.status;
       const outputChanged = member.lastSeenOutputHash !== outputHash;
       if (!statusChanged && !outputChanged)
@@ -24296,8 +24700,71 @@ class NodeSupervisor {
       });
       member.status = status.status;
       member.lastSeenOutputHash = outputHash;
+      this.maybeAcknowledgeMemberAction(member.memberId);
     }
     return changes;
+  }
+  recomputeNodeHealth() {
+    for (const member of this.members.values()) {
+      if (!member.enabled)
+        continue;
+      if (member.status === "error")
+        return "degraded";
+      const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+      if (toContextHealth(contextPct) === "CRITICAL")
+        return "degraded";
+    }
+    return "running";
+  }
+  maybeAcknowledgeMemberAction(memberId) {
+    const pendingActionId = this.memberPendingAction.get(memberId);
+    if (!pendingActionId)
+      return;
+    const lifecycle = this.actionLifecycle.get(pendingActionId);
+    const envelope = this.actionById.get(pendingActionId);
+    if (lifecycle === "written" && envelope) {
+      this.appendActionLifecycleEvent(envelope, "observed");
+      this.appendActionLifecycleEvent(envelope, "completed");
+      this.completedActionIds.add(pendingActionId);
+      this.memberPendingAction.delete(memberId);
+    }
+  }
+  buildStateDigest(memoryEntries) {
+    let completed = 0;
+    let failed = 0;
+    let superseded = 0;
+    for (const state of this.actionLifecycle.values()) {
+      if (state === "completed")
+        completed += 1;
+      if (state === "failed")
+        failed += 1;
+      if (state === "superseded")
+        superseded += 1;
+    }
+    return {
+      node_status: this.status,
+      poll_sequence: this.pollSequence,
+      members_total: this.members.size,
+      members_enabled: [...this.members.values()].filter((member) => member.enabled).length,
+      actions_total: this.actionLifecycle.size,
+      actions_completed: completed,
+      actions_failed: failed,
+      actions_superseded: superseded,
+      memory_entries_total: memoryEntries.length
+    };
+  }
+  buildActionLedgerSummary() {
+    const actionEvents = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId).filter((event) => event.type === "action_completed" || event.type === "action_failed" || event.type === "action_superseded").slice(-MAX_ACTION_LEDGER_ENTRIES);
+    return actionEvents.map((event) => {
+      const envelope = this.restoreActionFromEvent(event.event_json);
+      return {
+        action_id: envelope?.actionId ?? null,
+        member_id: envelope?.action.memberId ?? null,
+        action_type: envelope?.action.type ?? null,
+        lifecycle_state: event.type.replace("action_", ""),
+        observed_at_ms: event.t
+      };
+    });
   }
   buildResumePayload(changes) {
     const memberUpdates = changes.map((change) => {
@@ -24306,6 +24773,7 @@ class NodeSupervisor {
       const contextHealth = toContextHealth(contextPct);
       return {
         memberId: change.memberId,
+        generation: member?.generation ?? 0,
         status: change.newStatus,
         context_pct: contextPct,
         context_health: contextHealth,
@@ -24314,18 +24782,26 @@ class NodeSupervisor {
     });
     const registrySnapshot = this.getMembers().map((member) => ({
       memberId: member.memberId,
+      generation: member.generation,
       status: member.status,
       enabled: member.enabled,
       specialist: member.specialist,
       role: member.role,
       jobId: member.jobId
     }));
-    const memoryPatchSummary = this.opts.sqliteClient.readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined).slice(-MAX_MEMORY_ENTRIES_IN_RESUME).map((entry) => ({
+    const memoryEntries = this.opts.sqliteClient.readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined);
+    const memoryPatchSummary = memoryEntries.slice(-MAX_MEMORY_ENTRIES_IN_RESUME).map((entry) => ({
       entry_id: entry.entry_id ?? null,
       entry_type: entry.entry_type ?? null,
       summary: entry.summary ?? null,
       source_member_id: entry.source_member_id ?? null,
       confidence: entry.confidence ?? null
+    }));
+    const unresolvedDecisions = memoryEntries.filter((entry) => entry.entry_type === "decision").slice(-MAX_MEMORY_ENTRIES_IN_RESUME).map((entry) => ({
+      entry_id: entry.entry_id ?? null,
+      summary: entry.summary ?? null,
+      source_member_id: entry.source_member_id ?? null,
+      created_at_ms: entry.created_at_ms ?? null
     }));
     return [
       "node_resume_payload:",
@@ -24333,45 +24809,139 @@ class NodeSupervisor {
         node_id: this.opts.nodeId,
         member_updates: memberUpdates,
         registry_snapshot: registrySnapshot,
-        memory_patch_summary: memoryPatchSummary
+        memory_patch_summary: memoryPatchSummary,
+        state_digest: this.buildStateDigest(memoryEntries),
+        unresolved_decisions: unresolvedDecisions,
+        action_ledger_summary: this.buildActionLedgerSummary()
       }, null, 2)
     ].join(`
 `);
   }
   getActionKey(action) {
-    return JSON.stringify(action);
+    const stableAction = {
+      ...action,
+      actionId: undefined,
+      targetGeneration: action.targetGeneration ?? undefined,
+      dependsOnActionId: action.dependsOnActionId ?? undefined
+    };
+    return JSON.stringify(stableAction);
+  }
+  nextActionId() {
+    this.nextActionSequence += 1;
+    return `${this.opts.nodeId}:${Date.now()}:${this.nextActionSequence}`;
+  }
+  appendActionLifecycleEvent(envelope, state, extra) {
+    this.actionLifecycle.set(envelope.actionId, state);
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), `action_${state}`, {
+        node_id: this.opts.nodeId,
+        action_id: envelope.actionId,
+        member_id: envelope.action.memberId,
+        action_type: envelope.action.type,
+        target_generation: envelope.targetGeneration,
+        depends_on_action_id: envelope.dependsOnActionId ?? null,
+        ...extra
+      });
+    } catch {}
   }
   async dispatchAction(action) {
-    const actionKey = this.getActionKey(action);
+    if (this.status === "degraded" && action.type === "resume") {
+      return null;
+    }
+    const queuedForMember = this.dispatchQueue.filter((queued) => queued.action.memberId === action.memberId).length;
+    if (queuedForMember >= MAX_QUEUED_ACTIONS_PER_MEMBER) {
+      return null;
+    }
+    const envelope = {
+      action: {
+        ...action
+      },
+      actionId: action.actionId ?? this.nextActionId(),
+      targetGeneration: action.targetGeneration ?? (this.members.get(action.memberId)?.generation ?? 0),
+      dependsOnActionId: action.dependsOnActionId
+    };
+    envelope.action.actionId = envelope.actionId;
+    envelope.action.targetGeneration = envelope.targetGeneration;
+    const actionKey = this.getActionKey(envelope.action);
     if (this.queuedActionKeys.has(actionKey))
-      return;
-    this.dispatchQueue.push(action);
+      return null;
+    this.dispatchQueue.push(envelope);
+    this.actionById.set(envelope.actionId, envelope);
     this.queuedActionKeys.add(actionKey);
-    while (this.dispatchQueue.length > 0) {
-      const nextAction = this.dispatchQueue.shift();
-      if (!nextAction)
-        continue;
-      const nextActionKey = this.getActionKey(nextAction);
-      try {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "action_dispatched", {
-          node_id: this.opts.nodeId,
-          action: nextAction
-        });
-      } catch {}
-      const controller = this.memberControllers.get(nextAction.memberId);
-      const member = this.members.get(nextAction.memberId);
-      if (!controller || !member?.jobId) {
-        this.queuedActionKeys.delete(nextActionKey);
-        continue;
+    this.appendActionLifecycleEvent(envelope, "queued", { action: envelope.action });
+    try {
+      await this.drainDispatchQueue();
+      return envelope.actionId;
+    } finally {
+      const lifecycle = this.actionLifecycle.get(envelope.actionId);
+      if (lifecycle === "failed" || lifecycle === "completed" || lifecycle === "superseded") {
+        this.queuedActionKeys.delete(actionKey);
       }
-      if (nextAction.type === "resume") {
-        await controller.resumeJob(member.jobId, nextAction.task ?? "Continue.");
-      } else if (nextAction.type === "steer") {
-        await controller.steerJob(member.jobId, nextAction.message ?? "");
-      } else {
-        await controller.stopJob(member.jobId);
+    }
+  }
+  async drainDispatchQueue() {
+    if (this.isDrainingDispatchQueue)
+      return;
+    this.isDrainingDispatchQueue = true;
+    try {
+      while (this.dispatchQueue.length > 0) {
+        const nextEnvelope = this.dispatchQueue.shift();
+        if (!nextEnvelope)
+          continue;
+        const nextAction = nextEnvelope.action;
+        const nextActionKey = this.getActionKey(nextAction);
+        const controller = this.memberControllers.get(nextAction.memberId);
+        const member = this.members.get(nextAction.memberId);
+        if (!controller || !member?.jobId) {
+          this.appendActionLifecycleEvent(nextEnvelope, "failed", { reason: "missing_controller_or_job" });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+        if (member.generation !== nextEnvelope.targetGeneration) {
+          this.appendActionLifecycleEvent(nextEnvelope, "superseded", {
+            reason: "member_generation_mismatch",
+            observed_generation: member.generation
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+        if (nextEnvelope.dependsOnActionId && !this.completedActionIds.has(nextEnvelope.dependsOnActionId)) {
+          this.appendActionLifecycleEvent(nextEnvelope, "failed", {
+            reason: "dependency_not_completed",
+            dependency_action_id: nextEnvelope.dependsOnActionId
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+        const pendingActionId = this.memberPendingAction.get(nextAction.memberId);
+        if (pendingActionId && !this.completedActionIds.has(pendingActionId)) {
+          this.appendActionLifecycleEvent(nextEnvelope, "failed", {
+            reason: "member_has_pending_action",
+            pending_action_id: pendingActionId
+          });
+          this.queuedActionKeys.delete(nextActionKey);
+          continue;
+        }
+        try {
+          if (nextAction.type === "resume") {
+            await controller.resumeJob(member.jobId, nextAction.task ?? "Continue.");
+          } else if (nextAction.type === "steer") {
+            await controller.steerJob(member.jobId, nextAction.message ?? "");
+          } else {
+            await controller.stopJob(member.jobId);
+          }
+          this.memberPendingAction.set(nextAction.memberId, nextEnvelope.actionId);
+          this.appendActionLifecycleEvent(nextEnvelope, "written");
+        } catch (error2) {
+          this.appendActionLifecycleEvent(nextEnvelope, "failed", {
+            reason: error2 instanceof Error ? error2.message : String(error2)
+          });
+        } finally {
+          this.queuedActionKeys.delete(nextActionKey);
+        }
       }
-      this.queuedActionKeys.delete(nextActionKey);
+    } finally {
+      this.isDrainingDispatchQueue = false;
     }
   }
   appendNodeEvent(type, event) {
@@ -24412,6 +24982,18 @@ class NodeSupervisor {
       }
       if (!this.memberControllers.has(action.memberId)) {
         return `Member '${action.memberId}' has no active controller.`;
+      }
+      if (action.type === "resume" && this.status === "degraded") {
+        return `Node is degraded; resume actions are paused for member '${action.memberId}'.`;
+      }
+      if (action.type === "resume" && member.status !== "waiting") {
+        return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
+      }
+      if (action.type === "steer" && member.status !== "running" && member.status !== "waiting") {
+        return `Member '${action.memberId}' must be running/waiting before steer (current=${member.status}).`;
+      }
+      if (action.type === "stop" && TERMINAL_MEMBER_STATUSES.has(member.status)) {
+        return `Member '${action.memberId}' is already terminal (current=${member.status}).`;
       }
     }
     return null;
@@ -24484,16 +25066,18 @@ class NodeSupervisor {
         currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
         continue;
       }
+      const normalizedPayload = normalizeCoordinatorJsonPayload(currentOutput);
       let parsedJson;
       try {
-        parsedJson = JSON.parse(currentOutput);
+        parsedJson = JSON.parse(normalizedPayload.normalized);
       } catch (error2) {
         const details = error2 instanceof Error ? error2.message : "Unable to parse coordinator output as JSON.";
         this.appendNodeEvent("coordinator_output_invalid", {
           node_id: this.opts.nodeId,
           attempt,
           failure_class: "invalid_json",
-          details
+          details,
+          payload_excerpt: normalizedPayload.excerpt
         });
         if (attempt === 3) {
           this.transition("error", "coordinator_output_invalid_after_3_attempts");
@@ -24518,7 +25102,8 @@ class NodeSupervisor {
           node_id: this.opts.nodeId,
           attempt,
           failure_class: "schema_validation_failure",
-          details
+          details,
+          payload_excerpt: normalizedPayload.excerpt
         });
         if (attempt === 3) {
           this.transition("error", "coordinator_output_invalid_after_3_attempts");
@@ -24543,7 +25128,8 @@ class NodeSupervisor {
           node_id: this.opts.nodeId,
           attempt,
           failure_class: "runtime_state_mismatch",
-          details: runtimeMismatch
+          details: runtimeMismatch,
+          payload_excerpt: normalizedPayload.excerpt
         });
         if (attempt === 3) {
           this.transition("error", "coordinator_output_invalid_after_3_attempts");
@@ -24565,11 +25151,19 @@ class NodeSupervisor {
         node_id: this.opts.nodeId,
         summary: coordinatorOutput.summary,
         action_count: coordinatorOutput.actions.length,
-        memory_patch_count: coordinatorOutput.memory_patch.length
+        memory_patch_count: coordinatorOutput.memory_patch.length,
+        output_hash: hashOutput(currentOutput)
       });
       this.applyMemoryPatch(coordinatorOutput.memory_patch);
+      let predecessorActionId = null;
       for (const action of coordinatorOutput.actions) {
-        await this.dispatchAction(action);
+        const actionId = await this.dispatchAction({
+          ...action,
+          dependsOnActionId: action.dependsOnActionId ?? predecessorActionId ?? undefined
+        });
+        if (actionId) {
+          predecessorActionId = actionId;
+        }
       }
       return;
     }
@@ -24610,14 +25204,97 @@ class NodeSupervisor {
       throw new Error(errorMessage);
     }
   }
+  getNextPollIntervalMs(changesCount) {
+    if (changesCount > 0 || this.dispatchQueue.length > 0) {
+      this.lastActivityAtMs = Date.now();
+    }
+    if (this.status === "degraded") {
+      return Math.max(MIN_POLL_INTERVAL_MS, Math.floor(BASE_POLL_INTERVAL_MS / 2));
+    }
+    const idleForMs = Date.now() - this.lastActivityAtMs;
+    if (idleForMs > 30000) {
+      return MAX_POLL_INTERVAL_MS;
+    }
+    if (idleForMs > 1e4) {
+      return Math.min(MAX_POLL_INTERVAL_MS, BASE_POLL_INTERVAL_MS * 2);
+    }
+    return BASE_POLL_INTERVAL_MS;
+  }
+  async cleanupJobs() {
+    const cleanupErrors = [];
+    if (this.coordinatorJobId && this.coordinatorController) {
+      try {
+        const status = this.coordinatorController.readStatus(this.coordinatorJobId)?.status;
+        if (status && !TERMINAL_JOB_STATUSES.has(status)) {
+          await this.coordinatorController.stopJob(this.coordinatorJobId);
+          await this.coordinatorController.waitForTerminal(this.coordinatorJobId, 5000);
+        }
+      } catch (error2) {
+        cleanupErrors.push(`coordinator: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      }
+    }
+    for (const member of this.members.values()) {
+      if (!member.jobId)
+        continue;
+      const controller = this.memberControllers.get(member.memberId);
+      if (!controller)
+        continue;
+      try {
+        const status = controller.readStatus(member.jobId)?.status ?? member.status;
+        if (TERMINAL_JOB_STATUSES.has(status))
+          continue;
+        await controller.stopJob(member.jobId);
+        await controller.waitForTerminal(member.jobId, 3000);
+      } catch (error2) {
+        cleanupErrors.push(`member:${member.memberId}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      }
+    }
+    this.memberControllers.clear();
+    this.coordinatorController = null;
+    this.dispatchQueue = [];
+    this.queuedActionKeys.clear();
+    this.resumePending = false;
+    this.recoveredCoordinatorOutputHash = null;
+    return cleanupErrors;
+  }
   async run(initialPrompt) {
     await this.bootstrap();
-    this.transition("starting", "node_supervisor_run_started");
+    const recovering = this.coordinatorJobId !== null || [...this.members.values()].some((member) => member.jobId !== null);
+    if (!recovering) {
+      this.transition("starting", "node_supervisor_run_started");
+    }
     try {
-      await this.spawnMembers();
-      await this.spawnCoordinator(initialPrompt);
-      this.transition("running", "members_and_coordinator_spawned");
-      let coordinatorOutputHash = null;
+      if (!recovering) {
+        await this.spawnMembers();
+        await this.spawnCoordinator(initialPrompt);
+        this.transition("running", "members_and_coordinator_spawned");
+      } else {
+        const coordinatorPrompt = this.createBaseRunOptions(this.opts.coordinatorSpecialist, initialPrompt);
+        this.coordinatorController = new JobControl({
+          runner: this.opts.runner,
+          runOptions: coordinatorPrompt,
+          jobsDir: this.opts.jobsDir
+        });
+        for (const member of this.members.values()) {
+          const memberPrompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+          this.memberControllers.set(member.memberId, new JobControl({
+            runner: this.opts.runner,
+            runOptions: this.createBaseRunOptions(member.specialist, memberPrompt),
+            jobsDir: this.opts.jobsDir
+          }));
+        }
+        await this.drainDispatchQueue();
+        if (this.status === "created" || this.status === "starting") {
+          this.transition("running", "node_supervisor_recovered");
+        }
+      }
+      let coordinatorOutputHash = this.recoveredCoordinatorOutputHash;
+      if (!coordinatorOutputHash) {
+        const lastCoordinatorOutput = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId, { type: "coordinator_output_received", limit: 1 }).at(0);
+        if (lastCoordinatorOutput) {
+          coordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(lastCoordinatorOutput.event_json);
+        }
+      }
       while (!TERMINAL_NODE_STATUSES.has(this.status)) {
         const changes = await this.pollMemberStatuses();
         for (const change of changes) {
@@ -24646,12 +25323,17 @@ class NodeSupervisor {
             });
           } catch {}
           const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+          if (change.newStatus === "error") {
+            member.enabled = false;
+          }
           if (change.newStatus === "error" || toContextHealth(contextPct) === "CRITICAL") {
             if (this.status === "running" || this.status === "waiting") {
               this.transition("degraded", "member_error_or_critical_context");
+              this.degradedResumeCount = 0;
             }
-          } else if (this.status === "degraded") {
-            this.transition("running", "member_recovered_or_context_normalized");
+          } else if (this.status === "degraded" && this.recomputeNodeHealth() === "running") {
+            this.transition("running", "all_members_healthy");
+            this.degradedResumeCount = 0;
           }
         }
         const coordinatorStatus = this.coordinatorJobId ? this.opts.sqliteClient.readStatus(this.coordinatorJobId) : null;
@@ -24665,16 +25347,39 @@ class NodeSupervisor {
           coordinatorOutputHash = nextCoordinatorOutputHash;
           await this.handleCoordinatorOutput(coordinatorOutput);
         }
-        if (changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && this.coordinatorJobId && this.coordinatorController) {
+        const degradedResumeLimitReached = this.status === "degraded" && this.degradedResumeCount >= MAX_DEGRADED_COORDINATOR_RESUMES;
+        const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
+        if (changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && !degradedResumeLimitReached && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
-          const payload = this.buildResumePayload(changes);
-          await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
-          this.resumePending = false;
+          this.coordinatorResumesInFlight += 1;
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resume_state", {
+              node_id: this.opts.nodeId,
+              resume_pending: true
+            });
+          } catch {}
+          try {
+            const payload = this.buildResumePayload(changes);
+            await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
+            if (this.status === "degraded") {
+              this.degradedResumeCount += 1;
+            }
+          } finally {
+            this.resumePending = false;
+            this.coordinatorResumesInFlight = Math.max(0, this.coordinatorResumesInFlight - 1);
+          }
+          try {
+            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resume_state", {
+              node_id: this.opts.nodeId,
+              resume_pending: false
+            });
+          } catch {}
           try {
             this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resumed", {
               node_id: this.opts.nodeId,
               coordinator_job_id: this.coordinatorJobId,
-              member_update_count: changes.length
+              member_update_count: changes.length,
+              degraded_resume_count: this.degradedResumeCount
             });
           } catch {}
           if (this.status === "running") {
@@ -24684,13 +25389,35 @@ class NodeSupervisor {
         const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
         if (allTerminal) {
           this.transition("done", "all_members_terminal");
-          this.appendCompletionSummaryToBead();
+          try {
+            this.appendCompletionSummaryToBead();
+          } catch {
+            console.warn("failed to append completion summary to bead; node already done", {
+              nodeId: this.opts.nodeId
+            });
+          }
           break;
         }
-        await sleep2(POLL_INTERVAL_MS);
+        await sleep2(this.getNextPollIntervalMs(changes.length));
       }
     } catch (error2) {
-      this.transition("error", error2 instanceof Error ? error2.message : String(error2));
+      if (!TERMINAL_NODE_STATUSES.has(this.status)) {
+        this.transition("error", error2 instanceof Error ? error2.message : String(error2));
+      } else {
+        console.warn("non-fatal error after terminal node state", {
+          nodeId: this.opts.nodeId,
+          status: this.status,
+          error: error2 instanceof Error ? error2.message : String(error2)
+        });
+      }
+    } finally {
+      const cleanupErrors = await this.cleanupJobs();
+      if (cleanupErrors.length > 0) {
+        console.warn("node supervisor cleanup completed with errors", {
+          nodeId: this.opts.nodeId,
+          errors: cleanupErrors
+        });
+      }
     }
     return {
       nodeId: this.opts.nodeId,
@@ -24706,7 +25433,7 @@ class NodeSupervisor {
     return [...this.members.values()].map((member) => ({ ...member }));
   }
 }
-var POLL_INTERVAL_MS = 5000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
+var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, MAX_DEGRADED_COORDINATOR_RESUMES = 1, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
 var init_node_supervisor = __esm(() => {
   init_zod();
   init_job_control();
@@ -24722,6 +25449,7 @@ var init_node_supervisor = __esm(() => {
   };
   TERMINAL_NODE_STATUSES = new Set(["error", "done", "stopped"]);
   TERMINAL_MEMBER_STATUSES = new Set(["done", "error", "stopped"]);
+  TERMINAL_JOB_STATUSES = new Set(["done", "error", "stopped"]);
   coordinatorActionSchema = discriminatedUnionType("type", [
     objectType({
       type: literalType("resume"),
@@ -25105,14 +25833,39 @@ async function handleNodeStatus(args) {
     sqliteClient.close();
   }
 }
-function buildFindingNotes(nodeId, findingId, summary) {
-  return [
+function buildFindingNotes(nodeId, findingId, finding) {
+  const lines = [
     "Node finding promoted",
     `node_id: ${nodeId}`,
     `finding_id: ${findingId}`,
+    `memory_entry_id: ${finding.entry_id ?? findingId}`,
+    `source_member_id: ${finding.source_member_id ?? "unknown"}`,
+    `confidence: ${finding.confidence ?? "unknown"}`,
     "",
-    summary
-  ].join(`
+    "## Summary",
+    finding.summary?.trim() || "(no summary)"
+  ];
+  if (finding.provenance_json?.trim()) {
+    lines.push("", "## Provenance", "```json");
+    try {
+      const parsed = JSON.parse(finding.provenance_json);
+      lines.push(JSON.stringify(parsed, null, 2));
+    } catch {
+      lines.push(finding.provenance_json);
+    }
+    lines.push("```");
+  }
+  lines.push("", "<!-- node_finding_provenance:start -->", JSON.stringify({
+    node_id: nodeId,
+    finding_id: findingId,
+    memory_entry_id: finding.entry_id ?? findingId,
+    source_member_id: finding.source_member_id ?? null,
+    confidence: finding.confidence ?? null,
+    provenance_json: finding.provenance_json ?? null,
+    created_at_ms: finding.created_at_ms ?? null,
+    updated_at_ms: finding.updated_at_ms ?? null
+  }), "<!-- node_finding_provenance:end -->");
+  return lines.join(`
 `);
 }
 function promoteFindingToBead(beadId, notes) {
@@ -25145,7 +25898,7 @@ async function handleNodePromote(args) {
     if (!findingSummary) {
       throw new Error(`Finding ${findingId} has no summary to promote`);
     }
-    const notes = buildFindingNotes(nodeId, findingId, findingSummary);
+    const notes = buildFindingNotes(nodeId, findingId, finding);
     promoteFindingToBead(beadId, notes);
     if (args.jsonMode) {
       console.log(JSON.stringify({
@@ -25873,7 +26626,15 @@ function mergeTimelineEvents(batches) {
       });
     }
   }
-  merged.sort((a, b) => compareTimelineEvents(a.event, b.event));
+  merged.sort((a, b) => {
+    const timeDiff = compareTimelineEvents(a.event, b.event);
+    if (timeDiff !== 0)
+      return timeDiff;
+    const jobDiff = a.jobId.localeCompare(b.jobId);
+    if (jobDiff !== 0)
+      return jobDiff;
+    return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+  });
   return merged;
 }
 function filterTimelineEvents(merged, filter) {
@@ -26025,6 +26786,16 @@ function parseSince(value) {
   }
   return;
 }
+function parseCursor(value, defaultJobId) {
+  const tupleMatch = value.match(/^([^:]+):(\d+)$/);
+  if (tupleMatch) {
+    return { jobId: tupleMatch[1], seq: Number(tupleMatch[2]) };
+  }
+  const seq = Number(value);
+  if (!Number.isFinite(seq) || seq < 0 || !defaultJobId)
+    return;
+  return { jobId: defaultJobId, seq };
+}
 function readFileFresh(filePath) {
   let fd = null;
   try {
@@ -26094,7 +26865,7 @@ function parseArgs8(argv) {
   let jobId;
   let specialist;
   let since;
-  let from = 0;
+  let fromRaw;
   let limit = 100;
   let follow = false;
   let forever = false;
@@ -26113,8 +26884,7 @@ function parseArgs8(argv) {
       continue;
     }
     if (argv[i] === "--from" && argv[i + 1]) {
-      const parsedFrom = parseInt(argv[++i], 10);
-      from = Number.isFinite(parsedFrom) && parsedFrom >= 0 ? parsedFrom : 0;
+      fromRaw = argv[++i];
       continue;
     }
     if (argv[i] === "--limit" && argv[i + 1]) {
@@ -26136,7 +26906,16 @@ function parseArgs8(argv) {
     if (!jobId && !argv[i].startsWith("--"))
       jobId = argv[i];
   }
-  return { jobId, specialist, since, from, limit, follow, forever, json };
+  return {
+    jobId,
+    specialist,
+    since,
+    from: fromRaw ? parseCursor(fromRaw, jobId) : undefined,
+    limit,
+    follow,
+    forever,
+    json
+  };
 }
 function printSnapshot(sqliteClient, merged, options, jobsDir) {
   if (merged.length === 0) {
@@ -26183,22 +26962,33 @@ function printSnapshot(sqliteClient, merged, options, jobsDir) {
     console.log(formatEventLine(event, { jobId, specialist: specialistDisplay, beadId, colorize }));
   }
 }
+function compareMergedEvents(a, b) {
+  const timeDiff = a.event.t - b.event.t;
+  if (timeDiff !== 0)
+    return timeDiff;
+  const jobDiff = a.jobId.localeCompare(b.jobId);
+  if (jobDiff !== 0)
+    return jobDiff;
+  return (a.event.seq ?? 0) - (b.event.seq ?? 0);
+}
 function isCompletionEvent(event) {
   return isRunCompleteEvent(event);
 }
-function isEventAtOrAfterCursor(event, from) {
-  if (from <= 0)
+function isEventAtOrAfterCursor(jobId, event, from) {
+  if (!from)
     return true;
+  if (jobId !== from.jobId)
+    return false;
   const seq = event.seq;
   if (typeof seq !== "number") {
-    return event.t >= from;
+    return false;
   }
-  return seq >= from;
+  return seq >= from.seq;
 }
 function filterMergedEventsByCursor(merged, from) {
-  if (from <= 0)
+  if (!from)
     return merged;
-  return merged.filter(({ event }) => isEventAtOrAfterCursor(event, from));
+  return merged.filter(({ jobId, event }) => isEventAtOrAfterCursor(jobId, event, from));
 }
 function filterStandaloneMergedEvents(sqliteClient, jobsDir, merged) {
   return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
@@ -26233,7 +27023,7 @@ function readJobEventsFresh(sqliteClient, jobsDir, jobId) {
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
-      sqliteEvents.sort((a, b) => a.t - b.t);
+      sqliteEvents.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
       return sqliteEvents;
     }
   } catch (error2) {
@@ -26252,7 +27042,7 @@ function readJobEventsFresh(sqliteClient, jobsDir, jobId) {
     if (parsed)
       events.push(parsed);
   }
-  events.sort((a, b) => a.t - b.t);
+  events.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
   return events;
 }
 function readFilteredBatchesFresh(sqliteClient, jobsDir, options) {
@@ -26336,7 +27126,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
           lastSeenT.set(batch.jobId, maxT);
         }
         for (const event of batch.events) {
-          if (event.t > lastT && isEventAtOrAfterCursor(event, options.from)) {
+          if (event.t > lastT && isEventAtOrAfterCursor(batch.jobId, event, options.from)) {
             newEvents.push({
               jobId: batch.jobId,
               specialist: batch.specialist,
@@ -26349,7 +27139,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
           completedJobs.add(batch.jobId);
         }
       }
-      newEvents.sort((a, b) => a.event.t - b.event.t);
+      newEvents.sort(compareMergedEvents);
       for (const { jobId, specialist, beadId, event } of newEvents) {
         const meta = getJobMeta(jobId);
         const model = meta.model ?? (event.type === "meta" ? event.model : undefined);
@@ -26396,8 +27186,8 @@ async function run14() {
       console.log(dim8("No jobs directory found."));
       return;
     }
-    if (options.from > 0 && !options.json) {
-      console.log(dim8(`Showing events from seq ${options.from}`));
+    if (options.from && !options.json) {
+      console.log(dim8(`Showing events from cursor ${options.from.jobId}:${options.from.seq}`));
     }
     if (options.follow) {
       await followMerged(sqliteClient, jobsDir, options);
