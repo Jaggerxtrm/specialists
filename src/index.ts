@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              status, result, feed, poll, clean, stop, attach, quickstart, help
+ *              status, ps, result, feed, poll, clean, stop, attach, quickstart, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -420,6 +420,32 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/status.js');
+    return handler();
+  }
+
+  if (sub === 'ps') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists ps [options]',
+        '',
+        'Show jobs as a flat list and worktree tree groups.',
+        '',
+        'Options:',
+        '  --json       Output structured JSON with trees[].children[]',
+        '  --all        Include terminal jobs (done/error)',
+        '  --follow, -f Live refresh',
+        '',
+        'Examples:',
+        '  specialists ps',
+        '  specialists ps --all',
+        '  specialists ps --json',
+        '  specialists ps --follow',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/ps.js');
     return handler();
   }
 
