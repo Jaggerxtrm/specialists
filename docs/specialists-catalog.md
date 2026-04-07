@@ -2,9 +2,9 @@
 title: Specialists Catalog
 scope: specialists-catalog
 category: overview
-version: 1.4.0
+version: 1.5.0
 updated: 2026-04-07
-synced_at: acd30061
+synced_at: 0b4fe461
 description: Current project specialists and what each one is for.
 source_of_truth_for:
   - "config/specialists/*.specialist.json"
@@ -82,7 +82,23 @@ All specialists now have GitNexus skills wired for code intelligence:
 ### specialists-creator v1.2
 - **Permission**: HIGH
 - **Config format**: JSON (`.specialist.json`) — YAML no longer supported
+- **Workflow** (create):
+  1. Model selection protocol — ping primary + fallback before writing anything
+  2. Run `scaffold-specialist.ts` first to materialise all schema fields
+  3. Mutate fields with `sp edit <name> <dot.path> <value>`
+  4. Use `sp edit <name> --preset <preset>` for common model/thinking baselines
+  5. Use `--file` only for multiline `prompt.system` and `prompt.task_template`
+  6. Run `sp view <name>` + schema validation to confirm output
+- **Workflow** (fix): identify Zod error → `sp edit` focused fix → explain why invalid
+- **Pre-scripts**: `pi --list-models` (model injection), `scaffold-specialist.ts` (field materialisation)
 - **Skills**: `specialists-creator`
+
+### executor v1.0
+- **Permission**: HIGH
+- **Mode**: `auto` (scaffold-populated field)
+- **Thinking**: low
+- **Skills**: `gitnexus-impact-analysis`, `clean-code`
+- **Post-script**: `npm run lint` (tail-5 output)
 
 ### xt-merge v1.1
 - **Model**: `anthropic/claude-sonnet-4-6`

@@ -2,9 +2,9 @@
 title: Skills Catalog
 scope: skills
 category: overview
-version: 1.3.0
+version: 1.4.0
 updated: 2026-04-07
-synced_at: acd30061
+synced_at: 0b4fe461
 description: Skills shipped in this repo and what they are for.
 source_of_truth_for:
   - "config/skills/**/*.md"
@@ -75,16 +75,25 @@ Location: `config/skills/specialists-creator/SKILL.md`
 Purpose:
 
 - write valid `.specialist.json` files (YAML format deprecated; `.specialist.yaml` still accepted but prints warnings)
-- mandatory ping-models-first workflow before writing any JSON
+- mandatory ping-models-first workflow before mutating any config
+- scaffold-first creation: `node config/skills/specialists-creator/scripts/scaffold-specialist.ts` fills all schema sections, then `sp edit` for field mutations
+- `sp edit <name> <dot.path> <value>` as primary mutation workflow; `sp edit <name> --preset <name>` for common model/thinking defaults
+- `--file` flag only for multiline prompt fields (`specialist.prompt.system`, `specialist.prompt.task_template`)
+- `sp view <name>` to verify materialized JSON before validating
 - model setup and rebalance across all specialists
 - schema guidance and common validation fixes
 - capability, permission, and beads integration references
 
 Key areas covered:
 
-- **MANDATORY first step**: `pi --list-models` → pick models → `pi --model <x> --print "ping"` on both primary and fallback before writing anything
-- model rebalancing with `specialists models` (view all assignments) and `specialists edit <name> --model <v> --fallback-model <v>`
-- minimal JSON skeleton and validation loop: `specialists validate` / `bun src/specialist/validate.ts`
+- **MANDATORY first step**: `pi --list-models` → pick models → `pi --model <x> --print "ping"` on both primary and fallback before mutating config
+- **Scaffold + `sp edit` workflow** (replaces manual JSON skeleton):
+  1. `node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json`
+  2. `sp edit my-specialist --preset standard` (optional — applies model/thinking defaults)
+  3. `sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6` (dot.path for fields)
+  4. `sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt` (multiline via `--file`)
+  5. `sp view my-specialist` to verify; `specialists validate` to confirm schema
+- model rebalancing with `specialists models` (view all assignments) and `sp edit <name> --model <v> --fallback-model <v>`
 - model tier classification (Heavy / Standard / Light) with provider-diversity rules
 - schema sections: `metadata`, `execution` (incl. `interactive`, `thinking_level`, `stall_timeout_ms`), `prompt` (incl. `output_schema`), `skills`, `capabilities`, `communication`, `validation`, `stall_detection`, `beads_integration`
 - `output_schema` standard patterns by specialist type (executor, explorer, planner)
