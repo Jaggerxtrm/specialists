@@ -12,9 +12,10 @@ describe('command-specific --help', () => {
     vi.restoreAllMocks();
   });
 
-  it('init --help mentions sole onboarding command and sync-defaults', () => {
+  it('init --help mentions symlink prerequisite and sync-defaults', () => {
     const out = captureIndexHelp(['init', '--help']);
-    expect(out).toContain('sole onboarding command');
+    expect(out).toContain('specialists onboarding command');
+    expect(out).toContain('.claude/skills and .pi/skills must already be symlinks');
     expect(out).toContain('--sync-defaults');
     expect(out).toContain('Human-only');
   });
