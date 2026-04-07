@@ -10,6 +10,22 @@ async function importInitModule() {
   return import('../../../src/cli/init.js');
 }
 
+async function setupXtrmStructure(cwd: string) {
+  const { mkdirSync, symlinkSync, existsSync: exists } = await import('node:fs');
+  mkdirSync(join(cwd, '.xtrm', 'skills', 'active', 'claude'), { recursive: true });
+  mkdirSync(join(cwd, '.xtrm', 'skills', 'active', 'pi'), { recursive: true });
+  mkdirSync(join(cwd, '.xtrm', 'skills', 'default'), { recursive: true });
+  mkdirSync(join(cwd, '.xtrm', 'hooks'), { recursive: true });
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  mkdirSync(join(cwd, '.pi'), { recursive: true });
+  if (!exists(join(cwd, '.claude', 'skills'))) {
+    symlinkSync(join(cwd, '.xtrm', 'skills', 'active', 'claude'), join(cwd, '.claude', 'skills'));
+  }
+  if (!exists(join(cwd, '.pi', 'skills'))) {
+    symlinkSync(join(cwd, '.xtrm', 'skills', 'active', 'pi'), join(cwd, '.pi', 'skills'));
+  }
+}
+
 async function runInit(cwd: string, opts: InitOptions = {}) {
   Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
   delete process.env.SPECIALISTS_TMUX_SESSION;
@@ -17,8 +33,9 @@ async function runInit(cwd: string, opts: InitOptions = {}) {
   delete process.env.PI_SESSION_ID;
   delete process.env.PI_RPC_SOCKET;
   vi.spyOn(process, 'cwd').mockReturnValue(cwd);
+  await setupXtrmStructure(cwd);
   const { run } = await importInitModule();
-  await run(opts);
+  await run({ noXtrmCheck: true, ...opts });
 }
 
 describe('init CLI — run()', () => {
