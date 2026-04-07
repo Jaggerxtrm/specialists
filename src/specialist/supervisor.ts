@@ -229,6 +229,106 @@ function startDetachedGitnexusAnalyze(cwd: string): void {
   child.unref();
 }
 
+const STATUS_WATCHDOG_INTERVAL_MS = 5_000;
+
+function startDetachedStatusWatchdog(statusPath: string, pid: number): number | undefined {
+  const watchdogScript = `
+const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
+
+const statusPath = process.env.SPECIALISTS_STATUS_PATH;
+const pidRaw = process.env.SPECIALISTS_STATUS_PID;
+const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
+
+const targetPid = Number(pidRaw);
+const intervalMs = Number(intervalRaw);
+
+if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+  process.exit(1);
+}
+
+const isPidAlive = () => {
+  try {
+    process.kill(targetPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const run = () => {
+  if (!existsSync(statusPath)) {
+    process.exit(0);
+  }
+
+  let status;
+  try {
+    status = JSON.parse(readFileSync(statusPath, 'utf-8'));
+  } catch {
+    process.exit(0);
+  }
+
+  if (!status || typeof status !== 'object') {
+    process.exit(0);
+  }
+
+  if (status.status === 'done' || status.status === 'error') {
+    process.exit(0);
+  }
+
+  if (status.status !== 'running' && status.status !== 'starting') {
+    return;
+  }
+
+  if (isPidAlive()) {
+    return;
+  }
+
+  const now = Date.now();
+  const updated = status.node_id
+    ? {
+        ...status,
+        status: 'waiting',
+        current_event: 'recovery_pending',
+        last_event_at_ms: now,
+        error: undefined,
+      }
+    : {
+        ...status,
+        status: 'error',
+        error: 'Supervisor process exited unexpectedly',
+        last_event_at_ms: now,
+      };
+
+  const tmpPath = statusPath + '.tmp';
+  try {
+    writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
+    renameSync(tmpPath, statusPath);
+  } catch {
+    // Best effort only.
+  }
+
+  process.exit(0);
+};
+
+setInterval(run, intervalMs);
+run();
+`;
+
+  const watchdog = spawn(process.execPath, ['-e', watchdogScript], {
+    detached: true,
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      SPECIALISTS_STATUS_PATH: statusPath,
+      SPECIALISTS_STATUS_PID: String(pid),
+      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS),
+    },
+  });
+
+  watchdog.unref();
+  return watchdog.pid ?? undefined;
+}
+
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
   private readonly resolvedJobsDir: string;
@@ -442,6 +542,7 @@ export class Supervisor {
         : { branch: resolveCurrentBranch() }),
     };
     this.writeStatusFileOnly(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
     // Persist a latest marker so other processes can discover the active job id immediately
     writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
     this.opts.onJobStarted?.({ id });
@@ -1113,6 +1214,9 @@ export class Supervisor {
     } finally {
       if (stuckIntervalId !== undefined) clearInterval(stuckIntervalId);
       process.removeListener('SIGTERM', sigtermHandler);
+      if (statusWatchdogPid !== undefined) {
+        try { process.kill(statusWatchdogPid, 'SIGTERM'); } catch { /* ignore */ }
+      }
       // Close the FIFO: readline → fd → stream. Closing the fd synchronously before
       // destroying the stream prevents the event loop hang that blocks batch test suites.
       // autoClose is false so stream.destroy() won't attempt a second close on the fd.
