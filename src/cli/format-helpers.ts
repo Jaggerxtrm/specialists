@@ -267,12 +267,23 @@ function formatToolDetail(event: Extract<TimelineEvent, { type: 'tool' }>): stri
 
 export function formatEventLine(
   event: TimelineEvent,
-  options: { jobId: string; specialist: string; beadId?: string; colorize: Colorizer }
+  options: {
+    jobId: string;
+    specialist: string;
+    beadId?: string;
+    contextPct?: number;
+    colorize: Colorizer;
+  }
 ): string {
   const ts = dim(formatTime(event.t));
   const job = options.colorize(`[${options.jobId}]`);
   const bead = dim(`[${options.beadId ?? '-'}]`);
   const label = options.colorize(bold(getEventLabel(event.type).padEnd(5)));
+  const hasContextPct = Number.isFinite(options.contextPct);
+  const contextPct = hasContextPct
+    ? Math.min(100, Math.max(0, Math.round(options.contextPct as number)))
+    : null;
+  const contextBadge = contextPct === null ? '' : dim(`[${contextPct}%]`);
 
   const detailParts: string[] = [];
   let detail = '';
@@ -356,7 +367,7 @@ export function formatEventLine(
     detail = dim(detailParts.join(' '));
   }
 
-  return `${ts} ${job} ${bead} ${label} ${options.specialist}${detail ? ` ${detail}` : ''}`.trimEnd();
+  return `${ts} ${job} ${bead} ${label} ${options.specialist}${contextBadge ? ` ${contextBadge}` : ''}${detail ? ` ${detail}` : ''}`.trimEnd();
 }
 
 /**
