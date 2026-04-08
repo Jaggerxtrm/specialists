@@ -154,7 +154,7 @@ function migrateLegacySpecialists(cwd: string, scope: 'default' | 'user'): void 
  */
 function copyCanonicalSpecialists(cwd: string): void {
   const sourceDir = resolvePackagePath('specialists');
-  
+
   if (!sourceDir) {
     skip('no canonical specialists found in package');
     return;
@@ -193,6 +193,52 @@ function copyCanonicalSpecialists(cwd: string): void {
   }
   if (skipped > 0) {
     skip(`${skipped} specialist${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  }
+}
+
+/**
+ * Copy canonical node configs to .specialists/default/nodes/
+ */
+function copyCanonicalNodeConfigs(cwd: string): void {
+  const sourceDir = resolvePackagePath('nodes');
+
+  if (!sourceDir) {
+    skip('no canonical node configs found in package');
+    return;
+  }
+
+  const targetDir = join(cwd, '.specialists', 'default', 'nodes');
+  const files = readdirSync(sourceDir).filter(f => f.endsWith('.node.json'));
+
+  if (files.length === 0) {
+    skip('no node config files found in package');
+    return;
+  }
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  let copied = 0;
+  let skipped = 0;
+
+  for (const file of files) {
+    const src = join(sourceDir, file);
+    const dest = join(targetDir, file);
+
+    if (existsSync(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    ok(`copied ${copied} canonical node config${copied === 1 ? '' : 's'} to .specialists/default/nodes/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} node config${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
   }
 }
 
@@ -600,6 +646,7 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   if (syncDefaults) {
     migrateLegacySpecialists(cwd, 'default');
     copyCanonicalSpecialists(cwd);
+    copyCanonicalNodeConfigs(cwd);
   } else {
     skip('.specialists/default/ not synced (pass --sync-defaults to write canonical specialists)');
   }

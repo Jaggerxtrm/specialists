@@ -110,20 +110,31 @@ It recovers from `degraded -> running` when health/status conditions normalize.
 
 ## `sp node run`
 
-Run a node from config file or inline JSON.
+Run a node from a discovered config name, config file path, or inline JSON.
 
 ```bash
+sp node run research
 sp node run ./node-config.json
 sp node run ./node-config.json --bead unitAI-123
 sp node run --inline '{"name":"research","coordinator":"node-coordinator","members":[{"memberId":"explorer-1","specialist":"explorer"}],"initialPrompt":"Investigate X"}' --json
 ```
+
+### Node config discovery
+
+`sp node run <name>` and `sp node list` discover configs from:
+
+1. `.specialists/default/nodes/*.node.json` (installed by `sp init --sync-defaults`)
+2. `config/nodes/*.node.json`
+
+If the same node name exists in both locations, `.specialists/default/nodes/` wins.
 
 ### Presets / examples
 
 Use the built-in research preset:
 
 ```bash
-sp node run config/nodes/research.node.json --bead <id>
+sp node run research --bead <id>
+# equivalent to: sp node run config/nodes/research.node.json --bead <id>
 ```
 
 This preset uses:
@@ -136,9 +147,18 @@ This preset uses:
   - `on_member_waiting` -> resume coordinator
   - `on_all_members_waiting` -> resume coordinator
 
+## `sp node list`
+
+List discovered node configs.
+
+```bash
+sp node list
+sp node list --json
+```
+
 ## `sp node status`
 
-Show one node or list all.
+Show one node run or list all node runs.
 
 ```bash
 sp node status

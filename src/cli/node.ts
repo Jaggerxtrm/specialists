@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -28,8 +28,8 @@ interface NodeConfig {
 }
 
 interface ParsedNodeArgs {
-  command: 'run' | 'status' | 'feed' | 'promote';
-  nodeConfigFile?: string;
+  command: 'run' | 'list' | 'status' | 'feed' | 'promote';
+  nodeConfigInput?: string;
   inlineJson?: string;
   nodeId?: string;
   findingId?: string;
@@ -40,11 +40,11 @@ interface ParsedNodeArgs {
 
 function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   const command = argv[0];
-  if (command !== 'run' && command !== 'status' && command !== 'feed' && command !== 'promote') {
-    throw new Error('Usage: specialists node <run|status|feed|promote> [options]');
+  if (command !== 'run' && command !== 'list' && command !== 'status' && command !== 'feed' && command !== 'promote') {
+    throw new Error('Usage: specialists node <run|list|status|feed|promote> [options]');
   }
 
-  let nodeConfigFile: string | undefined;
+  let nodeConfigInput: string | undefined;
   let inlineJson: string | undefined;
   let nodeId: string | undefined;
   let findingId: string | undefined;
@@ -100,8 +100,8 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
-    if (!token.startsWith('--') && command === 'run' && !nodeConfigFile) {
-      nodeConfigFile = token;
+    if (!token.startsWith('--') && command === 'run' && !nodeConfigInput) {
+      nodeConfigInput = token;
       continue;
     }
 
@@ -118,8 +118,8 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     throw new Error(`Unknown argument: ${token}`);
   }
 
-  if (command === 'run' && !nodeConfigFile && !inlineJson) {
-    throw new Error('Usage: specialists node run <node-config-file> [--inline JSON] [--bead <bead-id>] [--json]');
+  if (command === 'run' && !nodeConfigInput && !inlineJson) {
+    throw new Error('Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--json]');
   }
 
   if (command === 'promote') {
@@ -134,7 +134,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
 
   return {
     command,
-    nodeConfigFile,
+    nodeConfigInput,
     inlineJson,
     nodeId,
     findingId,
@@ -142,6 +142,63 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     beadId,
     jsonMode,
   };
+}
+
+interface DiscoveredNodeConfig {
+  name: string;
+  path: string;
+  source: 'default' | 'project';
+}
+
+const NODE_CONFIG_SUFFIX = '.node.json';
+const NODE_DISCOVERY_DIRS: ReadonlyArray<{ path: string; source: DiscoveredNodeConfig['source'] }> = [
+  { path: '.specialists/default/nodes', source: 'default' },
+  { path: 'config/nodes', source: 'project' },
+];
+
+function toNodeName(filePath: string): string {
+  const fileName = basename(filePath);
+  return fileName.endsWith(NODE_CONFIG_SUFFIX)
+    ? fileName.slice(0, -NODE_CONFIG_SUFFIX.length)
+    : fileName;
+}
+
+function discoverNodeConfigs(cwd: string): DiscoveredNodeConfig[] {
+  const discoveredByName = new Map<string, DiscoveredNodeConfig>();
+
+  for (const directory of NODE_DISCOVERY_DIRS) {
+    const absoluteDir = resolve(cwd, directory.path);
+    if (!existsSync(absoluteDir)) continue;
+
+    const files = readdirSync(absoluteDir).filter((fileName) => fileName.endsWith(NODE_CONFIG_SUFFIX));
+    for (const fileName of files) {
+      const path = join(absoluteDir, fileName);
+      const name = toNodeName(fileName);
+      if (discoveredByName.has(name)) continue;
+      discoveredByName.set(name, { name, path, source: directory.source });
+    }
+  }
+
+  return [...discoveredByName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function resolveNodeConfigPath(cwd: string, input: string): string {
+  const explicitPath = resolve(cwd, input);
+  if (existsSync(explicitPath)) {
+    return explicitPath;
+  }
+
+  const normalizedName = input.endsWith(NODE_CONFIG_SUFFIX)
+    ? input.slice(0, -NODE_CONFIG_SUFFIX.length)
+    : input;
+  const discovered = discoverNodeConfigs(cwd).find((entry) => entry.name === normalizedName);
+  if (discovered) {
+    return discovered.path;
+  }
+
+  throw new Error(
+    `Node config not found: ${input}. Checked explicit path and discovery dirs: ${NODE_DISCOVERY_DIRS.map((entry) => entry.path).join(', ')}`,
+  );
 }
 
 function parseNodeConfig(raw: string): NodeConfig {
@@ -248,7 +305,7 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
   try {
     const rawConfig = args.inlineJson
       ? args.inlineJson
-      : readFileSync(args.nodeConfigFile!, 'utf-8');
+      : readFileSync(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput!), 'utf-8');
     const config = parseNodeConfig(rawConfig);
 
     const loader = new SpecialistLoader();
@@ -409,6 +466,24 @@ async function handleNodeFeed(args: ParsedNodeArgs): Promise<void> {
     }
   } finally {
     sqliteClient.close();
+  }
+}
+
+async function handleNodeList(args: ParsedNodeArgs): Promise<void> {
+  const nodes = discoverNodeConfigs(process.cwd());
+
+  if (args.jsonMode) {
+    console.log(JSON.stringify(nodes, null, 2));
+    return;
+  }
+
+  if (nodes.length === 0) {
+    console.log('No node configs found. Checked: .specialists/default/nodes and config/nodes');
+    return;
+  }
+
+  for (const node of nodes) {
+    console.log(`${node.name}\t${node.source}\t${node.path}`);
   }
 }
 
@@ -606,6 +681,11 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
 
   if (parsed.command === 'run') {
     await handleNodeRun(parsed);
+    return;
+  }
+
+  if (parsed.command === 'list') {
+    await handleNodeList(parsed);
     return;
   }
 
