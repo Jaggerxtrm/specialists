@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Supervisor } from '../specialist/supervisor.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { formatCostUsd, formatTokenUsageSummary } from './format-helpers.js';
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
@@ -70,6 +71,28 @@ export async function run(): Promise<void> {
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
 
+  const emitHumanResult = (
+    output: string,
+    status: NonNullable<ReturnType<Supervisor['readStatus']>>,
+    trailingFooter?: string,
+  ): void => {
+    process.stdout.write(output);
+
+    const tokenSummaryParts = formatTokenUsageSummary(status.metrics?.token_usage).filter((part) => !part.startsWith('cost='));
+    const formattedCost = formatCostUsd(status.metrics?.token_usage?.cost_usd);
+    if (tokenSummaryParts.length === 0 && !formattedCost) {
+      if (trailingFooter) process.stderr.write(dim(trailingFooter));
+      return;
+    }
+
+    const footerParts: string[] = [];
+    if (tokenSummaryParts.length > 0) footerParts.push(tokenSummaryParts.join(' · '));
+    if (formattedCost) footerParts.push(`cost_usd=${formattedCost}`);
+
+    process.stderr.write(dim(`\n--- metrics: ${footerParts.join(' · ')} ---\n`));
+    if (trailingFooter) process.stderr.write(dim(trailingFooter));
+  };
+
   try {
     const resultPath = join(jobsDir, jobId, 'result.txt');
 
@@ -117,7 +140,7 @@ export async function run(): Promise<void> {
         if (args.json) {
           emitJson(status, output, null);
         } else {
-          process.stdout.write(output);
+          emitHumanResult(output, status);
         }
         return;
       }
@@ -179,7 +202,7 @@ export async function run(): Promise<void> {
       emitJson(status, output, null);
     } else {
       process.stderr.write(`${dim(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}\n`);
-      process.stdout.write(output);
+      emitHumanResult(output, status);
     }
     return;
   }
@@ -201,8 +224,7 @@ export async function run(): Promise<void> {
     if (args.json) {
       emitJson(status, `${output}${waitingFooter}`, null);
     } else {
-      process.stdout.write(output);
-      process.stderr.write(dim(waitingFooter));
+      emitHumanResult(output, status, waitingFooter);
     }
     return;
   }
@@ -231,7 +253,7 @@ export async function run(): Promise<void> {
     return;
   }
 
-  process.stdout.write(output);
+  emitHumanResult(output, status);
   } finally {
     sqliteClient?.close();
   }

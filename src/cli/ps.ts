@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { bold, cyan, dim, green, magenta, red, yellow } from './format-helpers.js';
+import { bold, cyan, dim, formatCostUsd, formatTokenUsageSummary, green, magenta, red, yellow } from './format-helpers.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
@@ -33,6 +33,7 @@ interface JobNode {
   elapsed_s?: number;
   context_pct?: number;
   context_health?: SupervisorStatus['context_health'];
+  metrics?: SupervisorStatus['metrics'];
   children: JobNode[];
 }
 
@@ -125,6 +126,7 @@ function toJobNode(job: SupervisorStatus & { is_dead?: boolean }): JobNode {
     elapsed_s: job.elapsed_s,
     context_pct: job.context_pct,
     context_health: job.context_health,
+    metrics: job.metrics,
     children: [],
   };
 }
@@ -322,7 +324,10 @@ function renderJobLine(
   const id = job.id.padEnd(8);
   const spec = job.specialist.slice(0, 13).padEnd(13);
   const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
-  const elapsed = formatElapsed(job.elapsed_s).padStart(7);
+  const elapsedBase = formatElapsed(job.elapsed_s);
+  const totalTokens = job.metrics?.token_usage?.total_tokens;
+  const elapsedWithTokens = totalTokens !== undefined ? `${elapsedBase} · ${totalTokens} tok` : elapsedBase;
+  const elapsed = elapsedWithTokens.padStart(7);
   const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
   const beadCol = job.bead_id ? job.bead_id : '';
   const action = getNextAction(job);
@@ -406,6 +411,15 @@ function renderInspect(jobId: string): void {
   }
   if (chainJobs.length > 1) console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
+  const tokenUsage = job.metrics?.token_usage;
+  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage).filter((part) => !part.startsWith('cost='));
+  if (tokenSummaryParts.length > 0) {
+    console.log(`  tokens    ${tokenSummaryParts.join(' · ')}`);
+  }
+  const formattedCost = formatCostUsd(tokenUsage?.cost_usd);
+  if (formattedCost) {
+    console.log(`  cost_usd  ${formattedCost}`);
+  }
   console.log(`  context   ${ctx}`);
   if (job.current_tool) console.log(`  current   ${job.current_tool}`);
   const inspectActions: string[] = [];
