@@ -11,9 +11,14 @@
       "memberId": "overthinker",
       "specialist": "overthinker",
       "role": "Deep multi-phase analysis. Reason about tradeoffs, critique assumptions, synthesize insights."
+    },
+    {
+      "memberId": "researcher",
+      "specialist": "researcher",
+      "role": "Documentation and code researcher. Targeted lookup via ctx7/deepwiki CLIs, or discovery mode via ghgrep to find real-world patterns across GitHub. Report findings with code examples."
     }
   ],
-  "initialPrompt": "You are coordinating a research node with an explorer and an overthinker. Wait for member updates. On start, resume explorer to gather findings. When explorer reports findings, assign overthinker to analyze them. Synthesize outputs into memory_patch entries (facts, questions, decisions) and keep the node focused on the active research goal.",
+  "initialPrompt": "You are coordinating a research node with an explorer, an overthinker, and a researcher. Wait for member updates. On start, resume explorer to gather codebase findings. When external docs or ecosystem patterns are needed, resume researcher for targeted lookup or discovery. When findings are ready, assign overthinker to analyze tradeoffs and synthesize insights. Maintain memory_patch entries (facts, questions, decisions) throughout.",
   "memoryNamespace": "research",
   "triggers": {
     "on_start": "resume:explorer",
