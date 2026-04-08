@@ -183,8 +183,7 @@ function migrateToV4(db: BunDb): void {
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)');
 
     db.run('CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)');
-    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)');
-    db.run('CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)');
+    // seq-dependent indexes handled by migrateToV6 for existing DBs without seq column
     db.run('CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)');
 
     db.run('CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)');
@@ -289,10 +288,9 @@ export function initSchema(db: BunDb): void {
       type         TEXT NOT NULL,
       event_json   TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq
-      ON specialist_events(job_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t
-      ON specialist_events(job_id, t, seq, id);
+    -- seq-dependent indexes are created/maintained by migrateToV6 to handle
+    -- existing DBs where specialist_events was created without the seq column.
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_type ON specialist_events(type);
 
     CREATE TABLE IF NOT EXISTS specialist_results (
       job_id        TEXT PRIMARY KEY,
@@ -1047,7 +1045,7 @@ class SqliteClient implements ObservabilitySqliteClient {
 }
 
 export function createObservabilitySqliteClient(cwd: string = process.cwd()): ObservabilitySqliteClient | null {
-  if (!loadBunDatabase()) return null; // Not running under Bun
+  if (!loadBunDatabase()) return null;
   const location = resolveObservabilityDbLocation(cwd);
   if (!existsSync(location.dbPath)) return null;
 
