@@ -20884,33 +20884,36 @@ function initSchema(db) {
   for (const missingColumn of missingSpecialistJobsColumns) {
     db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
   }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_jobs_new (
-      job_id          TEXT PRIMARY KEY,
-      specialist      TEXT NOT NULL,
-      worktree_column TEXT,
-      bead_id         TEXT,
-      node_id         TEXT,
-      status          TEXT NOT NULL,
-      status_json     TEXT NOT NULL,
-      updated_at_ms   INTEGER NOT NULL,
-      last_output     TEXT
-    );
-    INSERT OR IGNORE INTO specialist_jobs_new
-      SELECT
-        job_id,
-        specialist,
-        worktree_column,
-        bead_id,
-        node_id,
-        COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
-        status_json,
-        updated_at_ms,
-        last_output
-      FROM specialist_jobs;
-    DROP TABLE IF EXISTS specialist_jobs;
-    ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
-  `);
+  const shouldRebuildSpecialistJobs = missingSpecialistJobsColumns.length > 0;
+  if (shouldRebuildSpecialistJobs) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS specialist_jobs_new (
+        job_id          TEXT PRIMARY KEY,
+        specialist      TEXT NOT NULL,
+        worktree_column TEXT,
+        bead_id         TEXT,
+        node_id         TEXT,
+        status          TEXT NOT NULL,
+        status_json     TEXT NOT NULL,
+        updated_at_ms   INTEGER NOT NULL,
+        last_output     TEXT
+      );
+      INSERT OR IGNORE INTO specialist_jobs_new
+        SELECT
+          job_id,
+          specialist,
+          worktree_column,
+          bead_id,
+          node_id,
+          COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
+          status_json,
+          updated_at_ms,
+          last_output
+        FROM specialist_jobs;
+      DROP TABLE IF EXISTS specialist_jobs;
+      ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
+    `);
+  }
   migrateToV2(db);
   migrateToV3(db);
   migrateToV4(db);
