@@ -1,0 +1,19 @@
+{
+  "name": "@xtrm/pi-beads",
+  "version": "1.0.0",
+  "description": "xtrm Pi extension: beads",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "xtrm"
+  ],
+  "author": "xtrm",
+  "license": "MIT",
+  "dependencies": {
+    "@xtrm/pi-core": "^1.0.0"
+  }
+}

@@ -16,7 +16,7 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "anthropic/claude-sonnet-4-6",
+      "model": "dashscope/qwen3.5-plus",
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
       "response_format": "markdown",
