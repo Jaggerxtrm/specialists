@@ -20,7 +20,7 @@ const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = {
   starting: ['running', 'error', 'stopped'],
   running: ['waiting', 'degraded', 'done', 'error', 'stopped'],
   waiting: ['running', 'degraded', 'done', 'error', 'stopped'],
-  degraded: ['running', 'error', 'stopped'],
+  degraded: ['running', 'done', 'error', 'stopped'],
   error: [],
   done: [],
   stopped: [],
@@ -386,8 +386,15 @@ export class NodeSupervisor {
         const state = this.actionLifecycle.get(envelope.actionId);
         if (!state || terminalStates.has(state)) continue;
 
-        this.dispatchQueue.push(envelope);
-        this.queuedActionKeys.add(this.getActionKey(envelope.action));
+        if (state === 'queued') {
+          this.dispatchQueue.push(envelope);
+          this.queuedActionKeys.add(this.getActionKey(envelope.action));
+          continue;
+        }
+
+        if (state === 'written' || state === 'observed') {
+          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+        }
       }
 
       try {
@@ -1382,6 +1389,10 @@ export class NodeSupervisor {
           const member = this.members.get(change.memberId);
           if (!member) continue;
 
+          if (change.newStatus === 'error') {
+            member.enabled = false;
+          }
+
           try {
             this.opts.sqliteClient.upsertNodeMember({
               node_run_id: this.opts.nodeId,
@@ -1392,6 +1403,7 @@ export class NodeSupervisor {
               role: member.role,
               status: member.status,
               enabled: member.enabled,
+              generation: member.generation,
             });
           } catch {
             // best-effort persistence; orchestration remains live
@@ -1410,10 +1422,6 @@ export class NodeSupervisor {
           }
 
           const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
-          if (change.newStatus === 'error') {
-            member.enabled = false;
-          }
-
           if (change.newStatus === 'error' || toContextHealth(contextPct) === 'CRITICAL') {
             if (this.status === 'running' || this.status === 'waiting') {
               this.transition('degraded', 'member_error_or_critical_context');
@@ -1428,9 +1436,20 @@ export class NodeSupervisor {
         const coordinatorStatus = this.coordinatorJobId
           ? this.opts.sqliteClient.readStatus(this.coordinatorJobId)
           : null;
+        const coordinatorStatusValue = coordinatorStatus?.status as string | undefined;
 
-        if (coordinatorStatus?.status === 'error') {
+        if (coordinatorStatusValue === 'error') {
           this.transition('error', 'coordinator_crash');
+          break;
+        }
+
+        if (coordinatorStatusValue === 'stopped') {
+          this.transition('stopped', 'coordinator_stopped');
+          break;
+        }
+
+        if (coordinatorStatusValue === 'done') {
+          this.transition('done', 'coordinator_done');
           break;
         }
 
@@ -1441,6 +1460,9 @@ export class NodeSupervisor {
         if (coordinatorOutput && nextCoordinatorOutputHash !== coordinatorOutputHash) {
           coordinatorOutputHash = nextCoordinatorOutputHash;
           await this.handleCoordinatorOutput(coordinatorOutput);
+          if (this.status === 'waiting') {
+            this.transition('running', 'coordinator_output_processed');
+          }
         }
 
         const degradedResumeLimitReached = this.status === 'degraded' && this.degradedResumeCount >= MAX_DEGRADED_COORDINATOR_RESUMES;
@@ -1494,7 +1516,15 @@ export class NodeSupervisor {
           }
         }
 
-        const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const memberSnapshot = this.getMembers();
+        const allTerminal = memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const allStopped = memberSnapshot.length > 0 && memberSnapshot.every((member) => member.status === 'stopped');
+
+        if (allStopped) {
+          this.transition('stopped', 'all_members_stopped');
+          break;
+        }
+
         if (allTerminal) {
           this.transition('done', 'all_members_terminal');
           try {
