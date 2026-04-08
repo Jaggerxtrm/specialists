@@ -26577,10 +26577,12 @@ import { spawnSync as spawnSync15 } from "node:child_process";
 import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync11 } from "node:fs";
 import { join as join17 } from "node:path";
 function parseArgs7(argv) {
+  const positional = argv.filter((a) => !a.startsWith("-"));
   return {
     json: argv.includes("--json"),
     all: argv.includes("--all"),
-    follow: argv.includes("--follow") || argv.includes("-f")
+    follow: argv.includes("--follow") || argv.includes("-f"),
+    inspectId: positional[0]
   };
 }
 function isVisibleStatus(status, all) {
@@ -26696,6 +26698,17 @@ function groupByTree(jobs) {
   }
   return trees;
 }
+function statusLabel(status) {
+  if (status === "running")
+    return cyan5(status);
+  if (status === "waiting")
+    return magenta3(status);
+  if (status === "done")
+    return green8(status);
+  if (status === "error")
+    return red2(status);
+  return yellow10(status);
+}
 function isPidAlive(pid) {
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
     return false;
@@ -26717,10 +26730,14 @@ function withPidLiveness(statuses) {
     is_dead: isDeadActiveJob(job)
   }));
 }
-function formatContextPct(contextPct) {
-  if (contextPct === undefined || !Number.isFinite(contextPct))
+function formatElapsed3(seconds) {
+  if (seconds === undefined || !Number.isFinite(seconds))
     return "--";
-  return `${Math.round(contextPct)}%`;
+  if (seconds < 60)
+    return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}m${String(remainder).padStart(2, "0")}s`;
 }
 function getBeadTitleFromBd(beadId) {
   const result = spawnSync15("bd", ["show", beadId, "--json"], {
@@ -26791,55 +26808,91 @@ function getNextAction(job) {
     return `sp result ${job.id}`;
   return `sp result ${job.id}`;
 }
-function flattenJobs(items) {
-  const result = [];
-  const stack = [...items].reverse();
-  while (stack.length > 0) {
-    const item = stack.pop();
-    if (!item)
-      continue;
-    result.push(item);
-    for (let index = item.children.length - 1;index >= 0; index -= 1) {
-      stack.push(item.children[index]);
+function formatCtxWithIndicator(contextPct, contextHealth) {
+  if (contextPct === undefined || !Number.isFinite(contextPct))
+    return "  --";
+  const pct = `${Math.round(contextPct)}%`;
+  const warn2 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "▲" : "";
+  return `${pct}${warn2}`.padStart(4);
+}
+function renderJobLine(job, beadTitles, prefix, connector) {
+  const icon = getStatusIcon(job);
+  const id = job.id.padEnd(8);
+  const spec = job.specialist.slice(0, 13).padEnd(13);
+  const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
+  const elapsed = formatElapsed3(job.elapsed_s).padStart(7);
+  const bead = job.bead_id ? job.bead_id.padEnd(14) : "".padEnd(14);
+  const next = job.is_dead ? red2("dead") : dim8(getNextAction(job).replace("sp ", ""));
+  return `${prefix}${connector}${icon} ${id} ${spec} ${ctx} ${elapsed}  ${bead} ${next}`;
+}
+function renderTreeNodes(nodes, beadTitles, prefix, counter) {
+  for (let i = 0;i < nodes.length; i++) {
+    const node = nodes[i];
+    const isLast = i === nodes.length - 1;
+    const connector = prefix === "" ? "  " : isLast ? "└ " : "├ ";
+    const childPrefix = prefix === "" ? "  " : prefix + (isLast ? "  " : "│ ");
+    if (node.status === "running")
+      counter.running += 1;
+    if (node.status === "waiting")
+      counter.waiting += 1;
+    console.log(renderJobLine(node, beadTitles, prefix, connector));
+    if (node.children.length > 0) {
+      renderTreeNodes(node.children, beadTitles, childPrefix, counter);
     }
   }
-  return result;
 }
 function renderHuman(jobs, trees, all) {
   const beadTitles = buildBeadTitleCache(jobs);
-  console.log(`
-${bold9(all ? "jobs" : "active jobs")}`);
-  console.log(dim8("st  id       specialist     ctx%  next"));
-  let runningCount = 0;
-  let waitingCount = 0;
+  const counter = { running: 0, waiting: 0 };
+  console.log("");
   for (const tree of trees) {
-    const location = tree.worktree_path ?? "(no worktree)";
-    const branch = tree.branch ? ` (${tree.branch})` : "";
-    console.log(`
-${dim8(`worktree ${location}${branch}`)}`);
-    const treeJobs = flattenJobs(tree.children);
-    for (const job of treeJobs) {
-      const context = formatContextPct(job.context_pct).padStart(4);
-      const nextAction = getNextAction(job);
-      const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-      const beadLabel = job.bead_id ? ` ${dim8(`[${job.bead_id}${beadTitle ? ` ${beadTitle}` : ""}]`)}` : "";
-      const deadLabel = job.is_dead ? ` ${red2("dead")}` : "";
-      const idCell = job.id.slice(0, 8).padEnd(8);
-      const specialistCell = job.specialist.slice(0, 14).padEnd(14);
-      if (job.status === "running")
-        runningCount += 1;
-      if (job.status === "waiting")
-        waitingCount += 1;
-      console.log(`${getStatusIcon(job)}  ${idCell} ${specialistCell} ${context}  ${nextAction}${beadLabel}${deadLabel}`);
-    }
+    const branch = tree.branch ?? "master";
+    const beadId = tree.children[0]?.bead_id;
+    const beadSuffix = beadId ? ` · ${beadId}` : "";
+    console.log(`${dim8(branch)}${dim8(beadSuffix)}`);
+    renderTreeNodes(tree.children, beadTitles, "", counter);
+    console.log("");
   }
-  console.log(`
-${dim8(`summary: ${jobs.length} jobs • ${trees.length} worktrees • ${runningCount} running • ${waitingCount} waiting`)}`);
+  if (trees.length === 0) {
+    console.log(dim8("  no active jobs"));
+    console.log("");
+  }
+  console.log(dim8(`${jobs.length} jobs · ${trees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting`));
 }
-function renderJson(jobs, trees, all) {
+function renderInspect(jobId) {
+  const statuses = withPidLiveness(loadStatuses());
+  const job = statuses.find((s) => s.id.startsWith(jobId));
+  if (!job) {
+    console.error(`Job not found: ${jobId}`);
+    process.exitCode = 1;
+    return;
+  }
+  const beadTitles = buildBeadTitleCache([job]);
+  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+  const ctx = job.context_pct !== undefined ? `${Math.round(job.context_pct)}% ${job.context_health ?? ""}` : "--";
+  const deadLabel = job.is_dead ? ` ${red2("dead")}` : "";
+  const chainJobs = job.worktree_owner_job_id ? statuses.filter((s) => s.worktree_owner_job_id === job.worktree_owner_job_id).sort((a, b) => a.started_at_ms - b.started_at_ms) : [job];
+  const chainStr = chainJobs.map((j) => j.id === job.id ? bold9(j.id) : dim8(j.id)).join(" → ");
+  console.log(`
+${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
+  console.log(`  model     ${job.model ?? "--"} ${job.backend ? `(${job.backend})` : ""}`);
+  if (job.bead_id)
+    console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ""}`);
+  if (job.branch)
+    console.log(`  worktree  ${job.branch}`);
+  if (chainJobs.length > 1)
+    console.log(`  chain     ${chainStr}`);
+  console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ""}`);
+  console.log(`  context   ${ctx}`);
+  if (job.current_tool)
+    console.log(`  current   ${job.current_tool}`);
+  console.log(`
+  ${dim8(getNextAction(toJobNode(job)))}`);
+}
+function renderJson(jobs, trees, _all) {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
-    include_terminal: all,
+    include_terminal: _all,
     counts: {
       jobs: jobs.length,
       trees: trees.length
@@ -26892,6 +26945,10 @@ async function follow(args) {
 }
 async function run13() {
   const args = parseArgs7(process.argv.slice(3));
+  if (args.inspectId) {
+    renderInspect(args.inspectId);
+    return;
+  }
   if (args.follow) {
     await follow(args);
     return;
