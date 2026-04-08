@@ -13,7 +13,8 @@ const MAX_MEMORY_ENTRIES_IN_RESUME = 5;
 const MAX_ACTION_LEDGER_ENTRIES = 20;
 const MAX_QUEUED_ACTIONS_PER_MEMBER = 5;
 const MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2;
-const MAX_DEGRADED_COORDINATOR_RESUMES = 1;
+const MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE = 1;
+const NO_PROGRESS_WATCHDOG_MS = 120_000;
 
 const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = {
   created: ['starting', 'stopped'],
@@ -95,15 +96,18 @@ const coordinatorActionSchema = z.discriminatedUnion('type', [
     type: z.literal('resume'),
     memberId: z.string().min(1),
     task: z.string().min(1),
+    dependsOnActionId: z.string().min(1).optional(),
   }),
   z.object({
     type: z.literal('steer'),
     memberId: z.string().min(1),
     message: z.string().min(1),
+    dependsOnActionId: z.string().min(1).optional(),
   }),
   z.object({
     type: z.literal('stop'),
     memberId: z.string().min(1),
+    dependsOnActionId: z.string().min(1).optional(),
   }),
 ]);
 
@@ -223,6 +227,9 @@ export class NodeSupervisor {
   private lastActivityAtMs = Date.now();
   private coordinatorResumesInFlight = 0;
   private degradedResumeCount = 0;
+  private lastCoordinatorOutputAtMs = Date.now();
+  private lastCompletedActionAtMs = Date.now();
+  private lastMemberTransitionAtMs = Date.now();
 
   constructor(opts: NodeSupervisorOptions) {
     this.opts = opts;
@@ -399,6 +406,12 @@ export class NodeSupervisor {
       for (const event of events) {
         if (event.type === 'coordinator_output_received') {
           this.recoveredCoordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(event.event_json);
+          this.lastCoordinatorOutputAtMs = Math.max(this.lastCoordinatorOutputAtMs, event.t);
+          continue;
+        }
+
+        if (event.type === 'member_state_changed') {
+          this.lastMemberTransitionAtMs = Math.max(this.lastMemberTransitionAtMs, event.t);
           continue;
         }
 
@@ -420,6 +433,7 @@ export class NodeSupervisor {
         if (event.type === 'action_completed') {
           this.completedActionIds.add(envelope.actionId);
           this.clearMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration);
+          this.lastCompletedActionAtMs = Math.max(this.lastCompletedActionAtMs, event.t);
         } else if (event.type === 'action_written') {
           this.setMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration, envelope.actionId);
         }
@@ -867,6 +881,9 @@ export class NodeSupervisor {
 
   private appendActionLifecycleEvent(envelope: DispatchActionEnvelope, state: ActionLifecycleState, extra?: Record<string, unknown>): void {
     this.actionLifecycle.set(envelope.actionId, state);
+    if (state === 'completed') {
+      this.lastCompletedActionAtMs = Date.now();
+    }
 
     try {
       this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), `action_${state}` as never, {
@@ -884,8 +901,11 @@ export class NodeSupervisor {
   }
 
   private async dispatchAction(action: NodeDispatchAction): Promise<string | null> {
-    if (this.status === 'degraded' && action.type === 'resume') {
-      return null;
+    if (action.type === 'resume') {
+      const member = this.members.get(action.memberId);
+      if (!member || !this.isRecoveryResumeAllowed(member)) {
+        return null;
+      }
     }
 
     const queuedForMember = this.dispatchQueue.filter((queued) => queued.action.memberId === action.memberId).length;
@@ -993,7 +1013,10 @@ export class NodeSupervisor {
     }
   }
 
-  private appendNodeEvent(type: 'coordinator_output_invalid' | 'memory_updated' | 'coordinator_output_received', event: Record<string, unknown>): void {
+  private appendNodeEvent(
+    type: 'coordinator_output_invalid' | 'memory_updated' | 'coordinator_output_received',
+    event: Record<string, unknown>,
+  ): void {
     try {
       this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), type, event);
     } catch {
@@ -1015,16 +1038,26 @@ export class NodeSupervisor {
       'Return ONLY strict JSON matching this contract:',
       '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
       'actions allowed:',
-      '- {"type":"resume","memberId":string,"task":string}',
-      '- {"type":"steer","memberId":string,"message":string}',
-      '- {"type":"stop","memberId":string}',
+      '- {"type":"resume","memberId":string,"task":string,"dependsOnActionId"?:string}',
+      '- {"type":"steer","memberId":string,"message":string,"dependsOnActionId"?:string}',
+      '- {"type":"stop","memberId":string,"dependsOnActionId"?:string}',
       'memory_patch entries:',
       '- {"entry_type":"fact|question|decision","summary":string,"entry_id"?:string,"source_member_id"?:string,"confidence"?:number,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`,
     ].join('\n');
   }
 
+  private isRecoveryResumeAllowed(member: NodeMemberEntry): boolean {
+    if (this.status !== 'degraded') return true;
+    if (!member.enabled || member.status !== 'waiting') return false;
+    if (!member.jobId) return false;
+    const contextPct = this.opts.sqliteClient.queryMemberContextHealth(member.jobId);
+    return toContextHealth(contextPct) !== 'CRITICAL';
+  }
+
   private validateActionRuntimeState(actions: NodeDispatchAction[]): string | null {
+    let degradedRecoveryResumeCount = 0;
+
     for (const action of actions) {
       const member = this.members.get(action.memberId);
       if (!member) {
@@ -1043,12 +1076,19 @@ export class NodeSupervisor {
         return `Member '${action.memberId}' has no active controller.`;
       }
 
-      if (action.type === 'resume' && this.status === 'degraded') {
-        return `Node is degraded; resume actions are paused for member '${action.memberId}'.`;
-      }
-
       if (action.type === 'resume' && member.status !== 'waiting') {
         return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
+      }
+
+      if (action.type === 'resume' && !this.isRecoveryResumeAllowed(member)) {
+        return `Member '${action.memberId}' is not eligible for degraded recovery resume.`;
+      }
+
+      if (action.type === 'resume' && this.status === 'degraded') {
+        degradedRecoveryResumeCount += 1;
+        if (degradedRecoveryResumeCount > MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE) {
+          return `Degraded mode permits at most ${MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE} recovery resume action per coordinator cycle.`;
+        }
       }
 
       if (action.type === 'steer' && member.status !== 'running' && member.status !== 'waiting') {
@@ -1261,16 +1301,18 @@ export class NodeSupervisor {
         memory_patch_count: coordinatorOutput.memory_patch.length,
         output_hash: hashOutput(currentOutput),
       });
+      this.lastCoordinatorOutputAtMs = Date.now();
 
       this.applyMemoryPatch(coordinatorOutput.memory_patch);
-      let predecessorActionId: string | null = null;
+      const predecessorByMemberId = new Map<string, string>();
       for (const action of coordinatorOutput.actions as NodeDispatchAction[]) {
+        const inferredDependsOnActionId = action.dependsOnActionId ?? predecessorByMemberId.get(action.memberId);
         const actionId = await this.dispatchAction({
           ...action,
-          dependsOnActionId: action.dependsOnActionId ?? predecessorActionId ?? undefined,
+          dependsOnActionId: inferredDependsOnActionId,
         });
         if (actionId) {
-          predecessorActionId = actionId;
+          predecessorByMemberId.set(action.memberId, actionId);
         }
       }
 
@@ -1341,6 +1383,32 @@ export class NodeSupervisor {
     }
 
     return BASE_POLL_INTERVAL_MS;
+  }
+
+  private getLastProgressAtMs(): number {
+    return Math.max(this.lastCoordinatorOutputAtMs, this.lastCompletedActionAtMs, this.lastMemberTransitionAtMs);
+  }
+
+  private maybeTriggerNoProgressWatchdog(): boolean {
+    if (TERMINAL_NODE_STATUSES.has(this.status)) return false;
+
+    const stalledForMs = Date.now() - this.getLastProgressAtMs();
+    if (stalledForMs < NO_PROGRESS_WATCHDOG_MS) {
+      return false;
+    }
+
+    this.appendNodeEvent('coordinator_output_invalid', {
+      node_id: this.opts.nodeId,
+      failure_class: 'watchdog_no_progress',
+      details: `No progress observed for ${stalledForMs}ms.`,
+      stalled_for_ms: stalledForMs,
+      threshold_ms: NO_PROGRESS_WATCHDOG_MS,
+      last_coordinator_output_at_ms: this.lastCoordinatorOutputAtMs,
+      last_completed_action_at_ms: this.lastCompletedActionAtMs,
+      last_member_transition_at_ms: this.lastMemberTransitionAtMs,
+    });
+    this.transition('error', 'no_progress_watchdog_triggered');
+    return true;
   }
 
   private async cleanupJobs(): Promise<string[]> {
@@ -1472,6 +1540,7 @@ export class NodeSupervisor {
           } catch {
             // best-effort persistence; orchestration remains live
           }
+          this.lastMemberTransitionAtMs = Date.now();
 
           const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
           if (change.newStatus === 'error' || toContextHealth(contextPct) === 'CRITICAL') {
@@ -1517,10 +1586,9 @@ export class NodeSupervisor {
           }
         }
 
-        const degradedResumeLimitReached = this.status === 'degraded' && this.degradedResumeCount >= MAX_DEGRADED_COORDINATOR_RESUMES;
         const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
 
-        if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && !degradedResumeLimitReached && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
+        if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
           this.coordinatorResumesInFlight += 1;
           try {
@@ -1586,6 +1654,10 @@ export class NodeSupervisor {
               nodeId: this.opts.nodeId,
             });
           }
+          break;
+        }
+
+        if (this.maybeTriggerNoProgressWatchdog()) {
           break;
         }
 
