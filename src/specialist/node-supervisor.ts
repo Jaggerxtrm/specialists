@@ -324,6 +324,52 @@ export class NodeSupervisor {
     }
   }
 
+  private getMemberPendingActionKey(memberId: string, generation: number): string {
+    return `${memberId}:${generation}`;
+  }
+
+  private getMemberPendingActionForGeneration(memberId: string, generation: number): string | null {
+    return this.memberPendingAction.get(this.getMemberPendingActionKey(memberId, generation)) ?? null;
+  }
+
+  private setMemberPendingActionForGeneration(memberId: string, generation: number, actionId: string): void {
+    this.memberPendingAction.set(this.getMemberPendingActionKey(memberId, generation), actionId);
+  }
+
+  private clearMemberPendingActionForGeneration(memberId: string, generation: number): void {
+    this.memberPendingAction.delete(this.getMemberPendingActionKey(memberId, generation));
+  }
+
+  private clearMemberPendingActions(memberId: string): void {
+    for (const key of this.memberPendingAction.keys()) {
+      if (key.startsWith(`${memberId}:`)) {
+        this.memberPendingAction.delete(key);
+      }
+    }
+  }
+
+  private resetResumePendingFromLiveCoordinatorStatus(): void {
+    const coordinatorStatus = this.coordinatorJobId
+      ? this.opts.sqliteClient.readStatus(this.coordinatorJobId)?.status
+      : null;
+
+    const recoveredPending = this.resumePending;
+    this.resumePending = false;
+
+    if (!recoveredPending) return;
+
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
+        node_id: this.opts.nodeId,
+        resume_pending: false,
+        recovery_reset: true,
+        coordinator_status: coordinatorStatus,
+      });
+    } catch {
+      // best-effort persistence; orchestration remains live
+    }
+  }
+
   private async bootstrap(): Promise<void> {
     try {
       this.opts.sqliteClient.bootstrapNode(this.opts.nodeId, this.opts.nodeName, this.opts.memoryNamespace);
@@ -373,9 +419,9 @@ export class NodeSupervisor {
 
         if (event.type === 'action_completed') {
           this.completedActionIds.add(envelope.actionId);
-          this.memberPendingAction.delete(envelope.action.memberId);
+          this.clearMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration);
         } else if (event.type === 'action_written') {
-          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+          this.setMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration, envelope.actionId);
         }
 
         this.actionLifecycle.set(envelope.actionId, event.type.replace('action_', '') as ActionLifecycleState);
@@ -393,9 +439,11 @@ export class NodeSupervisor {
         }
 
         if (state === 'written' || state === 'observed') {
-          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+          this.setMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration, envelope.actionId);
         }
       }
+
+      this.resetResumePendingFromLiveCoordinatorStatus();
 
       try {
         this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'node_recovered', {
@@ -523,6 +571,7 @@ export class NodeSupervisor {
       member.jobId = jobId;
       member.status = 'starting';
       member.generation += 1;
+      this.clearMemberPendingActions(member.memberId);
       this.memberControllers.set(member.memberId, controller);
 
       try {
@@ -649,7 +698,7 @@ export class NodeSupervisor {
       if (!status) continue;
 
       const output = this.memberControllers.get(member.memberId)?.readResult(member.jobId) ?? null;
-      const outputHash = hashOutput(output, `${member.generation}:${this.pollSequence}`);
+      const outputHash = hashOutput(output, `${member.generation}`);
       const statusChanged = member.status !== status.status;
       const outputChanged = member.lastSeenOutputHash !== outputHash;
 
@@ -682,7 +731,10 @@ export class NodeSupervisor {
   }
 
   private maybeAcknowledgeMemberAction(memberId: string): void {
-    const pendingActionId = this.memberPendingAction.get(memberId);
+    const member = this.members.get(memberId);
+    if (!member) return;
+
+    const pendingActionId = this.getMemberPendingActionForGeneration(memberId, member.generation);
     if (!pendingActionId) return;
 
     const lifecycle = this.actionLifecycle.get(pendingActionId);
@@ -691,7 +743,7 @@ export class NodeSupervisor {
       this.appendActionLifecycleEvent(envelope, 'observed');
       this.appendActionLifecycleEvent(envelope, 'completed');
       this.completedActionIds.add(pendingActionId);
-      this.memberPendingAction.delete(memberId);
+      this.clearMemberPendingActionForGeneration(memberId, member.generation);
     }
   }
 
@@ -908,7 +960,7 @@ export class NodeSupervisor {
           continue;
         }
 
-        const pendingActionId = this.memberPendingAction.get(nextAction.memberId);
+        const pendingActionId = this.getMemberPendingActionForGeneration(nextAction.memberId, member.generation);
         if (pendingActionId && !this.completedActionIds.has(pendingActionId)) {
           this.appendActionLifecycleEvent(nextEnvelope, 'failed', {
             reason: 'member_has_pending_action',
@@ -926,7 +978,7 @@ export class NodeSupervisor {
           } else {
             await controller.stopJob(member.jobId);
           }
-          this.memberPendingAction.set(nextAction.memberId, nextEnvelope.actionId);
+          this.setMemberPendingActionForGeneration(nextAction.memberId, nextEnvelope.targetGeneration, nextEnvelope.actionId);
           this.appendActionLifecycleEvent(nextEnvelope, 'written');
         } catch (error) {
           this.appendActionLifecycleEvent(nextEnvelope, 'failed', {
