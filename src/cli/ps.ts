@@ -325,9 +325,12 @@ function renderJobLine(
   const spec = job.specialist.slice(0, 13).padEnd(13);
   const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
   const elapsedBase = formatElapsed(job.elapsed_s);
+  const metricParts: string[] = [];
+  if (job.metrics?.turns) metricParts.push(`${job.metrics.turns}t`);
+  if (job.metrics?.tool_calls) metricParts.push(`${job.metrics.tool_calls}tc`);
   const totalTokens = job.metrics?.token_usage?.total_tokens;
-  const elapsedWithTokens = totalTokens !== undefined ? `${elapsedBase} · ${totalTokens} tok` : elapsedBase;
-  const elapsed = elapsedWithTokens.padStart(7);
+  if (totalTokens) metricParts.push(`${totalTokens}tok`);
+  const elapsed = metricParts.length > 0 ? `${elapsedBase} ${dim(metricParts.join('·'))}` : elapsedBase;
   const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
   const beadCol = job.bead_id ? job.bead_id : '';
   const action = getNextAction(job);

@@ -17631,6 +17631,7 @@ class SpecialistLoader {
     const dirs = [
       { path: join(this.projectDir, ".specialists", "user"), scope: "user" },
       { path: join(this.projectDir, ".specialists", "user", "specialists"), scope: "user" },
+      { path: join(this.projectDir, "config", "specialists"), scope: "default" },
       { path: join(this.projectDir, ".specialists", "default"), scope: "default" },
       { path: join(this.projectDir, ".specialists", "default", "specialists"), scope: "default" },
       { path: join(this.projectDir, "specialists"), scope: "default" },
@@ -17825,13 +17826,14 @@ function normalizeTokenUsage(candidate) {
   if (!candidate || typeof candidate !== "object")
     return;
   const usage = candidate;
+  const cost = usage.cost;
   const normalized = {
-    input_tokens: pickFirstNumber(usage, ["input_tokens", "inputTokens", "prompt_tokens", "promptTokens"]),
-    output_tokens: pickFirstNumber(usage, ["output_tokens", "outputTokens", "completion_tokens", "completionTokens"]),
-    cache_creation_tokens: pickFirstNumber(usage, ["cache_creation_tokens", "cacheCreationTokens", "cache_write_tokens"]),
-    cache_read_tokens: pickFirstNumber(usage, ["cache_read_tokens", "cacheReadTokens", "cache_hit_tokens"]),
+    input_tokens: pickFirstNumber(usage, ["input_tokens", "inputTokens", "prompt_tokens", "promptTokens", "input"]),
+    output_tokens: pickFirstNumber(usage, ["output_tokens", "outputTokens", "completion_tokens", "completionTokens", "output"]),
+    cache_creation_tokens: pickFirstNumber(usage, ["cache_creation_tokens", "cacheCreationTokens", "cache_write_tokens", "cacheWrite"]),
+    cache_read_tokens: pickFirstNumber(usage, ["cache_read_tokens", "cacheReadTokens", "cache_hit_tokens", "cacheRead"]),
     total_tokens: pickFirstNumber(usage, ["total_tokens", "totalTokens"]),
-    cost_usd: pickFirstNumber(usage, ["cost_usd", "costUsd", "usd_cost", "cost"])
+    cost_usd: pickFirstNumber(usage, ["cost_usd", "costUsd", "usd_cost", "cost"]) ?? (typeof cost === "object" && cost !== null ? pickFirstNumber(cost, ["total", "usd", "cost_usd"]) : undefined)
   };
   const hasAny = Object.values(normalized).some((value) => value !== undefined);
   if (!hasAny)
@@ -17847,7 +17849,7 @@ function normalizeTokenUsage(candidate) {
       normalized.total_tokens = components.reduce((sum, value) => sum + value, 0);
     }
   }
-  return normalized;
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
 }
 function findFinishReason(payload) {
   if (!payload || typeof payload !== "object")
@@ -17862,10 +17864,18 @@ function findTokenUsage(payload) {
   if (!payload || typeof payload !== "object")
     return;
   const record3 = payload;
+  const message = record3.message && typeof record3.message === "object" ? record3.message : undefined;
+  const assistantMessage = Array.isArray(record3.messages) ? [...record3.messages].reverse().find((m) => !!m && typeof m === "object" && m.role === "assistant") : undefined;
   const candidates = [
     record3.usage,
     record3.tokenUsage,
     record3.token_usage,
+    message?.usage,
+    message?.tokenUsage,
+    message?.token_usage,
+    assistantMessage?.usage,
+    assistantMessage?.tokenUsage,
+    assistantMessage?.token_usage,
     record3.stats?.usage,
     record3.stats?.tokenUsage,
     record3.result?.usage,
@@ -17926,6 +17936,17 @@ function findToolResultRaw(payload) {
   if (!result || typeof result !== "object" || Array.isArray(result))
     return;
   return result;
+}
+function findStringValue(payload, keys) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  for (const key of keys) {
+    const value = record3[key];
+    if (typeof value === "string" && value.trim().length > 0)
+      return value;
+  }
+  return;
 }
 
 class PiAgentSession {
@@ -18174,16 +18195,54 @@ class PiAgentSession {
       if (type === "auto_compaction_end") {
         this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
       }
-      this.options.onMetric?.({ type: "compaction", phase: type === "auto_compaction_start" ? "start" : "end" });
-      this.options.onEvent?.(type);
+      const compactionDetails = {
+        tokensBefore: asNumber(event.tokensBefore ?? event.tokens_before),
+        summary: findStringValue(event, ["summary"]),
+        firstKeptEntryId: findStringValue(event, ["firstKeptEntryId", "first_kept_entry_id"])
+      };
+      this.options.onMetric?.({
+        type: "compaction",
+        phase: type === "auto_compaction_start" ? "start" : "end",
+        ...compactionDetails
+      });
+      this.options.onEvent?.(type, compactionDetails);
       return;
     }
     if (type === "auto_retry_start" || type === "auto_retry_end") {
       if (type === "auto_retry_end") {
         this._metrics.auto_retries = (this._metrics.auto_retries ?? 0) + 1;
       }
-      this.options.onMetric?.({ type: "retry", phase: type === "auto_retry_start" ? "start" : "end" });
-      this.options.onEvent?.("auto_retry");
+      const retryDetails = {
+        attempt: asNumber(event.attempt),
+        maxAttempts: asNumber(event.maxAttempts ?? event.max_attempts),
+        delayMs: asNumber(event.delayMs ?? event.delay_ms),
+        errorMessage: findStringValue(event, ["errorMessage", "error_message", "error"])
+      };
+      this.options.onMetric?.({
+        type: "retry",
+        phase: type === "auto_retry_start" ? "start" : "end",
+        ...retryDetails
+      });
+      this.options.onEvent?.(type, retryDetails);
+      return;
+    }
+    if (type === "set_model" || type === "cycle_model") {
+      const modelChange = {
+        action: type,
+        model: findStringValue(event, ["model", "newModel", "new_model"]),
+        previousModel: findStringValue(event, ["previousModel", "previous_model", "oldModel", "old_model"])
+      };
+      this.options.onMetric?.({ type: "model_change", ...modelChange });
+      this.options.onEvent?.(type, modelChange);
+      return;
+    }
+    if (type === "extension_error") {
+      const extensionError = {
+        extension: findStringValue(event, ["extension", "extensionName", "name"]),
+        errorMessage: findStringValue(event, ["errorMessage", "error_message", "error"])
+      };
+      this.options.onMetric?.({ type: "extension_error", ...extensionError });
+      this.options.onEvent?.("extension_error", extensionError);
       return;
     }
     if (type === "message_update") {
@@ -21531,12 +21590,61 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
     case "turn_end":
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
     case "auto_compaction_start":
-      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: "start" };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "start",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
     case "auto_compaction_end":
     case "auto_compaction":
-      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: "end" };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "end",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_retry_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "start",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "auto_retry_end":
     case "auto_retry":
-      return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: "end" };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "end",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "set_model":
+    case "cycle_model":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
+        action: callbackEvent,
+        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
+        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
+      };
+    case "extension_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
+        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
+        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
+      };
     case "text":
       return {
         t,
@@ -21613,18 +21721,25 @@ function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textCont
     ...contextHealth ? { context_health: contextHealth } : {}
   };
 }
-function createCompactionEvent(phase) {
+function createCompactionEvent(phase, options) {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.COMPACTION,
-    phase
+    phase,
+    ...options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {},
+    ...options?.summary ? { summary: options.summary } : {},
+    ...options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}
   };
 }
-function createRetryEvent(phase) {
+function createRetryEvent(phase, options) {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.RETRY,
-    phase
+    phase,
+    ...options?.attempt !== undefined ? { attempt: options.attempt } : {},
+    ...options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {},
+    ...options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {},
+    ...options?.errorMessage ? { error_message: options.errorMessage } : {}
   };
 }
 function createRunCompleteEvent(status, elapsed_s, options) {
@@ -21694,6 +21809,8 @@ var init_timeline_events = __esm(() => {
     TURN_SUMMARY: "turn_summary",
     COMPACTION: "compaction",
     RETRY: "retry",
+    MODEL_CHANGE: "model_change",
+    EXTENSION_ERROR: "extension_error",
     DONE: "done",
     AGENT_END: "agent_end"
   };
@@ -23372,7 +23489,27 @@ class Supervisor {
           isError: toolState?.isError,
           resultContent: toolState?.resultContent,
           resultRaw: toolState?.resultRaw,
-          charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount
+          charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount,
+          compaction: {
+            tokensBefore: details?.tokensBefore,
+            summary: details?.summary,
+            firstKeptEntryId: details?.firstKeptEntryId
+          },
+          retry: {
+            attempt: details?.attempt,
+            maxAttempts: details?.maxAttempts,
+            delayMs: details?.delayMs,
+            errorMessage: details?.errorMessage
+          },
+          modelChange: {
+            action: details?.action ?? (eventType === "set_model" || eventType === "cycle_model" ? eventType : "set_model"),
+            model: details?.model,
+            previousModel: details?.previousModel
+          },
+          extensionError: {
+            extension: details?.extension,
+            errorMessage: details?.errorMessage
+          }
         });
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
@@ -23413,13 +23550,23 @@ class Supervisor {
         if (metricEvent.type === "compaction") {
           const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
           mergeRunMetrics({ auto_compactions: compactions });
-          appendTimelineEvent(createCompactionEvent(metricEvent.phase));
+          appendTimelineEvent(createCompactionEvent(metricEvent.phase, {
+            tokensBefore: metricEvent.tokensBefore,
+            summary: metricEvent.summary,
+            firstKeptEntryId: metricEvent.firstKeptEntryId
+          }));
           return;
         }
         if (metricEvent.type === "retry") {
           const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
           mergeRunMetrics({ auto_retries: retries });
-          appendTimelineEvent(createRetryEvent(metricEvent.phase));
+          appendTimelineEvent(createRetryEvent(metricEvent.phase, {
+            attempt: metricEvent.attempt,
+            maxAttempts: metricEvent.maxAttempts,
+            delayMs: metricEvent.delayMs,
+            errorMessage: metricEvent.errorMessage
+          }));
+          return;
         }
       }, (meta) => {
         setStatus({ model: meta.model, backend: meta.backend });
@@ -26780,6 +26927,7 @@ function toJobNode(job) {
     elapsed_s: job.elapsed_s,
     context_pct: job.context_pct,
     context_health: job.context_health,
+    metrics: job.metrics,
     children: []
   };
 }
@@ -26965,7 +27113,16 @@ function renderJobLine(job, beadTitles, prefix, connector) {
   const id = job.id.padEnd(8);
   const spec = job.specialist.slice(0, 13).padEnd(13);
   const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
-  const elapsed = formatElapsed3(job.elapsed_s).padStart(7);
+  const elapsedBase = formatElapsed3(job.elapsed_s);
+  const metricParts = [];
+  if (job.metrics?.turns)
+    metricParts.push(`${job.metrics.turns}t`);
+  if (job.metrics?.tool_calls)
+    metricParts.push(`${job.metrics.tool_calls}tc`);
+  const totalTokens = job.metrics?.token_usage?.total_tokens;
+  if (totalTokens)
+    metricParts.push(`${totalTokens}tok`);
+  const elapsed = metricParts.length > 0 ? `${elapsedBase} ${dim8(metricParts.join("\xB7"))}` : elapsedBase;
   const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
   const beadCol = job.bead_id ? job.bead_id : "";
   const action = getNextAction(job);
@@ -27033,6 +27190,15 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   if (chainJobs.length > 1)
     console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` \xB7 ${job.metrics.turns ?? 0} turns \xB7 ${job.metrics.tool_calls ?? 0} tools` : ""}`);
+  const tokenUsage = job.metrics?.token_usage;
+  const tokenSummaryParts = formatTokenUsageSummary(tokenUsage).filter((part) => !part.startsWith("cost="));
+  if (tokenSummaryParts.length > 0) {
+    console.log(`  tokens    ${tokenSummaryParts.join(" \xB7 ")}`);
+  }
+  const formattedCost = formatCostUsd(tokenUsage?.cost_usd);
+  if (formattedCost) {
+    console.log(`  cost_usd  ${formattedCost}`);
+  }
   console.log(`  context   ${ctx}`);
   if (job.current_tool)
     console.log(`  current   ${job.current_tool}`);
@@ -27194,6 +27360,26 @@ async function run14() {
   const jobsDir = join19(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
+  const emitHumanResult = (output2, status, trailingFooter) => {
+    process.stdout.write(output2);
+    const tokenSummaryParts = formatTokenUsageSummary(status.metrics?.token_usage).filter((part) => !part.startsWith("cost="));
+    const formattedCost = formatCostUsd(status.metrics?.token_usage?.cost_usd);
+    if (tokenSummaryParts.length === 0 && !formattedCost) {
+      if (trailingFooter)
+        process.stderr.write(dim10(trailingFooter));
+      return;
+    }
+    const footerParts = [];
+    if (tokenSummaryParts.length > 0)
+      footerParts.push(tokenSummaryParts.join(" \xB7 "));
+    if (formattedCost)
+      footerParts.push(`cost_usd=${formattedCost}`);
+    process.stderr.write(dim10(`
+--- metrics: ${footerParts.join(" \xB7 ")} ---
+`));
+    if (trailingFooter)
+      process.stderr.write(dim10(trailingFooter));
+  };
   try {
     const resultPath = join19(jobsDir, jobId, "result.txt");
     const readResultOutput = () => {
@@ -27234,7 +27420,7 @@ async function run14() {
           if (args.json) {
             emitJson(status2, output3, null);
           } else {
-            process.stdout.write(output3);
+            emitHumanResult(output3, status2);
           }
           return;
         }
@@ -27290,7 +27476,7 @@ async function run14() {
       } else {
         process.stderr.write(`${dim10(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
-        process.stdout.write(output3);
+        emitHumanResult(output3, status);
       }
       return;
     }
@@ -27312,8 +27498,7 @@ async function run14() {
       if (args.json) {
         emitJson(status, `${output3}${waitingFooter}`, null);
       } else {
-        process.stdout.write(output3);
-        process.stderr.write(dim10(waitingFooter));
+        emitHumanResult(output3, status, waitingFooter);
       }
       return;
     }
@@ -27340,7 +27525,7 @@ async function run14() {
       emitJson(status, output2, null);
       return;
     }
-    process.stdout.write(output2);
+    emitHumanResult(output2, status);
   } finally {
     sqliteClient?.close();
   }
@@ -27349,6 +27534,7 @@ var dim10 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
   init_observability_sqlite();
+  init_format_helpers();
 });
 
 // src/specialist/timeline-query.ts
