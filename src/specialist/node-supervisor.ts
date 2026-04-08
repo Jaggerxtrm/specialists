@@ -1051,6 +1051,8 @@ export class NodeSupervisor {
     type:
       | 'coordinator_output_invalid'
       | 'memory_updated'
+      | 'memory_patch_rejected'
+      | 'memory_patch_deduplicated'
       | 'coordinator_output_received'
       | 'coordinator_resume_skipped'
       | 'action_dropped'
@@ -1140,8 +1142,48 @@ export class NodeSupervisor {
     return null;
   }
 
-  private applyMemoryPatch(memoryPatch: CoordinatorOutputContract['memory_patch']): void {
+  private applyMemoryPatch(memoryPatch: CoordinatorOutputContract['memory_patch']): {
+    acceptedCount: number;
+    rejectedCount: number;
+    dedupedCount: number;
+  } {
+    let acceptedCount = 0;
+    let rejectedCount = 0;
+    let dedupedCount = 0;
+
+    const existingEntryIds = new Set(
+      this.opts.sqliteClient
+        .readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined)
+        .map((row) => row.entry_id)
+        .filter((entryId): entryId is string => typeof entryId === 'string' && entryId.length > 0),
+    );
+
     for (const entry of memoryPatch) {
+      if (!entry.source_member_id) {
+        rejectedCount += 1;
+        this.appendNodeEvent('memory_patch_rejected', {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          reason: 'missing_source_member_id',
+        });
+        continue;
+      }
+
+      if (typeof entry.confidence !== 'number' || Number.isNaN(entry.confidence) || entry.confidence < 0 || entry.confidence > 1) {
+        rejectedCount += 1;
+        this.appendNodeEvent('memory_patch_rejected', {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          reason: 'invalid_confidence',
+          confidence: entry.confidence ?? null,
+        });
+        continue;
+      }
+
+      const isDeduped = Boolean(entry.entry_id && existingEntryIds.has(entry.entry_id));
+
       try {
         this.opts.sqliteClient.upsertNodeMemory({
           node_run_id: this.opts.nodeId,
@@ -1159,13 +1201,35 @@ export class NodeSupervisor {
         continue;
       }
 
+      acceptedCount += 1;
+      if (entry.entry_id) {
+        existingEntryIds.add(entry.entry_id);
+      }
+
+      if (isDeduped) {
+        dedupedCount += 1;
+        this.appendNodeEvent('memory_patch_deduplicated', {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id,
+          namespace: this.opts.memoryNamespace ?? null,
+        });
+      }
+
       this.appendNodeEvent('memory_updated', {
         node_id: this.opts.nodeId,
         entry_type: entry.entry_type,
         entry_id: entry.entry_id ?? null,
-        source_member_id: entry.source_member_id ?? null,
+        source_member_id: entry.source_member_id,
+        confidence: entry.confidence,
       });
     }
+
+    return {
+      acceptedCount,
+      rejectedCount,
+      dedupedCount,
+    };
   }
 
   private waitForCoordinatorOutput(previousOutputHash: string | null): Promise<string | null> {
@@ -1356,16 +1420,19 @@ export class NodeSupervisor {
         continue;
       }
 
+      const memoryPatchStats = this.applyMemoryPatch(coordinatorOutput.memory_patch);
+
       this.appendNodeEvent('coordinator_output_received', {
         node_id: this.opts.nodeId,
         summary: coordinatorOutput.summary,
         action_count: coordinatorOutput.actions.length,
         memory_patch_count: coordinatorOutput.memory_patch.length,
+        accepted_count: memoryPatchStats.acceptedCount,
+        rejected_count: memoryPatchStats.rejectedCount,
+        deduped_count: memoryPatchStats.dedupedCount,
         output_hash: hashOutput(currentOutput),
       });
       this.lastCoordinatorOutputAtMs = Date.now();
-
-      this.applyMemoryPatch(coordinatorOutput.memory_patch);
       const predecessorByMemberId = new Map<string, string>();
       for (const action of coordinatorOutput.actions as NodeDispatchAction[]) {
         const inferredDependsOnActionId = action.dependsOnActionId ?? predecessorByMemberId.get(action.memberId);

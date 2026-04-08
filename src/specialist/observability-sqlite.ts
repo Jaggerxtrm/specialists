@@ -459,6 +459,8 @@ export type NodeEventType =
   | 'coordinator_output_invalid'
   | 'coordinator_repair_requested'
   | 'memory_updated'
+  | 'memory_patch_rejected'
+  | 'memory_patch_deduplicated'
   | 'action_dispatched'
   | 'action_queued'
   | 'action_written'

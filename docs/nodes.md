@@ -293,14 +293,25 @@ Memory is coordinator-authored via `memory_patch` entries.
 Flow:
 
 1. Coordinator emits `memory_patch[]`.
-2. `NodeSupervisor.applyMemoryPatch()` upserts into `node_memory`.
-3. For each entry, supervisor appends `memory_updated` event.
-4. `sp node promote <node-id> <finding-id> --to-bead <id>`:
+2. `NodeSupervisor.applyMemoryPatch()` validates each entry before persistence.
+3. Required fields:
+   - `source_member_id` must be present
+   - `confidence` must be present and within `0..1`
+4. Validation failures are non-fatal:
+   - invalid entry is skipped
+   - `memory_patch_rejected` event is emitted with rejection reason
+   - processing continues for remaining entries
+5. Dedup behavior:
+   - dedupe key is `(node_run_id, namespace, entry_id)` logical scope
+   - when `entry_id` already exists for the node/namespace, write path performs upsert (update existing row)
+   - `memory_patch_deduplicated` event is emitted for that mutation
+6. Accepted entries are upserted into `node_memory` and emit `memory_updated`.
+7. `sp node promote <node-id> <finding-id> --to-bead <id>`:
    - reads `node_memory` by `entry_id`,
    - builds “Node finding promoted” notes,
    - appends notes to target bead with `bd update --notes`.
 
-This gives structured node memory + explicit human workflow promotion.
+This gives structured node memory + explicit human workflow promotion with audit trail for accepted, rejected, and deduplicated entries.
 
 ---
 
@@ -362,7 +373,7 @@ Node runtime persistence lives in schema v4:
 - `type`
 - `event_json`
 
-Supported event types (`NodeEventType`, 17 total):
+Supported event types (`NodeEventType`):
 
 - `node_created`
 - `node_started`
@@ -376,6 +387,8 @@ Supported event types (`NodeEventType`, 17 total):
 - `coordinator_output_received`
 - `coordinator_output_invalid`
 - `memory_updated`
+- `memory_patch_rejected`
+- `memory_patch_deduplicated`
 - `action_dispatched`
 - `node_waiting`
 - `node_done`
