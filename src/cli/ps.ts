@@ -400,7 +400,10 @@ function renderInspect(jobId: string): void {
   console.log(`\n${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
   console.log(`  model     ${job.model ?? '--'} ${job.backend ? `(${job.backend})` : ''}`);
   if (job.bead_id) console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ''}`);
-  if (job.branch) console.log(`  worktree  ${job.branch}`);
+  if (job.worktree_path || job.branch) {
+    const wt = job.worktree_path ? dim(` ${job.worktree_path}`) : '';
+    console.log(`  worktree  ${job.branch ?? 'master'}${wt}`);
+  }
   if (chainJobs.length > 1) console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
   console.log(`  context   ${ctx}`);
