@@ -4,6 +4,13 @@ import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, re
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  ensureObservabilityDbFile,
+  ensureGitignoreHasObservabilityDbEntries,
+  isPathInsideJobsDirectory,
+  resolveObservabilityDbLocation,
+} from '../specialist/observability-db.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -494,6 +501,43 @@ function ensureGitignore(cwd: string): void {
   }
 }
 
+/**
+ * Initialize the observability SQLite database if it doesn't already exist.
+ * Uses exclusive-create (wx flag) internally — safe to call on every init,
+ * will never overwrite or reset an existing database.
+ */
+function ensureObservabilityDb(cwd: string): void {
+  const location = resolveObservabilityDbLocation(cwd);
+
+  if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
+    skip('observability DB path resolves inside jobs directory — skipped');
+    return;
+  }
+
+  const alreadyExists = existsSync(location.dbPath);
+  if (alreadyExists) {
+    skip('observability database already exists (not touched)');
+    return;
+  }
+
+  const { created } = ensureObservabilityDbFile(location);
+  if (!created) {
+    skip('observability database already exists (not touched)');
+    return;
+  }
+
+  // Initialize schema on the freshly created file
+  const client = createObservabilitySqliteClient(cwd);
+  if (client) {
+    client.close();
+    ok('created observability database (.specialists/db/observability.db)');
+  } else {
+    ok('created observability database file (schema init deferred — sqlite3/bun not available)');
+  }
+
+  ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
+}
+
 function ensureAgentsMd(cwd: string): void {
   const agentsPath = join(cwd, 'AGENTS.md');
   if (existsSync(agentsPath)) {
@@ -580,6 +624,9 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   // ── 6. Install skills via .xtrm default + active symlink roots ────────────
   installProjectSkills(cwd, false);
 
+  // ── 7. Initialize observability database (never overwrites existing) ──────
+  ensureObservabilityDb(cwd);
+
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
   console.log(`  ${dim('Project-local installation:')}`);
@@ -595,6 +642,7 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   console.log(`  .specialists/`);
   console.log(`  ├── default/           ${dim('# canonical specialists (from init --sync-defaults)')}`)
   console.log(`  ├── user/              ${dim('# your custom specialists')}`);
+  console.log(`  ├── db/                ${dim('# observability SQLite (gitignored)')}`);
   console.log(`  ├── jobs/              ${dim('# runtime (gitignored)')}`);
   console.log(`  └── ready/             ${dim('# runtime (gitignored)')}`);
   console.log(`\n  ${dim('Next steps:')}`);

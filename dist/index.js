@@ -20096,475 +20096,12 @@ var init_models = __esm(() => {
   init_loader();
 });
 
-// src/cli/init.ts
-var exports_init = {};
-__export(exports_init, {
-  run: () => run6
-});
-import { copyFileSync, cpSync, existsSync as existsSync6, lstatSync, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, readlinkSync, renameSync, symlinkSync, writeFileSync } from "fs";
-import { spawnSync as spawnSync5 } from "child_process";
-import { basename as basename3, dirname as dirname3, join as join6, resolve as resolve3 } from "path";
-import { fileURLToPath as fileURLToPath2 } from "url";
-function ok(msg) {
-  console.log(`  ${green4("\u2713")} ${msg}`);
-}
-function skip(msg) {
-  console.log(`  ${yellow5("\u25CB")} ${msg}`);
-}
-function isInstalled(bin) {
-  return spawnSync5("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
-}
-function assertXtrmPrerequisites(cwd) {
-  const hasXtrmDir = existsSync6(join6(cwd, ".xtrm"));
-  const hasXtCli = isInstalled("xt");
-  if (hasXtrmDir && hasXtCli)
-    return;
-  console.error("specialists requires xtrm. Run: npm install -g xtrm-tools && xt install");
-  process.exit(1);
-}
-function loadJson(path, fallback) {
-  if (!existsSync6(path))
-    return structuredClone(fallback);
-  try {
-    return JSON.parse(readFileSync3(path, "utf-8"));
-  } catch {
-    return structuredClone(fallback);
-  }
-}
-function saveJson(path, value) {
-  writeFileSync(path, JSON.stringify(value, null, 2) + `
-`, "utf-8");
-}
-function resolvePackagePath(relativePath) {
-  const configPath = `config/${relativePath}`;
-  let resolved = fileURLToPath2(new URL(`../${configPath}`, import.meta.url));
-  if (existsSync6(resolved))
-    return resolved;
-  resolved = fileURLToPath2(new URL(`../../${configPath}`, import.meta.url));
-  if (existsSync6(resolved))
-    return resolved;
-  return null;
-}
-function migrateLegacySpecialists(cwd, scope) {
-  const sourceDir = join6(cwd, ".specialists", scope, "specialists");
-  if (!existsSync6(sourceDir))
-    return;
-  const targetDir = join6(cwd, ".specialists", scope);
-  if (!existsSync6(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
-  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
-  if (files.length === 0)
-    return;
-  let moved = 0;
-  let skipped = 0;
-  for (const file of files) {
-    const src = join6(sourceDir, file);
-    const dest = join6(targetDir, file);
-    if (existsSync6(dest)) {
-      skipped++;
-      continue;
-    }
-    renameSync(src, dest);
-    moved++;
-  }
-  if (moved > 0) {
-    ok(`migrated ${moved} specialist${moved === 1 ? "" : "s"} from .specialists/${scope}/specialists/ to .specialists/${scope}/`);
-  }
-  if (skipped > 0) {
-    skip(`${skipped} legacy specialist${skipped === 1 ? "" : "s"} already exist in .specialists/${scope}/ (not moved)`);
-  }
-}
-function copyCanonicalSpecialists(cwd) {
-  const sourceDir = resolvePackagePath("specialists");
-  if (!sourceDir) {
-    skip("no canonical specialists found in package");
-    return;
-  }
-  const targetDir = join6(cwd, ".specialists", "default");
-  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json"));
-  if (files.length === 0) {
-    skip("no specialist files found in package");
-    return;
-  }
-  if (!existsSync6(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
-  }
-  let copied = 0;
-  let skipped = 0;
-  for (const file of files) {
-    const src = join6(sourceDir, file);
-    const dest = join6(targetDir, file);
-    if (existsSync6(dest)) {
-      skipped++;
-    } else {
-      copyFileSync(src, dest);
-      copied++;
-    }
-  }
-  if (copied > 0) {
-    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to .specialists/default/`);
-  }
-  if (skipped > 0) {
-    skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
-  }
-}
-function installProjectHooks(cwd) {
-  const sourceDir = resolvePackagePath("hooks");
-  if (!sourceDir) {
-    skip("no canonical hooks found in package");
-    return;
-  }
-  const xtrmHooksDir = join6(cwd, ".xtrm", "hooks");
-  const targetDir = join6(xtrmHooksDir, "specialists");
-  const claudeHooksDir = join6(cwd, ".claude", "hooks");
-  const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
-  if (hooks.length === 0) {
-    skip("no hook files found in package");
-    return;
-  }
-  mkdirSync(targetDir, { recursive: true });
-  mkdirSync(claudeHooksDir, { recursive: true });
-  let copied = 0;
-  let skippedCopies = 0;
-  let linked = 0;
-  let skippedLinks = 0;
-  for (const file of hooks) {
-    const src = join6(sourceDir, file);
-    const xtrmDest = join6(targetDir, file);
-    if (existsSync6(xtrmDest)) {
-      skippedCopies++;
-    } else {
-      copyFileSync(src, xtrmDest);
-      copied++;
-    }
-    const claudeHookPath = join6(claudeHooksDir, file);
-    if (existsSync6(claudeHookPath)) {
-      const stats = lstatSync(claudeHookPath);
-      if (!stats.isSymbolicLink()) {
-        skippedLinks++;
-        continue;
-      }
-      const currentTarget = resolve3(dirname3(claudeHookPath), readlinkSync(claudeHookPath));
-      if (currentTarget !== xtrmDest) {
-        skippedLinks++;
-        continue;
-      }
-      skippedLinks++;
-      continue;
-    }
-    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
-    symlinkSync(relativeTarget, claudeHookPath);
-    linked++;
-  }
-  if (copied > 0)
-    ok(`installed ${copied} hook${copied === 1 ? "" : "s"} to .xtrm/hooks/specialists/`);
-  if (skippedCopies > 0)
-    skip(`${skippedCopies} hook${skippedCopies === 1 ? "" : "s"} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
-  if (linked > 0)
-    ok(`linked ${linked} hook${linked === 1 ? "" : "s"} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
-  if (skippedLinks > 0)
-    skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
-}
-function ensureProjectHookWiring(cwd) {
-  const settingsPath = join6(cwd, ".claude", "settings.json");
-  const settingsDir = join6(cwd, ".claude");
-  if (!existsSync6(settingsDir)) {
-    mkdirSync(settingsDir, { recursive: true });
-  }
-  const settings = loadJson(settingsPath, {});
-  let changed = false;
-  function addHook(event, command) {
-    const eventList = settings[event] ?? [];
-    settings[event] = eventList;
-    const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
-    if (!alreadyWired) {
-      eventList.push({ matcher: "", hooks: [{ type: "command", command }] });
-      changed = true;
-    }
-  }
-  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
-  addHook("PostToolUse", "node .claude/hooks/specialists-complete.mjs");
-  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
-  if (changed) {
-    saveJson(settingsPath, settings);
-    ok("wired specialists hooks in .claude/settings.json");
-  } else {
-    skip(".claude/settings.json already has specialists hooks");
-  }
-}
-function assertSkillRootSymlink(rootPath, expectedTargetPath) {
-  if (!existsSync6(rootPath)) {
-    throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
-  }
-  const stats = lstatSync(rootPath);
-  if (!stats.isSymbolicLink()) {
-    throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
-  }
-  const linkTarget = readlinkSync(rootPath);
-  const resolvedTarget = resolve3(dirname3(rootPath), linkTarget);
-  const resolvedExpected = resolve3(expectedTargetPath);
-  if (resolvedTarget !== resolvedExpected) {
-    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
-  }
-}
-function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
-  let stats;
-  try {
-    stats = lstatSync(activeLinkPath);
-  } catch (error2) {
-    const fileError = error2;
-    if (fileError.code === "ENOENT") {
-      const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
-      symlinkSync(relativeTarget, activeLinkPath, "dir");
-      return;
-    }
-    throw error2;
-  }
-  if (!stats.isSymbolicLink()) {
-    throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
-  }
-  const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
-  if (currentTarget !== resolve3(defaultSkillPath)) {
-    throw new Error(`${activeLinkPath} points to an unexpected target.`);
-  }
-}
-function installProjectSkills(cwd, syncSkills) {
-  const xtrmRoot = join6(cwd, ".xtrm");
-  if (!existsSync6(xtrmRoot)) {
-    throw new Error(".xtrm/ is missing. Install xtrm first, then run specialists init.");
-  }
-  const sourceDir = resolvePackagePath("skills");
-  if (!sourceDir) {
-    skip("no canonical skills found in package");
-    return;
-  }
-  const skills = readdirSync2(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
-  if (skills.length === 0) {
-    skip("no skill directories found in package");
-    return;
-  }
-  const defaultRoot = join6(cwd, ".xtrm", "skills", "default");
-  const activeClaudeRoot = join6(cwd, ".xtrm", "skills", "active", "claude");
-  const activePiRoot = join6(cwd, ".xtrm", "skills", "active", "pi");
-  mkdirSync(defaultRoot, { recursive: true });
-  mkdirSync(activeClaudeRoot, { recursive: true });
-  mkdirSync(activePiRoot, { recursive: true });
-  assertSkillRootSymlink(join6(cwd, ".claude", "skills"), activeClaudeRoot);
-  assertSkillRootSymlink(join6(cwd, ".pi", "skills"), activePiRoot);
-  let copied = 0;
-  let refreshed = 0;
-  for (const skill of skills) {
-    const src = join6(sourceDir, skill);
-    const defaultSkillPath = join6(defaultRoot, skill);
-    if (existsSync6(defaultSkillPath)) {
-      if (syncSkills) {
-        cpSync(src, defaultSkillPath, { recursive: true, force: true });
-        refreshed++;
-      }
-    } else {
-      cpSync(src, defaultSkillPath, { recursive: true });
-      copied++;
-    }
-    ensureActiveSkillSymlink(defaultSkillPath, join6(activeClaudeRoot, skill));
-    ensureActiveSkillSymlink(defaultSkillPath, join6(activePiRoot, skill));
-  }
-  if (copied > 0)
-    ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
-  if (refreshed > 0)
-    ok(`re-synced ${refreshed} skill${refreshed === 1 ? "" : "s"} in .xtrm/skills/default/`);
-  ok("verified active skill symlinks in .xtrm/skills/active/{claude,pi}/");
-}
-function createSpecialistsDirs(cwd) {
-  const defaultDir = join6(cwd, ".specialists", "default");
-  const userDir = join6(cwd, ".specialists", "user");
-  let created = 0;
-  for (const dir of [defaultDir, userDir]) {
-    if (!existsSync6(dir)) {
-      mkdirSync(dir, { recursive: true });
-      created++;
-    }
-  }
-  if (created > 0) {
-    ok("created .specialists/default/ and .specialists/user/");
-  }
-}
-function createRuntimeDirs(cwd) {
-  const runtimeDirs = [
-    join6(cwd, ".specialists", "jobs"),
-    join6(cwd, ".specialists", "ready")
-  ];
-  let created = 0;
-  for (const dir of runtimeDirs) {
-    if (!existsSync6(dir)) {
-      mkdirSync(dir, { recursive: true });
-      created++;
-    }
-  }
-  if (created > 0) {
-    ok("created .specialists/jobs/ and .specialists/ready/");
-  }
-}
-function ensureProjectMcp(cwd) {
-  const mcpPath = join6(cwd, MCP_FILE);
-  const mcp = loadJson(mcpPath, { mcpServers: {} });
-  mcp.mcpServers ??= {};
-  const existing = mcp.mcpServers[MCP_SERVER_NAME];
-  if (existing && existing.command === MCP_SERVER_CONFIG.command && Array.isArray(existing.args) && existing.args.length === MCP_SERVER_CONFIG.args.length) {
-    skip(".mcp.json already registers specialists");
-    return;
-  }
-  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
-  saveJson(mcpPath, mcp);
-  ok("registered specialists in project .mcp.json");
-}
-function ensureGitignore(cwd) {
-  const gitignorePath = join6(cwd, ".gitignore");
-  const existing = existsSync6(gitignorePath) ? readFileSync3(gitignorePath, "utf-8") : "";
-  let added = 0;
-  const lines = existing.split(`
-`);
-  for (const entry of GITIGNORE_ENTRIES) {
-    if (!lines.includes(entry)) {
-      lines.push(entry);
-      added++;
-    }
-  }
-  if (added > 0) {
-    writeFileSync(gitignorePath, lines.join(`
-`) + `
-`, "utf-8");
-    ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
-  } else {
-    skip(".gitignore already has runtime entries");
-  }
-}
-function ensureAgentsMd(cwd) {
-  const agentsPath = join6(cwd, "AGENTS.md");
-  if (existsSync6(agentsPath)) {
-    const existing = readFileSync3(agentsPath, "utf-8");
-    if (existing.includes(AGENTS_MARKER)) {
-      skip("AGENTS.md already has Specialists section");
-    } else {
-      writeFileSync(agentsPath, existing.trimEnd() + `
-
-` + AGENTS_BLOCK, "utf-8");
-      ok("appended Specialists section to AGENTS.md");
-    }
-  } else {
-    writeFileSync(agentsPath, AGENTS_BLOCK, "utf-8");
-    ok("created AGENTS.md with Specialists section");
-  }
-}
-async function run6(opts = {}) {
-  const cwd = process.cwd();
-  const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
-  const inAgentSession = !forceInit && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
-  if (inAgentSession) {
-    console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command \u2014 do not invoke from scripts or agent sessions.");
-    process.exit(1);
-  }
-  console.log(`
-${bold5("specialists init")}
-`);
-  const { syncDefaults = false, syncSkills = false, noXtrmCheck = false } = opts;
-  if (!noXtrmCheck) {
-    assertXtrmPrerequisites(cwd);
-  }
-  if (syncSkills) {
-    installProjectSkills(cwd, true);
-    console.log(`
-${bold5("Done!")}
-`);
-    console.log(`  ${dim5("Skills re-synced via .xtrm symlink pattern only.")}
-`);
-    return;
-  }
-  if (syncDefaults) {
-    migrateLegacySpecialists(cwd, "default");
-    copyCanonicalSpecialists(cwd);
-  } else {
-    skip(".specialists/default/ not synced (pass --sync-defaults to write canonical specialists)");
-  }
-  migrateLegacySpecialists(cwd, "user");
-  createSpecialistsDirs(cwd);
-  createRuntimeDirs(cwd);
-  ensureGitignore(cwd);
-  ensureAgentsMd(cwd);
-  ensureProjectMcp(cwd);
-  installProjectHooks(cwd);
-  ensureProjectHookWiring(cwd);
-  installProjectSkills(cwd, false);
-  console.log(`
-${bold5("Done!")}
-`);
-  console.log(`  ${dim5("Project-local installation:")}`);
-  console.log(`  .xtrm/hooks/specialists/ ${dim5("# canonical specialists hooks")}`);
-  console.log(`  .claude/hooks/            ${dim5("# symlinks -> .xtrm/hooks/specialists")}`);
-  console.log(`  .claude/settings.json     ${dim5("# hook wiring")}`);
-  console.log(`  .xtrm/skills/default/  ${dim5("# canonical skills")}`);
-  console.log(`  .xtrm/skills/active/   ${dim5("# active symlink roots for claude/pi")}`);
-  console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active/claude")}`);
-  console.log(`  .pi/skills/            ${dim5("# symlink -> .xtrm/skills/active/pi")}`);
-  console.log("");
-  console.log(`  ${dim5(".specialists/ structure:")}`);
-  console.log(`  .specialists/`);
-  console.log(`  \u251C\u2500\u2500 default/           ${dim5("# canonical specialists (from init --sync-defaults)")}`);
-  console.log(`  \u251C\u2500\u2500 user/              ${dim5("# your custom specialists")}`);
-  console.log(`  \u251C\u2500\u2500 jobs/              ${dim5("# runtime (gitignored)")}`);
-  console.log(`  \u2514\u2500\u2500 ready/             ${dim5("# runtime (gitignored)")}`);
-  console.log(`
-  ${dim5("Next steps:")}`);
-  console.log(`  1. Run ${yellow5("specialists list")} to see available specialists`);
-  console.log(`  2. Add custom specialists to ${yellow5(".specialists/user/")}`);
-  console.log(`  3. Restart Claude Code or pi to pick up changes
-`);
-}
-var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
-var init_init = __esm(() => {
-  AGENTS_BLOCK = `
-## Specialists
-
-Use CLI commands via Bash to run and monitor specialists:
-
-Core specialist commands (CLI-first in pi):
-- \`specialists list\`
-- \`specialists run <name> --bead <id>\`
-- \`specialists run <name> --prompt "..."\`
-- \`specialists feed -f\` / \`specialists feed <job-id>\`
-- \`specialists result <job-id>\`
-- \`specialists resume <job-id> "next task"\` (for keep-alive jobs in waiting)
-- \`specialists stop <job-id>\`
-
-For background specialists in pi, prefer the process extension:
-- \`process start\`, \`process list\`, \`process output\`, \`process logs\`, \`process kill\`, \`process clear\`
-- TUI: \`/ps\`, \`/ps:pin\`, \`/ps:logs\`, \`/ps:kill\`, \`/ps:clear\`, \`/ps:dock\`, \`/ps:settings\`
-
-Canonical tracked flow:
-1. Create/claim bead issue
-2. Run specialist with \`--bead <id>\` (for long work, launch via \`process start\`)
-3. Observe progress (\`process output\` / \`process logs\` or \`specialists feed\`)
-4. Read final output (\`specialists result <job-id>\`)
-5. Close/update bead with outcome
-
-Add custom specialists to \`.specialists/user/\` to extend defaults.
-`.trimStart();
-  GITIGNORE_ENTRIES = [
-    ".specialists/jobs/",
-    ".specialists/ready/",
-    ".specialists/db/*.db",
-    ".specialists/db/*.db-wal",
-    ".specialists/db/*.db-shm"
-  ];
-  MCP_SERVER_CONFIG = { command: "specialists", args: [] };
-});
-
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "fs";
-import { spawnSync as spawnSync6 } from "child_process";
-import { join as join7, sep } from "path";
+import { chmodSync, existsSync as existsSync6, mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
+import { spawnSync as spawnSync5 } from "child_process";
+import { join as join6, sep } from "path";
 function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync6("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+  const commonDirResult = spawnSync5("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20575,7 +20112,7 @@ function resolveGitRootFrom(cwd) {
       return commonDir.slice(0, -4);
     }
   }
-  const fallbackResult = spawnSync6("git", ["rev-parse", "--show-toplevel"], {
+  const fallbackResult = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20588,17 +20125,17 @@ function resolveGitRootFrom(cwd) {
 function resolveDbDirectory(gitRoot) {
   const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
   if (xdgDataHome) {
-    return { directory: join7(xdgDataHome, "specialists"), source: "xdg-data-home" };
+    return { directory: join6(xdgDataHome, "specialists"), source: "xdg-data-home" };
   }
   return {
-    directory: join7(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    directory: join6(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
     source: "git-root"
   };
 }
 function resolveObservabilityDbLocation(cwd = process.cwd()) {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join7(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const dbPath = join6(resolved.directory, OBSERVABILITY_DB_FILENAME);
   return {
     gitRoot,
     dbDirectory: resolved.directory,
@@ -20609,22 +20146,22 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
   };
 }
 function ensureObservabilityDbFile(location) {
-  mkdirSync2(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync7(location.dbPath);
+  mkdirSync(location.dbDirectory, { recursive: true });
+  const alreadyExists = existsSync6(location.dbPath);
   if (!alreadyExists) {
-    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+    writeFileSync(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
   }
   chmodSync(location.dbPath, 420);
   return { created: !alreadyExists };
 }
 function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
-  const gitignorePath = join7(gitRoot, ".gitignore");
+  const gitignorePath = join6(gitRoot, ".gitignore");
   const requiredEntries = [
     ".specialists/db/*.db",
     ".specialists/db/*.db-wal",
     ".specialists/db/*.db-shm"
   ];
-  const existing = existsSync7(gitignorePath) ? readFileSync4(gitignorePath, "utf-8") : "";
+  const existing = existsSync6(gitignorePath) ? readFileSync3(gitignorePath, "utf-8") : "";
   const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
   const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
   if (missingEntries.length === 0) {
@@ -20639,11 +20176,11 @@ function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
   const block = `${prefix}${sectionHeader}${missingEntries.join(`
 `)}
 `;
-  writeFileSync2(gitignorePath, `${existing}${block}`, "utf-8");
+  writeFileSync(gitignorePath, `${existing}${block}`, "utf-8");
   return { changed: true };
 }
 function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
-  const jobsDirPrefix = `${join7(gitRoot, ".specialists", "jobs")}${sep}`;
+  const jobsDirPrefix = `${join6(gitRoot, ".specialists", "jobs")}${sep}`;
   return pathToCheck.startsWith(jobsDirPrefix);
 }
 var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
@@ -20651,41 +20188,8 @@ var init_observability_db = __esm(() => {
   DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
 });
 
-// src/specialist/job-root.ts
-import { spawnSync as spawnSync7 } from "child_process";
-import { dirname as dirname4, join as join8, resolve as resolve4 } from "path";
-function resolveCommonGitRoot(cwd) {
-  const result = spawnSync7("git", ["rev-parse", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const gitCommonDir = result.stdout?.trim();
-  if (!gitCommonDir)
-    return;
-  return dirname4(resolve4(cwd, gitCommonDir));
-}
-function resolveJobsDir(cwd = process.cwd()) {
-  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
-  return join8(commonRoot, ".specialists", "jobs");
-}
-function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync7("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const branch = result.stdout?.trim();
-  return branch && branch !== "HEAD" ? branch : undefined;
-}
-var init_job_root = () => {};
-
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync8 } from "fs";
+import { existsSync as existsSync7 } from "fs";
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -21504,7 +21008,7 @@ function createObservabilitySqliteClient(cwd = process.cwd()) {
   if (!loadBunDatabase())
     return null;
   const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync8(location.dbPath))
+  if (!existsSync7(location.dbPath))
     return null;
   try {
     const Ctor = loadBunDatabase();
@@ -21521,6 +21025,531 @@ var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTE
 var init_observability_sqlite = __esm(() => {
   init_observability_db();
 });
+
+// src/cli/init.ts
+var exports_init = {};
+__export(exports_init, {
+  run: () => run6
+});
+import { copyFileSync, cpSync, existsSync as existsSync8, lstatSync, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync4, readlinkSync, renameSync, symlinkSync, writeFileSync as writeFileSync2 } from "fs";
+import { spawnSync as spawnSync6 } from "child_process";
+import { basename as basename3, dirname as dirname3, join as join7, resolve as resolve3 } from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+function ok(msg) {
+  console.log(`  ${green4("\u2713")} ${msg}`);
+}
+function skip(msg) {
+  console.log(`  ${yellow5("\u25CB")} ${msg}`);
+}
+function isInstalled(bin) {
+  return spawnSync6("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+}
+function assertXtrmPrerequisites(cwd) {
+  const hasXtrmDir = existsSync8(join7(cwd, ".xtrm"));
+  const hasXtCli = isInstalled("xt");
+  if (hasXtrmDir && hasXtCli)
+    return;
+  console.error("specialists requires xtrm. Run: npm install -g xtrm-tools && xt install");
+  process.exit(1);
+}
+function loadJson(path, fallback) {
+  if (!existsSync8(path))
+    return structuredClone(fallback);
+  try {
+    return JSON.parse(readFileSync4(path, "utf-8"));
+  } catch {
+    return structuredClone(fallback);
+  }
+}
+function saveJson(path, value) {
+  writeFileSync2(path, JSON.stringify(value, null, 2) + `
+`, "utf-8");
+}
+function resolvePackagePath(relativePath) {
+  const configPath = `config/${relativePath}`;
+  let resolved = fileURLToPath2(new URL(`../${configPath}`, import.meta.url));
+  if (existsSync8(resolved))
+    return resolved;
+  resolved = fileURLToPath2(new URL(`../../${configPath}`, import.meta.url));
+  if (existsSync8(resolved))
+    return resolved;
+  return null;
+}
+function migrateLegacySpecialists(cwd, scope) {
+  const sourceDir = join7(cwd, ".specialists", scope, "specialists");
+  if (!existsSync8(sourceDir))
+    return;
+  const targetDir = join7(cwd, ".specialists", scope);
+  if (!existsSync8(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
+  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
+  if (files.length === 0)
+    return;
+  let moved = 0;
+  let skipped = 0;
+  for (const file of files) {
+    const src = join7(sourceDir, file);
+    const dest = join7(targetDir, file);
+    if (existsSync8(dest)) {
+      skipped++;
+      continue;
+    }
+    renameSync(src, dest);
+    moved++;
+  }
+  if (moved > 0) {
+    ok(`migrated ${moved} specialist${moved === 1 ? "" : "s"} from .specialists/${scope}/specialists/ to .specialists/${scope}/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} legacy specialist${skipped === 1 ? "" : "s"} already exist in .specialists/${scope}/ (not moved)`);
+  }
+}
+function copyCanonicalSpecialists(cwd) {
+  const sourceDir = resolvePackagePath("specialists");
+  if (!sourceDir) {
+    skip("no canonical specialists found in package");
+    return;
+  }
+  const targetDir = join7(cwd, ".specialists", "default");
+  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json"));
+  if (files.length === 0) {
+    skip("no specialist files found in package");
+    return;
+  }
+  if (!existsSync8(targetDir)) {
+    mkdirSync2(targetDir, { recursive: true });
+  }
+  let copied = 0;
+  let skipped = 0;
+  for (const file of files) {
+    const src = join7(sourceDir, file);
+    const dest = join7(targetDir, file);
+    if (existsSync8(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to .specialists/default/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
+}
+function installProjectHooks(cwd) {
+  const sourceDir = resolvePackagePath("hooks");
+  if (!sourceDir) {
+    skip("no canonical hooks found in package");
+    return;
+  }
+  const xtrmHooksDir = join7(cwd, ".xtrm", "hooks");
+  const targetDir = join7(xtrmHooksDir, "specialists");
+  const claudeHooksDir = join7(cwd, ".claude", "hooks");
+  const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
+  if (hooks.length === 0) {
+    skip("no hook files found in package");
+    return;
+  }
+  mkdirSync2(targetDir, { recursive: true });
+  mkdirSync2(claudeHooksDir, { recursive: true });
+  let copied = 0;
+  let skippedCopies = 0;
+  let linked = 0;
+  let skippedLinks = 0;
+  for (const file of hooks) {
+    const src = join7(sourceDir, file);
+    const xtrmDest = join7(targetDir, file);
+    if (existsSync8(xtrmDest)) {
+      skippedCopies++;
+    } else {
+      copyFileSync(src, xtrmDest);
+      copied++;
+    }
+    const claudeHookPath = join7(claudeHooksDir, file);
+    if (existsSync8(claudeHookPath)) {
+      const stats = lstatSync(claudeHookPath);
+      if (!stats.isSymbolicLink()) {
+        skippedLinks++;
+        continue;
+      }
+      const currentTarget = resolve3(dirname3(claudeHookPath), readlinkSync(claudeHookPath));
+      if (currentTarget !== xtrmDest) {
+        skippedLinks++;
+        continue;
+      }
+      skippedLinks++;
+      continue;
+    }
+    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
+    symlinkSync(relativeTarget, claudeHookPath);
+    linked++;
+  }
+  if (copied > 0)
+    ok(`installed ${copied} hook${copied === 1 ? "" : "s"} to .xtrm/hooks/specialists/`);
+  if (skippedCopies > 0)
+    skip(`${skippedCopies} hook${skippedCopies === 1 ? "" : "s"} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
+  if (linked > 0)
+    ok(`linked ${linked} hook${linked === 1 ? "" : "s"} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+  if (skippedLinks > 0)
+    skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
+}
+function ensureProjectHookWiring(cwd) {
+  const settingsPath = join7(cwd, ".claude", "settings.json");
+  const settingsDir = join7(cwd, ".claude");
+  if (!existsSync8(settingsDir)) {
+    mkdirSync2(settingsDir, { recursive: true });
+  }
+  const settings = loadJson(settingsPath, {});
+  let changed = false;
+  function addHook(event, command) {
+    const eventList = settings[event] ?? [];
+    settings[event] = eventList;
+    const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
+    if (!alreadyWired) {
+      eventList.push({ matcher: "", hooks: [{ type: "command", command }] });
+      changed = true;
+    }
+  }
+  addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
+  addHook("PostToolUse", "node .claude/hooks/specialists-complete.mjs");
+  addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
+  if (changed) {
+    saveJson(settingsPath, settings);
+    ok("wired specialists hooks in .claude/settings.json");
+  } else {
+    skip(".claude/settings.json already has specialists hooks");
+  }
+}
+function assertSkillRootSymlink(rootPath, expectedTargetPath) {
+  if (!existsSync8(rootPath)) {
+    throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
+  }
+  const stats = lstatSync(rootPath);
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
+  }
+  const linkTarget = readlinkSync(rootPath);
+  const resolvedTarget = resolve3(dirname3(rootPath), linkTarget);
+  const resolvedExpected = resolve3(expectedTargetPath);
+  if (resolvedTarget !== resolvedExpected) {
+    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
+  }
+}
+function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
+  let stats;
+  try {
+    stats = lstatSync(activeLinkPath);
+  } catch (error2) {
+    const fileError = error2;
+    if (fileError.code === "ENOENT") {
+      const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
+      symlinkSync(relativeTarget, activeLinkPath, "dir");
+      return;
+    }
+    throw error2;
+  }
+  if (!stats.isSymbolicLink()) {
+    throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+  }
+  const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
+  if (currentTarget !== resolve3(defaultSkillPath)) {
+    throw new Error(`${activeLinkPath} points to an unexpected target.`);
+  }
+}
+function installProjectSkills(cwd, syncSkills) {
+  const xtrmRoot = join7(cwd, ".xtrm");
+  if (!existsSync8(xtrmRoot)) {
+    throw new Error(".xtrm/ is missing. Install xtrm first, then run specialists init.");
+  }
+  const sourceDir = resolvePackagePath("skills");
+  if (!sourceDir) {
+    skip("no canonical skills found in package");
+    return;
+  }
+  const skills = readdirSync2(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  if (skills.length === 0) {
+    skip("no skill directories found in package");
+    return;
+  }
+  const defaultRoot = join7(cwd, ".xtrm", "skills", "default");
+  const activeClaudeRoot = join7(cwd, ".xtrm", "skills", "active", "claude");
+  const activePiRoot = join7(cwd, ".xtrm", "skills", "active", "pi");
+  mkdirSync2(defaultRoot, { recursive: true });
+  mkdirSync2(activeClaudeRoot, { recursive: true });
+  mkdirSync2(activePiRoot, { recursive: true });
+  assertSkillRootSymlink(join7(cwd, ".claude", "skills"), activeClaudeRoot);
+  assertSkillRootSymlink(join7(cwd, ".pi", "skills"), activePiRoot);
+  let copied = 0;
+  let refreshed = 0;
+  for (const skill of skills) {
+    const src = join7(sourceDir, skill);
+    const defaultSkillPath = join7(defaultRoot, skill);
+    if (existsSync8(defaultSkillPath)) {
+      if (syncSkills) {
+        cpSync(src, defaultSkillPath, { recursive: true, force: true });
+        refreshed++;
+      }
+    } else {
+      cpSync(src, defaultSkillPath, { recursive: true });
+      copied++;
+    }
+    ensureActiveSkillSymlink(defaultSkillPath, join7(activeClaudeRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join7(activePiRoot, skill));
+  }
+  if (copied > 0)
+    ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
+  if (refreshed > 0)
+    ok(`re-synced ${refreshed} skill${refreshed === 1 ? "" : "s"} in .xtrm/skills/default/`);
+  ok("verified active skill symlinks in .xtrm/skills/active/{claude,pi}/");
+}
+function createSpecialistsDirs(cwd) {
+  const defaultDir = join7(cwd, ".specialists", "default");
+  const userDir = join7(cwd, ".specialists", "user");
+  let created = 0;
+  for (const dir of [defaultDir, userDir]) {
+    if (!existsSync8(dir)) {
+      mkdirSync2(dir, { recursive: true });
+      created++;
+    }
+  }
+  if (created > 0) {
+    ok("created .specialists/default/ and .specialists/user/");
+  }
+}
+function createRuntimeDirs(cwd) {
+  const runtimeDirs = [
+    join7(cwd, ".specialists", "jobs"),
+    join7(cwd, ".specialists", "ready")
+  ];
+  let created = 0;
+  for (const dir of runtimeDirs) {
+    if (!existsSync8(dir)) {
+      mkdirSync2(dir, { recursive: true });
+      created++;
+    }
+  }
+  if (created > 0) {
+    ok("created .specialists/jobs/ and .specialists/ready/");
+  }
+}
+function ensureProjectMcp(cwd) {
+  const mcpPath = join7(cwd, MCP_FILE);
+  const mcp = loadJson(mcpPath, { mcpServers: {} });
+  mcp.mcpServers ??= {};
+  const existing = mcp.mcpServers[MCP_SERVER_NAME];
+  if (existing && existing.command === MCP_SERVER_CONFIG.command && Array.isArray(existing.args) && existing.args.length === MCP_SERVER_CONFIG.args.length) {
+    skip(".mcp.json already registers specialists");
+    return;
+  }
+  mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
+  saveJson(mcpPath, mcp);
+  ok("registered specialists in project .mcp.json");
+}
+function ensureGitignore(cwd) {
+  const gitignorePath = join7(cwd, ".gitignore");
+  const existing = existsSync8(gitignorePath) ? readFileSync4(gitignorePath, "utf-8") : "";
+  let added = 0;
+  const lines = existing.split(`
+`);
+  for (const entry of GITIGNORE_ENTRIES) {
+    if (!lines.includes(entry)) {
+      lines.push(entry);
+      added++;
+    }
+  }
+  if (added > 0) {
+    writeFileSync2(gitignorePath, lines.join(`
+`) + `
+`, "utf-8");
+    ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
+  } else {
+    skip(".gitignore already has runtime entries");
+  }
+}
+function ensureObservabilityDb(cwd) {
+  const location = resolveObservabilityDbLocation(cwd);
+  if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
+    skip("observability DB path resolves inside jobs directory \u2014 skipped");
+    return;
+  }
+  const alreadyExists = existsSync8(location.dbPath);
+  if (alreadyExists) {
+    skip("observability database already exists (not touched)");
+    return;
+  }
+  const { created } = ensureObservabilityDbFile(location);
+  if (!created) {
+    skip("observability database already exists (not touched)");
+    return;
+  }
+  const client = createObservabilitySqliteClient(cwd);
+  if (client) {
+    client.close();
+    ok("created observability database (.specialists/db/observability.db)");
+  } else {
+    ok("created observability database file (schema init deferred \u2014 sqlite3/bun not available)");
+  }
+  ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
+}
+function ensureAgentsMd(cwd) {
+  const agentsPath = join7(cwd, "AGENTS.md");
+  if (existsSync8(agentsPath)) {
+    const existing = readFileSync4(agentsPath, "utf-8");
+    if (existing.includes(AGENTS_MARKER)) {
+      skip("AGENTS.md already has Specialists section");
+    } else {
+      writeFileSync2(agentsPath, existing.trimEnd() + `
+
+` + AGENTS_BLOCK, "utf-8");
+      ok("appended Specialists section to AGENTS.md");
+    }
+  } else {
+    writeFileSync2(agentsPath, AGENTS_BLOCK, "utf-8");
+    ok("created AGENTS.md with Specialists section");
+  }
+}
+async function run6(opts = {}) {
+  const cwd = process.cwd();
+  const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
+  const inAgentSession = !forceInit && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
+  if (inAgentSession) {
+    console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command \u2014 do not invoke from scripts or agent sessions.");
+    process.exit(1);
+  }
+  console.log(`
+${bold5("specialists init")}
+`);
+  const { syncDefaults = false, syncSkills = false, noXtrmCheck = false } = opts;
+  if (!noXtrmCheck) {
+    assertXtrmPrerequisites(cwd);
+  }
+  if (syncSkills) {
+    installProjectSkills(cwd, true);
+    console.log(`
+${bold5("Done!")}
+`);
+    console.log(`  ${dim5("Skills re-synced via .xtrm symlink pattern only.")}
+`);
+    return;
+  }
+  if (syncDefaults) {
+    migrateLegacySpecialists(cwd, "default");
+    copyCanonicalSpecialists(cwd);
+  } else {
+    skip(".specialists/default/ not synced (pass --sync-defaults to write canonical specialists)");
+  }
+  migrateLegacySpecialists(cwd, "user");
+  createSpecialistsDirs(cwd);
+  createRuntimeDirs(cwd);
+  ensureGitignore(cwd);
+  ensureAgentsMd(cwd);
+  ensureProjectMcp(cwd);
+  installProjectHooks(cwd);
+  ensureProjectHookWiring(cwd);
+  installProjectSkills(cwd, false);
+  ensureObservabilityDb(cwd);
+  console.log(`
+${bold5("Done!")}
+`);
+  console.log(`  ${dim5("Project-local installation:")}`);
+  console.log(`  .xtrm/hooks/specialists/ ${dim5("# canonical specialists hooks")}`);
+  console.log(`  .claude/hooks/            ${dim5("# symlinks -> .xtrm/hooks/specialists")}`);
+  console.log(`  .claude/settings.json     ${dim5("# hook wiring")}`);
+  console.log(`  .xtrm/skills/default/  ${dim5("# canonical skills")}`);
+  console.log(`  .xtrm/skills/active/   ${dim5("# active symlink roots for claude/pi")}`);
+  console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active/claude")}`);
+  console.log(`  .pi/skills/            ${dim5("# symlink -> .xtrm/skills/active/pi")}`);
+  console.log("");
+  console.log(`  ${dim5(".specialists/ structure:")}`);
+  console.log(`  .specialists/`);
+  console.log(`  \u251C\u2500\u2500 default/           ${dim5("# canonical specialists (from init --sync-defaults)")}`);
+  console.log(`  \u251C\u2500\u2500 user/              ${dim5("# your custom specialists")}`);
+  console.log(`  \u251C\u2500\u2500 db/                ${dim5("# observability SQLite (gitignored)")}`);
+  console.log(`  \u251C\u2500\u2500 jobs/              ${dim5("# runtime (gitignored)")}`);
+  console.log(`  \u2514\u2500\u2500 ready/             ${dim5("# runtime (gitignored)")}`);
+  console.log(`
+  ${dim5("Next steps:")}`);
+  console.log(`  1. Run ${yellow5("specialists list")} to see available specialists`);
+  console.log(`  2. Add custom specialists to ${yellow5(".specialists/user/")}`);
+  console.log(`  3. Restart Claude Code or pi to pick up changes
+`);
+}
+var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, yellow5 = (s) => `\x1B[33m${s}\x1B[0m`, dim5 = (s) => `\x1B[2m${s}\x1B[0m`, AGENTS_BLOCK, AGENTS_MARKER = "## Specialists", GITIGNORE_ENTRIES, MCP_FILE = ".mcp.json", MCP_SERVER_NAME = "specialists", MCP_SERVER_CONFIG;
+var init_init = __esm(() => {
+  init_observability_db();
+  init_observability_sqlite();
+  AGENTS_BLOCK = `
+## Specialists
+
+Use CLI commands via Bash to run and monitor specialists:
+
+Core specialist commands (CLI-first in pi):
+- \`specialists list\`
+- \`specialists run <name> --bead <id>\`
+- \`specialists run <name> --prompt "..."\`
+- \`specialists feed -f\` / \`specialists feed <job-id>\`
+- \`specialists result <job-id>\`
+- \`specialists resume <job-id> "next task"\` (for keep-alive jobs in waiting)
+- \`specialists stop <job-id>\`
+
+For background specialists in pi, prefer the process extension:
+- \`process start\`, \`process list\`, \`process output\`, \`process logs\`, \`process kill\`, \`process clear\`
+- TUI: \`/ps\`, \`/ps:pin\`, \`/ps:logs\`, \`/ps:kill\`, \`/ps:clear\`, \`/ps:dock\`, \`/ps:settings\`
+
+Canonical tracked flow:
+1. Create/claim bead issue
+2. Run specialist with \`--bead <id>\` (for long work, launch via \`process start\`)
+3. Observe progress (\`process output\` / \`process logs\` or \`specialists feed\`)
+4. Read final output (\`specialists result <job-id>\`)
+5. Close/update bead with outcome
+
+Add custom specialists to \`.specialists/user/\` to extend defaults.
+`.trimStart();
+  GITIGNORE_ENTRIES = [
+    ".specialists/jobs/",
+    ".specialists/ready/",
+    ".specialists/db/*.db",
+    ".specialists/db/*.db-wal",
+    ".specialists/db/*.db-shm"
+  ];
+  MCP_SERVER_CONFIG = { command: "specialists", args: [] };
+});
+
+// src/specialist/job-root.ts
+import { spawnSync as spawnSync7 } from "child_process";
+import { dirname as dirname4, join as join8, resolve as resolve4 } from "path";
+function resolveCommonGitRoot(cwd) {
+  const result = spawnSync7("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const gitCommonDir = result.stdout?.trim();
+  if (!gitCommonDir)
+    return;
+  return dirname4(resolve4(cwd, gitCommonDir));
+}
+function resolveJobsDir(cwd = process.cwd()) {
+  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
+  return join8(commonRoot, ".specialists", "jobs");
+}
+function resolveCurrentBranch(cwd = process.cwd()) {
+  const result = spawnSync7("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const branch = result.stdout?.trim();
+  return branch && branch !== "HEAD" ? branch : undefined;
+}
+var init_job_root = () => {};
 
 // src/specialist/timeline-events.ts
 function summarizeToolResult(resultContent) {
