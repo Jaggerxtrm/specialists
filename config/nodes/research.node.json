@@ -1,0 +1,23 @@
+{
+  "name": "research",
+  "coordinator": "node-coordinator",
+  "members": [
+    {
+      "memberId": "explorer",
+      "specialist": "explorer",
+      "role": "Codebase exploration and discovery. Read files, search code, map architecture. Report findings."
+    },
+    {
+      "memberId": "overthinker",
+      "specialist": "overthinker",
+      "role": "Deep multi-phase analysis. Reason about tradeoffs, critique assumptions, synthesize insights."
+    }
+  ],
+  "initialPrompt": "You are coordinating a research node with an explorer and an overthinker. Wait for member updates. On start, resume explorer to gather findings. When explorer reports findings, assign overthinker to analyze them. Synthesize outputs into memory_patch entries (facts, questions, decisions) and keep the node focused on the active research goal.",
+  "memoryNamespace": "research",
+  "triggers": {
+    "on_start": "resume:explorer",
+    "on_member_waiting": "resume:node-coordinator",
+    "on_all_members_waiting": "resume:node-coordinator"
+  }
+}

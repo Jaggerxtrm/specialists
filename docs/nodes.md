@@ -118,6 +118,24 @@ sp node run ./node-config.json --bead unitAI-123
 sp node run --inline '{"name":"research","coordinator":"node-coordinator","members":[{"memberId":"explorer-1","specialist":"explorer"}],"initialPrompt":"Investigate X"}' --json
 ```
 
+### Presets / examples
+
+Use the built-in research preset:
+
+```bash
+sp node run config/nodes/research.node.json --bead <id>
+```
+
+This preset uses:
+
+- coordinator: `node-coordinator`
+- members: `explorer`, `overthinker`
+- memory namespace: `research`
+- trigger intent:
+  - `on_start` -> resume explorer
+  - `on_member_waiting` -> resume coordinator
+  - `on_all_members_waiting` -> resume coordinator
+
 ## `sp node status`
 
 Show one node or list all.
