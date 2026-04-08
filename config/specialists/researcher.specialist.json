@@ -35,7 +35,8 @@
       "paths": [
         ".xtrm/skills/active/pi/find-docs/SKILL.md",
         ".xtrm/skills/active/pi/deepwiki/SKILL.md",
-        ".xtrm/skills/active/pi/github-search/SKILL.md"
+        ".xtrm/skills/active/pi/github-search/SKILL.md",
+        ".xtrm/skills/default/last30days"
       ],
       "scripts": []
     },
