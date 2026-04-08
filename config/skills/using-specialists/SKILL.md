@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.1
+version: 4.2
 ---
 
 # Specialists Usage
@@ -74,10 +74,12 @@ specialists run <name> --bead <id> --keep-alive  # keep session alive after firs
 specialists run <name> --bead <id> --context-depth 2  # inject parent bead context
 
 # Monitoring
-specialists feed -f                           # tail merged feed (all jobs)
+specialists ps                                # list all jobs (status, specialist, elapsed, bead)
+specialists ps <job-id>                       # inspect single job (full detail + ctx% badge)
+specialists feed -f                           # tail merged feed (all jobs) — shows [ctx%] context window usage
 specialists feed <job-id>                     # events for a specific job
 specialists result <job-id>                   # final output text
-specialists status --job <job-id>             # single-job detail view
+specialists status --job <job-id>             # single-job detail view (legacy — prefer `sp ps <id>`)
 
 # Interaction
 specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
@@ -536,6 +538,28 @@ specialists stop <job-id>   # when satisfied
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 ```
 
+### Monitoring with `sp ps`
+
+Use `specialists ps` (alias `sp ps`) for job monitoring instead of manual JSON polling:
+
+```bash
+# Quick overview — all jobs
+specialists ps
+# Output: ID, status, specialist, elapsed, bead, [ctx%] badge
+
+# Inspect specific job
+specialists ps <job-id>
+# Shows: full status, worktree path, chain, ctx% (context window utilization)
+
+# The ctx% in `sp feed` and `sp ps` shows context window utilization:
+# - 0-40% = OK (plenty of room)
+# - 40-65% = MONITOR
+# - 65-80% = WARN (▲ indicator shown)
+# - >80% = CRITICAL (▲ indicator shown)
+```
+
+---
+
 ### Pi extensions and packages
 
 Pi extensions are global at `~/.pi/agent/extensions/`. Pi packages are global npm installs.
@@ -579,13 +603,13 @@ specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
 | **debugger** | Phase 3 fix attempt or Phase 4 verify result | Follow-up fix, "try different approach", or "done" |
 | **sync-docs** | Audit report or targeted update result | "approve", "deny", or specific instructions |
 
-> **Warning:** A job in `waiting` looks identical to a stalled job. **Always check `status.json`
+> **Warning:** A job in `waiting` looks identical to a stalled job. **Always check with `sp ps`
 > before killing a keep-alive job.**
 
 ```bash
 # Check before stopping
-python3 -c "import json; d=json.load(open('.specialists/jobs/d4e5f6/status.json')); print(d['status'])"
-# -> waiting  ← healthy, expecting input
+specialists ps d4e5f6
+# -> status: waiting  ← healthy, expecting input
 
 specialists resume d4e5f6 "What about backward compatibility?"
 specialists stop d4e5f6   # only when truly done iterating
@@ -612,10 +636,9 @@ Waves are strictly sequential: **never start wave N+1 before wave N completes AN
 ### Polling a wave
 
 ```bash
-for job in abc123 def456 ghi789; do
-  python3 -c "import json; d=json.load(open('.specialists/jobs/$job/status.json')); \
-    print(f'$job {d[\"specialist\"]:12} {d[\"status\"]:10} {d.get(\"elapsed_s\",\"?\")}s')"
-done
+specialists ps                                # list all jobs — shows status, specialist, elapsed, bead
+specialists ps abc123                         # inspect specific job (full detail)
+specialists ps abc123 def456 ghi789           # inspect multiple jobs
 ```
 
 A wave is complete when every job is `completed` or `error` AND you have:
