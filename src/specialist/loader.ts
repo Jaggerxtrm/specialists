@@ -72,7 +72,10 @@ export class SpecialistLoader {
       // Back-compat nested user path
       { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
 
-      // Canonical project-local defaults
+      // Canonical source-of-truth definitions
+      { path: join(this.projectDir, 'config', 'specialists'), scope: 'default' },
+
+      // Project-local defaults (generated copies)
       { path: join(this.projectDir, '.specialists', 'default'), scope: 'default' },
       // Back-compat nested default path
       { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
