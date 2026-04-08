@@ -205,6 +205,10 @@ function toContextHealth(contextPct: number | null): 'OK' | 'MONITOR' | 'WARN' |
   return 'CRITICAL';
 }
 
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class NodeSupervisor {
   private status: NodeRunStatus = 'created';
   private members: Map<string, NodeMemberEntry>;
@@ -498,6 +502,22 @@ export class NodeSupervisor {
     }
   }
 
+  private logPersistenceWarning(operation: string, error: unknown): void {
+    console.warn('node supervisor sqlite write failed', {
+      nodeId: this.opts.nodeId,
+      operation,
+      error: toErrorMessage(error),
+    });
+  }
+
+  private persistNodeEvent(operation: string, type: Parameters<ObservabilitySqliteClient['appendNodeEvent']>[2], event: Record<string, unknown>, t = Date.now()): void {
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, t, type, event);
+    } catch (error) {
+      this.logPersistenceWarning(operation, error);
+    }
+  }
+
   private transition(to: NodeRunStatus, reason?: string): void {
     this.validateTransition(to);
     const previousStatus = this.status;
@@ -522,30 +542,29 @@ export class NodeSupervisor {
           coordinator_job_id: this.coordinatorJobId,
         }),
       });
-    } catch {
-      // best-effort persistence; orchestration remains live
+    } catch (error) {
+      this.logPersistenceWarning('transition.upsertNodeRun', error);
     }
 
-    try {
-      const now = Date.now();
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now, 'node_state_changed', {
-        node_id: this.opts.nodeId,
-        previous_status: previousStatus,
-        status: to,
-        reason,
-      });
+    const now = Date.now();
+    this.persistNodeEvent('transition.node_state_changed', 'node_state_changed', {
+      node_id: this.opts.nodeId,
+      previous_status: previousStatus,
+      status: to,
+      reason,
+    }, now);
 
-      if (to === 'done') {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, 'node_done', { node_id: this.opts.nodeId, reason });
-      }
-      if (to === 'error') {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, 'node_error', { node_id: this.opts.nodeId, reason });
-      }
-      if (to === 'stopped') {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, 'node_stopped', { node_id: this.opts.nodeId, reason });
-      }
-    } catch {
-      // best-effort persistence; orchestration remains live
+    if (to === 'waiting') {
+      this.persistNodeEvent('transition.node_waiting', 'node_waiting', { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === 'done') {
+      this.persistNodeEvent('transition.node_done', 'node_done', { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === 'error') {
+      this.persistNodeEvent('transition.node_error', 'node_error', { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === 'stopped') {
+      this.persistNodeEvent('transition.node_stopped', 'node_stopped', { node_id: this.opts.nodeId, reason }, now + 1);
     }
   }
 
@@ -662,14 +681,6 @@ export class NodeSupervisor {
       // best-effort persistence; orchestration remains live
     }
 
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'node_started', {
-        node_id: this.opts.nodeId,
-        coordinator_job_id: this.coordinatorJobId,
-      });
-    } catch {
-      // best-effort persistence; orchestration remains live
-    }
   }
 
   private async pollMemberStatuses(): Promise<MemberStateChange[]> {
@@ -885,31 +896,45 @@ export class NodeSupervisor {
       this.lastCompletedActionAtMs = Date.now();
     }
 
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), `action_${state}` as never, {
-        node_id: this.opts.nodeId,
-        action_id: envelope.actionId,
-        member_id: envelope.action.memberId,
-        action_type: envelope.action.type,
-        target_generation: envelope.targetGeneration,
-        depends_on_action_id: envelope.dependsOnActionId ?? null,
-        ...extra,
-      });
-    } catch {
-      // best-effort persistence; orchestration remains live
-    }
+    this.persistNodeEvent(`appendActionLifecycleEvent.action_${state}`, `action_${state}` as never, {
+      node_id: this.opts.nodeId,
+      action_id: envelope.actionId,
+      member_id: envelope.action.memberId,
+      action_type: envelope.action.type,
+      target_generation: envelope.targetGeneration,
+      depends_on_action_id: envelope.dependsOnActionId ?? null,
+      ...extra,
+    });
   }
 
   private async dispatchAction(action: NodeDispatchAction): Promise<string | null> {
     if (action.type === 'resume') {
       const member = this.members.get(action.memberId);
       if (!member || !this.isRecoveryResumeAllowed(member)) {
+        this.appendNodeEvent('action_dropped', {
+          node_id: this.opts.nodeId,
+          member_id: action.memberId,
+          action_type: action.type,
+          reason: 'resume_not_allowed',
+          member_status: member?.status ?? null,
+          member_enabled: member?.enabled ?? null,
+          target_generation: action.targetGeneration ?? null,
+        });
         return null;
       }
     }
 
     const queuedForMember = this.dispatchQueue.filter((queued) => queued.action.memberId === action.memberId).length;
     if (queuedForMember >= MAX_QUEUED_ACTIONS_PER_MEMBER) {
+      this.appendNodeEvent('action_dropped', {
+        node_id: this.opts.nodeId,
+        member_id: action.memberId,
+        action_type: action.type,
+        reason: 'member_queue_full',
+        queued_for_member: queuedForMember,
+        queue_limit: MAX_QUEUED_ACTIONS_PER_MEMBER,
+        target_generation: action.targetGeneration ?? null,
+      });
       return null;
     }
 
@@ -925,7 +950,16 @@ export class NodeSupervisor {
     envelope.action.targetGeneration = envelope.targetGeneration;
 
     const actionKey = this.getActionKey(envelope.action);
-    if (this.queuedActionKeys.has(actionKey)) return null;
+    if (this.queuedActionKeys.has(actionKey)) {
+      this.appendNodeEvent('action_dropped', {
+        node_id: this.opts.nodeId,
+        member_id: action.memberId,
+        action_type: action.type,
+        reason: 'duplicate_action',
+        target_generation: envelope.targetGeneration,
+      });
+      return null;
+    }
 
     this.dispatchQueue.push(envelope);
     this.actionById.set(envelope.actionId, envelope);
@@ -1014,14 +1048,17 @@ export class NodeSupervisor {
   }
 
   private appendNodeEvent(
-    type: 'coordinator_output_invalid' | 'memory_updated' | 'coordinator_output_received',
+    type:
+      | 'coordinator_output_invalid'
+      | 'memory_updated'
+      | 'coordinator_output_received'
+      | 'coordinator_resume_skipped'
+      | 'action_dropped'
+      | 'member_disabled'
+      | 'coordinator_repair_requested',
     event: Record<string, unknown>,
   ): void {
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), type, event);
-    } catch {
-      // best-effort persistence; orchestration remains live
-    }
+    this.persistNodeEvent(`appendNodeEvent.${type}`, type, event);
   }
 
   private buildCoordinatorRepairPrompt(args: {
@@ -1117,16 +1154,17 @@ export class NodeSupervisor {
           provenance_json: entry.provenance ? JSON.stringify(entry.provenance) : undefined,
           updated_at_ms: Date.now(),
         });
-
-        this.appendNodeEvent('memory_updated', {
-          node_id: this.opts.nodeId,
-          entry_type: entry.entry_type,
-          entry_id: entry.entry_id ?? null,
-          source_member_id: entry.source_member_id ?? null,
-        });
-      } catch {
-        // best-effort persistence; orchestration remains live
+      } catch (error) {
+        this.logPersistenceWarning('applyMemoryPatch.upsertNodeMemory', error);
+        continue;
       }
+
+      this.appendNodeEvent('memory_updated', {
+        node_id: this.opts.nodeId,
+        entry_type: entry.entry_type,
+        entry_id: entry.entry_id ?? null,
+        source_member_id: entry.source_member_id ?? null,
+      });
     }
   }
 
@@ -1177,6 +1215,12 @@ export class NodeSupervisor {
           return;
         }
 
+        this.appendNodeEvent('coordinator_repair_requested', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'runtime_state_mismatch',
+          details: 'No coordinator output available for validation.',
+        });
         await this.coordinatorController.resumeJob(
           this.coordinatorJobId,
           this.buildCoordinatorRepairPrompt({
@@ -1213,6 +1257,12 @@ export class NodeSupervisor {
           return;
         }
 
+        this.appendNodeEvent('coordinator_repair_requested', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'invalid_json',
+          details,
+        });
         await this.coordinatorController.resumeJob(
           this.coordinatorJobId,
           this.buildCoordinatorRepairPrompt({
@@ -1249,6 +1299,12 @@ export class NodeSupervisor {
           return;
         }
 
+        this.appendNodeEvent('coordinator_repair_requested', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'schema_validation_failure',
+          details,
+        });
         await this.coordinatorController.resumeJob(
           this.coordinatorJobId,
           this.buildCoordinatorRepairPrompt({
@@ -1282,6 +1338,12 @@ export class NodeSupervisor {
           return;
         }
 
+        this.appendNodeEvent('coordinator_repair_requested', {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: 'runtime_state_mismatch',
+          details: runtimeMismatch,
+        });
         await this.coordinatorController.resumeJob(
           this.coordinatorJobId,
           this.buildCoordinatorRepairPrompt({
@@ -1509,8 +1571,23 @@ export class NodeSupervisor {
           const member = this.members.get(change.memberId);
           if (!member) continue;
 
+          const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+          const contextHealth = toContextHealth(contextPct);
+          const trigger = change.prevStatus !== change.newStatus
+            ? 'status_changed'
+            : (change.output ? 'output_changed' : 'poll_observed');
+
           if (change.newStatus === 'error') {
             member.enabled = false;
+            this.appendNodeEvent('member_disabled', {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              reason: 'member_error',
+              trigger,
+              context_health: contextHealth,
+            });
           }
 
           try {
@@ -1525,30 +1602,62 @@ export class NodeSupervisor {
               enabled: member.enabled,
               generation: member.generation,
             });
-          } catch {
-            // best-effort persistence; orchestration remains live
+          } catch (error) {
+            this.logPersistenceWarning('run.upsertNodeMember', error);
           }
 
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'member_state_changed', {
+          this.persistNodeEvent('run.member_state_changed', 'member_state_changed', {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            job_id: member.jobId ?? null,
+            prev_status: change.prevStatus,
+            status: change.newStatus,
+            generation: member.generation,
+            trigger,
+            context_pct: contextPct,
+            context_health: contextHealth,
+            output_present: Boolean(change.output),
+            output_excerpt: change.output ? change.output.slice(0, 500) : null,
+          });
+
+          if (change.output) {
+            this.persistNodeEvent('run.member_output_received', 'member_output_received', {
               node_id: this.opts.nodeId,
               member_id: member.memberId,
-              prev_status: change.prevStatus,
-              status: change.newStatus,
-              output_present: Boolean(change.output),
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              trigger,
+              context_health: contextHealth,
+              output_excerpt: change.output.slice(0, 500),
             });
-          } catch {
-            // best-effort persistence; orchestration remains live
           }
+
+          if (change.newStatus === 'error') {
+            this.persistNodeEvent('run.member_failed', 'member_failed', {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              trigger,
+              context_health: contextHealth,
+            });
+          }
+
           this.lastMemberTransitionAtMs = Date.now();
 
-          const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
-          if (change.newStatus === 'error' || toContextHealth(contextPct) === 'CRITICAL') {
+          if (change.newStatus === 'error' || contextHealth === 'CRITICAL') {
             if (this.status === 'running' || this.status === 'waiting') {
               this.transition('degraded', 'member_error_or_critical_context');
               this.degradedResumeCount = 0;
             }
           } else if (this.status === 'degraded' && this.recomputeNodeHealth() === 'running') {
+            this.persistNodeEvent('run.member_recovered', 'member_recovered', {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              context_health: contextHealth,
+            });
             this.transition('running', 'all_members_healthy');
             this.degradedResumeCount = 0;
           }
@@ -1587,18 +1696,36 @@ export class NodeSupervisor {
         }
 
         const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
+        const shouldResumeCoordinator = changes.length > 0
+          && coordinatorStatus?.status === 'waiting'
+          && !this.resumePending
+          && canResumeCoordinator
+          && Boolean(this.coordinatorJobId)
+          && Boolean(this.coordinatorController);
 
-        if (changes.length > 0 && coordinatorStatus?.status === 'waiting' && !this.resumePending && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
+        if (changes.length > 0 && !shouldResumeCoordinator) {
+          const skipReasons: string[] = [];
+          if (coordinatorStatus?.status !== 'waiting') skipReasons.push(`coordinator_status:${coordinatorStatus?.status ?? 'unknown'}`);
+          if (this.resumePending) skipReasons.push('resume_pending');
+          if (!canResumeCoordinator) skipReasons.push('resume_in_flight_limit');
+          if (!this.coordinatorJobId) skipReasons.push('missing_coordinator_job');
+          if (!this.coordinatorController) skipReasons.push('missing_coordinator_controller');
+
+          this.appendNodeEvent('coordinator_resume_skipped', {
+            node_id: this.opts.nodeId,
+            coordinator_job_id: this.coordinatorJobId,
+            member_update_count: changes.length,
+            reasons: skipReasons,
+          });
+        }
+
+        if (shouldResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
           this.coordinatorResumesInFlight += 1;
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
-              node_id: this.opts.nodeId,
-              resume_pending: true,
-            });
-          } catch {
-            // best-effort persistence; orchestration remains live
-          }
+          this.persistNodeEvent('run.coordinator_resume_state.pending', 'coordinator_resume_state', {
+            node_id: this.opts.nodeId,
+            resume_pending: true,
+          });
 
           try {
             const payload = this.buildResumePayload(changes);
@@ -1611,25 +1738,17 @@ export class NodeSupervisor {
             this.coordinatorResumesInFlight = Math.max(0, this.coordinatorResumesInFlight - 1);
           }
 
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resume_state', {
-              node_id: this.opts.nodeId,
-              resume_pending: false,
-            });
-          } catch {
-            // best-effort persistence; orchestration remains live
-          }
+          this.persistNodeEvent('run.coordinator_resume_state.cleared', 'coordinator_resume_state', {
+            node_id: this.opts.nodeId,
+            resume_pending: false,
+          });
 
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'coordinator_resumed', {
-              node_id: this.opts.nodeId,
-              coordinator_job_id: this.coordinatorJobId,
-              member_update_count: changes.length,
-              degraded_resume_count: this.degradedResumeCount,
-            });
-          } catch {
-            // best-effort persistence; orchestration remains live
-          }
+          this.persistNodeEvent('run.coordinator_resumed', 'coordinator_resumed', {
+            node_id: this.opts.nodeId,
+            coordinator_job_id: this.coordinatorJobId,
+            member_update_count: changes.length,
+            degraded_resume_count: this.degradedResumeCount,
+          });
 
           if (this.status === 'running') {
             this.transition('waiting', 'coordinator_resumed_waiting_for_actions');

@@ -194,15 +194,38 @@ function formatTimestamp(ms: number | undefined): string {
   return Number.isNaN(value.getTime()) ? '-' : value.toISOString();
 }
 
-function printNodeRunsTable(rows: NodeRunRow[]): void {
-  const headers = ['node_id', 'node_name', 'status', 'started_at', 'updated_at', 'coordinator_job_id'];
+function parseStatusJson(row: NodeRunRow): Record<string, unknown> {
+  try {
+    return JSON.parse(row.status_json) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function readStatusReason(row: NodeRunRow): string {
+  const statusJson = parseStatusJson(row);
+  const reason = statusJson.reason;
+  return typeof reason === 'string' && reason.trim() ? reason : '-';
+}
+
+function summarizeMembers(members: Array<{ member_id: string; status: string; enabled?: boolean }>): string {
+  if (members.length === 0) return '-';
+  return members
+    .map((member) => `${member.member_id}:${member.status}${member.enabled === false ? ' (disabled)' : ''}`)
+    .join(', ');
+}
+
+function printNodeRunsTable(rows: Array<NodeRunRow & { member_summary: string }>): void {
+  const headers = ['node_id', 'node_name', 'status', 'reason', 'started_at', 'updated_at', 'coordinator_job_id', 'members'];
   const body = rows.map((row) => [
     row.id,
     row.node_name,
     row.status,
+    readStatusReason(row),
     formatTimestamp(row.started_at_ms),
     formatTimestamp(row.updated_at_ms),
     row.coordinator_job_id ?? '-',
+    row.member_summary,
   ]);
   const allRows = [headers, ...body];
   const widths = headers.map((_, colIndex) => Math.max(...allRows.map((r) => (r[colIndex] ?? '').length)));
@@ -317,14 +340,16 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
   }
 }
 
-function printNodeRunDetail(row: NodeRunRow): void {
+function printNodeRunDetail(row: NodeRunRow, members: Array<{ member_id: string; status: string; enabled?: boolean }>): void {
   const detail = {
     node_id: row.id,
     node_name: row.node_name,
     status: row.status,
+    reason: readStatusReason(row),
     started_at: formatTimestamp(row.started_at_ms),
     updated_at: formatTimestamp(row.updated_at_ms),
     coordinator_job_id: row.coordinator_job_id ?? '-',
+    member_summary: summarizeMembers(members),
   };
 
   for (const [key, value] of Object.entries(detail)) {
@@ -362,7 +387,25 @@ async function handleNodeFeed(args: ParsedNodeArgs): Promise<void> {
     }
 
     for (const event of events) {
-      console.log(`[${new Date(event.t).toISOString()}] ${event.type}`);
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(event.event_json) as Record<string, unknown>;
+      } catch {
+        payload = {};
+      }
+
+      const metadata = [
+        typeof payload.member_id === 'string' ? `member=${payload.member_id}` : null,
+        typeof payload.job_id === 'string' ? `job=${payload.job_id}` : null,
+        typeof payload.status === 'string' ? `status=${payload.status}` : null,
+        typeof payload.reason === 'string' ? `reason=${payload.reason}` : null,
+        typeof payload.trigger === 'string' ? `trigger=${payload.trigger}` : null,
+        typeof payload.context_health === 'string' ? `context=${payload.context_health}` : null,
+        typeof payload.generation === 'number' ? `generation=${payload.generation}` : null,
+        typeof payload.action_type === 'string' ? `action=${payload.action_type}` : null,
+      ].filter((value): value is string => value !== null);
+
+      console.log(`[${new Date(event.t).toISOString()}] ${event.type}${metadata.length > 0 ? ` | ${metadata.join(' ')}` : ''}`);
     }
   } finally {
     sqliteClient.close();
@@ -388,31 +431,54 @@ async function handleNodeStatus(args: ParsedNodeArgs): Promise<void> {
         return;
       }
 
+      const members = sqliteClient.readNodeMembers(row.id);
+
       if (args.jsonMode) {
         console.log(JSON.stringify({
           node_id: row.id,
           node_name: row.node_name,
           status: row.status,
+          reason: readStatusReason(row),
           started_at: row.started_at_ms,
           updated_at: row.updated_at_ms,
           coordinator_job_id: row.coordinator_job_id ?? null,
+          members: members.map((member) => ({
+            member_id: member.member_id,
+            job_id: member.job_id ?? null,
+            specialist: member.specialist,
+            status: member.status,
+            enabled: member.enabled ?? true,
+            generation: member.generation ?? 0,
+          })),
+          member_summary: summarizeMembers(members),
         }, null, 2));
       } else {
-        printNodeRunDetail(row);
+        printNodeRunDetail(row, members);
       }
       return;
     }
 
     const rows = sqliteClient.listNodeRuns();
 
+    const rowsWithMembers = rows.map((row) => {
+      const members = sqliteClient.readNodeMembers(row.id);
+      return {
+        ...row,
+        members,
+        member_summary: summarizeMembers(members),
+      };
+    });
+
     if (args.jsonMode) {
-      console.log(JSON.stringify(rows.map((row) => ({
+      console.log(JSON.stringify(rowsWithMembers.map((row) => ({
         node_id: row.id,
         node_name: row.node_name,
         status: row.status,
+        reason: readStatusReason(row),
         started_at: row.started_at_ms,
         updated_at: row.updated_at_ms,
         coordinator_job_id: row.coordinator_job_id ?? null,
+        member_summary: row.member_summary,
       })), null, 2));
       return;
     }
@@ -422,7 +488,7 @@ async function handleNodeStatus(args: ParsedNodeArgs): Promise<void> {
       return;
     }
 
-    printNodeRunsTable(rows);
+    printNodeRunsTable(rowsWithMembers);
   } finally {
     sqliteClient.close();
   }
