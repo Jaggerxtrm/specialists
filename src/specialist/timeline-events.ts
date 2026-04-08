@@ -281,11 +281,31 @@ export interface TimelineEventTurnSummary extends TimelineEventBase {
 export interface TimelineEventCompaction extends TimelineEventBase {
   type: 'compaction';
   phase: 'start' | 'end';
+  tokens_before?: number;
+  summary?: string;
+  first_kept_entry_id?: string;
 }
 
 export interface TimelineEventRetry extends TimelineEventBase {
   type: 'retry';
   phase: 'start' | 'end';
+  attempt?: number;
+  max_attempts?: number;
+  delay_ms?: number;
+  error_message?: string;
+}
+
+export interface TimelineEventModelChange extends TimelineEventBase {
+  type: 'model_change';
+  action: 'set_model' | 'cycle_model';
+  model?: string;
+  previous_model?: string;
+}
+
+export interface TimelineEventExtensionError extends TimelineEventBase {
+  type: 'extension_error';
+  extension?: string;
+  error_message?: string;
 }
 
 /**
@@ -317,6 +337,8 @@ export type TimelineEvent =
   | TimelineEventTurnSummary
   | TimelineEventCompaction
   | TimelineEventRetry
+  | TimelineEventModelChange
+  | TimelineEventExtensionError
   | TimelineEventLegacyComplete;
 
 // ============================================================================
@@ -339,6 +361,8 @@ export const TIMELINE_EVENT_TYPES = {
   TURN_SUMMARY: 'turn_summary',
   COMPACTION: 'compaction',
   RETRY: 'retry',
+  MODEL_CHANGE: 'model_change',
+  EXTENSION_ERROR: 'extension_error',
   DONE: 'done',
   AGENT_END: 'agent_end',
 } as const;
@@ -384,6 +408,26 @@ export function mapCallbackEventToTimelineEvent(
     resultContent?: string;
     resultRaw?: Record<string, unknown>;
     charCount?: number;
+    compaction?: {
+      tokensBefore?: number;
+      summary?: string;
+      firstKeptEntryId?: string;
+    };
+    retry?: {
+      attempt?: number;
+      maxAttempts?: number;
+      delayMs?: number;
+      errorMessage?: string;
+    };
+    modelChange?: {
+      action: 'set_model' | 'cycle_model';
+      model?: string;
+      previousModel?: string;
+    };
+    extensionError?: {
+      extension?: string;
+      errorMessage?: string;
+    };
   }
 ): TimelineEvent | null {
   const t = Date.now();
@@ -454,14 +498,66 @@ export function mapCallbackEventToTimelineEvent(
       return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: 'end' };
 
     case 'auto_compaction_start':
-      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: 'start' };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: 'start',
+        ...(context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {}),
+        ...(context.compaction?.summary ? { summary: context.compaction.summary } : {}),
+        ...(context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}),
+      };
 
     case 'auto_compaction_end':
     case 'auto_compaction':
-      return { t, type: TIMELINE_EVENT_TYPES.COMPACTION, phase: 'end' };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: 'end',
+        ...(context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {}),
+        ...(context.compaction?.summary ? { summary: context.compaction.summary } : {}),
+        ...(context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}),
+      };
 
+    case 'auto_retry_start':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: 'start',
+        ...(context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {}),
+        ...(context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {}),
+        ...(context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {}),
+        ...(context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}),
+      };
+
+    case 'auto_retry_end':
     case 'auto_retry':
-      return { t, type: TIMELINE_EVENT_TYPES.RETRY, phase: 'end' };
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: 'end',
+        ...(context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {}),
+        ...(context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {}),
+        ...(context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {}),
+        ...(context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}),
+      };
+
+    case 'set_model':
+    case 'cycle_model':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
+        action: callbackEvent,
+        ...(context.modelChange?.model ? { model: context.modelChange.model } : {}),
+        ...(context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}),
+      };
+
+    case 'extension_error':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
+        ...(context.extensionError?.extension ? { extension: context.extensionError.extension } : {}),
+        ...(context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}),
+      };
 
     case 'text':
       return {
@@ -591,19 +687,32 @@ export function createTurnSummaryEvent(
   };
 }
 
-export function createCompactionEvent(phase: 'start' | 'end'): TimelineEventCompaction {
+export function createCompactionEvent(
+  phase: 'start' | 'end',
+  options?: { tokensBefore?: number; summary?: string; firstKeptEntryId?: string },
+): TimelineEventCompaction {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.COMPACTION,
     phase,
+    ...(options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {}),
+    ...(options?.summary ? { summary: options.summary } : {}),
+    ...(options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}),
   };
 }
 
-export function createRetryEvent(phase: 'start' | 'end'): TimelineEventRetry {
+export function createRetryEvent(
+  phase: 'start' | 'end',
+  options?: { attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string },
+): TimelineEventRetry {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.RETRY,
     phase,
+    ...(options?.attempt !== undefined ? { attempt: options.attempt } : {}),
+    ...(options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {}),
+    ...(options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {}),
+    ...(options?.errorMessage ? { error_message: options.errorMessage } : {}),
   };
 }
 

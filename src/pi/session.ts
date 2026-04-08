@@ -74,8 +74,10 @@ export type SessionMetricEvent =
   | { type: 'token_usage'; token_usage: SessionTokenUsage; source: 'message_done' | 'turn_end' | 'agent_end' }
   | { type: 'finish_reason'; finish_reason: string; source: 'message_done' | 'turn_end' | 'agent_end' }
   | { type: 'turn_summary'; turn_index: number; token_usage?: SessionTokenUsage; finish_reason?: string }
-  | { type: 'compaction'; phase: 'start' | 'end' }
-  | { type: 'retry'; phase: 'start' | 'end' };
+  | { type: 'compaction'; phase: 'start' | 'end'; tokensBefore?: number; summary?: string; firstKeptEntryId?: string }
+  | { type: 'retry'; phase: 'start' | 'end'; attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string }
+  | { type: 'model_change'; action: 'set_model' | 'cycle_model'; model?: string; previousModel?: string }
+  | { type: 'extension_error'; extension?: string; errorMessage?: string };
 
 export interface PiSessionOptions {
   model: string;
@@ -97,7 +99,24 @@ export interface PiSessionOptions {
   /** Called with tool name, error flag, optional tool call ID, summarized result content, and optional raw result payload */
   onToolEnd?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string, resultRaw?: Record<string, unknown>) => void;
   /** Called with the raw pi event type (for job status tracking) */
-  onEvent?: (type: string, details?: { charCount?: number; toolCallId?: string }) => void;
+  onEvent?: (
+    type: string,
+    details?: {
+      charCount?: number;
+      toolCallId?: string;
+      model?: string;
+      previousModel?: string;
+      action?: 'set_model' | 'cycle_model';
+      extension?: string;
+      errorMessage?: string;
+      tokensBefore?: number;
+      summary?: string;
+      firstKeptEntryId?: string;
+      attempt?: number;
+      maxAttempts?: number;
+      delayMs?: number;
+    },
+  ) => void;
   /** Called with additive observability metrics derived from RPC events */
   onMetric?: (event: SessionMetricEvent) => void;
   /** Called once with actual backend/model from the first assistant message_start */
@@ -249,6 +268,16 @@ function findToolResultRaw(payload: unknown): Record<string, unknown> | undefine
   const result = record.result;
   if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
   return result as Record<string, unknown>;
+}
+
+function findStringValue(payload: unknown, keys: readonly string[]): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return undefined;
 }
 
 export class PiAgentSession {
@@ -553,16 +582,56 @@ export class PiAgentSession {
       if (type === 'auto_compaction_end') {
         this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
       }
-      this.options.onMetric?.({ type: 'compaction', phase: type === 'auto_compaction_start' ? 'start' : 'end' });
-      this.options.onEvent?.(type);
+      const compactionDetails = {
+        tokensBefore: asNumber(event.tokensBefore ?? event.tokens_before),
+        summary: findStringValue(event, ['summary']),
+        firstKeptEntryId: findStringValue(event, ['firstKeptEntryId', 'first_kept_entry_id']),
+      };
+      this.options.onMetric?.({
+        type: 'compaction',
+        phase: type === 'auto_compaction_start' ? 'start' : 'end',
+        ...compactionDetails,
+      });
+      this.options.onEvent?.(type, compactionDetails);
       return;
     }
     if (type === 'auto_retry_start' || type === 'auto_retry_end') {
       if (type === 'auto_retry_end') {
         this._metrics.auto_retries = (this._metrics.auto_retries ?? 0) + 1;
       }
-      this.options.onMetric?.({ type: 'retry', phase: type === 'auto_retry_start' ? 'start' : 'end' });
-      this.options.onEvent?.('auto_retry');
+      const retryDetails = {
+        attempt: asNumber(event.attempt),
+        maxAttempts: asNumber(event.maxAttempts ?? event.max_attempts),
+        delayMs: asNumber(event.delayMs ?? event.delay_ms),
+        errorMessage: findStringValue(event, ['errorMessage', 'error_message', 'error']),
+      };
+      this.options.onMetric?.({
+        type: 'retry',
+        phase: type === 'auto_retry_start' ? 'start' : 'end',
+        ...retryDetails,
+      });
+      this.options.onEvent?.(type, retryDetails);
+      return;
+    }
+
+    if (type === 'set_model' || type === 'cycle_model') {
+      const modelChange = {
+        action: type,
+        model: findStringValue(event, ['model', 'newModel', 'new_model']),
+        previousModel: findStringValue(event, ['previousModel', 'previous_model', 'oldModel', 'old_model']),
+      };
+      this.options.onMetric?.({ type: 'model_change', ...modelChange });
+      this.options.onEvent?.(type, modelChange);
+      return;
+    }
+
+    if (type === 'extension_error') {
+      const extensionError = {
+        extension: findStringValue(event, ['extension', 'extensionName', 'name']),
+        errorMessage: findStringValue(event, ['errorMessage', 'error_message', 'error']),
+      };
+      this.options.onMetric?.({ type: 'extension_error', ...extensionError });
+      this.options.onEvent?.('extension_error', extensionError);
       return;
     }
 

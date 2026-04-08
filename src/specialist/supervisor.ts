@@ -869,6 +869,26 @@ export class Supervisor {
               : eventType === 'thinking'
                 ? thinkingCharCount
                 : details?.charCount,
+            compaction: {
+              tokensBefore: details?.tokensBefore,
+              summary: details?.summary,
+              firstKeptEntryId: details?.firstKeptEntryId,
+            },
+            retry: {
+              attempt: details?.attempt,
+              maxAttempts: details?.maxAttempts,
+              delayMs: details?.delayMs,
+              errorMessage: details?.errorMessage,
+            },
+            modelChange: {
+              action: details?.action ?? (eventType === 'set_model' || eventType === 'cycle_model' ? eventType : 'set_model'),
+              model: details?.model,
+              previousModel: details?.previousModel,
+            },
+            extensionError: {
+              extension: details?.extension,
+              errorMessage: details?.errorMessage,
+            },
           });
 
           if (timelineEvent) {
@@ -923,15 +943,26 @@ export class Supervisor {
           if (metricEvent.type === 'compaction') {
             const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === 'end' ? 1 : 0);
             mergeRunMetrics({ auto_compactions: compactions });
-            appendTimelineEvent(createCompactionEvent(metricEvent.phase));
+            appendTimelineEvent(createCompactionEvent(metricEvent.phase, {
+              tokensBefore: metricEvent.tokensBefore,
+              summary: metricEvent.summary,
+              firstKeptEntryId: metricEvent.firstKeptEntryId,
+            }));
             return;
           }
 
           if (metricEvent.type === 'retry') {
             const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === 'end' ? 1 : 0);
             mergeRunMetrics({ auto_retries: retries });
-            appendTimelineEvent(createRetryEvent(metricEvent.phase));
+            appendTimelineEvent(createRetryEvent(metricEvent.phase, {
+              attempt: metricEvent.attempt,
+              maxAttempts: metricEvent.maxAttempts,
+              delayMs: metricEvent.delayMs,
+              errorMessage: metricEvent.errorMessage,
+            }));
+            return;
           }
+
         },
         // onMeta — model/backend metadata
         (meta) => {

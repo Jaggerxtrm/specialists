@@ -640,7 +640,24 @@ export class SpecialistRunner {
   async run(
     options: RunOptions,
     onProgress?: (msg: string) => void,
-    onEvent?: (type: string, details?: { charCount?: number; toolCallId?: string }) => void,
+    onEvent?: (
+      type: string,
+      details?: {
+        charCount?: number;
+        toolCallId?: string;
+        model?: string;
+        previousModel?: string;
+        action?: 'set_model' | 'cycle_model';
+        extension?: string;
+        errorMessage?: string;
+        tokensBefore?: number;
+        summary?: string;
+        firstKeptEntryId?: string;
+        attempt?: number;
+        maxAttempts?: number;
+        delayMs?: number;
+      },
+    ) => void,
     onMetric?: (event: SessionMetricEvent) => void,
     onMeta?: (meta: { backend: string; model: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
