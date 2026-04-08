@@ -297,11 +297,12 @@ function getStatusIcon(job: JobNode): string {
 }
 
 function getNextAction(job: JobNode): string {
-  if (job.is_dead) return 'sp clean --zombies';
-  if (job.status === 'running' || job.status === 'starting') return `sp feed -f ${job.id}`;
-  if (job.status === 'waiting') return `sp resume ${job.id} "next task"`;
-  if (job.status === 'done') return `sp result ${job.id}`;
-  return `sp result ${job.id}`;
+  if (job.is_dead) return 'dead';
+  if (job.status === 'running' || job.status === 'starting') return 'feed';
+  if (job.status === 'waiting') return 'resume';
+  if (job.status === 'done') return 'result';
+  if (job.status === 'error') return 'result';
+  return '';
 }
 
 function formatCtxWithIndicator(contextPct: number | undefined, contextHealth: string | undefined): string {
@@ -322,9 +323,12 @@ function renderJobLine(
   const spec = job.specialist.slice(0, 13).padEnd(13);
   const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
   const elapsed = formatElapsed(job.elapsed_s).padStart(7);
-  const bead = job.bead_id ? job.bead_id.padEnd(14) : ''.padEnd(14);
-  const next = job.is_dead ? red('dead') : dim(getNextAction(job).replace('sp ', ''));
-  return `${prefix}${connector}${icon} ${id} ${spec} ${ctx} ${elapsed}  ${bead} ${next}`;
+  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+  const beadCol = job.bead_id ? job.bead_id : '';
+  const action = getNextAction(job);
+  const actionCol = job.is_dead ? red(action) : dim(action);
+  const titleSuffix = beadTitle ? dim(` ${beadTitle.slice(0, 40)}`) : '';
+  return `${prefix}${connector}${icon} ${id} ${spec} ${ctx} ${elapsed}  ${beadCol.padEnd(14)} ${actionCol}${titleSuffix}`;
 }
 
 function renderTreeNodes(
@@ -401,7 +405,14 @@ function renderInspect(jobId: string): void {
   console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
   console.log(`  context   ${ctx}`);
   if (job.current_tool) console.log(`  current   ${job.current_tool}`);
-  console.log(`\n  ${dim(getNextAction(toJobNode(job)))}`);
+  const inspectActions: string[] = [];
+  if (job.status === 'running' || job.status === 'starting') inspectActions.push(`feed -f ${job.id}`);
+  if (job.status === 'waiting') inspectActions.push(`resume ${job.id} "..."`);
+  if (job.status === 'running') inspectActions.push(`steer ${job.id} "..."`);
+  if (job.tmux_session) inspectActions.push(`attach ${job.id}`);
+  if (job.status === 'done' || job.status === 'error') inspectActions.push(`result ${job.id}`);
+  if (job.is_dead) inspectActions.push('clean --zombies');
+  console.log(`\n  ${dim(inspectActions.join(' | '))}`);
 }
 
 function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, trees: WorktreeTree[], _all: boolean): void {
