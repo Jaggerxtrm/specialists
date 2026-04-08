@@ -26622,6 +26622,8 @@ function toJobNode(job) {
     id: job.id,
     specialist: job.specialist,
     status: job.status,
+    pid: job.pid,
+    is_dead: job.is_dead,
     bead_id: job.bead_id,
     bead_title: beadAwareStatus.bead_title,
     node_id: job.node_id,
@@ -26685,50 +26687,35 @@ function groupByTree(jobs) {
   });
   for (const [ownerJobId, treeJobs] of sortedGroups) {
     const representative = treeJobs.find((job) => job.id === ownerJobId) ?? treeJobs[0];
-    const nonNodeJobs = treeJobs.filter((job) => !job.node_id);
-    const nodeBuckets = new Map;
-    for (const nodeJob of treeJobs.filter((job) => Boolean(job.node_id))) {
-      const nodeId = nodeJob.node_id;
-      if (!nodeBuckets.has(nodeId))
-        nodeBuckets.set(nodeId, []);
-      nodeBuckets.get(nodeId).push(nodeJob);
-    }
-    const children = [
-      ...buildReuseForest(nonNodeJobs),
-      ...[...nodeBuckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([nodeId, nodeJobs]) => ({
-        kind: "node",
-        node_id: nodeId,
-        children: buildReuseForest(nodeJobs)
-      }))
-    ];
     trees.push({
       owner_job_id: ownerJobId,
       worktree_path: representative.worktree_path,
       branch: representative.branch,
-      children
+      children: buildReuseForest(treeJobs)
     });
   }
   return trees;
 }
-function statusLabel(status) {
-  if (status === "running")
-    return cyan5(status);
-  if (status === "waiting")
-    return magenta3(status);
-  if (status === "done")
-    return green8(status);
-  if (status === "error")
-    return red2(status);
-  return yellow10(status);
+function isPidAlive(pid) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
-function formatElapsed3(seconds) {
-  if (seconds === undefined || !Number.isFinite(seconds))
-    return "--";
-  if (seconds < 60)
-    return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return `${minutes}m${String(remainder).padStart(2, "0")}s`;
+function isDeadActiveJob(job) {
+  if (job.status !== "running" && job.status !== "waiting")
+    return false;
+  return !isPidAlive(job.pid);
+}
+function withPidLiveness(statuses) {
+  return statuses.map((job) => ({
+    ...job,
+    is_dead: isDeadActiveJob(job)
+  }));
 }
 function formatContextPct(contextPct) {
   if (contextPct === undefined || !Number.isFinite(contextPct))
@@ -26778,43 +26765,76 @@ function buildBeadTitleCache(jobs) {
   }
   return titles;
 }
-function renderJobLine(job, beadTitles, prefix = "") {
-  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-  const beadLabel = job.bead_id ? `${job.bead_id}${beadTitle ? ` ${beadTitle}` : ""}` : "-";
-  const context = dim8(formatContextPct(job.context_pct).padStart(4));
-  const elapsed = dim8(formatElapsed3(job.elapsed_s).padStart(6));
-  console.log(`${prefix}${dim8(job.id)} ${job.specialist} ${context} ${elapsed} ${beadLabel} ${statusLabel(job.status)}`);
+function getStatusIcon(job) {
+  if (job.is_dead)
+    return red2("◉");
+  if (job.status === "running")
+    return cyan5("◉");
+  if (job.status === "waiting")
+    return magenta3("◐");
+  if (job.status === "starting")
+    return yellow10("◐");
+  if (job.status === "done")
+    return green8("○");
+  if (job.status === "error")
+    return red2("○");
+  return dim8("○");
 }
-function renderTreeJobs(items, beadTitles, indent = "") {
-  for (const item of items) {
-    if (item.kind === "node") {
-      console.log(`${indent}${bold9(`node:${item.node_id}`)}`);
-      renderTreeJobs(item.children, beadTitles, `${indent}  `);
+function getNextAction(job) {
+  if (job.is_dead)
+    return "sp clean --zombies";
+  if (job.status === "running" || job.status === "starting")
+    return `sp feed -f ${job.id}`;
+  if (job.status === "waiting")
+    return `sp resume ${job.id} "next task"`;
+  if (job.status === "done")
+    return `sp result ${job.id}`;
+  return `sp result ${job.id}`;
+}
+function flattenJobs(items) {
+  const result = [];
+  const stack = [...items].reverse();
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (!item)
       continue;
+    result.push(item);
+    for (let index = item.children.length - 1;index >= 0; index -= 1) {
+      stack.push(item.children[index]);
     }
-    renderJobLine(item, beadTitles, `${indent}- `);
-    if (item.children.length > 0)
-      renderTreeJobs(item.children, beadTitles, `${indent}  `);
   }
+  return result;
 }
 function renderHuman(jobs, trees, all) {
   const beadTitles = buildBeadTitleCache(jobs);
   console.log(`
-${bold9(all ? "Jobs" : "Active jobs")} (${jobs.length})
-`);
-  for (const job of jobs) {
-    renderJobLine(toJobNode(job), beadTitles);
+${bold9(all ? "jobs" : "active jobs")}`);
+  console.log(dim8("st  id       specialist     ctx%  next"));
+  let runningCount = 0;
+  let waitingCount = 0;
+  for (const tree of trees) {
+    const location = tree.worktree_path ?? "(no worktree)";
+    const branch = tree.branch ? ` (${tree.branch})` : "";
+    console.log(`
+${dim8(`worktree ${location}${branch}`)}`);
+    const treeJobs = flattenJobs(tree.children);
+    for (const job of treeJobs) {
+      const context = formatContextPct(job.context_pct).padStart(4);
+      const nextAction = getNextAction(job);
+      const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+      const beadLabel = job.bead_id ? ` ${dim8(`[${job.bead_id}${beadTitle ? ` ${beadTitle}` : ""}]`)}` : "";
+      const deadLabel = job.is_dead ? ` ${red2("dead")}` : "";
+      const idCell = job.id.slice(0, 8).padEnd(8);
+      const specialistCell = job.specialist.slice(0, 14).padEnd(14);
+      if (job.status === "running")
+        runningCount += 1;
+      if (job.status === "waiting")
+        waitingCount += 1;
+      console.log(`${getStatusIcon(job)}  ${idCell} ${specialistCell} ${context}  ${nextAction}${beadLabel}${deadLabel}`);
+    }
   }
   console.log(`
-${bold9("Worktree trees")} (${trees.length})
-`);
-  for (const tree of trees) {
-    const where = tree.worktree_path ? dim8(` ${tree.worktree_path}`) : "";
-    const branch = tree.branch ? dim8(` (${tree.branch})`) : "";
-    console.log(`${bold9(tree.owner_job_id)}${branch}${where}`);
-    renderTreeJobs(tree.children, beadTitles, "  ");
-    console.log("");
-  }
+${dim8(`summary: ${jobs.length} jobs • ${trees.length} worktrees • ${runningCount} running • ${waitingCount} waiting`)}`);
 }
 function renderJson(jobs, trees, all) {
   console.log(JSON.stringify({
@@ -26828,6 +26848,8 @@ function renderJson(jobs, trees, all) {
       id: job.id,
       specialist: job.specialist,
       status: job.status,
+      pid: job.pid,
+      is_dead: job.is_dead,
       bead_id: job.bead_id,
       bead_title: job.bead_title,
       node_id: job.node_id,
@@ -26844,13 +26866,20 @@ function renderJson(jobs, trees, all) {
   }, null, 2));
 }
 function render(args) {
-  const statuses = loadStatuses().filter((job) => isVisibleStatus(job.status, args.all));
-  const trees = groupByTree(statuses);
+  const statusesWithLiveness = withPidLiveness(loadStatuses());
+  const visibleStatuses = statusesWithLiveness.filter((job) => {
+    if (!isVisibleStatus(job.status, args.all))
+      return false;
+    if (args.all)
+      return true;
+    return !job.is_dead;
+  });
+  const trees = groupByTree(visibleStatuses);
   if (args.json) {
-    renderJson(statuses, trees, args.all);
+    renderJson(visibleStatuses, trees, args.all);
     return;
   }
-  renderHuman(statuses, trees, args.all);
+  renderHuman(visibleStatuses, trees, args.all);
 }
 async function follow(args) {
   render(args);
@@ -29263,7 +29292,7 @@ var init_help = __esm(() => {
     ["attach", "Attach terminal to a running background job tmux session"],
     ["report", "Generate/show/list/diff session reports in .xtrm/reports/"],
     ["status", "Show health, MCP state, and active jobs"],
-    ["ps", "Show flat jobs + worktree trees; --json, --all, --follow"],
+    ["ps", "Show urgency-sorted worktree view with ctx% and NEXT action; --json, --all, --follow"],
     ["doctor", "Diagnose installation/runtime problems"],
     ["quickstart", "Full getting-started guide"],
     ["help", "Show this help"]
@@ -37181,18 +37210,34 @@ async function run27() {
         "",
         "Usage: specialists ps [options]",
         "",
-        "Show jobs as a flat list and worktree tree groups.",
+        "Process dashboard — shows active specialist jobs grouped by worktree chain.",
+        "Dead jobs (PID gone) are filtered by default. Includes context%, bead title,",
+        "and next-action hints on every row.",
         "",
         "Options:",
-        "  --json       Output structured JSON with trees[].children[]",
-        "  --all        Include terminal jobs (done/error)",
-        "  --follow, -f Live refresh",
+        "  --json       Structured JSON output with trees[].children[] schema",
+        "  --all        Include terminal (done/error) and dead jobs",
+        "  --follow, -f Live-refresh view with spinner animation",
+        "",
+        "Output columns:",
+        "  st           Status icon: ◉ running, ◐ waiting/starting, ○ done/error",
+        "  id           6-char job ID",
+        "  specialist   Specialist name (executor, explorer, reviewer, ...)",
+        "  ctx%         Context window utilization (-- if unavailable)",
+        "  elapsed      Compact elapsed time (e.g. 5m03s)",
+        "  bead         Bead ID + title (if bead-linked)",
+        "  next         Suggested action (feed, resume, result, ...)",
+        "",
+        "Grouping:",
+        "  Jobs sharing a worktree (via --job) appear as nested ├─/└─ chains.",
+        "  Node coordinator → member relationships are shown inline.",
+        "  Standalone jobs appear ungrouped at the bottom.",
         "",
         "Examples:",
-        "  specialists ps",
-        "  specialists ps --all",
-        "  specialists ps --json",
-        "  specialists ps --follow",
+        "  specialists ps              Active jobs only (dead filtered out)",
+        "  specialists ps --all        All jobs including dead and terminal",
+        "  specialists ps --json       Machine-readable tree output",
+        "  specialists ps --follow     Live dashboard with auto-refresh",
         ""
       ].join(`
 `));
