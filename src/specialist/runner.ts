@@ -250,6 +250,16 @@ const BASE_OUTPUT_SCHEMA: JsonSchema = {
   required: ['summary', 'status', 'issues_closed', 'issues_created', 'follow_ups', 'risks', 'verification'],
 };
 
+const IMPACT_REPORT_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    files_touched: { type: 'array', items: { type: 'string' } },
+    symbols_analyzed: { type: 'array', items: { type: 'string' } },
+    highest_risk: { enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+    tool_invocations: { type: 'number' },
+  },
+};
+
 const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonSchema> = {
   codegen: {
     type: 'object',
@@ -258,6 +268,7 @@ const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonS
       symbols_modified: { type: 'array', items: { type: 'string' } },
       lint_pass: { type: 'boolean' },
       tests_pass: { type: 'boolean' },
+      impact_report: IMPACT_REPORT_SCHEMA,
     },
   },
   analysis: {
@@ -266,6 +277,7 @@ const OUTPUT_TYPE_SCHEMA_EXTENSIONS: Record<Exclude<OutputType, 'custom'>, JsonS
       key_files: { type: 'array', items: { type: 'string' } },
       architecture_notes: { type: 'string' },
       recommendations: { type: 'array', items: { type: 'string' } },
+      impact_report: IMPACT_REPORT_SCHEMA,
     },
   },
   review: {

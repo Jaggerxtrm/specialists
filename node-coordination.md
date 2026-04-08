@@ -11,7 +11,9 @@
 | Stream 2 — 08zd (Phases 1→3) + 4qam | **this orchestrator** |
 | Stream 3 — z5ml implementation | another agent (unblocked after 08zd Phase 3) |
 
-## Live Status (updated 2026-04-04)
+## Live Status (updated 2026-04-08)
+
+> **Schema note (current):** Node persistence is on **schema v4**. `specialist_events` is at **v6** (adds `seq` column from commit `72caac6b`).
 
 ### Stream 1 — Output Contract + Validation — ✅ COMPLETE
 | Bead | Job | Status | Notes |
@@ -45,10 +47,10 @@
 | unitAI-afl9 | bdca41 (executor) + 5c05a0 (reviewer) | ✅ CLOSED — commit a86f05ef | Phase 3B: atomic dual-write via db.transaction() at job start + completion. writeStatusRow/writeEventRow/writeResultRow private helpers. Reviewer PASS 96/100. |
 | unitAI-hhs6 | c718cf (schema exec) + 03c239 (CLI exec) + ba941e (reviewer) | ✅ CLOSED — commits e7c740dd + cb6eab3b | Phase 3D: schema v2 (bead_id column on specialist_jobs), CLI reads SQLite-first with file fallback. Reviewers PASS 95+96/100. |
 | unitAI-fdtq | 2ea02b (executor) | ✅ CLOSED — commit 0c900174 | Per-turn text capture: turnTextAccumulator in supervisor.ts, text_content on turn_summary events. Live-tested: 4212 chars captured on final turn, tool-only turns correctly empty. Feed preview added (commit f3e68132). |
-| unitAI-ftu5 | — | 🔜 unblocked | Enriched specialist_jobs schema v2→v3: all queryable columns promoted. Must land BEFORE z5ml (provides node_id column). |
-| unitAI-mhra/lcv6/pi8m | — | 🔜 test beads for 3A/3B/3D | Each blocks its impl bead |
-| unitAI-4qam | — | 🔜 unblocked | Surface waiting state in feed/result/status (display/UX, not new event type) |
-| unitAI-hgpu | — | 🔜 CLOSED | REVISED: `specialists worktree create <bead-id>` CLI subcommand + `--job <id>` targeting + .pi absolute paths + ~/.pi/node_modules symlink. Full design in bead. |
+| unitAI-ftu5 | e2d337 (executor) | ✅ CLOSED — commit 758c338a | specialist_jobs v3 migration landed (adds `status` + `node_id` on top of prior v2 shape). |
+| unitAI-mhra/lcv6/pi8m | — | ✅ CLOSED | Phase 3 test beads closed. |
+| unitAI-4qam | — | ✅ CLOSED | Waiting state surfaced in feed/result/status (display/UX, no new event type). |
+| unitAI-hgpu | — | ✅ CLOSED | `specialists worktree create <bead-id>` + `--job <id>` targeting + `.pi` absolute paths + `~/.pi/node_modules` symlink. |
 | unitAI-1san | — | ✅ CLOSED | Consistency check passed. Follow-ups: e90j/brbb/hpjg (P3). |
 | unitAI-x4ms | 604513 (executor) | ✅ CLOSED — commit e651e391 | Runner template var substitution fix for bead runs. |
 | unitAI-sxmy | — | ✅ CLOSED — commit f155f1f9 | Executor bead claim non-fatal when same actor. |
@@ -235,9 +237,11 @@ Every `appendTimelineEvent` call in `supervisor.ts` writes one of these to `even
 
 ---
 
-### Phase 3 Schema — DENORMALIZED (revised 2026-04-04)
+### ~~Phase 3 Schema — DENORMALIZED~~ (SUPERSEDED — see JSON-first decision below)
 
-The original schema stored everything in `event_json TEXT` blobs — making 18+ event types unqueryable. **Revised: every field from every event type gets a real SQL column.** The blob stays for forward compat and full replay.
+> ⚠️ This denormalized design is historical and was rejected.
+> Canonical direction is **JSON-first** (`event_json` as source of truth, selective promotion only for proven hot selectors).
+> See **Key Decisions → JSON-first schema (overthinker consensus 2026-04-05)**.
 
 #### specialist_events (denormalized)
 
@@ -325,30 +329,19 @@ CREATE INDEX idx_events_tool     ON specialist_events(tool_name) WHERE tool_name
 CREATE INDEX idx_events_bead     ON specialist_events(bead_id) WHERE bead_id IS NOT NULL;
 ```
 
-#### specialist_jobs (enriched)
+#### specialist_jobs (actual v3 shape — 9 columns)
 
 ```sql
 specialist_jobs (
-  job_id              TEXT PRIMARY KEY,
-  specialist          TEXT NOT NULL,
-  worktree_column     TEXT,
-  bead_id             TEXT,
-  model               TEXT,
-  backend             TEXT,
-  status              TEXT NOT NULL,
-  total_turns         INTEGER DEFAULT 0,
-  total_tool_calls    INTEGER DEFAULT 0,
-  total_cost_usd      REAL DEFAULT 0,
-  input_tokens        INTEGER DEFAULT 0,
-  output_tokens       INTEGER DEFAULT 0,
-  exit_reason         TEXT,
-  highest_gitnexus_risk TEXT,
-  files_touched       TEXT,             -- JSON array
-  started_at_ms       INTEGER,
-  elapsed_s           REAL,
-  node_id             TEXT,             -- nullable FK → node_runs.id
-  status_json         TEXT NOT NULL,    -- full blob for backward compat
-  updated_at_ms       INTEGER NOT NULL
+  job_id            TEXT PRIMARY KEY,
+  specialist        TEXT NOT NULL,
+  worktree_column   TEXT,
+  bead_id           TEXT,
+  status            TEXT NOT NULL,
+  node_id           TEXT,
+  last_output       TEXT,
+  status_json       TEXT NOT NULL,
+  updated_at_ms     INTEGER NOT NULL
 );
 
 CREATE INDEX idx_jobs_specialist ON specialist_jobs(specialist);
@@ -641,9 +634,12 @@ All 3 CLI commands (feed, status, result) now try SQLite first, fall back to fil
 #### Per-turn text capture (commit 0c900174)
 `turnTextAccumulator` in supervisor.ts collects streamed text deltas per assistant message. Emitted as `text_content` on `turn_summary` events in `event_json`. No schema changes (JSON-first). Live-tested: tool-only turns correctly empty, text turns captured. Feed preview added (commit f3e68132).
 
-#### ftu5 before z5ml ordering
-ftu5 (enriched specialist_jobs v2→v3) must land before z5ml (node tables). Reason: z5ml needs `node_id` FK on specialist_jobs — ftu5 adds it alongside all other enriched columns in one migration, avoiding two incremental table recreates.
+#### ftu5 / z5ml ordering (corrected)
+ftu5 and z5ml were **separate migrations** with distinct responsibilities:
+- **v3 (ftu5)** added `node_id` (plus job-row selector enrichment)
+- **v4 (z5ml)** added node tables (`node_runs`, `node_members`, `node_events`, `node_memory`)
 
+The ordering requirement was about introducing `node_id` before node-runtime linkage, not a combined migration.
 #### z5ml promoted to epic
 5 new tables + circular FK bootstrap + design alignment with JSON-first decisions. Sub-beads needed for: (1) overthinker on stale design elements, (2) schema creation, (3) write paths, (4) read paths.
 

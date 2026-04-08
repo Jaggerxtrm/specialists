@@ -186,13 +186,15 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists db setup',
+        'Usage: specialists db <setup|backfill>',
         '',
         'Provision the shared observability SQLite database (human-only).',
         '',
         'Commands:',
-        '  setup   Create and initialize the observability DB (one-time)',
-        '  init    Alias for setup',
+        '  setup      Create and initialize the observability DB (one-time)',
+        '  init       Alias for setup',
+        '  backfill   Backfill specialist_jobs from .specialists/jobs/*/status.json',
+        '             Use --events to also replay events.jsonl',
         '',
         'Notes:',
         '  - TTY required (blocked in agent/non-interactive sessions)',
@@ -201,7 +203,10 @@ async function run() {
         '',
         'Examples:',
         '  specialists db setup',
+        '  specialists db backfill',
+        '  specialists db backfill --events',
         '  sp db setup',
+        '  sp db backfill',
         '',
       ].join('\n'));
       return;
