@@ -493,6 +493,38 @@ describe('sendCommand — concurrent dispatch', () => {
     expect(metrics.token_usage?.output_tokens).toBe(15);
   });
 
+  it('captures token usage from assistant message usage format in turn_end and agent_end', async () => {
+    const session = await PiAgentSession.create({ model: 'gemini' });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'turn_end',
+      message: {
+        role: 'assistant',
+        usage: {
+          input: 21,
+          output: 13,
+          cacheRead: 5,
+          cacheWrite: 2,
+          cost: { total: 0.1234 },
+        },
+      },
+    });
+
+    emitLine(fake, {
+      type: 'agent_end',
+      messages: [{ role: 'assistant', content: [], usage: { input: 30, output: 20 } }],
+    });
+
+    const metrics = session.getMetrics();
+    expect(metrics.token_usage?.input_tokens).toBe(30);
+    expect(metrics.token_usage?.output_tokens).toBe(20);
+    expect(metrics.token_usage?.cache_read_tokens).toBe(5);
+    expect(metrics.token_usage?.cache_creation_tokens).toBe(2);
+    expect(metrics.token_usage?.total_tokens).toBe(50);
+    expect(metrics.token_usage?.cost_usd).toBe(0.1234);
+  });
+
   it('auto_compaction_start and auto_compaction_end both fire onEvent("auto_compaction")', async () => {
     const onEvent = vi.fn();
     const session = await PiAgentSession.create({ model: 'gemini', onEvent });

@@ -162,14 +162,18 @@ function pickFirstNumber(record: Record<string, unknown>, keys: readonly string[
 function normalizeTokenUsage(candidate: unknown): SessionTokenUsage | undefined {
   if (!candidate || typeof candidate !== 'object') return undefined;
   const usage = candidate as Record<string, unknown>;
+  const cost = usage.cost;
 
   const normalized: SessionTokenUsage = {
-    input_tokens: pickFirstNumber(usage, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens']),
-    output_tokens: pickFirstNumber(usage, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens']),
-    cache_creation_tokens: pickFirstNumber(usage, ['cache_creation_tokens', 'cacheCreationTokens', 'cache_write_tokens']),
-    cache_read_tokens: pickFirstNumber(usage, ['cache_read_tokens', 'cacheReadTokens', 'cache_hit_tokens']),
+    input_tokens: pickFirstNumber(usage, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens', 'input']),
+    output_tokens: pickFirstNumber(usage, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens', 'output']),
+    cache_creation_tokens: pickFirstNumber(usage, ['cache_creation_tokens', 'cacheCreationTokens', 'cache_write_tokens', 'cacheWrite']),
+    cache_read_tokens: pickFirstNumber(usage, ['cache_read_tokens', 'cacheReadTokens', 'cache_hit_tokens', 'cacheRead']),
     total_tokens: pickFirstNumber(usage, ['total_tokens', 'totalTokens']),
-    cost_usd: pickFirstNumber(usage, ['cost_usd', 'costUsd', 'usd_cost', 'cost']),
+    cost_usd: pickFirstNumber(usage, ['cost_usd', 'costUsd', 'usd_cost', 'cost'])
+      ?? (typeof cost === 'object' && cost !== null
+        ? pickFirstNumber(cost as Record<string, unknown>, ['total', 'usd', 'cost_usd'])
+        : undefined),
   };
 
   const hasAny = Object.values(normalized).some(value => value !== undefined);
@@ -187,7 +191,9 @@ function normalizeTokenUsage(candidate: unknown): SessionTokenUsage | undefined 
     }
   }
 
-  return normalized;
+  return Object.fromEntries(
+    Object.entries(normalized).filter(([, value]) => value !== undefined),
+  ) as SessionTokenUsage;
 }
 
 function findFinishReason(payload: unknown): string | undefined {
@@ -201,10 +207,23 @@ function findFinishReason(payload: unknown): string | undefined {
 function findTokenUsage(payload: unknown): SessionTokenUsage | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
   const record = payload as Record<string, unknown>;
+  const message = (record.message && typeof record.message === 'object') ? record.message as Record<string, unknown> : undefined;
+  const assistantMessage = Array.isArray(record.messages)
+    ? [...record.messages]
+      .reverse()
+      .find((m): m is Record<string, unknown> => !!m && typeof m === 'object' && (m as Record<string, unknown>).role === 'assistant')
+    : undefined;
+
   const candidates: unknown[] = [
     record.usage,
     record.tokenUsage,
     record.token_usage,
+    message?.usage,
+    message?.tokenUsage,
+    message?.token_usage,
+    assistantMessage?.usage,
+    assistantMessage?.tokenUsage,
+    assistantMessage?.token_usage,
     (record.stats as Record<string, unknown> | undefined)?.usage,
     (record.stats as Record<string, unknown> | undefined)?.tokenUsage,
     (record.result as Record<string, unknown> | undefined)?.usage,
