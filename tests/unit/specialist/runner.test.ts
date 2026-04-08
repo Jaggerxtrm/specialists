@@ -149,6 +149,22 @@ describe('SpecialistRunner', () => {
     expect(sessionOptions.systemPrompt).toContain('Output archetype: `review`');
   });
 
+  it('strips JSON fences for response_format=json outputs before returning', async () => {
+    mockSession.getLastOutput.mockResolvedValueOnce('```json\n{"summary":"Done","status":"success","issues_closed":[],"issues_created":[],"follow_ups":[],"risks":[],"verification":[]}\n```');
+
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ response_format: 'json' }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    const result = await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    expect(result.output.startsWith('```')).toBe(false);
+    expect(JSON.parse(result.output).status).toBe('success');
+  });
+
   it('does not inject output contract when response_format=text', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({

@@ -15,7 +15,7 @@
     "install": "bin/install.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=node --outfile=dist/index.js && chmod +x dist/index.js",
+    "build": "bun build src/index.ts --target=bun --outfile=dist/index.js && sed -i '1s|#!/usr/bin/env node|#!/usr/bin/env bun|' dist/index.js && chmod +x dist/index.js",
     "dev": "bun run src/index.ts",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",

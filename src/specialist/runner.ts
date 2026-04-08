@@ -12,6 +12,7 @@ import {
 import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
+import { stripJsonFences } from './json-output.js';
 
 export interface RunOptions {
   name: string;
@@ -832,6 +833,10 @@ export class SpecialistRunner {
 
       if (output === undefined) {
         throw new Error('Specialist run finished without output');
+      }
+
+      if (responseFormat === 'json') {
+        output = stripJsonFences(output);
       }
 
       if (effectiveKeepAlive && onResumeReady) {

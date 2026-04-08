@@ -1,5 +1,5 @@
-#!/usr/bin/env node
-import { createRequire } from "node:module";
+#!/usr/bin/env bun
+// @bun
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
@@ -27,7 +27,7 @@ var __export = (target, all) => {
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
-var __require = /* @__PURE__ */ createRequire(import.meta.url);
+var __require = import.meta.require;
 
 // node_modules/zod/v3/helpers/util.js
 var util, objectUtil, ZodParsedType, getParsedType = (data) => {
@@ -13879,15 +13879,15 @@ var require_errors2 = __commonJS((exports) => {
     let lineStr = src.substring(lc.lineStarts[line - 1], lc.lineStarts[line]).replace(/[\n\r]+$/, "");
     if (ci >= 60 && lineStr.length > 80) {
       const trimStart = Math.min(ci - 39, lineStr.length - 79);
-      lineStr = "…" + lineStr.substring(trimStart);
+      lineStr = "\u2026" + lineStr.substring(trimStart);
       ci -= trimStart - 1;
     }
     if (lineStr.length > 80)
-      lineStr = lineStr.substring(0, 79) + "…";
+      lineStr = lineStr.substring(0, 79) + "\u2026";
     if (line > 1 && /^ *$/.test(lineStr.substring(0, ci))) {
       let prev = src.substring(lc.lineStarts[line - 2], lc.lineStarts[line - 1]);
       if (prev.length > 80)
-        prev = prev.substring(0, 79) + `…
+        prev = prev.substring(0, 79) + `\u2026
 `;
       lineStr = prev + lineStr;
     }
@@ -14942,8 +14942,8 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
     r: "\r",
     t: "\t",
     v: "\v",
-    N: "",
-    _: " ",
+    N: "\x85",
+    _: "\xA0",
     L: "\u2028",
     P: "\u2029",
     " ": " ",
@@ -17497,14 +17497,14 @@ async function validateSpecialist(jsonContent) {
 async function parseSpecialist(jsonContent) {
   const result = await validateSpecialist(jsonContent);
   if (!result.valid) {
-    const errorList = result.errors.map((e) => `  • ${e.message}`).join(`
+    const errorList = result.errors.map((e) => `  \u2022 ${e.message}`).join(`
 `);
     throw new Error(`Schema validation failed:
 ${errorList}`);
   }
   if (result.warnings.length > 0) {
     process.stderr.write(`[specialists] warnings:
-${result.warnings.map((w) => `  ⚠ ${w}`).join(`
+${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
 `)}
 `);
   }
@@ -17599,9 +17599,9 @@ var init_schema = __esm(() => {
 });
 
 // src/specialist/loader.ts
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { existsSync } from "node:fs";
+import { readdir, readFile, stat } from "fs/promises";
+import { basename, join } from "path";
+import { existsSync } from "fs";
 async function checkStaleness(summary) {
   if (!summary.filestoWatch?.length || !summary.updated)
     return "OK";
@@ -17786,10 +17786,10 @@ var init_backendMap = __esm(() => {
 });
 
 // src/pi/session.ts
-import { spawn } from "node:child_process";
-import { existsSync as existsSync2 } from "node:fs";
-import { homedir } from "node:os";
-import { join as join2, resolve } from "node:path";
+import { spawn } from "child_process";
+import { existsSync as existsSync2 } from "fs";
+import { homedir } from "os";
+import { join as join2, resolve } from "path";
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
     case "READ_ONLY":
@@ -18463,8 +18463,13 @@ var init_circuitBreaker = __esm(() => {
   ];
 });
 
+// src/specialist/json-output.ts
+function stripJsonFences(text) {
+  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
 // src/specialist/beads.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "child_process";
 function buildBeadContext(bead, completedBlockers = []) {
   const lines = [`# Task: ${bead.title}`];
   if (bead.description?.trim()) {
@@ -18497,7 +18502,7 @@ class BeadsClient {
   constructor() {
     this.available = BeadsClient.checkAvailable();
     if (!this.available) {
-      console.warn("[specialists] bd CLI not found — beads tracking disabled");
+      console.warn("[specialists] bd CLI not found \u2014 beads tracking disabled");
     }
   }
   static checkAvailable() {
@@ -18605,12 +18610,12 @@ function shouldCreateBead(beadsIntegration, permissionRequired) {
 var init_beads = () => {};
 
 // src/specialist/runner.ts
-import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { execSync, spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync3, readFileSync } from "node:fs";
-import { basename as basename2, resolve as resolve2 } from "node:path";
-import { homedir as homedir2 } from "node:os";
+import { createHash } from "crypto";
+import { writeFile } from "fs/promises";
+import { execSync, spawnSync as spawnSync2 } from "child_process";
+import { existsSync as existsSync3, readFileSync } from "fs";
+import { basename as basename2, resolve as resolve2 } from "path";
+import { homedir as homedir2 } from "os";
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
@@ -18661,7 +18666,7 @@ function validateShebang(filePath, errors5) {
     ];
     for (const [pattern, correct] of typos) {
       if (pattern.test(shebang)) {
-        errors5.push(`  ✗ ${filePath}: shebang looks wrong — did you mean '${correct}'? (got: ${shebang})`);
+        errors5.push(`  \u2717 ${filePath}: shebang looks wrong \u2014 did you mean '${correct}'? (got: ${shebang})`);
       }
     }
   } catch {}
@@ -18679,7 +18684,7 @@ function validateBeforeRun(spec, permissionLevel) {
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
     if (!existsSync3(abs))
-      warnings.push(`  ⚠ skills.paths: file not found: ${p}`);
+      warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
   }
   for (const script of spec.specialist.skills?.scripts ?? []) {
     const run = script.run ?? script.path;
@@ -18689,25 +18694,25 @@ function validateBeforeRun(spec, permissionLevel) {
     if (isFilePath) {
       const abs = resolvePath(run);
       if (!existsSync3(abs)) {
-        errors5.push(`  ✗ skills.scripts: script not found: ${run}`);
+        errors5.push(`  \u2717 skills.scripts: script not found: ${run}`);
       } else {
         validateShebang(abs, errors5);
       }
     } else {
       const binary = run.split(" ")[0];
       if (!commandExists(binary)) {
-        errors5.push(`  ✗ skills.scripts: command not found on PATH: ${binary}`);
+        errors5.push(`  \u2717 skills.scripts: command not found on PATH: ${binary}`);
       }
     }
   }
   for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
     if (!commandExists(cmd)) {
-      errors5.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
+      errors5.push(`  \u2717 capabilities.external_commands: not found on PATH: ${cmd}`);
     }
   }
   for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
     if (!isToolAvailable(tool, permissionLevel)) {
-      errors5.push(`  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
+      errors5.push(`  \u2717 capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
     }
   }
   if (warnings.length > 0) {
@@ -18766,7 +18771,7 @@ function buildOutputContractInstruction(responseFormat, outputType, outputSchema
     return "";
   const lines = ["## Output Contract"];
   if (responseFormat === "markdown") {
-    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits — prioritize completeness and clarity.");
+    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits \u2014 prioritize completeness and clarity.");
   } else {
     lines.push("Respond with a single valid JSON object only.", "Do not wrap JSON in markdown fences, headers, or prose.");
   }
@@ -18952,20 +18957,20 @@ class SpecialistRunner {
       const sanitizedBeadId = options.inputBeadId ? sanitizeBeadIdForPrompt(options.inputBeadId) : "";
       const beadInstructions = sanitizedBeadId ? `
 - Your task bead is: ${sanitizedBeadId}
-- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)
-- Do NOT create new beads or sub-issues — this bead IS your task.
-- Do NOT run \`bd create\` — the orchestrator manages issue tracking.
+- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal \u2014 orchestrator may already own it)
+- Do NOT create new beads or sub-issues \u2014 this bead IS your task.
+- Do NOT run \`bd create\` \u2014 the orchestrator manages issue tracking.
 - Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
       agentsMd += `
 
 ---
 ## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)
 You are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:
-- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.
+- Do NOT run \`specialists init\` or \`sp init\` \u2014 these are user-only bootstrap commands that will corrupt the project.
 - Do NOT run \`specialists setup\` or \`specialists install\`.
 - The edit-gate (bd create before editing) does NOT apply inside a specialist run.
-- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.
-- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths — but never leave.${beadInstructions}
+- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY \u2014 do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.
+- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths \u2014 but never leave.${beadInstructions}
 ---
 `;
     }
@@ -18979,20 +18984,20 @@ You are a specialist agent. The following rules OVERRIDE any conflicting instruc
       skillPaths.push(prompt.skill_inherit);
     skillPaths.push(...spec.specialist.skills?.paths ?? []);
     if (skillPaths.length > 0 || preScripts.length > 0) {
-      const line = "━".repeat(56);
+      const line = "\u2501".repeat(56);
       onProgress?.(`
 ${line}
-◆ AUTO INJECTED
+\u25C6 AUTO INJECTED
 `);
       if (skillPaths.length > 0) {
         onProgress?.(`  skills (--skill):
-${skillPaths.map((p) => `    • ${p}`).join(`
+${skillPaths.map((p) => `    \u2022 ${p}`).join(`
 `)}
 `);
       }
       if (preScripts.length > 0) {
         onProgress?.(`  pre scripts/commands:
-${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_output ? " → $pre_script_output" : ""}`).join(`
+${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_output ? " \u2192 $pre_script_output" : ""}`).join(`
 `)}
 `);
       }
@@ -19039,11 +19044,11 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
         onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
         onToolStart: (tool, args, toolCallId) => {
           onProgress?.(`
-⚙ ${tool}…`);
+\u2699 ${tool}\u2026`);
           onToolStartCallback?.(tool, args, toolCallId);
         },
         onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => {
-          onProgress?.(`✓
+          onProgress?.(`\u2713
 `);
           onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw);
         },
@@ -19070,13 +19075,16 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
           const delayMs = getRetryDelayMs(attempt);
           onEvent?.("auto_retry");
           onProgress?.(`
-↻ transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms
+\u21BB transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms
 `);
           await sleep(delayMs);
         }
       }
       if (output === undefined) {
         throw new Error("Specialist run finished without output");
+      }
+      if (responseFormat === "json") {
+        output = stripJsonFences(output);
       }
       if (effectiveKeepAlive && onResumeReady) {
         keepAliveActive = true;
@@ -19125,7 +19133,7 @@ ${preScripts.map((s) => `    • ${s.run ?? s.path ?? "<missing>"}${s.inject_out
     const outputContractWarnings = validateOutputContract(output, responseFormat, outputContractSchema);
     if (outputContractWarnings.length > 0) {
       process.stderr.write(`[specialists] output contract warnings:
-${outputContractWarnings.map((msg) => `  ⚠ ${msg}`).join(`
+${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
 `)}
 `);
     }
@@ -19337,8 +19345,8 @@ var init_runner = __esm(() => {
 });
 
 // src/specialist/hooks.ts
-import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { appendFile, mkdir } from "fs/promises";
+import { dirname } from "path";
 
 class HookEmitter {
   tracePath;
@@ -19379,14 +19387,14 @@ __export(exports_install, {
 });
 async function run() {
   console.log("");
-  console.log(yellow("⚠ DEPRECATED: `specialists install` is deprecated"));
+  console.log(yellow("\u26A0 DEPRECATED: `specialists install` is deprecated"));
   console.log("");
   console.log(`  Use ${bold("specialists init")} instead.`);
   console.log("");
   console.log("  The init command:");
-  console.log("    • creates specialists/ and .specialists/ directories");
-  console.log("    • registers the MCP server in .mcp.json");
-  console.log("    • injects workflow context into AGENTS.md/CLAUDE.md");
+  console.log("    \u2022 creates specialists/ and .specialists/ directories");
+  console.log("    \u2022 registers the MCP server in .mcp.json");
+  console.log("    \u2022 injects workflow context into AGENTS.md/CLAUDE.md");
   console.log("");
   console.log(`  ${dim("Run: specialists init --help for full details")}`);
   console.log("");
@@ -19398,12 +19406,12 @@ var exports_version = {};
 __export(exports_version, {
   run: () => run2
 });
-import { createRequire as createRequire2 } from "node:module";
-import { fileURLToPath } from "node:url";
-import { dirname as dirname2, join as join4 } from "node:path";
-import { existsSync as existsSync4 } from "node:fs";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import { dirname as dirname2, join as join4 } from "path";
+import { existsSync as existsSync4 } from "fs";
 async function run2() {
-  const req = createRequire2(import.meta.url);
+  const req = createRequire(import.meta.url);
   const here = dirname2(fileURLToPath(import.meta.url));
   const bundlePkgPath = join4(here, "..", "package.json");
   const sourcePkgPath = join4(here, "..", "..", "package.json");
@@ -19427,10 +19435,10 @@ __export(exports_list, {
   parseArgs: () => parseArgs,
   ArgParseError: () => ArgParseError
 });
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { existsSync as existsSync5, readdirSync, readFileSync as readFileSync2 } from "node:fs";
-import { join as join5 } from "node:path";
-import readline from "node:readline";
+import { spawnSync as spawnSync3 } from "child_process";
+import { existsSync as existsSync5, readdirSync, readFileSync as readFileSync2 } from "fs";
+import { join as join5 } from "path";
+import readline from "readline";
 function permissionBadge(permission) {
   if (permission === "READ_ONLY")
     return green("[READ_ONLY]");
@@ -19478,9 +19486,9 @@ function formatLiveChoice(job) {
 function renderLiveSelector(jobs, selectedIndex) {
   return [
     "",
-    bold2("Select tmux session (↑/↓, Enter to attach, Ctrl+C to cancel)"),
+    bold2("Select tmux session (\u2191/\u2193, Enter to attach, Ctrl+C to cancel)"),
     "",
-    ...jobs.map((job, index) => `${index === selectedIndex ? cyan("❯") : " "} ${formatLiveChoice(job)}`),
+    ...jobs.map((job, index) => `${index === selectedIndex ? cyan("\u276F") : " "} ${formatLiveChoice(job)}`),
     ""
   ];
 }
@@ -19632,7 +19640,7 @@ ${bold2(`Specialists (${specialists.length})`)}
     const keepAliveTag = s.interactive ? `  ${yellow2("[keep-alive]")}` : "";
     const thinkingTag = s.thinking_level && s.thinking_level !== "off" ? `  ${dim2(`thinking:${s.thinking_level}`)}` : "";
     const model = dim2(s.model);
-    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
+    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "\u2026" : s.description;
     console.log(`  ${cyan(s.name)}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
     console.log(`  ${dim2(desc)}`);
     if (s.skills.length > 0) {
@@ -19640,9 +19648,9 @@ ${bold2(`Specialists (${specialists.length})`)}
     }
     if (s.scripts.length > 0) {
       const scriptSummary = s.scripts.map((sc) => {
-        const inject = sc.inject_output ? " →$out" : "";
+        const inject = sc.inject_output ? " \u2192$out" : "";
         return `${sc.phase}: ${sc.run}${inject}`;
-      }).join("  ∙  ");
+      }).join("  \u2219  ");
       console.log(`  ${dim2("scripts: " + scriptSummary)}`);
     }
     console.log();
@@ -19664,9 +19672,9 @@ var exports_view = {};
 __export(exports_view, {
   run: () => run4
 });
-import { readFile as readFile2 } from "node:fs/promises";
-import readline2 from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import { readFile as readFile2 } from "fs/promises";
+import readline2 from "readline/promises";
+import { stdin as input, stdout as output } from "process";
 function permissionBadge2(permission) {
   if (permission === "READ_ONLY")
     return green2("[READ_ONLY]");
@@ -19733,7 +19741,7 @@ function formatValue(value) {
 function printSectionHeader(title, color) {
   console.log();
   console.log(color(bold3(title)));
-  console.log(color("─".repeat(title.length)));
+  console.log(color("\u2500".repeat(title.length)));
 }
 function printPromptSection(prompt) {
   printSectionHeader("prompt", magenta2);
@@ -19918,7 +19926,7 @@ var exports_models = {};
 __export(exports_models, {
   run: () => run5
 });
-import { spawnSync as spawnSync4 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "child_process";
 function parsePiModels() {
   const r = spawnSync4("pi", ["--list-models"], {
     encoding: "utf8",
@@ -19967,7 +19975,7 @@ async function run5() {
   }
   const allModels = parsePiModels();
   if (!allModels) {
-    console.error("pi not found or failed — install and configure pi first");
+    console.error("pi not found or failed \u2014 install and configure pi first");
     process.exit(1);
   }
   let models = allModels;
@@ -19998,11 +20006,11 @@ ${bold4(`Models on pi`)}  ${dim4(`(${total} total)`)}
       const key = `${m.provider}/${m.model}`;
       const inUse = usedBy.get(key);
       const flags = [
-        m.thinking ? green3("thinking") : dim4("·"),
+        m.thinking ? green3("thinking") : dim4("\xB7"),
         m.images ? dim4("images") : ""
       ].filter(Boolean).join("  ");
       const ctx = dim4(`ctx ${m.context}`);
-      const usedLabel = inUse ? `  ${yellow4("←")} ${dim4(inUse.join(", "))}` : "";
+      const usedLabel = inUse ? `  ${yellow4("\u2190")} ${dim4(inUse.join(", "))}` : "";
       console.log(`    ${m.model.padEnd(modelWidth)}  ${ctx.padEnd(18)}  ${flags}${usedLabel}`);
     }
     console.log();
@@ -20023,15 +20031,15 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run6
 });
-import { copyFileSync, cpSync, existsSync as existsSync6, lstatSync, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, readlinkSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
-import { spawnSync as spawnSync5 } from "node:child_process";
-import { basename as basename3, dirname as dirname3, join as join6, resolve as resolve3 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { copyFileSync, cpSync, existsSync as existsSync6, lstatSync, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync3, readlinkSync, renameSync, symlinkSync, writeFileSync } from "fs";
+import { spawnSync as spawnSync5 } from "child_process";
+import { basename as basename3, dirname as dirname3, join as join6, resolve as resolve3 } from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
 function ok(msg) {
-  console.log(`  ${green4("✓")} ${msg}`);
+  console.log(`  ${green4("\u2713")} ${msg}`);
 }
 function skip(msg) {
-  console.log(`  ${yellow5("○")} ${msg}`);
+  console.log(`  ${yellow5("\u25CB")} ${msg}`);
 }
 function isInstalled(bin) {
   return spawnSync5("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
@@ -20383,7 +20391,7 @@ async function run6(opts = {}) {
   const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
   const inAgentSession = !forceInit && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
   if (inAgentSession) {
-    console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.");
+    console.error("specialists init requires an interactive terminal. This is a user-only bootstrap command \u2014 do not invoke from scripts or agent sessions.");
     process.exit(1);
   }
   console.log(`
@@ -20431,10 +20439,10 @@ ${bold5("Done!")}
   console.log("");
   console.log(`  ${dim5(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
-  console.log(`  ├── default/           ${dim5("# canonical specialists (from init --sync-defaults)")}`);
-  console.log(`  ├── user/              ${dim5("# your custom specialists")}`);
-  console.log(`  ├── jobs/              ${dim5("# runtime (gitignored)")}`);
-  console.log(`  └── ready/             ${dim5("# runtime (gitignored)")}`);
+  console.log(`  \u251C\u2500\u2500 default/           ${dim5("# canonical specialists (from init --sync-defaults)")}`);
+  console.log(`  \u251C\u2500\u2500 user/              ${dim5("# your custom specialists")}`);
+  console.log(`  \u251C\u2500\u2500 jobs/              ${dim5("# runtime (gitignored)")}`);
+  console.log(`  \u2514\u2500\u2500 ready/             ${dim5("# runtime (gitignored)")}`);
   console.log(`
   ${dim5("Next steps:")}`);
   console.log(`  1. Run ${yellow5("specialists list")} to see available specialists`);
@@ -20482,9 +20490,9 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
 });
 
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { spawnSync as spawnSync6 } from "node:child_process";
-import { join as join7, sep } from "node:path";
+import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "fs";
+import { spawnSync as spawnSync6 } from "child_process";
+import { join as join7, sep } from "path";
 function resolveGitRootFrom(cwd) {
   const commonDirResult = spawnSync6("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
@@ -20574,7 +20582,7 @@ var init_observability_db = __esm(() => {
 });
 
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync8 } from "node:fs";
+import { existsSync as existsSync8 } from "fs";
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -21442,22 +21450,22 @@ function assertHumanInteractiveTerminal() {
   const inAgentSession = !forceSetup && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
   if (!inAgentSession)
     return;
-  console.error("specialists db setup requires an interactive terminal. This is a user-only setup command — do not invoke from scripts or agent sessions.");
+  console.error("specialists db setup requires an interactive terminal. This is a user-only setup command \u2014 do not invoke from scripts or agent sessions.");
   process.exit(1);
 }
 function printSetupResult(created, gitignoreUpdated, location) {
   console.log(`
 ${bold6("specialists db setup")}
 `);
-  console.log(`  ${green5("✓")} database path: ${location.dbPath}`);
-  console.log(`  ${green5("✓")} mode: chmod 644`);
+  console.log(`  ${green5("\u2713")} database path: ${location.dbPath}`);
+  console.log(`  ${green5("\u2713")} mode: chmod 644`);
   if (location.source === "xdg-data-home") {
-    console.log(`  ${yellow6("○")} using XDG_DATA_HOME (${location.dbDirectory})`);
+    console.log(`  ${yellow6("\u25CB")} using XDG_DATA_HOME (${location.dbDirectory})`);
   } else {
-    console.log(`  ${green5("✓")} using shared git-root location (${location.dbDirectory})`);
+    console.log(`  ${green5("\u2713")} using shared git-root location (${location.dbDirectory})`);
   }
-  console.log(`  ${created ? green5("✓ created database file") : yellow6("○ database file already exists")}`);
-  console.log(`  ${gitignoreUpdated ? green5("✓ updated .gitignore for DB artifacts") : yellow6("○ .gitignore already excludes DB artifacts")}`);
+  console.log(`  ${created ? green5("\u2713 created database file") : yellow6("\u25CB database file already exists")}`);
+  console.log(`  ${gitignoreUpdated ? green5("\u2713 updated .gitignore for DB artifacts") : yellow6("\u25CB .gitignore already excludes DB artifacts")}`);
   console.log("");
 }
 async function run7(argv = process.argv.slice(3)) {
@@ -21497,9 +21505,9 @@ __export(exports_validate, {
   parseArgs: () => parseArgs4,
   ArgParseError: () => ArgParseError3
 });
-import { readFile as readFile3 } from "node:fs/promises";
-import { existsSync as existsSync9 } from "node:fs";
-import { join as join8 } from "node:path";
+import { readFile as readFile3 } from "fs/promises";
+import { existsSync as existsSync9 } from "fs";
+import { join as join8 } from "path";
 function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -21547,7 +21555,7 @@ async function run8() {
     if (json) {
       console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${name}`, code: "not_found" }] }));
     } else {
-      console.error(`${red("✗")} Specialist not found: ${cyan4(name)}`);
+      console.error(`${red("\u2717")} Specialist not found: ${cyan4(name)}`);
     }
     process.exit(1);
   }
@@ -21559,7 +21567,7 @@ async function run8() {
     if (json) {
       console.log(JSON.stringify({ valid: false, errors: [{ path: "file", message: `Failed to read file: ${msg}`, code: "read_error" }] }));
     } else {
-      console.error(`${red("✗")} Failed to read file: ${msg}`);
+      console.error(`${red("\u2717")} Failed to read file: ${msg}`);
     }
     process.exit(1);
   }
@@ -21577,13 +21585,13 @@ async function run8() {
 ${bold7("Validating")} ${cyan4(name)} ${dim6(`(${filePath})`)}
 `);
   if (result.valid) {
-    console.log(`${green6("✓")} Schema validation passed
+    console.log(`${green6("\u2713")} Schema validation passed
 `);
   } else {
-    console.log(`${red("✗")} Schema validation failed:
+    console.log(`${red("\u2717")} Schema validation failed:
 `);
     for (const error2 of result.errors) {
-      console.log(`  ${red("•")} ${error2.message}`);
+      console.log(`  ${red("\u2022")} ${error2.message}`);
       if (error2.path && error2.path !== "json") {
         console.log(`    ${dim6(`path: ${error2.path}`)}`);
       }
@@ -21594,7 +21602,7 @@ ${bold7("Validating")} ${cyan4(name)} ${dim6(`(${filePath})`)}
     console.log(`${yellow7("Warnings")}:
 `);
     for (const warning of result.warnings) {
-      console.log(`  ${yellow7("⚠")} ${warning}`);
+      console.log(`  ${yellow7("\u26A0")} ${warning}`);
     }
     console.log();
   }
@@ -21616,9 +21624,9 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run9
 });
-import { spawnSync as spawnSync7 } from "node:child_process";
-import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join9 } from "node:path";
+import { spawnSync as spawnSync7 } from "child_process";
+import { existsSync as existsSync10, readdirSync as readdirSync3, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
+import { join as join9 } from "path";
 function loadPresets() {
   const paths = [
     join9(process.cwd(), "config", "presets.json"),
@@ -22106,7 +22114,7 @@ async function run9() {
       }
       writeFileSync3(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow8(f)).join(", ");
-      console.log(`${green7("✓")} ${bold8(target.name)}: applied preset ${bold8(args.preset)} (${fieldList})`);
+      console.log(`${green7("\u2713")} ${bold8(target.name)}: applied preset ${bold8(args.preset)} (${fieldList})`);
     }
     return;
   }
@@ -22141,7 +22149,7 @@ async function run9() {
       continue;
     }
     writeFileSync3(target.filePath, updated, "utf-8");
-    console.log(`${green7("✓")} ${bold8(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
+    console.log(`${green7("\u2713")} ${bold8(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
   }
 }
 var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, LEGACY_FIELD_ALIASES, ENUM_PATHS, MULTILINE_FILE_PATHS;
@@ -22249,7 +22257,7 @@ ${usage2()}`);
 async function run10() {
   const originalArgs = process.argv.slice(3);
   const editArgs = buildEditArgv(originalArgs);
-  console.error(`${yellow9("⚠ DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
+  console.error(`${yellow9("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
   await run9();
 }
@@ -22259,8 +22267,8 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/job-root.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
-import { dirname as dirname4, join as join10, resolve as resolve4 } from "node:path";
+import { spawnSync as spawnSync8 } from "child_process";
+import { dirname as dirname4, join as join10, resolve as resolve4 } from "path";
 function resolveCommonGitRoot(cwd) {
   const result = spawnSync8("git", ["rev-parse", "--git-common-dir"], {
     cwd,
@@ -22300,7 +22308,7 @@ function summarizeToolResult(resultContent) {
     return;
   if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
     return compact;
-  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}…`;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}\u2026`;
 }
 function mapCallbackEventToTimelineEvent(callbackEvent, context) {
   const t = Date.now();
@@ -22542,11 +22550,11 @@ import {
   statSync,
   writeFileSync as writeFileSync4,
   writeSync
-} from "node:fs";
-import { join as join11 } from "node:path";
-import { createInterface } from "node:readline";
-import { createReadStream } from "node:fs";
-import { spawn as spawn2, spawnSync as spawnSync9, execFileSync } from "node:child_process";
+} from "fs";
+import { join as join11 } from "path";
+import { createInterface } from "readline";
+import { createReadStream } from "fs";
+import { spawn as spawn2, spawnSync as spawnSync9, execFileSync } from "child_process";
 function getCurrentGitSha() {
   const result = spawnSync9("git", ["rev-parse", "HEAD"], {
     encoding: "utf-8",
@@ -23181,13 +23189,13 @@ class Supervisor {
     process.once("SIGTERM", sigtermHandler);
     try {
       const result = await runner.run(runOptions, (delta) => {
-        const toolMatch = delta.match(/⚙ (.+?)…/);
+        const toolMatch = delta.match(/\u2699 (.+?)\u2026/);
         if (toolMatch) {
           setStatus({ current_tool: toolMatch[1] });
         }
-        if (delta !== `✓
+        if (delta !== `\u2713
 ` && !delta.startsWith(`
-⚙ `) && !delta.startsWith("\uD83D\uDCAD ")) {
+\u2699 `) && !delta.startsWith("\uD83D\uDCAD ")) {
           turnTextAccumulator += delta;
         }
         this.opts.onProgress?.(delta);
@@ -23577,9 +23585,9 @@ var init_supervisor = __esm(() => {
 });
 
 // src/specialist/worktree.ts
-import { existsSync as existsSync12, symlinkSync as symlinkSync2, mkdirSync as mkdirSync4 } from "node:fs";
-import { join as join12, resolve as resolve5 } from "node:path";
-import { spawnSync as spawnSync10, execFileSync as execFileSync2 } from "node:child_process";
+import { existsSync as existsSync12, symlinkSync as symlinkSync2, mkdirSync as mkdirSync4 } from "fs";
+import { join as join12, resolve as resolve5 } from "path";
+import { spawnSync as spawnSync10, execFileSync as execFileSync2 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -23811,7 +23819,7 @@ function formatEventLine(event, options) {
     }
     if (event.text_content) {
       const preview = event.text_content.replace(/\n/g, " ").slice(0, 80);
-      detailParts.push(`"${preview}${event.text_content.length > 80 ? "…" : ""}"`);
+      detailParts.push(`"${preview}${event.text_content.length > 80 ? "\u2026" : ""}"`);
     }
   } else if (event.type === "compaction" || event.type === "retry") {
     detailParts.push(`phase=${event.phase}`);
@@ -23886,7 +23894,7 @@ var init_format_helpers = __esm(() => {
 });
 
 // src/cli/tmux-utils.ts
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "child_process";
 function escapeForSingleQuotedBash(script) {
   return script.replace(/'/g, "'\\''");
 }
@@ -23926,10 +23934,10 @@ var exports_run = {};
 __export(exports_run, {
   run: () => run11
 });
-import { join as join13 } from "node:path";
-import { readFileSync as readFileSync7 } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { spawn as cpSpawn } from "node:child_process";
+import { join as join13 } from "path";
+import { readFileSync as readFileSync7 } from "fs";
+import { randomBytes } from "crypto";
+import { spawn as cpSpawn } from "child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -24082,7 +24090,7 @@ function resolveWorkingDirectory(args, jobsDir) {
     }
     const worktreePath = targetStatus?.worktree_path;
     if (!worktreePath) {
-      console.error(`Error: job '${args.reuseJobId}' has no worktree_path — it was not started with --worktree.`);
+      console.error(`Error: job '${args.reuseJobId}' has no worktree_path \u2014 it was not started with --worktree.`);
       process.exit(1);
     }
     const worktreeOwnerJobId = targetStatus?.worktree_owner_job_id ?? targetStatus?.id ?? args.reuseJobId;
@@ -24324,7 +24332,7 @@ ${bold10(`Running ${cyan6(args.name)}`)}
     modelLabel ? dim9(modelLabel) : ""
   ].filter(Boolean).join("  ");
   process.stderr.write(`
-${green9("✓")} ${footer}
+${green9("\u2713")} ${footer}
 
 `);
   process.stderr.write(dim9(`Poll: specialists poll ${jobId} --json
@@ -24347,8 +24355,8 @@ var init_run = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync13, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync13, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "fs";
+import { join as join14 } from "path";
 
 class JobControl {
   supervisor;
@@ -24477,8 +24485,8 @@ var exports_node_supervisor = {};
 __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
-import { createHash as createHash2 } from "node:crypto";
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { createHash as createHash2 } from "crypto";
+import { spawnSync as spawnSync12 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -24525,7 +24533,7 @@ function extractFirstJsonObject(raw) {
 }
 function normalizeCoordinatorJsonPayload(output2) {
   const trimmed = output2.trim();
-  const noFence = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const noFence = stripJsonFences(trimmed);
   const extracted = extractFirstJsonObject(noFence) ?? noFence;
   return {
     normalized: extracted,
@@ -25724,10 +25732,10 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { readFileSync as readFileSync9 } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { spawnSync as spawnSync13 } from "node:child_process";
-import { join as join15 } from "node:path";
+import { readFileSync as readFileSync9 } from "fs";
+import { randomUUID } from "crypto";
+import { spawnSync as spawnSync13 } from "child_process";
+import { join as join15 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
   if (command !== "run" && command !== "status" && command !== "feed" && command !== "promote") {
@@ -26184,25 +26192,25 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run12
 });
-import { spawnSync as spawnSync14 } from "node:child_process";
-import { existsSync as existsSync14, readFileSync as readFileSync10 } from "node:fs";
-import { join as join16 } from "node:path";
+import { spawnSync as spawnSync14 } from "child_process";
+import { existsSync as existsSync14, readFileSync as readFileSync10 } from "fs";
+import { join as join16 } from "path";
 function ok2(msg) {
-  console.log(`  ${green8("✓")} ${msg}`);
+  console.log(`  ${green8("\u2713")} ${msg}`);
 }
 function warn(msg) {
-  console.log(`  ${yellow10("○")} ${msg}`);
+  console.log(`  ${yellow10("\u25CB")} ${msg}`);
 }
 function fail3(msg) {
-  console.log(`  ${red2("✗")} ${msg}`);
+  console.log(`  ${red2("\u2717")} ${msg}`);
 }
 function info(msg) {
   console.log(`  ${dim8(msg)}`);
 }
 function section(label) {
-  const line = "─".repeat(Math.max(0, 38 - label.length));
+  const line = "\u2500".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold9(`── ${label} ${line}`)}`);
+${bold9(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
   const r = spawnSync14(bin, args, {
@@ -26500,7 +26508,7 @@ ${bold9("specialists status")}
 `);
     section("Specialists");
     if (allSpecialists.length === 0) {
-      warn(`no specialists found — run ${yellow10("specialists init")} to scaffold`);
+      warn(`no specialists found \u2014 run ${yellow10("specialists init")} to scaffold`);
     } else {
       const byScope = allSpecialists.reduce((acc, s) => {
         acc[s.scope] = (acc[s.scope] ?? 0) + 1;
@@ -26519,26 +26527,26 @@ ${bold9("specialists status")}
     }
     section("pi  (coding agent runtime)");
     if (!piInstalled) {
-      fail3(`pi not installed — install ${yellow10("pi")} first`);
+      fail3(`pi not installed \u2014 install ${yellow10("pi")} first`);
     } else {
       const vStr = piVersion?.ok ? `v${piVersion.stdout}` : "unknown version";
-      const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim8(`(${[...piProviders].join(", ")})`)} ` : yellow10("no providers configured — run pi config");
-      ok2(`${vStr}  —  ${pStr}`);
+      const pStr = piProviders.size > 0 ? `${piProviders.size} provider${piProviders.size > 1 ? "s" : ""} active  ${dim8(`(${[...piProviders].join(", ")})`)} ` : yellow10("no providers configured \u2014 run pi config");
+      ok2(`${vStr}  \u2014  ${pStr}`);
     }
     section("beads  (issue tracker)");
     if (!bdInstalled) {
-      fail3(`bd not installed — install ${yellow10("bd")} first`);
+      fail3(`bd not installed \u2014 install ${yellow10("bd")} first`);
     } else {
       ok2(`bd installed${bdVersion?.ok ? `  ${dim8(bdVersion.stdout)}` : ""}`);
       if (beadsPresent) {
         ok2(".beads/ present in project");
       } else {
-        warn(`.beads/ not found — run ${yellow10("bd init")} to enable issue tracking`);
+        warn(`.beads/ not found \u2014 run ${yellow10("bd init")} to enable issue tracking`);
       }
     }
     section("MCP");
     if (!specialistsBin.ok) {
-      fail3(`specialists not installed globally — run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
+      fail3(`specialists not installed globally \u2014 run ${yellow10("npm install -g @jaggerxtrm/specialists")}`);
     } else {
       ok2(`specialists binary installed  ${dim8(specialistsBin.stdout)}`);
       info(`verify registration: claude mcp get specialists`);
@@ -26573,9 +26581,9 @@ var exports_ps = {};
 __export(exports_ps, {
   run: () => run13
 });
-import { spawnSync as spawnSync15 } from "node:child_process";
-import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync11 } from "node:fs";
-import { join as join17 } from "node:path";
+import { spawnSync as spawnSync15 } from "child_process";
+import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync11 } from "fs";
+import { join as join17 } from "path";
 function parseArgs7(argv) {
   const positional = argv.filter((a) => !a.startsWith("-"));
   return {
@@ -26784,18 +26792,18 @@ function buildBeadTitleCache(jobs) {
 }
 function getStatusIcon(job) {
   if (job.is_dead)
-    return red2("◉");
+    return red2("\u25C9");
   if (job.status === "running")
-    return cyan5("◉");
+    return cyan5("\u25C9");
   if (job.status === "waiting")
-    return magenta3("◐");
+    return magenta3("\u25D0");
   if (job.status === "starting")
-    return yellow10("◐");
+    return yellow10("\u25D0");
   if (job.status === "done")
-    return green8("○");
+    return green8("\u25CB");
   if (job.status === "error")
-    return red2("○");
-  return dim8("○");
+    return red2("\u25CB");
+  return dim8("\u25CB");
 }
 function getNextAction(job) {
   if (job.is_dead)
@@ -26814,7 +26822,7 @@ function formatCtxWithIndicator(contextPct, contextHealth) {
   if (contextPct === undefined || !Number.isFinite(contextPct))
     return "  --";
   const pct = `${Math.round(contextPct)}%`;
-  const warn2 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "▲" : "";
+  const warn2 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "\u25B2" : "";
   return `${pct}${warn2}`.padStart(4);
 }
 function renderJobLine(job, beadTitles, prefix, connector) {
@@ -26834,8 +26842,8 @@ function renderTreeNodes(nodes, beadTitles, prefix, counter) {
   for (let i = 0;i < nodes.length; i++) {
     const node = nodes[i];
     const isLast = i === nodes.length - 1;
-    const connector = prefix === "" ? "  " : isLast ? "└ " : "├ ";
-    const childPrefix = prefix === "" ? "  " : prefix + (isLast ? "  " : "│ ");
+    const connector = prefix === "" ? "  " : isLast ? "\u2514 " : "\u251C ";
+    const childPrefix = prefix === "" ? "  " : prefix + (isLast ? "  " : "\u2502 ");
     if (node.status === "running")
       counter.running += 1;
     if (node.status === "waiting")
@@ -26853,7 +26861,7 @@ function renderHuman(jobs, trees, all) {
   for (const tree of trees) {
     const branch = tree.branch ?? "master";
     const beadId = tree.children[0]?.bead_id;
-    const beadSuffix = beadId ? ` · ${beadId}` : "";
+    const beadSuffix = beadId ? ` \xB7 ${beadId}` : "";
     console.log(`${dim8(branch)}${dim8(beadSuffix)}`);
     renderTreeNodes(tree.children, beadTitles, "", counter);
     console.log("");
@@ -26862,7 +26870,7 @@ function renderHuman(jobs, trees, all) {
     console.log(dim8("  no active jobs"));
     console.log("");
   }
-  console.log(dim8(`${jobs.length} jobs · ${trees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting`));
+  console.log(dim8(`${jobs.length} jobs \xB7 ${trees.length} worktrees \xB7 ${counter.running} running \xB7 ${counter.waiting} waiting`));
 }
 function renderInspect(jobId) {
   const statuses = withPidLiveness(loadStatuses());
@@ -26877,19 +26885,19 @@ function renderInspect(jobId) {
   const ctx = job.context_pct !== undefined ? `${Math.round(job.context_pct)}% ${job.context_health ?? ""}` : "--";
   const deadLabel = job.is_dead ? ` ${red2("dead")}` : "";
   const chainJobs = job.worktree_owner_job_id ? statuses.filter((s) => s.worktree_owner_job_id === job.worktree_owner_job_id).sort((a, b) => a.started_at_ms - b.started_at_ms) : [job];
-  const chainStr = chainJobs.map((j) => j.id === job.id ? bold9(j.id) : dim8(j.id)).join(" → ");
+  const chainStr = chainJobs.map((j) => j.id === job.id ? bold9(j.id) : dim8(j.id)).join(" \u2192 ");
   console.log(`
 ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
   console.log(`  model     ${job.model ?? "--"} ${job.backend ? `(${job.backend})` : ""}`);
   if (job.bead_id)
-    console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ""}`);
+    console.log(`  bead      ${job.bead_id}${beadTitle ? ` \u2014 ${beadTitle}` : ""}`);
   if (job.worktree_path || job.branch) {
     const wt = job.worktree_path ? dim8(` ${job.worktree_path}`) : "";
     console.log(`  worktree  ${job.branch ?? "master"}${wt}`);
   }
   if (chainJobs.length > 1)
     console.log(`  chain     ${chainStr}`);
-  console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ""}`);
+  console.log(`  elapsed   ${formatElapsed3(job.elapsed_s)}${job.metrics ? ` \xB7 ${job.metrics.turns ?? 0} turns \xB7 ${job.metrics.tool_calls ?? 0} tools` : ""}`);
   console.log(`  context   ${ctx}`);
   if (job.current_tool)
     console.log(`  current   ${job.current_tool}`);
@@ -26996,8 +27004,8 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run14
 });
-import { existsSync as existsSync16, readFileSync as readFileSync12 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync16, readFileSync as readFileSync12 } from "fs";
+import { join as join18 } from "path";
 function parseArgs8(argv) {
   const jobId = argv[0];
   if (!jobId || jobId.startsWith("--")) {
@@ -27209,8 +27217,8 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync17, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "node:fs";
-import { basename as basename4, join as join19 } from "node:path";
+import { existsSync as existsSync17, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "fs";
+import { basename as basename4, join as join19 } from "path";
 function readJobEvents(jobDir) {
   const jobId = basename4(jobDir);
   try {
@@ -27246,7 +27254,7 @@ function readAllJobEvents(jobsDir) {
   for (const entry of entries) {
     const jobDir = join19(jobsDir, entry);
     try {
-      const stat2 = __require("node:fs").statSync(jobDir);
+      const stat2 = __require("fs").statSync(jobDir);
       if (!stat2.isDirectory())
         continue;
     } catch {
@@ -27360,8 +27368,8 @@ import {
   readFileSync as readFileSync14,
   readdirSync as readdirSync7,
   statSync as statSync2
-} from "node:fs";
-import { join as join20 } from "node:path";
+} from "fs";
+import { join as join20 } from "path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -27887,8 +27895,8 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run16
 });
-import { existsSync as existsSync19, readFileSync as readFileSync15 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync19, readFileSync as readFileSync15 } from "fs";
+import { join as join21 } from "path";
 function parseArgs10(argv) {
   let jobId;
   let cursor = 0;
@@ -28002,7 +28010,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run17
 });
-import { writeFileSync as writeFileSync6 } from "node:fs";
+import { writeFileSync as writeFileSync6 } from "fs";
 async function run17() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -28033,7 +28041,7 @@ async function run17() {
     const payload = JSON.stringify({ type: "steer", message }) + `
 `;
     writeFileSync6(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green10("✓")} Steer message sent to job ${jobId}
+    process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
 `);
   } catch (err) {
     process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
@@ -28052,7 +28060,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run18
 });
-import { writeFileSync as writeFileSync7 } from "node:fs";
+import { writeFileSync as writeFileSync7 } from "fs";
 async function run18() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -28083,7 +28091,7 @@ async function run18() {
     const payload = JSON.stringify({ type: "resume", task }) + `
 `;
     writeFileSync7(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green11("✓")} Resume sent to job ${jobId}
+    process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
 `);
     process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
 `);
@@ -28105,15 +28113,15 @@ __export(exports_follow_up, {
   run: () => run19
 });
 async function run19() {
-  process.stderr.write("\x1B[33m⚠ DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
+  process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync20, readdirSync as readdirSync8, readFileSync as readFileSync16 } from "node:fs";
-import { join as join22 } from "node:path";
-import { spawnSync as spawnSync16 } from "node:child_process";
+import { existsSync as existsSync20, readdirSync as readdirSync8, readFileSync as readFileSync16 } from "fs";
+import { join as join22 } from "path";
+import { spawnSync as spawnSync16 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join22(jobDir, "status.json");
   if (!existsSync20(statusPath))
@@ -28198,8 +28206,8 @@ import {
   readFileSync as readFileSync17,
   rmSync as rmSync2,
   statSync as statSync3
-} from "node:fs";
-import { join as join23 } from "node:path";
+} from "fs";
+import { join as join23 } from "path";
 function parseTtlDaysFromEnvironment() {
   const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
   if (!rawValue)
@@ -28424,7 +28432,7 @@ var exports_stop = {};
 __export(exports_stop, {
   run: () => run21
 });
-import { join as join24 } from "node:path";
+import { join as join24 } from "path";
 async function run21() {
   const jobId = process.argv[3];
   if (!jobId) {
@@ -28451,7 +28459,7 @@ async function run21() {
   const tmuxSession = status.tmux_session;
   try {
     process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green12("✓")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
+    process.stdout.write(`${green12("\u2713")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
     if (tmuxSession) {
       killTmuxSession(tmuxSession);
@@ -28485,9 +28493,9 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run22
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync17 } from "node:child_process";
-import { readFileSync as readFileSync18 } from "node:fs";
-import { join as join25 } from "node:path";
+import { execFileSync as execFileSync3, spawnSync as spawnSync17 } from "child_process";
+import { readFileSync as readFileSync18 } from "fs";
+import { join as join25 } from "path";
 function exitWithError(message) {
   console.error(message);
   process.exit(1);
@@ -28536,7 +28544,7 @@ __export(exports_quickstart, {
   run: () => run23
 });
 function section2(title) {
-  const bar = "─".repeat(60);
+  const bar = "\u2500".repeat(60);
   return `
 ${bold11(cyan7(title))}
 ${dim12(bar)}`;
@@ -28550,9 +28558,9 @@ function flag(s) {
 async function run23() {
   const lines = [
     "",
-    bold11("specialists  ·  Quick Start Guide"),
+    bold11("specialists  \xB7  Quick Start Guide"),
     dim12("One MCP server. Multiple AI backends. Intelligent orchestration."),
-    dim12("Tip: sp is a shorter alias — sp run, sp list, sp feed etc. work identically."),
+    dim12("Tip: sp is a shorter alias \u2014 sp run, sp list, sp feed etc. work identically."),
     ""
   ];
   lines.push(section2("1. Installation"));
@@ -28570,10 +28578,10 @@ async function run23() {
   lines.push(`  ${cmd2("specialists init")}                          # creates .specialists/, wires MCP + AGENTS.md`);
   lines.push("");
   lines.push(`  What this creates:`);
-  lines.push(`  ${dim12(".specialists/default/")} — canonical specialists (from init)`);
-  lines.push(`  ${dim12(".specialists/user/")}    — custom .specialist.json files`);
-  lines.push(`  ${dim12(".specialists/jobs|ready")} — runtime data — gitignored`);
-  lines.push(`  ${dim12("AGENTS.md")}          — context block injected into Claude sessions`);
+  lines.push(`  ${dim12(".specialists/default/")} \u2014 canonical specialists (from init)`);
+  lines.push(`  ${dim12(".specialists/user/")}    \u2014 custom .specialist.json files`);
+  lines.push(`  ${dim12(".specialists/jobs|ready")} \u2014 runtime data \u2014 gitignored`);
+  lines.push(`  ${dim12("AGENTS.md")}          \u2014 context block injected into Claude sessions`);
   lines.push("");
   lines.push(section2("3. Discover Specialists"));
   lines.push("");
@@ -28611,20 +28619,20 @@ async function run23() {
   lines.push(`  ${bold11("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim12("[job started: <id>]")} to stderr`);
   lines.push(`  ${bold11("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push("");
-  lines.push(`  ${bold11("Watch progress")} — stream events as they arrive:`);
+  lines.push(`  ${bold11("Watch progress")} \u2014 stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
   lines.push("");
-  lines.push(`  ${bold11("Read results")} — print the final output:`);
+  lines.push(`  ${bold11("Read results")} \u2014 print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
-  lines.push(`  ${bold11("Steer a running job")} — redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${bold11("Steer a running job")} \u2014 redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim12("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
-  lines.push(`  ${bold11("Keep-alive multi-turn")} — start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${bold11("Keep-alive multi-turn")} \u2014 start with ${flag("--keep-alive")}, then follow up:`);
   lines.push(`  ${cmd2("specialists run debugger")} ${flag("--bead unitAI-abc --keep-alive")}`);
-  lines.push(`  ${dim12("  # → status: waiting after first turn")}`);
+  lines.push(`  ${dim12("  # \u2192 status: waiting after first turn")}`);
   lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
   lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
@@ -28633,10 +28641,10 @@ async function run23() {
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
   lines.push(`  ${bold11("Job files")} in ${dim12(".specialists/jobs/<job-id>/")}:`);
-  lines.push(`  ${dim12("status.json")}   — id, specialist, status, pid, started_at, elapsed_s, current_tool`);
-  lines.push(`  ${dim12("events.jsonl")} — one JSON event per line (tool_use, text, agent_end, error …)`);
-  lines.push(`  ${dim12("result.txt")}    — final output (written when status=done)`);
-  lines.push(`  ${dim12("steer.pipe")}    — named FIFO for mid-run steering (removed on job completion)`);
+  lines.push(`  ${dim12("status.json")}   \u2014 id, specialist, status, pid, started_at, elapsed_s, current_tool`);
+  lines.push(`  ${dim12("events.jsonl")} \u2014 one JSON event per line (tool_use, text, agent_end, error \u2026)`);
+  lines.push(`  ${dim12("result.txt")}    \u2014 final output (written when status=done)`);
+  lines.push(`  ${dim12("steer.pipe")}    \u2014 named FIFO for mid-run steering (removed on job completion)`);
   lines.push("");
   lines.push(section2("6. Editing Specialists"));
   lines.push("");
@@ -28657,12 +28665,12 @@ async function run23() {
   const schemaLines = [
     "specialist:",
     "  metadata:",
-    '    name: my-specialist          # required · used in "specialists run <name>"',
+    '    name: my-specialist          # required \xB7 used in "specialists run <name>"',
     "    version: 1.0.0               # semver, for staleness detection",
     '    description: "What it does"  # shown in specialists list',
     "    category: analysis           # free-form tag for --category filter",
     "    tags: [review, security]     # array of labels",
-    '    updated: "2026-03-11"        # ISO date — used for staleness check',
+    '    updated: "2026-03-11"        # ISO date \u2014 used for staleness check',
     "",
     "  execution:",
     "    mode: tool                   # tool (default) | chat",
@@ -28675,7 +28683,7 @@ async function run23() {
     "",
     "  prompt:",
     "    system: |                    # system prompt (multiline YAML literal block)",
-    "      You are …",
+    "      You are \u2026",
     "    user_template: |             # optional; $prompt and $context are substituted",
     "      Task: $prompt",
     "      Context: $context",
@@ -28692,7 +28700,7 @@ async function run23() {
     "  beads_integration:",
     "    auto_create: true            # create a beads issue per run",
     "    issue_type: task             # task | bug | feature",
-    "    priority: 2                  # 0=critical … 4=backlog"
+    "    priority: 2                  # 0=critical \u2026 4=backlog"
   ];
   for (const l of schemaLines) {
     lines.push(`  ${dim12(l)}`);
@@ -28718,14 +28726,14 @@ async function run23() {
   lines.push("");
   lines.push(`  After ${cmd2("specialists init")}, these MCP tools are available to Claude:`);
   lines.push("");
-  lines.push(`  ${bold11("specialist_init")}    — bootstrap: bd init + list specialists`);
-  lines.push(`  ${bold11("list_specialists")}   — discover specialists (project/user/system)`);
-  lines.push(`  ${bold11("use_specialist")}     — full lifecycle: load → agents.md → run → output`);
-  lines.push(`  ${bold11("feed_specialist")}    — stream events/output by job ID`);
-  lines.push(`  ${bold11("steer_specialist")}      — send a mid-run message to a running job`);
-  lines.push(`  ${bold11("resume_specialist")}    — resume a waiting keep-alive session with a next-turn prompt`);
-  lines.push(`  ${bold11("stop_specialist")}      — cancel a running job by ID`);
-  lines.push(`  ${bold11("specialist_status")}  — circuit breaker health + staleness`);
+  lines.push(`  ${bold11("specialist_init")}    \u2014 bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold11("list_specialists")}   \u2014 discover specialists (project/user/system)`);
+  lines.push(`  ${bold11("use_specialist")}     \u2014 full lifecycle: load \u2192 agents.md \u2192 run \u2192 output`);
+  lines.push(`  ${bold11("feed_specialist")}    \u2014 stream events/output by job ID`);
+  lines.push(`  ${bold11("steer_specialist")}      \u2014 send a mid-run message to a running job`);
+  lines.push(`  ${bold11("resume_specialist")}    \u2014 resume a waiting keep-alive session with a next-turn prompt`);
+  lines.push(`  ${bold11("stop_specialist")}      \u2014 cancel a running job by ID`);
+  lines.push(`  ${bold11("specialist_status")}  \u2014 circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
   lines.push("");
@@ -28749,7 +28757,7 @@ async function run23() {
   lines.push(`  ${bold11("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
-  lines.push(dim12("─".repeat(62)));
+  lines.push(dim12("\u2500".repeat(62)));
   lines.push(`  ${dim12("specialists help")}     command list         ${dim12("specialists <cmd> --help")}   per-command flags`);
   lines.push(`  ${dim12("specialists status")}   health check         ${dim12("specialists models")}         available models`);
   lines.push("");
@@ -28768,29 +28776,29 @@ __export(exports_doctor, {
   compareVersions: () => compareVersions,
   cleanupProcesses: () => cleanupProcesses
 });
-import { createHash as createHash3 } from "node:crypto";
-import { spawnSync as spawnSync18 } from "node:child_process";
-import { existsSync as existsSync22, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync10, readFileSync as readFileSync19, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
-import { dirname as dirname5, join as join26, relative, resolve as resolve6 } from "node:path";
+import { createHash as createHash3 } from "crypto";
+import { spawnSync as spawnSync18 } from "child_process";
+import { existsSync as existsSync22, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync10, readFileSync as readFileSync19, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "fs";
+import { dirname as dirname5, join as join26, relative, resolve as resolve6 } from "path";
 function ok3(msg) {
-  console.log(`  ${green14("✓")} ${msg}`);
+  console.log(`  ${green14("\u2713")} ${msg}`);
 }
 function warn2(msg) {
-  console.log(`  ${yellow12("○")} ${msg}`);
+  console.log(`  ${yellow12("\u25CB")} ${msg}`);
 }
 function fail4(msg) {
-  console.log(`  ${red7("✗")} ${msg}`);
+  console.log(`  ${red7("\u2717")} ${msg}`);
 }
 function fix(msg) {
-  console.log(`    ${dim13("→ fix:")} ${yellow12(msg)}`);
+  console.log(`    ${dim13("\u2192 fix:")} ${yellow12(msg)}`);
 }
 function hint(msg) {
   console.log(`    ${dim13(msg)}`);
 }
 function section3(label) {
-  const line = "─".repeat(Math.max(0, 38 - label.length));
+  const line = "\u2500".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold12(`── ${label} ${line}`)}`);
+${bold12(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
   const r = spawnSync18(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
@@ -28825,7 +28833,7 @@ function checkPi() {
     fix("pi config   (add at least one API key)");
     return false;
   }
-  ok3(`pi ${vStr}  —  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim13(`(${[...providers].join(", ")})`)}`);
+  ok3(`pi ${vStr}  \u2014  ${providers.size} provider${providers.size > 1 ? "s" : ""} active  ${dim13(`(${[...providers].join(", ")})`)}`);
   return true;
 }
 function checkSpAlias() {
@@ -29072,7 +29080,7 @@ function checkRuntimeDirs() {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
       if (!existsSync22(subDir)) {
-        warn2(`.specialists/${label}/ missing — auto-creating`);
+        warn2(`.specialists/${label}/ missing \u2014 auto-creating`);
         mkdirSync5(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
@@ -29165,7 +29173,7 @@ function checkZombieJobs() {
   section3("Background jobs");
   const jobsDir = join26(CWD, ".specialists", "jobs");
   if (!existsSync22(jobsDir)) {
-    hint("No .specialists/jobs/ — skipping");
+    hint("No .specialists/jobs/ \u2014 skipping");
     return true;
   }
   const result = cleanupProcesses(jobsDir, false);
@@ -29175,7 +29183,7 @@ function checkZombieJobs() {
   }
   for (const jobId of result.zombieJobIds) {
     warn2(`${jobId}  ${yellow12("ZOMBIE")}  ${dim13("pid not found for running job")}`);
-    fix(`Edit .specialists/jobs/${jobId}/status.json  →  set "status": "error"`);
+    fix(`Edit .specialists/jobs/${jobId}/status.json  \u2192  set "status": "error"`);
   }
   if (result.zombies === 0) {
     ok3(renderProcessSummary(result, false));
@@ -29198,9 +29206,9 @@ ${bold12("specialists doctor")}
   const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green14("✓")} ${bold12("All checks passed")}  — specialists is healthy`);
+    console.log(`  ${green14("\u2713")} ${bold12("All checks passed")}  \u2014 specialists is healthy`);
   } else {
-    console.log(`  ${yellow12("○")} ${bold12("Some checks failed")}  — follow the fix hints above`);
+    console.log(`  ${yellow12("\u25CB")} ${bold12("Some checks failed")}  \u2014 follow the fix hints above`);
     console.log(`  ${dim13("specialists install fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.")}`);
   }
   console.log("");
@@ -29233,15 +29241,15 @@ __export(exports_setup, {
 });
 async function run25() {
   console.log("");
-  console.log(yellow13("⚠ DEPRECATED: `specialists setup` is deprecated"));
+  console.log(yellow13("\u26A0 DEPRECATED: `specialists setup` is deprecated"));
   console.log("");
   console.log(`  Use ${bold13("specialists init")} instead.`);
   console.log("");
   console.log("  The init command handles all setup tasks:");
-  console.log("    • creates specialists/ and .specialists/ directories");
-  console.log("    • adds .specialists/ to .gitignore");
-  console.log("    • registers the MCP server in .mcp.json");
-  console.log("    • injects workflow context into AGENTS.md/CLAUDE.md");
+  console.log("    \u2022 creates specialists/ and .specialists/ directories");
+  console.log("    \u2022 adds .specialists/ to .gitignore");
+  console.log("    \u2022 registers the MCP server in .mcp.json");
+  console.log("    \u2022 injects workflow context into AGENTS.md/CLAUDE.md");
   console.log("");
   console.log("  Options:");
   console.log("    --force-workflow   Overwrite existing workflow blocks");
@@ -29269,7 +29277,7 @@ async function run26() {
     "  specialists|sp [command]",
     "  specialists|sp [command] --help",
     "",
-    dim15("  sp is a shorter alias — sp run, sp list, sp feed etc. all work identically."),
+    dim15("  sp is a shorter alias \u2014 sp run, sp list, sp feed etc. all work identically."),
     "",
     bold14("Common flows:"),
     "",
@@ -29300,10 +29308,10 @@ async function run26() {
     '    Shell: specialists run <name> --prompt "..." &      # native shell backgrounding',
     "",
     "  Background workflow",
-    '    specialists run executor --background --prompt "..."   # → prints job-id',
-    "    specialists list --live                                # → interactive session picker",
-    "    specialists attach <job-id>                            # → attach directly",
-    "    specialists feed <job-id> --follow                     # → structured event stream",
+    '    specialists run executor --background --prompt "..."   # \u2192 prints job-id',
+    "    specialists list --live                                # \u2192 interactive session picker",
+    "    specialists attach <job-id>                            # \u2192 attach directly",
+    "    specialists feed <job-id> --follow                     # \u2192 structured event stream",
     "",
     bold14("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
@@ -36572,7 +36580,7 @@ class Server extends Protocol {
 }
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
-import process2 from "node:process";
+import process2 from "process";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
 class ReadBuffer {
@@ -36663,7 +36671,7 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join3 } from "node:path";
+import { join as join3 } from "path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -36751,7 +36759,7 @@ var useSpecialistSchema = objectType({
 function createUseSpecialistTool(runner) {
   return {
     name: "use_specialist",
-    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load → agents.md → pi session → output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto — creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too).",
+    description: "Run a specialist synchronously and wait for the result. " + "Full lifecycle: load \u2192 agents.md \u2192 pi session \u2192 output. " + "Response includes output, model, durationMs, and beadId (string | undefined). " + "beadId is set when the specialist's beads_integration policy triggered bead creation " + "(default: auto \u2014 creates for LOW/MEDIUM/HIGH permission, skips for READ_ONLY). " + "If beadId is present, use `bd update <beadId> --notes` to attach findings or " + "`bd remember` to persist key discoveries for future sessions. " + "When bead_id is provided, the source bead becomes the specialist prompt and the tracking bead links back to it. " + "Use context_depth to inject outputs from completed blocking dependencies (depth 1 = immediate blockers, 2 = include their blockers too).",
     inputSchema: useSpecialistSchema,
     async execute(input, onProgress) {
       let prompt = input.prompt?.trim() ?? "";
@@ -36856,9 +36864,9 @@ class SpecialistsServer {
     try {
       const transport = new StdioServerTransport;
       await this.server.connect(transport);
-      logger.info(`Specialists MCP Server v2 started — ${this.tools.length} tools registered`);
+      logger.info(`Specialists MCP Server v2 started \u2014 ${this.tools.length} tools registered`);
       process.on("SIGTERM", async () => {
-        logger.info("SIGTERM received — shutting down");
+        logger.info("SIGTERM received \u2014 shutting down");
         await this.stop();
         process.exit(0);
       });
@@ -36889,7 +36897,7 @@ async function run27() {
     if (wantsHelp()) {
       console.log([
         "",
-        "⚠ DEPRECATED: Use `specialists init` instead.",
+        "\u26A0 DEPRECATED: Use `specialists init` instead.",
         "",
         "The install command is deprecated. Run `specialists init` for project setup.",
         ""
@@ -37001,13 +37009,13 @@ async function run27() {
         "Bootstrap a project for specialists. This is the specialists onboarding command.",
         "",
         "What it does (always safe, idempotent):",
-        "  • creates .specialists/user/ for custom specialists",
-        "  • creates .specialists/jobs/ and .specialists/ready/ runtime dirs",
-        "  • adds runtime dirs to .gitignore",
-        "  • injects the Specialists section into AGENTS.md",
-        "  • registers the Specialists MCP server at project scope (.mcp.json)",
-        "  • installs hooks to .claude/hooks/ and wires .claude/settings.json",
-        "  • syncs skills into .xtrm/skills/default/ and wires active symlinks",
+        "  \u2022 creates .specialists/user/ for custom specialists",
+        "  \u2022 creates .specialists/jobs/ and .specialists/ready/ runtime dirs",
+        "  \u2022 adds runtime dirs to .gitignore",
+        "  \u2022 injects the Specialists section into AGENTS.md",
+        "  \u2022 registers the Specialists MCP server at project scope (.mcp.json)",
+        "  \u2022 installs hooks to .claude/hooks/ and wires .claude/settings.json",
+        "  \u2022 syncs skills into .xtrm/skills/default/ and wires active symlinks",
         "",
         "Options:",
         "  --sync-defaults    Also copy canonical specialists to .specialists/default/.",
@@ -37026,9 +37034,9 @@ async function run27() {
         "  Prerequisite: .claude/skills and .pi/skills must already be symlinks to",
         "  .xtrm/skills/active/ (created by xt install). specialists init does not",
         "  create those top-level symlinks.",
-        "  MCP missing → specialists init (safe for anyone to call).",
-        "  Specialists missing → specialists init --sync-defaults.",
-        "  Skill sync only → specialists init --sync-skills.",
+        "  MCP missing \u2192 specialists init (safe for anyone to call).",
+        "  Specialists missing \u2192 specialists init --sync-defaults.",
+        "  Skill sync only \u2192 specialists init --sync-skills.",
         ""
       ].join(`
 `));
@@ -37090,8 +37098,8 @@ async function run27() {
         "  specialists validate my-specialist --json",
         "",
         "Exit codes:",
-        "  0 — validation passed",
-        "  1 — validation failed (errors) or specialist not found",
+        "  0 \u2014 validation passed",
+        "  1 \u2014 validation failed (errors) or specialist not found",
         ""
       ].join(`
 `));
@@ -37152,7 +37160,7 @@ async function run27() {
         "",
         "Usage: specialists config <get|set> <key> [value] [options]",
         "",
-        "⚠ DEPRECATED: use specialists edit instead.",
+        "\u26A0 DEPRECATED: use specialists edit instead.",
         "",
         "Delegates to:",
         "  specialists edit --all --get <key>",
@@ -37287,7 +37295,7 @@ async function run27() {
         "",
         "Usage: specialists ps [options]",
         "",
-        "Process dashboard — shows active specialist jobs grouped by worktree chain.",
+        "Process dashboard \u2014 shows active specialist jobs grouped by worktree chain.",
         "Dead jobs (PID gone) are filtered by default. Includes context%, bead title,",
         "and next-action hints on every row.",
         "",
@@ -37297,7 +37305,7 @@ async function run27() {
         "  --follow, -f Live-refresh view with spinner animation",
         "",
         "Output columns:",
-        "  st           Status icon: ◉ running, ◐ waiting/starting, ○ done/error",
+        "  st           Status icon: \u25C9 running, \u25D0 waiting/starting, \u25CB done/error",
         "  id           6-char job ID",
         "  specialist   Specialist name (executor, explorer, reviewer, ...)",
         "  ctx%         Context window utilization (-- if unavailable)",
@@ -37306,8 +37314,8 @@ async function run27() {
         "  next         Suggested action (feed, resume, result, ...)",
         "",
         "Grouping:",
-        "  Jobs sharing a worktree (via --job) appear as nested ├─/└─ chains.",
-        "  Node coordinator → member relationships are shown inline.",
+        "  Jobs sharing a worktree (via --job) appear as nested \u251C\u2500/\u2514\u2500 chains.",
+        "  Node coordinator \u2192 member relationships are shown inline.",
         "  Standalone jobs appear ungrouped at the bottom.",
         "",
         "Examples:",
@@ -37468,7 +37476,7 @@ async function run27() {
         "",
         "Workflow:",
         "  specialists run debugger --bead <id> --keep-alive",
-        "  # → Job started: a1b2c3  (status: waiting after first turn)",
+        "  # \u2192 Job started: a1b2c3  (status: waiting after first turn)",
         "  specialists result a1b2c3          # read first turn output",
         '  specialists resume a1b2c3 "..."    # send next task',
         "  specialists feed a1b2c3 --follow   # watch response",
@@ -37486,7 +37494,7 @@ async function run27() {
     if (wantsHelp()) {
       console.log([
         "",
-        "⚠ DEPRECATED: Use `specialists resume` instead.",
+        "\u26A0 DEPRECATED: Use `specialists resume` instead.",
         "",
         'Usage: specialists follow-up <job-id> "<task>"',
         "",
@@ -37561,8 +37569,8 @@ async function run27() {
         "  <job-id>    The job ID returned by specialists run --background",
         "",
         "Exit codes:",
-        "  0 — session attached and exited normally",
-        "  1 — job not found, already done, or no tmux session",
+        "  0 \u2014 session attached and exited normally",
+        "  1 \u2014 job not found, already done, or no tmux session",
         "",
         "Examples:",
         "  specialists attach job_a1b2c3d4",
@@ -37616,7 +37624,7 @@ async function run27() {
     if (wantsHelp()) {
       console.log([
         "",
-        "⚠ DEPRECATED: Use `specialists init` instead.",
+        "\u26A0 DEPRECATED: Use `specialists init` instead.",
         "",
         "The setup command is deprecated. Run `specialists init` for project setup.",
         ""

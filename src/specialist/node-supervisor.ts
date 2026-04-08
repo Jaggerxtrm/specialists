@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
+import { stripJsonFences } from './json-output.js';
 
 const BASE_POLL_INTERVAL_MS = 5_000;
 const MIN_POLL_INTERVAL_MS = 1_000;
@@ -179,10 +180,7 @@ function extractFirstJsonObject(raw: string): string | null {
 
 function normalizeCoordinatorJsonPayload(output: string): { normalized: string; excerpt: string } {
   const trimmed = output.trim();
-  const noFence = trimmed
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
+  const noFence = stripJsonFences(trimmed);
 
   const extracted = extractFirstJsonObject(noFence) ?? noFence;
   return {
