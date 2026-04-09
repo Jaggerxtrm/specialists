@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SpecialistLoader, checkStaleness } from '../specialist/loader.js';
 import { Supervisor } from '../specialist/supervisor.js';
-import type { SupervisorStatus } from '../specialist/supervisor.js';
+import type { SupervisorStatus, SupervisorStatusView } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
@@ -49,14 +49,16 @@ function formatElapsed(s: SupervisorStatus): string {
   return m > 0 ? `${m}m${sec.toString().padStart(2, '0')}s` : `${sec}s`;
 }
 
-function statusColor(status: string): string {
-  switch (status) {
-    case 'running':  return cyan(status);
-    case 'done':     return green(status);
-    case 'error':    return red(status);
-    case 'starting': return yellow(status);
-    case 'waiting':  return magenta(status);
-    default:         return status;
+function statusColor(job: Pick<SupervisorStatusView, 'status' | 'is_dead'>): string {
+  if (job.is_dead) return red('dead ☠');
+
+  switch (job.status) {
+    case 'running':  return cyan(job.status);
+    case 'done':     return green(job.status);
+    case 'error':    return red(job.status);
+    case 'starting': return yellow(job.status);
+    case 'waiting':  return magenta(job.status);
+    default:         return job.status;
   }
 }
 
@@ -168,7 +170,7 @@ function getLatestContextSnapshot(
   return null;
 }
 
-function isStandaloneJob(job: SupervisorStatus): boolean {
+function isStandaloneJob(job: SupervisorStatusView): boolean {
   return !job.node_id;
 }
 
@@ -195,14 +197,14 @@ function formatMetricsInline(metrics: SupervisorStatus['metrics']): string {
 }
 
 function renderJobDetail(
-  job: SupervisorStatus,
+  job: SupervisorStatusView,
   eventCount: number,
   contextSnapshot: ContextSnapshot | null,
 ): void {
   console.log(`\n${bold('specialists status')}\n`);
   section(`Job ${job.id}`);
   console.log(`  specialist   ${job.specialist}`);
-  console.log(`  status       ${statusColor(job.status)}`);
+  console.log(`  status       ${statusColor(job)}`);
   console.log(`  model        ${job.model ?? 'n/a'}`);
   console.log(`  backend      ${job.backend ?? 'n/a'}`);
   console.log(`  elapsed      ${formatElapsed(job)}`);
@@ -273,7 +275,7 @@ export async function run(): Promise<void> {
   const specialistsBin = cmd('which', ['specialists']);
 
   const jobsDir = resolveJobsDir();
-  let jobs: SupervisorStatus[] = [];
+  let jobs: SupervisorStatusView[] = [];
   let supervisor: Supervisor | null = null;
   if (existsSync(jobsDir)) {
     supervisor = new Supervisor({
@@ -354,6 +356,7 @@ export async function run(): Promise<void> {
         current_tool: j.current_tool ?? null,
         metrics: j.metrics ?? null,
         error: j.error ?? null,
+        is_dead: j.is_dead,
       })),
     };
     console.log(JSON.stringify(output, null, 2));
@@ -430,7 +433,9 @@ export async function run(): Promise<void> {
     for (const job of jobs) {
       const elapsed = formatElapsed(job);
       const metricsInline = formatMetricsInline(job.metrics);
-      const detail = job.status === 'error'
+      const detail = job.is_dead
+        ? red('[dead]')
+        : job.status === 'error'
         ? red(job.error?.slice(0, 40) ?? 'error')
         : job.status === 'waiting'
           ? magenta(`resume: specialists resume ${job.id} "..."`)
@@ -440,7 +445,7 @@ export async function run(): Promise<void> {
               ? dim(metricsInline)
               : dim(job.current_event ?? '');
       console.log(
-        `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
+        `  ${dim(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`
       );
     }
   }

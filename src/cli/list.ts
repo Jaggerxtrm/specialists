@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import readline from 'node:readline';
 import { SpecialistLoader } from '../specialist/loader.js';
+import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
@@ -21,9 +22,11 @@ export interface ParsedArgs {
   scope?: 'default' | 'user';
   json?: boolean;
   live?: boolean;
+  showDead?: boolean;
 }
 
 interface LiveJob {
+  isDead: boolean;
   id: string;
   specialist: string;
   status: 'running' | 'waiting';
@@ -63,6 +66,7 @@ function toLiveJob(status: SupervisorStatus | null): LiveJob | null {
     tmuxSession: status.tmux_session,
     elapsedS,
     startedAtMs: status.started_at_ms,
+    isDead: isJobDead(status),
   };
 }
 
@@ -74,20 +78,22 @@ function readJobStatus(statusPath: string): SupervisorStatus | null {
   }
 }
 
-function listLiveJobs(): LiveJob[] {
+function listLiveJobs(showDead: boolean): LiveJob[] {
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   if (!existsSync(jobsDir)) return [];
 
   const jobs = readdirSync(jobsDir)
     .map(entry => toLiveJob(readJobStatus(join(jobsDir, entry, 'status.json'))))
     .filter((job): job is LiveJob => job !== null)
+    .filter((job) => showDead || !job.isDead)
     .sort((a, b) => b.startedAtMs - a.startedAtMs);
 
   return jobs;
 }
 
 function formatLiveChoice(job: LiveJob): string {
-  return `${job.tmuxSession}  ${job.specialist}  ${job.elapsedS}s  ${job.status}`;
+  const state = job.isDead ? 'dead' : job.status;
+  return `${job.tmuxSession}  ${job.specialist}  ${job.elapsedS}s  ${state}`;
 }
 
 function renderLiveSelector(jobs: readonly LiveJob[], selectedIndex: number): string[] {
@@ -164,8 +170,8 @@ function selectLiveJob(jobs: readonly LiveJob[]): Promise<LiveJob | null> {
   });
 }
 
-async function runLiveMode(): Promise<void> {
-  const jobs = listLiveJobs();
+async function runLiveMode(showDead: boolean): Promise<void> {
+  const jobs = listLiveJobs(showDead);
 
   if (jobs.length === 0) {
     console.log('No running tmux sessions found.');
@@ -174,7 +180,7 @@ async function runLiveMode(): Promise<void> {
 
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     for (const job of jobs) {
-      console.log(`${job.id}  ${job.tmuxSession}  ${job.status}`);
+      console.log(`${job.id}  ${job.tmuxSession}  ${job.isDead ? 'dead' : job.status}`);
     }
     return;
   }
@@ -229,6 +235,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (token === '--show-dead') {
+      result.showDead = true;
+      continue;
+    }
+
     // Unknown flags: silently ignored
   }
 
@@ -250,7 +261,7 @@ export async function run(): Promise<void> {
   }
 
   if (args.live) {
-    await runLiveMode();
+    await runLiveMode(Boolean(args.showDead));
     return;
   }
 

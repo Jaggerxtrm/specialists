@@ -59,6 +59,20 @@ export function createTmuxSession(
 }
 
 /**
+ * Check whether a tmux session currently exists.
+ * Returns false when tmux exits non-zero or the check times out.
+ */
+export function isTmuxSessionAlive(sessionName: string): boolean {
+  const result = spawnSync('tmux', ['has-session', '-t', sessionName], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout: 2000,
+  });
+  if (result.error) return false;
+  return result.status === 0;
+}
+
+/**
  * Kill a tmux session. Idempotent — does not throw if session is already dead.
  */
 export function killTmuxSession(name: string): void {

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bold, cyan, dim, formatCostUsd, formatTokenUsageSummary, green, magenta, red, yellow } from './format-helpers.js';
+import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
@@ -278,25 +279,10 @@ function statusLabel(status: JobState): string {
   return yellow(status);
 }
 
-function isPidAlive(pid: number | undefined): boolean {
-  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isDeadActiveJob(job: SupervisorStatus): boolean {
-  if (job.status !== 'running' && job.status !== 'waiting') return false;
-  return !isPidAlive(job.pid);
-}
-
 function withPidLiveness(statuses: SupervisorStatus[]): Array<SupervisorStatus & { is_dead: boolean }> {
   return statuses.map((job) => ({
     ...job,
-    is_dead: isDeadActiveJob(job),
+    is_dead: isJobDead(job),
   }));
 }
 
