@@ -517,16 +517,35 @@ export async function run(): Promise<void> {
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
   let jobId: string;
+  let runError: any;
   try {
     jobId = await supervisor.run();
   } catch (err: any) {
+    runError = err;
     stopTailer?.();
-    process.stderr.write(`Error: ${err?.message ?? err}\n`);
-    process.exit(1);
   }
 
   // Drain remaining events before printing footer
   stopTailer?.();
+
+  // Clean up bead-claim AFTER run completes (success or error) — ensures no stale claims
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync(`bd kv clear "bead-claim:${args.beadId}"`, {
+        cwd: workingDirectory,
+        stdio: 'pipe',
+        timeout: 5000,
+      });
+    } catch {
+      // Non-fatal — stale claim will be overwritten on next run
+    }
+  }
+
+  // If run failed, report error and exit
+  if (runError) {
+    process.stderr.write(`Error: ${runError?.message ?? runError}\n`);
+    process.exit(1);
+  }
 
   // Read the result from the job file
   const status = supervisor.readStatus(jobId);
@@ -543,19 +562,6 @@ export async function run(): Promise<void> {
 
   process.stderr.write(`\n${green('✓')} ${footer}\n\n`);
   process.stderr.write(dim(`Poll: specialists poll ${jobId} --json\n\n`));
-
-  // Clean up bead-claim after specialist completes
-  if (args.beadId && workingDirectory) {
-    try {
-      execSync(`bd kv clear "bead-claim:${args.beadId}"`, {
-        cwd: workingDirectory,
-        stdio: 'pipe',
-        timeout: 5000,
-      });
-    } catch {
-      // Non-fatal — stale claim will be overwritten on next run
-    }
-  }
 
   // Exit immediately - all work is done
   process.exit(0);

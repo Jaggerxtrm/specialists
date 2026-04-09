@@ -25070,15 +25070,28 @@ ${bold10(`Running ${cyan6(args.name)}`)}
 
 `);
   let jobId;
+  let runError;
   try {
     jobId = await supervisor.run();
   } catch (err) {
+    runError = err;
     stopTailer?.();
-    process.stderr.write(`Error: ${err?.message ?? err}
+  }
+  stopTailer?.();
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync2(`bd kv clear "bead-claim:${args.beadId}"`, {
+        cwd: workingDirectory,
+        stdio: "pipe",
+        timeout: 5000
+      });
+    } catch {}
+  }
+  if (runError) {
+    process.stderr.write(`Error: ${runError?.message ?? runError}
 `);
     process.exit(1);
   }
-  stopTailer?.();
   const status = supervisor.readStatus(jobId);
   const secs = ((status?.last_event_at_ms ?? Date.now()) - (status?.started_at_ms ?? Date.now())) / 1000;
   const modelLabel = formatFooterModel(status?.backend, status?.model);
@@ -25095,15 +25108,6 @@ ${green9("\u2713")} ${footer}
   process.stderr.write(dim9(`Poll: specialists poll ${jobId} --json
 
 `));
-  if (args.beadId && workingDirectory) {
-    try {
-      execSync2(`bd kv clear "bead-claim:${args.beadId}"`, {
-        cwd: workingDirectory,
-        stdio: "pipe",
-        timeout: 5000
-      });
-    } catch {}
-  }
   process.exit(0);
 }
 var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, BLOCKED_JOB_REUSE_STATUSES;
@@ -31468,6 +31472,7 @@ async function run27() {
     "    specialists list --live                                # \u2192 interactive session picker",
     "    specialists attach <job-id>                            # \u2192 attach directly",
     "    specialists feed <job-id> --follow                     # \u2192 structured event stream",
+    "    specialists merge <bead-id> [--rebuild]                # \u2192 fan-in: merge worktree branches",
     "",
     bold14("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
@@ -31492,6 +31497,8 @@ async function run27() {
     '  specialists resume <job-id> "now write the fix"',
     "  specialists attach <job-id>                     # open raw tmux session output",
     '  specialists run debugger --prompt "why does auth fail"',
+    "  specialists merge unitAI-55d                   # merge chain or epic branches",
+    "  specialists merge unitAI-3f7b --rebuild        # topological merge + rebuild",
     "  specialists report list",
     "  specialists report show --specialists",
     "  specialists result <job-id> --wait",
