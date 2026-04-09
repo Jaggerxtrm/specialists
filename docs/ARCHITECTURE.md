@@ -418,12 +418,15 @@ This prevents sub-bead/lifecycle conflicts and keeps orchestrator ownership expl
 
 ### Completion semantic
 
-For feed v2, the canonical completion event is a single `run_complete` event. This resolves the historical ambiguity between:
+> ⚠️ **BREAKING CHANGE:** `run_complete` is now emitted **per turn** for keep-alive sessions, not once per job lifecycle. Consumers that previously treated the first `run_complete` as terminal must now gate completion on terminal job status (`done`/`error`/`cancelled`) for keep-alive flows.
+
+For feed v2, `run_complete` is the canonical per-turn completion event. In single-turn runs this is emitted once; in keep-alive runs it is emitted after each completed turn.
+This resolves the historical ambiguity between:
 
 - callback-level `done` (synthetic, from `agent_end`)
 - persisted `agent_end` (added after runner returns)
 
-The `run_complete` event is emitted once per job and contains:
+Each `run_complete` event contains:
 - final status (`COMPLETE` | `ERROR` | `CANCELLED`)
 - elapsed time
 - model/backend
@@ -473,7 +476,7 @@ End-to-end flow:
 4. Supervisor maps callbacks through `mapCallbackEventToTimelineEvent(...)`
 5. Supervisor appends normalized timeline records to `events.jsonl` (and SQLite when available)
 6. Supervisor updates `status.json` on every lifecycle change
-7. On terminal outcome, Supervisor writes `result.txt` and emits exactly one `run_complete`
+7. On each completed turn, Supervisor writes `result.txt` and emits `run_complete`
 
 Result: **Pi provides protocol events; Session adapts transport; Supervisor persists lifecycle truth.**
 
