@@ -778,8 +778,28 @@ export class SpecialistRunner {
       const beadInstructions = sanitizedBeadId
         ? `\n- Your task bead is: ${sanitizedBeadId}\n- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\``
         : '';
-      agentsMd += `\n\n---\n## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)\nYou are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:\n- Do NOT run \`specialists init\` or \`sp init\` — these are user-only bootstrap commands that will corrupt the project.\n- Do NOT run \`specialists setup\` or \`specialists install\`.\n- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
-- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY — do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.\n- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths — but never leave.${beadInstructions}\n---\n`;
+      agentsMd += `...beadInstructions}\n---\n`;
+    }
+
+    // Inject project memory context — curated synthesis + full bd memories dump
+    // This prevents specialists from rediscovering known gotchas on every run.
+    // 1. Load .xtrm/memory.md (curated, 100-200 lines, ~400-800 tokens)
+    try {
+      const memoryMdPath = resolve(runCwd, '.xtrm/memory.md');
+      if (existsSync(memoryMdPath)) {
+        const memoryMd = readFileSync(memoryMdPath, 'utf-8');
+        agentsMd += `\n\n---\n## Project Memory (SSOT)\n_Injected at spawn — use as operational context_\n${memoryMd}\n---\n`;
+      }
+    } catch {
+      // Non-fatal — memory.md is optional
+    }
+
+    // 2. Load bd prime output (full context, ~800 lines, ~3000 tokens)
+    try {
+      const bdPrime = execSync('bd prime', { encoding: 'utf8', cwd: runCwd, timeout: 10000 });
+      agentsMd += `\n\n---\n## Beads Workflow Context (bd prime)\n_Injected at spawn — workflow rules + all bd memories_\n${bdPrime}\n---\n`;
+    } catch {
+      // Non-fatal — bd prime may be unavailable in some contexts
     }
 
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
