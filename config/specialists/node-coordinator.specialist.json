@@ -184,13 +184,6 @@
     "skills": {
       "paths": [
         "config/skills/using-nodes/"
-      ],
-      "scripts": [
-        {
-          "run": "specialists list",
-          "phase": "pre",
-          "inject_output": true
-        }
       ]
     },
     "capabilities": {

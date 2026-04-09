@@ -11,6 +11,7 @@ import {
   type NodeMemoryRow,
   type NodeRunRow,
 } from '../specialist/observability-sqlite.js';
+import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 
 interface NodeMemberConfig {
   memberId: string;
@@ -35,6 +36,7 @@ interface ParsedNodeArgs {
   findingId?: string;
   toBead?: string;
   beadId?: string;
+  contextDepth: number;
   jsonMode: boolean;
 }
 
@@ -50,6 +52,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   let findingId: string | undefined;
   let toBead: string | undefined;
   let beadId: string | undefined;
+  let contextDepth = 1;
   let jsonMode = false;
 
   for (let i = 1; i < argv.length; i += 1) {
@@ -100,6 +103,17 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
+    if (token === '--context-depth') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--context-depth requires a numeric value');
+      }
+      const parsed = Number.parseInt(value, 10);
+      contextDepth = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      i += 1;
+      continue;
+    }
+
     if (!token.startsWith('--') && command === 'run' && !nodeConfigInput) {
       nodeConfigInput = token;
       continue;
@@ -119,7 +133,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   }
 
   if (command === 'run' && !nodeConfigInput && !inlineJson) {
-    throw new Error('Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--json]');
+    throw new Error('Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]');
   }
 
   if (command === 'promote') {
@@ -140,6 +154,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     findingId,
     toBead,
     beadId,
+    contextDepth,
     jsonMode,
   };
 }
@@ -319,6 +334,20 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
 
     const { NodeSupervisor } = await import('../specialist/node-supervisor.js');
 
+    let beadContext: string | undefined;
+    if (args.beadId) {
+      const beadReader = new BeadsClient();
+      const bead = beadReader.readBead(args.beadId);
+      if (!bead) {
+        throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
+      }
+
+      const blockers = args.contextDepth > 0
+        ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth)
+        : [];
+      beadContext = buildBeadContext(bead, blockers);
+    }
+
     const supervisor = new NodeSupervisor({
       nodeId,
       nodeName: config.name,
@@ -330,7 +359,14 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
       runner,
       runOptions: {
         inputBeadId: args.beadId,
-      } as any,
+        contextDepth: args.contextDepth,
+        variables: beadContext
+          ? {
+              bead_context: beadContext,
+              bead_id: args.beadId ?? '',
+            }
+          : undefined,
+      },
     });
 
     let cursor = 0;

@@ -26,6 +26,8 @@ export interface RunOptions {
   inputBeadId?: string;
   /** Lineage: set when --job <id> is used to reuse another job's worktree. */
   reusedFromJobId?: string;
+  /** Bead dependency context depth (0 disables completed blocker injection). */
+  contextDepth?: number;
   /** Lineage: root job id that originally created the reused worktree. */
   worktreeOwnerJobId?: string;
   /** Path to an existing pi session file for continuation (Phase 2+) */
@@ -60,7 +62,7 @@ type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'ge
 
 export type SessionFactory = (opts: PiSessionOptions) => Promise<SessionLike>;
 
-import { type BeadsClient, shouldCreateBead } from './beads.js';
+import { BeadsClient, type BeadsClient as BeadsClientType, buildBeadContext, shouldCreateBead } from './beads.js';
 
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -74,7 +76,7 @@ interface RunnerDeps {
   /** Overridable for testing; defaults to PiAgentSession.create */
   sessionFactory?: SessionFactory;
   /** Optional beads client for specialist run tracking */
-  beadsClient?: BeadsClient;
+  beadsClient?: BeadsClientType;
 }
 
 // ── Pre/post script helpers ───────────────────────────────────────────────────
@@ -637,6 +639,25 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
+  private resolvePromptWithBeadContext(options: RunOptions, beadsClient?: BeadsClientType): string {
+    if (!options.inputBeadId) {
+      return options.prompt;
+    }
+
+    const beadReader = beadsClient ?? new BeadsClient();
+    const bead = beadReader.readBead(options.inputBeadId);
+    if (!bead) {
+      return options.prompt;
+    }
+
+    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
+    const blockers = contextDepth > 0
+      ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth)
+      : [];
+
+    return buildBeadContext(bead, blockers);
+  }
+
   async run(
     options: RunOptions,
     onProgress?: (msg: string) => void,
@@ -711,14 +732,15 @@ export class SpecialistRunner {
     const preScriptOutput = formatScriptOutput(preResults);
 
     // Render task template (pre_script_output is '' when no scripts ran)
+    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
     const beadVariables: Record<string, string> = options.inputBeadId
-      ? { bead_context: options.prompt, bead_id: options.inputBeadId }
+      ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId }
       : {};
     const beadTemplateVariables: Record<string, string> = options.inputBeadId
-      ? { bead_id: options.inputBeadId, prompt: options.prompt }
+      ? { bead_id: options.inputBeadId, prompt: resolvedPrompt }
       : {};
     const variables: Record<string, string> = {
-      prompt: options.prompt,
+      prompt: resolvedPrompt,
       cwd: runCwd,
       pre_script_output: preScriptOutput,
       ...(options.variables ?? {}),

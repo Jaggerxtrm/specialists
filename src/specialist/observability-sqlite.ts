@@ -459,6 +459,7 @@ export type NodeEventType =
   | 'coordinator_resumed'
   | 'coordinator_resume_state'
   | 'coordinator_resume_skipped'
+  | 'coordinator_first_turn_context_built'
   | 'coordinator_output_received'
   | 'coordinator_output_invalid'
   | 'coordinator_repair_requested'
