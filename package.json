@@ -20,6 +20,7 @@
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
     "test": "bun --bun vitest run",
+    "test:node": "node node_modules/.bin/vitest run",
     "test:bun": "bun test tests/unit/specialist/observability-sqlite.test.ts tests/unit/specialist/observability-db.test.ts tests/unit/cli/db.test.ts",
     "test:watch": "bun --bun vitest",
     "test:coverage": "bun --bun vitest run --coverage",
