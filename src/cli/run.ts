@@ -422,6 +422,13 @@ export async function run(): Promise<void> {
     };
   }
 
+  if (args.reuseJobId) {
+    variables = {
+      ...(variables ?? {}),
+      reviewed_job_id: args.reuseJobId,
+    };
+  }
+
   const runner = new SpecialistRunner({
     loader,
     hooks,

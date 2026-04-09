@@ -346,7 +346,9 @@ describe('Supervisor', () => {
 
     const eventsWhileWaiting = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
       .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    expect(eventsWhileWaiting.some((event: any) => event.type === 'run_complete')).toBe(false);
+    const runCompleteWhileWaiting = eventsWhileWaiting.filter((event: any) => event.type === 'run_complete');
+    expect(runCompleteWhileWaiting).toHaveLength(1);
+    expect(runCompleteWhileWaiting[0]?.output).toBe('first turn output');
 
     writeFileSync(fifoPath, JSON.stringify({ type: 'resume', task: 'next prompt' }) + '\n', { flag: 'a' });
     await waitForCondition(() => resumeMock.mock.calls.length === 1);
@@ -362,9 +364,46 @@ describe('Supervisor', () => {
     const finalEvents = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
       .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
     const runCompleteEvents = finalEvents.filter((event: any) => event.type === 'run_complete');
-    expect(runCompleteEvents).toHaveLength(1);
+    expect(runCompleteEvents).toHaveLength(2);
+    expect(runCompleteEvents[0]?.output).toBe('first turn output');
+    expect(runCompleteEvents[1]?.output).toBe('second turn output');
   });
 
+  it('auto-closes keep-alive READ_ONLY specialist when terminal compliance verdict is present', async () => {
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    const runner = {
+      run: vi.fn().mockImplementation(async (
+        _opts: any, _onProgress: any, _onEvent: any, _onMetric: any, _onMeta: any, _onKill: any, _onBead: any,
+        onSteerRegistered: any, onResumeReady: any,
+      ) => {
+        onSteerRegistered?.(vi.fn().mockResolvedValue(undefined));
+        onResumeReady?.(vi.fn().mockResolvedValue('unused'), closeMock);
+        return {
+          output: '## Compliance Verdict\n- Verdict: PASS',
+          model: 'claude-haiku',
+          backend: 'anthropic',
+          durationMs: 100,
+          specialistVersion: '1.0.0',
+          promptHash: 'abc123def4567890',
+          beadId: undefined,
+          permissionRequired: 'READ_ONLY',
+        };
+      }),
+    } as any;
+
+    const sup = new Supervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
+    const id = await sup.run();
+
+    const status = sup.readStatus(id);
+    expect(status?.status).toBe('done');
+    expect(closeMock).toHaveBeenCalledOnce();
+
+    const finalEvents = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const runCompleteEvents = finalEvents.filter((event: any) => event.type === 'run_complete');
+    expect(runCompleteEvents).toHaveLength(1);
+    expect(runCompleteEvents[0]?.output).toContain('- Verdict: PASS');
+  });
 
   it('pins result output and metadata to bead notes when beadId is present', async () => {
     const beadsClient = { updateBeadNotes: vi.fn(), closeBead: vi.fn() } as any;

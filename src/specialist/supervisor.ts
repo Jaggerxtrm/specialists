@@ -135,6 +135,8 @@ const MODEL_CONTEXT_WINDOWS: Array<{ matcher: (model: string) => boolean; window
   { matcher: (model) => model.includes('claude'), windowTokens: 200_000 },
 ];
 
+const TERMINAL_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict: (PASS|PARTIAL|FAIL)/i;
+
 function getModelContextWindow(model: string | undefined): number | undefined {
   if (!model) return undefined;
   const normalizedModel = model.toLowerCase();
@@ -728,6 +730,7 @@ export class Supervisor {
     let keepAliveSession = false;
     let latestOutput = '';
     let keepAliveExitResolved = false;
+    let isReadOnlySpecialist = false;
     let resolveKeepAliveExit: ((exit: { kind: 'closed' } | { kind: 'fatal'; error: Error }) => void) | undefined;
     const keepAliveExitPromise = new Promise<{ kind: 'closed' } | { kind: 'fatal'; error: Error }>((resolve) => {
       resolveKeepAliveExit = resolve;
@@ -738,6 +741,39 @@ export class Supervisor {
       keepAliveExitResolved = true;
       resolveKeepAliveExit?.(exit);
     };
+
+    const emitRunCompleteForTurn = (result: {
+      model: string;
+      backend: string;
+      beadId?: string;
+      output: string;
+    }): void => {
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0
+        ? {
+            files_touched: [...gitnexusAccumulator.files_touched],
+            symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+            highest_risk: gitnexusAccumulator.highest_risk,
+            tool_invocations: gitnexusAccumulator.tool_invocations,
+          }
+        : undefined;
+
+      appendTimelineEvent(createRunCompleteEvent('COMPLETE', Math.round((Date.now() - startedAtMs) / 1000), {
+        model: result.model,
+        backend: result.backend,
+        bead_id: result.beadId,
+        output: result.output,
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
+        metrics: runMetrics,
+        ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
+      }));
+    };
+
+    const shouldAutoCloseReadOnlyKeepAlive = (output: string): boolean => (
+      isReadOnlySpecialist && TERMINAL_COMPLIANCE_VERDICT_REGEX.test(output)
+    );
 
     const handleResumeTurn = async (task: string): Promise<void> => {
       if (!resumeFn) return;
@@ -755,6 +791,18 @@ export class Supervisor {
           this.sqliteClient?.upsertResult(id, output);
         } catch (error: unknown) {
           console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error)}`);
+        }
+
+        emitRunCompleteForTurn({
+          model: statusSnapshot.model ?? 'unknown',
+          backend: statusSnapshot.backend ?? 'unknown',
+          beadId: statusSnapshot.bead_id,
+          output,
+        });
+
+        if (shouldAutoCloseReadOnlyKeepAlive(output)) {
+          void closeKeepAliveSession();
+          return;
         }
 
         setWaitingStatus();
@@ -1143,19 +1191,6 @@ export class Supervisor {
       mkdirSync(this.jobDir(id), { recursive: true });
       writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
 
-      if (keepAliveSession) {
-        setWaitingStatus({
-          model: result.model,
-          backend: result.backend,
-          bead_id: result.beadId,
-        });
-
-        const keepAliveExit = await keepAliveExitPromise;
-        if (keepAliveExit.kind === 'fatal') {
-          throw keepAliveExit.error;
-        }
-      }
-
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const finalResult = {
         ...result,
@@ -1168,6 +1203,31 @@ export class Supervisor {
         tool_call_names: toolCallNames,
         exit_reason: 'agent_end',
       });
+      isReadOnlySpecialist = finalResult.permissionRequired === 'READ_ONLY';
+
+      emitRunCompleteForTurn({
+        model: finalResult.model,
+        backend: finalResult.backend,
+        beadId: finalResult.beadId,
+        output: finalResult.output,
+      });
+
+      if (keepAliveSession) {
+        if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
+          await closeKeepAliveSession();
+        } else {
+          setWaitingStatus({
+            model: result.model,
+            backend: result.backend,
+            bead_id: result.beadId,
+          });
+        }
+
+        const keepAliveExit = await keepAliveExitPromise;
+        if (keepAliveExit.kind === 'fatal') {
+          throw keepAliveExit.error;
+        }
+      }
 
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
@@ -1216,21 +1276,19 @@ export class Supervisor {
           }
         : undefined;
 
-      // Emit run_complete — THE canonical completion event
-      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent('COMPLETE', elapsed, {
-        model: finalResult.model,
-        backend: finalResult.backend,
-        bead_id: finalResult.beadId,
-        output: finalResult.output,
-        token_usage: runMetrics.token_usage,
-        finish_reason: runMetrics.finish_reason,
-        tool_calls: [...toolCallNames],
-        exit_reason: runMetrics.exit_reason,
-        metrics: runMetrics,
-        ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-      }));
       try {
-        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
+        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
+          model: finalResult.model,
+          backend: finalResult.backend,
+          bead_id: finalResult.beadId,
+          output: finalResult.output,
+          token_usage: runMetrics.token_usage,
+          finish_reason: runMetrics.finish_reason,
+          tool_calls: [...toolCallNames],
+          exit_reason: runMetrics.exit_reason,
+          metrics: runMetrics,
+          ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
+        }), latestOutput);
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error)}`);
       }

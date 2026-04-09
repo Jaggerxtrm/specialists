@@ -233,7 +233,33 @@ function isTerminalJobStatus(
   jobId: string
 ): boolean {
   const status = readStatusJson(sqliteClient, jobsDir, jobId);
-  return status?.status === 'done' || status?.status === 'error';
+  return status?.status === 'done' || status?.status === 'error' || status?.status === 'cancelled';
+}
+
+function isKeepAliveJobStatus(status: Record<string, unknown> | null): boolean {
+  return status?.status === 'waiting';
+}
+
+function isJobCompleteForFollow(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string,
+  events: TimelineEvent[]
+): boolean {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
+
+  // Keep-alive jobs emit run_complete at the end of each turn, so only terminal
+  // status transitions should close follow mode for them.
+  if (isKeepAliveJobStatus(status)) {
+    return false;
+  }
+
+  // Single-turn jobs emit one terminal run_complete event.
+  if (events.some(isRunCompleteEvent)) {
+    return true;
+  }
+
+  return status?.status === 'done' || status?.status === 'error' || status?.status === 'cancelled';
 }
 
 function readJobMeta(
@@ -402,10 +428,6 @@ function compareMergedEvents(a: MergedEvent, b: MergedEvent): number {
   return (a.event.seq ?? 0) - (b.event.seq ?? 0);
 }
 
-function isCompletionEvent(event: TimelineEvent): boolean {
-  return isRunCompleteEvent(event);
-}
-
 function isEventAtOrAfterCursor(jobId: string, event: TimelineEvent, from?: FeedCursor): boolean {
   if (!from) return true;
   if (jobId !== from.jobId) return false;
@@ -554,7 +576,7 @@ async function followMerged(
       lastSeenT.set(batch.jobId, maxT);
     }
 
-    if (trackedJobs.has(batch.jobId) && batch.events.some(isCompletionEvent)) {
+    if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
       completedJobs.add(batch.jobId);
     }
   }
@@ -623,10 +645,7 @@ async function followMerged(
         }
 
         // Check completion for jobs that were active during follow.
-        if (
-          trackedJobs.has(batch.jobId)
-          && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(sqliteClient, jobsDir, batch.jobId))
-        ) {
+        if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
           completedJobs.add(batch.jobId);
         }
       }
