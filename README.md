@@ -40,6 +40,13 @@ specialists feed -f
 bd close <id> --reason "Done"
 ```
 
+Merge worktree branches:
+
+```bash
+specialists merge <bead-id>           # single chain or epic (topological)
+specialists merge <bead-id> --rebuild # rebuild after merge
+```
+
 `specialists run` prints `[job started: <id>]` early and also writes the id to `.specialists/jobs/latest`.
 
 Ad-hoc work:

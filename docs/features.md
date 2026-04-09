@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.6.0
-updated: 2026-04-09
-synced_at: 36cfce04
+version: 1.7.0
+updated: 2026-04-10
+synced_at: a1e9f935
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -788,6 +788,144 @@ sp run validator --job d4e5f6 --bead unitAI-55d-validate
 ### Tree reconstruction in `sp ps`
 
 `sp ps` groups all jobs sharing the same `worktree_owner_job_id` into one worktree tree. Jobs are further arranged as a reuse forest: parent → child edges follow `reused_from_job_id` pointers.
+
+---
+
+## 17) `sp merge`: topological chain/epic merge primitive
+
+`sp merge` is a narrow Phase 1 primitive for merging worktree branches in dependency order. It handles the merge step of the wave/chain/epic model (see locked design in unitAI-lzys).
+
+### Scope (Phase 1)
+
+**What it does**:
+- Merge a single chain-root branch (one bead → one branch)
+- Merge multiple epic children in topological order (bead dependencies drive merge sequence)
+- Run TypeScript gate after each merge
+- Optional rebuild (`--rebuild`) after all merges
+
+**What it does NOT include (deferred)**:
+- `sp end` — full session close flow (commit, push, PR, cleanup)
+- `--pr` flag — PR creation instead of direct merge
+- Epic lifecycle management — `sp epic merge`, epic state machine
+- Worktree cleanup after merge
+- Conflict auto-resolution
+
+### Vocabulary
+
+| Term | Definition |
+|------|------------|
+| **Epic** | Top merge-gated identity with state machine. Contains stages, owns merge decision. |
+| **Chain** | Worktree lineage, seeded by edit-capable specialist. One branch per chain. |
+| **Wave** | Stage/batch label — speech only, no code meaning. |
+| **Job** | Atomic execution unit. Jobs belong to chains. |
+
+### Command
+
+```bash
+sp merge <target-bead-id> [--rebuild]
+```
+
+- `<target-bead-id>`: chain-root (single merge) or epic (multi-merge)
+- `--rebuild`: run `bun run build` after all merges
+
+### Topological sorting
+
+For epic merges, chains are sorted by bead dependencies:
+1. Build dependency graph from `bd show` for each child bead
+2. Compute merge order via Kahn's algorithm (indegree-based)
+3. Start with chains having zero dependencies (roots)
+4. Merge roots first, then dependents in order
+
+If a cycle is detected, merge fails with error.
+
+### Safety
+
+- Non-terminal jobs block merge (`starting`, `running` statuses)
+- TypeScript gate after EACH merge (not just at end)
+- Uses `--no-ff` to preserve branch history
+
+### Example
+
+```bash
+# Chain-root merge (single)
+sp merge unitAI-55d
+# → merges branch feature/unitAI-55d-executor
+
+# Epic merge (ordered by bead deps)
+sp merge unitAI-3f7b
+# → merges children in topological order:
+#   1. unitAI-hgpu.1 (no deps)
+#   2. unitAI-hgpu.2 (dep: hgpu.1)
+#   3. unitAI-hgpu.3 (dep: hgpu.2)
+```
+
+### Implementation
+
+Source: `src/cli/merge.ts`
+
+Key functions:
+- `resolveMergeTargets()` — resolve bead to sorted chains
+- `topologicallySortChains()` — dependency-aware merge order
+- `mergeBranch()` — git merge with conflict detection
+- `runTypecheckGate()` — tsc validation
+
+---
+
+## 18) Worktree write-boundary enforcement
+
+When a specialist runs with `--worktree`, the pi session enforces a **write-boundary** on tool calls. This prevents accidental modifications to files outside the isolated worktree.
+
+### Intercepted tools
+
+| Tool | Intercepted? | Behavior on out-of-bounds path |
+|------|:-------------:|--------------------------------|
+| `edit` | ✓ Yes | Falls back to tmp-fs (temp dir, discarded) |
+| `write` | ✓ Yes | Falls back to tmp-fs |
+| `multiEdit` | ✓ Yes | Falls back to tmp-fs |
+| `notebookEdit` | ✓ Yes | Falls back to tmp-fs |
+| `read` | ✗ No | Allowed (read-only, no corruption risk) |
+| `bash` | ✗ No | Allowed (command execution, not file write) |
+
+### Boundary semantics
+
+- **Worktree root**: the `worktree_path` recorded in `status.json`
+- **In-bounds path**: any path that resolves to a location under worktree root
+- **Out-of-bounds path**: any absolute path pointing outside worktree root, OR any relative path that escapes via `..` traversal
+
+### Fallback behavior (tmp-fs)
+
+When a write tool attempts an out-of-bounds path:
+1. Tool call is NOT rejected (no error raised to the specialist)
+2. Write is redirected to a temporary location (tmp-fs)
+3. Temporary file is discarded after the session ends
+4. Specialist continues execution unaware of the redirection
+
+This design prevents:
+- Specialists accidentally modifying main checkout files
+- Parallel specialists racing on shared files
+- Escape via absolute paths (LLMs commonly generate these from context memory)
+
+### Why this matters
+
+Without write-boundary enforcement, specialists in worktrees could:
+1. Generate absolute paths from session context (e.g. `/home/user/project/src/file.ts`)
+2. Modify files in the main repo, bypassing worktree isolation
+3. Create race conditions with other specialists or the operator
+
+This was observed in production (2026-04-09): sync-docs specialist in worktree `.worktrees/8we6/8we6-sync-docs/` emitted edit calls with absolute paths pointing to main repo. All 6 doc edits landed in main repo instead of the worktree — isolation was completely bypassed.
+
+### Implementation
+
+Enforcement lives in pi session layer (not specialists code):
+- Commit: `da9ac9e3` (elhl/a2u7 Phase 1)
+- Applied at tool invocation boundary
+- Path resolution checks against declared `worktree_path`
+
+### Limitations (Phase 1)
+
+- Bash commands can still write outside worktree (not intercepted)
+- Relative paths with `..` traversal may bypass if not normalized
+- tmp-fs fallback is silent — specialist doesn't know write was redirected
 
 ---
 
