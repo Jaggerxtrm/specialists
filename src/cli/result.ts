@@ -256,5 +256,6 @@ export async function run(): Promise<void> {
   emitHumanResult(output, status);
   } finally {
     sqliteClient?.close();
+    await supervisor.dispose();
   }
 }

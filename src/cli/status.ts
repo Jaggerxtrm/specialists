@@ -250,6 +250,7 @@ export async function run(): Promise<void> {
 
   const { jsonMode, jobId } = parsedArgs;
   const sqliteClient = createObservabilitySqliteClient();
+  let supervisor: Supervisor | null = null;
 
   try {
     // ── Collect all data ────────────────────────────────────────────────────────
@@ -276,7 +277,6 @@ export async function run(): Promise<void> {
 
   const jobsDir = resolveJobsDir();
   let jobs: SupervisorStatusView[] = [];
-  let supervisor: Supervisor | null = null;
   if (existsSync(jobsDir)) {
     supervisor = new Supervisor({
       runner: null as any,
@@ -453,5 +453,6 @@ export async function run(): Promise<void> {
   console.log();
   } finally {
     sqliteClient?.close();
+    await supervisor?.dispose();
   }
 }

@@ -52,13 +52,17 @@ function withRetry<T>(operation: () => T, context: string): T {
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       
+      if (lastError.message.includes('Cannot use a closed database')) {
+        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
+      }
+
       // Check if it's a retryable SQLite error
-      const isRetryable = 
+      const isRetryable =
         lastError.message.includes('SQLITE_BUSY') ||
         lastError.message.includes('SQLITE_LOCKED') ||
         lastError.message.includes('database is locked') ||
         lastError.message.includes('database is busy');
-      
+
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
       }

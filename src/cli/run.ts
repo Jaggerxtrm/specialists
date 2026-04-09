@@ -461,7 +461,7 @@ export async function run(): Promise<void> {
     perm,
     (jobId) => statusReader.readStatus(jobId),
   );
-  statusReader.dispose();
+  await statusReader.dispose();
 
   let stopTailer: (() => void) | undefined;
 

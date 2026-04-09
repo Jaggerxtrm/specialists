@@ -359,6 +359,9 @@ export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
   private readonly resolvedJobsDir: string;
   private isDisposed = false;
+  private disposePromise: Promise<void> | null = null;
+  private pendingSqliteOperations = 0;
+  private readonly pendingSqliteDrainResolvers = new Set<() => void>();
 
   constructor(private opts: SupervisorOptions) {
     this.sqliteClient = createObservabilitySqliteClient();
@@ -368,15 +371,55 @@ export class Supervisor {
     this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
   }
 
-  dispose(): void {
-    if (this.isDisposed) return;
-    this.isDisposed = true;
-    if (!this.sqliteClient) return;
+  private createDisposedSqliteError(operation: string): Error {
+    return new Error(`[supervisor] SQLite operation "${operation}" rejected: supervisor is disposed`);
+  }
+
+  private withSqliteOperation<T>(operation: string, fn: (client: ObservabilitySqliteClient) => T): T | undefined {
+    const client = this.sqliteClient;
+    if (!client) return undefined;
+    if (this.isDisposed) throw this.createDisposedSqliteError(operation);
+
+    this.pendingSqliteOperations += 1;
     try {
-      this.sqliteClient.close();
-    } catch (error: unknown) {
-      console.warn(`[supervisor] Failed to close sqlite client: ${String(error)}`);
+      return fn(client);
+    } finally {
+      this.pendingSqliteOperations -= 1;
+      if (this.pendingSqliteOperations === 0) {
+        for (const resolve of this.pendingSqliteDrainResolvers) {
+          resolve();
+        }
+        this.pendingSqliteDrainResolvers.clear();
+      }
     }
+  }
+
+  private async waitForPendingSqliteOperations(): Promise<void> {
+    if (this.pendingSqliteOperations === 0) return;
+
+    await new Promise<void>((resolve) => {
+      this.pendingSqliteDrainResolvers.add(resolve);
+    });
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposePromise) {
+      await this.disposePromise;
+      return;
+    }
+
+    this.isDisposed = true;
+    this.disposePromise = (async () => {
+      await this.waitForPendingSqliteOperations();
+      if (!this.sqliteClient) return;
+      try {
+        this.sqliteClient.close();
+      } catch (error: unknown) {
+        console.warn(`[supervisor] Failed to close sqlite client: ${String(error)}`);
+      }
+    })();
+
+    await this.disposePromise;
   }
 
   private jobDir(id: string): string {
@@ -413,10 +456,15 @@ export class Supervisor {
 
   readStatus(id: string): SupervisorStatusView | null {
     try {
-      const sqliteStatus = this.sqliteClient?.readStatus(id);
+      if (this.isDisposed) {
+        throw this.createDisposedSqliteError('readStatus');
+      }
+      const sqliteStatus = this.withSqliteOperation('readStatus', (client) => client.readStatus(id));
       if (sqliteStatus) return this.withComputedLiveness(sqliteStatus);
     } catch (error: unknown) {
-      console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error)}`);
+      if (!(error instanceof Error && error.message.includes('supervisor is disposed'))) {
+        console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error)}`);
+      }
     }
 
     const path = this.statusPath(id);
@@ -432,14 +480,19 @@ export class Supervisor {
   /** List all jobs sorted newest-first. */
   listJobs(): SupervisorStatusView[] {
     try {
-      const sqliteJobs = this.sqliteClient?.listStatuses() ?? [];
+      if (this.isDisposed) {
+        throw this.createDisposedSqliteError('listStatuses');
+      }
+      const sqliteJobs = this.withSqliteOperation('listStatuses', (client) => client.listStatuses()) ?? [];
       if (sqliteJobs.length > 0) {
         return sqliteJobs
           .map((status) => this.withComputedLiveness(status))
           .sort((a, b) => b.started_at_ms - a.started_at_ms);
       }
     } catch (error: unknown) {
-      console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error)}`);
+      if (!(error instanceof Error && error.message.includes('supervisor is disposed'))) {
+        console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error)}`);
+      }
     }
 
     if (!existsSync(this.resolvedJobsDir)) return [];
@@ -477,7 +530,7 @@ export class Supervisor {
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     this.writeStatusFileOnly(id, normalizedStatus);
     try {
-      this.sqliteClient?.upsertStatus(normalizedStatus);
+      this.withSqliteOperation('upsertStatus', (client) => client.upsertStatus(normalizedStatus));
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);
     }
@@ -641,7 +694,7 @@ export class Supervisor {
       }
 
       try {
-        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
+        this.withSqliteOperation('appendEvent', (client) => client.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent));
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite appendEvent failed: ${String(error)}`);
       }
@@ -676,7 +729,7 @@ export class Supervisor {
     // Emit run_start event
     const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
     try {
-      this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
+      this.withSqliteOperation('upsertStatusWithEvent:run_start', (client) => client.upsertStatusWithEvent(statusSnapshot, runStartEvent));
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during run start: ${String(error)}`);
     }
@@ -788,7 +841,7 @@ export class Supervisor {
         mkdirSync(this.jobDir(id), { recursive: true });
         writeFileSync(this.resultPath(id), output, 'utf-8');
         try {
-          this.sqliteClient?.upsertResult(id, output);
+          this.withSqliteOperation('upsertResult:resume_turn', (client) => client.upsertResult(id, output));
         } catch (error: unknown) {
           console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error)}`);
         }
@@ -1277,7 +1330,7 @@ export class Supervisor {
         : undefined;
 
       try {
-        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
+        this.withSqliteOperation('upsertStatusWithEventAndResult:complete', (client) => client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
           model: finalResult.model,
           backend: finalResult.backend,
           bead_id: finalResult.beadId,
@@ -1288,7 +1341,7 @@ export class Supervisor {
           exit_reason: runMetrics.exit_reason,
           metrics: runMetrics,
           ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-        }), latestOutput);
+        }), latestOutput));
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error)}`);
       }
@@ -1355,7 +1408,7 @@ export class Supervisor {
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
       }));
       try {
-        this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
+        this.withSqliteOperation('upsertStatusWithEvent:error', (client) => client.upsertStatusWithEvent(statusSnapshot, runCompleteEvent));
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error)}`);
       }
@@ -1384,7 +1437,7 @@ export class Supervisor {
       if (statusSnapshot.tmux_session) {
         spawnSync('tmux', ['kill-session', '-t', statusSnapshot.tmux_session], { stdio: 'ignore' });
       }
-      this.dispose();
+      await this.dispose();
     }
   }
 }

@@ -15,11 +15,13 @@ export function createStopSpecialistTool() {
     async execute(input: z.infer<typeof stopSpecialistSchema>) {
       const jobsDir = join(process.cwd(), '.specialists', 'jobs');
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-      const status = supervisor.readStatus(input.job_id);
 
-      if (!status) {
-        return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
-      }
+      try {
+        const status = supervisor.readStatus(input.job_id);
+
+        if (!status) {
+          return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+        }
 
       if (status.status === 'done' || status.status === 'error') {
         return {
@@ -33,14 +35,17 @@ export function createStopSpecialistTool() {
         return { status: 'error', error: `No PID recorded for job ${input.job_id}`, job_id: input.job_id };
       }
 
-      try {
-        process.kill(status.pid, 'SIGTERM');
-        return { status: 'cancelled', job_id: input.job_id, pid: status.pid };
-      } catch (err: any) {
-        if (err?.code === 'ESRCH') {
-          return { status: 'error', error: `Process ${status.pid} not found`, job_id: input.job_id };
+        try {
+          process.kill(status.pid, 'SIGTERM');
+          return { status: 'cancelled', job_id: input.job_id, pid: status.pid };
+        } catch (err: any) {
+          if (err?.code === 'ESRCH') {
+            return { status: 'error', error: `Process ${status.pid} not found`, job_id: input.job_id };
+          }
+          return { status: 'error', error: err?.message ?? String(err), job_id: input.job_id };
         }
-        return { status: 'error', error: err?.message ?? String(err), job_id: input.job_id };
+      } finally {
+        await supervisor.dispose();
       }
     },
   };

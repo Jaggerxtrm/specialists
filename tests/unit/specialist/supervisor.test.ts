@@ -56,26 +56,35 @@ describe('Supervisor', () => {
   let tmpDir: string;
   let jobsDir: string;
   let originalTmuxSessionEnv: string | undefined;
+  let supervisors: Supervisor[];
+
+  const createSupervisor = (options: ConstructorParameters<typeof Supervisor>[0]): Supervisor => {
+    const supervisor = createSupervisor(options);
+    supervisors.push(supervisor);
+    return supervisor;
+  };
 
   beforeEach(() => {
     originalTmuxSessionEnv = process.env.SPECIALISTS_TMUX_SESSION;
     tmpDir = mkdtempSync(join(tmpdir(), 'supervisor-test-'));
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
+    supervisors = [];
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (originalTmuxSessionEnv === undefined) {
       delete process.env.SPECIALISTS_TMUX_SESSION;
     } else {
       process.env.SPECIALISTS_TMUX_SESSION = originalTmuxSessionEnv;
     }
     vi.restoreAllMocks();
+    await Promise.all(supervisors.map((supervisor) => supervisor.dispose()));
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('run() creates job directory with status.json, events.jsonl, result.txt', async () => {
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const jobDir = join(jobsDir, id);
@@ -85,7 +94,7 @@ describe('Supervisor', () => {
   });
 
   it('status.json has all expected fields after successful run', async () => {
-    const sup = new Supervisor({
+    const sup = createSupervisor({
       jobsDir,
       runner: makeMockRunner('output text', 'claude-haiku', 'anthropic'),
       runOptions: makeRunOptions('my-specialist'),
@@ -122,7 +131,7 @@ describe('Supervisor', () => {
       },
     });
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
@@ -160,7 +169,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
@@ -202,7 +211,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
@@ -249,7 +258,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const events = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
@@ -264,7 +273,7 @@ describe('Supervisor', () => {
   });
 
   it('result.txt contains the runner output string', async () => {
-    const sup = new Supervisor({
+    const sup = createSupervisor({
       jobsDir,
       runner: makeMockRunner('hello world output'),
       runOptions: makeRunOptions(),
@@ -275,7 +284,7 @@ describe('Supervisor', () => {
   });
 
   it('events.jsonl contains at least one valid JSON line', async () => {
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const content = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8');
@@ -287,7 +296,7 @@ describe('Supervisor', () => {
   });
 
   it('.specialists/ready/<id> marker is created on success', async () => {
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     const id = await sup.run();
 
     const readyMarker = join(jobsDir, '..', 'ready', id);
@@ -296,7 +305,7 @@ describe('Supervisor', () => {
 
   it('writes jobs/latest and fires onJobStarted callback with the allocated id', async () => {
     const onJobStarted = vi.fn();
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions(), onJobStarted });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions(), onJobStarted });
     const id = await sup.run();
 
     expect(onJobStarted).toHaveBeenCalledWith({ id });
@@ -325,7 +334,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
     const runPromise = sup.run();
 
     await waitForCondition(() => existsSync(join(jobsDir, 'latest')));
@@ -391,7 +400,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: { ...makeRunOptions(), keepAlive: true } });
     const id = await sup.run();
 
     const status = sup.readStatus(id);
@@ -417,7 +426,7 @@ describe('Supervisor', () => {
       promptHash: 'abc123def4567890',
       beadId: 'specialists-123',
     });
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
 
     await sup.run();
 
@@ -450,7 +459,7 @@ describe('Supervisor', () => {
       beadId: 'specialists-abc',
     });
     // No inputBeadId → runner owns the bead
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions(), beadsClient });
     await sup.run();
 
     expect(updateBeadNotes).toHaveBeenCalledOnce();
@@ -477,7 +486,7 @@ describe('Supervisor', () => {
     });
     // inputBeadId set → orchestrator owns the bead lifecycle
     const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-external' };
-    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions, beadsClient });
     await sup.run();
 
     expect(updateBeadNotes).toHaveBeenCalledOnce();
@@ -499,7 +508,7 @@ describe('Supervisor', () => {
       beadId: 'unitAI-external',
     });
     const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-external', beadsWriteNotes: false };
-    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions, beadsClient });
 
     await sup.run();
 
@@ -522,7 +531,7 @@ describe('Supervisor', () => {
       beadId: 'specialists-owned',
     });
     const runOptions = { ...makeRunOptions(), beadsWriteNotes: false };
-    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions, beadsClient });
 
     await sup.run();
 
@@ -546,7 +555,7 @@ describe('Supervisor', () => {
       permissionRequired: 'READ_ONLY',
     });
     const runOptions = { ...makeRunOptions(), inputBeadId: 'unitAI-readonly-1' };
-    const sup = new Supervisor({ jobsDir, runner, runOptions, beadsClient });
+    const sup = createSupervisor({ jobsDir, runner, runOptions, beadsClient });
 
     await sup.run();
 
@@ -561,7 +570,7 @@ describe('Supervisor', () => {
     const runner = {
       run: vi.fn().mockRejectedValue(new Error('backend exploded')),
     } as any;
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
 
     await expect(sup.run()).rejects.toThrow('backend exploded');
 
@@ -601,7 +610,7 @@ describe('Supervisor', () => {
     const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000);
     utimesSync(oldJobDir, eightDaysAgo, eightDaysAgo);
 
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     await sup.run();
 
     expect(existsSync(oldJobDir)).toBe(false);
@@ -621,7 +630,7 @@ describe('Supervisor', () => {
     };
     writeFileSync(join(crashedDir, 'status.json'), JSON.stringify(crashStatus));
 
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     await sup.run();
 
     const recovered: SupervisorStatus = JSON.parse(
@@ -646,7 +655,7 @@ describe('Supervisor', () => {
     };
     writeFileSync(join(waitingDir, 'status.json'), JSON.stringify(waitingStatus));
 
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     await sup.run();
 
     const eventsPath = join(waitingDir, 'events.jsonl');
@@ -675,7 +684,7 @@ describe('Supervisor', () => {
       }),
     } as any;
 
-    const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
     const id = await sup.run();
 
     expect(existsSync(join(jobsDir, id, 'status.json'))).toBe(true);
@@ -703,7 +712,7 @@ describe('Supervisor', () => {
     mkdirSync(join(jobsDir, 'newer2'), { recursive: true });
     writeFileSync(join(jobsDir, 'newer2', 'status.json'), JSON.stringify(newerStatus));
 
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     const jobs = sup.listJobs();
 
     expect(jobs).toHaveLength(2);
@@ -712,7 +721,7 @@ describe('Supervisor', () => {
   });
 
   it('readStatus() returns null for unknown id', () => {
-    const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
     expect(sup.readStatus('nonexistent')).toBeNull();
   });
 
@@ -731,7 +740,7 @@ describe('Supervisor', () => {
           };
         }),
       } as any;
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const status: SupervisorStatus = JSON.parse(readFileSync(join(jobsDir, id, 'status.json'), 'utf-8'));
@@ -745,7 +754,7 @@ describe('Supervisor', () => {
         durationMs: 10, specialistVersion: '1.0.0', promptHash: 'abc123',
         beadId: 'unitAI-auto-88',
       });
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -756,7 +765,7 @@ describe('Supervisor', () => {
     });
 
     it('run_complete event has no bead_id when no bead is associated', async () => {
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -789,7 +798,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -817,7 +826,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -845,7 +854,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -876,7 +885,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -905,7 +914,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({
+      const sup = createSupervisor({
         jobsDir,
         runner,
         runOptions: makeRunOptions(),
@@ -937,7 +946,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({
+      const sup = createSupervisor({
         jobsDir,
         runner,
         runOptions: makeRunOptions(),
@@ -972,7 +981,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -1001,7 +1010,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')
@@ -1034,7 +1043,7 @@ describe('Supervisor', () => {
         writeFileSync(join(dir, 'events.jsonl'), ''); // empty
       }
 
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       await sup.run();
 
       for (const jobId of [doneId, errorId]) {
@@ -1065,7 +1074,7 @@ describe('Supervisor', () => {
         writeFileSync(join(dir, 'status.json'), JSON.stringify(s));
       }
 
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       await sup.run();
 
       for (const jobId of jobIds) {
@@ -1096,7 +1105,7 @@ describe('Supervisor', () => {
       };
       writeFileSync(join(waitingDir, 'status.json'), JSON.stringify(waitingStatus));
 
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       await sup.run();
 
       const eventsPath = join(waitingDir, 'events.jsonl');
@@ -1136,7 +1145,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       await sup.run();
 
       expect(capturedStatuses).toHaveLength(1);
@@ -1166,7 +1175,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       await sup.run();
 
       expect(capturedStatuses).toHaveLength(1);
@@ -1190,7 +1199,7 @@ describe('Supervisor', () => {
         return realSpawnSync(command, args, options as any);
       }) as any);
 
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       await expect(sup.run()).resolves.toMatch(/^[a-z0-9]{6}$/);
 
       expect(spawnSyncSpy).toHaveBeenCalledWith(
@@ -1220,7 +1229,7 @@ describe('Supervisor', () => {
       const runner = {
         run: vi.fn().mockRejectedValue(new Error('backend exploded')),
       } as any;
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
 
       await expect(sup.run()).rejects.toThrow('backend exploded');
       expect(spawnSyncSpy).toHaveBeenCalledWith(
@@ -1257,7 +1266,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({
+      const sup = createSupervisor({
         jobsDir,
         runner,
         runOptions: { name: 'test', prompt: 'go', inputBeadId: 'unitAI-ext-42' },
@@ -1291,7 +1300,7 @@ describe('Supervisor', () => {
         }),
       } as any;
 
-      const sup = new Supervisor({ jobsDir, runner, runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner, runOptions: makeRunOptions() });
       await sup.run();
 
       expect(capturedStatuses).toHaveLength(1);
@@ -1300,7 +1309,7 @@ describe('Supervisor', () => {
 
     it('run_start event in events.jsonl has bead_id when inputBeadId is provided', async () => {
       const runner = makeMockRunner('out', 'haiku', 'anthropic');
-      const sup = new Supervisor({
+      const sup = createSupervisor({
         jobsDir,
         runner,
         runOptions: { name: 'test', prompt: 'go', inputBeadId: 'unitAI-ext-99' },
@@ -1316,7 +1325,7 @@ describe('Supervisor', () => {
     });
 
     it('run_start event has no bead_id when no inputBeadId provided', async () => {
-      const sup = new Supervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+      const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
       const id = await sup.run();
 
       const lines = readFileSync(join(jobsDir, id, 'events.jsonl'), 'utf-8')

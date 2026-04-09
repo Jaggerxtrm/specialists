@@ -36,11 +36,13 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
       // Fall back to FIFO for Supervisor-managed CLI-started jobs
       const jobsDir = resolveJobsDir();
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-      const status = supervisor.readStatus(input.job_id);
 
-      if (!status) {
-        return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
-      }
+      try {
+        const status = supervisor.readStatus(input.job_id);
+
+        if (!status) {
+          return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+        }
       if (status.status !== 'waiting') {
         return { status: 'error', error: `Job is not waiting (status: ${status.status}). resume is only valid in waiting state.`, job_id: input.job_id };
       }
@@ -48,12 +50,15 @@ export function createResumeSpecialistTool(registry: JobRegistry) {
         return { status: 'error', error: 'Job has no steer pipe', job_id: input.job_id };
       }
 
-      try {
-        const payload = JSON.stringify({ type: 'resume', task: input.task }) + '\n';
-        writeFileSync(status.fifo_path, payload, { flag: 'a' });
-        return { status: 'sent', job_id: input.job_id, task: input.task };
-      } catch (err: any) {
-        return { status: 'error', error: `Failed to write to steer pipe: ${err?.message}`, job_id: input.job_id };
+        try {
+          const payload = JSON.stringify({ type: 'resume', task: input.task }) + '\n';
+          writeFileSync(status.fifo_path, payload, { flag: 'a' });
+          return { status: 'sent', job_id: input.job_id, task: input.task };
+        } catch (err: any) {
+          return { status: 'error', error: `Failed to write to steer pipe: ${err?.message}`, job_id: input.job_id };
+        }
+      } finally {
+        await supervisor.dispose();
       }
     },
   };

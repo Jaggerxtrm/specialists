@@ -19,12 +19,14 @@ export async function run(): Promise<void> {
 
   const jobsDir = resolveJobsDir();
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-  const status = supervisor.readStatus(jobId);
 
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
+  try {
+    const status = supervisor.readStatus(jobId);
+
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
+    }
 
   if (status.status !== 'waiting') {
     process.stderr.write(`${red('Error:')} Job ${jobId} is not in waiting state (status: ${status.status}).\n`);
@@ -37,13 +39,16 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
-  try {
-    const payload = JSON.stringify({ type: 'resume', task }) + '\n';
-    writeFileSync(status.fifo_path, payload, { flag: 'a' });
-    process.stdout.write(`${green('✓')} Resume sent to job ${jobId}\n`);
-    process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.\n`);
-  } catch (err: any) {
-    process.stderr.write(`${red('Error:')} Failed to write to steer pipe: ${err?.message}\n`);
-    process.exit(1);
+    try {
+      const payload = JSON.stringify({ type: 'resume', task }) + '\n';
+      writeFileSync(status.fifo_path, payload, { flag: 'a' });
+      process.stdout.write(`${green('✓')} Resume sent to job ${jobId}\n`);
+      process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.\n`);
+    } catch (err: any) {
+      process.stderr.write(`${red('Error:')} Failed to write to steer pipe: ${err?.message}\n`);
+      process.exit(1);
+    }
+  } finally {
+    await supervisor.dispose();
   }
 }
