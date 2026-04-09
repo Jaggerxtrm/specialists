@@ -18,12 +18,14 @@ export async function run(): Promise<void> {
 
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-  const status = supervisor.readStatus(jobId);
 
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
+  try {
+    const status = supervisor.readStatus(jobId);
+
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
+    }
 
   if (status.status === 'done' || status.status === 'error') {
     process.stderr.write(`${dim(`Job ${jobId} is already ${status.status}.`)}\n`);
@@ -37,25 +39,28 @@ export async function run(): Promise<void> {
 
   const tmuxSession = status.tmux_session;
 
-  try {
-    process.kill(status.pid, 'SIGTERM');
-    process.stdout.write(`${green('✓')} Sent SIGTERM to PID ${status.pid} (job ${jobId})\n`);
-
-    if (tmuxSession) {
-      killTmuxSession(tmuxSession);
-      process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
-    }
-  } catch (err: any) {
-    if (err.code === 'ESRCH') {
-      process.stderr.write(`${red(`Process ${status.pid} not found.`)} Job may have already completed.\n`);
+    try {
+      process.kill(status.pid, 'SIGTERM');
+      process.stdout.write(`${green('✓')} Sent SIGTERM to PID ${status.pid} (job ${jobId})\n`);
 
       if (tmuxSession) {
         killTmuxSession(tmuxSession);
         process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
       }
-    } else {
-      process.stderr.write(`${red('Error:')} ${err.message}\n`);
-      process.exit(1);
+    } catch (err: any) {
+      if (err.code === 'ESRCH') {
+        process.stderr.write(`${red(`Process ${status.pid} not found.`)} Job may have already completed.\n`);
+
+        if (tmuxSession) {
+          killTmuxSession(tmuxSession);
+          process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
+        }
+      } else {
+        process.stderr.write(`${red('Error:')} ${err.message}\n`);
+        process.exit(1);
+      }
     }
+  } finally {
+    await supervisor.dispose();
   }
 }

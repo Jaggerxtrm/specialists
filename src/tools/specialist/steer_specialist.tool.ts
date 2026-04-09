@@ -29,11 +29,13 @@ export function createSteerSpecialistTool(registry: JobRegistry) {
       // Fall back to FIFO for Supervisor-managed CLI-started jobs (specialists run)
       const jobsDir = resolveJobsDir();
       const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-      const status = supervisor.readStatus(input.job_id);
 
-      if (!status) {
-        return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
-      }
+      try {
+        const status = supervisor.readStatus(input.job_id);
+
+        if (!status) {
+          return { status: 'error', error: `Job not found: ${input.job_id}`, job_id: input.job_id };
+        }
       if (status.status === 'done' || status.status === 'error') {
         return { status: 'error', error: `Job is already ${status.status}`, job_id: input.job_id };
       }
@@ -41,12 +43,15 @@ export function createSteerSpecialistTool(registry: JobRegistry) {
         return { status: 'error', error: 'Job has no steer pipe (may have been started without FIFO support)', job_id: input.job_id };
       }
 
-      try {
-        const payload = JSON.stringify({ type: 'steer', message: input.message }) + '\n';
-        writeFileSync(status.fifo_path, payload, { flag: 'a' });
-        return { status: 'steered', job_id: input.job_id, message: input.message };
-      } catch (err: any) {
-        return { status: 'error', error: `Failed to write to steer pipe: ${err?.message}`, job_id: input.job_id };
+        try {
+          const payload = JSON.stringify({ type: 'steer', message: input.message }) + '\n';
+          writeFileSync(status.fifo_path, payload, { flag: 'a' });
+          return { status: 'steered', job_id: input.job_id, message: input.message };
+        } catch (err: any) {
+          return { status: 'error', error: `Failed to write to steer pipe: ${err?.message}`, job_id: input.job_id };
+        }
+      } finally {
+        await supervisor.dispose();
       }
     },
   };

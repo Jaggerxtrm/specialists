@@ -19,12 +19,14 @@ export async function run(): Promise<void> {
 
   const jobsDir = resolveJobsDir();
   const supervisor = new Supervisor({ runner: null as any, runOptions: null as any, jobsDir });
-  const status = supervisor.readStatus(jobId);
 
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
+  try {
+    const status = supervisor.readStatus(jobId);
+
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
+    }
 
   if (status.status === 'done' || status.status === 'error') {
     process.stderr.write(`Job ${jobId} is already ${status.status}.\n`);
@@ -37,12 +39,15 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
-  try {
-    const payload = JSON.stringify({ type: 'steer', message }) + '\n';
-    writeFileSync(status.fifo_path, payload, { flag: 'a' });
-    process.stdout.write(`${green('✓')} Steer message sent to job ${jobId}\n`);
-  } catch (err: any) {
-    process.stderr.write(`${red('Error:')} Failed to write to steer pipe: ${err?.message}\n`);
-    process.exit(1);
+    try {
+      const payload = JSON.stringify({ type: 'steer', message }) + '\n';
+      writeFileSync(status.fifo_path, payload, { flag: 'a' });
+      process.stdout.write(`${green('✓')} Steer message sent to job ${jobId}\n`);
+    } catch (err: any) {
+      process.stderr.write(`${red('Error:')} Failed to write to steer pipe: ${err?.message}\n`);
+      process.exit(1);
+    }
+  } finally {
+    await supervisor.dispose();
   }
 }
