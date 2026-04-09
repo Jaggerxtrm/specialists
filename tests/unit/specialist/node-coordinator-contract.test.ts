@@ -13,8 +13,12 @@ describe('node coordinator contract', () => {
     expect(actionTypes).toEqual(['resume', 'steer', 'stop']);
 
     expect(props.memory_patch.type).toBe('array');
-    expect(props.memory_patch.items.required).toEqual(['entry_type', 'summary']);
+    expect(props.memory_patch.items.required).toEqual(['entry_type', 'summary', 'source_member_id', 'confidence']);
     expect(props.memory_patch.items.properties.entry_type.enum.sort()).toEqual(['decision', 'fact', 'question']);
+
+    const scripts = config.specialist.skills?.scripts ?? [];
+    expect(Array.isArray(scripts)).toBe(true);
+    expect(scripts).toEqual([]);
   });
 
   it('runtime accepts payload shape defined by coordinator config', async () => {
@@ -38,13 +42,15 @@ describe('node coordinator contract', () => {
       sqliteClient,
     });
 
+    (supervisor as any).status = 'running';
+
     const resumeJob = vi.fn();
     (supervisor as any).memberControllers.set('member-a', { resumeJob, steerJob: vi.fn(), stopJob: vi.fn() });
     (supervisor as any).members.set('member-a', {
       memberId: 'member-a',
       jobId: 'job-1',
       specialist: 'explorer',
-      status: 'running',
+      status: 'waiting',
       enabled: true,
       lastSeenOutputHash: null,
       generation: 0,
@@ -53,7 +59,7 @@ describe('node coordinator contract', () => {
     await (supervisor as any).handleCoordinatorOutput(
       JSON.stringify({
         summary: 'next step',
-        memory_patch: [{ entry_type: 'fact', summary: 'fact-a' }],
+        memory_patch: [{ entry_type: 'fact', summary: 'fact-a', source_member_id: 'member-a', confidence: 0.7 }],
         actions: [{ type: 'resume', memberId: 'member-a', task: 'continue' }],
         validation: {},
       }),

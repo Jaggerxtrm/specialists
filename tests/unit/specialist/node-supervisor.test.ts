@@ -13,6 +13,7 @@ const jobControlInstances: Array<{
   stopJob: ReturnType<typeof vi.fn>;
   readStatus: ReturnType<typeof vi.fn>;
   readResult: ReturnType<typeof vi.fn>;
+  runOptions: Record<string, unknown>;
 }> = [];
 
 vi.mock('../../../src/specialist/job-control.js', () => {
@@ -24,8 +25,10 @@ vi.mock('../../../src/specialist/job-control.js', () => {
     stopJob = vi.fn();
     readStatus = vi.fn();
     readResult = vi.fn().mockReturnValue(null);
+    runOptions: Record<string, unknown>;
 
-    constructor() {
+    constructor(args?: { runOptions?: Record<string, unknown> }) {
+      this.runOptions = args?.runOptions ?? {};
       jobControlInstances.push(this);
     }
   }
@@ -55,7 +58,16 @@ const baseOptions = {
     { memberId: 'member-b', specialist: 'reviewer', role: 'reviewer' },
   ],
   sqliteClient: mockSqliteClient as ObservabilitySqliteClient,
-  runOptions: { name: 'node-coordinator', prompt: 'start', keepAlive: true },
+  runOptions: {
+    name: 'node-coordinator',
+    prompt: 'start',
+    keepAlive: true,
+    contextDepth: 2,
+    variables: {
+      bead_context: '# Task: Real bead context\nInvestigate startup semantics',
+      bead_id: 'unitAI-3f7b.2',
+    },
+  },
   runner: { run: vi.fn() },
 };
 
@@ -94,6 +106,24 @@ describe('NodeSupervisor orchestration', () => {
       expect(members.every((member: any) => typeof member.jobId === 'string' || member.jobId === null)).toBe(true);
       expect(mockSqliteClient.upsertNodeMember).toHaveBeenCalled();
     });
+
+    it('spawns members with idle bootstrap prompt and forwards contextDepth', async () => {
+      const mod = await loadNodeSupervisorModule();
+      if (!mod) return;
+
+      const { NodeSupervisor } = mod;
+      const supervisor = new NodeSupervisor(baseOptions as any);
+
+      await (supervisor as any).spawnMembers();
+
+      expect(jobControlInstances).toHaveLength(2);
+      for (const instance of jobControlInstances) {
+        expect(instance.runOptions.contextDepth).toBe(2);
+        expect(typeof instance.runOptions.prompt).toBe('string');
+        expect(String(instance.runOptions.prompt)).toContain('Bootstrap state: idle_wait.');
+        expect(String(instance.runOptions.prompt)).toContain('Do not start investigation or produce substantive work until explicitly resumed.');
+      }
+    });
   });
 
   describe('poll loop state change detection', () => {
@@ -107,8 +137,8 @@ describe('NodeSupervisor orchestration', () => {
 
       // readNodeMembers must return rows with member_id + job_id for poll to work
       const memberRows = [
-        { member_id: 'member-a', job_id: 'job-1' },
-        { member_id: 'member-b', job_id: 'job-2' },
+        { member_id: 'member-a', job_id: 'job-1', generation: 1 },
+        { member_id: 'member-b', job_id: 'job-2', generation: 1 },
       ];
       mockSqliteClient.readNodeMembers.mockReturnValue(memberRows);
 
@@ -129,6 +159,38 @@ describe('NodeSupervisor orchestration', () => {
       mockSqliteClient.readStatus.mockReturnValueOnce({ status: 'running' });
       const third = await (supervisor as any).pollMemberStatuses();
       expect(third.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('coordinator bootstrap context', () => {
+    it('builds first-turn context with bead goal and member registry', async () => {
+      const mod = await loadNodeSupervisorModule();
+      if (!mod) return;
+
+      const { NodeSupervisor } = mod;
+      const supervisor = new NodeSupervisor(baseOptions as any);
+      await (supervisor as any).spawnMembers();
+      await (supervisor as any).spawnCoordinator('Coordinate the node run.');
+
+      const coordinatorController = jobControlInstances[jobControlInstances.length - 1];
+      const prompt = String(coordinatorController.runOptions.prompt ?? '');
+
+      expect(prompt).toContain('node_bootstrap_context:');
+      expect(prompt).toContain('"bead_goal": "# Task: Real bead context"');
+      expect(prompt).toContain('"member_registry"');
+      expect(prompt).toContain('"first_routing_instruction"');
+
+      expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
+        'node-1',
+        expect.any(Number),
+        'coordinator_first_turn_context_built',
+        expect.objectContaining({
+          node_id: 'node-1',
+          source_bead_id: null,
+          member_count: 2,
+          bead_goal: '# Task: Real bead context',
+        }),
+      );
     });
   });
 
@@ -252,7 +314,7 @@ describe('NodeSupervisor orchestration', () => {
       await (supervisor as any).bootstrap();
 
       expect((supervisor as any).dispatchQueue).toHaveLength(1);
-      expect((supervisor as any).resumePending).toBe(true);
+      expect((supervisor as any).resumePending).toBe(false);
       expect(mockSqliteClient.appendNodeEvent).toHaveBeenCalledWith(
         'node-1',
         expect.any(Number),
