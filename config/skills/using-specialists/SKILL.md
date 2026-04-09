@@ -9,8 +9,8 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.3
-synced_at: 36cfce04
+version: 4.4
+synced_at: a1e9f935
 ---
 
 # Specialists Usage
@@ -37,7 +37,7 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 4. **For tracked work, the bead is the prompt.** The bead description, notes, and parent context are the instruction surface.
 5. **`--bead` and `--prompt` are mutually exclusive.** If you need to refine instructions, update the bead notes; do not add `--prompt`.
 6. **Wave sequencing is strict.** Never start wave N+1 before wave N is complete AND merged. Within-wave parallelism is fine only for independent jobs.
-7. **Merge between waves is mandatory.** Executor worktree branches must be merged into master before the next wave starts. See "Merge Protocol" below.
+7. **Merge between waves is mandatory.** Executor worktree branches must be merged into master before the next wave starts. Use `sp merge <epic-id>` or `sp merge <chain-root-bead>` — never manual git merge. See "Merge Protocol" below.
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
 9. **Executor does not run tests.** Executor runs lint + tsc only. Tests are the reviewer's and test-runner's responsibility in the chained pipeline.
 
@@ -146,7 +146,8 @@ specialists run explorer --bead abc-exp --context-depth 2 --background
 # Explorer output auto-appends to abc-exp notes (READ_ONLY behavior)
 specialists result e1f2g3
 
-# 4. [MERGE] Merge any worktree branches from Wave 1 into master (see Merge Protocol)
+# 4. [MERGE] Merge any worktree branches from Wave 1 into master
+# READ_ONLY waves have no worktrees to merge
 
 # 5. Wave 2 — Executor
 specialists run executor --worktree --bead abc-impl --context-depth 2 --background
@@ -154,7 +155,8 @@ specialists run executor --worktree --bead abc-impl --context-depth 2 --backgrou
 # Executor sees: abc-impl + abc-exp (with explorer notes) + abc via context-depth
 # Executor self-appends output to abc-impl notes, closes abc-impl on completion
 
-# 6. [MERGE] Merge abc-impl worktree branch into master
+# 6. [MERGE] Merge impl worktree branch into master
+sp merge abc-impl --rebuild
 
 # 7. Wave 3 — Reviewer (no separate bead — uses --job + --prompt to enter executor's worktree)
 specialists run reviewer --job a1b2c3 --keep-alive --background --prompt "Review the token refresh fix"
@@ -253,6 +255,22 @@ Use when the caller explicitly accepts concurrent write risk (e.g., target job k
 | Force entry to blocked worktree | `--bead <fix-bead> --job <exec-job-id> --force-job` |
 | Explorer (READ_ONLY) | Neither — explorers don't need worktrees |
 | Overthinker, planner, debugger | Neither — read-only and interactive specialists |
+
+---
+
+### Worktree write-boundary enforcement
+
+Specialists running in worktrees are **prevented from writing outside their boundary**. The session generates a Pi extension that hooks `tool_call` events and blocks `edit`/`write`/`multiEdit`/`notebookEdit` tools with absolute paths outside the worktree.
+
+**What's blocked:**
+- `edit` with `/absolute/path/outside/worktree/file.ts`
+- `write` with `/absolute/path/outside/worktree/new-file.ts`
+
+**What's allowed:**
+- Relative paths (`src/file.ts`) — resolve within worktree cwd
+- Absolute paths inside the worktree boundary
+
+This enforcement is automatic when `--worktree` is used. No configuration required. If the extension fails to generate (tmpdir permissions), a warning is logged and the session proceeds without protection.
 
 ---
 
@@ -375,10 +393,9 @@ bd close unitAI-task --reason "Reviewer PASS. All findings addressed."
 
 ---
 
-## Merge Protocol — Orchestrator Responsibility
+## Merge Protocol — `sp merge`
 
-The orchestrator owns merge timing. This is not optional — failing to merge at the right
-time means downstream specialists branch from stale master and miss upstream code.
+The orchestrator owns merge timing, but **no longer performs manual git merges**. Use `sp merge <target>` instead.
 
 ### When to merge vs when NOT to merge
 
@@ -391,7 +408,7 @@ executor --worktree --bead impl     ← creates worktree
 reviewer --job <exec-job>           ← enters same worktree (no merge)
 executor --bead fix --job <exec-job> ← re-enters same worktree (no merge)
 reviewer --job <exec-job>           ← re-enters same worktree (no merge)
-PASS → NOW merge the worktree branch into master
+PASS → NOW run sp merge <impl-bead>
 ```
 
 **DO merge between waves.** When the next wave's beads depend on this wave's code existing
@@ -399,60 +416,60 @@ on master, you must merge first. The dep graph tells you: beads connected by `--
 one chain (same worktree, no merge). Beads connected by `bd dep add` across different
 file scopes are separate waves (different worktrees, merge between them).
 
+### `sp merge <target>` — the canonical path
+
+`sp merge` handles the full merge workflow:
+
+```bash
+# Merge a single chain (one executor's worktree branch)
+sp merge unitAI-impl-bead
+
+# Merge all chains under an epic (topological order, tsc gate after each)
+sp merge unitAI-epic
+
+# With rebuild after all merges complete
+sp merge unitAI-epic --rebuild
+```
+
+**What `sp merge` does:**
+
+1. Validates all target jobs are terminal (`done`/`error`/`cancelled`)
+2. Resolves chain-root jobs with worktree metadata
+3. Topologically sorts by bead dependencies (FIFO)
+4. For each branch: `git merge <branch> --no-ff --no-edit`
+5. Runs `bunx tsc --noEmit` after each merge (stops on type errors)
+6. Optionally rebuilds with `--rebuild` flag
+
+**Why use `sp merge` instead of manual git:**
+
+- Guarantees correct dependency order (bead deps → merge order)
+- Catches type errors immediately after each merge
+- Refuses merge if any chain job is still running
+- Handles epic-level batch merge with one command
+
 ### Planning context upfront
 
 Before dispatching any wave, identify:
 - **Chains** — beads that share a worktree via `--job` (executor → reviewer → fix → re-review)
-- **Waves** — groups of independent chains that can run in parallel
+- **Waves** — groups of independent chains that can run in parallel ("Wave 1" / "Wave 2b" are orchestrator speech for dispatch batches)
 - **Merge points** — between waves, after all chains in the wave reach PASS
+- **Epics** — the top merge-gated identity (bead epic) that owns chains across multiple waves
 
 The dep graph encodes this. If bead B depends on bead A and they touch different files,
 they're separate waves with a merge point between them.
 
-### FIFO — dependency order
+### Conflict handling
 
-Merge in **dependency order** (first dep first), not completion order.
-Parallel beads (disjoint files) can merge in any order within their wave.
+If `sp merge` hits a conflict:
 
-```bash
-# After Wave N — all beads closed, all jobs terminal:
-
-# 1. Move to main checkout
-cd /path/to/main/repo
-
-# 2. Merge in dependency order
-git merge feature/bead-a-executor       # first dep in chain
-npm run lint && npx tsc --noEmit        # verify after each merge
-git merge feature/bead-b-executor       # second dep (parallel, disjoint files)
-npm run lint && npx tsc --noEmit
-
-# 3. Resolve conflicts if any
-#    Expected conflict: parallel executors creating the same utility file
-#    (e.g. job-root.ts created by two parallel beads)
-#    → Keep the version from the earlier dep, discard the duplicate
-#    → Re-run lint + tsc after resolution
-
-# 4. Rebuild dist if project uses a bundled output
-npm run build
-
-# 5. Start Wave N+1
-```
-
-**Why FIFO matters:**
-- Bead A blocks bead B → A's code must land in master before B's worktree branches from it
-- Merging B before A: broken imports, missing symbols, silent type errors
-- Parallel beads (disjoint files): order doesn't matter within the wave, but ALL must merge before the next wave
+1. Command fails with list of conflicting files
+2. Resolve conflicts manually in your editor
+3. Run `bunx tsc --noEmit` to verify
+4. Continue with next chain (or re-run `sp merge <epic>` to resume)
 
 **Common conflict pattern:** Parallel executors in the same wave may both create the same
 utility file (e.g. `job-root.ts`). This is expected — implementations should be identical.
 Keep one, delete the duplicate during conflict resolution.
-
-**File overlap conflict:** If two parallel executors modify the **same file** (e.g. both touch
-`init.ts`), their worktree branches will conflict on merge. Either sequence them as separate
-waves, or accept manual conflict resolution. When resolving: copy the incoming version from
-the worktree (`cat /path/to/.worktrees/.../file > main/file`), then re-apply missing changes
-from the other branch. **Always verify your cwd is the main repo** — shell state can drift
-into a worktree directory after merge operations.
 
 ---
 
@@ -707,9 +724,8 @@ specialists run executor --worktree --bead unitAI-impl --context-depth 2 --backg
 # -> Job started: job2  (worktree: .worktrees/unitAI-impl/unitAI-impl-executor)
 specialists result job2
 
-# [MERGE] Merge worktree branch into master (FIFO)
-git merge feature/unitAI-impl-executor
-npm run lint && npx tsc --noEmit && npm run build
+# [MERGE] Merge worktree branch into master (sp merge handles topological order + tsc gate)
+sp merge unitAI-impl --rebuild
 
 # Wave 3 — Reviewer (no bead, uses --job)
 specialists run reviewer --job job2 --keep-alive --background

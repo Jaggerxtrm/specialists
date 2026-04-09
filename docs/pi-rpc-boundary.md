@@ -1,7 +1,7 @@
 ---
 title: pi/rpc Boundary
 description: Canonical ownership boundary between pi/rpc protocol surfaces and Specialists runtime adaptation.
-synced_at: 36cfce04
+synced_at: a1e9f935
 ---
 
 # pi/rpc Boundary
@@ -73,6 +73,37 @@ The stall timeout mechanism is entirely Specialists-owned:
 - **Supervisor staleness**: Separate mechanism (running_silence_warn_ms, waiting_stale_ms) that emits timeline events but does not kill the session
 
 This distinction matters: pi/rpc provides the event stream, but Specialists determines when "no activity" becomes a timeout. The test-aware extension is a Specialists policy decision, not a protocol feature.
+
+---
+
+## 7) Specialists-owned Pi extensions
+
+Specialists can inject Pi extensions at session spawn time for policy enforcement. These extensions live in `$TMPDIR/specialists-pi-extensions/` and are passed to Pi via `-e <path>` arguments.
+
+**What's OK to inject:**
+
+- Pre-tool-call hooks (`pi.on('tool_call', ...)`) — for write-boundary enforcement, tool filtering, argument validation
+- Event listeners (`pi.on('message_update', ...)`, etc.) — for logging, metrics, custom event handling
+- Post-tool-call hooks — for result filtering, error handling wrappers
+
+**What's NOT OK:**
+
+- Pi protocol changes — extension cannot modify the command/event schema, add new RPC commands, or change wire-level semantics
+- Competing with Supervisor lifecycle — extension should not emit `run_complete` or alter job state
+- Cross-session state — extension is per-session, cannot persist state across Pi invocations
+
+The RPC boundary remains unchanged: Pi's command/response/event contract is identical whether or not extensions are injected. Extensions are a **policy layer**, not a protocol extension.
+
+**Example: worktree write-boundary enforcement**
+
+The primary use case is blocking write tools (`edit`, `write`, `multiEdit`, `notebookEdit`) from writing outside a declared worktree boundary. The extension:
+
+1. Hooks `tool_call` events
+2. Extracts `path`/`file_path` argument from tool input
+3. Validates against the boundary (via `WORKTREE_BOUNDARY` env var)
+4. Returns `{ block: true, reason: '...' }` for out-of-bounds paths
+
+This enforcement happens entirely inside the Pi process — the Specialists Supervisor does not need to intercept or validate tool calls itself.
 
 ---
 

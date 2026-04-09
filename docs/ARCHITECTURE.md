@@ -2,10 +2,10 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.4.0
-updated: 2026-04-09
-synced_at: 36cfce04
-description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, and worktree/bead ownership semantics.
+version: 2.5.0
+updated: 2026-04-10
+synced_at: a1e9f935
+description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
   - "src/specialist/worktree.ts"
@@ -13,6 +13,7 @@ source_of_truth_for:
   - "src/pi/session.ts"
   - "src/specialist/supervisor.ts"
   - "src/cli/ps.ts"
+  - "src/cli/merge.ts"
   - "pi/rpc/"
 domain:
   - architecture
@@ -264,15 +265,14 @@ Supervisor supports non-streaming keep-alive sessions via `onResumeReady` callba
 - `done` → terminal, session closed
 - `error` → terminal, session closed with error
 
-### Job lineage fields
+### Worktree write-boundary enforcement
 
-When `--job <id>` is passed at run time, Supervisor persists two lineage fields in `status.json` (and mirrors them to SQLite):
+Supervisor propagates `worktreeBoundary` to the Runner when a job has an active worktree:
 
 ```typescript
-interface SupervisorStatus {
-  reused_from_job_id?: string;      // the job whose workspace was borrowed via --job
-  worktree_owner_job_id?: string;   // the transitive root owner of the worktree
-}
+const runOptionsWithBoundary = runOptions.workingDirectory
+  ? { ...runOptions, worktreeBoundary: runOptions.workingDirectory }
+  : runOptions;
 ```
 
 The resolver walks the target job's `status.json`: if it already carries a `worktree_owner_job_id`, that value is inherited; otherwise the target job's own `id` becomes the owner. This keeps ownership consistent across arbitrarily deep reuse chains.
@@ -428,6 +428,17 @@ if (editCapable && !args.forceJob && BLOCKED_JOB_REUSE_STATUSES.has(targetJobSta
 
 READ_ONLY and LOW specialists bypass the guard entirely — they cannot corrupt files.
 
+### Job lineage fields
+
+When `--job <id>` is passed at run time, Supervisor persists two lineage fields in `status.json` (and mirrors them to SQLite):
+
+```typescript
+interface SupervisorStatus {
+  reused_from_job_id?: string;      // the job whose workspace was borrowed via --job
+  worktree_owner_job_id?: string;   // the transitive root owner of the worktree
+}
+```
+
 ### Bead ownership and lifecycle semantics
 
 Ownership comes from Runner + Supervisor behavior:
@@ -543,7 +554,71 @@ This keeps tests/tooling portable while enabling SQLite acceleration in Bun envi
 | `auto_retry` | `retry` (end) | — |
 | `agent_end`, `done`, `message_done` | **IGNORED** | Supervisor emits `run_complete` instead |
 
-## 7) How Session, Timeline, and Supervisor connect
+## 7) Pi session extensions for tool interception
+
+`PiAgentSession` can generate and inject Pi extensions at spawn time for policy enforcement. The primary use is **worktree write-boundary enforcement** — preventing specialists in isolated worktrees from writing outside their boundary.
+
+### Extension generation pattern
+
+When `worktreeBoundary` is provided in session options:
+
+1. `getWorktreeBoundaryExtensionPath(boundary)` generates a temporary extension file
+2. Extension lives in `$TMPDIR/specialists-pi-extensions/worktree-boundary-<hash>.mjs`
+3. Hash is derived from SHA256 of the resolved boundary path (first 16 chars)
+4. Extension is passed to Pi via `-e <path>` argument
+
+### Extension behavior
+
+The generated extension hooks `tool_call` events for write-side tools (`edit`, `write`, `multiEdit`, `notebookEdit`):
+
+```javascript
+export default function(pi) {
+  pi.on('tool_call', (event) => {
+    if (!WRITE_TOOLS.has(event.toolName)) return undefined;
+
+    const rawPath = extractPathFromInput(event.input);
+    if (!rawPath || !isAbsolute(rawPath)) return undefined;
+
+    if (isPathWithinBoundary(rawPath, worktreeBoundary)) return undefined;
+
+    return { block: true, reason: `Path '${rawPath}' is outside worktree boundary...` };  
+  });
+}
+```
+
+- **Relative paths**: always allowed (resolve within worktree cwd)
+- **Absolute paths inside boundary**: allowed
+- **Absolute paths outside boundary**: blocked with error message
+
+### Tmp-fs fallback behavior
+
+If the extension directory (`$TMPDIR/specialists-pi-extensions/`) cannot be created or the extension file cannot be written:
+
+1. Logs warning to stderr: `[session] Failed to write worktree boundary extension: <error>`
+2. Returns `null` from `getWorktreeBoundaryExtensionPath()`
+3. Session proceeds **without** the boundary extension (unprotected mode)
+4. Specialist can still write anywhere — relies on orchestrator vigilance
+
+This fail-soft behavior ensures sessions don't crash on tmpdir issues (e.g. read-only filesystem, permissions) but surfaces the degradation clearly via stderr.
+
+### Boundary propagation flow
+
+```
+Supervisor.run()
+  ↓ detects workingDirectory (worktree path)
+  ↓ adds worktreeBoundary: workingDirectory to runOptions
+Runner.startSession()
+  ↓ passes worktreeBoundary to PiSessionOptions
+PiAgentSession.start()
+  ↓ generates extension via getWorktreeBoundaryExtensionPath()
+  ↓ passes -e <ext-path> to Pi spawn args
+  ↓ sets WORKTREE_BOUNDARY env var for extension to read
+Pi extension (inside pi process)
+  ↓ hooks tool_call events
+  ↓ blocks write tools with out-of-bounds paths
+```
+
+## 8) How Session, Timeline, and Supervisor connect
 
 End-to-end flow:
 
@@ -557,7 +632,7 @@ End-to-end flow:
 
 Result: **Pi provides protocol events; Session adapts transport; Supervisor persists lifecycle truth.**
 
-## 8) Canonical references
+## 9) Canonical references
 
 | Component | Path | Responsibility |
 |-----------|------|----------------|
