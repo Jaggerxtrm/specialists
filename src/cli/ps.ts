@@ -44,6 +44,15 @@ interface WorktreeTree {
   children: JobNode[];
 }
 
+interface NodeTree {
+  node_id: string;
+  node_name: string;
+  status: string;
+  member_count: number;
+  newest_activity_ms: number;
+  members: JobNode[];
+}
+
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
 const BEAD_TITLE_CACHE = new Map<string, string>();
 const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
@@ -167,6 +176,7 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
   const groups = new Map<string, SupervisorStatus[]>();
 
   for (const job of jobs) {
+    if (job.node_id) continue;
     const ownerId = job.worktree_owner_job_id ?? job.id;
     if (!groups.has(ownerId)) groups.set(ownerId, []);
     groups.get(ownerId)!.push(job);
@@ -194,6 +204,70 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
   }
 
   return trees;
+}
+
+function resolveNodeRunMap(nodeIds: readonly string[]): Map<string, { node_name: string; status: string }> {
+  const nodeIdSet = new Set(nodeIds.filter((nodeId) => nodeId.length > 0));
+  if (nodeIdSet.size === 0) return new Map();
+
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) return new Map();
+
+  try {
+    const byId = new Map<string, { node_name: string; status: string }>();
+    const rows = sqliteClient.listNodeRuns();
+    for (const row of rows) {
+      if (!nodeIdSet.has(row.id)) continue;
+      byId.set(row.id, { node_name: row.node_name, status: row.status });
+    }
+    return byId;
+  } catch {
+    return new Map();
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+function groupByNode(jobs: SupervisorStatus[]): NodeTree[] {
+  const nodeGroups = new Map<string, SupervisorStatus[]>();
+  for (const job of jobs) {
+    if (!job.node_id) continue;
+    if (!nodeGroups.has(job.node_id)) nodeGroups.set(job.node_id, []);
+    nodeGroups.get(job.node_id)!.push(job);
+  }
+
+  const nodeInfoById = resolveNodeRunMap([...nodeGroups.keys()]);
+  const nodeTrees: NodeTree[] = [];
+
+  for (const [nodeId, nodeJobs] of nodeGroups.entries()) {
+    const representative = nodeJobs[0];
+    const nodeInfo = nodeInfoById.get(nodeId);
+
+    const members = nodeJobs
+      .map((job) => toJobNode(job))
+      .sort((a, b) => {
+        const urgencyDelta = STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status];
+        if (urgencyDelta !== 0) return urgencyDelta;
+        return b.started_at_ms - a.started_at_ms;
+      });
+
+    nodeTrees.push({
+      node_id: nodeId,
+      node_name: nodeInfo?.node_name ?? representative?.specialist ?? 'node',
+      status: nodeInfo?.status ?? representative?.status ?? 'unknown',
+      member_count: members.length,
+      newest_activity_ms: getTreeNewestStart(nodeJobs),
+      members,
+    });
+  }
+
+  nodeTrees.sort((a, b) => {
+    const timeDelta = b.newest_activity_ms - a.newest_activity_ms;
+    if (timeDelta !== 0) return timeDelta;
+    return a.node_id.localeCompare(b.node_id);
+  });
+
+  return nodeTrees;
 }
 
 function statusLabel(status: JobState): string {
@@ -362,11 +436,21 @@ function renderTreeNodes(
   }
 }
 
-function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boolean): void {
+function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean): void {
   const beadTitles = buildBeadTitleCache(jobs);
   const counter = { running: 0, waiting: 0 };
 
   console.log('');
+  for (const node of nodes) {
+    console.log(`${cyan('⬢')} ${node.node_id} · ${node.node_name} · ${statusLabel(node.status as JobState)} · ${node.member_count} members`);
+    for (const member of node.members) {
+      if (member.status === 'running') counter.running += 1;
+      if (member.status === 'waiting') counter.waiting += 1;
+      console.log(renderJobLine(member, beadTitles, '    ', ''));
+    }
+    console.log('');
+  }
+
   for (const tree of trees) {
     const branch = tree.branch ?? 'master';
     const beadId = tree.children[0]?.bead_id;
@@ -377,12 +461,12 @@ function renderHuman(jobs: SupervisorStatus[], trees: WorktreeTree[], all: boole
     console.log('');
   }
 
-  if (trees.length === 0) {
+  if (nodes.length === 0 && trees.length === 0) {
     console.log(dim('  no active jobs'));
     console.log('');
   }
 
-  console.log(dim(`${jobs.length} jobs · ${trees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting`));
+  console.log(dim(`${jobs.length} jobs · ${nodes.length} nodes · ${trees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting`));
 }
 
 function renderInspect(jobId: string): void {
@@ -435,12 +519,13 @@ function renderInspect(jobId: string): void {
   console.log(`\n  ${dim(inspectActions.join(' | '))}`);
 }
 
-function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, trees: WorktreeTree[], _all: boolean): void {
+function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, nodes: NodeTree[], trees: WorktreeTree[], _all: boolean): void {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: _all,
     counts: {
       jobs: jobs.length,
+      nodes: nodes.length,
       trees: trees.length,
     },
     flat: jobs.map((job) => ({
@@ -461,6 +546,7 @@ function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, trees:
       context_pct: job.context_pct,
       context_health: job.context_health,
     })),
+    nodes,
     trees,
   }, null, 2));
 }
@@ -472,14 +558,15 @@ function render(args: PsArgs): void {
     if (args.all) return true;
     return !job.is_dead;
   });
+  const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
 
   if (args.json) {
-    renderJson(visibleStatuses, trees, args.all);
+    renderJson(visibleStatuses, nodes, trees, args.all);
     return;
   }
 
-  renderHuman(visibleStatuses, trees, args.all);
+  renderHuman(visibleStatuses, nodes, trees, args.all);
 }
 
 async function follow(args: PsArgs): Promise<void> {
