@@ -18,6 +18,8 @@ interface NodeMemberConfig {
   specialist: string;
   model?: string;
   role?: string;
+  worktree?: string;
+  bootstrapTemplate?: string;
 }
 
 interface NodeConfig {
@@ -26,6 +28,10 @@ interface NodeConfig {
   members: NodeMemberConfig[];
   initialPrompt: string;
   memoryNamespace?: string;
+  defaultContextDepth: number;
+  completionStrategy: 'pr' | 'manual';
+  maxRetries?: number;
+  baseBranch: string;
 }
 
 interface ParsedNodeArgs {
@@ -36,7 +42,7 @@ interface ParsedNodeArgs {
   findingId?: string;
   toBead?: string;
   beadId?: string;
-  contextDepth: number;
+  contextDepth?: number;
   jsonMode: boolean;
 }
 
@@ -52,7 +58,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   let findingId: string | undefined;
   let toBead: string | undefined;
   let beadId: string | undefined;
-  let contextDepth = 1;
+  let contextDepth: number | undefined;
   let jsonMode = false;
 
   for (let i = 1; i < argv.length; i += 1) {
@@ -249,12 +255,35 @@ function parseNodeConfig(raw: string): NodeConfig {
     }
   }
 
+  const completionStrategyRaw = (parsed as any).completion_strategy ?? (parsed as any).completionStrategy;
+  const completionStrategy = completionStrategyRaw === 'manual' ? 'manual' : 'pr';
+  const defaultContextDepthRaw = (parsed as any).default_context_depth ?? (parsed as any).defaultContextDepth;
+  const defaultContextDepth = Number.isFinite(defaultContextDepthRaw)
+    ? Math.max(0, Number(defaultContextDepthRaw))
+    : 1;
+  const baseBranchRaw = (parsed as any).base_branch ?? (parsed as any).baseBranch;
+  const baseBranch = typeof baseBranchRaw === 'string' && baseBranchRaw.trim().length > 0
+    ? baseBranchRaw.trim()
+    : 'master';
+  const maxRetriesRaw = (parsed as any).max_retries ?? (parsed as any).maxRetries;
+  const maxRetries = Number.isFinite(maxRetriesRaw)
+    ? Math.max(0, Number(maxRetriesRaw))
+    : undefined;
+
   return {
     name: parsed.name,
     coordinator: parsed.coordinator,
-    members: parsed.members as NodeMemberConfig[],
+    members: (parsed.members as NodeMemberConfig[]).map((member) => ({
+      ...member,
+      worktree: typeof member.worktree === 'string' ? member.worktree : undefined,
+      bootstrapTemplate: typeof member.bootstrapTemplate === 'string' ? member.bootstrapTemplate : undefined,
+    })),
     initialPrompt: parsed.initialPrompt,
     memoryNamespace: parsed.memoryNamespace,
+    defaultContextDepth,
+    completionStrategy,
+    maxRetries,
+    baseBranch,
   };
 }
 
@@ -331,6 +360,7 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
     });
 
     const nodeId = `${config.name}-${randomUUID().slice(0, 8)}`;
+    const effectiveContextDepth = args.contextDepth ?? config.defaultContextDepth;
 
     const { NodeSupervisor } = await import('../specialist/node-supervisor.js');
 
@@ -342,11 +372,13 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
         throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
       }
 
-      const blockers = args.contextDepth > 0
-        ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth)
+      const blockers = effectiveContextDepth > 0
+        ? beadReader.getCompletedBlockers(args.beadId, effectiveContextDepth)
         : [];
       beadContext = buildBeadContext(bead, blockers);
     }
+
+    const availableSpecialists = (await loader.list()).map((specialist) => specialist.name);
 
     const supervisor = new NodeSupervisor({
       nodeId,
@@ -357,9 +389,15 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
       sourceBeadId: args.beadId,
       sqliteClient,
       runner,
+      availableSpecialists,
+      qualityGates: ['npm run lint', 'npx tsc --noEmit'],
+      nodeConfigSnapshot: config as unknown as Record<string, unknown>,
+      completionStrategy: config.completionStrategy,
+      maxRetries: config.maxRetries,
+      baseBranch: config.baseBranch,
       runOptions: {
         inputBeadId: args.beadId,
-        contextDepth: args.contextDepth,
+        contextDepth: effectiveContextDepth,
         variables: beadContext
           ? {
               bead_context: beadContext,

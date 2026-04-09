@@ -7,6 +7,9 @@ const ALL_STATUSES: ReadonlyArray<NodeRunStatus> = [
   'running',
   'waiting',
   'degraded',
+  'awaiting_merge',
+  'fixing_after_review',
+  'failed',
   'error',
   'done',
   'stopped',
@@ -15,9 +18,12 @@ const ALL_STATUSES: ReadonlyArray<NodeRunStatus> = [
 const VALID_TRANSITIONS: Readonly<Record<NodeRunStatus, ReadonlyArray<NodeRunStatus>>> = {
   created: ['starting', 'stopped'],
   starting: ['running', 'error', 'stopped'],
-  running: ['waiting', 'degraded', 'done', 'error', 'stopped'],
-  waiting: ['running', 'degraded', 'done', 'error', 'stopped'],
-  degraded: ['running', 'error', 'stopped'],
+  running: ['waiting', 'degraded', 'awaiting_merge', 'done', 'error', 'stopped', 'failed'],
+  waiting: ['running', 'degraded', 'awaiting_merge', 'done', 'error', 'stopped', 'failed'],
+  degraded: ['running', 'fixing_after_review', 'failed', 'error', 'stopped'],
+  awaiting_merge: ['done', 'fixing_after_review', 'failed', 'error', 'stopped'],
+  fixing_after_review: ['awaiting_merge', 'running', 'failed', 'error', 'stopped'],
+  failed: [],
   error: [],
   done: [],
   stopped: [],
@@ -105,7 +111,7 @@ describe('NodeSupervisor state machine', () => {
   });
 
   describe('terminal states', () => {
-    const TERMINAL_STATES: ReadonlyArray<NodeRunStatus> = ['error', 'done', 'stopped'];
+    const TERMINAL_STATES: ReadonlyArray<NodeRunStatus> = ['failed', 'error', 'done', 'stopped'];
 
     for (const terminalState of TERMINAL_STATES) {
       for (const to of ALL_STATUSES) {

@@ -20,6 +20,9 @@
   ],
   "initialPrompt": "You are coordinating a research node with an explorer, an overthinker, and a researcher. Wait for member updates. On start, resume explorer to gather codebase findings. When external docs or ecosystem patterns are needed, resume researcher for targeted lookup or discovery. When findings are ready, assign overthinker to analyze tradeoffs and synthesize insights. Maintain memory_patch entries (facts, questions, decisions) throughout.",
   "memoryNamespace": "research",
+  "completion_strategy": "pr",
+  "default_context_depth": 1,
+  "base_branch": "master",
   "triggers": {
     "on_start": "resume:explorer",
     "on_member_waiting": "resume:node-coordinator",

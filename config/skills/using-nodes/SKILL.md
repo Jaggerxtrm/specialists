@@ -2,9 +2,8 @@
 name: using-nodes
 description: >
   Use this skill for node-coordinator behavior. The coordinator is a READ_ONLY
-  JSON emitter that can only output memory patches and member actions
-  (resume/steer/stop).
-version: 1.0
+  JSON emitter that declares node phases/actions while NodeSupervisor executes side effects.
+version: 1.1
 ---
 
 # Using Nodes
@@ -13,72 +12,118 @@ version: 1.0
 
 - You are a **READ_ONLY JSON emitter**.
 - You do **not** run tools, files, git, bd commands, or specialist CLI commands.
-- You do **not** output prose, markdown, code fences, or commentary.
-- Your response must be **exactly one valid JSON object** matching the declared schema.
-- No comments, no extra top-level keys, no trailing text.
+- Output must be **exactly one valid JSON object** matching the declared schema.
+- Keep responses declarative: phase/member intent + action intent only.
 
-## Action semantics
+## Workflow guidance
 
-Only these actions are valid:
+1. Build explicit `phases` in execution order.
+2. Keep parallel work in a phase disjoint by mutating scope paths.
+3. Use `create_bead` only for discovered follow-up work.
+4. Use `complete_node` only when completion gates are represented in `gate_results`.
+5. For failing gates, either run a fix/re_review loop or set `force_draft_pr: true`.
 
-1. `resume`
-   - Purpose: send a new task prompt to a waiting member.
-   - Required fields: `type`, `memberId`, `task`.
-   - Precondition: target member status is `waiting`.
+<!-- node-contract:generated:start -->
+## Generated node contract reference
 
-2. `steer`
-   - Purpose: inject a mid-run correction to a member.
-   - Required fields: `type`, `memberId`, `message`.
-   - Precondition: target member status is `running` or `waiting`.
+### Phase kinds
+- `explore`: Discovery and evidence gathering.
+- `design`: Design options and decision framing.
+- `impl`: Code/config implementation and edits.
+- `review`: Structured quality or correctness review.
+- `fix`: Apply corrections for review findings.
+- `re_review`: Verification pass after fixes.
+- `custom`: Project-specific phase with explicit intent.
 
-3. `stop`
-   - Purpose: terminate a member no longer useful.
-   - Required fields: `type`, `memberId`.
-   - Precondition: target member is not terminal (`completed`/`error`/`stopped`).
+### Actions
+- `create_bead`
+  - `type`: Literal action discriminator.
+  - `title`: Bead title for created work item.
+  - `description`: Detailed bead description.
+  - `bead_type`: One of task|bug|feature|epic|chore|decision.
+  - `priority`: Integer priority 0..4.
+  - `parent_bead_id`: Optional parent bead link.
+  - `depends_on`: Optional dependency bead ids.
+- `complete_node`
+  - `type`: Literal action discriminator.
+  - `gate_results`: Quality gate statuses to attach to completion report.
+  - `report_payload_ref`: Reference to external report payload.
+  - `force_draft_pr`: Allow completion while gates fail by forcing draft PR intent.
 
-## How to read the resume payload
+### Completion strategies
+- `pr`
+- `manual`
 
-Use these sections to decide next actions:
-
-- `member_updates`: latest member reports, status transitions, and outputs.
-- `registry_snapshot`: full declared members and generation numbers.
-- `memory_patch_summary`: accumulated recent facts/questions/decisions.
-- `unresolved_decisions`: open questions that still block routing.
-- `action_ledger_summary`: recently completed/failed/superseded actions.
-- `state_digest`: totals (running/waiting/terminal/error) for quick health checks.
-
-## Decision tree templates
-
-1. Waiting member produced useful output
-   - Write memory fact(s) from that output.
-   - `resume` the next pipeline member with a concrete task that includes the output.
-
-2. Running member reports CRITICAL context
-   - Use `steer` to request a concise summary + pause.
-   - If clearly non-useful or harmful, use `stop`.
-
-3. Member in `error`
-   - Do not route new actions to that member.
-   - Mark node as degraded in `summary`/`validation.issues`.
-   - Write a memory fact capturing failure and impact.
-
-4. All members terminal
-   - Emit empty `actions` so the node can complete.
-
-## Memory patch protocol
-
-Each memory entry uses:
-
-- `entry_type`: `fact` | `question` | `decision`
-- `summary`: 1-3 sentences
-- `source_member_id`: REQUIRED
-- `confidence`: REQUIRED number in [0,1]
-  - Default: `0.7` for member-observed facts
-- `entry_id`: optional; include for dedupe/update semantics
-
-## JSON output rules
-
-- Raw JSON only. Never wrap in markdown fences.
-- Never emit prose outside the JSON object.
-- If no action is needed, emit:
-  - `{ "summary": "no-op", "memory_patch": [], "actions": [], "validation": { "ok": true } }`
+### State machine
+```json
+{
+  "states": [
+    "created",
+    "starting",
+    "running",
+    "waiting",
+    "degraded",
+    "awaiting_merge",
+    "fixing_after_review",
+    "failed",
+    "error",
+    "done",
+    "stopped"
+  ],
+  "transitions": {
+    "created": [
+      "starting",
+      "stopped"
+    ],
+    "starting": [
+      "running",
+      "error",
+      "stopped"
+    ],
+    "running": [
+      "waiting",
+      "degraded",
+      "awaiting_merge",
+      "done",
+      "error",
+      "stopped",
+      "failed"
+    ],
+    "waiting": [
+      "running",
+      "degraded",
+      "awaiting_merge",
+      "done",
+      "error",
+      "stopped",
+      "failed"
+    ],
+    "degraded": [
+      "running",
+      "fixing_after_review",
+      "failed",
+      "error",
+      "stopped"
+    ],
+    "awaiting_merge": [
+      "done",
+      "fixing_after_review",
+      "failed",
+      "error",
+      "stopped"
+    ],
+    "fixing_after_review": [
+      "awaiting_merge",
+      "running",
+      "failed",
+      "error",
+      "stopped"
+    ],
+    "failed": [],
+    "error": [],
+    "done": [],
+    "stopped": []
+  }
+}
+```
+<!-- node-contract:generated:end -->

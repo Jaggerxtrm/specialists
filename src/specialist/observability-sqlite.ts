@@ -442,7 +442,7 @@ function migrateToV6(db: BunDb): void {
   `);
 }
 
-export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
+export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'awaiting_merge' | 'fixing_after_review' | 'failed' | 'error' | 'done' | 'stopped';
 
 export type NodeEventType =
   | 'node_created'
@@ -478,7 +478,11 @@ export type NodeEventType =
   | 'node_waiting'
   | 'node_done'
   | 'node_error'
-  | 'node_stopped';
+  | 'node_stopped'
+  | 'phase_started'
+  | 'phase_completed'
+  | 'pr_created'
+  | 'pr_updated';
 
 export interface NodeRunRow {
   id: string;

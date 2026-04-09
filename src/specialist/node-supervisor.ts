@@ -1,10 +1,20 @@
 import { createHash } from 'node:crypto';
-import * as z from 'zod';
 import { spawnSync } from 'node:child_process';
 import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
 import { stripJsonFences } from './json-output.js';
+import {
+  coordinatorOutputSchema,
+  renderForFirstTurnContext,
+  renderForResumePayload,
+  VALID_STATE_TRANSITIONS,
+  type CoordinatorOutputContract,
+  type NodeCompletionStrategy,
+  type NodeState,
+  NODE_BASE_BRANCH_DEFAULT,
+  NODE_SUPERVISOR_MAX_RETRIES_DEFAULT,
+} from './node-contract.js';
 
 const BASE_POLL_INTERVAL_MS = 5_000;
 const MIN_POLL_INTERVAL_MS = 1_000;
@@ -16,22 +26,13 @@ const MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2;
 const MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE = 1;
 const NO_PROGRESS_WATCHDOG_MS = 120_000;
 
-const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = {
-  created: ['starting', 'stopped'],
-  starting: ['running', 'error', 'stopped'],
-  running: ['waiting', 'degraded', 'done', 'error', 'stopped'],
-  waiting: ['running', 'degraded', 'done', 'error', 'stopped'],
-  degraded: ['running', 'done', 'error', 'stopped'],
-  error: [],
-  done: [],
-  stopped: [],
-};
+const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = VALID_STATE_TRANSITIONS;
 
-const TERMINAL_NODE_STATUSES: ReadonlySet<NodeRunStatus> = new Set(['error', 'done', 'stopped']);
+const TERMINAL_NODE_STATUSES: ReadonlySet<NodeRunStatus> = new Set(['error', 'done', 'stopped', 'failed', 'awaiting_merge']);
 const TERMINAL_MEMBER_STATUSES: ReadonlySet<string> = new Set(['done', 'error', 'stopped']);
 const TERMINAL_JOB_STATUSES: ReadonlySet<string> = new Set(['done', 'error', 'stopped']);
 
-export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'error' | 'done' | 'stopped';
+export type NodeRunStatus = NodeState;
 
 export interface NodeMemberEntry {
   memberId: string;
@@ -49,13 +50,19 @@ export interface NodeSupervisorOptions {
   nodeId: string;
   nodeName: string;
   coordinatorSpecialist: string;
-  members: Array<{ memberId: string; specialist: string; model?: string; role?: string }>;
+  members: Array<{ memberId: string; specialist: string; model?: string; role?: string; worktree?: string }>;
   memoryNamespace?: string;
   sourceBeadId?: string;
   sqliteClient: ObservabilitySqliteClient;
   jobsDir?: string;
   runner?: SpecialistRunner;
   runOptions?: Omit<RunOptions, 'name' | 'prompt'>;
+  availableSpecialists?: string[];
+  qualityGates?: string[];
+  nodeConfigSnapshot?: Record<string, unknown>;
+  completionStrategy?: NodeCompletionStrategy;
+  maxRetries?: number;
+  baseBranch?: string;
 }
 
 export interface MemberStateChange {
@@ -91,49 +98,7 @@ export interface NodeRunResult {
   members: NodeMemberEntry[];
 }
 
-const coordinatorActionSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('resume'),
-    memberId: z.string().min(1),
-    task: z.string().min(1),
-    dependsOnActionId: z.string().min(1).optional(),
-  }),
-  z.object({
-    type: z.literal('steer'),
-    memberId: z.string().min(1),
-    message: z.string().min(1),
-    dependsOnActionId: z.string().min(1).optional(),
-  }),
-  z.object({
-    type: z.literal('stop'),
-    memberId: z.string().min(1),
-    dependsOnActionId: z.string().min(1).optional(),
-  }),
-]);
 
-const coordinatorMemoryPatchEntrySchema = z.object({
-  entry_type: z.enum(['fact', 'question', 'decision']),
-  entry_id: z.string().min(1).optional(),
-  summary: z.string().min(1),
-  source_member_id: z.string().min(1),
-  confidence: z.number().min(0).max(1),
-  provenance: z.record(z.string(), z.unknown()).optional(),
-});
-
-const coordinatorOutputSchema = z.object({
-  summary: z.string().min(1),
-  memory_patch: z.array(coordinatorMemoryPatchEntrySchema).default([]),
-  actions: z.array(coordinatorActionSchema).default([]),
-  validation: z
-    .object({
-      ok: z.boolean().optional(),
-      issues: z.array(z.string()).optional(),
-      notes: z.string().optional(),
-    })
-    .passthrough(),
-});
-
-type CoordinatorOutputContract = z.infer<typeof coordinatorOutputSchema>;
 
 function hashOutput(output: string | null, salt?: string): string | null {
   if (!output) return null;
@@ -625,20 +590,23 @@ export class NodeSupervisor {
       generation: member.generation,
       status: member.status,
       enabled: member.enabled,
+      worktree: this.opts.members.find((candidate) => candidate.memberId === member.memberId)?.worktree ?? null,
     }));
 
-    return [
-      'node_bootstrap_context:',
-      JSON.stringify({
-        node_id: this.opts.nodeId,
-        node_name: this.opts.nodeName,
-        source_bead_id: this.opts.sourceBeadId ?? null,
-        bead_goal: this.getBeadGoalSummary(),
-        member_registry: memberRegistry,
-        first_routing_instruction: 'Choose exactly one member to resume first with a concrete task. Keep all other members idle.',
-        coordinator_goal: initialPrompt,
-      }, null, 2),
-    ].join('\n');
+    return renderForFirstTurnContext({
+      nodeId: this.opts.nodeId,
+      nodeName: this.opts.nodeName,
+      sourceBeadId: this.opts.sourceBeadId ?? null,
+      beadGoal: this.getBeadGoalSummary(),
+      memberRegistry,
+      availableSpecialists: this.opts.availableSpecialists ?? [],
+      qualityGates: this.opts.qualityGates ?? ['npm run lint', 'npx tsc --noEmit'],
+      nodeConfigSnapshot: this.opts.nodeConfigSnapshot ?? {},
+      completionStrategy: this.opts.completionStrategy ?? 'pr',
+      maxRetries: this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT,
+      baseBranch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
+      coordinatorGoal: initialPrompt,
+    });
   }
 
   private async spawnMembers(): Promise<void> {
@@ -923,18 +891,19 @@ export class NodeSupervisor {
         created_at_ms: entry.created_at_ms ?? null,
       }));
 
-    return [
-      'node_resume_payload:',
-      JSON.stringify({
-        node_id: this.opts.nodeId,
-        member_updates: memberUpdates,
-        registry_snapshot: registrySnapshot,
-        memory_patch_summary: memoryPatchSummary,
-        state_digest: this.buildStateDigest(memoryEntries),
-        unresolved_decisions: unresolvedDecisions,
-        action_ledger_summary: this.buildActionLedgerSummary(),
-      }, null, 2),
-    ].join('\n');
+    return renderForResumePayload({
+      nodeId: this.opts.nodeId,
+      stateMachine: {
+        state: this.status,
+        allowed_next: VALID_TRANSITIONS[this.status],
+      },
+      memberUpdates,
+      registrySnapshot,
+      memoryPatchSummary,
+      stateDigest: this.buildStateDigest(memoryEntries),
+      unresolvedDecisions,
+      actionLedgerSummary: this.buildActionLedgerSummary(),
+    });
   }
 
   private getActionKey(action: NodeDispatchAction): string {
@@ -1137,11 +1106,11 @@ export class NodeSupervisor {
       `failure_class=${args.failureClass}`,
       `details=${args.details}`,
       'Return ONLY strict JSON matching this contract:',
-      '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
+      '{"summary": string, "node_status": "in_progress|complete|blocked|aborted", "phases": array, "memory_patch": array, "actions": array, "validation": object}',
       'actions allowed:',
-      '- {"type":"resume","memberId":string,"task":string,"dependsOnActionId"?:string}',
-      '- {"type":"steer","memberId":string,"message":string,"dependsOnActionId"?:string}',
-      '- {"type":"stop","memberId":string,"dependsOnActionId"?:string}',
+      '- {"type":"create_bead","title":string,"description":string,"bead_type":"task|bug|feature|epic|chore|decision","priority":0..4,"parent_bead_id"?:string,"depends_on"?:string[]}',
+      '- {"type":"complete_node","gate_results":[{"gate":string,"status":"pass|fail|skip","details"?:string}],"report_payload_ref":string,"force_draft_pr"?:boolean}',
+      'spawn_member declarations are encoded in phases[].members entries.',
       'memory_patch entries:',
       '- {"entry_type":"fact|question|decision","summary":string,"source_member_id":string,"confidence":number,"entry_id"?:string,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`,
@@ -1156,48 +1125,68 @@ export class NodeSupervisor {
     return toContextHealth(contextPct) !== 'CRITICAL';
   }
 
-  private validateActionRuntimeState(actions: NodeDispatchAction[]): string | null {
-    let degradedRecoveryResumeCount = 0;
+  private hasOverlappingScope(left: string, right: string): boolean {
+    return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+  }
 
-    for (const action of actions) {
-      const member = this.members.get(action.memberId);
-      if (!member) {
-        return `Unknown memberId '${action.memberId}'.`;
-      }
+  private validateCoordinatorContractRuntime(output: CoordinatorOutputContract): string | null {
+    const availableSpecialists = new Set(this.opts.availableSpecialists ?? []);
+    const maxRetries = this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT;
+    const retryCounts = new Map<string, number>();
 
-      if (!member.enabled) {
-        return `Member '${action.memberId}' is disabled.`;
-      }
+    for (const phase of output.phases) {
+      const mutatingScopes = phase.members
+        .filter((member) => member.scope.mutates)
+        .flatMap((member) => member.scope.paths.map((path) => ({ member_key: member.member_key, path })));
 
-      if (!member.jobId) {
-        return `Member '${action.memberId}' has no active jobId.`;
-      }
-
-      if (!this.memberControllers.has(action.memberId)) {
-        return `Member '${action.memberId}' has no active controller.`;
-      }
-
-      if (action.type === 'resume' && member.status !== 'waiting') {
-        return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
-      }
-
-      if (action.type === 'resume' && !this.isRecoveryResumeAllowed(member)) {
-        return `Member '${action.memberId}' is not eligible for degraded recovery resume.`;
-      }
-
-      if (action.type === 'resume' && this.status === 'degraded') {
-        degradedRecoveryResumeCount += 1;
-        if (degradedRecoveryResumeCount > MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE) {
-          return `Degraded mode permits at most ${MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE} recovery resume action per coordinator cycle.`;
+      for (let index = 0; index < mutatingScopes.length; index += 1) {
+        const current = mutatingScopes[index];
+        for (let compareIndex = index + 1; compareIndex < mutatingScopes.length; compareIndex += 1) {
+          const candidate = mutatingScopes[compareIndex];
+          if (!this.hasOverlappingScope(current.path, candidate.path)) continue;
+          return `Phase '${phase.phase_id}' contains overlapping mutating scopes ('${current.member_key}' <-> '${candidate.member_key}'). Split work into separate phases or disjoint paths.`;
         }
       }
 
-      if (action.type === 'steer' && member.status !== 'running' && member.status !== 'waiting') {
-        return `Member '${action.memberId}' must be running/waiting before steer (current=${member.status}).`;
-      }
+      for (const memberSpawn of phase.members) {
+        if (memberSpawn.role === this.opts.coordinatorSpecialist || memberSpawn.role.includes('node-coordinator')) {
+          return `Nested nodes are forbidden. member_key='${memberSpawn.member_key}' role='${memberSpawn.role}' is not allowed.`;
+        }
 
-      if (action.type === 'stop' && TERMINAL_MEMBER_STATUSES.has(member.status)) {
-        return `Member '${action.memberId}' is already terminal (current=${member.status}).`;
+        if (memberSpawn.bead_id.endsWith('.node.json')) {
+          return `Nested node config detected for member_key='${memberSpawn.member_key}'. bead_id must target a bead id, not node config.`;
+        }
+
+        if (availableSpecialists.size > 0 && !availableSpecialists.has(memberSpawn.role)) {
+          return `Unknown specialist role '${memberSpawn.role}' for member_key='${memberSpawn.member_key}'. Choose one from available_specialists.`;
+        }
+
+        if (memberSpawn.retry_of) {
+          const next = (retryCounts.get(memberSpawn.retry_of) ?? 0) + 1;
+          retryCounts.set(memberSpawn.retry_of, next);
+          if (next > maxRetries) {
+            return `retry_of='${memberSpawn.retry_of}' exceeded max_retries=${maxRetries}. Emit complete_node with blocked/aborted status or reduce retries.`;
+          }
+        }
+      }
+    }
+
+    const hasCompleteAction = output.actions.some((action) => action.type === 'complete_node');
+    if (output.node_status === 'complete' && !hasCompleteAction) {
+      return 'node_status=complete requires a complete_node action with gate_results and report_payload_ref.';
+    }
+
+    for (const action of output.actions) {
+      if (action.type === 'complete_node') {
+        const hasFailingGate = action.gate_results.some((gate) => gate.status === 'fail');
+        if (hasFailingGate && !action.force_draft_pr) {
+          return 'complete_node rejected: quality gates failing. Either fix gates first or set force_draft_pr=true for draft PR intent.';
+        }
+
+        const targetState: NodeRunStatus = this.opts.completionStrategy === 'manual' ? 'done' : 'awaiting_merge';
+        if (!VALID_TRANSITIONS[this.status].includes(targetState)) {
+          return `State transition blocked: ${this.status} -> ${targetState} is not allowed by node state machine.`;
+        }
       }
     }
 
@@ -1444,7 +1433,7 @@ export class NodeSupervisor {
       }
 
       const coordinatorOutput = parseResult.data;
-      const runtimeMismatch = this.validateActionRuntimeState(coordinatorOutput.actions as NodeDispatchAction[]);
+      const runtimeMismatch = this.validateCoordinatorContractRuntime(coordinatorOutput);
       if (runtimeMismatch) {
         this.appendNodeEvent('coordinator_output_invalid', {
           node_id: this.opts.nodeId,
@@ -1495,15 +1484,41 @@ export class NodeSupervisor {
         output_hash: hashOutput(currentOutput),
       });
       this.lastCoordinatorOutputAtMs = Date.now();
-      const predecessorByMemberId = new Map<string, string>();
-      for (const action of coordinatorOutput.actions as NodeDispatchAction[]) {
-        const inferredDependsOnActionId = action.dependsOnActionId ?? predecessorByMemberId.get(action.memberId);
-        const actionId = await this.dispatchAction({
-          ...action,
-          dependsOnActionId: inferredDependsOnActionId,
+      for (const phase of coordinatorOutput.phases) {
+        this.persistNodeEvent('handleCoordinatorOutput.phase_started', 'phase_started', {
+          node_id: this.opts.nodeId,
+          phase_id: phase.phase_id,
+          phase_kind: phase.phase_kind,
+          member_count: phase.members.length,
         });
-        if (actionId) {
-          predecessorByMemberId.set(action.memberId, actionId);
+
+        this.persistNodeEvent('handleCoordinatorOutput.phase_completed', 'phase_completed', {
+          node_id: this.opts.nodeId,
+          phase_id: phase.phase_id,
+          barrier: phase.barrier,
+        });
+      }
+
+      for (const action of coordinatorOutput.actions) {
+        if (action.type === 'create_bead') {
+          this.appendNodeEvent('action_dropped', {
+            node_id: this.opts.nodeId,
+            action_type: 'create_bead',
+            reason: 'handler_not_implemented_wave_2b',
+            title: action.title,
+          });
+        }
+
+        if (action.type === 'complete_node') {
+          const completionState: NodeRunStatus = this.opts.completionStrategy === 'manual' ? 'done' : 'awaiting_merge';
+          this.transition(completionState, 'complete_node_declared');
+          this.persistNodeEvent('handleCoordinatorOutput.pr_created', 'pr_created', {
+            node_id: this.opts.nodeId,
+            report_payload_ref: action.report_payload_ref,
+            force_draft_pr: action.force_draft_pr ?? false,
+            gate_results: action.gate_results,
+            completion_strategy: this.opts.completionStrategy ?? 'pr',
+          });
         }
       }
 

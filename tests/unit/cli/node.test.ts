@@ -19,7 +19,11 @@ vi.mock('../../../src/specialist/observability-sqlite.js', () => ({
 }));
 
 vi.mock('../../../src/specialist/loader.js', () => ({
-  SpecialistLoader: class SpecialistLoader {},
+  SpecialistLoader: class SpecialistLoader {
+    async list() {
+      return [{ name: 'explorer' }, { name: 'reviewer' }, { name: 'node-coordinator' }];
+    }
+  },
 }));
 
 vi.mock('../../../src/specialist/runner.js', () => ({
