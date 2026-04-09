@@ -17787,10 +17787,11 @@ var init_backendMap = __esm(() => {
 });
 
 // src/pi/session.ts
+import { createHash } from "crypto";
 import { spawn } from "child_process";
-import { existsSync as existsSync2 } from "fs";
-import { homedir } from "os";
-import { join as join2, resolve } from "path";
+import { existsSync as existsSync2, mkdirSync, writeFileSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { isAbsolute, resolve, sep, join as join2 } from "path";
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
     case "READ_ONLY":
@@ -17960,6 +17961,64 @@ function extractBashCommand(args) {
 function isTestCommand(command) {
   return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
 }
+function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
+  const boundaryHash = createHash("sha256").update(resolve(worktreeBoundary)).digest("hex").slice(0, 16);
+  const extensionsDir = join2(tmpdir(), "specialists-pi-extensions");
+  try {
+    mkdirSync(extensionsDir, { recursive: true });
+  } catch (err) {
+    process.stderr.write(`[worktree-boundary] WARN: could not create extensions directory at ${extensionsDir}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
+`);
+    return null;
+  }
+  const extensionPath = join2(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync2(extensionPath))
+    return extensionPath;
+  const extensionSource = `
+import { isAbsolute, resolve } from 'node:path';
+
+const WRITE_TOOLS = new Set(['edit', 'write', 'multiEdit', 'notebookEdit']);
+const WORKTREE_BOUNDARY_ENV_KEY = '${WORKTREE_BOUNDARY_ENV_KEY}';
+
+function isPathWithinBoundary(path, boundary) {
+  const resolvedPath = resolve(path);
+  const resolvedBoundary = resolve(boundary);
+  if (resolvedPath === resolvedBoundary) return true;
+  return resolvedPath.startsWith(resolvedBoundary.endsWith('/') ? resolvedBoundary : resolvedBoundary + '/');
+}
+
+export default function(pi) {
+  const worktreeBoundary = process.env[WORKTREE_BOUNDARY_ENV_KEY];
+  if (!worktreeBoundary) return;
+
+  pi.on('tool_call', (event) => {
+    if (!WRITE_TOOLS.has(event.toolName)) return undefined;
+
+    const input = event.input && typeof event.input === 'object' ? event.input : {};
+    const rawPath = typeof input.path === 'string'
+      ? input.path
+      : (typeof input.file_path === 'string' ? input.file_path : undefined);
+
+    if (!rawPath || !isAbsolute(rawPath)) return undefined;
+
+    if (isPathWithinBoundary(rawPath, worktreeBoundary)) return undefined;
+
+    return {
+      block: true,
+      reason: \`Path '\${rawPath}' is outside worktree boundary ('\${resolve(worktreeBoundary)}'). Use a relative path or a path within the worktree.\`,
+    };
+  });
+}
+`.trimStart();
+  try {
+    writeFileSync(extensionPath, extensionSource, "utf-8");
+  } catch (err) {
+    process.stderr.write(`[worktree-boundary] WARN: could not write extension file at ${extensionPath}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
+`);
+    return null;
+  }
+  return extensionPath;
+}
 
 class PiAgentSession {
   options;
@@ -18039,10 +18098,18 @@ class PiAgentSession {
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }
+    const worktreeBoundary = this.options.worktreeBoundary ? resolve(this.options.worktreeBoundary) : undefined;
+    if (worktreeBoundary) {
+      const boundaryExtPath = getWorktreeBoundaryExtensionPath(worktreeBoundary);
+      if (boundaryExtPath) {
+        args.push("-e", boundaryExtPath);
+      }
+    }
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: sessionCwd
+      cwd: sessionCwd,
+      env: worktreeBoundary ? { ...process.env, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : process.env
     });
     const donePromise = new Promise((resolve2, reject) => {
       this._doneResolve = resolve2;
@@ -18479,7 +18546,7 @@ class PiAgentSession {
     await this.waitForDone(timeout);
   }
 }
-var SessionKilledError, StallTimeoutError, TEST_COMMAND_STALL_TIMEOUT_MS = 300000, TEST_COMMAND_PATTERNS;
+var SessionKilledError, StallTimeoutError, TEST_COMMAND_STALL_TIMEOUT_MS = 300000, TEST_COMMAND_PATTERNS, WRITE_BOUNDARY_TOOL_NAMES, WORKTREE_BOUNDARY_ENV_KEY = "SPECIALISTS_WORKTREE_BOUNDARY";
 var init_session = __esm(() => {
   init_backendMap();
   SessionKilledError = class SessionKilledError extends Error {
@@ -18502,6 +18569,7 @@ var init_session = __esm(() => {
     /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
     /(?:^|\s)pytest(?:\s|$)/i
   ];
+  WRITE_BOUNDARY_TOOL_NAMES = new Set(["edit", "write", "multiEdit", "notebookEdit"]);
 });
 
 // src/utils/circuitBreaker.ts
@@ -18733,7 +18801,7 @@ function shouldCreateBead(beadsIntegration, permissionRequired) {
 var init_beads = () => {};
 
 // src/specialist/runner.ts
-import { createHash } from "crypto";
+import { createHash as createHash2 } from "crypto";
 import { writeFile } from "fs/promises";
 import { execSync, spawnSync as spawnSync2 } from "child_process";
 import { existsSync as existsSync3, readFileSync } from "fs";
@@ -19034,6 +19102,19 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
+  resolvePromptWithBeadContext(options, beadsClient) {
+    if (!options.inputBeadId) {
+      return options.prompt;
+    }
+    const beadReader = beadsClient ?? new BeadsClient;
+    const bead = beadReader.readBead(options.inputBeadId);
+    if (!bead) {
+      return options.prompt;
+    }
+    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
+    const blockers = contextDepth > 0 ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth) : [];
+    return buildBeadContext(bead, blockers);
+  }
   async run(options, onProgress, onEvent, onMetric, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
     const invocationId = crypto.randomUUID();
@@ -19057,10 +19138,11 @@ class SpecialistRunner {
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
     const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
-    const beadVariables = options.inputBeadId ? { bead_context: options.prompt, bead_id: options.inputBeadId } : {};
-    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: options.prompt } : {};
+    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
+    const beadVariables = options.inputBeadId ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId } : {};
+    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: resolvedPrompt } : {};
     const variables = {
-      prompt: options.prompt,
+      prompt: resolvedPrompt,
       cwd: runCwd,
       pre_script_output: preScriptOutput,
       ...options.variables ?? {},
@@ -19068,7 +19150,7 @@ class SpecialistRunner {
     };
     const taskTemplate = options.inputBeadId ? renderTemplate(prompt.task_template, beadTemplateVariables) : prompt.task_template;
     const renderedTask = renderTemplate(taskTemplate, variables);
-    const promptHash = createHash("sha256").update(renderedTask).digest("hex").slice(0, 16);
+    const promptHash = createHash2("sha256").update(renderedTask).digest("hex").slice(0, 16);
     await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
       prompt_hash: promptHash,
       prompt_length_chars: renderedTask.length,
@@ -19163,6 +19245,7 @@ ${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_
         permissionLevel,
         stallTimeoutMs: execution.stall_timeout_ms,
         cwd: runCwd,
+        worktreeBoundary: options.worktreeBoundary,
         onToken: (delta) => onProgress?.(delta),
         onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
         onToolStart: (tool, args, toolCallId) => {
@@ -19890,9 +19973,9 @@ var init_timeline_events = __esm(() => {
 });
 
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync5, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "fs";
+import { chmodSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
 import { spawnSync as spawnSync4 } from "child_process";
-import { join as join6, sep } from "path";
+import { join as join6, sep as sep2 } from "path";
 function resolveGitRootFrom(cwd) {
   const commonDirResult = spawnSync4("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
@@ -19901,7 +19984,7 @@ function resolveGitRootFrom(cwd) {
   });
   if (commonDirResult.status === 0) {
     const commonDir = commonDirResult.stdout.trim();
-    if (commonDir.length > 0 && commonDir.endsWith(`${sep}.git`)) {
+    if (commonDir.length > 0 && commonDir.endsWith(`${sep2}.git`)) {
       return commonDir.slice(0, -4);
     }
   }
@@ -19939,10 +20022,10 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
   };
 }
 function ensureObservabilityDbFile(location) {
-  mkdirSync(location.dbDirectory, { recursive: true });
+  mkdirSync2(location.dbDirectory, { recursive: true });
   const alreadyExists = existsSync5(location.dbPath);
   if (!alreadyExists) {
-    writeFileSync(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
   }
   chmodSync(location.dbPath, 420);
   return { created: !alreadyExists };
@@ -19969,11 +20052,11 @@ function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
   const block = `${prefix}${sectionHeader}${missingEntries.join(`
 `)}
 `;
-  writeFileSync(gitignorePath, `${existing}${block}`, "utf-8");
+  writeFileSync2(gitignorePath, `${existing}${block}`, "utf-8");
   return { changed: true };
 }
 function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
-  const jobsDirPrefix = `${join6(gitRoot, ".specialists", "jobs")}${sep}`;
+  const jobsDirPrefix = `${join6(gitRoot, ".specialists", "jobs")}${sep2}`;
   return pathToCheck.startsWith(jobsDirPrefix);
 }
 var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
@@ -20874,14 +20957,14 @@ import {
   closeSync,
   existsSync as existsSync7,
   fsyncSync,
-  mkdirSync as mkdirSync2,
+  mkdirSync as mkdirSync3,
   openSync,
   readdirSync,
   readFileSync as readFileSync3,
   renameSync,
   rmSync,
   statSync,
-  writeFileSync as writeFileSync2,
+  writeFileSync as writeFileSync3,
   writeSync
 } from "fs";
 import { join as join7 } from "path";
@@ -21192,8 +21275,8 @@ class Supervisor {
     return join7(this.resolvedJobsDir, "..", "ready");
   }
   writeReadyMarker(id) {
-    mkdirSync2(this.readyDir(), { recursive: true });
-    writeFileSync2(join7(this.readyDir(), id), "", "utf-8");
+    mkdirSync3(this.readyDir(), { recursive: true });
+    writeFileSync3(join7(this.readyDir(), id), "", "utf-8");
   }
   withComputedLiveness(status) {
     return {
@@ -21264,10 +21347,10 @@ class Supervisor {
   }
   writeStatusFileOnly(id, data) {
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
-    mkdirSync2(this.jobDir(id), { recursive: true });
+    mkdirSync3(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + ".tmp";
-    writeFileSync2(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
+    writeFileSync3(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
     renameSync(tmp, path);
   }
   writeStatusFile(id, data) {
@@ -21326,7 +21409,7 @@ class Supervisor {
               last_event_at_ms: now,
               error: undefined
             } : { ...s, status: "error", error: "Process crashed or was killed" };
-            writeFileSync2(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
             renameSync(tmp, statusPath);
           } else if (s.status === "running") {
             const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
@@ -21338,7 +21421,7 @@ class Supervisor {
                 status: "error",
                 error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
               };
-              writeFileSync2(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
               renameSync(tmp, statusPath);
             }
           }
@@ -21367,8 +21450,8 @@ class Supervisor {
     const id = crypto.randomUUID().slice(0, 6);
     const dir = this.jobDir(id);
     const startedAtMs = Date.now();
-    mkdirSync2(dir, { recursive: true });
-    mkdirSync2(this.readyDir(), { recursive: true });
+    mkdirSync3(dir, { recursive: true });
+    mkdirSync3(this.readyDir(), { recursive: true });
     const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
     const initialStatus = {
       id,
@@ -21386,7 +21469,7 @@ class Supervisor {
     };
     this.writeStatusFileOnly(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
-    writeFileSync2(join7(this.resolvedJobsDir, "latest"), `${id}
+    writeFileSync3(join7(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     this.opts.onJobStarted?.({ id });
     let statusSnapshot = initialStatus;
@@ -21535,8 +21618,8 @@ class Supervisor {
       try {
         const output = await resumeFn(task);
         latestOutput = output;
-        mkdirSync2(this.jobDir(id), { recursive: true });
-        writeFileSync2(this.resultPath(id), output, "utf-8");
+        mkdirSync3(this.jobDir(id), { recursive: true });
+        writeFileSync3(this.resultPath(id), output, "utf-8");
         try {
           this.withSqliteOperation("upsertResult:resume_turn", (client) => client.upsertResult(id, output));
         } catch (error2) {
@@ -21627,8 +21710,9 @@ class Supervisor {
       killFn?.();
     };
     process.once("SIGTERM", sigtermHandler);
+    const runOptionsWithBoundary = runOptions.workingDirectory ? { ...runOptions, worktreeBoundary: runOptions.workingDirectory } : runOptions;
     try {
-      const result = await runner.run(runOptions, (delta) => {
+      const result = await runner.run(runOptionsWithBoundary, (delta) => {
         const toolMatch = delta.match(/\u2699 (.+?)\u2026/);
         if (toolMatch) {
           setStatus({ current_tool: toolMatch[1] });
@@ -21857,8 +21941,8 @@ class Supervisor {
         }
       });
       latestOutput = result.output;
-      mkdirSync2(this.jobDir(id), { recursive: true });
-      writeFileSync2(this.resultPath(id), latestOutput, "utf-8");
+      mkdirSync3(this.jobDir(id), { recursive: true });
+      writeFileSync3(this.resultPath(id), latestOutput, "utf-8");
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const finalResult = {
         ...result,
@@ -22676,7 +22760,7 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run6
 });
-import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync3, readdirSync as readdirSync3, readFileSync as readFileSync5, readlinkSync, renameSync as renameSync2, symlinkSync, writeFileSync as writeFileSync3 } from "fs";
+import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync4, readdirSync as readdirSync3, readFileSync as readFileSync5, readlinkSync, renameSync as renameSync2, symlinkSync, writeFileSync as writeFileSync4 } from "fs";
 import { spawnSync as spawnSync9 } from "child_process";
 import { basename as basename3, dirname as dirname4, join as join9, resolve as resolve4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
@@ -22707,7 +22791,7 @@ function loadJson(path, fallback) {
   }
 }
 function saveJson(path, value) {
-  writeFileSync3(path, JSON.stringify(value, null, 2) + `
+  writeFileSync4(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
 function resolvePackagePath(relativePath) {
@@ -22726,7 +22810,7 @@ function migrateLegacySpecialists(cwd, scope) {
     return;
   const targetDir = join9(cwd, ".specialists", scope);
   if (!existsSync9(targetDir)) {
-    mkdirSync3(targetDir, { recursive: true });
+    mkdirSync4(targetDir, { recursive: true });
   }
   const files = readdirSync3(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
   if (files.length === 0)
@@ -22763,7 +22847,7 @@ function copyCanonicalSpecialists(cwd) {
     return;
   }
   if (!existsSync9(targetDir)) {
-    mkdirSync3(targetDir, { recursive: true });
+    mkdirSync4(targetDir, { recursive: true });
   }
   let copied = 0;
   let skipped = 0;
@@ -22797,7 +22881,7 @@ function copyCanonicalNodeConfigs(cwd) {
     return;
   }
   if (!existsSync9(targetDir)) {
-    mkdirSync3(targetDir, { recursive: true });
+    mkdirSync4(targetDir, { recursive: true });
   }
   let copied = 0;
   let skipped = 0;
@@ -22832,8 +22916,8 @@ function installProjectHooks(cwd) {
     skip("no hook files found in package");
     return;
   }
-  mkdirSync3(targetDir, { recursive: true });
-  mkdirSync3(claudeHooksDir, { recursive: true });
+  mkdirSync4(targetDir, { recursive: true });
+  mkdirSync4(claudeHooksDir, { recursive: true });
   let copied = 0;
   let skippedCopies = 0;
   let linked = 0;
@@ -22879,7 +22963,7 @@ function ensureProjectHookWiring(cwd) {
   const settingsPath = join9(cwd, ".claude", "settings.json");
   const settingsDir = join9(cwd, ".claude");
   if (!existsSync9(settingsDir)) {
-    mkdirSync3(settingsDir, { recursive: true });
+    mkdirSync4(settingsDir, { recursive: true });
   }
   const settings = loadJson(settingsPath, {});
   let changed = false;
@@ -22956,9 +23040,9 @@ function installProjectSkills(cwd, syncSkills) {
   const defaultRoot = join9(cwd, ".xtrm", "skills", "default");
   const activeClaudeRoot = join9(cwd, ".xtrm", "skills", "active", "claude");
   const activePiRoot = join9(cwd, ".xtrm", "skills", "active", "pi");
-  mkdirSync3(defaultRoot, { recursive: true });
-  mkdirSync3(activeClaudeRoot, { recursive: true });
-  mkdirSync3(activePiRoot, { recursive: true });
+  mkdirSync4(defaultRoot, { recursive: true });
+  mkdirSync4(activeClaudeRoot, { recursive: true });
+  mkdirSync4(activePiRoot, { recursive: true });
   assertSkillRootSymlink(join9(cwd, ".claude", "skills"), activeClaudeRoot);
   assertSkillRootSymlink(join9(cwd, ".pi", "skills"), activePiRoot);
   let copied = 0;
@@ -22990,7 +23074,7 @@ function createSpecialistsDirs(cwd) {
   let created = 0;
   for (const dir of [defaultDir, userDir]) {
     if (!existsSync9(dir)) {
-      mkdirSync3(dir, { recursive: true });
+      mkdirSync4(dir, { recursive: true });
       created++;
     }
   }
@@ -23006,7 +23090,7 @@ function createRuntimeDirs(cwd) {
   let created = 0;
   for (const dir of runtimeDirs) {
     if (!existsSync9(dir)) {
-      mkdirSync3(dir, { recursive: true });
+      mkdirSync4(dir, { recursive: true });
       created++;
     }
   }
@@ -23040,7 +23124,7 @@ function ensureGitignore(cwd) {
     }
   }
   if (added > 0) {
-    writeFileSync3(gitignorePath, lines.join(`
+    writeFileSync4(gitignorePath, lines.join(`
 `) + `
 `, "utf-8");
     ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
@@ -23080,13 +23164,13 @@ function ensureAgentsMd(cwd) {
     if (existing.includes(AGENTS_MARKER)) {
       skip("AGENTS.md already has Specialists section");
     } else {
-      writeFileSync3(agentsPath, existing.trimEnd() + `
+      writeFileSync4(agentsPath, existing.trimEnd() + `
 
 ` + AGENTS_BLOCK, "utf-8");
       ok("appended Specialists section to AGENTS.md");
     }
   } else {
-    writeFileSync3(agentsPath, AGENTS_BLOCK, "utf-8");
+    writeFileSync4(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
   }
 }
@@ -23528,7 +23612,7 @@ __export(exports_edit, {
   run: () => run9
 });
 import { spawnSync as spawnSync10 } from "child_process";
-import { existsSync as existsSync12, readdirSync as readdirSync5, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "fs";
+import { existsSync as existsSync12, readdirSync as readdirSync5, readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "fs";
 import { join as join12 } from "path";
 function loadPresets() {
   const paths = [
@@ -24015,7 +24099,7 @@ async function run9() {
         printDryRun(target.filePath, raw, updated);
         continue;
       }
-      writeFileSync4(target.filePath, updated, "utf-8");
+      writeFileSync5(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow8(f)).join(", ");
       console.log(`${green7("\u2713")} ${bold8(target.name)}: applied preset ${bold8(args.preset)} (${fieldList})`);
     }
@@ -24051,7 +24135,7 @@ async function run9() {
       printDryRun(target.filePath, raw, updated);
       continue;
     }
-    writeFileSync4(target.filePath, updated, "utf-8");
+    writeFileSync5(target.filePath, updated, "utf-8");
     console.log(`${green7("\u2713")} ${bold8(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
   }
 }
@@ -24170,7 +24254,7 @@ var init_config = __esm(() => {
 });
 
 // src/specialist/worktree.ts
-import { existsSync as existsSync13, symlinkSync as symlinkSync2, mkdirSync as mkdirSync4 } from "fs";
+import { existsSync as existsSync13, symlinkSync as symlinkSync2, mkdirSync as mkdirSync5 } from "fs";
 import { join as join13, resolve as resolve5 } from "path";
 import { spawnSync as spawnSync11, execFileSync as execFileSync2 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
@@ -24219,7 +24303,7 @@ function symlinkPiNpmCache(commonRoot, worktreePath) {
   if (!existsSync13(source) || existsSync13(target))
     return;
   try {
-    mkdirSync4(join13(worktreePath, ".pi"), { recursive: true });
+    mkdirSync5(join13(worktreePath, ".pi"), { recursive: true });
     symlinkSync2(source, target);
   } catch {}
 }
@@ -24486,7 +24570,7 @@ __export(exports_run, {
 import { join as join14 } from "path";
 import { readFileSync as readFileSync8 } from "fs";
 import { randomBytes } from "crypto";
-import { spawn as cpSpawn } from "child_process";
+import { spawn as cpSpawn, execSync as execSync2 } from "child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -24889,6 +24973,15 @@ async function run11() {
       }
     }
   });
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync2(`bd kv set "bead-claim:${args.beadId}" "active"`, {
+        cwd: workingDirectory,
+        stdio: "pipe",
+        timeout: 5000
+      });
+    } catch {}
+  }
   process.stderr.write(`
 ${bold10(`Running ${cyan6(args.name)}`)}
 
@@ -24919,6 +25012,15 @@ ${green9("\u2713")} ${footer}
   process.stderr.write(dim9(`Poll: specialists poll ${jobId} --json
 
 `));
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync2(`bd kv clear "bead-claim:${args.beadId}"`, {
+        cwd: workingDirectory,
+        stdio: "pipe",
+        timeout: 5000
+      });
+    } catch {}
+  }
   process.exit(0);
 }
 var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, BLOCKED_JOB_REUSE_STATUSES;
@@ -24937,7 +25039,7 @@ var init_run = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync14, readFileSync as readFileSync9, writeFileSync as writeFileSync5 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync9, writeFileSync as writeFileSync6 } from "fs";
 import { join as join15 } from "path";
 
 class JobControl {
@@ -25048,7 +25150,7 @@ class JobControl {
     }
     const jsonLine = `${JSON.stringify(payload)}
 `;
-    writeFileSync5(status.fifo_path, jsonLine, { flag: "a" });
+    writeFileSync6(status.fifo_path, jsonLine, { flag: "a" });
   }
   resultPath(jobId) {
     return join15(this.jobsDir, jobId, "result.txt");
@@ -25062,18 +25164,190 @@ var init_job_control = __esm(() => {
   TERMINAL_STATUSES = new Set(["done", "error", "stopped"]);
 });
 
+// src/specialist/node-contract.ts
+function renderJsonSnippet(value) {
+  return JSON.stringify(value, null, 2);
+}
+function renderForFirstTurnContext(ctx) {
+  return [
+    "node_bootstrap_context:",
+    renderJsonSnippet({
+      node_id: ctx.nodeId,
+      node_name: ctx.nodeName,
+      source_bead_id: ctx.sourceBeadId,
+      bead_goal: ctx.beadGoal,
+      action_vocabulary: {
+        [ACTION_TYPES.SPAWN_MEMBER]: "Declare via phases[].members",
+        [ACTION_TYPES.CREATE_BEAD]: ACTION_DOCS.create_bead,
+        [ACTION_TYPES.COMPLETE_NODE]: ACTION_DOCS.complete_node
+      },
+      state_machine: {
+        states: NODE_STATES,
+        transitions: VALID_STATE_TRANSITIONS
+      },
+      member_registry: ctx.memberRegistry,
+      available_specialists: ctx.availableSpecialists,
+      quality_gates: ctx.qualityGates,
+      completion_strategy: ctx.completionStrategy,
+      max_retries: ctx.maxRetries,
+      base_branch: ctx.baseBranch,
+      node_config_snapshot: ctx.nodeConfigSnapshot,
+      coordinator_goal: ctx.coordinatorGoal,
+      first_routing_instruction: "Construct phases and actions declaratively. Do not perform side effects directly."
+    })
+  ].join(`
+`);
+}
+function renderForResumePayload(update) {
+  return [
+    "node_resume_payload:",
+    renderJsonSnippet({
+      node_id: update.nodeId,
+      state_machine: update.stateMachine,
+      member_updates: update.memberUpdates,
+      registry_snapshot: update.registrySnapshot,
+      memory_patch_summary: update.memoryPatchSummary,
+      unresolved_decisions: update.unresolvedDecisions,
+      action_ledger_summary: update.actionLedgerSummary,
+      state_digest: update.stateDigest
+    })
+  ].join(`
+`);
+}
+var PHASE_KIND_VALUES, NODE_COMPLETION_STRATEGIES, NODE_BASE_BRANCH_DEFAULT = "master", NODE_SUPERVISOR_MAX_RETRIES_DEFAULT = 3, phaseKindSchema, PHASE_KINDS, actionTypeSchema, ACTION_TYPES, completionStrategySchema, memberScopeSchema, memberSpawnSchema, phaseSchema, createBeadActionSchema, completeNodeActionSchema, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema, NODE_STATES, VALID_STATE_TRANSITIONS, ACTION_DOCS;
+var init_node_contract = __esm(() => {
+  init_zod();
+  PHASE_KIND_VALUES = ["explore", "design", "impl", "review", "fix", "re_review", "custom"];
+  NODE_COMPLETION_STRATEGIES = ["pr", "manual"];
+  phaseKindSchema = enumType(PHASE_KIND_VALUES);
+  PHASE_KINDS = phaseKindSchema.enum;
+  actionTypeSchema = enumType(["spawn_member", "create_bead", "complete_node"]);
+  ACTION_TYPES = {
+    SPAWN_MEMBER: actionTypeSchema.enum.spawn_member,
+    CREATE_BEAD: actionTypeSchema.enum.create_bead,
+    COMPLETE_NODE: actionTypeSchema.enum.complete_node
+  };
+  completionStrategySchema = enumType(NODE_COMPLETION_STRATEGIES);
+  memberScopeSchema = objectType({
+    paths: arrayType(stringType().min(1)).min(1),
+    mutates: booleanType()
+  });
+  memberSpawnSchema = objectType({
+    member_key: stringType().min(1),
+    role: stringType().min(1),
+    bead_id: stringType().min(1),
+    scope: memberScopeSchema,
+    depends_on: arrayType(stringType().min(1)).default([]),
+    failure_policy: enumType(["blocking", "non_blocking"]),
+    isolated: booleanType().default(false),
+    retry_of: stringType().min(1).nullable().default(null)
+  });
+  phaseSchema = objectType({
+    phase_id: stringType().min(1),
+    phase_kind: phaseKindSchema,
+    barrier: literalType("all_members_terminal"),
+    members: arrayType(memberSpawnSchema).default([])
+  });
+  createBeadActionSchema = objectType({
+    type: actionTypeSchema.extract([ACTION_TYPES.CREATE_BEAD]),
+    title: stringType().min(1),
+    description: stringType().min(1),
+    bead_type: enumType(["task", "bug", "feature", "epic", "chore", "decision"]),
+    priority: numberType().int().min(0).max(4),
+    parent_bead_id: stringType().min(1).optional(),
+    depends_on: arrayType(stringType().min(1)).default([])
+  });
+  completeNodeActionSchema = objectType({
+    type: actionTypeSchema.extract([ACTION_TYPES.COMPLETE_NODE]),
+    gate_results: arrayType(objectType({
+      gate: stringType().min(1),
+      status: enumType(["pass", "fail", "skip"]),
+      details: stringType().optional()
+    })).default([]),
+    report_payload_ref: stringType().min(1),
+    force_draft_pr: booleanType().optional()
+  });
+  coordinatorActionSchema = discriminatedUnionType("type", [
+    createBeadActionSchema,
+    completeNodeActionSchema
+  ]);
+  coordinatorMemoryPatchEntrySchema = objectType({
+    entry_type: enumType(["fact", "question", "decision"]),
+    entry_id: stringType().min(1).optional(),
+    summary: stringType().min(1),
+    source_member_id: stringType().min(1),
+    confidence: numberType().min(0).max(1),
+    provenance: recordType(stringType(), unknownType()).optional()
+  });
+  coordinatorOutputSchema = objectType({
+    summary: stringType().min(1),
+    node_status: enumType(["in_progress", "complete", "blocked", "aborted"]),
+    phases: arrayType(phaseSchema).default([]),
+    memory_patch: arrayType(coordinatorMemoryPatchEntrySchema).default([]),
+    actions: arrayType(coordinatorActionSchema).default([]),
+    validation: objectType({
+      ok: booleanType().optional(),
+      issues: arrayType(stringType()).optional(),
+      notes: stringType().optional()
+    }).passthrough()
+  });
+  NODE_STATES = [
+    "created",
+    "starting",
+    "running",
+    "waiting",
+    "degraded",
+    "awaiting_merge",
+    "fixing_after_review",
+    "failed",
+    "error",
+    "done",
+    "stopped"
+  ];
+  VALID_STATE_TRANSITIONS = {
+    created: ["starting", "stopped"],
+    starting: ["running", "error", "stopped"],
+    running: ["waiting", "degraded", "awaiting_merge", "done", "error", "stopped", "failed"],
+    waiting: ["running", "degraded", "awaiting_merge", "done", "error", "stopped", "failed"],
+    degraded: ["running", "fixing_after_review", "failed", "error", "stopped"],
+    awaiting_merge: ["done", "fixing_after_review", "failed", "error", "stopped"],
+    fixing_after_review: ["awaiting_merge", "running", "failed", "error", "stopped"],
+    failed: [],
+    error: [],
+    done: [],
+    stopped: []
+  };
+  ACTION_DOCS = {
+    create_bead: {
+      type: "Literal action discriminator.",
+      title: "Bead title for created work item.",
+      description: "Detailed bead description.",
+      bead_type: "One of task|bug|feature|epic|chore|decision.",
+      priority: "Integer priority 0..4.",
+      parent_bead_id: "Optional parent bead link.",
+      depends_on: "Optional dependency bead ids."
+    },
+    complete_node: {
+      type: "Literal action discriminator.",
+      gate_results: "Quality gate statuses to attach to completion report.",
+      report_payload_ref: "Reference to external report payload.",
+      force_draft_pr: "Allow completion while gates fail by forcing draft PR intent."
+    }
+  };
+});
+
 // src/specialist/node-supervisor.ts
 var exports_node_supervisor = {};
 __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
-import { createHash as createHash2 } from "crypto";
+import { createHash as createHash3 } from "crypto";
 import { spawnSync as spawnSync12 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
   const value = salt ? `${salt}:${output2}` : output2;
-  return createHash2("sha256").update(value).digest("hex");
+  return createHash3("sha256").update(value).digest("hex");
 }
 function extractFirstJsonObject(raw) {
   const start = raw.indexOf("{");
@@ -25454,6 +25728,7 @@ class NodeSupervisor {
       ...runOptions,
       name: specialist,
       prompt,
+      contextDepth: runOptions.contextDepth,
       keepAlive: true,
       noKeepAlive: false,
       variables: {
@@ -25463,9 +25738,55 @@ class NodeSupervisor {
       }
     };
   }
+  buildMemberIdleBootstrapPrompt(member) {
+    const roleText = member.role?.trim() ? `
+- Assigned role: ${member.role.trim()}` : "";
+    return [
+      `You are node member ${member.memberId}.`,
+      "Bootstrap state: idle_wait.",
+      "Acknowledge readiness briefly, then wait for coordinator resume/steer instructions.",
+      "Do not start investigation or produce substantive work until explicitly resumed.",
+      roleText
+    ].join(`
+`).trim();
+  }
+  getBeadGoalSummary() {
+    const beadContext = this.opts.runOptions?.variables?.bead_context;
+    if (!beadContext || typeof beadContext !== "string") {
+      return this.opts.sourceBeadId ?? "none";
+    }
+    const firstLine = beadContext.split(`
+`).map((line) => line.trim()).find((line) => line.length > 0);
+    return firstLine ?? (this.opts.sourceBeadId ?? "none");
+  }
+  buildCoordinatorFirstTurnContext(initialPrompt) {
+    const memberRegistry = this.getMembers().map((member) => ({
+      memberId: member.memberId,
+      specialist: member.specialist,
+      role: member.role ?? null,
+      generation: member.generation,
+      status: member.status,
+      enabled: member.enabled,
+      worktree: this.opts.members.find((candidate) => candidate.memberId === member.memberId)?.worktree ?? null
+    }));
+    return renderForFirstTurnContext({
+      nodeId: this.opts.nodeId,
+      nodeName: this.opts.nodeName,
+      sourceBeadId: this.opts.sourceBeadId ?? null,
+      beadGoal: this.getBeadGoalSummary(),
+      memberRegistry,
+      availableSpecialists: this.opts.availableSpecialists ?? [],
+      qualityGates: this.opts.qualityGates ?? ["npm run lint", "npx tsc --noEmit"],
+      nodeConfigSnapshot: this.opts.nodeConfigSnapshot ?? {},
+      completionStrategy: this.opts.completionStrategy ?? "pr",
+      maxRetries: this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT,
+      baseBranch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
+      coordinatorGoal: initialPrompt
+    });
+  }
   async spawnMembers() {
     for (const member of this.members.values()) {
-      const prompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+      const prompt = this.buildMemberIdleBootstrapPrompt(member);
       const runOptions = this.createBaseRunOptions(member.specialist, prompt);
       const controller = new JobControl({
         runner: this.opts.runner,
@@ -25517,7 +25838,15 @@ class NodeSupervisor {
     }
   }
   async spawnCoordinator(initialPrompt) {
-    const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, initialPrompt);
+    const firstTurnContext = this.buildCoordinatorFirstTurnContext(initialPrompt);
+    this.persistNodeEvent("spawnCoordinator.coordinator_first_turn_context_built", "coordinator_first_turn_context_built", {
+      node_id: this.opts.nodeId,
+      source_bead_id: this.opts.sourceBeadId ?? null,
+      context_length_chars: firstTurnContext.length,
+      member_count: this.members.size,
+      bead_goal: this.getBeadGoalSummary()
+    });
+    const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, firstTurnContext);
     const controller = new JobControl({
       runner: this.opts.runner,
       runOptions,
@@ -25694,19 +26023,19 @@ class NodeSupervisor {
       source_member_id: entry.source_member_id ?? null,
       created_at_ms: entry.created_at_ms ?? null
     }));
-    return [
-      "node_resume_payload:",
-      JSON.stringify({
-        node_id: this.opts.nodeId,
-        member_updates: memberUpdates,
-        registry_snapshot: registrySnapshot,
-        memory_patch_summary: memoryPatchSummary,
-        state_digest: this.buildStateDigest(memoryEntries),
-        unresolved_decisions: unresolvedDecisions,
-        action_ledger_summary: this.buildActionLedgerSummary()
-      }, null, 2)
-    ].join(`
-`);
+    return renderForResumePayload({
+      nodeId: this.opts.nodeId,
+      stateMachine: {
+        state: this.status,
+        allowed_next: VALID_TRANSITIONS[this.status]
+      },
+      memberUpdates,
+      registrySnapshot,
+      memoryPatchSummary,
+      stateDigest: this.buildStateDigest(memoryEntries),
+      unresolvedDecisions,
+      actionLedgerSummary: this.buildActionLedgerSummary()
+    });
   }
   getActionKey(action) {
     const stableAction = {
@@ -25876,11 +26205,11 @@ class NodeSupervisor {
       `failure_class=${args.failureClass}`,
       `details=${args.details}`,
       "Return ONLY strict JSON matching this contract:",
-      '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
+      '{"summary": string, "node_status": "in_progress|complete|blocked|aborted", "phases": array, "memory_patch": array, "actions": array, "validation": object}',
       "actions allowed:",
-      '- {"type":"resume","memberId":string,"task":string,"dependsOnActionId"?:string}',
-      '- {"type":"steer","memberId":string,"message":string,"dependsOnActionId"?:string}',
-      '- {"type":"stop","memberId":string,"dependsOnActionId"?:string}',
+      `- {"type":"${ACTION_TYPES.CREATE_BEAD}","title":string,"description":string,"bead_type":"task|bug|feature|epic|chore|decision","priority":0..4,"parent_bead_id"?:string,"depends_on"?:string[]}`,
+      `- {"type":"${ACTION_TYPES.COMPLETE_NODE}","gate_results":[{"gate":string,"status":"pass|fail|skip","details"?:string}],"report_payload_ref":string,"force_draft_pr"?:boolean}`,
+      `${ACTION_TYPES.SPAWN_MEMBER} declarations are encoded in phases[].members entries.`,
       "memory_patch entries:",
       '- {"entry_type":"fact|question|decision","summary":string,"source_member_id":string,"confidence":number,"entry_id"?:string,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`
@@ -25897,39 +26226,57 @@ class NodeSupervisor {
     const contextPct = this.opts.sqliteClient.queryMemberContextHealth(member.jobId);
     return toContextHealth(contextPct) !== "CRITICAL";
   }
-  validateActionRuntimeState(actions) {
-    let degradedRecoveryResumeCount = 0;
-    for (const action of actions) {
-      const member = this.members.get(action.memberId);
-      if (!member) {
-        return `Unknown memberId '${action.memberId}'.`;
-      }
-      if (!member.enabled) {
-        return `Member '${action.memberId}' is disabled.`;
-      }
-      if (!member.jobId) {
-        return `Member '${action.memberId}' has no active jobId.`;
-      }
-      if (!this.memberControllers.has(action.memberId)) {
-        return `Member '${action.memberId}' has no active controller.`;
-      }
-      if (action.type === "resume" && member.status !== "waiting") {
-        return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
-      }
-      if (action.type === "resume" && !this.isRecoveryResumeAllowed(member)) {
-        return `Member '${action.memberId}' is not eligible for degraded recovery resume.`;
-      }
-      if (action.type === "resume" && this.status === "degraded") {
-        degradedRecoveryResumeCount += 1;
-        if (degradedRecoveryResumeCount > MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE) {
-          return `Degraded mode permits at most ${MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE} recovery resume action per coordinator cycle.`;
+  hasOverlappingScope(left, right) {
+    return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+  }
+  validateCoordinatorContractRuntime(output2) {
+    const availableSpecialists = new Set(this.opts.availableSpecialists ?? []);
+    const maxRetries = this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT;
+    const retryCounts = new Map;
+    for (const phase of output2.phases) {
+      const mutatingScopes = phase.members.filter((member) => member.scope.mutates).flatMap((member) => member.scope.paths.map((path) => ({ member_key: member.member_key, path })));
+      for (let index = 0;index < mutatingScopes.length; index += 1) {
+        const current = mutatingScopes[index];
+        for (let compareIndex = index + 1;compareIndex < mutatingScopes.length; compareIndex += 1) {
+          const candidate = mutatingScopes[compareIndex];
+          if (!this.hasOverlappingScope(current.path, candidate.path))
+            continue;
+          return `Phase '${phase.phase_id}' contains overlapping mutating scopes ('${current.member_key}' <-> '${candidate.member_key}'). Split work into separate phases or disjoint paths.`;
         }
       }
-      if (action.type === "steer" && member.status !== "running" && member.status !== "waiting") {
-        return `Member '${action.memberId}' must be running/waiting before steer (current=${member.status}).`;
+      for (const memberSpawn of phase.members) {
+        if (memberSpawn.role === this.opts.coordinatorSpecialist || memberSpawn.role.includes("node-coordinator")) {
+          return `Nested nodes are forbidden. member_key='${memberSpawn.member_key}' role='${memberSpawn.role}' is not allowed.`;
+        }
+        if (memberSpawn.bead_id.endsWith(".node.json")) {
+          return `Nested node config detected for member_key='${memberSpawn.member_key}'. bead_id must target a bead id, not node config.`;
+        }
+        if (availableSpecialists.size > 0 && !availableSpecialists.has(memberSpawn.role)) {
+          return `Unknown specialist role '${memberSpawn.role}' for member_key='${memberSpawn.member_key}'. Choose one from available_specialists.`;
+        }
+        if (memberSpawn.retry_of) {
+          const next = (retryCounts.get(memberSpawn.retry_of) ?? 0) + 1;
+          retryCounts.set(memberSpawn.retry_of, next);
+          if (next > maxRetries) {
+            return `retry_of='${memberSpawn.retry_of}' exceeded max_retries=${maxRetries}. Emit complete_node with blocked/aborted status or reduce retries.`;
+          }
+        }
       }
-      if (action.type === "stop" && TERMINAL_MEMBER_STATUSES.has(member.status)) {
-        return `Member '${action.memberId}' is already terminal (current=${member.status}).`;
+    }
+    const hasCompleteAction = output2.actions.some((action) => action.type === ACTION_TYPES.COMPLETE_NODE);
+    if (output2.node_status === "complete" && !hasCompleteAction) {
+      return "node_status=complete requires a complete_node action with gate_results and report_payload_ref.";
+    }
+    for (const action of output2.actions) {
+      if (action.type === ACTION_TYPES.COMPLETE_NODE) {
+        const hasFailingGate = action.gate_results.some((gate) => gate.status === "fail");
+        if (hasFailingGate && !action.force_draft_pr) {
+          return "complete_node rejected: quality gates failing. Either fix gates first or set force_draft_pr=true for draft PR intent.";
+        }
+        const targetState = this.opts.completionStrategy === "manual" ? "done" : "awaiting_merge";
+        if (!VALID_TRANSITIONS[this.status].includes(targetState)) {
+          return `State transition blocked: ${this.status} -> ${targetState} is not allowed by node state machine.`;
+        }
       }
     }
     return null;
@@ -26124,7 +26471,7 @@ class NodeSupervisor {
         continue;
       }
       const coordinatorOutput = parseResult.data;
-      const runtimeMismatch = this.validateActionRuntimeState(coordinatorOutput.actions);
+      const runtimeMismatch = this.validateCoordinatorContractRuntime(coordinatorOutput);
       if (runtimeMismatch) {
         this.appendNodeEvent("coordinator_output_invalid", {
           node_id: this.opts.nodeId,
@@ -26167,15 +26514,38 @@ class NodeSupervisor {
         output_hash: hashOutput(currentOutput)
       });
       this.lastCoordinatorOutputAtMs = Date.now();
-      const predecessorByMemberId = new Map;
-      for (const action of coordinatorOutput.actions) {
-        const inferredDependsOnActionId = action.dependsOnActionId ?? predecessorByMemberId.get(action.memberId);
-        const actionId = await this.dispatchAction({
-          ...action,
-          dependsOnActionId: inferredDependsOnActionId
+      for (const phase of coordinatorOutput.phases) {
+        this.persistNodeEvent("handleCoordinatorOutput.phase_started", "phase_started", {
+          node_id: this.opts.nodeId,
+          phase_id: phase.phase_id,
+          phase_kind: phase.phase_kind,
+          member_count: phase.members.length
         });
-        if (actionId) {
-          predecessorByMemberId.set(action.memberId, actionId);
+        this.persistNodeEvent("handleCoordinatorOutput.phase_completed", "phase_completed", {
+          node_id: this.opts.nodeId,
+          phase_id: phase.phase_id,
+          barrier: phase.barrier
+        });
+      }
+      for (const action of coordinatorOutput.actions) {
+        if (action.type === ACTION_TYPES.CREATE_BEAD) {
+          this.appendNodeEvent("action_dropped", {
+            node_id: this.opts.nodeId,
+            action_type: ACTION_TYPES.CREATE_BEAD,
+            reason: "handler_not_implemented_wave_2b",
+            title: action.title
+          });
+        }
+        if (action.type === ACTION_TYPES.COMPLETE_NODE) {
+          const completionState = this.opts.completionStrategy === "manual" ? "done" : "awaiting_merge";
+          this.transition(completionState, "complete_node_declared");
+          this.persistNodeEvent("handleCoordinatorOutput.pr_created", "pr_created", {
+            node_id: this.opts.nodeId,
+            report_payload_ref: action.report_payload_ref,
+            force_draft_pr: action.force_draft_pr ?? false,
+            gate_results: action.gate_results,
+            completion_strategy: this.opts.completionStrategy ?? "pr"
+          });
         }
       }
       return;
@@ -26312,7 +26682,7 @@ class NodeSupervisor {
           jobsDir: this.opts.jobsDir
         });
         for (const member of this.members.values()) {
-          const memberPrompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+          const memberPrompt = this.buildMemberIdleBootstrapPrompt(member);
           this.memberControllers.set(member.memberId, new JobControl({
             runner: this.opts.runner,
             runOptions: this.createBaseRunOptions(member.specialist, memberPrompt),
@@ -26550,60 +26920,14 @@ class NodeSupervisor {
     return [...this.members.values()].map((member) => ({ ...member }));
   }
 }
-var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE = 1, NO_PROGRESS_WATCHDOG_MS = 120000, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
+var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, NO_PROGRESS_WATCHDOG_MS = 120000, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES;
 var init_node_supervisor = __esm(() => {
-  init_zod();
   init_job_control();
-  VALID_TRANSITIONS = {
-    created: ["starting", "stopped"],
-    starting: ["running", "error", "stopped"],
-    running: ["waiting", "degraded", "done", "error", "stopped"],
-    waiting: ["running", "degraded", "done", "error", "stopped"],
-    degraded: ["running", "done", "error", "stopped"],
-    error: [],
-    done: [],
-    stopped: []
-  };
-  TERMINAL_NODE_STATUSES = new Set(["error", "done", "stopped"]);
+  init_node_contract();
+  VALID_TRANSITIONS = VALID_STATE_TRANSITIONS;
+  TERMINAL_NODE_STATUSES = new Set(["error", "done", "stopped", "failed", "awaiting_merge"]);
   TERMINAL_MEMBER_STATUSES = new Set(["done", "error", "stopped"]);
   TERMINAL_JOB_STATUSES = new Set(["done", "error", "stopped"]);
-  coordinatorActionSchema = discriminatedUnionType("type", [
-    objectType({
-      type: literalType("resume"),
-      memberId: stringType().min(1),
-      task: stringType().min(1),
-      dependsOnActionId: stringType().min(1).optional()
-    }),
-    objectType({
-      type: literalType("steer"),
-      memberId: stringType().min(1),
-      message: stringType().min(1),
-      dependsOnActionId: stringType().min(1).optional()
-    }),
-    objectType({
-      type: literalType("stop"),
-      memberId: stringType().min(1),
-      dependsOnActionId: stringType().min(1).optional()
-    })
-  ]);
-  coordinatorMemoryPatchEntrySchema = objectType({
-    entry_type: enumType(["fact", "question", "decision"]),
-    entry_id: stringType().min(1).optional(),
-    summary: stringType().min(1),
-    source_member_id: stringType().min(1),
-    confidence: numberType().min(0).max(1),
-    provenance: recordType(stringType(), unknownType()).optional()
-  });
-  coordinatorOutputSchema = objectType({
-    summary: stringType().min(1),
-    memory_patch: arrayType(coordinatorMemoryPatchEntrySchema).default([]),
-    actions: arrayType(coordinatorActionSchema).default([]),
-    validation: objectType({
-      ok: booleanType().optional(),
-      issues: arrayType(stringType()).optional(),
-      notes: stringType().optional()
-    }).passthrough()
-  });
 });
 
 // src/cli/node.ts
@@ -26626,6 +26950,7 @@ function parseNodeArgs(argv) {
   let findingId;
   let toBead;
   let beadId;
+  let contextDepth;
   let jsonMode = false;
   for (let i = 1;i < argv.length; i += 1) {
     const token = argv[i];
@@ -26669,6 +26994,16 @@ function parseNodeArgs(argv) {
       i += 1;
       continue;
     }
+    if (token === "--context-depth") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--context-depth requires a numeric value");
+      }
+      const parsed = Number.parseInt(value, 10);
+      contextDepth = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      i += 1;
+      continue;
+    }
     if (!token.startsWith("--") && command === "run" && !nodeConfigInput) {
       nodeConfigInput = token;
       continue;
@@ -26684,7 +27019,7 @@ function parseNodeArgs(argv) {
     throw new Error(`Unknown argument: ${token}`);
   }
   if (command === "run" && !nodeConfigInput && !inlineJson) {
-    throw new Error("Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--json]");
+    throw new Error("Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]");
   }
   if (command === "promote") {
     if (!nodeId || !findingId || !toBead) {
@@ -26702,6 +27037,7 @@ function parseNodeArgs(argv) {
     findingId,
     toBead,
     beadId,
+    contextDepth,
     jsonMode
   };
 }
@@ -26767,12 +27103,28 @@ function parseNodeConfig(raw) {
       throw new Error('Each member requires non-empty "specialist"');
     }
   }
+  const completionStrategyRaw = parsed.completion_strategy ?? parsed.completionStrategy;
+  const completionStrategy = completionStrategyRaw === "manual" ? "manual" : "pr";
+  const defaultContextDepthRaw = parsed.default_context_depth ?? parsed.defaultContextDepth;
+  const defaultContextDepth = Number.isFinite(defaultContextDepthRaw) ? Math.max(0, Number(defaultContextDepthRaw)) : 1;
+  const baseBranchRaw = parsed.base_branch ?? parsed.baseBranch;
+  const baseBranch = typeof baseBranchRaw === "string" && baseBranchRaw.trim().length > 0 ? baseBranchRaw.trim() : "master";
+  const maxRetriesRaw = parsed.max_retries ?? parsed.maxRetries;
+  const maxRetries = Number.isFinite(maxRetriesRaw) ? Math.max(0, Number(maxRetriesRaw)) : undefined;
   return {
     name: parsed.name,
     coordinator: parsed.coordinator,
-    members: parsed.members,
+    members: parsed.members.map((member) => ({
+      ...member,
+      worktree: typeof member.worktree === "string" ? member.worktree : undefined,
+      bootstrapTemplate: typeof member.bootstrapTemplate === "string" ? member.bootstrapTemplate : undefined
+    })),
     initialPrompt: parsed.initialPrompt,
-    memoryNamespace: parsed.memoryNamespace
+    memoryNamespace: parsed.memoryNamespace,
+    defaultContextDepth,
+    completionStrategy,
+    maxRetries,
+    baseBranch
   };
 }
 function formatTimestamp(ms) {
@@ -26834,7 +27186,19 @@ async function handleNodeRun(args) {
       circuitBreaker: new CircuitBreaker
     });
     const nodeId = `${config2.name}-${randomUUID().slice(0, 8)}`;
+    const effectiveContextDepth = args.contextDepth ?? config2.defaultContextDepth;
     const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
+    let beadContext;
+    if (args.beadId) {
+      const beadReader = new BeadsClient;
+      const bead = beadReader.readBead(args.beadId);
+      if (!bead) {
+        throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
+      }
+      const blockers = effectiveContextDepth > 0 ? beadReader.getCompletedBlockers(args.beadId, effectiveContextDepth) : [];
+      beadContext = buildBeadContext(bead, blockers);
+    }
+    const availableSpecialists = (await loader.list()).map((specialist) => specialist.name);
     const supervisor = new NodeSupervisor2({
       nodeId,
       nodeName: config2.name,
@@ -26844,8 +27208,19 @@ async function handleNodeRun(args) {
       sourceBeadId: args.beadId,
       sqliteClient,
       runner,
+      availableSpecialists,
+      qualityGates: ["npm run lint", "npx tsc --noEmit"],
+      nodeConfigSnapshot: config2,
+      completionStrategy: config2.completionStrategy,
+      maxRetries: config2.maxRetries,
+      baseBranch: config2.baseBranch,
       runOptions: {
-        inputBeadId: args.beadId
+        inputBeadId: args.beadId,
+        contextDepth: effectiveContextDepth,
+        variables: beadContext ? {
+          bead_context: beadContext,
+          bead_id: args.beadId ?? ""
+        } : undefined
       }
     });
     let cursor = 0;
@@ -27174,6 +27549,7 @@ var init_node = __esm(() => {
   init_circuitBreaker();
   init_hooks();
   init_observability_sqlite();
+  init_beads();
   NODE_DISCOVERY_DIRS = [
     { path: ".specialists/default/nodes", source: "default" },
     { path: "config/nodes", source: "project" }
@@ -29118,7 +29494,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run17
 });
-import { writeFileSync as writeFileSync6 } from "fs";
+import { writeFileSync as writeFileSync7 } from "fs";
 async function run17() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -29149,7 +29525,7 @@ async function run17() {
     try {
       const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-      writeFileSync6(status.fifo_path, payload, { flag: "a" });
+      writeFileSync7(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
 `);
     } catch (err) {
@@ -29172,7 +29548,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run18
 });
-import { writeFileSync as writeFileSync7 } from "fs";
+import { writeFileSync as writeFileSync8 } from "fs";
 async function run18() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -29203,7 +29579,7 @@ async function run18() {
     try {
       const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-      writeFileSync7(status.fifo_path, payload, { flag: "a" });
+      writeFileSync8(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
 `);
       process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
@@ -29543,19 +29919,320 @@ var init_clean = __esm(() => {
   PROTECTED_SQLITE_SUFFIXES = [".db", ".db-wal", ".db-shm"];
 });
 
+// src/cli/merge.ts
+var exports_merge = {};
+__export(exports_merge, {
+  topologicallySortChains: () => topologicallySortChains,
+  run: () => run21,
+  resolveMergeTargets: () => resolveMergeTargets,
+  parseChildBeadIds: () => parseChildBeadIds
+});
+import { existsSync as existsSync24, readdirSync as readdirSync12, readFileSync as readFileSync19 } from "fs";
+import { spawnSync as spawnSync17 } from "child_process";
+import { join as join25 } from "path";
+function parseOptions2(argv) {
+  let target = "";
+  let rebuild = false;
+  for (const argument of argv) {
+    if (argument === "--rebuild") {
+      rebuild = true;
+      continue;
+    }
+    if (argument.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+    if (target) {
+      throw new Error("Only one merge target is supported");
+    }
+    target = argument;
+  }
+  if (!target) {
+    throw new Error("Missing merge target");
+  }
+  return { target, rebuild };
+}
+function runCommand(command, args, cwd = process.cwd()) {
+  return spawnSync17(command, args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+}
+function readJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+function readBead(id) {
+  const result = runCommand("bd", ["show", id, "--json"]);
+  if (result.status !== 0 || !result.stdout.trim()) {
+    throw new Error(`Unable to read bead '${id}'`);
+  }
+  const parsed = readJson(result.stdout);
+  const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!bead || typeof bead !== "object") {
+    throw new Error(`Unexpected bd show payload for '${id}'`);
+  }
+  const maybe = bead;
+  if (!maybe.id || !maybe.title) {
+    throw new Error(`Invalid bead record for '${id}'`);
+  }
+  return maybe;
+}
+function parseChildBeadIds(childrenOutput) {
+  const ids = childrenOutput.split(`
+`).map((line) => line.match(/(unitAI-[a-z0-9]+)/i)?.[1] ?? "").filter(Boolean);
+  return [...new Set(ids)];
+}
+function readEpicChildIds(epicId) {
+  let result = runCommand("bd", ["children", epicId, "--json"]);
+  if (result.status === 0) {
+    const parsed = readJson(result.stdout);
+    if (Array.isArray(parsed)) {
+      const ids = parsed.map((row) => row.id).filter((id) => Boolean(id));
+      return [...new Set(ids)];
+    }
+    const idsFromText2 = parseChildBeadIds(result.stdout);
+    if (idsFromText2.length === 0) {
+      throw new Error(`No children found for epic '${epicId}'`);
+    }
+    return idsFromText2;
+  }
+  result = runCommand("bd", ["children", epicId]);
+  if (result.status !== 0) {
+    throw new Error(`Unable to load children for epic '${epicId}'`);
+  }
+  const idsFromText = parseChildBeadIds(result.stdout);
+  if (idsFromText.length === 0) {
+    throw new Error(`No children found for epic '${epicId}'`);
+  }
+  return idsFromText;
+}
+function readAllJobStatuses() {
+  const jobsDir = resolveJobsDir();
+  if (!existsSync24(jobsDir))
+    return [];
+  const entries = readdirSync12(jobsDir, { withFileTypes: true });
+  const statuses = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory())
+      continue;
+    const statusPath = join25(jobsDir, entry.name, "status.json");
+    if (!existsSync24(statusPath))
+      continue;
+    const parsed = readJson(readFileSync19(statusPath, "utf-8"));
+    if (!parsed || typeof parsed !== "object")
+      continue;
+    statuses.push(parsed);
+  }
+  return statuses;
+}
+function selectNewestChainRootJob(beadId, statuses) {
+  const candidates = statuses.filter((status) => status.bead_id === beadId && status.branch && status.worktree_path).sort((left, right) => (right.started_at_ms ?? 0) - (left.started_at_ms ?? 0));
+  const selected = candidates[0];
+  if (!selected || !selected.branch || !selected.status || !selected.id)
+    return null;
+  return {
+    beadId,
+    branch: selected.branch,
+    jobId: selected.id,
+    jobStatus: selected.status,
+    startedAtMs: selected.started_at_ms ?? 0
+  };
+}
+function ensureTerminalJobs(chains) {
+  const running = chains.filter((chain) => !TERMINAL_STATUSES3.has(chain.jobStatus));
+  if (running.length === 0)
+    return;
+  const lines = running.map((chain) => `- ${chain.beadId} (${chain.jobId}): ${chain.jobStatus}`);
+  throw new Error(`Refusing merge: non-terminal chain jobs
+${lines.join(`
+`)}`);
+}
+function topologicallySortChains(chains, dependenciesByBeadId) {
+  const byId = new Map(chains.map((chain) => [chain.beadId, chain]));
+  const indegree = new Map;
+  const adjacency = new Map;
+  for (const chain of chains) {
+    indegree.set(chain.beadId, 0);
+    adjacency.set(chain.beadId, []);
+  }
+  for (const chain of chains) {
+    const dependencies = dependenciesByBeadId.get(chain.beadId) ?? [];
+    for (const dependencyId of dependencies) {
+      if (!byId.has(dependencyId))
+        continue;
+      adjacency.get(dependencyId)?.push(chain.beadId);
+      indegree.set(chain.beadId, (indegree.get(chain.beadId) ?? 0) + 1);
+    }
+  }
+  const queue = [...chains].filter((chain) => (indegree.get(chain.beadId) ?? 0) === 0).sort((left, right) => left.startedAtMs - right.startedAtMs).map((chain) => chain.beadId);
+  const ordered = [];
+  while (queue.length > 0) {
+    const beadId = queue.shift();
+    if (!beadId)
+      continue;
+    const chain = byId.get(beadId);
+    if (chain) {
+      ordered.push(chain);
+    }
+    const dependents = adjacency.get(beadId) ?? [];
+    for (const dependentId of dependents) {
+      const nextIndegree = (indegree.get(dependentId) ?? 0) - 1;
+      indegree.set(dependentId, nextIndegree);
+      if (nextIndegree === 0) {
+        queue.push(dependentId);
+      }
+    }
+  }
+  if (ordered.length !== chains.length) {
+    throw new Error("Unable to compute merge order: dependency cycle detected");
+  }
+  return ordered;
+}
+function loadDependenciesFor(beadIds) {
+  const selected = new Set(beadIds);
+  const dependenciesByBeadId = new Map;
+  for (const beadId of beadIds) {
+    const bead = readBead(beadId);
+    const dependencyIds = (bead.dependencies ?? []).map((dep) => dep.id).filter((id) => {
+      if (!id)
+        return false;
+      return selected.has(id);
+    });
+    dependenciesByBeadId.set(beadId, dependencyIds);
+  }
+  return dependenciesByBeadId;
+}
+function resolveMergeTargets(target) {
+  const bead = readBead(target);
+  const statuses = readAllJobStatuses();
+  if (bead.issue_type !== "epic") {
+    const chain = selectNewestChainRootJob(target, statuses);
+    if (!chain) {
+      throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
+    }
+    ensureTerminalJobs([chain]);
+    return [chain];
+  }
+  const childIds = readEpicChildIds(target);
+  const chains = childIds.map((childId) => selectNewestChainRootJob(childId, statuses)).filter((chain) => Boolean(chain));
+  if (chains.length === 0) {
+    throw new Error(`No mergeable chain branches found under epic '${target}'`);
+  }
+  ensureTerminalJobs(chains);
+  const dependenciesByBeadId = loadDependenciesFor(chains.map((chain) => chain.beadId));
+  return topologicallySortChains(chains, dependenciesByBeadId);
+}
+function readChangedFilesForHead() {
+  const diff = runCommand("git", ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]);
+  if (diff.status !== 0)
+    return [];
+  return diff.stdout.split(`
+`).map((line) => line.trim()).filter(Boolean);
+}
+function getConflictFiles() {
+  const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"]);
+  if (result.status !== 0)
+    return [];
+  return result.stdout.split(`
+`).map((line) => line.trim()).filter(Boolean);
+}
+function mergeBranch(branch) {
+  const result = runCommand("git", ["merge", branch, "--no-ff", "--no-edit"]);
+  if (result.status === 0)
+    return;
+  const conflicts = getConflictFiles();
+  const context = conflicts.length > 0 ? `
+Conflicting files:
+${conflicts.map((file) => `- ${file}`).join(`
+`)}` : "";
+  throw new Error(`Merge conflict while merging '${branch}'.${context}`);
+}
+function runTypecheckGate() {
+  const tsc = runCommand("bunx", ["tsc", "--noEmit"]);
+  if (tsc.status === 0)
+    return;
+  const stderr = tsc.stderr.trim();
+  const stdout = tsc.stdout.trim();
+  throw new Error(`TypeScript gate failed after merge.
+${stderr || stdout || "Unknown tsc error"}`);
+}
+function runRebuild() {
+  const build = runCommand("bun", ["run", "build"]);
+  if (build.status === 0)
+    return;
+  const stderr = build.stderr.trim();
+  const stdout = build.stdout.trim();
+  throw new Error(`Rebuild failed.
+${stderr || stdout || "Unknown build error"}`);
+}
+function printSummary(steps, rebuild) {
+  console.log("Merge complete.");
+  console.log("Merged branches (in order):");
+  for (const step of steps) {
+    console.log(`- ${step.branch} (${step.beadId})`);
+    if (step.changedFiles.length === 0) {
+      console.log("  files: (none)");
+      continue;
+    }
+    console.log(`  files: ${step.changedFiles.join(", ")}`);
+  }
+  console.log("TypeScript gate: passed after each merge");
+  if (rebuild) {
+    console.log("Rebuild: bun run build (passed)");
+  }
+}
+function printUsageAndExit2(message) {
+  console.error(message);
+  console.error("Usage: specialists|sp merge <target-bead-id> [--rebuild]");
+  process.exit(1);
+}
+async function run21() {
+  let options;
+  try {
+    options = parseOptions2(process.argv.slice(3));
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    printUsageAndExit2(message);
+  }
+  const targets = resolveMergeTargets(options.target);
+  const mergedSteps = [];
+  for (const target of targets) {
+    mergeBranch(target.branch);
+    runTypecheckGate();
+    mergedSteps.push({
+      beadId: target.beadId,
+      branch: target.branch,
+      changedFiles: readChangedFilesForHead()
+    });
+  }
+  if (options.rebuild) {
+    runRebuild();
+  }
+  printSummary(mergedSteps, options.rebuild);
+}
+var TERMINAL_STATUSES3;
+var init_merge = __esm(() => {
+  init_job_root();
+  TERMINAL_STATUSES3 = new Set(["done", "error", "cancelled"]);
+});
+
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run21
+  run: () => run22
 });
-import { join as join25 } from "path";
-async function run21() {
+import { join as join26 } from "path";
+async function run22() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
     process.exit(1);
   }
-  const jobsDir = join25(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join26(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   try {
     const status = supervisor.readStatus(jobId);
@@ -29611,18 +30288,18 @@ var init_stop = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run22
+  run: () => run23
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync17 } from "child_process";
-import { readFileSync as readFileSync19 } from "fs";
-import { join as join26 } from "path";
+import { execFileSync as execFileSync3, spawnSync as spawnSync18 } from "child_process";
+import { readFileSync as readFileSync20 } from "fs";
+import { join as join27 } from "path";
 function exitWithError(message) {
   console.error(message);
   process.exit(1);
 }
 function readStatus(statusPath, jobId) {
   try {
-    return JSON.parse(readFileSync19(statusPath, "utf-8"));
+    return JSON.parse(readFileSync20(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
       exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
@@ -29631,13 +30308,13 @@ function readStatus(statusPath, jobId) {
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
   }
 }
-async function run22() {
+async function run23() {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
   }
-  const jobsDir = join26(process.cwd(), ".specialists", "jobs");
-  const statusPath = join26(jobsDir, jobId, "status.json");
+  const jobsDir = join27(process.cwd(), ".specialists", "jobs");
+  const statusPath = join27(jobsDir, jobId, "status.json");
   const status = readStatus(statusPath, jobId);
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
@@ -29646,7 +30323,7 @@ async function run22() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync17("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync18("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
@@ -29661,7 +30338,7 @@ var init_attach = () => {};
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run23
+  run: () => run24
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
@@ -29675,7 +30352,7 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run23() {
+async function run24() {
   const lines = [
     "",
     bold11("specialists  \xB7  Quick Start Guide"),
@@ -29890,16 +30567,16 @@ var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, y
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run24,
+  run: () => run25,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
   compareVersions: () => compareVersions,
   cleanupProcesses: () => cleanupProcesses
 });
-import { createHash as createHash3 } from "crypto";
-import { spawnSync as spawnSync18 } from "child_process";
-import { existsSync as existsSync24, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync12, readFileSync as readFileSync20, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname5, join as join27, relative, resolve as resolve7 } from "path";
+import { createHash as createHash4 } from "crypto";
+import { spawnSync as spawnSync19 } from "child_process";
+import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync21, readlinkSync as readlinkSync2, writeFileSync as writeFileSync9 } from "fs";
+import { dirname as dirname5, join as join28, relative, resolve as resolve7 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
@@ -29921,17 +30598,17 @@ function section3(label) {
 ${bold12(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync18(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync19(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync18("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync19("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync24(path))
+  if (!existsSync25(path))
     return null;
   try {
-    return JSON.parse(readFileSync20(path, "utf8"));
+    return JSON.parse(readFileSync21(path, "utf8"));
   } catch {
     return null;
   }
@@ -29974,7 +30651,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim13(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync24(join27(CWD, ".beads")))
+  if (existsSync25(join28(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -29994,8 +30671,8 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join27(HOOKS_DIR, name);
-    if (!existsSync24(dest)) {
+    const dest = join28(HOOKS_DIR, name);
+    if (!existsSync25(dest)) {
       fail4(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -30037,15 +30714,15 @@ function checkMCP() {
   return true;
 }
 function hashFile(path) {
-  const hash = createHash3("sha256");
-  hash.update(readFileSync20(path));
+  const hash = createHash4("sha256");
+  hash.update(readFileSync21(path));
   return hash.digest("hex");
 }
 function collectFileHashes(rootDir) {
   const hashes = new Map;
   const visit2 = (dir) => {
-    for (const entry of readdirSync12(dir, { withFileTypes: true })) {
-      const fullPath = join27(dir, entry.name);
+    for (const entry of readdirSync13(dir, { withFileTypes: true })) {
+      const fullPath = join28(dir, entry.name);
       if (entry.isDirectory()) {
         visit2(fullPath);
         continue;
@@ -30056,12 +30733,12 @@ function collectFileHashes(rootDir) {
       hashes.set(relPath, hashFile(fullPath));
     }
   };
-  if (existsSync24(rootDir))
+  if (existsSync25(rootDir))
     visit2(rootDir);
   return hashes;
 }
 function isSymlinkTo(linkPath, expectedTargetPath) {
-  if (!existsSync24(linkPath))
+  if (!existsSync25(linkPath))
     return { ok: false, reason: "missing" };
   let stats;
   try {
@@ -30085,12 +30762,12 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
 }
 function checkSkillDrift() {
   section3("Skill drift  (.xtrm skill sync)");
-  if (!existsSync24(CONFIG_SKILLS_DIR)) {
+  if (!existsSync25(CONFIG_SKILLS_DIR)) {
     fail4("config/skills/ missing");
     fix("restore config/skills/ from git");
     return false;
   }
-  if (!existsSync24(XTRM_DEFAULT_SKILLS_DIR)) {
+  if (!existsSync25(XTRM_DEFAULT_SKILLS_DIR)) {
     fail4(".xtrm/skills/default/ missing");
     fix("specialists init --sync-skills");
     return false;
@@ -30132,17 +30809,17 @@ function checkSkillDrift() {
   }
   let linksOk = true;
   for (const scope of ["claude", "pi"]) {
-    const activeRoot = join27(XTRM_ACTIVE_SKILLS_DIR, scope);
-    if (!existsSync24(activeRoot)) {
+    const activeRoot = join28(XTRM_ACTIVE_SKILLS_DIR, scope);
+    if (!existsSync25(activeRoot)) {
       fail4(`${relative(CWD, activeRoot)}/ missing`);
       fix("specialists init --sync-skills");
       linksOk = false;
       continue;
     }
-    const defaultSkills = readdirSync12(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const defaultSkills = readdirSync13(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const skillName of defaultSkills) {
-      const activeLinkPath = join27(activeRoot, skillName);
-      const expectedTarget = join27(XTRM_DEFAULT_SKILLS_DIR, skillName);
+      const activeLinkPath = join28(activeRoot, skillName);
+      const expectedTarget = join28(XTRM_DEFAULT_SKILLS_DIR, skillName);
       const state = isSymlinkTo(activeLinkPath, expectedTarget);
       if (state.ok)
         continue;
@@ -30161,8 +30838,8 @@ function checkSkillDrift() {
     }
   }
   const skillRootChecks = [
-    { root: join27(CLAUDE_DIR, "skills"), expected: ACTIVE_CLAUDE_SKILLS_DIR },
-    { root: join27(PI_DIR, "skills"), expected: ACTIVE_PI_SKILLS_DIR }
+    { root: join28(CLAUDE_DIR, "skills"), expected: ACTIVE_CLAUDE_SKILLS_DIR },
+    { root: join28(PI_DIR, "skills"), expected: ACTIVE_PI_SKILLS_DIR }
   ];
   let rootLinksOk = true;
   for (const check2 of skillRootChecks) {
@@ -30188,20 +30865,20 @@ function checkSkillDrift() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join27(CWD, ".specialists");
-  const jobsDir = join27(rootDir, "jobs");
-  const readyDir = join27(rootDir, "ready");
+  const rootDir = join28(CWD, ".specialists");
+  const jobsDir = join28(rootDir, "jobs");
+  const readyDir = join28(rootDir, "ready");
   let allOk = true;
-  if (!existsSync24(rootDir)) {
+  if (!existsSync25(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync24(subDir)) {
+      if (!existsSync25(subDir)) {
         warn2(`.specialists/${label}/ missing \u2014 auto-creating`);
-        mkdirSync5(subDir, { recursive: true });
+        mkdirSync6(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -30232,17 +30909,17 @@ function compareVersions(left, right) {
 }
 function setStatusError(statusPath) {
   try {
-    const raw = readFileSync20(statusPath, "utf8");
+    const raw = readFileSync21(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
-    writeFileSync8(statusPath, `${JSON.stringify(status, null, 2)}
+    writeFileSync9(statusPath, `${JSON.stringify(status, null, 2)}
 `, "utf8");
   } catch {}
 }
 function cleanupProcesses(jobsDir, dryRun) {
   let entries;
   try {
-    entries = readdirSync12(jobsDir);
+    entries = readdirSync13(jobsDir);
   } catch {
     entries = [];
   }
@@ -30254,11 +30931,11 @@ function cleanupProcesses(jobsDir, dryRun) {
     zombieJobIds: []
   };
   for (const jobId of entries) {
-    const statusPath = join27(jobsDir, jobId, "status.json");
-    if (!existsSync24(statusPath))
+    const statusPath = join28(jobsDir, jobId, "status.json");
+    if (!existsSync25(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync20(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync21(statusPath, "utf8"));
       result.total += 1;
       if (status.status !== "running" && status.status !== "starting")
         continue;
@@ -30291,8 +30968,8 @@ function renderProcessSummary(result, dryRun) {
 }
 function checkZombieJobs() {
   section3("Background jobs");
-  const jobsDir = join27(CWD, ".specialists", "jobs");
-  if (!existsSync24(jobsDir)) {
+  const jobsDir = join28(CWD, ".specialists", "jobs");
+  if (!existsSync25(jobsDir)) {
     hint("No .specialists/jobs/ \u2014 skipping");
     return true;
   }
@@ -30310,7 +30987,7 @@ function checkZombieJobs() {
   }
   return result.zombies === 0;
 }
-async function run24() {
+async function run25() {
   console.log(`
 ${bold12("specialists doctor")}
 `);
@@ -30336,18 +31013,18 @@ ${bold12("specialists doctor")}
 var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
-  CLAUDE_DIR = join27(CWD, ".claude");
-  PI_DIR = join27(CWD, ".pi");
-  XTRM_SKILLS_DIR = join27(CWD, ".xtrm", "skills");
-  XTRM_DEFAULT_SKILLS_DIR = join27(XTRM_SKILLS_DIR, "default");
-  XTRM_ACTIVE_SKILLS_DIR = join27(XTRM_SKILLS_DIR, "active");
-  ACTIVE_CLAUDE_SKILLS_DIR = join27(XTRM_ACTIVE_SKILLS_DIR, "claude");
-  ACTIVE_PI_SKILLS_DIR = join27(XTRM_ACTIVE_SKILLS_DIR, "pi");
-  CONFIG_SKILLS_DIR = join27(CWD, "config", "skills");
-  SPECIALISTS_DIR = join27(CWD, ".specialists");
-  HOOKS_DIR = join27(SPECIALISTS_DIR, "default", "hooks");
-  SETTINGS_FILE = join27(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join27(CWD, ".mcp.json");
+  CLAUDE_DIR = join28(CWD, ".claude");
+  PI_DIR = join28(CWD, ".pi");
+  XTRM_SKILLS_DIR = join28(CWD, ".xtrm", "skills");
+  XTRM_DEFAULT_SKILLS_DIR = join28(XTRM_SKILLS_DIR, "default");
+  XTRM_ACTIVE_SKILLS_DIR = join28(XTRM_SKILLS_DIR, "active");
+  ACTIVE_CLAUDE_SKILLS_DIR = join28(XTRM_ACTIVE_SKILLS_DIR, "claude");
+  ACTIVE_PI_SKILLS_DIR = join28(XTRM_ACTIVE_SKILLS_DIR, "pi");
+  CONFIG_SKILLS_DIR = join28(CWD, "config", "skills");
+  SPECIALISTS_DIR = join28(CWD, ".specialists");
+  HOOKS_DIR = join28(SPECIALISTS_DIR, "default", "hooks");
+  SETTINGS_FILE = join28(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join28(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -30357,9 +31034,9 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run25
+  run: () => run26
 });
-async function run25() {
+async function run26() {
   console.log("");
   console.log(yellow13("\u26A0 DEPRECATED: `specialists setup` is deprecated"));
   console.log("");
@@ -30382,13 +31059,13 @@ var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run26
+  run: () => run27
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run26() {
+async function run27() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -30491,6 +31168,7 @@ var init_help = __esm(() => {
     ["poll", "Machine-readable job status polling (for scripts/Claude Code)"],
     ["result", "Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit"],
     ["clean", "Purge completed job directories (TTL, --all, --keep, --dry-run)"],
+    ["merge", "Merge chain-root branch or epic child branches (topological order)"],
     ["steer", "Send a mid-run message to a running job"],
     ["resume", "Resume a waiting keep-alive session with a next-turn prompt (retains full context)"],
     ["stop", "Stop a running job"],
@@ -38012,7 +38690,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run27() {
+async function run28() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -38663,6 +39341,34 @@ async function run27() {
     const { run: handler } = await Promise.resolve().then(() => (init_clean(), exports_clean));
     return handler();
   }
+  if (sub === "merge") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists merge <target-bead-id> [--rebuild]",
+        "",
+        "Merge a chain root bead branch or all chain branches under an epic.",
+        "",
+        "Behavior:",
+        "  - chain root target: merges one associated branch",
+        "  - epic target: merges child chain branches in dependency topological order",
+        "  - runs `bunx tsc --noEmit` after each merge and stops on failure",
+        "  - stops on first merge conflict and reports conflicting files",
+        "",
+        "Options:",
+        "  --rebuild   Run `bun run build` after all merges complete",
+        "",
+        "Examples:",
+        "  specialists merge unitAI-abc1",
+        "  specialists merge unitAI-epic1 --rebuild",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_merge(), exports_merge));
+    return handler();
+  }
   if (sub === "stop") {
     if (wantsHelp()) {
       console.log([
@@ -38773,7 +39479,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run27().catch((error2) => {
+run28().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
