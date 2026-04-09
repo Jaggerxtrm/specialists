@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.0.0
-updated: 2026-04-08
-synced_at: 36cfce04
+version: 2.1.0
+updated: 2026-04-10
+synced_at: a1e9f935
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -100,6 +100,8 @@ specialists run executor --job a1b2c3 --bead hgpu.4
 ### Worktree guard
 
 Specialists with `permission_required = MEDIUM` or `HIGH` can edit files. Running them in the main checkout risks concurrent write conflicts. To prevent this, `specialists run` enforces an **isolation guard**: when none of `--worktree`, `--job`, or `--no-worktree` is supplied, the command exits immediately with:
+
+Additionally, when `--worktree` is used, the pi session enforces a **write-boundary**: edit/write/multiEdit/notebookEdit tool calls are restricted to paths within the worktree root. Read and bash tools are not intercepted. If a write tool attempts an out-of-bounds path, it falls back to a tmp-fs location (writes to a temp directory that is discarded). This prevents accidental modifications to files outside the isolated worktree.
 
 ```
 Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
@@ -898,3 +900,68 @@ specialists validate code-review --json
 
 - `0`: Validation passed.
 - `1`: Not found, read error, YAML/schema validation failure, or invalid args.
+
+---
+
+## `specialists merge`
+
+### Synopsis
+
+```bash
+specialists merge <target-bead-id> [--rebuild]
+```
+
+### Flags
+
+- `--rebuild`: Run `bun run build` after all merges complete.
+
+### Arguments
+
+- `<target-bead-id>`: Either a **chain-root bead** (single branch merge) or an **epic bead** (multiple child branches merged in topological order).
+
+### Behavior
+
+**Chain-root merge (single bead)**:
+1. Read bead via `bd show --json`
+2. Find the newest terminal job with `worktree_path` and `branch` for that bead
+3. Merge the branch with `--no-ff --no-edit`
+4. Run TypeScript gate (`bunx tsc --noEmit`)
+5. Print summary with changed files
+
+**Epic merge (multiple children)**:
+1. Read epic bead and all children via `bd children <epic> --json`
+2. For each child, find the newest terminal chain-root job
+3. Topologically sort chains by bead dependencies (`topologicallySortChains`)
+4. Merge each branch in dependency order, running tsc gate after each
+5. Print ordered summary with per-merge file lists
+
+**Safety checks**:
+- Refuses merge if any chain job is non-terminal (`starting`, `running`)
+- Refuses merge if dependency cycle detected (topological sort fails)
+- TypeScript gate runs after EACH merge, not just at the end
+
+### Examples
+
+```bash
+# Single chain merge
+specialists merge unitAI-55d
+
+# Epic with ordered children
+specialists merge unitAI-3f7b
+
+# Rebuild after merge
+specialists merge unitAI-55d --rebuild
+```
+
+### Exit codes
+
+- `0`: All merges succeeded, TypeScript gate passed.
+- `1`: Invalid args, bead not found, no chain branches found, non-terminal jobs, dependency cycle, merge conflict, or TypeScript gate failure.
+
+### Notes
+
+- Merge target must have at least one job with `worktree_path` and `branch` metadata.
+- Epic children without chain-root jobs are skipped (not an error).
+- Uses `--no-ff` to preserve branch history.
+- `--rebuild` runs once at the end, not per-merge.
+- Source: `src/cli/merge.ts`
