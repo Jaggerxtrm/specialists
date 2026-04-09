@@ -19,6 +19,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['poll', 'Machine-readable job status polling (for scripts/Claude Code)'],
   ['result', 'Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit'],
   ['clean', 'Purge completed job directories (TTL, --all, --keep, --dry-run)'],
+  ['merge', 'Merge chain-root branch or epic child branches (topological order)'],
   ['steer', 'Send a mid-run message to a running job'],
   ['resume', 'Resume a waiting keep-alive session with a next-turn prompt (retains full context)'],
   ['stop', 'Stop a running job'],
