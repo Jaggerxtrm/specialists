@@ -461,7 +461,7 @@ export type NodeEventType =
   | 'memory_updated'
   | 'memory_patch_rejected'
   | 'memory_patch_deduplicated'
-  | 'action_dispatched'
+  // action_written is the canonical "dispatched to member" event.
   | 'action_queued'
   | 'action_written'
   | 'action_observed'

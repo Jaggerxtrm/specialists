@@ -411,27 +411,45 @@ Node runtime persistence lives in schema v4:
 - `type`
 - `event_json`
 
-Supported event types (`NodeEventType`):
+Supported event types (`NodeEventType`), grouped by lifecycle:
 
-- `node_created`
-- `node_started`
-- `node_state_changed`
-- `member_started`
-- `member_state_changed`
-- `member_output_received`
-- `member_failed`
-- `member_recovered`
-- `coordinator_resumed`
-- `coordinator_output_received`
-- `coordinator_output_invalid`
-- `memory_updated`
-- `memory_patch_rejected`
-- `memory_patch_deduplicated`
-- `action_dispatched`
-- `node_waiting`
-- `node_done`
-- `node_error`
-- `node_stopped`
+- **Node lifecycle**
+  - `node_created`
+  - `node_started`
+  - `node_state_changed`
+  - `node_recovered`
+  - `node_waiting`
+  - `node_done`
+  - `node_error`
+  - `node_stopped`
+- **Member lifecycle**
+  - `member_started`
+  - `member_state_changed`
+  - `member_output_received`
+  - `member_failed`
+  - `member_recovered`
+  - `member_respawned`
+  - `member_job_rebound`
+  - `member_disabled`
+- **Coordinator lifecycle**
+  - `coordinator_resumed`
+  - `coordinator_resume_state`
+  - `coordinator_resume_skipped`
+  - `coordinator_output_received`
+  - `coordinator_output_invalid`
+  - `coordinator_repair_requested`
+- **Memory lifecycle**
+  - `memory_updated`
+  - `memory_patch_rejected`
+  - `memory_patch_deduplicated`
+- **Action lifecycle**
+  - `action_queued`
+  - `action_written`
+  - `action_observed`
+  - `action_superseded`
+  - `action_completed`
+  - `action_failed`
+  - `action_dropped`
 
 ### `node_memory`
 
@@ -484,7 +502,7 @@ Validated path from bootstrap to completion:
    - Valid output:
      - emit `coordinator_output_received`,
      - apply `memory_patch` -> `node_memory` + `memory_updated` events,
-     - dispatch `actions[]` to target members (`action_dispatched`).
+     - queue/write `actions[]` to target members (`action_queued` -> `action_written`).
    - Invalid output:
      - emit `coordinator_output_invalid`,
      - run up to 3 repair attempts.
