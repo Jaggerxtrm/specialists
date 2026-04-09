@@ -17,7 +17,7 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "anthropic/claude-haiku-4-5",
+      "model": "dashscope/qwen3.5-plus",
       "fallback_model": "anthropic/claude-sonnet-4-6",
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
