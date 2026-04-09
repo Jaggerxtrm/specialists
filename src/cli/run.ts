@@ -326,12 +326,14 @@ export async function run(): Promise<void> {
 
   // ── Worktree guard for edit-capable specialists ────────────────────────────
   const permission = specialist.specialist.execution.permission_required;
+  const requiresWorktree = specialist.specialist.execution.requires_worktree ?? true;
   const perm: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH' =
     permission === 'LOW' || permission === 'MEDIUM' || permission === 'HIGH'
       ? permission
       : 'READ_ONLY';
   const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
-  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+  // Skip worktree requirement if specialist explicitly opts out (e.g., memory-processor writes shared state)
+  if (editCapable && requiresWorktree && !args.worktree && !args.reuseJobId && !args.noWorktree) {
     process.stderr.write(
       `Error: specialist '${args.name}' has permission_required=${perm} and can edit files.\n` +
       `Edit-capable specialists must run in isolation. Use one of:\n` +

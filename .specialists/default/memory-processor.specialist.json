@@ -24,6 +24,7 @@
       "response_format": "markdown",
       "output_type": "workflow",
       "permission_required": "MEDIUM",
+      "requires_worktree": false,
       "max_retries": 0,
       "interactive": false
     },

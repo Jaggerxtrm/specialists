@@ -17537,6 +17537,7 @@ var init_schema = __esm(() => {
     response_format: enumType(["text", "json", "markdown"]).default("text"),
     output_type: enumType(["codegen", "analysis", "review", "synthesis", "orchestration", "workflow", "research", "custom"]).default("custom"),
     permission_required: enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]).default("READ_ONLY"),
+    requires_worktree: booleanType().default(true),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
     preferred_profile: stringType().optional(),
     approval_mode: stringType().optional()
@@ -24909,9 +24910,10 @@ async function run11() {
     process.exit(1);
   });
   const permission = specialist.specialist.execution.permission_required;
+  const requiresWorktree = specialist.specialist.execution.requires_worktree ?? true;
   const perm = permission === "LOW" || permission === "MEDIUM" || permission === "HIGH" ? permission : "READ_ONLY";
   const editCapable = perm === "MEDIUM" || perm === "HIGH";
-  if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+  if (editCapable && requiresWorktree && !args.worktree && !args.reuseJobId && !args.noWorktree) {
     process.stderr.write(`Error: specialist '${args.name}' has permission_required=${perm} and can edit files.
 ` + `Edit-capable specialists must run in isolation. Use one of:
 ` + `  --worktree      provision an isolated worktree (recommended)

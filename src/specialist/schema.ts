@@ -33,6 +33,8 @@ const ExecutionSchema = z.object({
    *  HIGH      : + write                      (full access — create new files)
    */
   permission_required: z.enum(['READ_ONLY', 'LOW', 'MEDIUM', 'HIGH']).default('READ_ONLY'),
+  /** Whether specialist requires worktree isolation. Set false for workflow specialists that write shared state (.xtrm/memory.md) and should commit directly to master. */
+  requires_worktree: z.boolean().default(true),
   /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
   thinking_level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
   // Agent Forge compat — accepted but ignored by specialists
