@@ -3,7 +3,7 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { spawn as cpSpawn } from 'node:child_process';
+import { spawn as cpSpawn, execSync } from 'node:child_process';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { SpecialistRunner } from '../specialist/runner.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
@@ -498,6 +498,20 @@ export async function run(): Promise<void> {
     },
   });
 
+  // Set bead-based claim for edit gate — allows specialists to edit without session-scoped claim.
+  // This is checked by beads-edit-gate as a fallback when claimed:<sessionId> is not set.
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync(`bd kv set "bead-claim:${args.beadId}" "active"`, {
+        cwd: workingDirectory,
+        stdio: 'pipe',
+        timeout: 5000,
+      });
+    } catch {
+      // Non-fatal — edit gate will fall back to in_progress check
+    }
+  }
+
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
   let jobId: string;
@@ -527,6 +541,19 @@ export async function run(): Promise<void> {
 
   process.stderr.write(`\n${green('✓')} ${footer}\n\n`);
   process.stderr.write(dim(`Poll: specialists poll ${jobId} --json\n\n`));
+
+  // Clean up bead-claim after specialist completes
+  if (args.beadId && workingDirectory) {
+    try {
+      execSync(`bd kv clear "bead-claim:${args.beadId}"`, {
+        cwd: workingDirectory,
+        stdio: 'pipe',
+        timeout: 5000,
+      });
+    } catch {
+      // Non-fatal — stale claim will be overwritten on next run
+    }
+  }
 
   // Exit immediately - all work is done
   process.exit(0);

@@ -19166,19 +19166,35 @@ class SpecialistRunner {
 - Do NOT create new beads or sub-issues \u2014 this bead IS your task.
 - Do NOT run \`bd create\` \u2014 the orchestrator manages issue tracking.
 - Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
-      agentsMd += `
-
----
-## Specialist Run Context (OVERRIDES CLAUDE.md / AGENTS.md)
-You are a specialist agent. The following rules OVERRIDE any conflicting instructions in CLAUDE.md or AGENTS.md:
-- Do NOT run \`specialists init\` or \`sp init\` \u2014 these are user-only bootstrap commands that will corrupt the project.
-- Do NOT run \`specialists setup\` or \`specialists install\`.
-- The edit-gate (bd create before editing) does NOT apply inside a specialist run.
-- GitNexus impact warnings (HIGH/CRITICAL risk) are INFORMATIONAL ONLY \u2014 do NOT stop or wait for confirmation. Proceed with the fix regardless of risk level. The orchestrator has already approved the work by dispatching you.
-- NEVER change your working directory. Do not \`cd\` anywhere. All file paths are relative to your initial cwd. If you need files outside your working directory, use absolute paths \u2014 but never leave.${beadInstructions}
+      agentsMd += `...beadInstructions}
 ---
 `;
     }
+    try {
+      const memoryMdPath = resolve2(runCwd, ".xtrm/memory.md");
+      if (existsSync3(memoryMdPath)) {
+        const memoryMd = readFileSync(memoryMdPath, "utf-8");
+        agentsMd += `
+
+---
+## Project Memory (SSOT)
+_Injected at spawn \u2014 use as operational context_
+${memoryMd}
+---
+`;
+      }
+    } catch {}
+    try {
+      const bdPrime = execSync("bd prime", { encoding: "utf8", cwd: runCwd, timeout: 1e4 });
+      agentsMd += `
+
+---
+## Beads Workflow Context (bd prime)
+_Injected at spawn \u2014 workflow rules + all bd memories_
+${bdPrime}
+---
+`;
+    } catch {}
     const responseFormat = execution.response_format ?? "text";
     const outputType = execution.output_type ?? "custom";
     const specialistOutputSchema = prompt.output_schema;
@@ -20361,6 +20377,7 @@ function initSchema(db) {
   migrateToV4(db);
   migrateToV5(db);
   migrateToV6(db);
+  migrateToV7(db);
   verifyWalMode(db);
 }
 function migrateToV5(db) {
@@ -20420,6 +20437,39 @@ function migrateToV6(db) {
   db.run(`
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (6, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV7(db) {
+  const hasV7 = db.query("SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1").get();
+  const nodeRunColumns = new Set(db.query("PRAGMA table_info(node_runs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "pr_number", definition: "INTEGER" },
+    { name: "pr_url", definition: "TEXT" },
+    { name: "pr_head_sha", definition: "TEXT" },
+    { name: "gate_results", definition: "TEXT" },
+    { name: "completion_strategy", definition: "TEXT" }
+  ]) {
+    if (!nodeRunColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "worktree_path", definition: "TEXT" },
+    { name: "parent_member_id", definition: "TEXT" },
+    { name: "replaced_member_id", definition: "TEXT" },
+    { name: "phase_id", definition: "TEXT" }
+  ]) {
+    if (!nodeMemberColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  if (hasV7) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (7, strftime('%s', 'now') * 1000);
   `);
 }
 
@@ -20494,9 +20544,14 @@ class SqliteClient {
         waiting_on,
         error,
         memory_namespace,
-        status_json
+        status_json,
+        pr_number,
+        pr_url,
+        pr_head_sha,
+        gate_results,
+        completion_strategy
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         node_name = excluded.node_name,
         status = excluded.status,
@@ -20506,7 +20561,12 @@ class SqliteClient {
         waiting_on = excluded.waiting_on,
         error = excluded.error,
         memory_namespace = excluded.memory_namespace,
-        status_json = excluded.status_json;
+        status_json = excluded.status_json,
+        pr_number = excluded.pr_number,
+        pr_url = excluded.pr_url,
+        pr_head_sha = excluded.pr_head_sha,
+        gate_results = excluded.gate_results,
+        completion_strategy = excluded.completion_strategy;
     `, [
       nodeRun.id,
       nodeRun.node_name,
@@ -20517,7 +20577,12 @@ class SqliteClient {
       nodeRun.waiting_on ?? null,
       nodeRun.error ?? null,
       nodeRun.memory_namespace ?? null,
-      nodeRun.status_json
+      nodeRun.status_json,
+      nodeRun.pr_number ?? null,
+      nodeRun.pr_url ?? null,
+      nodeRun.pr_head_sha ?? null,
+      nodeRun.gate_results ?? null,
+      nodeRun.completion_strategy ?? null
     ]);
   }
   writeNodeMemberRow(member) {
@@ -20531,9 +20596,13 @@ class SqliteClient {
         role,
         status,
         enabled,
-        generation
+        generation,
+        worktree_path,
+        parent_member_id,
+        replaced_member_id,
+        phase_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(node_run_id, member_id) DO UPDATE SET
         job_id = excluded.job_id,
         specialist = excluded.specialist,
@@ -20541,7 +20610,11 @@ class SqliteClient {
         role = excluded.role,
         status = excluded.status,
         enabled = excluded.enabled,
-        generation = excluded.generation;
+        generation = excluded.generation,
+        worktree_path = excluded.worktree_path,
+        parent_member_id = excluded.parent_member_id,
+        replaced_member_id = excluded.replaced_member_id,
+        phase_id = excluded.phase_id;
     `, [
       member.node_run_id,
       member.member_id,
@@ -20551,7 +20624,11 @@ class SqliteClient {
       member.role ?? null,
       member.status,
       member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
-      member.generation ?? 0
+      member.generation ?? 0,
+      member.worktree_path ?? null,
+      member.parent_member_id ?? null,
+      member.replaced_member_id ?? null,
+      member.phase_id ?? null
     ]);
   }
   writeNodeEventRow(nodeRunId, t, type, eventJson) {
@@ -20770,7 +20847,11 @@ class SqliteClient {
         role: row.role ?? undefined,
         status: row.status,
         enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
-        generation: row.generation ?? 0
+        generation: row.generation ?? 0,
+        worktree_path: row.worktree_path ?? undefined,
+        parent_member_id: row.parent_member_id ?? undefined,
+        replaced_member_id: row.replaced_member_id ?? undefined,
+        phase_id: row.phase_id ?? undefined
       }));
     }, "readNodeMembers");
   }
@@ -25451,7 +25532,11 @@ class NodeSupervisor {
         status: "created",
         enabled: true,
         lastSeenOutputHash: null,
-        generation: 0
+        generation: 0,
+        worktreePath: member.worktreePath ?? member.worktree,
+        parentMemberId: member.parentMemberId,
+        replacedMemberId: member.replacedMemberId,
+        phaseId: member.phaseId
       }
     ]));
   }
@@ -25576,6 +25661,10 @@ class NodeSupervisor {
         member.status = row.status;
         member.enabled = row.enabled ?? true;
         member.generation = row.generation ?? member.generation;
+        member.worktreePath = row.worktree_path ?? member.worktreePath;
+        member.parentMemberId = row.parent_member_id ?? member.parentMemberId;
+        member.replacedMemberId = row.replaced_member_id ?? member.replacedMemberId;
+        member.phaseId = row.phase_id ?? member.phaseId;
       }
       const lifecycleByActionId = new Map;
       const events = this.opts.sqliteClient.readNodeEvents(this.opts.nodeId);
@@ -25648,7 +25737,11 @@ class NodeSupervisor {
           role: member.role,
           status: member.status,
           enabled: member.enabled,
-          generation: member.generation
+          generation: member.generation,
+          worktree_path: member.worktreePath,
+          parent_member_id: member.parentMemberId,
+          replaced_member_id: member.replacedMemberId,
+          phase_id: member.phaseId
         });
       } catch {}
     }
@@ -25811,7 +25904,11 @@ class NodeSupervisor {
           role: member.role,
           status: member.status,
           enabled: member.enabled,
-          generation: member.generation
+          generation: member.generation,
+          worktree_path: member.worktreePath,
+          parent_member_id: member.parentMemberId,
+          replaced_member_id: member.replacedMemberId,
+          phase_id: member.phaseId
         });
       } catch {}
       try {
@@ -25822,6 +25919,13 @@ class NodeSupervisor {
           specialist: member.specialist,
           generation: member.generation
         });
+        if (member.worktreePath) {
+          this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "worktree_provisioned", {
+            node_id: this.opts.nodeId,
+            worktree_path: member.worktreePath,
+            branch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT
+          });
+        }
       } catch {}
       if (previousGeneration > 0 || previousJobId) {
         try {
@@ -26514,47 +26618,51 @@ class NodeSupervisor {
         output_hash: hashOutput(currentOutput)
       });
       this.lastCoordinatorOutputAtMs = Date.now();
+      let retryCount = 0;
       for (const phase of coordinatorOutput.phases) {
+        const memberKeys = phase.members.map((member) => member.member_key);
         this.persistNodeEvent("handleCoordinatorOutput.phase_started", "phase_started", {
           node_id: this.opts.nodeId,
           phase_id: phase.phase_id,
           phase_kind: phase.phase_kind,
-          member_count: phase.members.length
+          member_keys: memberKeys
         });
+        if (phase.phase_kind === PHASE_KINDS.fix) {
+          retryCount += 1;
+          if (retryCount > (this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT)) {
+            this.transition("failed", "max_retries_exceeded_for_fix_phase");
+            break;
+          }
+        }
+        for (const memberSpawn of phase.members) {
+          await this.spawnDynamicMember(phase.phase_id, memberSpawn);
+        }
         this.persistNodeEvent("handleCoordinatorOutput.phase_completed", "phase_completed", {
           node_id: this.opts.nodeId,
           phase_id: phase.phase_id,
-          barrier: phase.barrier
+          phase_kind: phase.phase_kind,
+          outcome_summary: `spawned_members=${memberKeys.length}`
         });
       }
-      for (const action of coordinatorOutput.actions) {
+      for (let index = 0;index < coordinatorOutput.actions.length; index += 1) {
+        const action = coordinatorOutput.actions[index];
+        const actionId = `${this.opts.nodeId}:coordinator:${Date.now()}:${index}`;
         if (action.type === ACTION_TYPES.CREATE_BEAD) {
-          this.appendNodeEvent("action_dropped", {
-            node_id: this.opts.nodeId,
-            action_type: ACTION_TYPES.CREATE_BEAD,
-            reason: "handler_not_implemented_wave_2b",
-            title: action.title
-          });
+          this.executeCreateBeadAction(action, actionId);
         }
         if (action.type === ACTION_TYPES.COMPLETE_NODE) {
-          const completionState = this.opts.completionStrategy === "manual" ? "done" : "awaiting_merge";
-          this.transition(completionState, "complete_node_declared");
-          this.persistNodeEvent("handleCoordinatorOutput.pr_created", "pr_created", {
-            node_id: this.opts.nodeId,
-            report_payload_ref: action.report_payload_ref,
-            force_draft_pr: action.force_draft_pr ?? false,
-            gate_results: action.gate_results,
-            completion_strategy: this.opts.completionStrategy ?? "pr"
-          });
+          await this.executeCompleteNodeAction(action);
         }
       }
       return;
     }
     this.transition("error", "coordinator_output_invalid_after_3_attempts");
   }
-  buildCompletionSummary() {
+  buildCompletionSummary(options) {
     const coordinatorOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? "" : "";
-    const memberSummary = this.getMembers().map((member) => `- ${member.memberId}: ${member.status}`).join(`
+    const memberSummary = this.getMembers().map((member) => `- ${member.memberId}: ${member.status} (generation=${member.generation}, phase=${member.phaseId ?? "-"})`).join(`
+`);
+    const actionLedgerSummary = this.buildActionLedgerSummary().map((entry) => `- action_id=${String(entry.action_id ?? "-")}, member_id=${String(entry.member_id ?? "-")}, type=${String(entry.action_type ?? "-")}, state=${String(entry.lifecycle_state ?? "-")}`).join(`
 `);
     return [
       "Node run completed",
@@ -26562,19 +26670,31 @@ class NodeSupervisor {
       `node_name: ${this.opts.nodeName}`,
       `status: ${this.status}`,
       this.coordinatorJobId ? `coordinator_job_id: ${this.coordinatorJobId}` : "coordinator_job_id: -",
+      options?.reportPayloadRef ? `report_payload_ref: ${options.reportPayloadRef}` : "report_payload_ref: -",
       "",
-      "Member status:",
+      "Member lineage:",
       memberSummary || "- none",
+      "",
+      "Action ledger summary:",
+      actionLedgerSummary || "- none",
+      "",
+      "Reviewer verdicts:",
+      options?.reviewerVerdicts?.length ? options.reviewerVerdicts.map((verdict) => `- ${verdict}`).join(`
+`) : "- none",
+      "",
+      "Gate results:",
+      options?.gateResults ? Object.entries(options.gateResults).map(([gate, result]) => `- ${gate}: ${result}`).join(`
+`) : "- none",
       "",
       "Final coordinator summary:",
       coordinatorOutput.trim() || "(empty)"
     ].join(`
 `);
   }
-  appendCompletionSummaryToBead() {
+  appendCompletionSummaryToBead(options) {
     if (!this.opts.sourceBeadId)
       return;
-    const notes = this.buildCompletionSummary();
+    const notes = this.buildCompletionSummary(options);
     const result = spawnSync12("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -26586,6 +26706,239 @@ class NodeSupervisor {
       const errorMessage = result.stderr?.trim() || result.stdout?.trim() || `bd update exited with status ${result.status}`;
       throw new Error(errorMessage);
     }
+  }
+  runCommand(command, args, cwd) {
+    const result = spawnSync12(command, args, {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(result.stderr?.trim() || result.stdout?.trim() || `${command} exited with status ${result.status}`);
+    }
+    return {
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? ""
+    };
+  }
+  extractCreatedBeadId(output2) {
+    const trimmed = output2.trim();
+    if (trimmed.startsWith("{")) {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.id)
+        return parsed.id;
+    }
+    const matched = trimmed.match(/\b(?:bd-\d+|unitAI-[\w.-]+)\b/);
+    if (!matched) {
+      throw new Error(`Unable to parse created bead id from bd output: ${trimmed}`);
+    }
+    return matched[0];
+  }
+  executeCreateBeadAction(action, sourceActionId) {
+    if (action.type !== ACTION_TYPES.CREATE_BEAD)
+      return;
+    try {
+      const createResult = this.runCommand("bd", [
+        "create",
+        "--title",
+        action.title,
+        "--description",
+        action.description,
+        "--type",
+        action.bead_type,
+        "--priority",
+        String(action.priority),
+        "--json"
+      ]);
+      const createdBeadId = this.extractCreatedBeadId(createResult.stdout);
+      if (action.parent_bead_id) {
+        this.runCommand("bd", ["dep", "add", createdBeadId, action.parent_bead_id]);
+      }
+      for (const dependency of action.depends_on ?? []) {
+        this.runCommand("bd", ["dep", "add", createdBeadId, dependency]);
+      }
+      this.runCommand("bd", ["update", createdBeadId, "--notes", `node_id:${this.opts.nodeId} (created via Wave 2B autonomy action)`]);
+      this.persistNodeEvent("executeCreateBeadAction.bead_created", "bead_created", {
+        node_id: this.opts.nodeId,
+        action_id: sourceActionId,
+        source_action_id: sourceActionId,
+        created_bead_id: createdBeadId,
+        parent_bead_id: action.parent_bead_id ?? null,
+        depends_on: action.depends_on ?? [],
+        title: action.title
+      });
+    } catch (error2) {
+      this.appendNodeEvent("action_dropped", {
+        node_id: this.opts.nodeId,
+        action_type: ACTION_TYPES.CREATE_BEAD,
+        action_id: sourceActionId,
+        reason: toErrorMessage(error2)
+      });
+      this.persistNodeEvent("executeCreateBeadAction.action_failed", "action_failed", {
+        node_id: this.opts.nodeId,
+        action_type: ACTION_TYPES.CREATE_BEAD,
+        action_id: sourceActionId,
+        reason: toErrorMessage(error2)
+      });
+    }
+  }
+  async spawnDynamicMember(phaseId, memberSpawn) {
+    const availableSpecialists = new Set(this.opts.availableSpecialists ?? []);
+    if (availableSpecialists.size > 0 && !availableSpecialists.has(memberSpawn.role)) {
+      throw new Error(`Unknown specialist role '${memberSpawn.role}' for member_key='${memberSpawn.member_key}'.`);
+    }
+    if (memberSpawn.isolated) {
+      console.warn("node supervisor isolated spawn_member requested", {
+        node_id: this.opts.nodeId,
+        member_key: memberSpawn.member_key,
+        message: "isolated flag is reserved for Wave 3 runtime; proceeding without isolation"
+      });
+      this.appendNodeEvent("action_dropped", {
+        node_id: this.opts.nodeId,
+        action_type: ACTION_TYPES.SPAWN_MEMBER,
+        member_key: memberSpawn.member_key,
+        reason: "isolated_requested_but_not_implemented_wave_2b"
+      });
+    }
+    const existing = this.members.get(memberSpawn.member_key);
+    if (existing) {
+      return;
+    }
+    const member = {
+      memberId: memberSpawn.member_key,
+      jobId: null,
+      specialist: memberSpawn.role,
+      role: memberSpawn.role,
+      status: "created",
+      enabled: true,
+      lastSeenOutputHash: null,
+      generation: 0,
+      parentMemberId: memberSpawn.retry_of ?? undefined,
+      phaseId
+    };
+    this.members.set(member.memberId, member);
+    const runOptions = this.createBaseRunOptions(member.specialist, this.buildMemberIdleBootstrapPrompt(member));
+    const controller = new JobControl({
+      runner: this.opts.runner,
+      runOptions,
+      jobsDir: this.opts.jobsDir
+    });
+    const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
+    member.jobId = jobId;
+    member.status = "starting";
+    member.generation = 1;
+    this.memberControllers.set(member.memberId, controller);
+    this.opts.sqliteClient.upsertNodeMember({
+      node_run_id: this.opts.nodeId,
+      member_id: member.memberId,
+      job_id: member.jobId,
+      specialist: member.specialist,
+      role: member.role,
+      status: member.status,
+      enabled: member.enabled,
+      generation: member.generation,
+      worktree_path: member.worktreePath,
+      parent_member_id: member.parentMemberId,
+      replaced_member_id: member.replacedMemberId,
+      phase_id: member.phaseId
+    });
+    this.persistNodeEvent("spawnDynamicMember.member_spawned_dynamic", "member_spawned_dynamic", {
+      node_id: this.opts.nodeId,
+      member_key: member.memberId,
+      specialist: member.specialist,
+      bead_id: memberSpawn.bead_id,
+      phase_id: phaseId,
+      parent_member_id: member.parentMemberId ?? null
+    });
+  }
+  runFinalQualityGates(cwd) {
+    const lintPass = spawnSync12("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const tscPass = spawnSync12("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    return {
+      lint: lintPass ? "pass" : "fail",
+      tsc: tscPass ? "pass" : "fail"
+    };
+  }
+  async executeCompleteNodeAction(action) {
+    for (const member of this.members.values()) {
+      if (!member.jobId)
+        continue;
+      const controller = this.memberControllers.get(member.memberId);
+      if (!controller)
+        continue;
+      try {
+        await controller.stopJob(member.jobId);
+        await controller.waitForTerminal(member.jobId, 5000);
+      } catch {}
+    }
+    this.appendCompletionSummaryToBead({
+      reportPayloadRef: action.report_payload_ref
+    });
+    const gateResults = this.runFinalQualityGates(this.opts.runOptions?.workingDirectory ?? process.cwd());
+    const hasFailingGate = Object.values(gateResults).includes("fail");
+    const completionStrategy = this.opts.completionStrategy ?? "pr";
+    let prMetadata = {};
+    if (completionStrategy === "pr") {
+      if (hasFailingGate && !action.force_draft_pr) {
+        this.transition("failed", "complete_node_gate_failure");
+      } else {
+        const currentBranch = this.runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+        const headSha = this.runCommand("git", ["rev-parse", "HEAD"]).stdout.trim();
+        const title = `${this.opts.nodeName}: ${action.report_payload_ref}`;
+        const body = this.buildCompletionSummary({ gateResults, reportPayloadRef: action.report_payload_ref });
+        const prArgs = ["pr", "create", "--base", this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT, "--head", currentBranch, "--title", title, "--body", body];
+        if (hasFailingGate && action.force_draft_pr) {
+          prArgs.splice(2, 0, "--draft");
+        }
+        const prOutput = this.runCommand("gh", prArgs).stdout.trim();
+        const prNumberMatch = prOutput.match(/\/(\d+)$|#(\d+)/);
+        prMetadata = {
+          pr_number: prNumberMatch ? Number(prNumberMatch[1] ?? prNumberMatch[2]) : undefined,
+          pr_url: prOutput,
+          pr_head_sha: headSha
+        };
+        this.persistNodeEvent("executeCompleteNodeAction.pr_created", "pr_created", {
+          node_id: this.opts.nodeId,
+          pr_number: prMetadata.pr_number ?? null,
+          pr_url: prMetadata.pr_url ?? null,
+          pr_head_sha: prMetadata.pr_head_sha ?? null,
+          base_branch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
+          head_branch: currentBranch,
+          draft: Boolean(hasFailingGate && action.force_draft_pr),
+          gate_results: gateResults
+        });
+        this.transition("awaiting_merge", "complete_node_pr_created");
+      }
+    } else if (!hasFailingGate) {
+      this.transition("done", "complete_node_manual");
+    } else {
+      this.transition("failed", "complete_node_gate_failure");
+    }
+    this.opts.sqliteClient.upsertNodeRun({
+      id: this.opts.nodeId,
+      node_name: this.opts.nodeName,
+      status: this.status,
+      coordinator_job_id: this.coordinatorJobId ?? undefined,
+      started_at_ms: Date.now(),
+      updated_at_ms: Date.now(),
+      memory_namespace: this.opts.memoryNamespace,
+      status_json: JSON.stringify({ status: this.status, reason: "complete_node" }),
+      completion_strategy: completionStrategy,
+      pr_number: prMetadata.pr_number,
+      pr_url: prMetadata.pr_url,
+      pr_head_sha: prMetadata.pr_head_sha,
+      gate_results: JSON.stringify(gateResults)
+    });
+    this.persistNodeEvent("executeCompleteNodeAction.node_completed", "node_completed", {
+      node_id: this.opts.nodeId,
+      final_state: this.status,
+      pr_metadata: prMetadata,
+      gate_results: gateResults,
+      summary_bead_id: this.opts.sourceBeadId ?? null
+    });
   }
   getNextPollIntervalMs(changesCount) {
     if (changesCount > 0 || this.dispatchQueue.length > 0) {
@@ -26732,7 +27085,11 @@ class NodeSupervisor {
               role: member.role,
               status: member.status,
               enabled: member.enabled,
-              generation: member.generation
+              generation: member.generation,
+              worktree_path: member.worktreePath,
+              parent_member_id: member.parentMemberId,
+              replaced_member_id: member.replacedMemberId,
+              phase_id: member.phaseId
             });
           } catch (error2) {
             this.logPersistenceWarning("run.upsertNodeMember", error2);

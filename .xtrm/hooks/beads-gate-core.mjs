@@ -14,6 +14,7 @@ import {
   resolveSessionId,
   isBeadsProject,
   getSessionClaim,
+  getBeadClaim,
   getTotalWork,
   getInProgress,
   isIssueInProgress,
@@ -69,16 +70,30 @@ export function resolveClaimAndWorkState(ctx) {
   if (ctx.sessionId) {
     const claimId = getSessionClaim(ctx.sessionId, ctx.cwd);
     if (claimId === null) return null; // bd kv unavailable
+    if (claimId) {
+      return {
+        claimed: true,
+        claimId,
+        claimInProgress: isIssueInProgress(claimId, ctx.cwd),
+        totalWork,
+        inProgress,
+      };
+    }
+  }
+
+  // No session claim — check for bead-based claim (set by specialist runner)
+  const beadClaimId = getBeadClaim(ctx.cwd);
+  if (beadClaimId) {
     return {
-      claimed: !!claimId,
-      claimId: claimId || null,
-      claimInProgress: claimId ? isIssueInProgress(claimId, ctx.cwd) : false,
+      claimed: true,
+      claimId: beadClaimId,
+      claimInProgress: isIssueInProgress(beadClaimId, ctx.cwd),
       totalWork,
       inProgress,
     };
   }
 
-  // No session_id: fallback to global in_progress check
+  // No session_id and no bead claim: fallback to global in_progress check
   return {
     claimed: false,
     claimId: null,
