@@ -360,6 +360,7 @@ export function initSchema(db: BunDb): void {
   migrateToV4(db);
   migrateToV5(db);
   migrateToV6(db);
+  migrateToV7(db);
   verifyWalMode(db);
 }
 
@@ -442,6 +443,54 @@ function migrateToV6(db: BunDb): void {
   `);
 }
 
+function migrateToV7(db: BunDb): void {
+  const hasV7 = db.query('SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1').get() as { 1?: number } | undefined;
+
+  const nodeRunColumns = new Set(
+    (db.query('PRAGMA table_info(node_runs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  for (const column of [
+    { name: 'pr_number', definition: 'INTEGER' },
+    { name: 'pr_url', definition: 'TEXT' },
+    { name: 'pr_head_sha', definition: 'TEXT' },
+    { name: 'gate_results', definition: 'TEXT' },
+    { name: 'completion_strategy', definition: 'TEXT' },
+  ]) {
+    if (!nodeRunColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  const nodeMemberColumns = new Set(
+    (db.query('PRAGMA table_info(node_members)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  for (const column of [
+    { name: 'worktree_path', definition: 'TEXT' },
+    { name: 'parent_member_id', definition: 'TEXT' },
+    { name: 'replaced_member_id', definition: 'TEXT' },
+    { name: 'phase_id', definition: 'TEXT' },
+  ]) {
+    if (!nodeMemberColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  if (hasV7) {
+    return;
+  }
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (7, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'awaiting_merge' | 'fixing_after_review' | 'failed' | 'error' | 'done' | 'stopped';
 
 export type NodeEventType =
@@ -481,8 +530,12 @@ export type NodeEventType =
   | 'node_stopped'
   | 'phase_started'
   | 'phase_completed'
+  | 'bead_created'
+  | 'worktree_provisioned'
+  | 'member_spawned_dynamic'
   | 'pr_created'
-  | 'pr_updated';
+  | 'pr_updated'
+  | 'node_completed';
 
 export interface NodeRunRow {
   id: string;
@@ -495,6 +548,11 @@ export interface NodeRunRow {
   error?: string;
   memory_namespace?: string;
   status_json: string;
+  pr_number?: number;
+  pr_url?: string;
+  pr_head_sha?: string;
+  gate_results?: string;
+  completion_strategy?: string;
 }
 
 export interface NodeMemberRow {
@@ -507,6 +565,10 @@ export interface NodeMemberRow {
   status: string;
   enabled?: boolean;
   generation?: number;
+  worktree_path?: string;
+  parent_member_id?: string;
+  replaced_member_id?: string;
+  phase_id?: string;
 }
 
 export interface NodeMemoryRow {
@@ -632,9 +694,14 @@ class SqliteClient implements ObservabilitySqliteClient {
         waiting_on,
         error,
         memory_namespace,
-        status_json
+        status_json,
+        pr_number,
+        pr_url,
+        pr_head_sha,
+        gate_results,
+        completion_strategy
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         node_name = excluded.node_name,
         status = excluded.status,
@@ -644,7 +711,12 @@ class SqliteClient implements ObservabilitySqliteClient {
         waiting_on = excluded.waiting_on,
         error = excluded.error,
         memory_namespace = excluded.memory_namespace,
-        status_json = excluded.status_json;
+        status_json = excluded.status_json,
+        pr_number = excluded.pr_number,
+        pr_url = excluded.pr_url,
+        pr_head_sha = excluded.pr_head_sha,
+        gate_results = excluded.gate_results,
+        completion_strategy = excluded.completion_strategy;
     `, [
       nodeRun.id,
       nodeRun.node_name,
@@ -656,6 +728,11 @@ class SqliteClient implements ObservabilitySqliteClient {
       nodeRun.error ?? null,
       nodeRun.memory_namespace ?? null,
       nodeRun.status_json,
+      nodeRun.pr_number ?? null,
+      nodeRun.pr_url ?? null,
+      nodeRun.pr_head_sha ?? null,
+      nodeRun.gate_results ?? null,
+      nodeRun.completion_strategy ?? null,
     ]);
   }
 
@@ -670,9 +747,13 @@ class SqliteClient implements ObservabilitySqliteClient {
         role,
         status,
         enabled,
-        generation
+        generation,
+        worktree_path,
+        parent_member_id,
+        replaced_member_id,
+        phase_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(node_run_id, member_id) DO UPDATE SET
         job_id = excluded.job_id,
         specialist = excluded.specialist,
@@ -680,7 +761,11 @@ class SqliteClient implements ObservabilitySqliteClient {
         role = excluded.role,
         status = excluded.status,
         enabled = excluded.enabled,
-        generation = excluded.generation;
+        generation = excluded.generation,
+        worktree_path = excluded.worktree_path,
+        parent_member_id = excluded.parent_member_id,
+        replaced_member_id = excluded.replaced_member_id,
+        phase_id = excluded.phase_id;
     `, [
       member.node_run_id,
       member.member_id,
@@ -691,6 +776,10 @@ class SqliteClient implements ObservabilitySqliteClient {
       member.status,
       member.enabled === undefined ? 1 : (member.enabled ? 1 : 0),
       member.generation ?? 0,
+      member.worktree_path ?? null,
+      member.parent_member_id ?? null,
+      member.replaced_member_id ?? null,
+      member.phase_id ?? null,
     ]);
   }
 
@@ -936,6 +1025,10 @@ class SqliteClient implements ObservabilitySqliteClient {
         status: row.status,
         enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
         generation: row.generation ?? 0,
+        worktree_path: row.worktree_path ?? undefined,
+        parent_member_id: row.parent_member_id ?? undefined,
+        replaced_member_id: row.replaced_member_id ?? undefined,
+        phase_id: row.phase_id ?? undefined,
       }));
     }, 'readNodeMembers');
   }

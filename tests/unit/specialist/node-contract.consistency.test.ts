@@ -72,6 +72,24 @@ describe('node contract consistency', () => {
     expect(() => coordinatorOutputSchema.parse(sample)).not.toThrow();
   });
 
+  it('wave 2b events are registered in NodeEventType', () => {
+    const observabilitySource = readFileSync('src/specialist/observability-sqlite.ts', 'utf8');
+    const expectedEvents = [
+      'bead_created',
+      'worktree_provisioned',
+      'member_spawned_dynamic',
+      'phase_started',
+      'phase_completed',
+      'pr_created',
+      'pr_updated',
+      'node_completed',
+    ];
+
+    for (const eventName of expectedEvents) {
+      expect(observabilitySource).toContain(`'${eventName}'`);
+    }
+  });
+
   it('validator rules are represented by schema or explicit rejection paths', () => {
     const supervisorSource = readFileSync('src/specialist/node-supervisor.ts', 'utf8');
     const expectedRuntimeChecks = [
