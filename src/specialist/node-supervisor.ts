@@ -115,8 +115,8 @@ const coordinatorMemoryPatchEntrySchema = z.object({
   entry_type: z.enum(['fact', 'question', 'decision']),
   entry_id: z.string().min(1).optional(),
   summary: z.string().min(1),
-  source_member_id: z.string().min(1).optional(),
-  confidence: z.number().min(0).max(1).optional(),
+  source_member_id: z.string().min(1),
+  confidence: z.number().min(0).max(1),
   provenance: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -1081,7 +1081,7 @@ export class NodeSupervisor {
       '- {"type":"steer","memberId":string,"message":string,"dependsOnActionId"?:string}',
       '- {"type":"stop","memberId":string,"dependsOnActionId"?:string}',
       'memory_patch entries:',
-      '- {"entry_type":"fact|question|decision","summary":string,"entry_id"?:string,"source_member_id"?:string,"confidence"?:number,"provenance"?:object}',
+      '- {"entry_type":"fact|question|decision","summary":string,"source_member_id":string,"confidence":number,"entry_id"?:string,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`,
     ].join('\n');
   }

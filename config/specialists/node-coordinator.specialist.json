@@ -14,7 +14,7 @@
         "worktree"
       ],
       "created": "2026-04-03",
-      "updated": "2026-04-04"
+      "updated": "2026-04-09"
     },
     "execution": {
       "mode": "tool",
@@ -30,149 +30,19 @@
       "max_retries": 0
     },
     "prompt": {
-      "system": "You are a node coordinator. You manage a team of specialist members working toward a shared research goal. You are READ_ONLY \u2014 you do not write files or run code. You emit structured JSON decisions only.\n\nYour responsibilities:\n- Read member updates injected into your context\n- Decide which members to resume, steer, or stop next\n- Maintain a running memory patch as typed entries (fact/question/decision). REQUIRED fields: entry_type, summary, source_member_id (which member produced this finding), confidence (0-1)\n- Track coordination state (current_goal, active_members, waiting_on_members)\n- Emit a next_trigger so the NodeSupervisor knows when to resume you\n- If you need human input, set status: waiting and blocking_on.kind: human_input\n\n## Worktree Lifecycle\n\nEvery executor member runs in its own isolated git worktree. You control this through action payloads:\n\n- spawn_member with type=executor: NodeSupervisor provisions a new worktree via --worktree. The executor gets its own branch (feature/<bead-id>-<specialist-slug>) and isolated file tree.\n- spawn_member with type=reviewer/debugger/test-runner: NodeSupervisor routes into the executor's worktree via --job <executor-job-id>. These members see the executor's branch, not main.\n- complete_node or wave completion: triggers merge of worktree branches into master in FIFO dependency order. Orchestrator (or xt-merge) handles sequencing.\n\nKey rules:\n- Parallel executors are only allowed when their file sets are provably disjoint\n- Reviewers/debuggers/test-runners always enter via --job, never --worktree\n- After a wave completes, branches must be merged before the next wave starts\n- If a reviewer returns PARTIAL, create a fix bead as child of the impl bead and re-enter the same worktree via --job\n\nRefer to the using-specialists skill loaded in your context for full orchestration patterns, CLI flags, chained bead pipeline details, and merge protocol.\n\nNEVER emit prose outside of the JSON object. Your entire response must be a single valid JSON object matching the output schema.\n",
+      "system": "You are a node coordinator. You manage a fixed team of specialist members working toward a shared research goal. You are READ_ONLY \u2014 you do not write files or run code. You emit structured JSON decisions only.\n\nYour responsibilities:\n- Read member updates injected into your context\n- Decide which members to resume, steer, or stop next\n- Maintain a running memory patch as typed entries (fact/question/decision). REQUIRED fields: entry_type, summary, source_member_id (which member produced this finding), confidence (0-1)\n\nOutput contract requirements:\n- Return only one JSON object\n- Include only: summary, memory_patch, actions, validation\n- actions may only use: resume(memberId, task), steer(memberId, message), stop(memberId)\n- Do not emit any additional top-level fields\n\nNEVER emit prose outside of the JSON object. Your entire response must be a single valid JSON object matching the output schema.\n",
       "task_template": "$prompt\n\nNode context:\n$bead_context\n\nMember updates (if any):\n$pre_script_output\n",
       "output_schema": {
         "type": "object",
         "required": [
           "summary",
-          "status",
-          "actions",
           "memory_patch",
-          "coordination_state",
-          "routing_rationale",
-          "next_trigger"
+          "actions",
+          "validation"
         ],
         "properties": {
           "summary": {
             "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "success",
-              "partial",
-              "failed",
-              "waiting"
-            ]
-          },
-          "issues_closed": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "issues_created": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "follow_ups": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "risks": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "verification": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "actions": {
-            "type": "array",
-            "items": {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId",
-                    "task"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "resume"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    },
-                    "task": {
-                      "type": "string"
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId",
-                    "message"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "steer"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "stop"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "blocking_on": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "human_input",
-                  "member_output",
-                  "external_dependency"
-                ]
-              },
-              "target": {
-                "type": "string"
-              },
-              "details": {
-                "type": "string"
-              }
-            }
           },
           "memory_patch": {
             "type": "array",
@@ -180,7 +50,9 @@
               "type": "object",
               "required": [
                 "entry_type",
-                "summary"
+                "summary",
+                "source_member_id",
+                "confidence"
               ],
               "properties": {
                 "entry_type": {
@@ -209,66 +81,104 @@
               }
             }
           },
-          "coordination_state": {
-            "type": "object",
-            "properties": {
-              "current_goal": {
-                "type": "string"
-              },
-              "active_members": {
-                "type": "array",
-                "items": {
-                  "type": "string"
+          "actions": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "memberId",
+                    "task"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "resume"
+                      ]
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "task": {
+                      "type": "string"
+                    },
+                    "dependsOnActionId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "memberId",
+                    "message"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "steer"
+                      ]
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "dependsOnActionId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "memberId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "stop"
+                      ]
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "dependsOnActionId": {
+                      "type": "string"
+                    }
+                  }
                 }
-              },
-              "waiting_on_members": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "pending_decisions": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "blockers": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
+              ]
             }
           },
-          "routing_rationale": {
-            "type": "string"
-          },
-          "next_trigger": {
+          "validation": {
             "type": "object",
-            "required": [
-              "event"
-            ],
             "properties": {
-              "event": {
-                "type": "string",
-                "enum": [
-                  "on_member_update",
-                  "on_human_input",
-                  "on_external_update",
-                  "on_timeout",
-                  "manual_resume"
-                ]
+              "ok": {
+                "type": "boolean"
               },
-              "target": {
-                "type": "string"
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
-              "details": {
+              "notes": {
                 "type": "string"
               }
-            }
+            },
+            "additionalProperties": true
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "skills": {
