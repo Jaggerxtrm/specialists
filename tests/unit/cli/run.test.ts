@@ -234,6 +234,14 @@ describe('run CLI', () => {
     process.argv = ['node', '/repo/src/index.ts', 'run', 'code-review', '--prompt', "he'llo", '--background'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
     const randomBytesSpy = vi.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from('a1b2c3', 'hex') as any);
     const isTmuxAvailableSpy = vi.spyOn(tmuxUtils, 'isTmuxAvailable').mockReturnValue(true);
     const createTmuxSessionSpy = vi.spyOn(tmuxUtils, 'createTmuxSession').mockImplementation(() => {});
@@ -276,6 +284,14 @@ describe('run CLI', () => {
     process.argv = ['node', '/repo/src/index.ts', 'run', 'code-review', '--prompt', 'hello', '--background'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
     vi.spyOn(tmuxUtils, 'isTmuxAvailable').mockReturnValue(false);
     const createTmuxSessionSpy = vi.spyOn(tmuxUtils, 'createTmuxSession').mockImplementation(() => {});
     const unref = vi.fn();
@@ -317,6 +333,402 @@ describe('run CLI', () => {
     expect(options.env).toBe(process.env);
     expect(unref).toHaveBeenCalled();
     expect(stdoutWrite).toHaveBeenCalledWith('job-from-fallback\n');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('blocks MEDIUM specialists from reusing a running job worktree', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-running'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockReturnValue({
+      id: 'job-running',
+      specialist: 'other',
+      status: 'running',
+      started_at_ms: Date.now(),
+      worktree_path: '/tmp/wt-job-running',
+    } as any);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+
+    const stderrText = consoleError.mock.calls.map((args) => args.map((a) => String(a)).join(' ')).join('\n');
+    expect(stderrText).toContain('Target job job-running is still running (status: running).');
+    expect(stderrText).toContain('--force-job');
+  });
+
+  it('blocks MEDIUM specialists when target job status is starting with exact error text', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-starting'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockReturnValue({
+      id: 'job-starting',
+      specialist: 'other',
+      status: 'starting',
+      started_at_ms: Date.now(),
+      worktree_path: '/tmp/wt-job-starting',
+    } as any);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+
+    const stderrText = consoleError.mock.calls.map((args) => args.map((a) => String(a)).join(' ')).join('\n');
+    const plainText = stderrText.replace(/\x1b\[[0-9;]*m/g, '');
+    const exactMessage = 'Target job job-starting is still running (status: starting). MEDIUM/HIGH specialists cannot enter an active worktree. Wait for completion or use --force-job to override.';
+    const matchedLine = plainText.split('\n').find((line) => line.startsWith('Target job job-starting is still running'));
+
+    expect(matchedLine).toBe(exactMessage);
+  });
+
+  it('allows MEDIUM specialists to reuse done job worktrees', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-done'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-done') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'done',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-done',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('allows MEDIUM specialists to reuse error job worktrees', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-error'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-error') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'error',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-error',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('allows MEDIUM specialists to reuse cancelled job worktrees', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-cancelled'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-cancelled') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'cancelled',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-cancelled',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('blocks MEDIUM specialists for unknown target job status', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-unknown'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockReturnValue({
+      id: 'job-unknown',
+      specialist: 'other',
+      status: 'unrecognized-status',
+      started_at_ms: Date.now(),
+      worktree_path: '/tmp/wt-job-unknown',
+    } as any);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+
+    const stderrText = consoleError.mock.calls.map((args) => args.map((a) => String(a)).join(' ')).join('\n');
+    expect(stderrText).toContain("Target job job-unknown has unknown status 'unrecognized-status'.");
+    expect(stderrText).toContain('--force-job');
+  });
+
+  it('allows --force-job for MEDIUM specialists with unknown target job status', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-unknown', '--force-job'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-unknown') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'unrecognized-status',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-unknown',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('allows MEDIUM specialists to reuse waiting job worktrees', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-waiting'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-waiting') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'waiting',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-waiting',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('allows READ_ONLY specialists to reuse running job worktrees', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-running'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-running') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'running',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-running',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('allows --force-job to bypass active job reuse guard', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-running', '--force-job'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'HIGH' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-new');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-running') {
+        return {
+          id,
+          specialist: 'other',
+          status: 'running',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-running',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await expect(run()).rejects.toThrow('exit:0');
     expect(exit).toHaveBeenCalledWith(0);
   });
 

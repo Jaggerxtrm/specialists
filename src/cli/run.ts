@@ -47,6 +47,8 @@ interface RunArgs {
   worktree: boolean;
   /** Reuse the workspace from a prior job. Mutually exclusive with --worktree. */
   reuseJobId?: string;
+  /** Bypass reuse guard for active/unknown target job statuses. */
+  forceJob: boolean;
   /** Explicitly bypass the worktree requirement for edit-capable specialists. */
   noWorktree: boolean;
 }
@@ -56,7 +58,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   if (!name || name.startsWith('--')) {
     console.error(
       'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
-      '[--worktree] [--job <id>] [--context-depth <n>] [--model <model>] ' +
+      '[--worktree] [--job <id>] [--force-job] [--context-depth <n>] [--model <model>] ' +
       '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
     );
     process.exit(1);
@@ -75,6 +77,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let worktree = false;
   let noWorktree = false;
   let reuseJobId: string | undefined;
+  let forceJob = false;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -92,6 +95,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--worktree')      { worktree     = true; continue; }
     if (token === '--no-worktree')   { noWorktree   = true; continue; }
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
+    if (token === '--force-job')     { forceJob     = true; continue; }
   }
 
   // ── Mutual exclusion ─────────────────────────────────────────────────────────
@@ -130,7 +134,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId, noWorktree,
+    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, noWorktree,
   };
 }
 
@@ -148,9 +152,18 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
  *
  * Returns undefined when neither flag is set (run in current directory).
  */
+const BLOCKED_JOB_REUSE_STATUSES = new Set(['starting', 'running']);
+
 function resolveWorkingDirectory(
   args: RunArgs,
   jobsDir: string,
+  permissionRequired: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH',
+  readStatus: (jobId: string) => {
+    id?: string;
+    status?: string;
+    worktree_path?: string;
+    worktree_owner_job_id?: string;
+  } | null,
 ): {
   workingDirectory?: string;
   reusedFromJobId?: string;
@@ -173,15 +186,8 @@ function resolveWorkingDirectory(
   }
 
   if (args.reuseJobId !== undefined) {
-    const statusPath = join(jobsDir, args.reuseJobId, 'status.json');
-    let targetStatus: {
-      id?: string;
-      worktree_path?: string;
-      worktree_owner_job_id?: string;
-    } | null = null;
-    try {
-      targetStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
-    } catch {
+    const targetStatus = readStatus(args.reuseJobId);
+    if (!targetStatus) {
       console.error(
         `Error: cannot read status for job '${args.reuseJobId}'. ` +
         `Check the job id with: specialists poll ${args.reuseJobId} --json`,
@@ -189,7 +195,37 @@ function resolveWorkingDirectory(
       process.exit(1);
     }
 
-    const worktreePath = targetStatus?.worktree_path;
+    const targetJobStatus = targetStatus.status;
+    const editCapable = permissionRequired === 'MEDIUM' || permissionRequired === 'HIGH';
+    const isBlockedStatus = typeof targetJobStatus === 'string' && BLOCKED_JOB_REUSE_STATUSES.has(targetJobStatus);
+    const isKnownAllowedStatus = targetJobStatus === 'waiting'
+      || targetJobStatus === 'done'
+      || targetJobStatus === 'error'
+      || targetJobStatus === 'cancelled';
+    const shouldBlockUnknownStatus = editCapable
+      && !args.forceJob
+      && !isBlockedStatus
+      && !isKnownAllowedStatus;
+
+    if (editCapable && !args.forceJob && isBlockedStatus) {
+      console.error(
+        `Target job ${args.reuseJobId} is still running (status: ${targetJobStatus}). ` +
+        `MEDIUM/HIGH specialists cannot enter an active worktree. ` +
+        `Wait for completion or use --force-job to override.`,
+      );
+      process.exit(1);
+    }
+
+    if (shouldBlockUnknownStatus) {
+      console.error(
+        `Target job ${args.reuseJobId} has unknown status '${String(targetJobStatus)}'. ` +
+        `MEDIUM/HIGH specialists block on unknown status to avoid concurrent worktree access. ` +
+        `Use --force-job to override.`,
+      );
+      process.exit(1);
+    }
+
+    const worktreePath = targetStatus.worktree_path;
     if (!worktreePath) {
       console.error(
         `Error: job '${args.reuseJobId}' has no worktree_path — it was not started with --worktree.`,
@@ -197,7 +233,7 @@ function resolveWorkingDirectory(
       process.exit(1);
     }
 
-    const worktreeOwnerJobId = targetStatus?.worktree_owner_job_id ?? targetStatus?.id ?? args.reuseJobId;
+    const worktreeOwnerJobId = targetStatus.worktree_owner_job_id ?? targetStatus.id ?? args.reuseJobId;
 
     process.stderr.write(dim(`[workspace reused from job ${args.reuseJobId}: ${worktreePath}]\n`));
     return {
@@ -289,7 +325,11 @@ export async function run(): Promise<void> {
   });
 
   // ── Worktree guard for edit-capable specialists ────────────────────────────
-  const perm = specialist.specialist.execution.permission_required ?? 'READ_ONLY';
+  const permission = specialist.specialist.execution.permission_required;
+  const perm: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH' =
+    permission === 'LOW' || permission === 'MEDIUM' || permission === 'HIGH'
+      ? permission
+      : 'READ_ONLY';
   const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
   if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
     process.stderr.write(
@@ -395,12 +435,26 @@ export async function run(): Promise<void> {
   // ── Resolve jobs dir and optional working directory ─────────────────────────
   // Supervisor resolves this internally too, but we need it here for the tailer.
   const jobsDir = resolveJobsDir();
+  const statusReader = new Supervisor({
+    runner,
+    runOptions: {
+      name: args.name,
+      prompt,
+    },
+    jobsDir,
+  });
 
   const {
     workingDirectory,
     reusedFromJobId,
     worktreeOwnerJobId,
-  } = resolveWorkingDirectory(args, jobsDir);
+  } = resolveWorkingDirectory(
+    args,
+    jobsDir,
+    perm,
+    (jobId) => statusReader.readStatus(jobId),
+  );
+  statusReader.dispose();
 
   let stopTailer: (() => void) | undefined;
 
