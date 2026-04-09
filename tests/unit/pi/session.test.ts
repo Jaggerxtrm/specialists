@@ -315,6 +315,77 @@ describe('PiAgentSession', () => {
     }
   });
 
+  it('extends stall timeout for bash test commands', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        stallTimeoutMs: 50,
+        testCommandStallTimeoutMs: 200,
+      });
+      await session.start();
+      const promptP = session.prompt('run tests');
+      emitLine(fake, { type: 'response', id: 1, success: true });
+      await promptP;
+
+      emitLine(fake, {
+        type: 'tool_execution_start',
+        toolName: 'bash',
+        toolCallId: 'tool-1',
+        args: { command: 'bun --bun vitest run tests/unit/cli/run.test.ts' },
+      });
+
+      await vi.advanceTimersByTimeAsync(60);
+      expect(fake.proc.kill).not.toHaveBeenCalled();
+
+      const done = session.waitForDone().catch((err) => err);
+      await vi.advanceTimersByTimeAsync(150);
+      const err = await done;
+      expect(err).toBeInstanceOf(StallTimeoutError);
+      expect(fake.proc.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('restores base stall timeout after bash test command ends', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        stallTimeoutMs: 50,
+        testCommandStallTimeoutMs: 200,
+      });
+      await session.start();
+      const promptP = session.prompt('run tests');
+      emitLine(fake, { type: 'response', id: 1, success: true });
+      await promptP;
+
+      emitLine(fake, {
+        type: 'tool_execution_start',
+        toolName: 'bash',
+        toolCallId: 'tool-1',
+        args: { command: 'npm test -- --runInBand' },
+      });
+      await vi.advanceTimersByTimeAsync(40);
+      emitLine(fake, {
+        type: 'tool_execution_end',
+        toolName: 'bash',
+        toolCallId: 'tool-1',
+        isError: false,
+        result: { content: [] },
+      });
+
+      const done = session.waitForDone().catch((err) => err);
+      await vi.advanceTimersByTimeAsync(60);
+      const err = await done;
+      expect(err).toBeInstanceOf(StallTimeoutError);
+      expect(fake.proc.kill).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('close clears stall watchdog timer', async () => {
     vi.useFakeTimers();
     try {

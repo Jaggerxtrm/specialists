@@ -43,6 +43,16 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
+const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
+const TEST_COMMAND_PATTERNS: ReadonlyArray<RegExp> = [
+  /(?:^|\s)(?:bun\s+--bun\s+)?vitest(?:\s|$)/i,
+  /(?:^|\s)bun\s+test(?:\s|$)/i,
+  /(?:^|\s)npm\s+test(?:\s|$)/i,
+  /(?:^|\s)(?:pnpm|yarn)\s+test(?:\s|$)/i,
+  /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
+  /(?:^|\s)pytest(?:\s|$)/i,
+];
+
 export interface AgentSessionMeta {
   backend: string;
   model: string;
@@ -123,6 +133,8 @@ export interface PiSessionOptions {
   onMeta?: (meta: { backend: string; model: string }) => void;
   /** Kill and fail if no streaming/protocol activity occurs within this window */
   stallTimeoutMs?: number;
+  /** Extended stall timeout used while known test commands run via bash tool */
+  testCommandStallTimeoutMs?: number;
 }
 
 /** Maps specialist permission_required to pi --tools argument.
@@ -299,6 +311,18 @@ function findStringValue(payload: unknown, keys: readonly string[]): string | un
   return undefined;
 }
 
+function extractBashCommand(args: Record<string, unknown> | undefined): string | undefined {
+  if (!args) return undefined;
+  const command = args.command ?? args.cmd ?? args.script;
+  if (typeof command !== 'string') return undefined;
+  const normalizedCommand = command.trim();
+  return normalizedCommand.length > 0 ? normalizedCommand : undefined;
+}
+
+function isTestCommand(command: string): boolean {
+  return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
+}
+
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -313,6 +337,8 @@ export class PiAgentSession {
   private _stderrBuffer = '';
   private _stallTimer?: ReturnType<typeof setTimeout>;
   private _stallError?: Error;
+  private _testWindowToolCallIds = new Set<string>();
+  private _testWindowWithoutIdCount = 0;
   private _metrics: SessionRunMetrics = {
     turns: 0,
     tool_calls: 0,
@@ -451,9 +477,39 @@ export class PiAgentSession {
     }
   }
 
+  private _isTestWindowActive(): boolean {
+    return this._testWindowToolCallIds.size > 0 || this._testWindowWithoutIdCount > 0;
+  }
+
+  private _resolveStallTimeoutMs(): number | undefined {
+    const baseTimeoutMs = this.options.stallTimeoutMs;
+    if (!baseTimeoutMs || baseTimeoutMs <= 0) return undefined;
+    if (!this._isTestWindowActive()) return baseTimeoutMs;
+    const testCommandTimeoutMs = this.options.testCommandStallTimeoutMs ?? TEST_COMMAND_STALL_TIMEOUT_MS;
+    return Math.max(baseTimeoutMs, testCommandTimeoutMs);
+  }
+
+  private _activateTestWindow(toolCallId?: string): void {
+    if (toolCallId) {
+      this._testWindowToolCallIds.add(toolCallId);
+      return;
+    }
+    this._testWindowWithoutIdCount += 1;
+  }
+
+  private _deactivateTestWindow(toolCallId?: string): void {
+    if (toolCallId) {
+      this._testWindowToolCallIds.delete(toolCallId);
+      return;
+    }
+    if (this._testWindowWithoutIdCount > 0) {
+      this._testWindowWithoutIdCount -= 1;
+    }
+  }
+
   private _markActivity(): void {
-    const timeoutMs = this.options.stallTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0 || this._killed || this._agentEndReceived) return;
+    const timeoutMs = this._resolveStallTimeoutMs();
+    if (!timeoutMs || this._killed || this._agentEndReceived) return;
 
     this._clearStallTimer();
     this._stallTimer = setTimeout(() => {
@@ -572,12 +628,20 @@ export class PiAgentSession {
     // ── Tool execution (top-level per RPC docs) ────────────────────────────────
     if (type === 'tool_execution_start') {
       this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
+      const toolName = event.toolName ?? event.name ?? 'tool';
+      const toolArgs = event.args as Record<string, unknown> | undefined;
+      const toolCallId = event.toolCallId as string | undefined;
+      const command = toolName === 'bash' ? extractBashCommand(toolArgs) : undefined;
+      if (command && isTestCommand(command)) {
+        this._activateTestWindow(toolCallId);
+        this._markActivity();
+      }
       this.options.onToolStart?.(
-        event.toolName ?? event.name ?? 'tool',
-        event.args as Record<string, unknown> | undefined,
-        event.toolCallId as string | undefined,
+        toolName,
+        toolArgs,
+        toolCallId,
       );
-      this.options.onEvent?.('tool_execution_start', { toolCallId: event.toolCallId as string | undefined });
+      this.options.onEvent?.('tool_execution_start', { toolCallId });
       return;
     }
     if (type === 'tool_execution_update') {
@@ -585,14 +649,20 @@ export class PiAgentSession {
       return;
     }
     if (type === 'tool_execution_end') {
+      const toolName = event.toolName ?? event.name ?? 'tool';
+      const toolCallId = event.toolCallId as string | undefined;
       this.options.onToolEnd?.(
-        event.toolName ?? event.name ?? 'tool',
+        toolName,
         event.isError ?? false,
-        event.toolCallId as string | undefined,
+        toolCallId,
         findToolResultContent(event),
         findToolResultRaw(event),
       );
-      this.options.onEvent?.('tool_execution_end', { toolCallId: event.toolCallId as string | undefined });
+      if (toolName === 'bash') {
+        this._deactivateTestWindow(toolCallId);
+        this._markActivity();
+      }
+      this.options.onEvent?.('tool_execution_end', { toolCallId });
       return;
     }
 
