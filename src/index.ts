@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              status, ps, result, feed, poll, clean, stop, attach, quickstart, help
+ *              status, ps, result, feed, poll, clean, merge, stop, attach, quickstart, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -674,6 +674,34 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/clean.js');
+    return handler();
+  }
+
+  if (sub === 'merge') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists merge <target-bead-id> [--rebuild]',
+        '',
+        'Merge a chain root bead branch or all chain branches under an epic.',
+        '',
+        'Behavior:',
+        '  - chain root target: merges one associated branch',
+        '  - epic target: merges child chain branches in dependency topological order',
+        '  - runs `bunx tsc --noEmit` after each merge and stops on failure',
+        '  - stops on first merge conflict and reports conflicting files',
+        '',
+        'Options:',
+        '  --rebuild   Run `bun run build` after all merges complete',
+        '',
+        'Examples:',
+        '  specialists merge unitAI-abc1',
+        '  specialists merge unitAI-epic1 --rebuild',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/merge.js');
     return handler();
   }
 
