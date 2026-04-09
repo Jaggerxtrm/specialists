@@ -578,6 +578,7 @@ export class NodeSupervisor {
       ...runOptions,
       name: specialist,
       prompt,
+      contextDepth: runOptions.contextDepth,
       keepAlive: true,
       noKeepAlive: false,
       variables: {
@@ -588,9 +589,61 @@ export class NodeSupervisor {
     };
   }
 
+  private buildMemberIdleBootstrapPrompt(member: NodeMemberEntry): string {
+    const roleText = member.role?.trim()
+      ? `\n- Assigned role: ${member.role.trim()}`
+      : '';
+
+    return [
+      `You are node member ${member.memberId}.`,
+      'Bootstrap state: idle_wait.',
+      'Acknowledge readiness briefly, then wait for coordinator resume/steer instructions.',
+      'Do not start investigation or produce substantive work until explicitly resumed.',
+      roleText,
+    ].join('\n').trim();
+  }
+
+  private getBeadGoalSummary(): string {
+    const beadContext = this.opts.runOptions?.variables?.bead_context;
+    if (!beadContext || typeof beadContext !== 'string') {
+      return this.opts.sourceBeadId ?? 'none';
+    }
+
+    const firstLine = beadContext
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+
+    return firstLine ?? (this.opts.sourceBeadId ?? 'none');
+  }
+
+  private buildCoordinatorFirstTurnContext(initialPrompt: string): string {
+    const memberRegistry = this.getMembers().map((member) => ({
+      memberId: member.memberId,
+      specialist: member.specialist,
+      role: member.role ?? null,
+      generation: member.generation,
+      status: member.status,
+      enabled: member.enabled,
+    }));
+
+    return [
+      'node_bootstrap_context:',
+      JSON.stringify({
+        node_id: this.opts.nodeId,
+        node_name: this.opts.nodeName,
+        source_bead_id: this.opts.sourceBeadId ?? null,
+        bead_goal: this.getBeadGoalSummary(),
+        member_registry: memberRegistry,
+        first_routing_instruction: 'Choose exactly one member to resume first with a concrete task. Keep all other members idle.',
+        coordinator_goal: initialPrompt,
+      }, null, 2),
+    ].join('\n');
+  }
+
   private async spawnMembers(): Promise<void> {
     for (const member of this.members.values()) {
-      const prompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+      const prompt = this.buildMemberIdleBootstrapPrompt(member);
       const runOptions = this.createBaseRunOptions(member.specialist, prompt);
       const controller = new JobControl({
         runner: this.opts.runner!,
@@ -653,7 +706,16 @@ export class NodeSupervisor {
   }
 
   private async spawnCoordinator(initialPrompt: string): Promise<void> {
-    const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, initialPrompt);
+    const firstTurnContext = this.buildCoordinatorFirstTurnContext(initialPrompt);
+    this.persistNodeEvent('spawnCoordinator.coordinator_first_turn_context_built', 'coordinator_first_turn_context_built', {
+      node_id: this.opts.nodeId,
+      source_bead_id: this.opts.sourceBeadId ?? null,
+      context_length_chars: firstTurnContext.length,
+      member_count: this.members.size,
+      bead_goal: this.getBeadGoalSummary(),
+    });
+
+    const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, firstTurnContext);
     const controller = new JobControl({
       runner: this.opts.runner!,
       runOptions,
@@ -1603,7 +1665,7 @@ export class NodeSupervisor {
         });
 
         for (const member of this.members.values()) {
-          const memberPrompt = member.role ?? `You are node member ${member.memberId}. Execute delegated tasks from coordinator.`;
+          const memberPrompt = this.buildMemberIdleBootstrapPrompt(member);
           this.memberControllers.set(
             member.memberId,
             new JobControl({
