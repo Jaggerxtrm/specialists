@@ -8,10 +8,11 @@ export const NODE_SUPERVISOR_MAX_RETRIES_DEFAULT = 3;
 
 export const phaseKindSchema = z.enum(PHASE_KIND_VALUES);
 export const PHASE_KINDS = phaseKindSchema.enum;
+export const actionTypeSchema = z.enum(['spawn_member', 'create_bead', 'complete_node']);
 export const ACTION_TYPES = {
-  SPAWN_MEMBER: 'spawn_member',
-  CREATE_BEAD: 'create_bead',
-  COMPLETE_NODE: 'complete_node',
+  SPAWN_MEMBER: actionTypeSchema.enum.spawn_member,
+  CREATE_BEAD: actionTypeSchema.enum.create_bead,
+  COMPLETE_NODE: actionTypeSchema.enum.complete_node,
 } as const;
 export const completionStrategySchema = z.enum(NODE_COMPLETION_STRATEGIES);
 
@@ -39,7 +40,7 @@ export const phaseSchema = z.object({
 });
 
 export const createBeadActionSchema = z.object({
-  type: z.literal(ACTION_TYPES.CREATE_BEAD),
+  type: actionTypeSchema.extract([ACTION_TYPES.CREATE_BEAD]),
   title: z.string().min(1),
   description: z.string().min(1),
   bead_type: z.enum(['task', 'bug', 'feature', 'epic', 'chore', 'decision']),
@@ -49,7 +50,7 @@ export const createBeadActionSchema = z.object({
 });
 
 export const completeNodeActionSchema = z.object({
-  type: z.literal(ACTION_TYPES.COMPLETE_NODE),
+  type: actionTypeSchema.extract([ACTION_TYPES.COMPLETE_NODE]),
   gate_results: z.array(
     z.object({
       gate: z.string().min(1),
