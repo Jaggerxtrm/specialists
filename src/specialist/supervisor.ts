@@ -146,13 +146,13 @@ function getContextHealth(contextPct: number): ContextHealth {
 }
 
 function calculateContextUtilization(
-  cumulativeInputTokens: number,
+  contextInputTokens: number,
   model: string | undefined,
 ): { context_pct: number; context_health: ContextHealth } | undefined {
   const contextWindow = getModelContextWindow(model);
-  if (!contextWindow || cumulativeInputTokens < 0) return undefined;
+  if (!contextWindow || contextInputTokens < 0) return undefined;
 
-  const contextPct = (cumulativeInputTokens / contextWindow) * 100;
+  const contextPct = (contextInputTokens / contextWindow) * 100;
   return {
     context_pct: Number(contextPct.toFixed(2)),
     context_health: getContextHealth(contextPct),
@@ -668,7 +668,7 @@ export class Supervisor {
     let textCharCount = 0;
     let thinkingCharCount = 0;
     let turnTextAccumulator = '';
-    let cumulativeInputTokens = 0;
+    let currentContextTokens = 0;
     const toolCallNames: string[] = [];
     type ActiveToolCallState = {
       tool: string;
@@ -906,7 +906,7 @@ export class Supervisor {
         (metricEvent: SessionMetricEvent) => {
           if (metricEvent.type === 'token_usage') {
             mergeRunMetrics({ token_usage: metricEvent.token_usage });
-            cumulativeInputTokens += metricEvent.token_usage.input_tokens ?? 0;
+            currentContextTokens = metricEvent.token_usage.input_tokens ?? 0;
             appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
             return;
           }
@@ -923,7 +923,7 @@ export class Supervisor {
               ...(metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {}),
               ...(metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}),
             });
-            const contextUtilization = calculateContextUtilization(cumulativeInputTokens, statusSnapshot.model);
+            const contextUtilization = calculateContextUtilization(currentContextTokens, statusSnapshot.model);
             setStatus({
               context_pct: contextUtilization?.context_pct,
               context_health: contextUtilization?.context_health,
