@@ -939,9 +939,13 @@ export class Supervisor {
     };
     process.once('SIGTERM', sigtermHandler);
 
+    const runOptionsWithBoundary = runOptions.workingDirectory
+      ? { ...runOptions, worktreeBoundary: runOptions.workingDirectory }
+      : runOptions;
+
     try {
       const result = await runner.run(
-        runOptions,
+        runOptionsWithBoundary,
         // onProgress — parse tool names, update status, and stream to caller
         (delta) => {
           const toolMatch = delta.match(/⚙ (.+?)…/);

@@ -9,7 +9,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 
@@ -88,6 +88,46 @@ function emitLine(fake: ReturnType<typeof makeFakeProc>, obj: object) {
 }
 
 // ── RPC protocol parsing tests ────────────────────────────────────────────────
+
+describe('validateWriteToolPathAgainstBoundary', () => {
+  const boundary = '/tmp/worktrees/elhl';
+
+  it('rejects absolute path outside boundary for edit/write/multiEdit/notebookEdit', () => {
+    const outsidePath = '/tmp/main-repo/src/file.ts';
+    const expectedError = `Path '${outsidePath}' is outside worktree boundary ('${resolve(boundary)}'). Use a relative path or a path within the worktree.`;
+
+    for (const tool of ['edit', 'write', 'multiEdit']) {
+      expect(validateWriteToolPathAgainstBoundary(tool, { path: outsidePath }, boundary)).toBe(expectedError);
+    }
+
+    expect(validateWriteToolPathAgainstBoundary('notebookEdit', { file_path: outsidePath }, boundary)).toBe(expectedError);
+  });
+
+  it('allows absolute path inside boundary for edit/write/multiEdit/notebookEdit', () => {
+    const insidePath = `${resolve(boundary)}/src/file.ts`;
+
+    for (const tool of ['edit', 'write', 'multiEdit']) {
+      expect(validateWriteToolPathAgainstBoundary(tool, { path: insidePath }, boundary)).toBeUndefined();
+    }
+
+    expect(validateWriteToolPathAgainstBoundary('notebookEdit', { file_path: insidePath }, boundary)).toBeUndefined();
+  });
+
+  it('allows relative paths for edit/write/multiEdit/notebookEdit', () => {
+    for (const tool of ['edit', 'write', 'multiEdit']) {
+      expect(validateWriteToolPathAgainstBoundary(tool, { path: 'src/file.ts' }, boundary)).toBeUndefined();
+    }
+
+    expect(validateWriteToolPathAgainstBoundary('notebookEdit', { file_path: 'notes/example.ipynb' }, boundary)).toBeUndefined();
+  });
+
+  it('allows all paths when worktreeBoundary is undefined (backward compatibility)', () => {
+    expect(validateWriteToolPathAgainstBoundary('edit', { path: '/tmp/main-repo/src/file.ts' }, undefined)).toBeUndefined();
+    expect(validateWriteToolPathAgainstBoundary('write', { path: '/tmp/main-repo/src/file.ts' }, undefined)).toBeUndefined();
+    expect(validateWriteToolPathAgainstBoundary('multiEdit', { path: '/tmp/main-repo/src/file.ts' }, undefined)).toBeUndefined();
+    expect(validateWriteToolPathAgainstBoundary('notebookEdit', { file_path: '/tmp/main-repo/notebooks/nb.ipynb' }, undefined)).toBeUndefined();
+  });
+});
 
 describe('_handleEvent — RPC protocol parsing', () => {
   let fake: ReturnType<typeof makeFakeProc>;

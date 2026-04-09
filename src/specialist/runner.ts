@@ -22,6 +22,8 @@ export interface RunOptions {
   autonomyLevel?: string;
   /** Working directory for local scripts and the pi session. */
   workingDirectory?: string;
+  /** Absolute write-boundary for write-side tools inside pi session. */
+  worktreeBoundary?: string;
   /** Existing bead whose content should be used as the task prompt. */
   inputBeadId?: string;
   /** Lineage: set when --job <id> is used to reuse another job's worktree. */
@@ -842,6 +844,7 @@ export class SpecialistRunner {
         permissionLevel,
         stallTimeoutMs: execution.stall_timeout_ms,
         cwd: runCwd,
+        worktreeBoundary: options.worktreeBoundary,
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
