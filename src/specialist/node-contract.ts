@@ -1,12 +1,18 @@
 import * as z from 'zod';
 
-export const PHASE_KINDS = ['explore', 'design', 'impl', 'review', 'fix', 're_review', 'custom'] as const;
+const PHASE_KIND_VALUES = ['explore', 'design', 'impl', 'review', 'fix', 're_review', 'custom'] as const;
 export const BARRIER_TYPES = ['all_members_terminal'] as const;
 export const NODE_COMPLETION_STRATEGIES = ['pr', 'manual'] as const;
 export const NODE_BASE_BRANCH_DEFAULT = 'master';
 export const NODE_SUPERVISOR_MAX_RETRIES_DEFAULT = 3;
 
-export const phaseKindSchema = z.enum(PHASE_KINDS);
+export const phaseKindSchema = z.enum(PHASE_KIND_VALUES);
+export const PHASE_KINDS = phaseKindSchema.enum;
+export const ACTION_TYPES = {
+  SPAWN_MEMBER: 'spawn_member',
+  CREATE_BEAD: 'create_bead',
+  COMPLETE_NODE: 'complete_node',
+} as const;
 export const completionStrategySchema = z.enum(NODE_COMPLETION_STRATEGIES);
 
 const memberScopeSchema = z.object({
@@ -33,7 +39,7 @@ export const phaseSchema = z.object({
 });
 
 export const createBeadActionSchema = z.object({
-  type: z.literal('create_bead'),
+  type: z.literal(ACTION_TYPES.CREATE_BEAD),
   title: z.string().min(1),
   description: z.string().min(1),
   bead_type: z.enum(['task', 'bug', 'feature', 'epic', 'chore', 'decision']),
@@ -43,7 +49,7 @@ export const createBeadActionSchema = z.object({
 });
 
 export const completeNodeActionSchema = z.object({
-  type: z.literal('complete_node'),
+  type: z.literal(ACTION_TYPES.COMPLETE_NODE),
   gate_results: z.array(
     z.object({
       gate: z.string().min(1),
@@ -158,7 +164,7 @@ export interface ResumePayloadContext {
   stateDigest: Record<string, unknown>;
 }
 
-const PHASE_KIND_DOCS: Record<(typeof PHASE_KINDS)[number], string> = {
+const PHASE_KIND_DOCS: Record<z.infer<typeof phaseKindSchema>, string> = {
   explore: 'Discovery and evidence gathering.',
   design: 'Design options and decision framing.',
   impl: 'Code/config implementation and edits.',
@@ -196,9 +202,9 @@ export function renderForSystemPrompt(): string {
     '- READ_ONLY model: emit declarative JSON intent only.',
     '- Runtime side effects are executed by NodeSupervisor.',
     '- Top-level response keys: summary, node_status, phases, memory_patch, actions, validation.',
-    '- phase_kind enum: explore | design | impl | review | fix | re_review | custom',
+    `- phase_kind enum: ${Object.values(PHASE_KINDS).join(' | ')}`,
     '- barrier enum (Wave 2A): all_members_terminal',
-    '- actions enum: create_bead | complete_node',
+    `- actions enum: ${ACTION_TYPES.CREATE_BEAD} | ${ACTION_TYPES.COMPLETE_NODE}`,
     '- completion_strategy enum: pr | manual',
     '- Nested nodes are forbidden (do not route work to node-coordinator or node configs).',
     '- spawn_member is declared through phases[].members entries.',
@@ -217,9 +223,9 @@ export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
       source_bead_id: ctx.sourceBeadId,
       bead_goal: ctx.beadGoal,
       action_vocabulary: {
-        spawn_member: 'Declare via phases[].members',
-        create_bead: ACTION_DOCS.create_bead,
-        complete_node: ACTION_DOCS.complete_node,
+        [ACTION_TYPES.SPAWN_MEMBER]: 'Declare via phases[].members',
+        [ACTION_TYPES.CREATE_BEAD]: ACTION_DOCS.create_bead,
+        [ACTION_TYPES.COMPLETE_NODE]: ACTION_DOCS.complete_node,
       },
       state_machine: {
         states: NODE_STATES,
@@ -307,7 +313,7 @@ export function buildCoordinatorOutputJsonSchema(): Record<string, unknown> {
           required: ['phase_id', 'phase_kind', 'barrier', 'members'],
           properties: {
             phase_id: { type: 'string' },
-            phase_kind: { type: 'string', enum: [...PHASE_KINDS] },
+            phase_kind: { type: 'string', enum: Object.values(PHASE_KINDS) },
             barrier: { type: 'string', enum: ['all_members_terminal'] },
             members: {
               type: 'array',
@@ -359,7 +365,7 @@ export function buildCoordinatorOutputJsonSchema(): Record<string, unknown> {
               type: 'object',
               required: ['type', 'title', 'description', 'bead_type', 'priority'],
               properties: {
-                type: { type: 'string', enum: ['create_bead'] },
+                type: { type: 'string', enum: [ACTION_TYPES.CREATE_BEAD] },
                 title: { type: 'string' },
                 description: { type: 'string' },
                 bead_type: { type: 'string', enum: ['task', 'bug', 'feature', 'epic', 'chore', 'decision'] },
@@ -372,7 +378,7 @@ export function buildCoordinatorOutputJsonSchema(): Record<string, unknown> {
               type: 'object',
               required: ['type', 'gate_results', 'report_payload_ref'],
               properties: {
-                type: { type: 'string', enum: ['complete_node'] },
+                type: { type: 'string', enum: [ACTION_TYPES.COMPLETE_NODE] },
                 gate_results: {
                   type: 'array',
                   items: {

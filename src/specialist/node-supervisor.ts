@@ -5,6 +5,7 @@ import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
 import { stripJsonFences } from './json-output.js';
 import {
+  ACTION_TYPES,
   coordinatorOutputSchema,
   renderForFirstTurnContext,
   renderForResumePayload,
@@ -1108,9 +1109,9 @@ export class NodeSupervisor {
       'Return ONLY strict JSON matching this contract:',
       '{"summary": string, "node_status": "in_progress|complete|blocked|aborted", "phases": array, "memory_patch": array, "actions": array, "validation": object}',
       'actions allowed:',
-      '- {"type":"create_bead","title":string,"description":string,"bead_type":"task|bug|feature|epic|chore|decision","priority":0..4,"parent_bead_id"?:string,"depends_on"?:string[]}',
-      '- {"type":"complete_node","gate_results":[{"gate":string,"status":"pass|fail|skip","details"?:string}],"report_payload_ref":string,"force_draft_pr"?:boolean}',
-      'spawn_member declarations are encoded in phases[].members entries.',
+      `- {"type":"${ACTION_TYPES.CREATE_BEAD}","title":string,"description":string,"bead_type":"task|bug|feature|epic|chore|decision","priority":0..4,"parent_bead_id"?:string,"depends_on"?:string[]}`,
+      `- {"type":"${ACTION_TYPES.COMPLETE_NODE}","gate_results":[{"gate":string,"status":"pass|fail|skip","details"?:string}],"report_payload_ref":string,"force_draft_pr"?:boolean}`,
+      `${ACTION_TYPES.SPAWN_MEMBER} declarations are encoded in phases[].members entries.`,
       'memory_patch entries:',
       '- {"entry_type":"fact|question|decision","summary":string,"source_member_id":string,"confidence":number,"entry_id"?:string,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`,
@@ -1171,13 +1172,13 @@ export class NodeSupervisor {
       }
     }
 
-    const hasCompleteAction = output.actions.some((action) => action.type === 'complete_node');
+    const hasCompleteAction = output.actions.some((action) => action.type === ACTION_TYPES.COMPLETE_NODE);
     if (output.node_status === 'complete' && !hasCompleteAction) {
       return 'node_status=complete requires a complete_node action with gate_results and report_payload_ref.';
     }
 
     for (const action of output.actions) {
-      if (action.type === 'complete_node') {
+      if (action.type === ACTION_TYPES.COMPLETE_NODE) {
         const hasFailingGate = action.gate_results.some((gate) => gate.status === 'fail');
         if (hasFailingGate && !action.force_draft_pr) {
           return 'complete_node rejected: quality gates failing. Either fix gates first or set force_draft_pr=true for draft PR intent.';
@@ -1500,16 +1501,16 @@ export class NodeSupervisor {
       }
 
       for (const action of coordinatorOutput.actions) {
-        if (action.type === 'create_bead') {
+        if (action.type === ACTION_TYPES.CREATE_BEAD) {
           this.appendNodeEvent('action_dropped', {
             node_id: this.opts.nodeId,
-            action_type: 'create_bead',
+            action_type: ACTION_TYPES.CREATE_BEAD,
             reason: 'handler_not_implemented_wave_2b',
             title: action.title,
           });
         }
 
-        if (action.type === 'complete_node') {
+        if (action.type === ACTION_TYPES.COMPLETE_NODE) {
           const completionState: NodeRunStatus = this.opts.completionStrategy === 'manual' ? 'done' : 'awaiting_merge';
           this.transition(completionState, 'complete_node_declared');
           this.persistNodeEvent('handleCoordinatorOutput.pr_created', 'pr_created', {

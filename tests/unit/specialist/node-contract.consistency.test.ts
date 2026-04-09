@@ -51,14 +51,15 @@ describe('node contract consistency', () => {
 
   it('every phase kind has documentation and schema coverage', () => {
     const docs = renderForDocs();
-    for (const phaseKind of PHASE_KINDS) {
+    const phaseKinds = Object.values(PHASE_KINDS);
+    for (const phaseKind of phaseKinds) {
       expect(docs).toContain(`\`${phaseKind}\``);
     }
 
     const sample = {
       summary: 'ok',
       node_status: 'in_progress',
-      phases: PHASE_KINDS.map((kind, idx) => ({
+      phases: phaseKinds.map((kind, idx) => ({
         phase_id: `p-${idx}`,
         phase_kind: kind,
         barrier: 'all_members_terminal',
