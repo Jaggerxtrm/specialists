@@ -17948,6 +17948,18 @@ function findStringValue(payload, keys) {
   }
   return;
 }
+function extractBashCommand(args) {
+  if (!args)
+    return;
+  const command = args.command ?? args.cmd ?? args.script;
+  if (typeof command !== "string")
+    return;
+  const normalizedCommand = command.trim();
+  return normalizedCommand.length > 0 ? normalizedCommand : undefined;
+}
+function isTestCommand(command) {
+  return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
+}
 
 class PiAgentSession {
   options;
@@ -17964,6 +17976,8 @@ class PiAgentSession {
   _stderrBuffer = "";
   _stallTimer;
   _stallError;
+  _testWindowToolCallIds = new Set;
+  _testWindowWithoutIdCount = 0;
   _metrics = {
     turns: 0,
     tool_calls: 0,
@@ -18072,9 +18086,37 @@ class PiAgentSession {
       this._stallTimer = undefined;
     }
   }
+  _isTestWindowActive() {
+    return this._testWindowToolCallIds.size > 0 || this._testWindowWithoutIdCount > 0;
+  }
+  _resolveStallTimeoutMs() {
+    const baseTimeoutMs = this.options.stallTimeoutMs;
+    if (!baseTimeoutMs || baseTimeoutMs <= 0)
+      return;
+    if (!this._isTestWindowActive())
+      return baseTimeoutMs;
+    const testCommandTimeoutMs = this.options.testCommandStallTimeoutMs ?? TEST_COMMAND_STALL_TIMEOUT_MS;
+    return Math.max(baseTimeoutMs, testCommandTimeoutMs);
+  }
+  _activateTestWindow(toolCallId) {
+    if (toolCallId) {
+      this._testWindowToolCallIds.add(toolCallId);
+      return;
+    }
+    this._testWindowWithoutIdCount += 1;
+  }
+  _deactivateTestWindow(toolCallId) {
+    if (toolCallId) {
+      this._testWindowToolCallIds.delete(toolCallId);
+      return;
+    }
+    if (this._testWindowWithoutIdCount > 0) {
+      this._testWindowWithoutIdCount -= 1;
+    }
+  }
   _markActivity() {
-    const timeoutMs = this.options.stallTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0 || this._killed || this._agentEndReceived)
+    const timeoutMs = this._resolveStallTimeoutMs();
+    if (!timeoutMs || this._killed || this._agentEndReceived)
       return;
     this._clearStallTimer();
     this._stallTimer = setTimeout(() => {
@@ -18178,8 +18220,16 @@ class PiAgentSession {
     }
     if (type === "tool_execution_start") {
       this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
-      this.options.onToolStart?.(event.toolName ?? event.name ?? "tool", event.args, event.toolCallId);
-      this.options.onEvent?.("tool_execution_start", { toolCallId: event.toolCallId });
+      const toolName = event.toolName ?? event.name ?? "tool";
+      const toolArgs = event.args;
+      const toolCallId = event.toolCallId;
+      const command = toolName === "bash" ? extractBashCommand(toolArgs) : undefined;
+      if (command && isTestCommand(command)) {
+        this._activateTestWindow(toolCallId);
+        this._markActivity();
+      }
+      this.options.onToolStart?.(toolName, toolArgs, toolCallId);
+      this.options.onEvent?.("tool_execution_start", { toolCallId });
       return;
     }
     if (type === "tool_execution_update") {
@@ -18187,8 +18237,14 @@ class PiAgentSession {
       return;
     }
     if (type === "tool_execution_end") {
-      this.options.onToolEnd?.(event.toolName ?? event.name ?? "tool", event.isError ?? false, event.toolCallId, findToolResultContent(event), findToolResultRaw(event));
-      this.options.onEvent?.("tool_execution_end", { toolCallId: event.toolCallId });
+      const toolName = event.toolName ?? event.name ?? "tool";
+      const toolCallId = event.toolCallId;
+      this.options.onToolEnd?.(toolName, event.isError ?? false, toolCallId, findToolResultContent(event), findToolResultRaw(event));
+      if (toolName === "bash") {
+        this._deactivateTestWindow(toolCallId);
+        this._markActivity();
+      }
+      this.options.onEvent?.("tool_execution_end", { toolCallId });
       return;
     }
     if (type === "auto_compaction_start" || type === "auto_compaction_end") {
@@ -18423,7 +18479,7 @@ class PiAgentSession {
     await this.waitForDone(timeout);
   }
 }
-var SessionKilledError, StallTimeoutError;
+var SessionKilledError, StallTimeoutError, TEST_COMMAND_STALL_TIMEOUT_MS = 300000, TEST_COMMAND_PATTERNS;
 var init_session = __esm(() => {
   init_backendMap();
   SessionKilledError = class SessionKilledError extends Error {
@@ -18438,6 +18494,14 @@ var init_session = __esm(() => {
       this.name = "StallTimeoutError";
     }
   };
+  TEST_COMMAND_PATTERNS = [
+    /(?:^|\s)(?:bun\s+--bun\s+)?vitest(?:\s|$)/i,
+    /(?:^|\s)bun\s+test(?:\s|$)/i,
+    /(?:^|\s)npm\s+test(?:\s|$)/i,
+    /(?:^|\s)(?:pnpm|yarn)\s+test(?:\s|$)/i,
+    /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
+    /(?:^|\s)pytest(?:\s|$)/i
+  ];
 });
 
 // src/utils/circuitBreaker.ts
@@ -19498,610 +19562,339 @@ async function run2() {
 }
 var init_version = () => {};
 
-// src/cli/list.ts
-var exports_list = {};
-__export(exports_list, {
-  run: () => run3,
-  parseArgs: () => parseArgs,
-  ArgParseError: () => ArgParseError
-});
+// src/specialist/job-root.ts
 import { spawnSync as spawnSync3 } from "child_process";
-import { existsSync as existsSync5, readdirSync, readFileSync as readFileSync2 } from "fs";
-import { join as join5 } from "path";
-import readline from "readline";
-function permissionBadge(permission) {
-  if (permission === "READ_ONLY")
-    return green("[READ_ONLY]");
-  if (permission === "LOW")
-    return cyan("[LOW]");
-  if (permission === "MEDIUM")
-    return yellow2("[MEDIUM]");
-  return magenta("[HIGH]");
+import { dirname as dirname3, join as join5, resolve as resolve3 } from "path";
+function resolveCommonGitRoot(cwd) {
+  const result = spawnSync3("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const gitCommonDir = result.stdout?.trim();
+  if (!gitCommonDir)
+    return;
+  return dirname3(resolve3(cwd, gitCommonDir));
 }
-function toLiveJob(status) {
-  if (!status)
-    return null;
-  if (status.node_id)
-    return null;
-  if (status.status !== "running" && status.status !== "waiting" || !status.tmux_session) {
-    return null;
+function resolveJobsDir(cwd = process.cwd()) {
+  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
+  return join5(commonRoot, ".specialists", "jobs");
+}
+function resolveCurrentBranch(cwd = process.cwd()) {
+  const result = spawnSync3("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const branch = result.stdout?.trim();
+  return branch && branch !== "HEAD" ? branch : undefined;
+}
+var init_job_root = () => {};
+
+// src/specialist/timeline-events.ts
+function summarizeToolResult(resultContent) {
+  if (!resultContent)
+    return;
+  const compact = resultContent.trim();
+  if (!compact)
+    return;
+  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
+    return compact;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}\u2026`;
+}
+function mapCallbackEventToTimelineEvent(callbackEvent, context) {
+  const t = Date.now();
+  switch (callbackEvent) {
+    case "thinking":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.THINKING,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "tool_execution_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "start",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        args: context.args,
+        started_at: new Date(t).toISOString()
+      };
+    case "tool_execution_update":
+    case "tool_execution":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "update",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true }
+      };
+    case "tool_execution_end": {
+      const resultSummary = summarizeToolResult(context.resultContent);
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "end",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        is_error: context.isError,
+        ...resultSummary ? { result_summary: resultSummary } : {},
+        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
+      };
+    }
+    case "message_start_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
+    case "message_end_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "assistant" };
+    case "message_start_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "toolResult" };
+    case "message_end_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "toolResult" };
+    case "turn_start":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
+    case "turn_end":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
+    case "auto_compaction_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "start",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_compaction_end":
+    case "auto_compaction":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "end",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_retry_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "start",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "auto_retry_end":
+    case "auto_retry":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "end",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "set_model":
+    case "cycle_model":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
+        action: callbackEvent,
+        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
+        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
+      };
+    case "extension_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
+        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
+        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
+      };
+    case "text":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TEXT,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "agent_end":
+    case "message_done":
+    case "done":
+      return null;
+    default:
+      return null;
   }
-  const elapsedS = status.elapsed_s ?? Math.max(0, Math.floor((Date.now() - status.started_at_ms) / 1000));
+}
+function createRunStartEvent(specialist, beadId) {
   return {
-    id: status.id,
-    specialist: status.specialist,
-    status: status.status,
-    tmuxSession: status.tmux_session,
-    elapsedS,
-    startedAtMs: status.started_at_ms
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_START,
+    specialist,
+    bead_id: beadId
   };
 }
-function readJobStatus(statusPath) {
+function createMetaEvent(model, backend) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.META,
+    model,
+    backend
+  };
+}
+function createStatusChangeEvent(status, previousStatus) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
+  };
+}
+function createStaleWarningEvent(reason, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STALE_WARNING,
+    reason,
+    silence_ms: options.silence_ms,
+    threshold_ms: options.threshold_ms,
+    ...options.tool !== undefined ? { tool: options.tool } : {}
+  };
+}
+function createTokenUsageEvent(token_usage, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
+    token_usage,
+    source
+  };
+}
+function createFinishReasonEvent(finish_reason, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
+    finish_reason,
+    source
+  };
+}
+function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent, contextPct, contextHealth) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
+    turn_index,
+    ...token_usage ? { token_usage } : {},
+    ...finish_reason ? { finish_reason } : {},
+    ...textContent ? { text_content: textContent } : {},
+    ...contextPct !== undefined ? { context_pct: contextPct } : {},
+    ...contextHealth ? { context_health: contextHealth } : {}
+  };
+}
+function createCompactionEvent(phase, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.COMPACTION,
+    phase,
+    ...options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {},
+    ...options?.summary ? { summary: options.summary } : {},
+    ...options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}
+  };
+}
+function createRetryEvent(phase, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RETRY,
+    phase,
+    ...options?.attempt !== undefined ? { attempt: options.attempt } : {},
+    ...options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {},
+    ...options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {},
+    ...options?.errorMessage ? { error_message: options.errorMessage } : {}
+  };
+}
+function createRunCompleteEvent(status, elapsed_s, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
+    status,
+    elapsed_s,
+    ...options
+  };
+}
+function parseTimelineEvent(line) {
   try {
-    return JSON.parse(readFileSync2(statusPath, "utf-8"));
+    const parsed = JSON.parse(line);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    if (typeof parsed.t !== "number")
+      return null;
+    if (typeof parsed.type !== "string")
+      return null;
+    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.DONE,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.AGENT_END,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    const knownTypes = Object.values(TIMELINE_EVENT_TYPES).filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
+    if (!knownTypes.includes(parsed.type))
+      return null;
+    return parsed;
   } catch {
     return null;
   }
 }
-function listLiveJobs() {
-  const jobsDir = join5(process.cwd(), ".specialists", "jobs");
-  if (!existsSync5(jobsDir))
-    return [];
-  const jobs = readdirSync(jobsDir).map((entry) => toLiveJob(readJobStatus(join5(jobsDir, entry, "status.json")))).filter((job) => job !== null).sort((a, b) => b.startedAtMs - a.startedAtMs);
-  return jobs;
+function isRunCompleteEvent(event) {
+  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
 }
-function formatLiveChoice(job) {
-  return `${job.tmuxSession}  ${job.specialist}  ${job.elapsedS}s  ${job.status}`;
+function compareTimelineEvents(a, b) {
+  const timeDiff = a.t - b.t;
+  if (timeDiff !== 0)
+    return timeDiff;
+  return (a.seq ?? 0) - (b.seq ?? 0);
 }
-function renderLiveSelector(jobs, selectedIndex) {
-  return [
-    "",
-    bold2("Select tmux session (\u2191/\u2193, Enter to attach, Ctrl+C to cancel)"),
-    "",
-    ...jobs.map((job, index) => `${index === selectedIndex ? cyan("\u276F") : " "} ${formatLiveChoice(job)}`),
-    ""
-  ];
-}
-function selectLiveJob(jobs) {
-  return new Promise((resolve3) => {
-    const input = process.stdin;
-    const output = process.stdout;
-    const wasRawMode = input.isTTY ? input.isRaw : false;
-    let selectedIndex = 0;
-    let renderedLineCount = 0;
-    const cleanup = (selected) => {
-      input.off("keypress", onKeypress);
-      if (input.isTTY && !wasRawMode) {
-        input.setRawMode(false);
-      }
-      output.write("\x1B[?25h");
-      if (renderedLineCount > 0) {
-        readline.moveCursor(output, 0, -renderedLineCount);
-        readline.clearScreenDown(output);
-      }
-      resolve3(selected);
-    };
-    const render = () => {
-      if (renderedLineCount > 0) {
-        readline.moveCursor(output, 0, -renderedLineCount);
-        readline.clearScreenDown(output);
-      }
-      const lines = renderLiveSelector(jobs, selectedIndex);
-      output.write(lines.join(`
-`));
-      renderedLineCount = lines.length;
-    };
-    const onKeypress = (_, key) => {
-      if (key.ctrl && key.name === "c") {
-        cleanup(null);
-        return;
-      }
-      if (key.name === "up") {
-        selectedIndex = (selectedIndex - 1 + jobs.length) % jobs.length;
-        render();
-        return;
-      }
-      if (key.name === "down") {
-        selectedIndex = (selectedIndex + 1) % jobs.length;
-        render();
-        return;
-      }
-      if (key.name === "return") {
-        cleanup(jobs[selectedIndex]);
-      }
-    };
-    readline.emitKeypressEvents(input);
-    if (input.isTTY && !wasRawMode) {
-      input.setRawMode(true);
-    }
-    output.write("\x1B[?25l");
-    input.on("keypress", onKeypress);
-    render();
-  });
-}
-async function runLiveMode() {
-  const jobs = listLiveJobs();
-  if (jobs.length === 0) {
-    console.log("No running tmux sessions found.");
-    return;
-  }
-  if (!process.stdout.isTTY || !process.stdin.isTTY) {
-    for (const job of jobs) {
-      console.log(`${job.id}  ${job.tmuxSession}  ${job.status}`);
-    }
-    return;
-  }
-  const selected = await selectLiveJob(jobs);
-  if (!selected)
-    return;
-  const attach = spawnSync3("tmux", ["attach-session", "-t", selected.tmuxSession], {
-    stdio: "inherit"
-  });
-  if (attach.error) {
-    console.error(`Failed to attach tmux session ${selected.tmuxSession}: ${attach.error.message}`);
-    process.exit(1);
-  }
-}
-function parseArgs(argv) {
-  const result = {};
-  for (let i = 0;i < argv.length; i++) {
-    const token = argv[i];
-    if (token === "--category") {
-      const value = argv[++i];
-      if (!value || value.startsWith("--")) {
-        throw new ArgParseError("--category requires a value");
-      }
-      result.category = value;
-      continue;
-    }
-    if (token === "--scope") {
-      const value = argv[++i];
-      if (value !== "default" && value !== "user") {
-        throw new ArgParseError(`--scope must be "default" or "user", got: "${value ?? ""}"`);
-      }
-      result.scope = value;
-      continue;
-    }
-    if (token === "--json") {
-      result.json = true;
-      continue;
-    }
-    if (token === "--live") {
-      result.live = true;
-      continue;
-    }
-  }
-  return result;
-}
-async function run3() {
-  let args;
-  try {
-    args = parseArgs(process.argv.slice(3));
-  } catch (err) {
-    if (err instanceof ArgParseError) {
-      console.error(`Error: ${err.message}`);
-      process.exit(1);
-    }
-    throw err;
-  }
-  if (args.live) {
-    await runLiveMode();
-    return;
-  }
-  const loader = new SpecialistLoader;
-  let specialists = await loader.list(args.category);
-  if (args.scope) {
-    specialists = specialists.filter((s) => s.scope === args.scope);
-  }
-  if (args.json) {
-    console.log(JSON.stringify(specialists, null, 2));
-    return;
-  }
-  if (specialists.length === 0) {
-    console.log("No specialists found.");
-    return;
-  }
-  console.log(`
-${bold2(`Specialists (${specialists.length})`)}
-`);
-  for (const s of specialists) {
-    const scopeTag = s.scope === "default" ? green("[default]") : yellow2("[user]");
-    const permission = permissionBadge(s.permission_required);
-    const keepAliveTag = s.interactive ? `  ${yellow2("[keep-alive]")}` : "";
-    const thinkingTag = s.thinking_level && s.thinking_level !== "off" ? `  ${dim2(`thinking:${s.thinking_level}`)}` : "";
-    const model = dim2(s.model);
-    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "\u2026" : s.description;
-    console.log(`  ${cyan(s.name)}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
-    console.log(`  ${dim2(desc)}`);
-    if (s.skills.length > 0) {
-      console.log(`  ${dim2("skills: " + s.skills.join("  "))}`);
-    }
-    if (s.scripts.length > 0) {
-      const scriptSummary = s.scripts.map((sc) => {
-        const inject = sc.inject_output ? " \u2192$out" : "";
-        return `${sc.phase}: ${sc.run}${inject}`;
-      }).join("  \u2219  ");
-      console.log(`  ${dim2("scripts: " + scriptSummary)}`);
-    }
-    console.log();
-  }
-}
-var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, ArgParseError;
-var init_list = __esm(() => {
-  init_loader();
-  ArgParseError = class ArgParseError extends Error {
-    constructor(message) {
-      super(message);
-      this.name = "ArgParseError";
-    }
+var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
+var init_timeline_events = __esm(() => {
+  TIMELINE_EVENT_TYPES = {
+    RUN_START: "run_start",
+    META: "meta",
+    THINKING: "thinking",
+    TOOL: "tool",
+    TEXT: "text",
+    MESSAGE: "message",
+    TURN: "turn",
+    STATUS_CHANGE: "status_change",
+    RUN_COMPLETE: "run_complete",
+    STALE_WARNING: "stale_warning",
+    TOKEN_USAGE: "token_usage",
+    FINISH_REASON: "finish_reason",
+    TURN_SUMMARY: "turn_summary",
+    COMPACTION: "compaction",
+    RETRY: "retry",
+    MODEL_CHANGE: "model_change",
+    EXTENSION_ERROR: "extension_error",
+    DONE: "done",
+    AGENT_END: "agent_end"
   };
-});
-
-// src/cli/view.ts
-var exports_view = {};
-__export(exports_view, {
-  run: () => run4
-});
-import { readFile as readFile2 } from "fs/promises";
-import readline2 from "readline/promises";
-import { stdin as input, stdout as output } from "process";
-function permissionBadge2(permission) {
-  if (permission === "READ_ONLY")
-    return green2("[READ_ONLY]");
-  if (permission === "LOW")
-    return cyan2("[LOW]");
-  if (permission === "MEDIUM")
-    return yellow3("[MEDIUM]");
-  return magenta2("[HIGH]");
-}
-function parseArgs2(argv) {
-  const parsed = { raw: false, all: false };
-  for (let index = 0;index < argv.length; index++) {
-    const token = argv[index];
-    if (token === "--raw") {
-      parsed.raw = true;
-      continue;
-    }
-    if (token === "--all") {
-      parsed.all = true;
-      continue;
-    }
-    if (token === "--section") {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new ArgParseError2("--section requires a value");
-      }
-      const normalized = SECTION_ALIASES[value.toLowerCase()];
-      if (!normalized) {
-        throw new ArgParseError2(`Unsupported section "${value}"`);
-      }
-      parsed.section = normalized;
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--")) {
-      throw new ArgParseError2(`Unknown flag: ${token}`);
-    }
-    if (!parsed.name) {
-      parsed.name = token;
-      continue;
-    }
-    throw new ArgParseError2(`Unexpected argument: ${token}`);
-  }
-  if (parsed.all && parsed.name) {
-    throw new ArgParseError2("--all cannot be combined with a specialist name");
-  }
-  return parsed;
-}
-function formatPromptValue(value) {
-  if (!value || value.trim().length === 0) {
-    return dim3("(empty)");
-  }
-  return value;
-}
-function formatValue(value) {
-  if (value === undefined)
-    return dim3("(unset)");
-  if (value === null)
-    return dim3("null");
-  if (typeof value === "string")
-    return value;
-  return JSON.stringify(value, null, 2);
-}
-function printSectionHeader(title, color) {
-  console.log();
-  console.log(color(bold3(title)));
-  console.log(color("\u2500".repeat(title.length)));
-}
-function printPromptSection(prompt) {
-  printSectionHeader("prompt", magenta2);
-  console.log(`${bold3("system")}:`);
-  console.log(formatPromptValue(prompt.system));
-  console.log();
-  console.log(`${bold3("task_template")}:`);
-  console.log(formatPromptValue(prompt.task_template));
-  if (prompt.normalize_template !== undefined) {
-    console.log();
-    console.log(`${bold3("normalize_template")}:`);
-    console.log(formatValue(prompt.normalize_template));
-  }
-  if (prompt.skill_inherit !== undefined) {
-    console.log();
-    console.log(`${bold3("skill_inherit")}: ${formatValue(prompt.skill_inherit)}`);
-  }
-  if (prompt.examples !== undefined) {
-    console.log();
-    console.log(`${bold3("examples")}:`);
-    console.log(formatValue(prompt.examples));
-  }
-  if (prompt.output_schema !== undefined) {
-    console.log();
-    console.log(`${bold3("output_schema")}:`);
-    console.log(formatValue(prompt.output_schema));
-  }
-}
-function printGenericSection(title, color, value) {
-  printSectionHeader(title, color);
-  console.log(formatValue(value));
-}
-function printHeader(summary) {
-  const scope = summary.scope === "default" ? green2("[default]") : yellow3("[user]");
-  console.log();
-  console.log(`${bold3(cyan2(summary.name))} ${scope} ${permissionBadge2(summary.permission_required)}`);
-  console.log(dim3(summary.description));
-  console.log(`${dim3("model:")} ${summary.model}`);
-  console.log(`${dim3("version:")} ${summary.version}`);
-  console.log(`${dim3("source:")} ${summary.filePath}`);
-}
-function printCatalog(summaries) {
-  if (summaries.length === 0) {
-    console.log("No specialists found.");
-    return;
-  }
-  const rows = [...summaries].sort((left, right) => left.name.localeCompare(right.name));
-  console.log();
-  console.log(bold3(`Specialists catalog (${rows.length})`));
-  console.log();
-  for (const summary of rows) {
-    const scope = summary.scope === "default" ? green2("[default]") : yellow3("[user]");
-    const keepAlive = summary.interactive ? yellow3("[keep-alive]") : dim3("[single-turn]");
-    console.log(`${cyan2(summary.name)} ${scope} ${permissionBadge2(summary.permission_required)} ${keepAlive}`);
-    console.log(`${dim3("  model:")} ${summary.model}`);
-    console.log(`${dim3("  category:")} ${summary.category}  ${dim3("version:")} ${summary.version}`);
-    console.log(`${dim3("  desc:")} ${summary.description}`);
-    console.log();
-  }
-}
-function findSummary(summaries, name) {
-  return summaries.find((summary) => summary.name === name);
-}
-async function selectSpecialistFromCatalog(summaries) {
-  if (!input.isTTY || !output.isTTY) {
-    return null;
-  }
-  console.log(dim3("Enter specialist name to view details (blank to cancel):"));
-  const rl = readline2.createInterface({ input, output });
-  try {
-    const selectedName = (await rl.question("> ")).trim();
-    if (!selectedName)
-      return null;
-    return findSummary(summaries, selectedName) ?? null;
-  } finally {
-    rl.close();
-  }
-}
-function printBySection(spec, section) {
-  if (section === "beads") {
-    printGenericSection("beads", yellow3, {
-      beads_integration: spec.specialist.beads_integration,
-      beads_write_notes: spec.specialist.beads_write_notes
-    });
-    return;
-  }
-  if (section === "prompt") {
-    printPromptSection(spec.specialist.prompt);
-    return;
-  }
-  const value = spec.specialist[section];
-  printGenericSection(section, section === "metadata" ? cyan2 : green2, value);
-}
-function printFullSpecialist(spec) {
-  printBySection(spec, "metadata");
-  printBySection(spec, "execution");
-  printBySection(spec, "prompt");
-  printBySection(spec, "skills");
-  printBySection(spec, "capabilities");
-  printBySection(spec, "communication");
-  printBySection(spec, "validation");
-  printBySection(spec, "stall_detection");
-  printBySection(spec, "beads");
-}
-async function printRaw(summary) {
-  const content = await readFile2(summary.filePath, "utf-8");
-  console.log(content);
-}
-async function run4() {
-  let args;
-  try {
-    args = parseArgs2(process.argv.slice(3));
-  } catch (error2) {
-    if (error2 instanceof ArgParseError2) {
-      console.error(`Error: ${error2.message}`);
-      process.exit(1);
-    }
-    throw error2;
-  }
-  const loader = new SpecialistLoader;
-  const summaries = await loader.list();
-  if (args.all) {
-    printCatalog(summaries);
-    return;
-  }
-  let selectedSummary;
-  if (args.name) {
-    selectedSummary = findSummary(summaries, args.name);
-    if (!selectedSummary) {
-      console.error(`Specialist not found: ${args.name}`);
-      process.exit(1);
-    }
-  } else {
-    printCatalog(summaries);
-    const chosen = await selectSpecialistFromCatalog(summaries);
-    if (!chosen) {
-      if (!input.isTTY || !output.isTTY) {
-        console.log(dim3("Pass a specialist name to render details (e.g. specialists view <name>)."));
-      }
-      return;
-    }
-    selectedSummary = chosen;
-  }
-  if (args.raw) {
-    await printRaw(selectedSummary);
-    return;
-  }
-  const specialist = await loader.get(selectedSummary.name);
-  printHeader(selectedSummary);
-  if (args.section) {
-    printBySection(specialist, args.section);
-    return;
-  }
-  printFullSpecialist(specialist);
-}
-var ANSI_RESET = "\x1B[0m", bold3 = (value) => `\x1B[1m${value}${ANSI_RESET}`, dim3 = (value) => `\x1B[2m${value}${ANSI_RESET}`, cyan2 = (value) => `\x1B[36m${value}${ANSI_RESET}`, green2 = (value) => `\x1B[32m${value}${ANSI_RESET}`, yellow3 = (value) => `\x1B[33m${value}${ANSI_RESET}`, magenta2 = (value) => `\x1B[35m${value}${ANSI_RESET}`, SECTION_ALIASES, ArgParseError2;
-var init_view = __esm(() => {
-  init_loader();
-  SECTION_ALIASES = {
-    metadata: "metadata",
-    execution: "execution",
-    prompt: "prompt",
-    skills: "skills",
-    capabilities: "capabilities",
-    communication: "communication",
-    validation: "validation",
-    stall: "stall_detection",
-    "stall-detection": "stall_detection",
-    stall_detection: "stall_detection",
-    beads: "beads"
-  };
-  ArgParseError2 = class ArgParseError2 extends Error {
-    constructor(message) {
-      super(message);
-      this.name = "ArgParseError";
-    }
-  };
-});
-
-// src/cli/models.ts
-var exports_models = {};
-__export(exports_models, {
-  run: () => run5
-});
-import { spawnSync as spawnSync4 } from "child_process";
-function parsePiModels() {
-  const r = spawnSync4("pi", ["--list-models"], {
-    encoding: "utf8",
-    stdio: "pipe",
-    timeout: 8000
-  });
-  if (r.status !== 0 || r.error)
-    return null;
-  return r.stdout.split(`
-`).slice(1).map((line) => line.trim()).filter(Boolean).map((line) => {
-    const cols = line.split(/\s+/);
-    return {
-      provider: cols[0] ?? "",
-      model: cols[1] ?? "",
-      context: cols[2] ?? "",
-      maxOut: cols[3] ?? "",
-      thinking: cols[4] === "yes",
-      images: cols[5] === "yes"
-    };
-  }).filter((m) => m.provider && m.model);
-}
-function parseArgs3(argv) {
-  const out = {};
-  for (let i = 0;i < argv.length; i++) {
-    if (argv[i] === "--provider" && argv[i + 1]) {
-      out.provider = argv[++i];
-      continue;
-    }
-    if (argv[i] === "--used") {
-      out.used = true;
-      continue;
-    }
-  }
-  return out;
-}
-async function run5() {
-  const args = parseArgs3(process.argv.slice(3));
-  const loader = new SpecialistLoader;
-  const specialists = await loader.list();
-  const usedBy = new Map;
-  for (const s of specialists) {
-    const key = s.model;
-    if (!usedBy.has(key))
-      usedBy.set(key, []);
-    usedBy.get(key).push(s.name);
-  }
-  const allModels = parsePiModels();
-  if (!allModels) {
-    console.error("pi not found or failed \u2014 install and configure pi first");
-    process.exit(1);
-  }
-  let models = allModels;
-  if (args.provider) {
-    models = models.filter((m) => m.provider.toLowerCase().includes(args.provider.toLowerCase()));
-  }
-  if (args.used) {
-    models = models.filter((m) => usedBy.has(`${m.provider}/${m.model}`));
-  }
-  if (models.length === 0) {
-    console.log("No models match.");
-    return;
-  }
-  const byProvider = new Map;
-  for (const m of models) {
-    if (!byProvider.has(m.provider))
-      byProvider.set(m.provider, []);
-    byProvider.get(m.provider).push(m);
-  }
-  const total = models.length;
-  console.log(`
-${bold4(`Models on pi`)}  ${dim4(`(${total} total)`)}
-`);
-  for (const [provider, pModels] of byProvider) {
-    console.log(`  ${cyan3(provider)}  ${dim4(`${pModels.length} model${pModels.length !== 1 ? "s" : ""}`)}`);
-    const modelWidth = Math.max(...pModels.map((m) => m.model.length));
-    for (const m of pModels) {
-      const key = `${m.provider}/${m.model}`;
-      const inUse = usedBy.get(key);
-      const flags = [
-        m.thinking ? green3("thinking") : dim4("\xB7"),
-        m.images ? dim4("images") : ""
-      ].filter(Boolean).join("  ");
-      const ctx = dim4(`ctx ${m.context}`);
-      const usedLabel = inUse ? `  ${yellow4("\u2190")} ${dim4(inUse.join(", "))}` : "";
-      console.log(`    ${m.model.padEnd(modelWidth)}  ${ctx.padEnd(18)}  ${flags}${usedLabel}`);
-    }
-    console.log();
-  }
-  if (!args.used) {
-    console.log(dim4(`  --provider <name>  filter by provider`));
-    console.log(dim4(`  --used             only show models used by your specialists`));
-    console.log();
-  }
-}
-var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`;
-var init_models = __esm(() => {
-  init_loader();
 });
 
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync6, mkdirSync, readFileSync as readFileSync3, writeFileSync } from "fs";
-import { spawnSync as spawnSync5 } from "child_process";
+import { chmodSync, existsSync as existsSync5, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "fs";
+import { spawnSync as spawnSync4 } from "child_process";
 import { join as join6, sep } from "path";
 function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync5("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+  const commonDirResult = spawnSync4("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20112,7 +19905,7 @@ function resolveGitRootFrom(cwd) {
       return commonDir.slice(0, -4);
     }
   }
-  const fallbackResult = spawnSync5("git", ["rev-parse", "--show-toplevel"], {
+  const fallbackResult = spawnSync4("git", ["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20147,7 +19940,7 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
 }
 function ensureObservabilityDbFile(location) {
   mkdirSync(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync6(location.dbPath);
+  const alreadyExists = existsSync5(location.dbPath);
   if (!alreadyExists) {
     writeFileSync(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
   }
@@ -20161,7 +19954,7 @@ function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
     ".specialists/db/*.db-wal",
     ".specialists/db/*.db-shm"
   ];
-  const existing = existsSync6(gitignorePath) ? readFileSync3(gitignorePath, "utf-8") : "";
+  const existing = existsSync5(gitignorePath) ? readFileSync2(gitignorePath, "utf-8") : "";
   const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
   const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
   if (missingEntries.length === 0) {
@@ -20189,7 +19982,7 @@ var init_observability_db = __esm(() => {
 });
 
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync7 } from "fs";
+import { existsSync as existsSync6 } from "fs";
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -20213,6 +20006,9 @@ function withRetry(operation, context) {
       return operation();
     } catch (error2) {
       lastError = error2 instanceof Error ? error2 : new Error(String(error2));
+      if (lastError.message.includes("Cannot use a closed database")) {
+        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
+      }
       const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
       if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
         break;
@@ -20594,14 +20390,14 @@ class SqliteClient {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
   }
-  writeResultRow(jobId, output2) {
+  writeResultRow(jobId, output) {
     this.db.run(`
       INSERT INTO specialist_results (job_id, output, updated_at_ms)
       VALUES (?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         output = excluded.output,
         updated_at_ms = excluded.updated_at_ms;
-    `, [jobId, output2, Date.now()]);
+    `, [jobId, output, Date.now()]);
   }
   writeNodeRunRow(nodeRun) {
     this.db.run(`
@@ -20766,12 +20562,12 @@ class SqliteClient {
       transaction();
     }, "upsertStatusWithEvent");
   }
-  upsertStatusWithEventAndResult(status, event, output2) {
+  upsertStatusWithEventAndResult(status, event, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output2);
+        this.writeStatusRow(status, output);
         this.writeEventRow(status.id, status.specialist, status.bead_id, event);
-        this.writeResultRow(status.id, output2);
+        this.writeResultRow(status.id, output);
       });
       transaction();
     }, "upsertStatusWithEventAndResult");
@@ -20781,13 +20577,13 @@ class SqliteClient {
       this.writeEventRow(jobId, specialist, beadId, event);
     }, "appendEvent");
   }
-  upsertResult(jobId, output2) {
+  upsertResult(jobId, output) {
     withRetry(() => {
       const transaction = this.db.transaction(() => {
-        this.writeResultRow(jobId, output2);
+        this.writeResultRow(jobId, output);
         this.db.run(`
           UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
-        `, [output2, jobId]);
+        `, [output, jobId]);
       });
       transaction();
     }, "upsertResult");
@@ -21008,7 +20804,7 @@ function createObservabilitySqliteClient(cwd = process.cwd()) {
   if (!loadBunDatabase())
     return null;
   const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync7(location.dbPath))
+  if (!existsSync6(location.dbPath))
     return null;
   try {
     const Ctor = loadBunDatabase();
@@ -21026,14 +20822,1863 @@ var init_observability_sqlite = __esm(() => {
   init_observability_db();
 });
 
+// src/cli/tmux-utils.ts
+import { spawnSync as spawnSync5 } from "child_process";
+function escapeForSingleQuotedBash(script) {
+  return script.replace(/'/g, "'\\''");
+}
+function quoteShellValue(value) {
+  return `'${escapeForSingleQuotedBash(value)}'`;
+}
+function isTmuxAvailable() {
+  return spawnSync5("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
+}
+function buildSessionName(specialist, suffix) {
+  return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
+}
+function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
+  const exports = [
+    "unset CLAUDECODE CLAUDE_CODE_SSE_PORT CLAUDE_CODE_ENTRYPOINT",
+    `export SPECIALISTS_TMUX_SESSION=${quoteShellValue(name)}`
+  ];
+  for (const [key, value] of Object.entries(extraEnv)) {
+    exports.push(`export ${key}=${quoteShellValue(value)}`);
+  }
+  const startupScript = `${exports.join("; ")}; exec ${cmd}`;
+  const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
+  const result = spawnSync5("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
+  if (result.status !== 0) {
+    const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
+    throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
+  }
+}
+function isTmuxSessionAlive(sessionName) {
+  const result = spawnSync5("tmux", ["has-session", "-t", sessionName], {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 2000
+  });
+  if (result.error)
+    return false;
+  return result.status === 0;
+}
+function killTmuxSession(name) {
+  spawnSync5("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
+}
+var TMUX_SESSION_PREFIX = "sp";
+var init_tmux_utils = () => {};
+
+// src/specialist/supervisor.ts
+import {
+  appendFileSync,
+  closeSync,
+  existsSync as existsSync7,
+  fsyncSync,
+  mkdirSync as mkdirSync2,
+  openSync,
+  readdirSync,
+  readFileSync as readFileSync3,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync as writeFileSync2,
+  writeSync
+} from "fs";
+import { join as join7 } from "path";
+import { createInterface } from "readline";
+import { createReadStream } from "fs";
+import { spawn as spawn2, spawnSync as spawnSync6, execFileSync } from "child_process";
+function getCurrentGitSha() {
+  const result = spawnSync6("git", ["rev-parse", "HEAD"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const sha = result.stdout?.trim();
+  return sha || undefined;
+}
+function formatBeadNotes(result) {
+  const metadata = [
+    `prompt_hash=${result.promptHash}`,
+    `git_sha=${getCurrentGitSha() ?? "unknown"}`,
+    `elapsed_ms=${Math.round(result.durationMs)}`,
+    `model=${result.model}`,
+    `backend=${result.backend}`
+  ].join(`
+`);
+  return `${result.output}
+
+---
+${metadata}`;
+}
+function getModelContextWindow(model) {
+  if (!model)
+    return;
+  const normalizedModel = model.toLowerCase();
+  return MODEL_CONTEXT_WINDOWS.find(({ matcher }) => matcher(normalizedModel))?.windowTokens;
+}
+function getContextHealth(contextPct) {
+  if (contextPct < 40)
+    return "OK";
+  if (contextPct <= 65)
+    return "MONITOR";
+  if (contextPct <= 80)
+    return "WARN";
+  return "CRITICAL";
+}
+function calculateContextUtilization(contextInputTokens, model) {
+  const contextWindow = getModelContextWindow(model);
+  if (!contextWindow || contextInputTokens < 0)
+    return;
+  const contextPct = contextInputTokens / contextWindow * 100;
+  return {
+    context_pct: Number(contextPct.toFixed(2)),
+    context_health: getContextHealth(contextPct)
+  };
+}
+function normalizeGitnexusRisk(value) {
+  if (typeof value !== "string")
+    return;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "LOW" || normalized === "MEDIUM" || normalized === "HIGH" || normalized === "CRITICAL") {
+    return normalized;
+  }
+  return;
+}
+function collectStringArray(value) {
+  if (!Array.isArray(value))
+    return [];
+  return value.filter((entry) => typeof entry === "string" && entry.trim().length > 0);
+}
+function extractGitnexusFiles(tool, resultRaw) {
+  if (!resultRaw)
+    return [];
+  if (tool === "gitnexus_impact") {
+    return collectStringArray(resultRaw.files);
+  }
+  if (tool === "gitnexus_detect_changes") {
+    return collectStringArray(resultRaw.files_changed);
+  }
+  return [];
+}
+function extractGitnexusSymbols(resultRaw, args) {
+  if (!resultRaw)
+    return [];
+  const symbols = [
+    ...collectStringArray(resultRaw.symbols_analyzed),
+    ...collectStringArray(resultRaw.affected_symbols),
+    ...collectStringArray(resultRaw.symbols_modified)
+  ];
+  const argTarget = args?.target;
+  if (typeof argTarget === "string" && argTarget.trim().length > 0) {
+    symbols.push(argTarget);
+  }
+  return symbols;
+}
+function extractGitnexusRisk(resultRaw) {
+  if (!resultRaw)
+    return;
+  const direct = normalizeGitnexusRisk(resultRaw.risk_level) ?? normalizeGitnexusRisk(resultRaw.riskLevel) ?? normalizeGitnexusRisk(resultRaw.highest_risk) ?? normalizeGitnexusRisk(resultRaw.risk);
+  if (direct)
+    return direct;
+  const blastRadius = resultRaw.blast_radius;
+  if (blastRadius && typeof blastRadius === "object" && !Array.isArray(blastRadius)) {
+    const blastRadiusRecord = blastRadius;
+    return normalizeGitnexusRisk(blastRadiusRecord.risk_level) ?? normalizeGitnexusRisk(blastRadiusRecord.riskLevel) ?? normalizeGitnexusRisk(blastRadiusRecord.highest_risk) ?? normalizeGitnexusRisk(blastRadiusRecord.risk);
+  }
+  return;
+}
+function isGitnexusAnalyzeRequired(permissionRequired) {
+  return permissionRequired === "MEDIUM" || permissionRequired === "HIGH";
+}
+function startDetachedGitnexusAnalyze(cwd) {
+  const child = spawn2("npx", ["gitnexus", "analyze"], {
+    cwd,
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+}
+function startDetachedStatusWatchdog(statusPath, pid) {
+  const watchdogScript = `
+const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
+
+const statusPath = process.env.SPECIALISTS_STATUS_PATH;
+const pidRaw = process.env.SPECIALISTS_STATUS_PID;
+const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
+
+const targetPid = Number(pidRaw);
+const intervalMs = Number(intervalRaw);
+
+if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+  process.exit(1);
+}
+
+const isPidAlive = () => {
+  try {
+    process.kill(targetPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const run = () => {
+  if (!existsSync(statusPath)) {
+    process.exit(0);
+  }
+
+  let status;
+  try {
+    status = JSON.parse(readFileSync(statusPath, 'utf-8'));
+  } catch {
+    process.exit(0);
+  }
+
+  if (!status || typeof status !== 'object') {
+    process.exit(0);
+  }
+
+  if (status.status === 'done' || status.status === 'error') {
+    process.exit(0);
+  }
+
+  if (status.status !== 'running' && status.status !== 'starting') {
+    return;
+  }
+
+  if (isPidAlive()) {
+    return;
+  }
+
+  const now = Date.now();
+  const updated = status.node_id
+    ? {
+        ...status,
+        status: 'waiting',
+        current_event: 'recovery_pending',
+        last_event_at_ms: now,
+        error: undefined,
+      }
+    : {
+        ...status,
+        status: 'error',
+        error: 'Supervisor process exited unexpectedly',
+        last_event_at_ms: now,
+      };
+
+  const tmpPath = statusPath + '.tmp';
+  try {
+    writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
+    renameSync(tmpPath, statusPath);
+  } catch {
+    // Best effort only.
+  }
+
+  process.exit(0);
+};
+
+setInterval(run, intervalMs);
+run();
+`;
+  const watchdog = spawn2(process.execPath, ["-e", watchdogScript], {
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      SPECIALISTS_STATUS_PATH: statusPath,
+      SPECIALISTS_STATUS_PID: String(pid),
+      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS)
+    }
+  });
+  watchdog.unref();
+  return watchdog.pid ?? undefined;
+}
+function isPidAlive(pid) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isJobDead(status) {
+  if (status.status !== "starting" && status.status !== "running" && status.status !== "waiting")
+    return false;
+  if (status.pid !== undefined && !isPidAlive(status.pid))
+    return true;
+  if (status.tmux_session && !isTmuxSessionAlive(status.tmux_session))
+    return true;
+  return false;
+}
+
+class Supervisor {
+  opts;
+  sqliteClient;
+  resolvedJobsDir;
+  isDisposed = false;
+  disposePromise = null;
+  pendingSqliteOperations = 0;
+  pendingSqliteDrainResolvers = new Set;
+  constructor(opts) {
+    this.opts = opts;
+    this.sqliteClient = createObservabilitySqliteClient();
+    const cwd = opts.runOptions?.workingDirectory ?? process.cwd();
+    this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
+  }
+  createDisposedSqliteError(operation) {
+    return new Error(`[supervisor] SQLite operation "${operation}" rejected: supervisor is disposed`);
+  }
+  withSqliteOperation(operation, fn) {
+    const client = this.sqliteClient;
+    if (!client)
+      return;
+    if (this.isDisposed)
+      throw this.createDisposedSqliteError(operation);
+    this.pendingSqliteOperations += 1;
+    try {
+      return fn(client);
+    } finally {
+      this.pendingSqliteOperations -= 1;
+      if (this.pendingSqliteOperations === 0) {
+        for (const resolve4 of this.pendingSqliteDrainResolvers) {
+          resolve4();
+        }
+        this.pendingSqliteDrainResolvers.clear();
+      }
+    }
+  }
+  async waitForPendingSqliteOperations() {
+    if (this.pendingSqliteOperations === 0)
+      return;
+    await new Promise((resolve4) => {
+      this.pendingSqliteDrainResolvers.add(resolve4);
+    });
+  }
+  async dispose() {
+    if (this.disposePromise) {
+      await this.disposePromise;
+      return;
+    }
+    this.isDisposed = true;
+    this.disposePromise = (async () => {
+      await this.waitForPendingSqliteOperations();
+      if (!this.sqliteClient)
+        return;
+      try {
+        this.sqliteClient.close();
+      } catch (error2) {
+        console.warn(`[supervisor] Failed to close sqlite client: ${String(error2)}`);
+      }
+    })();
+    await this.disposePromise;
+  }
+  jobDir(id) {
+    return join7(this.resolvedJobsDir, id);
+  }
+  statusPath(id) {
+    return join7(this.jobDir(id), "status.json");
+  }
+  resultPath(id) {
+    return join7(this.jobDir(id), "result.txt");
+  }
+  eventsPath(id) {
+    return join7(this.jobDir(id), "events.jsonl");
+  }
+  readyDir() {
+    return join7(this.resolvedJobsDir, "..", "ready");
+  }
+  writeReadyMarker(id) {
+    mkdirSync2(this.readyDir(), { recursive: true });
+    writeFileSync2(join7(this.readyDir(), id), "", "utf-8");
+  }
+  withComputedLiveness(status) {
+    return {
+      ...status,
+      is_dead: isJobDead(status)
+    };
+  }
+  readStatus(id) {
+    try {
+      if (this.isDisposed) {
+        throw this.createDisposedSqliteError("readStatus");
+      }
+      const sqliteStatus = this.withSqliteOperation("readStatus", (client) => client.readStatus(id));
+      if (sqliteStatus)
+        return this.withComputedLiveness(sqliteStatus);
+    } catch (error2) {
+      if (!(error2 instanceof Error && error2.message.includes("supervisor is disposed"))) {
+        console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error2)}`);
+      }
+    }
+    const path = this.statusPath(id);
+    if (!existsSync7(path))
+      return null;
+    try {
+      const status = JSON.parse(readFileSync3(path, "utf-8"));
+      return this.withComputedLiveness(status);
+    } catch {
+      return null;
+    }
+  }
+  listJobs() {
+    try {
+      if (this.isDisposed) {
+        throw this.createDisposedSqliteError("listStatuses");
+      }
+      const sqliteJobs = this.withSqliteOperation("listStatuses", (client) => client.listStatuses()) ?? [];
+      if (sqliteJobs.length > 0) {
+        return sqliteJobs.map((status) => this.withComputedLiveness(status)).sort((a, b) => b.started_at_ms - a.started_at_ms);
+      }
+    } catch (error2) {
+      if (!(error2 instanceof Error && error2.message.includes("supervisor is disposed"))) {
+        console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error2)}`);
+      }
+    }
+    if (!existsSync7(this.resolvedJobsDir))
+      return [];
+    const jobs = [];
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const path = join7(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync7(path))
+        continue;
+      try {
+        const status = JSON.parse(readFileSync3(path, "utf-8"));
+        jobs.push(this.withComputedLiveness(status));
+      } catch {}
+    }
+    return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
+  }
+  withStatusLineageDefaults(id, status) {
+    if (!status.worktree_path)
+      return status;
+    if (status.worktree_owner_job_id)
+      return status;
+    return {
+      ...status,
+      worktree_owner_job_id: id
+    };
+  }
+  writeStatusFileOnly(id, data) {
+    const normalizedStatus = this.withStatusLineageDefaults(id, data);
+    mkdirSync2(this.jobDir(id), { recursive: true });
+    const path = this.statusPath(id);
+    const tmp = path + ".tmp";
+    writeFileSync2(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
+    renameSync(tmp, path);
+  }
+  writeStatusFile(id, data) {
+    const normalizedStatus = this.withStatusLineageDefaults(id, data);
+    this.writeStatusFileOnly(id, normalizedStatus);
+    try {
+      this.withSqliteOperation("upsertStatus", (client) => client.upsertStatus(normalizedStatus));
+    } catch (error2) {
+      console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error2)}`);
+    }
+  }
+  gc() {
+    if (!existsSync7(this.resolvedJobsDir))
+      return;
+    const cutoff = Date.now() - JOB_TTL_DAYS * 86400000;
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const dir = join7(this.resolvedJobsDir, entry);
+      try {
+        const stat2 = statSync(dir);
+        if (!stat2.isDirectory())
+          continue;
+        if (stat2.mtimeMs < cutoff)
+          rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+  crashRecovery() {
+    if (!existsSync7(this.resolvedJobsDir))
+      return;
+    const thresholds = {
+      ...STALL_DETECTION_DEFAULTS,
+      ...this.opts.stallDetection
+    };
+    const now = Date.now();
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const statusPath = join7(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync7(statusPath))
+        continue;
+      try {
+        const s = JSON.parse(readFileSync3(statusPath, "utf-8"));
+        if (s.status === "running" || s.status === "starting") {
+          if (!s.pid)
+            continue;
+          let pidAlive = true;
+          try {
+            process.kill(s.pid, 0);
+          } catch {
+            pidAlive = false;
+          }
+          if (!pidAlive) {
+            const tmp = statusPath + ".tmp";
+            const updated = s.node_id ? {
+              ...s,
+              status: "waiting",
+              current_event: "recovery_pending",
+              last_event_at_ms: now,
+              error: undefined
+            } : { ...s, status: "error", error: "Process crashed or was killed" };
+            writeFileSync2(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            renameSync(tmp, statusPath);
+          } else if (s.status === "running") {
+            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+            const silenceMs = now - lastEventAt;
+            if (silenceMs > thresholds.running_silence_error_ms) {
+              const tmp = statusPath + ".tmp";
+              const updated = {
+                ...s,
+                status: "error",
+                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
+              };
+              writeFileSync2(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              renameSync(tmp, statusPath);
+            }
+          }
+        } else if (s.status === "waiting") {
+          const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+          const silenceMs = now - lastEventAt;
+          if (silenceMs > thresholds.waiting_stale_ms) {
+            const eventsPath = join7(this.resolvedJobsDir, entry, "events.jsonl");
+            const event = createStaleWarningEvent("waiting_stale", {
+              silence_ms: silenceMs,
+              threshold_ms: thresholds.waiting_stale_ms
+            });
+            try {
+              appendFileSync(eventsPath, JSON.stringify(event) + `
+`);
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+  }
+  async run() {
+    const { runner, runOptions } = this.opts;
+    this.gc();
+    this.crashRecovery();
+    const id = crypto.randomUUID().slice(0, 6);
+    const dir = this.jobDir(id);
+    const startedAtMs = Date.now();
+    mkdirSync2(dir, { recursive: true });
+    mkdirSync2(this.readyDir(), { recursive: true });
+    const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
+    const initialStatus = {
+      id,
+      specialist: runOptions.name,
+      status: "starting",
+      started_at_ms: startedAtMs,
+      pid: process.pid,
+      ...runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {},
+      ...nodeId ? { node_id: nodeId } : {},
+      ...process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {},
+      ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
+      ...runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {},
+      ...runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {},
+      ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() }
+    };
+    this.writeStatusFileOnly(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
+    writeFileSync2(join7(this.resolvedJobsDir, "latest"), `${id}
+`, "utf-8");
+    this.opts.onJobStarted?.({ id });
+    let statusSnapshot = initialStatus;
+    const setStatus = (updates) => {
+      statusSnapshot = { ...statusSnapshot, ...updates };
+      this.writeStatusFile(id, statusSnapshot);
+    };
+    const mergeRunMetrics = (incoming) => {
+      if (!incoming)
+        return;
+      runMetrics = {
+        ...runMetrics,
+        ...incoming,
+        ...incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {},
+        ...incoming.tool_call_names ? { tool_call_names: [...incoming.tool_call_names] } : {}
+      };
+      setStatus({ metrics: runMetrics });
+    };
+    const eventsFd = openSync(this.eventsPath(id), "a");
+    let nextTimelineSeq = 1;
+    const assignTimelineSeq = (event) => {
+      if (typeof event.seq === "number" && Number.isFinite(event.seq) && event.seq > 0) {
+        nextTimelineSeq = Math.max(nextTimelineSeq, event.seq + 1);
+        return event;
+      }
+      return { ...event, seq: nextTimelineSeq++ };
+    };
+    const appendTimelineEvent = (event) => {
+      const sequencedEvent = assignTimelineSeq(event);
+      try {
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
+`);
+      } catch (err) {
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
+      try {
+        this.withSqliteOperation("appendEvent", (client) => client.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent));
+      } catch (error2) {
+        console.warn(`[supervisor] SQLite appendEvent failed: ${String(error2)}`);
+      }
+    };
+    const appendTimelineEventFileOnly = (event) => {
+      const sequencedEvent = assignTimelineSeq(event);
+      try {
+        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
+`);
+      } catch (err) {
+        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
+      }
+      return sequencedEvent;
+    };
+    const setWaitingStatus = (updates) => {
+      const previousStatus = statusSnapshot.status;
+      const waitingAt = Date.now();
+      setStatus({
+        status: "waiting",
+        current_event: "waiting",
+        elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
+        last_event_at_ms: waitingAt,
+        ...updates
+      });
+      if (previousStatus !== "waiting") {
+        appendTimelineEvent(createStatusChangeEvent("waiting", previousStatus));
+      }
+    };
+    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
+    try {
+      this.withSqliteOperation("upsertStatusWithEvent:run_start", (client) => client.upsertStatusWithEvent(statusSnapshot, runStartEvent));
+    } catch (error2) {
+      console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during run start: ${String(error2)}`);
+    }
+    const fifoPath = join7(dir, "steer.pipe");
+    try {
+      execFileSync("mkfifo", [fifoPath]);
+      setStatus({ fifo_path: fifoPath });
+    } catch {}
+    let textLogged = false;
+    let runMetrics = {
+      turns: 0,
+      tool_calls: 0,
+      auto_compactions: 0,
+      auto_retries: 0
+    };
+    const gitnexusAccumulator = {
+      files_touched: new Set,
+      symbols_analyzed: new Set,
+      highest_risk: undefined,
+      tool_invocations: 0
+    };
+    let textCharCount = 0;
+    let thinkingCharCount = 0;
+    let turnTextAccumulator = "";
+    let currentContextTokens = 0;
+    const toolCallNames = [];
+    const activeToolCalls = new Map;
+    let latestUncorrelatedToolState;
+    let killFn;
+    let steerFn;
+    let resumeFn;
+    let closeFn;
+    let fifoReadStream;
+    let fifoReadline;
+    let fifoFd;
+    let keepAliveSession = false;
+    let latestOutput = "";
+    let keepAliveExitResolved = false;
+    let isReadOnlySpecialist = false;
+    let resolveKeepAliveExit;
+    const keepAliveExitPromise = new Promise((resolve4) => {
+      resolveKeepAliveExit = resolve4;
+    });
+    const finishKeepAlive = (exit) => {
+      if (keepAliveExitResolved)
+        return;
+      keepAliveExitResolved = true;
+      resolveKeepAliveExit?.(exit);
+    };
+    const emitRunCompleteForTurn = (result) => {
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
+        files_touched: [...gitnexusAccumulator.files_touched],
+        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+        highest_risk: gitnexusAccumulator.highest_risk,
+        tool_invocations: gitnexusAccumulator.tool_invocations
+      } : undefined;
+      appendTimelineEvent(createRunCompleteEvent("COMPLETE", Math.round((Date.now() - startedAtMs) / 1000), {
+        model: result.model,
+        backend: result.backend,
+        bead_id: result.beadId,
+        output: result.output,
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
+        metrics: runMetrics,
+        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
+      }));
+    };
+    const shouldAutoCloseReadOnlyKeepAlive = (output) => isReadOnlySpecialist && TERMINAL_COMPLIANCE_VERDICT_REGEX.test(output);
+    const handleResumeTurn = async (task) => {
+      if (!resumeFn)
+        return;
+      const now = Date.now();
+      lastActivityMs = now;
+      setStatus({ status: "running", current_event: "starting", last_event_at_ms: now });
+      silenceWarnEmitted = false;
+      try {
+        const output = await resumeFn(task);
+        latestOutput = output;
+        mkdirSync2(this.jobDir(id), { recursive: true });
+        writeFileSync2(this.resultPath(id), output, "utf-8");
+        try {
+          this.withSqliteOperation("upsertResult:resume_turn", (client) => client.upsertResult(id, output));
+        } catch (error2) {
+          console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error2)}`);
+        }
+        emitRunCompleteForTurn({
+          model: statusSnapshot.model ?? "unknown",
+          backend: statusSnapshot.backend ?? "unknown",
+          beadId: statusSnapshot.bead_id,
+          output
+        });
+        if (shouldAutoCloseReadOnlyKeepAlive(output)) {
+          closeKeepAliveSession();
+          return;
+        }
+        setWaitingStatus();
+      } catch (err) {
+        const error2 = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: "error", error: error2.message });
+        finishKeepAlive({ kind: "fatal", error: error2 });
+      }
+    };
+    const closeKeepAliveSession = async () => {
+      if (!closeFn) {
+        finishKeepAlive({ kind: "closed" });
+        return;
+      }
+      try {
+        await closeFn();
+        finishKeepAlive({ kind: "closed" });
+      } catch (err) {
+        const error2 = err instanceof Error ? err : new Error(String(err));
+        setStatus({ status: "error", error: error2.message });
+        finishKeepAlive({ kind: "fatal", error: error2 });
+      }
+    };
+    const thresholds = {
+      ...STALL_DETECTION_DEFAULTS,
+      ...this.opts.stallDetection
+    };
+    let lastActivityMs = startedAtMs;
+    let silenceWarnEmitted = false;
+    let toolStartMs;
+    let toolDurationWarnEmitted = false;
+    let stuckIntervalId;
+    stuckIntervalId = setInterval(() => {
+      const now = Date.now();
+      if (statusSnapshot.status === "running") {
+        const silenceMs = now - lastActivityMs;
+        if (!silenceWarnEmitted && silenceMs > thresholds.running_silence_warn_ms) {
+          silenceWarnEmitted = true;
+          appendTimelineEvent(createStaleWarningEvent("running_silence", {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.running_silence_warn_ms
+          }));
+        }
+        if (silenceMs > thresholds.running_silence_error_ms) {
+          appendTimelineEvent(createStaleWarningEvent("running_silence_error", {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.running_silence_error_ms
+          }));
+          setStatus({
+            status: "error",
+            error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
+          });
+          killFn?.();
+          clearInterval(stuckIntervalId);
+        }
+      }
+      if (toolStartMs !== undefined && !toolDurationWarnEmitted) {
+        const toolDurationMs = now - toolStartMs;
+        if (toolDurationMs > thresholds.tool_duration_warn_ms) {
+          toolDurationWarnEmitted = true;
+          const activeToolName = activeToolCalls.values().next().value?.tool ?? latestUncorrelatedToolState?.tool ?? "unknown";
+          appendTimelineEvent(createStaleWarningEvent("tool_duration", {
+            silence_ms: toolDurationMs,
+            threshold_ms: thresholds.tool_duration_warn_ms,
+            tool: activeToolName
+          }));
+        }
+      }
+    }, 1e4);
+    const sigtermHandler = () => {
+      if (keepAliveSession) {
+        closeKeepAliveSession();
+        return;
+      }
+      killFn?.();
+    };
+    process.once("SIGTERM", sigtermHandler);
+    try {
+      const result = await runner.run(runOptions, (delta) => {
+        const toolMatch = delta.match(/\u2699 (.+?)\u2026/);
+        if (toolMatch) {
+          setStatus({ current_tool: toolMatch[1] });
+        }
+        if (delta !== `\u2713
+` && !delta.startsWith(`
+\u2699 `) && !delta.startsWith("\uD83D\uDCAD ")) {
+          turnTextAccumulator += delta;
+        }
+        this.opts.onProgress?.(delta);
+      }, (eventType, details) => {
+        const now = Date.now();
+        lastActivityMs = now;
+        silenceWarnEmitted = false;
+        const keepAliveTurnCompleted = keepAliveSession && eventType === "agent_end";
+        if (keepAliveTurnCompleted) {
+          setWaitingStatus();
+        } else {
+          setStatus({
+            status: "running",
+            current_event: eventType,
+            last_event_at_ms: now,
+            elapsed_s: Math.round((now - startedAtMs) / 1000)
+          });
+        }
+        if (eventType === "turn_start") {
+          textCharCount = 0;
+          thinkingCharCount = 0;
+          turnTextAccumulator = "";
+        }
+        if (eventType === "message_start_assistant") {
+          turnTextAccumulator = "";
+        }
+        if (eventType === "text") {
+          textCharCount += details?.charCount ?? 0;
+        }
+        if (eventType === "thinking") {
+          thinkingCharCount += details?.charCount ?? 0;
+        }
+        const toolCallId = details?.toolCallId;
+        const toolState = toolCallId ? activeToolCalls.get(toolCallId) : latestUncorrelatedToolState;
+        const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
+          tool: toolState?.tool,
+          toolCallId,
+          args: toolState?.args,
+          isError: toolState?.isError,
+          resultContent: toolState?.resultContent,
+          resultRaw: toolState?.resultRaw,
+          charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount,
+          compaction: {
+            tokensBefore: details?.tokensBefore,
+            summary: details?.summary,
+            firstKeptEntryId: details?.firstKeptEntryId
+          },
+          retry: {
+            attempt: details?.attempt,
+            maxAttempts: details?.maxAttempts,
+            delayMs: details?.delayMs,
+            errorMessage: details?.errorMessage
+          },
+          modelChange: {
+            action: details?.action ?? (eventType === "set_model" || eventType === "cycle_model" ? eventType : "set_model"),
+            model: details?.model,
+            previousModel: details?.previousModel
+          },
+          extensionError: {
+            extension: details?.extension,
+            errorMessage: details?.errorMessage
+          }
+        });
+        if (timelineEvent) {
+          appendTimelineEvent(timelineEvent);
+          if (eventType === "tool_execution_end" && toolCallId) {
+            activeToolCalls.delete(toolCallId);
+          }
+        } else if (eventType === "text" && !textLogged) {
+          textLogged = true;
+          appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
+        }
+      }, (metricEvent) => {
+        if (metricEvent.type === "token_usage") {
+          mergeRunMetrics({ token_usage: metricEvent.token_usage });
+          currentContextTokens = metricEvent.token_usage.input_tokens ?? 0;
+          appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
+          return;
+        }
+        if (metricEvent.type === "finish_reason") {
+          mergeRunMetrics({ finish_reason: metricEvent.finish_reason });
+          appendTimelineEvent(createFinishReasonEvent(metricEvent.finish_reason, metricEvent.source));
+          return;
+        }
+        if (metricEvent.type === "turn_summary") {
+          mergeRunMetrics({
+            turns: metricEvent.turn_index,
+            ...metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {},
+            ...metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}
+          });
+          const contextUtilization = calculateContextUtilization(currentContextTokens, statusSnapshot.model);
+          setStatus({
+            context_pct: contextUtilization?.context_pct,
+            context_health: contextUtilization?.context_health
+          });
+          appendTimelineEvent(createTurnSummaryEvent(metricEvent.turn_index, metricEvent.token_usage, metricEvent.finish_reason, turnTextAccumulator || undefined, contextUtilization?.context_pct, contextUtilization?.context_health));
+          turnTextAccumulator = "";
+          return;
+        }
+        if (metricEvent.type === "compaction") {
+          const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
+          mergeRunMetrics({ auto_compactions: compactions });
+          appendTimelineEvent(createCompactionEvent(metricEvent.phase, {
+            tokensBefore: metricEvent.tokensBefore,
+            summary: metricEvent.summary,
+            firstKeptEntryId: metricEvent.firstKeptEntryId
+          }));
+          return;
+        }
+        if (metricEvent.type === "retry") {
+          const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
+          mergeRunMetrics({ auto_retries: retries });
+          appendTimelineEvent(createRetryEvent(metricEvent.phase, {
+            attempt: metricEvent.attempt,
+            maxAttempts: metricEvent.maxAttempts,
+            delayMs: metricEvent.delayMs,
+            errorMessage: metricEvent.errorMessage
+          }));
+          return;
+        }
+      }, (meta) => {
+        setStatus({ model: meta.model, backend: meta.backend });
+        appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
+        this.opts.onMeta?.(meta);
+      }, (fn) => {
+        killFn = fn;
+      }, (beadId) => {
+        setStatus({ bead_id: beadId });
+      }, (fn) => {
+        steerFn = fn;
+        if (!existsSync7(fifoPath))
+          return;
+        fifoFd = openSync(fifoPath, "r+");
+        fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: false });
+        fifoReadline = createInterface({ input: fifoReadStream });
+        fifoReadline.on("line", (line) => {
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed?.type === "steer" && typeof parsed.message === "string") {
+              steerFn?.(parsed.message).catch(() => {});
+            } else if (parsed?.type === "resume" && typeof parsed.task === "string") {
+              handleResumeTurn(parsed.task);
+            } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
+              console.error('[specialists] DEPRECATED: FIFO message {type:"prompt"} is deprecated. Use {type:"resume", task:"..."} instead.');
+              handleResumeTurn(parsed.message);
+            } else if (parsed?.type === "close") {
+              closeKeepAliveSession();
+            }
+          } catch {}
+        });
+        fifoReadline.on("error", (error2) => {
+          console.error(`[supervisor] FIFO read error: ${String(error2)}`);
+        });
+      }, (rFn, cFn) => {
+        keepAliveSession = true;
+        resumeFn = rFn;
+        closeFn = cFn;
+        setWaitingStatus();
+      }, (tool, args, toolCallId) => {
+        const toolState = {
+          tool,
+          args,
+          isError: false,
+          resultContent: undefined,
+          resultRaw: undefined
+        };
+        if (toolCallId) {
+          activeToolCalls.set(toolCallId, toolState);
+        } else {
+          latestUncorrelatedToolState = toolState;
+        }
+        toolStartMs = Date.now();
+        toolDurationWarnEmitted = false;
+        toolCallNames.push(tool);
+        mergeRunMetrics({
+          tool_calls: toolCallNames.length,
+          tool_call_names: toolCallNames
+        });
+        setStatus({ current_tool: tool });
+      }, (tool, isError, toolCallId, resultContent, resultRaw) => {
+        const resolvedToolState = toolCallId ? activeToolCalls.get(toolCallId) ?? { tool } : latestUncorrelatedToolState ?? { tool };
+        const finalizedToolState = {
+          ...resolvedToolState,
+          tool: resolvedToolState.tool ?? tool,
+          isError,
+          resultContent,
+          resultRaw
+        };
+        if (toolCallId) {
+          activeToolCalls.set(toolCallId, finalizedToolState);
+        } else {
+          latestUncorrelatedToolState = finalizedToolState;
+        }
+        toolStartMs = undefined;
+        toolDurationWarnEmitted = false;
+        const resolvedToolName = finalizedToolState.tool;
+        const resolvedToolArgs = finalizedToolState.args;
+        if (resolvedToolName === "edit" || resolvedToolName === "write") {
+          const path = resultRaw?.path;
+          if (typeof path === "string" && path.trim().length > 0) {
+            gitnexusAccumulator.files_touched.add(path);
+          }
+        }
+        if (resolvedToolName.startsWith("gitnexus_")) {
+          gitnexusAccumulator.tool_invocations += 1;
+          for (const file of extractGitnexusFiles(resolvedToolName, resultRaw)) {
+            gitnexusAccumulator.files_touched.add(file);
+          }
+          for (const symbol of extractGitnexusSymbols(resultRaw, resolvedToolArgs)) {
+            gitnexusAccumulator.symbols_analyzed.add(symbol);
+          }
+          const risk = extractGitnexusRisk(resultRaw);
+          if (risk) {
+            const currentHighest = gitnexusAccumulator.highest_risk;
+            if (!currentHighest || GITNEXUS_RISK_ORDER[risk] > GITNEXUS_RISK_ORDER[currentHighest]) {
+              gitnexusAccumulator.highest_risk = risk;
+            }
+          }
+        }
+      });
+      latestOutput = result.output;
+      mkdirSync2(this.jobDir(id), { recursive: true });
+      writeFileSync2(this.resultPath(id), latestOutput, "utf-8");
+      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const finalResult = {
+        ...result,
+        output: latestOutput
+      };
+      mergeRunMetrics(finalResult.metrics);
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: "agent_end"
+      });
+      isReadOnlySpecialist = finalResult.permissionRequired === "READ_ONLY";
+      emitRunCompleteForTurn({
+        model: finalResult.model,
+        backend: finalResult.backend,
+        beadId: finalResult.beadId,
+        output: finalResult.output
+      });
+      if (keepAliveSession) {
+        if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
+          await closeKeepAliveSession();
+        } else {
+          setWaitingStatus({
+            model: result.model,
+            backend: result.backend,
+            bead_id: result.beadId
+          });
+        }
+        const keepAliveExit = await keepAliveExitPromise;
+        if (keepAliveExit.kind === "fatal") {
+          throw keepAliveExit.error;
+        }
+      }
+      const inputBeadId = runOptions.inputBeadId;
+      const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
+      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && finalResult.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
+      if (ownsBead && finalResult.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+      } else if (shouldWriteExternalBeadNotes) {
+        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
+          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
+        } else if (finalResult.beadId) {
+          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
+        }
+      }
+      if (finalResult.beadId) {
+        if (!inputBeadId) {
+          this.opts.beadsClient?.closeBead(finalResult.beadId, "COMPLETE", finalResult.durationMs, finalResult.model);
+        }
+      }
+      const completedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
+        status: "done",
+        elapsed_s: elapsed,
+        last_event_at_ms: completedAtMs,
+        model: finalResult.model,
+        backend: finalResult.backend,
+        bead_id: finalResult.beadId,
+        metrics: runMetrics
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
+        files_touched: [...gitnexusAccumulator.files_touched],
+        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+        highest_risk: gitnexusAccumulator.highest_risk,
+        tool_invocations: gitnexusAccumulator.tool_invocations
+      } : undefined;
+      try {
+        this.withSqliteOperation("upsertStatusWithEventAndResult:complete", (client) => client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent("COMPLETE", elapsed, {
+          model: finalResult.model,
+          backend: finalResult.backend,
+          bead_id: finalResult.beadId,
+          output: finalResult.output,
+          token_usage: runMetrics.token_usage,
+          finish_reason: runMetrics.finish_reason,
+          tool_calls: [...toolCallNames],
+          exit_reason: runMetrics.exit_reason,
+          metrics: runMetrics,
+          ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
+        }), latestOutput));
+      } catch (error2) {
+        console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error2)}`);
+      }
+      if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
+        try {
+          startDetachedGitnexusAnalyze(runOptions.workingDirectory ?? process.cwd());
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: "gitnexus_analyze_started",
+            backend: "supervisor"
+          });
+        } catch (err) {
+          appendTimelineEventFileOnly({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.META,
+            model: "gitnexus_analyze_start_failed",
+            backend: String(err?.message ?? err)
+          });
+        }
+      }
+      this.writeReadyMarker(id);
+      return id;
+    } catch (err) {
+      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
+      const errorMsg = err?.message ?? String(err);
+      const failedAtMs = Date.now();
+      statusSnapshot = {
+        ...statusSnapshot,
+        status: "error",
+        elapsed_s: elapsed,
+        error: errorMsg,
+        last_event_at_ms: failedAtMs
+      };
+      this.writeStatusFileOnly(id, statusSnapshot);
+      mergeRunMetrics({
+        tool_calls: toolCallNames.length,
+        tool_call_names: toolCallNames,
+        exit_reason: err instanceof Error ? err.name : "error"
+      });
+      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
+        files_touched: [...gitnexusAccumulator.files_touched],
+        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
+        highest_risk: gitnexusAccumulator.highest_risk,
+        tool_invocations: gitnexusAccumulator.tool_invocations
+      } : undefined;
+      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("ERROR", elapsed, {
+        error: errorMsg,
+        token_usage: runMetrics.token_usage,
+        finish_reason: runMetrics.finish_reason,
+        tool_calls: [...toolCallNames],
+        exit_reason: runMetrics.exit_reason,
+        metrics: runMetrics,
+        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
+      }));
+      try {
+        this.withSqliteOperation("upsertStatusWithEvent:error", (client) => client.upsertStatusWithEvent(statusSnapshot, runCompleteEvent));
+      } catch (error2) {
+        console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error2)}`);
+      }
+      this.writeReadyMarker(id);
+      throw err;
+    } finally {
+      if (stuckIntervalId !== undefined)
+        clearInterval(stuckIntervalId);
+      process.removeListener("SIGTERM", sigtermHandler);
+      if (statusWatchdogPid !== undefined) {
+        try {
+          process.kill(statusWatchdogPid, "SIGTERM");
+        } catch {}
+      }
+      try {
+        fifoReadline?.close();
+      } catch {}
+      if (fifoFd !== undefined) {
+        try {
+          closeSync(fifoFd);
+        } catch {}
+        fifoFd = undefined;
+      }
+      try {
+        fifoReadStream?.destroy();
+      } catch {}
+      try {
+        fsyncSync(eventsFd);
+      } catch {}
+      closeSync(eventsFd);
+      try {
+        if (existsSync7(fifoPath))
+          rmSync(fifoPath);
+      } catch {}
+      if (statusSnapshot.tmux_session) {
+        spawnSync6("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
+      }
+      await this.dispose();
+    }
+  }
+}
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, STATUS_WATCHDOG_INTERVAL_MS = 5000;
+var init_supervisor = __esm(() => {
+  init_job_root();
+  init_timeline_events();
+  init_observability_sqlite();
+  init_tmux_utils();
+  JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
+  STALL_DETECTION_DEFAULTS = {
+    running_silence_warn_ms: 60000,
+    running_silence_error_ms: 300000,
+    waiting_stale_ms: 3600000,
+    tool_duration_warn_ms: 120000
+  };
+  GITNEXUS_RISK_ORDER = {
+    LOW: 0,
+    MEDIUM: 1,
+    HIGH: 2,
+    CRITICAL: 3
+  };
+  MODEL_CONTEXT_WINDOWS = [
+    { matcher: (model) => model.includes("gemini-3.1-pro"), windowTokens: 1e6 },
+    { matcher: (model) => model.includes("qwen3.5") || model.includes("glm-5"), windowTokens: 128000 },
+    { matcher: (model) => model.includes("claude"), windowTokens: 200000 }
+  ];
+  TERMINAL_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict: (PASS|PARTIAL|FAIL)/i;
+});
+
+// src/cli/list.ts
+var exports_list = {};
+__export(exports_list, {
+  run: () => run3,
+  parseArgs: () => parseArgs,
+  ArgParseError: () => ArgParseError
+});
+import { spawnSync as spawnSync7 } from "child_process";
+import { existsSync as existsSync8, readdirSync as readdirSync2, readFileSync as readFileSync4 } from "fs";
+import { join as join8 } from "path";
+import readline from "readline";
+function permissionBadge(permission) {
+  if (permission === "READ_ONLY")
+    return green("[READ_ONLY]");
+  if (permission === "LOW")
+    return cyan("[LOW]");
+  if (permission === "MEDIUM")
+    return yellow2("[MEDIUM]");
+  return magenta("[HIGH]");
+}
+function toLiveJob(status) {
+  if (!status)
+    return null;
+  if (status.node_id)
+    return null;
+  if (status.status !== "running" && status.status !== "waiting" || !status.tmux_session) {
+    return null;
+  }
+  const elapsedS = status.elapsed_s ?? Math.max(0, Math.floor((Date.now() - status.started_at_ms) / 1000));
+  return {
+    id: status.id,
+    specialist: status.specialist,
+    status: status.status,
+    tmuxSession: status.tmux_session,
+    elapsedS,
+    startedAtMs: status.started_at_ms,
+    isDead: isJobDead(status)
+  };
+}
+function readJobStatus(statusPath) {
+  try {
+    return JSON.parse(readFileSync4(statusPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function listLiveJobs(showDead) {
+  const jobsDir = join8(process.cwd(), ".specialists", "jobs");
+  if (!existsSync8(jobsDir))
+    return [];
+  const jobs = readdirSync2(jobsDir).map((entry) => toLiveJob(readJobStatus(join8(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
+  return jobs;
+}
+function formatLiveChoice(job) {
+  const state = job.isDead ? "dead" : job.status;
+  return `${job.tmuxSession}  ${job.specialist}  ${job.elapsedS}s  ${state}`;
+}
+function renderLiveSelector(jobs, selectedIndex) {
+  return [
+    "",
+    bold2("Select tmux session (\u2191/\u2193, Enter to attach, Ctrl+C to cancel)"),
+    "",
+    ...jobs.map((job, index) => `${index === selectedIndex ? cyan("\u276F") : " "} ${formatLiveChoice(job)}`),
+    ""
+  ];
+}
+function selectLiveJob(jobs) {
+  return new Promise((resolve4) => {
+    const input = process.stdin;
+    const output = process.stdout;
+    const wasRawMode = input.isTTY ? input.isRaw : false;
+    let selectedIndex = 0;
+    let renderedLineCount = 0;
+    const cleanup = (selected) => {
+      input.off("keypress", onKeypress);
+      if (input.isTTY && !wasRawMode) {
+        input.setRawMode(false);
+      }
+      output.write("\x1B[?25h");
+      if (renderedLineCount > 0) {
+        readline.moveCursor(output, 0, -renderedLineCount);
+        readline.clearScreenDown(output);
+      }
+      resolve4(selected);
+    };
+    const render = () => {
+      if (renderedLineCount > 0) {
+        readline.moveCursor(output, 0, -renderedLineCount);
+        readline.clearScreenDown(output);
+      }
+      const lines = renderLiveSelector(jobs, selectedIndex);
+      output.write(lines.join(`
+`));
+      renderedLineCount = lines.length;
+    };
+    const onKeypress = (_, key) => {
+      if (key.ctrl && key.name === "c") {
+        cleanup(null);
+        return;
+      }
+      if (key.name === "up") {
+        selectedIndex = (selectedIndex - 1 + jobs.length) % jobs.length;
+        render();
+        return;
+      }
+      if (key.name === "down") {
+        selectedIndex = (selectedIndex + 1) % jobs.length;
+        render();
+        return;
+      }
+      if (key.name === "return") {
+        cleanup(jobs[selectedIndex]);
+      }
+    };
+    readline.emitKeypressEvents(input);
+    if (input.isTTY && !wasRawMode) {
+      input.setRawMode(true);
+    }
+    output.write("\x1B[?25l");
+    input.on("keypress", onKeypress);
+    render();
+  });
+}
+async function runLiveMode(showDead) {
+  const jobs = listLiveJobs(showDead);
+  if (jobs.length === 0) {
+    console.log("No running tmux sessions found.");
+    return;
+  }
+  if (!process.stdout.isTTY || !process.stdin.isTTY) {
+    for (const job of jobs) {
+      console.log(`${job.id}  ${job.tmuxSession}  ${job.isDead ? "dead" : job.status}`);
+    }
+    return;
+  }
+  const selected = await selectLiveJob(jobs);
+  if (!selected)
+    return;
+  const attach = spawnSync7("tmux", ["attach-session", "-t", selected.tmuxSession], {
+    stdio: "inherit"
+  });
+  if (attach.error) {
+    console.error(`Failed to attach tmux session ${selected.tmuxSession}: ${attach.error.message}`);
+    process.exit(1);
+  }
+}
+function parseArgs(argv) {
+  const result = {};
+  for (let i = 0;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--category") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) {
+        throw new ArgParseError("--category requires a value");
+      }
+      result.category = value;
+      continue;
+    }
+    if (token === "--scope") {
+      const value = argv[++i];
+      if (value !== "default" && value !== "user") {
+        throw new ArgParseError(`--scope must be "default" or "user", got: "${value ?? ""}"`);
+      }
+      result.scope = value;
+      continue;
+    }
+    if (token === "--json") {
+      result.json = true;
+      continue;
+    }
+    if (token === "--live") {
+      result.live = true;
+      continue;
+    }
+    if (token === "--show-dead") {
+      result.showDead = true;
+      continue;
+    }
+  }
+  return result;
+}
+async function run3() {
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(3));
+  } catch (err) {
+    if (err instanceof ArgParseError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  if (args.live) {
+    await runLiveMode(Boolean(args.showDead));
+    return;
+  }
+  const loader = new SpecialistLoader;
+  let specialists = await loader.list(args.category);
+  if (args.scope) {
+    specialists = specialists.filter((s) => s.scope === args.scope);
+  }
+  if (args.json) {
+    console.log(JSON.stringify(specialists, null, 2));
+    return;
+  }
+  if (specialists.length === 0) {
+    console.log("No specialists found.");
+    return;
+  }
+  console.log(`
+${bold2(`Specialists (${specialists.length})`)}
+`);
+  for (const s of specialists) {
+    const scopeTag = s.scope === "default" ? green("[default]") : yellow2("[user]");
+    const permission = permissionBadge(s.permission_required);
+    const keepAliveTag = s.interactive ? `  ${yellow2("[keep-alive]")}` : "";
+    const thinkingTag = s.thinking_level && s.thinking_level !== "off" ? `  ${dim2(`thinking:${s.thinking_level}`)}` : "";
+    const model = dim2(s.model);
+    const desc = s.description.length > 80 ? s.description.slice(0, 79) + "\u2026" : s.description;
+    console.log(`  ${cyan(s.name)}  ${scopeTag}  ${permission}${keepAliveTag}${thinkingTag}  ${model}`);
+    console.log(`  ${dim2(desc)}`);
+    if (s.skills.length > 0) {
+      console.log(`  ${dim2("skills: " + s.skills.join("  "))}`);
+    }
+    if (s.scripts.length > 0) {
+      const scriptSummary = s.scripts.map((sc) => {
+        const inject = sc.inject_output ? " \u2192$out" : "";
+        return `${sc.phase}: ${sc.run}${inject}`;
+      }).join("  \u2219  ");
+      console.log(`  ${dim2("scripts: " + scriptSummary)}`);
+    }
+    console.log();
+  }
+}
+var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, ArgParseError;
+var init_list = __esm(() => {
+  init_loader();
+  init_supervisor();
+  ArgParseError = class ArgParseError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "ArgParseError";
+    }
+  };
+});
+
+// src/cli/view.ts
+var exports_view = {};
+__export(exports_view, {
+  run: () => run4
+});
+import { readFile as readFile2 } from "fs/promises";
+import readline2 from "readline/promises";
+import { stdin as input, stdout as output } from "process";
+function permissionBadge2(permission) {
+  if (permission === "READ_ONLY")
+    return green2("[READ_ONLY]");
+  if (permission === "LOW")
+    return cyan2("[LOW]");
+  if (permission === "MEDIUM")
+    return yellow3("[MEDIUM]");
+  return magenta2("[HIGH]");
+}
+function parseArgs2(argv) {
+  const parsed = { raw: false, all: false };
+  for (let index = 0;index < argv.length; index++) {
+    const token = argv[index];
+    if (token === "--raw") {
+      parsed.raw = true;
+      continue;
+    }
+    if (token === "--all") {
+      parsed.all = true;
+      continue;
+    }
+    if (token === "--section") {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new ArgParseError2("--section requires a value");
+      }
+      const normalized = SECTION_ALIASES[value.toLowerCase()];
+      if (!normalized) {
+        throw new ArgParseError2(`Unsupported section "${value}"`);
+      }
+      parsed.section = normalized;
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      throw new ArgParseError2(`Unknown flag: ${token}`);
+    }
+    if (!parsed.name) {
+      parsed.name = token;
+      continue;
+    }
+    throw new ArgParseError2(`Unexpected argument: ${token}`);
+  }
+  if (parsed.all && parsed.name) {
+    throw new ArgParseError2("--all cannot be combined with a specialist name");
+  }
+  return parsed;
+}
+function formatPromptValue(value) {
+  if (!value || value.trim().length === 0) {
+    return dim3("(empty)");
+  }
+  return value;
+}
+function formatValue(value) {
+  if (value === undefined)
+    return dim3("(unset)");
+  if (value === null)
+    return dim3("null");
+  if (typeof value === "string")
+    return value;
+  return JSON.stringify(value, null, 2);
+}
+function printSectionHeader(title, color) {
+  console.log();
+  console.log(color(bold3(title)));
+  console.log(color("\u2500".repeat(title.length)));
+}
+function printPromptSection(prompt) {
+  printSectionHeader("prompt", magenta2);
+  console.log(`${bold3("system")}:`);
+  console.log(formatPromptValue(prompt.system));
+  console.log();
+  console.log(`${bold3("task_template")}:`);
+  console.log(formatPromptValue(prompt.task_template));
+  if (prompt.normalize_template !== undefined) {
+    console.log();
+    console.log(`${bold3("normalize_template")}:`);
+    console.log(formatValue(prompt.normalize_template));
+  }
+  if (prompt.skill_inherit !== undefined) {
+    console.log();
+    console.log(`${bold3("skill_inherit")}: ${formatValue(prompt.skill_inherit)}`);
+  }
+  if (prompt.examples !== undefined) {
+    console.log();
+    console.log(`${bold3("examples")}:`);
+    console.log(formatValue(prompt.examples));
+  }
+  if (prompt.output_schema !== undefined) {
+    console.log();
+    console.log(`${bold3("output_schema")}:`);
+    console.log(formatValue(prompt.output_schema));
+  }
+}
+function printGenericSection(title, color, value) {
+  printSectionHeader(title, color);
+  console.log(formatValue(value));
+}
+function printHeader(summary) {
+  const scope = summary.scope === "default" ? green2("[default]") : yellow3("[user]");
+  console.log();
+  console.log(`${bold3(cyan2(summary.name))} ${scope} ${permissionBadge2(summary.permission_required)}`);
+  console.log(dim3(summary.description));
+  console.log(`${dim3("model:")} ${summary.model}`);
+  console.log(`${dim3("version:")} ${summary.version}`);
+  console.log(`${dim3("source:")} ${summary.filePath}`);
+}
+function printCatalog(summaries) {
+  if (summaries.length === 0) {
+    console.log("No specialists found.");
+    return;
+  }
+  const rows = [...summaries].sort((left, right) => left.name.localeCompare(right.name));
+  console.log();
+  console.log(bold3(`Specialists catalog (${rows.length})`));
+  console.log();
+  for (const summary of rows) {
+    const scope = summary.scope === "default" ? green2("[default]") : yellow3("[user]");
+    const keepAlive = summary.interactive ? yellow3("[keep-alive]") : dim3("[single-turn]");
+    console.log(`${cyan2(summary.name)} ${scope} ${permissionBadge2(summary.permission_required)} ${keepAlive}`);
+    console.log(`${dim3("  model:")} ${summary.model}`);
+    console.log(`${dim3("  category:")} ${summary.category}  ${dim3("version:")} ${summary.version}`);
+    console.log(`${dim3("  desc:")} ${summary.description}`);
+    console.log();
+  }
+}
+function findSummary(summaries, name) {
+  return summaries.find((summary) => summary.name === name);
+}
+async function selectSpecialistFromCatalog(summaries) {
+  if (!input.isTTY || !output.isTTY) {
+    return null;
+  }
+  console.log(dim3("Enter specialist name to view details (blank to cancel):"));
+  const rl = readline2.createInterface({ input, output });
+  try {
+    const selectedName = (await rl.question("> ")).trim();
+    if (!selectedName)
+      return null;
+    return findSummary(summaries, selectedName) ?? null;
+  } finally {
+    rl.close();
+  }
+}
+function printBySection(spec, section) {
+  if (section === "beads") {
+    printGenericSection("beads", yellow3, {
+      beads_integration: spec.specialist.beads_integration,
+      beads_write_notes: spec.specialist.beads_write_notes
+    });
+    return;
+  }
+  if (section === "prompt") {
+    printPromptSection(spec.specialist.prompt);
+    return;
+  }
+  const value = spec.specialist[section];
+  printGenericSection(section, section === "metadata" ? cyan2 : green2, value);
+}
+function printFullSpecialist(spec) {
+  printBySection(spec, "metadata");
+  printBySection(spec, "execution");
+  printBySection(spec, "prompt");
+  printBySection(spec, "skills");
+  printBySection(spec, "capabilities");
+  printBySection(spec, "communication");
+  printBySection(spec, "validation");
+  printBySection(spec, "stall_detection");
+  printBySection(spec, "beads");
+}
+async function printRaw(summary) {
+  const content = await readFile2(summary.filePath, "utf-8");
+  console.log(content);
+}
+async function run4() {
+  let args;
+  try {
+    args = parseArgs2(process.argv.slice(3));
+  } catch (error2) {
+    if (error2 instanceof ArgParseError2) {
+      console.error(`Error: ${error2.message}`);
+      process.exit(1);
+    }
+    throw error2;
+  }
+  const loader = new SpecialistLoader;
+  const summaries = await loader.list();
+  if (args.all) {
+    printCatalog(summaries);
+    return;
+  }
+  let selectedSummary;
+  if (args.name) {
+    selectedSummary = findSummary(summaries, args.name);
+    if (!selectedSummary) {
+      console.error(`Specialist not found: ${args.name}`);
+      process.exit(1);
+    }
+  } else {
+    printCatalog(summaries);
+    const chosen = await selectSpecialistFromCatalog(summaries);
+    if (!chosen) {
+      if (!input.isTTY || !output.isTTY) {
+        console.log(dim3("Pass a specialist name to render details (e.g. specialists view <name>)."));
+      }
+      return;
+    }
+    selectedSummary = chosen;
+  }
+  if (args.raw) {
+    await printRaw(selectedSummary);
+    return;
+  }
+  const specialist = await loader.get(selectedSummary.name);
+  printHeader(selectedSummary);
+  if (args.section) {
+    printBySection(specialist, args.section);
+    return;
+  }
+  printFullSpecialist(specialist);
+}
+var ANSI_RESET = "\x1B[0m", bold3 = (value) => `\x1B[1m${value}${ANSI_RESET}`, dim3 = (value) => `\x1B[2m${value}${ANSI_RESET}`, cyan2 = (value) => `\x1B[36m${value}${ANSI_RESET}`, green2 = (value) => `\x1B[32m${value}${ANSI_RESET}`, yellow3 = (value) => `\x1B[33m${value}${ANSI_RESET}`, magenta2 = (value) => `\x1B[35m${value}${ANSI_RESET}`, SECTION_ALIASES, ArgParseError2;
+var init_view = __esm(() => {
+  init_loader();
+  SECTION_ALIASES = {
+    metadata: "metadata",
+    execution: "execution",
+    prompt: "prompt",
+    skills: "skills",
+    capabilities: "capabilities",
+    communication: "communication",
+    validation: "validation",
+    stall: "stall_detection",
+    "stall-detection": "stall_detection",
+    stall_detection: "stall_detection",
+    beads: "beads"
+  };
+  ArgParseError2 = class ArgParseError2 extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "ArgParseError";
+    }
+  };
+});
+
+// src/cli/models.ts
+var exports_models = {};
+__export(exports_models, {
+  run: () => run5
+});
+import { spawnSync as spawnSync8 } from "child_process";
+function parsePiModels() {
+  const r = spawnSync8("pi", ["--list-models"], {
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 8000
+  });
+  if (r.status !== 0 || r.error)
+    return null;
+  return r.stdout.split(`
+`).slice(1).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const cols = line.split(/\s+/);
+    return {
+      provider: cols[0] ?? "",
+      model: cols[1] ?? "",
+      context: cols[2] ?? "",
+      maxOut: cols[3] ?? "",
+      thinking: cols[4] === "yes",
+      images: cols[5] === "yes"
+    };
+  }).filter((m) => m.provider && m.model);
+}
+function parseArgs3(argv) {
+  const out = {};
+  for (let i = 0;i < argv.length; i++) {
+    if (argv[i] === "--provider" && argv[i + 1]) {
+      out.provider = argv[++i];
+      continue;
+    }
+    if (argv[i] === "--used") {
+      out.used = true;
+      continue;
+    }
+  }
+  return out;
+}
+async function run5() {
+  const args = parseArgs3(process.argv.slice(3));
+  const loader = new SpecialistLoader;
+  const specialists = await loader.list();
+  const usedBy = new Map;
+  for (const s of specialists) {
+    const key = s.model;
+    if (!usedBy.has(key))
+      usedBy.set(key, []);
+    usedBy.get(key).push(s.name);
+  }
+  const allModels = parsePiModels();
+  if (!allModels) {
+    console.error("pi not found or failed \u2014 install and configure pi first");
+    process.exit(1);
+  }
+  let models = allModels;
+  if (args.provider) {
+    models = models.filter((m) => m.provider.toLowerCase().includes(args.provider.toLowerCase()));
+  }
+  if (args.used) {
+    models = models.filter((m) => usedBy.has(`${m.provider}/${m.model}`));
+  }
+  if (models.length === 0) {
+    console.log("No models match.");
+    return;
+  }
+  const byProvider = new Map;
+  for (const m of models) {
+    if (!byProvider.has(m.provider))
+      byProvider.set(m.provider, []);
+    byProvider.get(m.provider).push(m);
+  }
+  const total = models.length;
+  console.log(`
+${bold4(`Models on pi`)}  ${dim4(`(${total} total)`)}
+`);
+  for (const [provider, pModels] of byProvider) {
+    console.log(`  ${cyan3(provider)}  ${dim4(`${pModels.length} model${pModels.length !== 1 ? "s" : ""}`)}`);
+    const modelWidth = Math.max(...pModels.map((m) => m.model.length));
+    for (const m of pModels) {
+      const key = `${m.provider}/${m.model}`;
+      const inUse = usedBy.get(key);
+      const flags = [
+        m.thinking ? green3("thinking") : dim4("\xB7"),
+        m.images ? dim4("images") : ""
+      ].filter(Boolean).join("  ");
+      const ctx = dim4(`ctx ${m.context}`);
+      const usedLabel = inUse ? `  ${yellow4("\u2190")} ${dim4(inUse.join(", "))}` : "";
+      console.log(`    ${m.model.padEnd(modelWidth)}  ${ctx.padEnd(18)}  ${flags}${usedLabel}`);
+    }
+    console.log();
+  }
+  if (!args.used) {
+    console.log(dim4(`  --provider <name>  filter by provider`));
+    console.log(dim4(`  --used             only show models used by your specialists`));
+    console.log();
+  }
+}
+var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`;
+var init_models = __esm(() => {
+  init_loader();
+});
+
 // src/cli/init.ts
 var exports_init = {};
 __export(exports_init, {
   run: () => run6
 });
-import { copyFileSync, cpSync, existsSync as existsSync8, lstatSync, mkdirSync as mkdirSync2, readdirSync as readdirSync2, readFileSync as readFileSync4, readlinkSync, renameSync, symlinkSync, writeFileSync as writeFileSync2 } from "fs";
-import { spawnSync as spawnSync6 } from "child_process";
-import { basename as basename3, dirname as dirname3, join as join7, resolve as resolve3 } from "path";
+import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync3, readdirSync as readdirSync3, readFileSync as readFileSync5, readlinkSync, renameSync as renameSync2, symlinkSync, writeFileSync as writeFileSync3 } from "fs";
+import { spawnSync as spawnSync9 } from "child_process";
+import { basename as basename3, dirname as dirname4, join as join9, resolve as resolve4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
@@ -21042,10 +22687,10 @@ function skip(msg) {
   console.log(`  ${yellow5("\u25CB")} ${msg}`);
 }
 function isInstalled(bin) {
-  return spawnSync6("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync9("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function assertXtrmPrerequisites(cwd) {
-  const hasXtrmDir = existsSync8(join7(cwd, ".xtrm"));
+  const hasXtrmDir = existsSync9(join9(cwd, ".xtrm"));
   const hasXtCli = isInstalled("xt");
   if (hasXtrmDir && hasXtCli)
     return;
@@ -21053,49 +22698,49 @@ function assertXtrmPrerequisites(cwd) {
   process.exit(1);
 }
 function loadJson(path, fallback) {
-  if (!existsSync8(path))
+  if (!existsSync9(path))
     return structuredClone(fallback);
   try {
-    return JSON.parse(readFileSync4(path, "utf-8"));
+    return JSON.parse(readFileSync5(path, "utf-8"));
   } catch {
     return structuredClone(fallback);
   }
 }
 function saveJson(path, value) {
-  writeFileSync2(path, JSON.stringify(value, null, 2) + `
+  writeFileSync3(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
 function resolvePackagePath(relativePath) {
   const configPath = `config/${relativePath}`;
   let resolved = fileURLToPath2(new URL(`../${configPath}`, import.meta.url));
-  if (existsSync8(resolved))
+  if (existsSync9(resolved))
     return resolved;
   resolved = fileURLToPath2(new URL(`../../${configPath}`, import.meta.url));
-  if (existsSync8(resolved))
+  if (existsSync9(resolved))
     return resolved;
   return null;
 }
 function migrateLegacySpecialists(cwd, scope) {
-  const sourceDir = join7(cwd, ".specialists", scope, "specialists");
-  if (!existsSync8(sourceDir))
+  const sourceDir = join9(cwd, ".specialists", scope, "specialists");
+  if (!existsSync9(sourceDir))
     return;
-  const targetDir = join7(cwd, ".specialists", scope);
-  if (!existsSync8(targetDir)) {
-    mkdirSync2(targetDir, { recursive: true });
+  const targetDir = join9(cwd, ".specialists", scope);
+  if (!existsSync9(targetDir)) {
+    mkdirSync3(targetDir, { recursive: true });
   }
-  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
+  const files = readdirSync3(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
   if (files.length === 0)
     return;
   let moved = 0;
   let skipped = 0;
   for (const file of files) {
-    const src = join7(sourceDir, file);
-    const dest = join7(targetDir, file);
-    if (existsSync8(dest)) {
+    const src = join9(sourceDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync9(dest)) {
       skipped++;
       continue;
     }
-    renameSync(src, dest);
+    renameSync2(src, dest);
     moved++;
   }
   if (moved > 0) {
@@ -21111,21 +22756,21 @@ function copyCanonicalSpecialists(cwd) {
     skip("no canonical specialists found in package");
     return;
   }
-  const targetDir = join7(cwd, ".specialists", "default");
-  const files = readdirSync2(sourceDir).filter((f) => f.endsWith(".specialist.json"));
+  const targetDir = join9(cwd, ".specialists", "default");
+  const files = readdirSync3(sourceDir).filter((f) => f.endsWith(".specialist.json"));
   if (files.length === 0) {
     skip("no specialist files found in package");
     return;
   }
-  if (!existsSync8(targetDir)) {
-    mkdirSync2(targetDir, { recursive: true });
+  if (!existsSync9(targetDir)) {
+    mkdirSync3(targetDir, { recursive: true });
   }
   let copied = 0;
   let skipped = 0;
   for (const file of files) {
-    const src = join7(sourceDir, file);
-    const dest = join7(targetDir, file);
-    if (existsSync8(dest)) {
+    const src = join9(sourceDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync9(dest)) {
       skipped++;
     } else {
       copyFileSync(src, dest);
@@ -21139,43 +22784,77 @@ function copyCanonicalSpecialists(cwd) {
     skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
   }
 }
+function copyCanonicalNodeConfigs(cwd) {
+  const sourceDir = resolvePackagePath("nodes");
+  if (!sourceDir) {
+    skip("no canonical node configs found in package");
+    return;
+  }
+  const targetDir = join9(cwd, ".specialists", "default", "nodes");
+  const files = readdirSync3(sourceDir).filter((f) => f.endsWith(".node.json"));
+  if (files.length === 0) {
+    skip("no node config files found in package");
+    return;
+  }
+  if (!existsSync9(targetDir)) {
+    mkdirSync3(targetDir, { recursive: true });
+  }
+  let copied = 0;
+  let skipped = 0;
+  for (const file of files) {
+    const src = join9(sourceDir, file);
+    const dest = join9(targetDir, file);
+    if (existsSync9(dest)) {
+      skipped++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+  if (copied > 0) {
+    ok(`copied ${copied} canonical node config${copied === 1 ? "" : "s"} to .specialists/default/nodes/`);
+  }
+  if (skipped > 0) {
+    skip(`${skipped} node config${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  }
+}
 function installProjectHooks(cwd) {
   const sourceDir = resolvePackagePath("hooks");
   if (!sourceDir) {
     skip("no canonical hooks found in package");
     return;
   }
-  const xtrmHooksDir = join7(cwd, ".xtrm", "hooks");
-  const targetDir = join7(xtrmHooksDir, "specialists");
-  const claudeHooksDir = join7(cwd, ".claude", "hooks");
-  const hooks = readdirSync2(sourceDir).filter((f) => f.endsWith(".mjs"));
+  const xtrmHooksDir = join9(cwd, ".xtrm", "hooks");
+  const targetDir = join9(xtrmHooksDir, "specialists");
+  const claudeHooksDir = join9(cwd, ".claude", "hooks");
+  const hooks = readdirSync3(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
     return;
   }
-  mkdirSync2(targetDir, { recursive: true });
-  mkdirSync2(claudeHooksDir, { recursive: true });
+  mkdirSync3(targetDir, { recursive: true });
+  mkdirSync3(claudeHooksDir, { recursive: true });
   let copied = 0;
   let skippedCopies = 0;
   let linked = 0;
   let skippedLinks = 0;
   for (const file of hooks) {
-    const src = join7(sourceDir, file);
-    const xtrmDest = join7(targetDir, file);
-    if (existsSync8(xtrmDest)) {
+    const src = join9(sourceDir, file);
+    const xtrmDest = join9(targetDir, file);
+    if (existsSync9(xtrmDest)) {
       skippedCopies++;
     } else {
       copyFileSync(src, xtrmDest);
       copied++;
     }
-    const claudeHookPath = join7(claudeHooksDir, file);
-    if (existsSync8(claudeHookPath)) {
+    const claudeHookPath = join9(claudeHooksDir, file);
+    if (existsSync9(claudeHookPath)) {
       const stats = lstatSync(claudeHookPath);
       if (!stats.isSymbolicLink()) {
         skippedLinks++;
         continue;
       }
-      const currentTarget = resolve3(dirname3(claudeHookPath), readlinkSync(claudeHookPath));
+      const currentTarget = resolve4(dirname4(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
         skippedLinks++;
         continue;
@@ -21197,10 +22876,10 @@ function installProjectHooks(cwd) {
     skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
 }
 function ensureProjectHookWiring(cwd) {
-  const settingsPath = join7(cwd, ".claude", "settings.json");
-  const settingsDir = join7(cwd, ".claude");
-  if (!existsSync8(settingsDir)) {
-    mkdirSync2(settingsDir, { recursive: true });
+  const settingsPath = join9(cwd, ".claude", "settings.json");
+  const settingsDir = join9(cwd, ".claude");
+  if (!existsSync9(settingsDir)) {
+    mkdirSync3(settingsDir, { recursive: true });
   }
   const settings = loadJson(settingsPath, {});
   let changed = false;
@@ -21224,7 +22903,7 @@ function ensureProjectHookWiring(cwd) {
   }
 }
 function assertSkillRootSymlink(rootPath, expectedTargetPath) {
-  if (!existsSync8(rootPath)) {
+  if (!existsSync9(rootPath)) {
     throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
   }
   const stats = lstatSync(rootPath);
@@ -21232,8 +22911,8 @@ function assertSkillRootSymlink(rootPath, expectedTargetPath) {
     throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
   }
   const linkTarget = readlinkSync(rootPath);
-  const resolvedTarget = resolve3(dirname3(rootPath), linkTarget);
-  const resolvedExpected = resolve3(expectedTargetPath);
+  const resolvedTarget = resolve4(dirname4(rootPath), linkTarget);
+  const resolvedExpected = resolve4(expectedTargetPath);
   if (resolvedTarget !== resolvedExpected) {
     throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
   }
@@ -21254,14 +22933,14 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   if (!stats.isSymbolicLink()) {
     throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
   }
-  const currentTarget = resolve3(dirname3(activeLinkPath), readlinkSync(activeLinkPath));
-  if (currentTarget !== resolve3(defaultSkillPath)) {
+  const currentTarget = resolve4(dirname4(activeLinkPath), readlinkSync(activeLinkPath));
+  if (currentTarget !== resolve4(defaultSkillPath)) {
     throw new Error(`${activeLinkPath} points to an unexpected target.`);
   }
 }
 function installProjectSkills(cwd, syncSkills) {
-  const xtrmRoot = join7(cwd, ".xtrm");
-  if (!existsSync8(xtrmRoot)) {
+  const xtrmRoot = join9(cwd, ".xtrm");
+  if (!existsSync9(xtrmRoot)) {
     throw new Error(".xtrm/ is missing. Install xtrm first, then run specialists init.");
   }
   const sourceDir = resolvePackagePath("skills");
@@ -21269,25 +22948,25 @@ function installProjectSkills(cwd, syncSkills) {
     skip("no canonical skills found in package");
     return;
   }
-  const skills = readdirSync2(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  const skills = readdirSync3(sourceDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   if (skills.length === 0) {
     skip("no skill directories found in package");
     return;
   }
-  const defaultRoot = join7(cwd, ".xtrm", "skills", "default");
-  const activeClaudeRoot = join7(cwd, ".xtrm", "skills", "active", "claude");
-  const activePiRoot = join7(cwd, ".xtrm", "skills", "active", "pi");
-  mkdirSync2(defaultRoot, { recursive: true });
-  mkdirSync2(activeClaudeRoot, { recursive: true });
-  mkdirSync2(activePiRoot, { recursive: true });
-  assertSkillRootSymlink(join7(cwd, ".claude", "skills"), activeClaudeRoot);
-  assertSkillRootSymlink(join7(cwd, ".pi", "skills"), activePiRoot);
+  const defaultRoot = join9(cwd, ".xtrm", "skills", "default");
+  const activeClaudeRoot = join9(cwd, ".xtrm", "skills", "active", "claude");
+  const activePiRoot = join9(cwd, ".xtrm", "skills", "active", "pi");
+  mkdirSync3(defaultRoot, { recursive: true });
+  mkdirSync3(activeClaudeRoot, { recursive: true });
+  mkdirSync3(activePiRoot, { recursive: true });
+  assertSkillRootSymlink(join9(cwd, ".claude", "skills"), activeClaudeRoot);
+  assertSkillRootSymlink(join9(cwd, ".pi", "skills"), activePiRoot);
   let copied = 0;
   let refreshed = 0;
   for (const skill of skills) {
-    const src = join7(sourceDir, skill);
-    const defaultSkillPath = join7(defaultRoot, skill);
-    if (existsSync8(defaultSkillPath)) {
+    const src = join9(sourceDir, skill);
+    const defaultSkillPath = join9(defaultRoot, skill);
+    if (existsSync9(defaultSkillPath)) {
       if (syncSkills) {
         cpSync(src, defaultSkillPath, { recursive: true, force: true });
         refreshed++;
@@ -21296,8 +22975,8 @@ function installProjectSkills(cwd, syncSkills) {
       cpSync(src, defaultSkillPath, { recursive: true });
       copied++;
     }
-    ensureActiveSkillSymlink(defaultSkillPath, join7(activeClaudeRoot, skill));
-    ensureActiveSkillSymlink(defaultSkillPath, join7(activePiRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join9(activeClaudeRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join9(activePiRoot, skill));
   }
   if (copied > 0)
     ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
@@ -21306,12 +22985,12 @@ function installProjectSkills(cwd, syncSkills) {
   ok("verified active skill symlinks in .xtrm/skills/active/{claude,pi}/");
 }
 function createSpecialistsDirs(cwd) {
-  const defaultDir = join7(cwd, ".specialists", "default");
-  const userDir = join7(cwd, ".specialists", "user");
+  const defaultDir = join9(cwd, ".specialists", "default");
+  const userDir = join9(cwd, ".specialists", "user");
   let created = 0;
   for (const dir of [defaultDir, userDir]) {
-    if (!existsSync8(dir)) {
-      mkdirSync2(dir, { recursive: true });
+    if (!existsSync9(dir)) {
+      mkdirSync3(dir, { recursive: true });
       created++;
     }
   }
@@ -21321,13 +23000,13 @@ function createSpecialistsDirs(cwd) {
 }
 function createRuntimeDirs(cwd) {
   const runtimeDirs = [
-    join7(cwd, ".specialists", "jobs"),
-    join7(cwd, ".specialists", "ready")
+    join9(cwd, ".specialists", "jobs"),
+    join9(cwd, ".specialists", "ready")
   ];
   let created = 0;
   for (const dir of runtimeDirs) {
-    if (!existsSync8(dir)) {
-      mkdirSync2(dir, { recursive: true });
+    if (!existsSync9(dir)) {
+      mkdirSync3(dir, { recursive: true });
       created++;
     }
   }
@@ -21336,7 +23015,7 @@ function createRuntimeDirs(cwd) {
   }
 }
 function ensureProjectMcp(cwd) {
-  const mcpPath = join7(cwd, MCP_FILE);
+  const mcpPath = join9(cwd, MCP_FILE);
   const mcp = loadJson(mcpPath, { mcpServers: {} });
   mcp.mcpServers ??= {};
   const existing = mcp.mcpServers[MCP_SERVER_NAME];
@@ -21349,8 +23028,8 @@ function ensureProjectMcp(cwd) {
   ok("registered specialists in project .mcp.json");
 }
 function ensureGitignore(cwd) {
-  const gitignorePath = join7(cwd, ".gitignore");
-  const existing = existsSync8(gitignorePath) ? readFileSync4(gitignorePath, "utf-8") : "";
+  const gitignorePath = join9(cwd, ".gitignore");
+  const existing = existsSync9(gitignorePath) ? readFileSync5(gitignorePath, "utf-8") : "";
   let added = 0;
   const lines = existing.split(`
 `);
@@ -21361,7 +23040,7 @@ function ensureGitignore(cwd) {
     }
   }
   if (added > 0) {
-    writeFileSync2(gitignorePath, lines.join(`
+    writeFileSync3(gitignorePath, lines.join(`
 `) + `
 `, "utf-8");
     ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
@@ -21375,7 +23054,7 @@ function ensureObservabilityDb(cwd) {
     skip("observability DB path resolves inside jobs directory \u2014 skipped");
     return;
   }
-  const alreadyExists = existsSync8(location.dbPath);
+  const alreadyExists = existsSync9(location.dbPath);
   if (alreadyExists) {
     skip("observability database already exists (not touched)");
     return;
@@ -21395,19 +23074,19 @@ function ensureObservabilityDb(cwd) {
   ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
 }
 function ensureAgentsMd(cwd) {
-  const agentsPath = join7(cwd, "AGENTS.md");
-  if (existsSync8(agentsPath)) {
-    const existing = readFileSync4(agentsPath, "utf-8");
+  const agentsPath = join9(cwd, "AGENTS.md");
+  if (existsSync9(agentsPath)) {
+    const existing = readFileSync5(agentsPath, "utf-8");
     if (existing.includes(AGENTS_MARKER)) {
       skip("AGENTS.md already has Specialists section");
     } else {
-      writeFileSync2(agentsPath, existing.trimEnd() + `
+      writeFileSync3(agentsPath, existing.trimEnd() + `
 
 ` + AGENTS_BLOCK, "utf-8");
       ok("appended Specialists section to AGENTS.md");
     }
   } else {
-    writeFileSync2(agentsPath, AGENTS_BLOCK, "utf-8");
+    writeFileSync3(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
   }
 }
@@ -21438,6 +23117,7 @@ ${bold5("Done!")}
   if (syncDefaults) {
     migrateLegacySpecialists(cwd, "default");
     copyCanonicalSpecialists(cwd);
+    copyCanonicalNodeConfigs(cwd);
   } else {
     skip(".specialists/default/ not synced (pass --sync-defaults to write canonical specialists)");
   }
@@ -21518,340 +23198,13 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
-// src/specialist/job-root.ts
-import { spawnSync as spawnSync7 } from "child_process";
-import { dirname as dirname4, join as join8, resolve as resolve4 } from "path";
-function resolveCommonGitRoot(cwd) {
-  const result = spawnSync7("git", ["rev-parse", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const gitCommonDir = result.stdout?.trim();
-  if (!gitCommonDir)
-    return;
-  return dirname4(resolve4(cwd, gitCommonDir));
-}
-function resolveJobsDir(cwd = process.cwd()) {
-  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
-  return join8(commonRoot, ".specialists", "jobs");
-}
-function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync7("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const branch = result.stdout?.trim();
-  return branch && branch !== "HEAD" ? branch : undefined;
-}
-var init_job_root = () => {};
-
-// src/specialist/timeline-events.ts
-function summarizeToolResult(resultContent) {
-  if (!resultContent)
-    return;
-  const compact = resultContent.trim();
-  if (!compact)
-    return;
-  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
-    return compact;
-  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}\u2026`;
-}
-function mapCallbackEventToTimelineEvent(callbackEvent, context) {
-  const t = Date.now();
-  switch (callbackEvent) {
-    case "thinking":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.THINKING,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
-    case "tool_execution_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "start",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true },
-        args: context.args,
-        started_at: new Date(t).toISOString()
-      };
-    case "tool_execution_update":
-    case "tool_execution":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "update",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true }
-      };
-    case "tool_execution_end": {
-      const resultSummary = summarizeToolResult(context.resultContent);
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "end",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true },
-        is_error: context.isError,
-        ...resultSummary ? { result_summary: resultSummary } : {},
-        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
-      };
-    }
-    case "message_start_assistant":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
-    case "message_end_assistant":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "assistant" };
-    case "message_start_tool_result":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "toolResult" };
-    case "message_end_tool_result":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "toolResult" };
-    case "turn_start":
-      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
-    case "turn_end":
-      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
-    case "auto_compaction_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.COMPACTION,
-        phase: "start",
-        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
-        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
-        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
-      };
-    case "auto_compaction_end":
-    case "auto_compaction":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.COMPACTION,
-        phase: "end",
-        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
-        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
-        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
-      };
-    case "auto_retry_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.RETRY,
-        phase: "start",
-        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
-        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
-        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
-        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
-      };
-    case "auto_retry_end":
-    case "auto_retry":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.RETRY,
-        phase: "end",
-        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
-        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
-        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
-        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
-      };
-    case "set_model":
-    case "cycle_model":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
-        action: callbackEvent,
-        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
-        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
-      };
-    case "extension_error":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
-        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
-        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
-      };
-    case "text":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TEXT,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
-    case "agent_end":
-    case "message_done":
-    case "done":
-      return null;
-    default:
-      return null;
-  }
-}
-function createRunStartEvent(specialist, beadId) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RUN_START,
-    specialist,
-    bead_id: beadId
-  };
-}
-function createMetaEvent(model, backend) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.META,
-    model,
-    backend
-  };
-}
-function createStatusChangeEvent(status, previousStatus) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
-    status,
-    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
-  };
-}
-function createStaleWarningEvent(reason, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.STALE_WARNING,
-    reason,
-    silence_ms: options.silence_ms,
-    threshold_ms: options.threshold_ms,
-    ...options.tool !== undefined ? { tool: options.tool } : {}
-  };
-}
-function createTokenUsageEvent(token_usage, source) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
-    token_usage,
-    source
-  };
-}
-function createFinishReasonEvent(finish_reason, source) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
-    finish_reason,
-    source
-  };
-}
-function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent, contextPct, contextHealth) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
-    turn_index,
-    ...token_usage ? { token_usage } : {},
-    ...finish_reason ? { finish_reason } : {},
-    ...textContent ? { text_content: textContent } : {},
-    ...contextPct !== undefined ? { context_pct: contextPct } : {},
-    ...contextHealth ? { context_health: contextHealth } : {}
-  };
-}
-function createCompactionEvent(phase, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.COMPACTION,
-    phase,
-    ...options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {},
-    ...options?.summary ? { summary: options.summary } : {},
-    ...options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}
-  };
-}
-function createRetryEvent(phase, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RETRY,
-    phase,
-    ...options?.attempt !== undefined ? { attempt: options.attempt } : {},
-    ...options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {},
-    ...options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {},
-    ...options?.errorMessage ? { error_message: options.errorMessage } : {}
-  };
-}
-function createRunCompleteEvent(status, elapsed_s, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
-    status,
-    elapsed_s,
-    ...options
-  };
-}
-function parseTimelineEvent(line) {
-  try {
-    const parsed = JSON.parse(line);
-    if (!parsed || typeof parsed !== "object")
-      return null;
-    if (typeof parsed.t !== "number")
-      return null;
-    if (typeof parsed.type !== "string")
-      return null;
-    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
-      return {
-        t: parsed.t,
-        type: TIMELINE_EVENT_TYPES.DONE,
-        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
-      };
-    }
-    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
-      return {
-        t: parsed.t,
-        type: TIMELINE_EVENT_TYPES.AGENT_END,
-        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
-      };
-    }
-    const knownTypes = Object.values(TIMELINE_EVENT_TYPES).filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
-    if (!knownTypes.includes(parsed.type))
-      return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-function isRunCompleteEvent(event) {
-  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
-}
-function compareTimelineEvents(a, b) {
-  const timeDiff = a.t - b.t;
-  if (timeDiff !== 0)
-    return timeDiff;
-  return (a.seq ?? 0) - (b.seq ?? 0);
-}
-var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
-var init_timeline_events = __esm(() => {
-  TIMELINE_EVENT_TYPES = {
-    RUN_START: "run_start",
-    META: "meta",
-    THINKING: "thinking",
-    TOOL: "tool",
-    TEXT: "text",
-    MESSAGE: "message",
-    TURN: "turn",
-    STATUS_CHANGE: "status_change",
-    RUN_COMPLETE: "run_complete",
-    STALE_WARNING: "stale_warning",
-    TOKEN_USAGE: "token_usage",
-    FINISH_REASON: "finish_reason",
-    TURN_SUMMARY: "turn_summary",
-    COMPACTION: "compaction",
-    RETRY: "retry",
-    MODEL_CHANGE: "model_change",
-    EXTENSION_ERROR: "extension_error",
-    DONE: "done",
-    AGENT_END: "agent_end"
-  };
-});
-
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
   run: () => run7
 });
-import { existsSync as existsSync9, readdirSync as readdirSync3, readFileSync as readFileSync5 } from "fs";
-import { join as join9 } from "path";
+import { existsSync as existsSync10, readdirSync as readdirSync4, readFileSync as readFileSync6 } from "fs";
+import { join as join10 } from "path";
 function printDbHelp() {
   console.log([
     "",
@@ -21918,8 +23271,8 @@ function parseBackfillOptions(argv) {
   return { importEvents };
 }
 function parseStatusFile(jobDirectoryPath, fallbackJobId) {
-  const statusPath = join9(jobDirectoryPath, "status.json");
-  const statusRaw = readFileSync5(statusPath, "utf-8");
+  const statusPath = join10(jobDirectoryPath, "status.json");
+  const statusRaw = readFileSync6(statusPath, "utf-8");
   const parsed = JSON.parse(statusRaw);
   const jobId = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : fallbackJobId;
   const specialist = typeof parsed.specialist === "string" && parsed.specialist.length > 0 ? parsed.specialist : "unknown";
@@ -21934,9 +23287,9 @@ function parseStatusFile(jobDirectoryPath, fallbackJobId) {
   };
 }
 function replayEvents(eventsPath, sqliteClient, status) {
-  if (!existsSync9(eventsPath))
+  if (!existsSync10(eventsPath))
     return 0;
-  const rawContent = readFileSync5(eventsPath, "utf-8");
+  const rawContent = readFileSync6(eventsPath, "utf-8");
   const lines = rawContent.split(`
 `).map((line) => line.trim()).filter((line) => line.length > 0);
   let importedEvents = 0;
@@ -21962,17 +23315,17 @@ function runBackfill(options) {
   };
   try {
     const jobsDirectoryPath = resolveJobsDir(process.cwd());
-    if (!existsSync9(jobsDirectoryPath)) {
+    if (!existsSync10(jobsDirectoryPath)) {
       console.log("No jobs directory found. Nothing to backfill.");
       return;
     }
-    const jobEntries = readdirSync3(jobsDirectoryPath, { withFileTypes: true });
+    const jobEntries = readdirSync4(jobsDirectoryPath, { withFileTypes: true });
     for (const jobEntry of jobEntries) {
       if (!jobEntry.isDirectory())
         continue;
-      const jobDirectoryPath = join9(jobsDirectoryPath, jobEntry.name);
-      const statusPath = join9(jobDirectoryPath, "status.json");
-      if (!existsSync9(statusPath))
+      const jobDirectoryPath = join10(jobsDirectoryPath, jobEntry.name);
+      const statusPath = join10(jobDirectoryPath, "status.json");
+      if (!existsSync10(statusPath))
         continue;
       try {
         const status = parseStatusFile(jobDirectoryPath, jobEntry.name);
@@ -21984,7 +23337,7 @@ function runBackfill(options) {
         sqliteClient.upsertStatus(status);
         summary.jobsBackfilled += 1;
         if (options.importEvents) {
-          const eventsPath = join9(jobDirectoryPath, "events.jsonl");
+          const eventsPath = join10(jobDirectoryPath, "events.jsonl");
           summary.eventsImported += replayEvents(eventsPath, sqliteClient, status);
         }
       } catch {
@@ -22056,8 +23409,8 @@ __export(exports_validate, {
   ArgParseError: () => ArgParseError3
 });
 import { readFile as readFile3 } from "fs/promises";
-import { existsSync as existsSync10 } from "fs";
-import { join as join10 } from "path";
+import { existsSync as existsSync11 } from "fs";
+import { join as join11 } from "path";
 function parseArgs4(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -22068,19 +23421,19 @@ function parseArgs4(argv) {
 }
 function findSpecialistFile(name) {
   const scanDirs = [
-    join10(process.cwd(), ".specialists", "user"),
-    join10(process.cwd(), ".specialists", "user", "specialists"),
-    join10(process.cwd(), ".specialists", "default"),
-    join10(process.cwd(), ".specialists", "default", "specialists"),
-    join10(process.cwd(), "specialists")
+    join11(process.cwd(), ".specialists", "user"),
+    join11(process.cwd(), ".specialists", "user", "specialists"),
+    join11(process.cwd(), ".specialists", "default"),
+    join11(process.cwd(), ".specialists", "default", "specialists"),
+    join11(process.cwd(), "specialists")
   ];
   for (const dir of scanDirs) {
-    const jsonCandidate = join10(dir, `${name}.specialist.json`);
-    if (existsSync10(jsonCandidate)) {
+    const jsonCandidate = join11(dir, `${name}.specialist.json`);
+    if (existsSync11(jsonCandidate)) {
       return jsonCandidate;
     }
-    const yamlCandidate = join10(dir, `${name}.specialist.json`);
-    if (existsSync10(yamlCandidate)) {
+    const yamlCandidate = join11(dir, `${name}.specialist.json`);
+    if (existsSync11(yamlCandidate)) {
       process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${yamlCandidate}. Please migrate to .specialist.json
 `);
       return yamlCandidate;
@@ -22174,18 +23527,18 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run9
 });
-import { spawnSync as spawnSync8 } from "child_process";
-import { existsSync as existsSync11, readdirSync as readdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
-import { join as join11 } from "path";
+import { spawnSync as spawnSync10 } from "child_process";
+import { existsSync as existsSync12, readdirSync as readdirSync5, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "fs";
+import { join as join12 } from "path";
 function loadPresets() {
   const paths = [
-    join11(process.cwd(), "config", "presets.json"),
-    join11(process.cwd(), "config", "specialists", "presets.json")
+    join12(process.cwd(), "config", "presets.json"),
+    join12(process.cwd(), "config", "specialists", "presets.json")
   ];
   for (const p of paths) {
-    if (existsSync11(p)) {
+    if (existsSync12(p)) {
       try {
-        const data = JSON.parse(readFileSync6(p, "utf-8"));
+        const data = JSON.parse(readFileSync7(p, "utf-8"));
         return data;
       } catch {
         return {};
@@ -22383,7 +23736,7 @@ ${usage()}`);
   if (action === "get" && (pendingArrayOp || filePath)) {
     fail("Error: --get cannot be combined with --append/--remove/--file");
   }
-  if (filePath && !existsSync11(filePath)) {
+  if (filePath && !existsSync12(filePath)) {
     fail(`Error: file not found: ${filePath}`);
   }
   return { name, all, scope, dryRun, action, path, value, filePath, preset };
@@ -22517,16 +23870,16 @@ function formatOutputValue(value) {
   return JSON.stringify(value);
 }
 function openAllConfigSpecialistsInEditor() {
-  const configDir = join11(process.cwd(), "config", "specialists");
-  if (!existsSync11(configDir)) {
+  const configDir = join12(process.cwd(), "config", "specialists");
+  if (!existsSync12(configDir)) {
     fail(`Error: missing directory: ${configDir}`);
   }
-  const files = readdirSync4(configDir).filter((file) => file.endsWith(".specialist.json")).sort().map((file) => join11(configDir, file));
+  const files = readdirSync5(configDir).filter((file) => file.endsWith(".specialist.json")).sort().map((file) => join12(configDir, file));
   if (files.length === 0) {
     fail("Error: no specialist JSON files found in config/specialists/");
   }
   const editor = process.env.VISUAL ?? process.env.EDITOR ?? "vi";
-  const result = spawnSync8(editor, files, { stdio: "inherit", shell: true });
+  const result = spawnSync10(editor, files, { stdio: "inherit", shell: true });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
@@ -22538,7 +23891,7 @@ function getRawValue(args, resolvedPath) {
   if (!MULTILINE_FILE_PATHS.has(resolvedPath.normalizedPath)) {
     fail(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
   }
-  return readFileSync6(args.filePath, "utf-8");
+  return readFileSync7(args.filePath, "utf-8");
 }
 function getAtPath(root, segments) {
   let current = root;
@@ -22648,7 +24001,7 @@ async function run9() {
     }
     const targets2 = await resolveTargets(args);
     for (const target of targets2) {
-      const raw = readFileSync6(target.filePath, "utf-8");
+      const raw = readFileSync7(target.filePath, "utf-8");
       const doc2 = JSON.parse(raw);
       for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
         const resolved = resolvePath2(fieldPath);
@@ -22662,7 +24015,7 @@ async function run9() {
         printDryRun(target.filePath, raw, updated);
         continue;
       }
-      writeFileSync3(target.filePath, updated, "utf-8");
+      writeFileSync4(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow8(f)).join(", ");
       console.log(`${green7("\u2713")} ${bold8(target.name)}: applied preset ${bold8(args.preset)} (${fieldList})`);
     }
@@ -22674,7 +24027,7 @@ async function run9() {
     fail("Error: no specialists found");
   }
   for (const target of targets) {
-    const raw = readFileSync6(target.filePath, "utf-8");
+    const raw = readFileSync7(target.filePath, "utf-8");
     let doc2;
     try {
       const parsed = JSON.parse(raw);
@@ -22698,7 +24051,7 @@ async function run9() {
       printDryRun(target.filePath, raw, updated);
       continue;
     }
-    writeFileSync3(target.filePath, updated, "utf-8");
+    writeFileSync4(target.filePath, updated, "utf-8");
     console.log(`${green7("\u2713")} ${bold8(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
   }
 }
@@ -22816,1089 +24169,10 @@ var init_config = __esm(() => {
   init_edit();
 });
 
-// src/specialist/supervisor.ts
-import {
-  appendFileSync,
-  closeSync,
-  existsSync as existsSync12,
-  fsyncSync,
-  mkdirSync as mkdirSync3,
-  openSync,
-  readdirSync as readdirSync5,
-  readFileSync as readFileSync7,
-  renameSync as renameSync2,
-  rmSync,
-  statSync,
-  writeFileSync as writeFileSync4,
-  writeSync
-} from "fs";
-import { join as join12 } from "path";
-import { createInterface } from "readline";
-import { createReadStream } from "fs";
-import { spawn as spawn2, spawnSync as spawnSync9, execFileSync } from "child_process";
-function getCurrentGitSha() {
-  const result = spawnSync9("git", ["rev-parse", "HEAD"], {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const sha = result.stdout?.trim();
-  return sha || undefined;
-}
-function formatBeadNotes(result) {
-  const metadata = [
-    `prompt_hash=${result.promptHash}`,
-    `git_sha=${getCurrentGitSha() ?? "unknown"}`,
-    `elapsed_ms=${Math.round(result.durationMs)}`,
-    `model=${result.model}`,
-    `backend=${result.backend}`
-  ].join(`
-`);
-  return `${result.output}
-
----
-${metadata}`;
-}
-function getModelContextWindow(model) {
-  if (!model)
-    return;
-  const normalizedModel = model.toLowerCase();
-  return MODEL_CONTEXT_WINDOWS.find(({ matcher }) => matcher(normalizedModel))?.windowTokens;
-}
-function getContextHealth(contextPct) {
-  if (contextPct < 40)
-    return "OK";
-  if (contextPct <= 65)
-    return "MONITOR";
-  if (contextPct <= 80)
-    return "WARN";
-  return "CRITICAL";
-}
-function calculateContextUtilization(cumulativeInputTokens, model) {
-  const contextWindow = getModelContextWindow(model);
-  if (!contextWindow || cumulativeInputTokens < 0)
-    return;
-  const contextPct = cumulativeInputTokens / contextWindow * 100;
-  return {
-    context_pct: Number(contextPct.toFixed(2)),
-    context_health: getContextHealth(contextPct)
-  };
-}
-function normalizeGitnexusRisk(value) {
-  if (typeof value !== "string")
-    return;
-  const normalized = value.trim().toUpperCase();
-  if (normalized === "LOW" || normalized === "MEDIUM" || normalized === "HIGH" || normalized === "CRITICAL") {
-    return normalized;
-  }
-  return;
-}
-function collectStringArray(value) {
-  if (!Array.isArray(value))
-    return [];
-  return value.filter((entry) => typeof entry === "string" && entry.trim().length > 0);
-}
-function extractGitnexusFiles(tool, resultRaw) {
-  if (!resultRaw)
-    return [];
-  if (tool === "gitnexus_impact") {
-    return collectStringArray(resultRaw.files);
-  }
-  if (tool === "gitnexus_detect_changes") {
-    return collectStringArray(resultRaw.files_changed);
-  }
-  return [];
-}
-function extractGitnexusSymbols(resultRaw, args) {
-  if (!resultRaw)
-    return [];
-  const symbols = [
-    ...collectStringArray(resultRaw.symbols_analyzed),
-    ...collectStringArray(resultRaw.affected_symbols),
-    ...collectStringArray(resultRaw.symbols_modified)
-  ];
-  const argTarget = args?.target;
-  if (typeof argTarget === "string" && argTarget.trim().length > 0) {
-    symbols.push(argTarget);
-  }
-  return symbols;
-}
-function extractGitnexusRisk(resultRaw) {
-  if (!resultRaw)
-    return;
-  const direct = normalizeGitnexusRisk(resultRaw.risk_level) ?? normalizeGitnexusRisk(resultRaw.riskLevel) ?? normalizeGitnexusRisk(resultRaw.highest_risk) ?? normalizeGitnexusRisk(resultRaw.risk);
-  if (direct)
-    return direct;
-  const blastRadius = resultRaw.blast_radius;
-  if (blastRadius && typeof blastRadius === "object" && !Array.isArray(blastRadius)) {
-    const blastRadiusRecord = blastRadius;
-    return normalizeGitnexusRisk(blastRadiusRecord.risk_level) ?? normalizeGitnexusRisk(blastRadiusRecord.riskLevel) ?? normalizeGitnexusRisk(blastRadiusRecord.highest_risk) ?? normalizeGitnexusRisk(blastRadiusRecord.risk);
-  }
-  return;
-}
-function isGitnexusAnalyzeRequired(permissionRequired) {
-  return permissionRequired === "MEDIUM" || permissionRequired === "HIGH";
-}
-function startDetachedGitnexusAnalyze(cwd) {
-  const child = spawn2("npx", ["gitnexus", "analyze"], {
-    cwd,
-    detached: true,
-    stdio: "ignore"
-  });
-  child.unref();
-}
-function startDetachedStatusWatchdog(statusPath, pid) {
-  const watchdogScript = `
-const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
-
-const statusPath = process.env.SPECIALISTS_STATUS_PATH;
-const pidRaw = process.env.SPECIALISTS_STATUS_PID;
-const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
-
-const targetPid = Number(pidRaw);
-const intervalMs = Number(intervalRaw);
-
-if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
-  process.exit(1);
-}
-
-const isPidAlive = () => {
-  try {
-    process.kill(targetPid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const run = () => {
-  if (!existsSync(statusPath)) {
-    process.exit(0);
-  }
-
-  let status;
-  try {
-    status = JSON.parse(readFileSync(statusPath, 'utf-8'));
-  } catch {
-    process.exit(0);
-  }
-
-  if (!status || typeof status !== 'object') {
-    process.exit(0);
-  }
-
-  if (status.status === 'done' || status.status === 'error') {
-    process.exit(0);
-  }
-
-  if (status.status !== 'running' && status.status !== 'starting') {
-    return;
-  }
-
-  if (isPidAlive()) {
-    return;
-  }
-
-  const now = Date.now();
-  const updated = status.node_id
-    ? {
-        ...status,
-        status: 'waiting',
-        current_event: 'recovery_pending',
-        last_event_at_ms: now,
-        error: undefined,
-      }
-    : {
-        ...status,
-        status: 'error',
-        error: 'Supervisor process exited unexpectedly',
-        last_event_at_ms: now,
-      };
-
-  const tmpPath = statusPath + '.tmp';
-  try {
-    writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
-    renameSync(tmpPath, statusPath);
-  } catch {
-    // Best effort only.
-  }
-
-  process.exit(0);
-};
-
-setInterval(run, intervalMs);
-run();
-`;
-  const watchdog = spawn2(process.execPath, ["-e", watchdogScript], {
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      SPECIALISTS_STATUS_PATH: statusPath,
-      SPECIALISTS_STATUS_PID: String(pid),
-      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS)
-    }
-  });
-  watchdog.unref();
-  return watchdog.pid ?? undefined;
-}
-
-class Supervisor {
-  opts;
-  sqliteClient;
-  resolvedJobsDir;
-  isDisposed = false;
-  constructor(opts) {
-    this.opts = opts;
-    this.sqliteClient = createObservabilitySqliteClient();
-    const cwd = opts.runOptions?.workingDirectory ?? process.cwd();
-    this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
-  }
-  dispose() {
-    if (this.isDisposed)
-      return;
-    this.isDisposed = true;
-    if (!this.sqliteClient)
-      return;
-    try {
-      this.sqliteClient.close();
-    } catch (error2) {
-      console.warn(`[supervisor] Failed to close sqlite client: ${String(error2)}`);
-    }
-  }
-  jobDir(id) {
-    return join12(this.resolvedJobsDir, id);
-  }
-  statusPath(id) {
-    return join12(this.jobDir(id), "status.json");
-  }
-  resultPath(id) {
-    return join12(this.jobDir(id), "result.txt");
-  }
-  eventsPath(id) {
-    return join12(this.jobDir(id), "events.jsonl");
-  }
-  readyDir() {
-    return join12(this.resolvedJobsDir, "..", "ready");
-  }
-  writeReadyMarker(id) {
-    mkdirSync3(this.readyDir(), { recursive: true });
-    writeFileSync4(join12(this.readyDir(), id), "", "utf-8");
-  }
-  readStatus(id) {
-    try {
-      const sqliteStatus = this.sqliteClient?.readStatus(id);
-      if (sqliteStatus)
-        return sqliteStatus;
-    } catch (error2) {
-      console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error2)}`);
-    }
-    const path = this.statusPath(id);
-    if (!existsSync12(path))
-      return null;
-    try {
-      return JSON.parse(readFileSync7(path, "utf-8"));
-    } catch {
-      return null;
-    }
-  }
-  listJobs() {
-    try {
-      const sqliteJobs = this.sqliteClient?.listStatuses() ?? [];
-      if (sqliteJobs.length > 0) {
-        return sqliteJobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
-      }
-    } catch (error2) {
-      console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error2)}`);
-    }
-    if (!existsSync12(this.resolvedJobsDir))
-      return [];
-    const jobs = [];
-    for (const entry of readdirSync5(this.resolvedJobsDir)) {
-      const path = join12(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync12(path))
-        continue;
-      try {
-        jobs.push(JSON.parse(readFileSync7(path, "utf-8")));
-      } catch {}
-    }
-    return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
-  }
-  withStatusLineageDefaults(id, status) {
-    if (!status.worktree_path)
-      return status;
-    if (status.worktree_owner_job_id)
-      return status;
-    return {
-      ...status,
-      worktree_owner_job_id: id
-    };
-  }
-  writeStatusFileOnly(id, data) {
-    const normalizedStatus = this.withStatusLineageDefaults(id, data);
-    mkdirSync3(this.jobDir(id), { recursive: true });
-    const path = this.statusPath(id);
-    const tmp = path + ".tmp";
-    writeFileSync4(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
-    renameSync2(tmp, path);
-  }
-  writeStatusFile(id, data) {
-    const normalizedStatus = this.withStatusLineageDefaults(id, data);
-    this.writeStatusFileOnly(id, normalizedStatus);
-    try {
-      this.sqliteClient?.upsertStatus(normalizedStatus);
-    } catch (error2) {
-      console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error2)}`);
-    }
-  }
-  gc() {
-    if (!existsSync12(this.resolvedJobsDir))
-      return;
-    const cutoff = Date.now() - JOB_TTL_DAYS * 86400000;
-    for (const entry of readdirSync5(this.resolvedJobsDir)) {
-      const dir = join12(this.resolvedJobsDir, entry);
-      try {
-        const stat2 = statSync(dir);
-        if (!stat2.isDirectory())
-          continue;
-        if (stat2.mtimeMs < cutoff)
-          rmSync(dir, { recursive: true, force: true });
-      } catch {}
-    }
-  }
-  crashRecovery() {
-    if (!existsSync12(this.resolvedJobsDir))
-      return;
-    const thresholds = {
-      ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
-    };
-    const now = Date.now();
-    for (const entry of readdirSync5(this.resolvedJobsDir)) {
-      const statusPath = join12(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync12(statusPath))
-        continue;
-      try {
-        const s = JSON.parse(readFileSync7(statusPath, "utf-8"));
-        if (s.status === "running" || s.status === "starting") {
-          if (!s.pid)
-            continue;
-          let pidAlive = true;
-          try {
-            process.kill(s.pid, 0);
-          } catch {
-            pidAlive = false;
-          }
-          if (!pidAlive) {
-            const tmp = statusPath + ".tmp";
-            const updated = s.node_id ? {
-              ...s,
-              status: "waiting",
-              current_event: "recovery_pending",
-              last_event_at_ms: now,
-              error: undefined
-            } : { ...s, status: "error", error: "Process crashed or was killed" };
-            writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
-            renameSync2(tmp, statusPath);
-          } else if (s.status === "running") {
-            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-            const silenceMs = now - lastEventAt;
-            if (silenceMs > thresholds.running_silence_error_ms) {
-              const tmp = statusPath + ".tmp";
-              const updated = {
-                ...s,
-                status: "error",
-                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
-              };
-              writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
-              renameSync2(tmp, statusPath);
-            }
-          }
-        } else if (s.status === "waiting") {
-          const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-          const silenceMs = now - lastEventAt;
-          if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join12(this.resolvedJobsDir, entry, "events.jsonl");
-            const event = createStaleWarningEvent("waiting_stale", {
-              silence_ms: silenceMs,
-              threshold_ms: thresholds.waiting_stale_ms
-            });
-            try {
-              appendFileSync(eventsPath, JSON.stringify(event) + `
-`);
-            } catch {}
-          }
-        }
-      } catch {}
-    }
-  }
-  async run() {
-    const { runner, runOptions } = this.opts;
-    this.gc();
-    this.crashRecovery();
-    const id = crypto.randomUUID().slice(0, 6);
-    const dir = this.jobDir(id);
-    const startedAtMs = Date.now();
-    mkdirSync3(dir, { recursive: true });
-    mkdirSync3(this.readyDir(), { recursive: true });
-    const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
-    const initialStatus = {
-      id,
-      specialist: runOptions.name,
-      status: "starting",
-      started_at_ms: startedAtMs,
-      pid: process.pid,
-      ...runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {},
-      ...nodeId ? { node_id: nodeId } : {},
-      ...process.env.SPECIALISTS_TMUX_SESSION ? { tmux_session: process.env.SPECIALISTS_TMUX_SESSION } : {},
-      ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
-      ...runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {},
-      ...runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {},
-      ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() }
-    };
-    this.writeStatusFileOnly(id, initialStatus);
-    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
-    writeFileSync4(join12(this.resolvedJobsDir, "latest"), `${id}
-`, "utf-8");
-    this.opts.onJobStarted?.({ id });
-    let statusSnapshot = initialStatus;
-    const setStatus = (updates) => {
-      statusSnapshot = { ...statusSnapshot, ...updates };
-      this.writeStatusFile(id, statusSnapshot);
-    };
-    const mergeRunMetrics = (incoming) => {
-      if (!incoming)
-        return;
-      runMetrics = {
-        ...runMetrics,
-        ...incoming,
-        ...incoming.token_usage ? { token_usage: { ...runMetrics.token_usage, ...incoming.token_usage } } : {},
-        ...incoming.tool_call_names ? { tool_call_names: [...incoming.tool_call_names] } : {}
-      };
-      setStatus({ metrics: runMetrics });
-    };
-    const eventsFd = openSync(this.eventsPath(id), "a");
-    let nextTimelineSeq = 1;
-    const assignTimelineSeq = (event) => {
-      if (typeof event.seq === "number" && Number.isFinite(event.seq) && event.seq > 0) {
-        nextTimelineSeq = Math.max(nextTimelineSeq, event.seq + 1);
-        return event;
-      }
-      return { ...event, seq: nextTimelineSeq++ };
-    };
-    const appendTimelineEvent = (event) => {
-      const sequencedEvent = assignTimelineSeq(event);
-      try {
-        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
-`);
-      } catch (err) {
-        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
-      }
-      try {
-        this.sqliteClient?.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
-      } catch (error2) {
-        console.warn(`[supervisor] SQLite appendEvent failed: ${String(error2)}`);
-      }
-    };
-    const appendTimelineEventFileOnly = (event) => {
-      const sequencedEvent = assignTimelineSeq(event);
-      try {
-        writeSync(eventsFd, JSON.stringify(sequencedEvent) + `
-`);
-      } catch (err) {
-        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
-      }
-      return sequencedEvent;
-    };
-    const setWaitingStatus = (updates) => {
-      const previousStatus = statusSnapshot.status;
-      const waitingAt = Date.now();
-      setStatus({
-        status: "waiting",
-        current_event: "waiting",
-        elapsed_s: Math.round((waitingAt - startedAtMs) / 1000),
-        last_event_at_ms: waitingAt,
-        ...updates
-      });
-      if (previousStatus !== "waiting") {
-        appendTimelineEvent(createStatusChangeEvent("waiting", previousStatus));
-      }
-    };
-    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
-    try {
-      this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runStartEvent);
-    } catch (error2) {
-      console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during run start: ${String(error2)}`);
-    }
-    const fifoPath = join12(dir, "steer.pipe");
-    try {
-      execFileSync("mkfifo", [fifoPath]);
-      setStatus({ fifo_path: fifoPath });
-    } catch {}
-    let textLogged = false;
-    let runMetrics = {
-      turns: 0,
-      tool_calls: 0,
-      auto_compactions: 0,
-      auto_retries: 0
-    };
-    const gitnexusAccumulator = {
-      files_touched: new Set,
-      symbols_analyzed: new Set,
-      highest_risk: undefined,
-      tool_invocations: 0
-    };
-    let textCharCount = 0;
-    let thinkingCharCount = 0;
-    let turnTextAccumulator = "";
-    let cumulativeInputTokens = 0;
-    const toolCallNames = [];
-    const activeToolCalls = new Map;
-    let latestUncorrelatedToolState;
-    let killFn;
-    let steerFn;
-    let resumeFn;
-    let closeFn;
-    let fifoReadStream;
-    let fifoReadline;
-    let fifoFd;
-    let keepAliveSession = false;
-    let latestOutput = "";
-    let keepAliveExitResolved = false;
-    let resolveKeepAliveExit;
-    const keepAliveExitPromise = new Promise((resolve5) => {
-      resolveKeepAliveExit = resolve5;
-    });
-    const finishKeepAlive = (exit) => {
-      if (keepAliveExitResolved)
-        return;
-      keepAliveExitResolved = true;
-      resolveKeepAliveExit?.(exit);
-    };
-    const handleResumeTurn = async (task) => {
-      if (!resumeFn)
-        return;
-      const now = Date.now();
-      lastActivityMs = now;
-      setStatus({ status: "running", current_event: "starting", last_event_at_ms: now });
-      silenceWarnEmitted = false;
-      try {
-        const output2 = await resumeFn(task);
-        latestOutput = output2;
-        mkdirSync3(this.jobDir(id), { recursive: true });
-        writeFileSync4(this.resultPath(id), output2, "utf-8");
-        try {
-          this.sqliteClient?.upsertResult(id, output2);
-        } catch (error2) {
-          console.warn(`[supervisor] SQLite upsertResult failed during resume turn: ${String(error2)}`);
-        }
-        setWaitingStatus();
-      } catch (err) {
-        const error2 = err instanceof Error ? err : new Error(String(err));
-        setStatus({ status: "error", error: error2.message });
-        finishKeepAlive({ kind: "fatal", error: error2 });
-      }
-    };
-    const closeKeepAliveSession = async () => {
-      if (!closeFn) {
-        finishKeepAlive({ kind: "closed" });
-        return;
-      }
-      try {
-        await closeFn();
-        finishKeepAlive({ kind: "closed" });
-      } catch (err) {
-        const error2 = err instanceof Error ? err : new Error(String(err));
-        setStatus({ status: "error", error: error2.message });
-        finishKeepAlive({ kind: "fatal", error: error2 });
-      }
-    };
-    const thresholds = {
-      ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
-    };
-    let lastActivityMs = startedAtMs;
-    let silenceWarnEmitted = false;
-    let toolStartMs;
-    let toolDurationWarnEmitted = false;
-    let stuckIntervalId;
-    stuckIntervalId = setInterval(() => {
-      const now = Date.now();
-      if (statusSnapshot.status === "running") {
-        const silenceMs = now - lastActivityMs;
-        if (!silenceWarnEmitted && silenceMs > thresholds.running_silence_warn_ms) {
-          silenceWarnEmitted = true;
-          appendTimelineEvent(createStaleWarningEvent("running_silence", {
-            silence_ms: silenceMs,
-            threshold_ms: thresholds.running_silence_warn_ms
-          }));
-        }
-        if (silenceMs > thresholds.running_silence_error_ms) {
-          appendTimelineEvent(createStaleWarningEvent("running_silence_error", {
-            silence_ms: silenceMs,
-            threshold_ms: thresholds.running_silence_error_ms
-          }));
-          setStatus({
-            status: "error",
-            error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
-          });
-          killFn?.();
-          clearInterval(stuckIntervalId);
-        }
-      }
-      if (toolStartMs !== undefined && !toolDurationWarnEmitted) {
-        const toolDurationMs = now - toolStartMs;
-        if (toolDurationMs > thresholds.tool_duration_warn_ms) {
-          toolDurationWarnEmitted = true;
-          const activeToolName = activeToolCalls.values().next().value?.tool ?? latestUncorrelatedToolState?.tool ?? "unknown";
-          appendTimelineEvent(createStaleWarningEvent("tool_duration", {
-            silence_ms: toolDurationMs,
-            threshold_ms: thresholds.tool_duration_warn_ms,
-            tool: activeToolName
-          }));
-        }
-      }
-    }, 1e4);
-    const sigtermHandler = () => {
-      if (keepAliveSession) {
-        closeKeepAliveSession();
-        return;
-      }
-      killFn?.();
-    };
-    process.once("SIGTERM", sigtermHandler);
-    try {
-      const result = await runner.run(runOptions, (delta) => {
-        const toolMatch = delta.match(/\u2699 (.+?)\u2026/);
-        if (toolMatch) {
-          setStatus({ current_tool: toolMatch[1] });
-        }
-        if (delta !== `\u2713
-` && !delta.startsWith(`
-\u2699 `) && !delta.startsWith("\uD83D\uDCAD ")) {
-          turnTextAccumulator += delta;
-        }
-        this.opts.onProgress?.(delta);
-      }, (eventType, details) => {
-        const now = Date.now();
-        lastActivityMs = now;
-        silenceWarnEmitted = false;
-        const keepAliveTurnCompleted = keepAliveSession && eventType === "agent_end";
-        if (keepAliveTurnCompleted) {
-          setWaitingStatus();
-        } else {
-          setStatus({
-            status: "running",
-            current_event: eventType,
-            last_event_at_ms: now,
-            elapsed_s: Math.round((now - startedAtMs) / 1000)
-          });
-        }
-        if (eventType === "turn_start") {
-          textCharCount = 0;
-          thinkingCharCount = 0;
-          turnTextAccumulator = "";
-        }
-        if (eventType === "message_start_assistant") {
-          turnTextAccumulator = "";
-        }
-        if (eventType === "text") {
-          textCharCount += details?.charCount ?? 0;
-        }
-        if (eventType === "thinking") {
-          thinkingCharCount += details?.charCount ?? 0;
-        }
-        const toolCallId = details?.toolCallId;
-        const toolState = toolCallId ? activeToolCalls.get(toolCallId) : latestUncorrelatedToolState;
-        const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
-          tool: toolState?.tool,
-          toolCallId,
-          args: toolState?.args,
-          isError: toolState?.isError,
-          resultContent: toolState?.resultContent,
-          resultRaw: toolState?.resultRaw,
-          charCount: eventType === "text" ? textCharCount : eventType === "thinking" ? thinkingCharCount : details?.charCount,
-          compaction: {
-            tokensBefore: details?.tokensBefore,
-            summary: details?.summary,
-            firstKeptEntryId: details?.firstKeptEntryId
-          },
-          retry: {
-            attempt: details?.attempt,
-            maxAttempts: details?.maxAttempts,
-            delayMs: details?.delayMs,
-            errorMessage: details?.errorMessage
-          },
-          modelChange: {
-            action: details?.action ?? (eventType === "set_model" || eventType === "cycle_model" ? eventType : "set_model"),
-            model: details?.model,
-            previousModel: details?.previousModel
-          },
-          extensionError: {
-            extension: details?.extension,
-            errorMessage: details?.errorMessage
-          }
-        });
-        if (timelineEvent) {
-          appendTimelineEvent(timelineEvent);
-          if (eventType === "tool_execution_end" && toolCallId) {
-            activeToolCalls.delete(toolCallId);
-          }
-        } else if (eventType === "text" && !textLogged) {
-          textLogged = true;
-          appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
-        }
-      }, (metricEvent) => {
-        if (metricEvent.type === "token_usage") {
-          mergeRunMetrics({ token_usage: metricEvent.token_usage });
-          cumulativeInputTokens += metricEvent.token_usage.input_tokens ?? 0;
-          appendTimelineEvent(createTokenUsageEvent(metricEvent.token_usage, metricEvent.source));
-          return;
-        }
-        if (metricEvent.type === "finish_reason") {
-          mergeRunMetrics({ finish_reason: metricEvent.finish_reason });
-          appendTimelineEvent(createFinishReasonEvent(metricEvent.finish_reason, metricEvent.source));
-          return;
-        }
-        if (metricEvent.type === "turn_summary") {
-          mergeRunMetrics({
-            turns: metricEvent.turn_index,
-            ...metricEvent.token_usage ? { token_usage: metricEvent.token_usage } : {},
-            ...metricEvent.finish_reason ? { finish_reason: metricEvent.finish_reason } : {}
-          });
-          const contextUtilization = calculateContextUtilization(cumulativeInputTokens, statusSnapshot.model);
-          setStatus({
-            context_pct: contextUtilization?.context_pct,
-            context_health: contextUtilization?.context_health
-          });
-          appendTimelineEvent(createTurnSummaryEvent(metricEvent.turn_index, metricEvent.token_usage, metricEvent.finish_reason, turnTextAccumulator || undefined, contextUtilization?.context_pct, contextUtilization?.context_health));
-          turnTextAccumulator = "";
-          return;
-        }
-        if (metricEvent.type === "compaction") {
-          const compactions = (runMetrics.auto_compactions ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
-          mergeRunMetrics({ auto_compactions: compactions });
-          appendTimelineEvent(createCompactionEvent(metricEvent.phase, {
-            tokensBefore: metricEvent.tokensBefore,
-            summary: metricEvent.summary,
-            firstKeptEntryId: metricEvent.firstKeptEntryId
-          }));
-          return;
-        }
-        if (metricEvent.type === "retry") {
-          const retries = (runMetrics.auto_retries ?? 0) + (metricEvent.phase === "end" ? 1 : 0);
-          mergeRunMetrics({ auto_retries: retries });
-          appendTimelineEvent(createRetryEvent(metricEvent.phase, {
-            attempt: metricEvent.attempt,
-            maxAttempts: metricEvent.maxAttempts,
-            delayMs: metricEvent.delayMs,
-            errorMessage: metricEvent.errorMessage
-          }));
-          return;
-        }
-      }, (meta) => {
-        setStatus({ model: meta.model, backend: meta.backend });
-        appendTimelineEvent(createMetaEvent(meta.model, meta.backend));
-        this.opts.onMeta?.(meta);
-      }, (fn) => {
-        killFn = fn;
-      }, (beadId) => {
-        setStatus({ bead_id: beadId });
-      }, (fn) => {
-        steerFn = fn;
-        if (!existsSync12(fifoPath))
-          return;
-        fifoFd = openSync(fifoPath, "r+");
-        fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: false });
-        fifoReadline = createInterface({ input: fifoReadStream });
-        fifoReadline.on("line", (line) => {
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed?.type === "steer" && typeof parsed.message === "string") {
-              steerFn?.(parsed.message).catch(() => {});
-            } else if (parsed?.type === "resume" && typeof parsed.task === "string") {
-              handleResumeTurn(parsed.task);
-            } else if (parsed?.type === "prompt" && typeof parsed.message === "string") {
-              console.error('[specialists] DEPRECATED: FIFO message {type:"prompt"} is deprecated. Use {type:"resume", task:"..."} instead.');
-              handleResumeTurn(parsed.message);
-            } else if (parsed?.type === "close") {
-              closeKeepAliveSession();
-            }
-          } catch {}
-        });
-        fifoReadline.on("error", (error2) => {
-          console.error(`[supervisor] FIFO read error: ${String(error2)}`);
-        });
-      }, (rFn, cFn) => {
-        keepAliveSession = true;
-        resumeFn = rFn;
-        closeFn = cFn;
-        setWaitingStatus();
-      }, (tool, args, toolCallId) => {
-        const toolState = {
-          tool,
-          args,
-          isError: false,
-          resultContent: undefined,
-          resultRaw: undefined
-        };
-        if (toolCallId) {
-          activeToolCalls.set(toolCallId, toolState);
-        } else {
-          latestUncorrelatedToolState = toolState;
-        }
-        toolStartMs = Date.now();
-        toolDurationWarnEmitted = false;
-        toolCallNames.push(tool);
-        mergeRunMetrics({
-          tool_calls: toolCallNames.length,
-          tool_call_names: toolCallNames
-        });
-        setStatus({ current_tool: tool });
-      }, (tool, isError, toolCallId, resultContent, resultRaw) => {
-        const resolvedToolState = toolCallId ? activeToolCalls.get(toolCallId) ?? { tool } : latestUncorrelatedToolState ?? { tool };
-        const finalizedToolState = {
-          ...resolvedToolState,
-          tool: resolvedToolState.tool ?? tool,
-          isError,
-          resultContent,
-          resultRaw
-        };
-        if (toolCallId) {
-          activeToolCalls.set(toolCallId, finalizedToolState);
-        } else {
-          latestUncorrelatedToolState = finalizedToolState;
-        }
-        toolStartMs = undefined;
-        toolDurationWarnEmitted = false;
-        const resolvedToolName = finalizedToolState.tool;
-        const resolvedToolArgs = finalizedToolState.args;
-        if (resolvedToolName === "edit" || resolvedToolName === "write") {
-          const path = resultRaw?.path;
-          if (typeof path === "string" && path.trim().length > 0) {
-            gitnexusAccumulator.files_touched.add(path);
-          }
-        }
-        if (resolvedToolName.startsWith("gitnexus_")) {
-          gitnexusAccumulator.tool_invocations += 1;
-          for (const file of extractGitnexusFiles(resolvedToolName, resultRaw)) {
-            gitnexusAccumulator.files_touched.add(file);
-          }
-          for (const symbol of extractGitnexusSymbols(resultRaw, resolvedToolArgs)) {
-            gitnexusAccumulator.symbols_analyzed.add(symbol);
-          }
-          const risk = extractGitnexusRisk(resultRaw);
-          if (risk) {
-            const currentHighest = gitnexusAccumulator.highest_risk;
-            if (!currentHighest || GITNEXUS_RISK_ORDER[risk] > GITNEXUS_RISK_ORDER[currentHighest]) {
-              gitnexusAccumulator.highest_risk = risk;
-            }
-          }
-        }
-      });
-      latestOutput = result.output;
-      mkdirSync3(this.jobDir(id), { recursive: true });
-      writeFileSync4(this.resultPath(id), latestOutput, "utf-8");
-      if (keepAliveSession) {
-        setWaitingStatus({
-          model: result.model,
-          backend: result.backend,
-          bead_id: result.beadId
-        });
-        const keepAliveExit = await keepAliveExitPromise;
-        if (keepAliveExit.kind === "fatal") {
-          throw keepAliveExit.error;
-        }
-      }
-      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
-      const finalResult = {
-        ...result,
-        output: latestOutput
-      };
-      mergeRunMetrics(finalResult.metrics);
-      mergeRunMetrics({
-        tool_calls: toolCallNames.length,
-        tool_call_names: toolCallNames,
-        exit_reason: "agent_end"
-      });
-      const inputBeadId = runOptions.inputBeadId;
-      const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
-      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
-      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && finalResult.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
-      if (ownsBead && finalResult.beadId) {
-        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-      } else if (shouldWriteExternalBeadNotes) {
-        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
-          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
-        } else if (finalResult.beadId) {
-          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-        }
-      }
-      if (finalResult.beadId) {
-        if (!inputBeadId) {
-          this.opts.beadsClient?.closeBead(finalResult.beadId, "COMPLETE", finalResult.durationMs, finalResult.model);
-        }
-      }
-      const completedAtMs = Date.now();
-      statusSnapshot = {
-        ...statusSnapshot,
-        status: "done",
-        elapsed_s: elapsed,
-        last_event_at_ms: completedAtMs,
-        model: finalResult.model,
-        backend: finalResult.backend,
-        bead_id: finalResult.beadId,
-        metrics: runMetrics
-      };
-      this.writeStatusFileOnly(id, statusSnapshot);
-      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
-        files_touched: [...gitnexusAccumulator.files_touched],
-        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
-        highest_risk: gitnexusAccumulator.highest_risk,
-        tool_invocations: gitnexusAccumulator.tool_invocations
-      } : undefined;
-      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("COMPLETE", elapsed, {
-        model: finalResult.model,
-        backend: finalResult.backend,
-        bead_id: finalResult.beadId,
-        output: finalResult.output,
-        token_usage: runMetrics.token_usage,
-        finish_reason: runMetrics.finish_reason,
-        tool_calls: [...toolCallNames],
-        exit_reason: runMetrics.exit_reason,
-        metrics: runMetrics,
-        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      }));
-      try {
-        this.sqliteClient?.upsertStatusWithEventAndResult(statusSnapshot, runCompleteEvent, latestOutput);
-      } catch (error2) {
-        console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error2)}`);
-      }
-      if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
-        try {
-          startDetachedGitnexusAnalyze(runOptions.workingDirectory ?? process.cwd());
-          appendTimelineEventFileOnly({
-            t: Date.now(),
-            type: TIMELINE_EVENT_TYPES.META,
-            model: "gitnexus_analyze_started",
-            backend: "supervisor"
-          });
-        } catch (err) {
-          appendTimelineEventFileOnly({
-            t: Date.now(),
-            type: TIMELINE_EVENT_TYPES.META,
-            model: "gitnexus_analyze_start_failed",
-            backend: String(err?.message ?? err)
-          });
-        }
-      }
-      this.writeReadyMarker(id);
-      return id;
-    } catch (err) {
-      const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
-      const errorMsg = err?.message ?? String(err);
-      const failedAtMs = Date.now();
-      statusSnapshot = {
-        ...statusSnapshot,
-        status: "error",
-        elapsed_s: elapsed,
-        error: errorMsg,
-        last_event_at_ms: failedAtMs
-      };
-      this.writeStatusFileOnly(id, statusSnapshot);
-      mergeRunMetrics({
-        tool_calls: toolCallNames.length,
-        tool_call_names: toolCallNames,
-        exit_reason: err instanceof Error ? err.name : "error"
-      });
-      const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
-        files_touched: [...gitnexusAccumulator.files_touched],
-        symbols_analyzed: [...gitnexusAccumulator.symbols_analyzed],
-        highest_risk: gitnexusAccumulator.highest_risk,
-        tool_invocations: gitnexusAccumulator.tool_invocations
-      } : undefined;
-      const runCompleteEvent = appendTimelineEventFileOnly(createRunCompleteEvent("ERROR", elapsed, {
-        error: errorMsg,
-        token_usage: runMetrics.token_usage,
-        finish_reason: runMetrics.finish_reason,
-        tool_calls: [...toolCallNames],
-        exit_reason: runMetrics.exit_reason,
-        metrics: runMetrics,
-        ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
-      }));
-      try {
-        this.sqliteClient?.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
-      } catch (error2) {
-        console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error2)}`);
-      }
-      this.writeReadyMarker(id);
-      throw err;
-    } finally {
-      if (stuckIntervalId !== undefined)
-        clearInterval(stuckIntervalId);
-      process.removeListener("SIGTERM", sigtermHandler);
-      if (statusWatchdogPid !== undefined) {
-        try {
-          process.kill(statusWatchdogPid, "SIGTERM");
-        } catch {}
-      }
-      try {
-        fifoReadline?.close();
-      } catch {}
-      if (fifoFd !== undefined) {
-        try {
-          closeSync(fifoFd);
-        } catch {}
-        fifoFd = undefined;
-      }
-      try {
-        fifoReadStream?.destroy();
-      } catch {}
-      try {
-        fsyncSync(eventsFd);
-      } catch {}
-      closeSync(eventsFd);
-      try {
-        if (existsSync12(fifoPath))
-          rmSync(fifoPath);
-      } catch {}
-      if (statusSnapshot.tmux_session) {
-        spawnSync9("tmux", ["kill-session", "-t", statusSnapshot.tmux_session], { stdio: "ignore" });
-      }
-      this.dispose();
-    }
-  }
-}
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, STATUS_WATCHDOG_INTERVAL_MS = 5000;
-var init_supervisor = __esm(() => {
-  init_job_root();
-  init_timeline_events();
-  init_observability_sqlite();
-  JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
-  STALL_DETECTION_DEFAULTS = {
-    running_silence_warn_ms: 60000,
-    running_silence_error_ms: 300000,
-    waiting_stale_ms: 3600000,
-    tool_duration_warn_ms: 120000
-  };
-  GITNEXUS_RISK_ORDER = {
-    LOW: 0,
-    MEDIUM: 1,
-    HIGH: 2,
-    CRITICAL: 3
-  };
-  MODEL_CONTEXT_WINDOWS = [
-    { matcher: (model) => model.includes("gemini-3.1-pro"), windowTokens: 1e6 },
-    { matcher: (model) => model.includes("qwen3.5") || model.includes("glm-5"), windowTokens: 128000 },
-    { matcher: (model) => model.includes("claude"), windowTokens: 200000 }
-  ];
-});
-
 // src/specialist/worktree.ts
 import { existsSync as existsSync13, symlinkSync as symlinkSync2, mkdirSync as mkdirSync4 } from "fs";
 import { join as join13, resolve as resolve5 } from "path";
-import { spawnSync as spawnSync10, execFileSync as execFileSync2 } from "child_process";
+import { spawnSync as spawnSync11, execFileSync as execFileSync2 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -23912,7 +24186,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync10("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync11("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -24204,42 +24478,6 @@ var init_format_helpers = __esm(() => {
   };
 });
 
-// src/cli/tmux-utils.ts
-import { spawnSync as spawnSync11 } from "child_process";
-function escapeForSingleQuotedBash(script) {
-  return script.replace(/'/g, "'\\''");
-}
-function quoteShellValue(value) {
-  return `'${escapeForSingleQuotedBash(value)}'`;
-}
-function isTmuxAvailable() {
-  return spawnSync11("which", ["tmux"], { encoding: "utf8", timeout: 2000 }).status === 0;
-}
-function buildSessionName(specialist, suffix) {
-  return `${TMUX_SESSION_PREFIX}-${specialist}-${suffix}`;
-}
-function createTmuxSession(name, cwd, cmd, extraEnv = {}) {
-  const exports = [
-    "unset CLAUDECODE CLAUDE_CODE_SSE_PORT CLAUDE_CODE_ENTRYPOINT",
-    `export SPECIALISTS_TMUX_SESSION=${quoteShellValue(name)}`
-  ];
-  for (const [key, value] of Object.entries(extraEnv)) {
-    exports.push(`export ${key}=${quoteShellValue(value)}`);
-  }
-  const startupScript = `${exports.join("; ")}; exec ${cmd}`;
-  const wrappedCommand = `/bin/bash -c '${escapeForSingleQuotedBash(startupScript)}'`;
-  const result = spawnSync11("tmux", ["new-session", "-d", "-s", name, "-c", cwd, wrappedCommand], { encoding: "utf8", stdio: "pipe" });
-  if (result.status !== 0) {
-    const errorOutput = (result.stderr ?? "").trim() || (result.error?.message ?? "unknown error");
-    throw new Error(`Failed to create tmux session "${name}": ${errorOutput}`);
-  }
-}
-function killTmuxSession(name) {
-  spawnSync11("tmux", ["kill-session", "-t", name], { encoding: "utf8", stdio: "pipe" });
-}
-var TMUX_SESSION_PREFIX = "sp";
-var init_tmux_utils = () => {};
-
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
@@ -24252,7 +24490,7 @@ import { spawn as cpSpawn } from "child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
     process.exit(1);
   }
   let prompt = "";
@@ -24268,6 +24506,7 @@ async function parseArgs6(argv) {
   let worktree = false;
   let noWorktree = false;
   let reuseJobId;
+  let forceJob = false;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
@@ -24328,6 +24567,10 @@ async function parseArgs6(argv) {
       reuseJobId = argv[++i];
       continue;
     }
+    if (token === "--force-job") {
+      forceJob = true;
+      continue;
+    }
   }
   if (worktree && reuseJobId !== undefined) {
     console.error("Error: --worktree and --job are mutually exclusive. Use one or the other.");
@@ -24370,10 +24613,11 @@ async function parseArgs6(argv) {
     outputMode,
     worktree,
     reuseJobId,
+    forceJob,
     noWorktree
   };
 }
-function resolveWorkingDirectory(args, jobsDir) {
+function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) {
   if (args.worktree) {
     const info = provisionWorktree({
       beadId: args.beadId,
@@ -24391,20 +24635,30 @@ function resolveWorkingDirectory(args, jobsDir) {
     };
   }
   if (args.reuseJobId !== undefined) {
-    const statusPath = join14(jobsDir, args.reuseJobId, "status.json");
-    let targetStatus = null;
-    try {
-      targetStatus = JSON.parse(readFileSync8(statusPath, "utf-8"));
-    } catch {
+    const targetStatus = readStatus(args.reuseJobId);
+    if (!targetStatus) {
       console.error(`Error: cannot read status for job '${args.reuseJobId}'. ` + `Check the job id with: specialists poll ${args.reuseJobId} --json`);
       process.exit(1);
     }
-    const worktreePath = targetStatus?.worktree_path;
+    const targetJobStatus = targetStatus.status;
+    const editCapable = permissionRequired === "MEDIUM" || permissionRequired === "HIGH";
+    const isBlockedStatus = typeof targetJobStatus === "string" && BLOCKED_JOB_REUSE_STATUSES.has(targetJobStatus);
+    const isKnownAllowedStatus = targetJobStatus === "waiting" || targetJobStatus === "done" || targetJobStatus === "error" || targetJobStatus === "cancelled";
+    const shouldBlockUnknownStatus = editCapable && !args.forceJob && !isBlockedStatus && !isKnownAllowedStatus;
+    if (editCapable && !args.forceJob && isBlockedStatus) {
+      console.error(`Target job ${args.reuseJobId} is still running (status: ${targetJobStatus}). ` + `MEDIUM/HIGH specialists cannot enter an active worktree. ` + `Wait for completion or use --force-job to override.`);
+      process.exit(1);
+    }
+    if (shouldBlockUnknownStatus) {
+      console.error(`Target job ${args.reuseJobId} has unknown status '${String(targetJobStatus)}'. ` + `MEDIUM/HIGH specialists block on unknown status to avoid concurrent worktree access. ` + `Use --force-job to override.`);
+      process.exit(1);
+    }
+    const worktreePath = targetStatus.worktree_path;
     if (!worktreePath) {
       console.error(`Error: job '${args.reuseJobId}' has no worktree_path \u2014 it was not started with --worktree.`);
       process.exit(1);
     }
-    const worktreeOwnerJobId = targetStatus?.worktree_owner_job_id ?? targetStatus?.id ?? args.reuseJobId;
+    const worktreeOwnerJobId = targetStatus.worktree_owner_job_id ?? targetStatus.id ?? args.reuseJobId;
     process.stderr.write(dim9(`[workspace reused from job ${args.reuseJobId}: ${worktreePath}]
 `));
     return {
@@ -24489,7 +24743,8 @@ async function run11() {
 `);
     process.exit(1);
   });
-  const perm = specialist.specialist.execution.permission_required ?? "READ_ONLY";
+  const permission = specialist.specialist.execution.permission_required;
+  const perm = permission === "LOW" || permission === "MEDIUM" || permission === "HIGH" ? permission : "READ_ONLY";
   const editCapable = perm === "MEDIUM" || perm === "HIGH";
   if (editCapable && !args.worktree && !args.reuseJobId && !args.noWorktree) {
     process.stderr.write(`Error: specialist '${args.name}' has permission_required=${perm} and can edit files.
@@ -24575,6 +24830,12 @@ async function run11() {
       bead_id: args.beadId
     };
   }
+  if (args.reuseJobId) {
+    variables = {
+      ...variables ?? {},
+      reviewed_job_id: args.reuseJobId
+    };
+  }
   const runner = new SpecialistRunner({
     loader,
     hooks,
@@ -24583,11 +24844,20 @@ async function run11() {
   });
   const beadsWriteNotes = args.noBeadNotes ? false : specialist.specialist.beads_write_notes ?? true;
   const jobsDir = resolveJobsDir();
+  const statusReader = new Supervisor({
+    runner,
+    runOptions: {
+      name: args.name,
+      prompt
+    },
+    jobsDir
+  });
   const {
     workingDirectory,
     reusedFromJobId,
     worktreeOwnerJobId
-  } = resolveWorkingDirectory(args, jobsDir);
+  } = resolveWorkingDirectory(args, jobsDir, perm, (jobId2) => statusReader.readStatus(jobId2));
+  await statusReader.dispose();
   let stopTailer;
   const supervisor = new Supervisor({
     runner,
@@ -24651,7 +24921,7 @@ ${green9("\u2713")} ${footer}
 `));
   process.exit(0);
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`;
+var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, BLOCKED_JOB_REUSE_STATUSES;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -24663,6 +24933,7 @@ var init_run = __esm(() => {
   init_worktree();
   init_format_helpers();
   init_tmux_utils();
+  BLOCKED_JOB_REUSE_STATUSES = new Set(["starting", "running"]);
 });
 
 // src/specialist/job-control.ts
@@ -24865,6 +25136,9 @@ function toContextHealth(contextPct) {
     return "WARN";
   return "CRITICAL";
 }
+function toErrorMessage(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
 
 class NodeSupervisor {
   status = "created";
@@ -24887,6 +25161,9 @@ class NodeSupervisor {
   lastActivityAtMs = Date.now();
   coordinatorResumesInFlight = 0;
   degradedResumeCount = 0;
+  lastCoordinatorOutputAtMs = Date.now();
+  lastCompletedActionAtMs = Date.now();
+  lastMemberTransitionAtMs = Date.now();
   constructor(opts) {
     this.opts = opts;
     this.members = new Map(opts.members.map((member) => [
@@ -24973,6 +25250,40 @@ class NodeSupervisor {
       return null;
     }
   }
+  getMemberPendingActionKey(memberId, generation) {
+    return `${memberId}:${generation}`;
+  }
+  getMemberPendingActionForGeneration(memberId, generation) {
+    return this.memberPendingAction.get(this.getMemberPendingActionKey(memberId, generation)) ?? null;
+  }
+  setMemberPendingActionForGeneration(memberId, generation, actionId) {
+    this.memberPendingAction.set(this.getMemberPendingActionKey(memberId, generation), actionId);
+  }
+  clearMemberPendingActionForGeneration(memberId, generation) {
+    this.memberPendingAction.delete(this.getMemberPendingActionKey(memberId, generation));
+  }
+  clearMemberPendingActions(memberId) {
+    for (const key of this.memberPendingAction.keys()) {
+      if (key.startsWith(`${memberId}:`)) {
+        this.memberPendingAction.delete(key);
+      }
+    }
+  }
+  resetResumePendingFromLiveCoordinatorStatus() {
+    const coordinatorStatus = this.coordinatorJobId ? this.opts.sqliteClient.readStatus(this.coordinatorJobId)?.status : null;
+    const recoveredPending = this.resumePending;
+    this.resumePending = false;
+    if (!recoveredPending)
+      return;
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resume_state", {
+        node_id: this.opts.nodeId,
+        resume_pending: false,
+        recovery_reset: true,
+        coordinator_status: coordinatorStatus
+      });
+    } catch {}
+  }
   async bootstrap() {
     try {
       this.opts.sqliteClient.bootstrapNode(this.opts.nodeId, this.opts.nodeName, this.opts.memoryNamespace);
@@ -24997,6 +25308,11 @@ class NodeSupervisor {
       for (const event of events) {
         if (event.type === "coordinator_output_received") {
           this.recoveredCoordinatorOutputHash = this.restoreCoordinatorOutputHashFromEvent(event.event_json);
+          this.lastCoordinatorOutputAtMs = Math.max(this.lastCoordinatorOutputAtMs, event.t);
+          continue;
+        }
+        if (event.type === "member_state_changed") {
+          this.lastMemberTransitionAtMs = Math.max(this.lastMemberTransitionAtMs, event.t);
           continue;
         }
         if (event.type === "coordinator_resume_state") {
@@ -25015,9 +25331,10 @@ class NodeSupervisor {
         this.actionById.set(envelope.actionId, envelope);
         if (event.type === "action_completed") {
           this.completedActionIds.add(envelope.actionId);
-          this.memberPendingAction.delete(envelope.action.memberId);
+          this.clearMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration);
+          this.lastCompletedActionAtMs = Math.max(this.lastCompletedActionAtMs, event.t);
         } else if (event.type === "action_written") {
-          this.memberPendingAction.set(envelope.action.memberId, envelope.actionId);
+          this.setMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration, envelope.actionId);
         }
         this.actionLifecycle.set(envelope.actionId, event.type.replace("action_", ""));
       }
@@ -25026,9 +25343,16 @@ class NodeSupervisor {
         const state = this.actionLifecycle.get(envelope.actionId);
         if (!state || terminalStates.has(state))
           continue;
-        this.dispatchQueue.push(envelope);
-        this.queuedActionKeys.add(this.getActionKey(envelope.action));
+        if (state === "queued") {
+          this.dispatchQueue.push(envelope);
+          this.queuedActionKeys.add(this.getActionKey(envelope.action));
+          continue;
+        }
+        if (state === "written" || state === "observed") {
+          this.setMemberPendingActionForGeneration(envelope.action.memberId, envelope.targetGeneration, envelope.actionId);
+        }
       }
+      this.resetResumePendingFromLiveCoordinatorStatus();
       try {
         this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "node_recovered", {
           node_id: this.opts.nodeId,
@@ -25061,19 +25385,33 @@ class NodeSupervisor {
       throw new Error(`Invalid NodeSupervisor transition: ${this.status} -> ${to}`);
     }
   }
+  logPersistenceWarning(operation, error2) {
+    console.warn("node supervisor sqlite write failed", {
+      nodeId: this.opts.nodeId,
+      operation,
+      error: toErrorMessage(error2)
+    });
+  }
+  persistNodeEvent(operation, type, event, t = Date.now()) {
+    try {
+      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, t, type, event);
+    } catch (error2) {
+      this.logPersistenceWarning(operation, error2);
+    }
+  }
   transition(to, reason) {
     this.validateTransition(to);
     const previousStatus = this.status;
     this.status = to;
     try {
-      const now = Date.now();
+      const now2 = Date.now();
       this.opts.sqliteClient.upsertNodeRun({
         id: this.opts.nodeId,
         node_name: this.opts.nodeName,
         status: to,
         coordinator_job_id: this.coordinatorJobId ?? undefined,
-        started_at_ms: now,
-        updated_at_ms: now,
+        started_at_ms: now2,
+        updated_at_ms: now2,
         error: to === "error" ? reason : undefined,
         memory_namespace: this.opts.memoryNamespace,
         status_json: JSON.stringify({
@@ -25084,25 +25422,28 @@ class NodeSupervisor {
           coordinator_job_id: this.coordinatorJobId
         })
       });
-    } catch {}
-    try {
-      const now = Date.now();
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now, "node_state_changed", {
-        node_id: this.opts.nodeId,
-        previous_status: previousStatus,
-        status: to,
-        reason
-      });
-      if (to === "done") {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_done", { node_id: this.opts.nodeId, reason });
-      }
-      if (to === "error") {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_error", { node_id: this.opts.nodeId, reason });
-      }
-      if (to === "stopped") {
-        this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, now + 1, "node_stopped", { node_id: this.opts.nodeId, reason });
-      }
-    } catch {}
+    } catch (error2) {
+      this.logPersistenceWarning("transition.upsertNodeRun", error2);
+    }
+    const now = Date.now();
+    this.persistNodeEvent("transition.node_state_changed", "node_state_changed", {
+      node_id: this.opts.nodeId,
+      previous_status: previousStatus,
+      status: to,
+      reason
+    }, now);
+    if (to === "waiting") {
+      this.persistNodeEvent("transition.node_waiting", "node_waiting", { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === "done") {
+      this.persistNodeEvent("transition.node_done", "node_done", { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === "error") {
+      this.persistNodeEvent("transition.node_error", "node_error", { node_id: this.opts.nodeId, reason }, now + 1);
+    }
+    if (to === "stopped") {
+      this.persistNodeEvent("transition.node_stopped", "node_stopped", { node_id: this.opts.nodeId, reason }, now + 1);
+    }
   }
   createBaseRunOptions(specialist, prompt) {
     const runOptions = this.opts.runOptions;
@@ -25137,6 +25478,7 @@ class NodeSupervisor {
       member.jobId = jobId;
       member.status = "starting";
       member.generation += 1;
+      this.clearMemberPendingActions(member.memberId);
       this.memberControllers.set(member.memberId, controller);
       try {
         this.opts.sqliteClient.upsertNodeMember({
@@ -25198,12 +25540,6 @@ class NodeSupervisor {
         status_json: JSON.stringify({ status: this.status, coordinator_job_id: this.coordinatorJobId })
       });
     } catch {}
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "node_started", {
-        node_id: this.opts.nodeId,
-        coordinator_job_id: this.coordinatorJobId
-      });
-    } catch {}
   }
   async pollMemberStatuses() {
     const changes = [];
@@ -25239,7 +25575,7 @@ class NodeSupervisor {
       if (!status)
         continue;
       const output2 = this.memberControllers.get(member.memberId)?.readResult(member.jobId) ?? null;
-      const outputHash = hashOutput(output2, `${member.generation}:${this.pollSequence}`);
+      const outputHash = hashOutput(output2, `${member.generation}`);
       const statusChanged = member.status !== status.status;
       const outputChanged = member.lastSeenOutputHash !== outputHash;
       if (!statusChanged && !outputChanged)
@@ -25269,7 +25605,10 @@ class NodeSupervisor {
     return "running";
   }
   maybeAcknowledgeMemberAction(memberId) {
-    const pendingActionId = this.memberPendingAction.get(memberId);
+    const member = this.members.get(memberId);
+    if (!member)
+      return;
+    const pendingActionId = this.getMemberPendingActionForGeneration(memberId, member.generation);
     if (!pendingActionId)
       return;
     const lifecycle = this.actionLifecycle.get(pendingActionId);
@@ -25278,7 +25617,7 @@ class NodeSupervisor {
       this.appendActionLifecycleEvent(envelope, "observed");
       this.appendActionLifecycleEvent(envelope, "completed");
       this.completedActionIds.add(pendingActionId);
-      this.memberPendingAction.delete(memberId);
+      this.clearMemberPendingActionForGeneration(memberId, member.generation);
     }
   }
   buildStateDigest(memoryEntries) {
@@ -25384,24 +25723,46 @@ class NodeSupervisor {
   }
   appendActionLifecycleEvent(envelope, state, extra) {
     this.actionLifecycle.set(envelope.actionId, state);
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), `action_${state}`, {
-        node_id: this.opts.nodeId,
-        action_id: envelope.actionId,
-        member_id: envelope.action.memberId,
-        action_type: envelope.action.type,
-        target_generation: envelope.targetGeneration,
-        depends_on_action_id: envelope.dependsOnActionId ?? null,
-        ...extra
-      });
-    } catch {}
+    if (state === "completed") {
+      this.lastCompletedActionAtMs = Date.now();
+    }
+    this.persistNodeEvent(`appendActionLifecycleEvent.action_${state}`, `action_${state}`, {
+      node_id: this.opts.nodeId,
+      action_id: envelope.actionId,
+      member_id: envelope.action.memberId,
+      action_type: envelope.action.type,
+      target_generation: envelope.targetGeneration,
+      depends_on_action_id: envelope.dependsOnActionId ?? null,
+      ...extra
+    });
   }
   async dispatchAction(action) {
-    if (this.status === "degraded" && action.type === "resume") {
-      return null;
+    if (action.type === "resume") {
+      const member = this.members.get(action.memberId);
+      if (!member || !this.isRecoveryResumeAllowed(member)) {
+        this.appendNodeEvent("action_dropped", {
+          node_id: this.opts.nodeId,
+          member_id: action.memberId,
+          action_type: action.type,
+          reason: "resume_not_allowed",
+          member_status: member?.status ?? null,
+          member_enabled: member?.enabled ?? null,
+          target_generation: action.targetGeneration ?? null
+        });
+        return null;
+      }
     }
     const queuedForMember = this.dispatchQueue.filter((queued) => queued.action.memberId === action.memberId).length;
     if (queuedForMember >= MAX_QUEUED_ACTIONS_PER_MEMBER) {
+      this.appendNodeEvent("action_dropped", {
+        node_id: this.opts.nodeId,
+        member_id: action.memberId,
+        action_type: action.type,
+        reason: "member_queue_full",
+        queued_for_member: queuedForMember,
+        queue_limit: MAX_QUEUED_ACTIONS_PER_MEMBER,
+        target_generation: action.targetGeneration ?? null
+      });
       return null;
     }
     const envelope = {
@@ -25415,8 +25776,16 @@ class NodeSupervisor {
     envelope.action.actionId = envelope.actionId;
     envelope.action.targetGeneration = envelope.targetGeneration;
     const actionKey = this.getActionKey(envelope.action);
-    if (this.queuedActionKeys.has(actionKey))
+    if (this.queuedActionKeys.has(actionKey)) {
+      this.appendNodeEvent("action_dropped", {
+        node_id: this.opts.nodeId,
+        member_id: action.memberId,
+        action_type: action.type,
+        reason: "duplicate_action",
+        target_generation: envelope.targetGeneration
+      });
       return null;
+    }
     this.dispatchQueue.push(envelope);
     this.actionById.set(envelope.actionId, envelope);
     this.queuedActionKeys.add(actionKey);
@@ -25465,7 +25834,7 @@ class NodeSupervisor {
           this.queuedActionKeys.delete(nextActionKey);
           continue;
         }
-        const pendingActionId = this.memberPendingAction.get(nextAction.memberId);
+        const pendingActionId = this.getMemberPendingActionForGeneration(nextAction.memberId, member.generation);
         if (pendingActionId && !this.completedActionIds.has(pendingActionId)) {
           this.appendActionLifecycleEvent(nextEnvelope, "failed", {
             reason: "member_has_pending_action",
@@ -25482,7 +25851,7 @@ class NodeSupervisor {
           } else {
             await controller.stopJob(member.jobId);
           }
-          this.memberPendingAction.set(nextAction.memberId, nextEnvelope.actionId);
+          this.setMemberPendingActionForGeneration(nextAction.memberId, nextEnvelope.targetGeneration, nextEnvelope.actionId);
           this.appendActionLifecycleEvent(nextEnvelope, "written");
         } catch (error2) {
           this.appendActionLifecycleEvent(nextEnvelope, "failed", {
@@ -25497,9 +25866,7 @@ class NodeSupervisor {
     }
   }
   appendNodeEvent(type, event) {
-    try {
-      this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), type, event);
-    } catch {}
+    this.persistNodeEvent(`appendNodeEvent.${type}`, type, event);
   }
   buildCoordinatorRepairPrompt(args) {
     const remainingAttempts = 3 - args.attempt;
@@ -25511,16 +25878,27 @@ class NodeSupervisor {
       "Return ONLY strict JSON matching this contract:",
       '{"summary": string, "memory_patch": array, "actions": array, "validation": object}',
       "actions allowed:",
-      '- {"type":"resume","memberId":string,"task":string}',
-      '- {"type":"steer","memberId":string,"message":string}',
-      '- {"type":"stop","memberId":string}',
+      '- {"type":"resume","memberId":string,"task":string,"dependsOnActionId"?:string}',
+      '- {"type":"steer","memberId":string,"message":string,"dependsOnActionId"?:string}',
+      '- {"type":"stop","memberId":string,"dependsOnActionId"?:string}',
       "memory_patch entries:",
-      '- {"entry_type":"fact|question|decision","summary":string,"entry_id"?:string,"source_member_id"?:string,"confidence"?:number,"provenance"?:object}',
+      '- {"entry_type":"fact|question|decision","summary":string,"source_member_id":string,"confidence":number,"entry_id"?:string,"provenance"?:object}',
       `remaining_attempts=${remainingAttempts}`
     ].join(`
 `);
   }
+  isRecoveryResumeAllowed(member) {
+    if (this.status !== "degraded")
+      return true;
+    if (!member.enabled || member.status !== "waiting")
+      return false;
+    if (!member.jobId)
+      return false;
+    const contextPct = this.opts.sqliteClient.queryMemberContextHealth(member.jobId);
+    return toContextHealth(contextPct) !== "CRITICAL";
+  }
   validateActionRuntimeState(actions) {
+    let degradedRecoveryResumeCount = 0;
     for (const action of actions) {
       const member = this.members.get(action.memberId);
       if (!member) {
@@ -25535,11 +25913,17 @@ class NodeSupervisor {
       if (!this.memberControllers.has(action.memberId)) {
         return `Member '${action.memberId}' has no active controller.`;
       }
-      if (action.type === "resume" && this.status === "degraded") {
-        return `Node is degraded; resume actions are paused for member '${action.memberId}'.`;
-      }
       if (action.type === "resume" && member.status !== "waiting") {
         return `Member '${action.memberId}' must be waiting before resume (current=${member.status}).`;
+      }
+      if (action.type === "resume" && !this.isRecoveryResumeAllowed(member)) {
+        return `Member '${action.memberId}' is not eligible for degraded recovery resume.`;
+      }
+      if (action.type === "resume" && this.status === "degraded") {
+        degradedRecoveryResumeCount += 1;
+        if (degradedRecoveryResumeCount > MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE) {
+          return `Degraded mode permits at most ${MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE} recovery resume action per coordinator cycle.`;
+        }
       }
       if (action.type === "steer" && member.status !== "running" && member.status !== "waiting") {
         return `Member '${action.memberId}' must be running/waiting before steer (current=${member.status}).`;
@@ -25551,7 +25935,33 @@ class NodeSupervisor {
     return null;
   }
   applyMemoryPatch(memoryPatch) {
+    let acceptedCount = 0;
+    let rejectedCount = 0;
+    let dedupedCount = 0;
+    const existingEntryIds = new Set(this.opts.sqliteClient.readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined).map((row) => row.entry_id).filter((entryId) => typeof entryId === "string" && entryId.length > 0));
     for (const entry of memoryPatch) {
+      if (!entry.source_member_id) {
+        rejectedCount += 1;
+        this.appendNodeEvent("memory_patch_rejected", {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          reason: "missing_source_member_id"
+        });
+        continue;
+      }
+      if (typeof entry.confidence !== "number" || Number.isNaN(entry.confidence) || entry.confidence < 0 || entry.confidence > 1) {
+        rejectedCount += 1;
+        this.appendNodeEvent("memory_patch_rejected", {
+          node_id: this.opts.nodeId,
+          entry_type: entry.entry_type,
+          entry_id: entry.entry_id ?? null,
+          reason: "invalid_confidence",
+          confidence: entry.confidence ?? null
+        });
+        continue;
+      }
+      const isDeduped = Boolean(entry.entry_id && existingEntryIds.has(entry.entry_id));
       try {
         this.opts.sqliteClient.upsertNodeMemory({
           node_run_id: this.opts.nodeId,
@@ -25564,14 +25974,36 @@ class NodeSupervisor {
           provenance_json: entry.provenance ? JSON.stringify(entry.provenance) : undefined,
           updated_at_ms: Date.now()
         });
-        this.appendNodeEvent("memory_updated", {
+      } catch (error2) {
+        this.logPersistenceWarning("applyMemoryPatch.upsertNodeMemory", error2);
+        continue;
+      }
+      acceptedCount += 1;
+      if (entry.entry_id) {
+        existingEntryIds.add(entry.entry_id);
+      }
+      if (isDeduped) {
+        dedupedCount += 1;
+        this.appendNodeEvent("memory_patch_deduplicated", {
           node_id: this.opts.nodeId,
           entry_type: entry.entry_type,
-          entry_id: entry.entry_id ?? null,
-          source_member_id: entry.source_member_id ?? null
+          entry_id: entry.entry_id,
+          namespace: this.opts.memoryNamespace ?? null
         });
-      } catch {}
+      }
+      this.appendNodeEvent("memory_updated", {
+        node_id: this.opts.nodeId,
+        entry_type: entry.entry_type,
+        entry_id: entry.entry_id ?? null,
+        source_member_id: entry.source_member_id,
+        confidence: entry.confidence
+      });
     }
+    return {
+      acceptedCount,
+      rejectedCount,
+      dedupedCount
+    };
   }
   waitForCoordinatorOutput(previousOutputHash) {
     const maxWaitMs = 15000;
@@ -25610,6 +26042,12 @@ class NodeSupervisor {
           this.transition("error", "coordinator_controller_missing_for_repair");
           return;
         }
+        this.appendNodeEvent("coordinator_repair_requested", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "runtime_state_mismatch",
+          details: "No coordinator output available for validation."
+        });
         await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
           failureClass: "runtime_state_mismatch",
           details: "No coordinator output available for validation.",
@@ -25639,6 +26077,12 @@ class NodeSupervisor {
           this.transition("error", "coordinator_controller_missing_for_repair");
           return;
         }
+        this.appendNodeEvent("coordinator_repair_requested", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "invalid_json",
+          details
+        });
         await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
           failureClass: "invalid_json",
           details,
@@ -25665,6 +26109,12 @@ class NodeSupervisor {
           this.transition("error", "coordinator_controller_missing_for_repair");
           return;
         }
+        this.appendNodeEvent("coordinator_repair_requested", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "schema_validation_failure",
+          details
+        });
         await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
           failureClass: "schema_validation_failure",
           details,
@@ -25691,6 +26141,12 @@ class NodeSupervisor {
           this.transition("error", "coordinator_controller_missing_for_repair");
           return;
         }
+        this.appendNodeEvent("coordinator_repair_requested", {
+          node_id: this.opts.nodeId,
+          attempt,
+          failure_class: "runtime_state_mismatch",
+          details: runtimeMismatch
+        });
         await this.coordinatorController.resumeJob(this.coordinatorJobId, this.buildCoordinatorRepairPrompt({
           failureClass: "runtime_state_mismatch",
           details: runtimeMismatch,
@@ -25699,22 +26155,27 @@ class NodeSupervisor {
         currentOutput = await this.waitForCoordinatorOutput(hashOutput(currentOutput));
         continue;
       }
+      const memoryPatchStats = this.applyMemoryPatch(coordinatorOutput.memory_patch);
       this.appendNodeEvent("coordinator_output_received", {
         node_id: this.opts.nodeId,
         summary: coordinatorOutput.summary,
         action_count: coordinatorOutput.actions.length,
         memory_patch_count: coordinatorOutput.memory_patch.length,
+        accepted_count: memoryPatchStats.acceptedCount,
+        rejected_count: memoryPatchStats.rejectedCount,
+        deduped_count: memoryPatchStats.dedupedCount,
         output_hash: hashOutput(currentOutput)
       });
-      this.applyMemoryPatch(coordinatorOutput.memory_patch);
-      let predecessorActionId = null;
+      this.lastCoordinatorOutputAtMs = Date.now();
+      const predecessorByMemberId = new Map;
       for (const action of coordinatorOutput.actions) {
+        const inferredDependsOnActionId = action.dependsOnActionId ?? predecessorByMemberId.get(action.memberId);
         const actionId = await this.dispatchAction({
           ...action,
-          dependsOnActionId: action.dependsOnActionId ?? predecessorActionId ?? undefined
+          dependsOnActionId: inferredDependsOnActionId
         });
         if (actionId) {
-          predecessorActionId = actionId;
+          predecessorByMemberId.set(action.memberId, actionId);
         }
       }
       return;
@@ -25771,6 +26232,29 @@ class NodeSupervisor {
       return Math.min(MAX_POLL_INTERVAL_MS, BASE_POLL_INTERVAL_MS * 2);
     }
     return BASE_POLL_INTERVAL_MS;
+  }
+  getLastProgressAtMs() {
+    return Math.max(this.lastCoordinatorOutputAtMs, this.lastCompletedActionAtMs, this.lastMemberTransitionAtMs);
+  }
+  maybeTriggerNoProgressWatchdog() {
+    if (TERMINAL_NODE_STATUSES.has(this.status))
+      return false;
+    const stalledForMs = Date.now() - this.getLastProgressAtMs();
+    if (stalledForMs < NO_PROGRESS_WATCHDOG_MS) {
+      return false;
+    }
+    this.appendNodeEvent("coordinator_output_invalid", {
+      node_id: this.opts.nodeId,
+      failure_class: "watchdog_no_progress",
+      details: `No progress observed for ${stalledForMs}ms.`,
+      stalled_for_ms: stalledForMs,
+      threshold_ms: NO_PROGRESS_WATCHDOG_MS,
+      last_coordinator_output_at_ms: this.lastCoordinatorOutputAtMs,
+      last_completed_action_at_ms: this.lastCompletedActionAtMs,
+      last_member_transition_at_ms: this.lastMemberTransitionAtMs
+    });
+    this.transition("error", "no_progress_watchdog_triggered");
+    return true;
   }
   async cleanupJobs() {
     const cleanupErrors = [];
@@ -25853,6 +26337,21 @@ class NodeSupervisor {
           const member = this.members.get(change.memberId);
           if (!member)
             continue;
+          const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
+          const contextHealth = toContextHealth(contextPct);
+          const trigger = change.prevStatus !== change.newStatus ? "status_changed" : change.output ? "output_changed" : "poll_observed";
+          if (change.newStatus === "error") {
+            member.enabled = false;
+            this.appendNodeEvent("member_disabled", {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              reason: "member_error",
+              trigger,
+              context_health: contextHealth
+            });
+          }
           try {
             this.opts.sqliteClient.upsertNodeMember({
               node_run_id: this.opts.nodeId,
@@ -25862,35 +26361,76 @@ class NodeSupervisor {
               model: member.model,
               role: member.role,
               status: member.status,
-              enabled: member.enabled
+              enabled: member.enabled,
+              generation: member.generation
             });
-          } catch {}
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "member_state_changed", {
+          } catch (error2) {
+            this.logPersistenceWarning("run.upsertNodeMember", error2);
+          }
+          this.persistNodeEvent("run.member_state_changed", "member_state_changed", {
+            node_id: this.opts.nodeId,
+            member_id: member.memberId,
+            job_id: member.jobId ?? null,
+            prev_status: change.prevStatus,
+            status: change.newStatus,
+            generation: member.generation,
+            trigger,
+            context_pct: contextPct,
+            context_health: contextHealth,
+            output_present: Boolean(change.output),
+            output_excerpt: change.output ? change.output.slice(0, 500) : null
+          });
+          if (change.output) {
+            this.persistNodeEvent("run.member_output_received", "member_output_received", {
               node_id: this.opts.nodeId,
               member_id: member.memberId,
-              prev_status: change.prevStatus,
-              status: change.newStatus,
-              output_present: Boolean(change.output)
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              trigger,
+              context_health: contextHealth,
+              output_excerpt: change.output.slice(0, 500)
             });
-          } catch {}
-          const contextPct = member.jobId ? this.opts.sqliteClient.queryMemberContextHealth(member.jobId) : null;
-          if (change.newStatus === "error") {
-            member.enabled = false;
           }
-          if (change.newStatus === "error" || toContextHealth(contextPct) === "CRITICAL") {
+          if (change.newStatus === "error") {
+            this.persistNodeEvent("run.member_failed", "member_failed", {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              trigger,
+              context_health: contextHealth
+            });
+          }
+          this.lastMemberTransitionAtMs = Date.now();
+          if (change.newStatus === "error" || contextHealth === "CRITICAL") {
             if (this.status === "running" || this.status === "waiting") {
               this.transition("degraded", "member_error_or_critical_context");
               this.degradedResumeCount = 0;
             }
           } else if (this.status === "degraded" && this.recomputeNodeHealth() === "running") {
+            this.persistNodeEvent("run.member_recovered", "member_recovered", {
+              node_id: this.opts.nodeId,
+              member_id: member.memberId,
+              job_id: member.jobId ?? null,
+              generation: member.generation,
+              context_health: contextHealth
+            });
             this.transition("running", "all_members_healthy");
             this.degradedResumeCount = 0;
           }
         }
         const coordinatorStatus = this.coordinatorJobId ? this.opts.sqliteClient.readStatus(this.coordinatorJobId) : null;
-        if (coordinatorStatus?.status === "error") {
+        const coordinatorStatusValue = coordinatorStatus?.status;
+        if (coordinatorStatusValue === "error") {
           this.transition("error", "coordinator_crash");
+          break;
+        }
+        if (coordinatorStatusValue === "stopped") {
+          this.transition("stopped", "coordinator_stopped");
+          break;
+        }
+        if (coordinatorStatusValue === "done") {
+          this.transition("done", "coordinator_done");
           break;
         }
         const coordinatorOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null : null;
@@ -25898,18 +26438,38 @@ class NodeSupervisor {
         if (coordinatorOutput && nextCoordinatorOutputHash !== coordinatorOutputHash) {
           coordinatorOutputHash = nextCoordinatorOutputHash;
           await this.handleCoordinatorOutput(coordinatorOutput);
+          if (this.status === "waiting") {
+            this.transition("running", "coordinator_output_processed");
+          }
         }
-        const degradedResumeLimitReached = this.status === "degraded" && this.degradedResumeCount >= MAX_DEGRADED_COORDINATOR_RESUMES;
         const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
-        if (changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && !degradedResumeLimitReached && canResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
+        const shouldResumeCoordinator = changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && canResumeCoordinator && Boolean(this.coordinatorJobId) && Boolean(this.coordinatorController);
+        if (changes.length > 0 && !shouldResumeCoordinator) {
+          const skipReasons = [];
+          if (coordinatorStatus?.status !== "waiting")
+            skipReasons.push(`coordinator_status:${coordinatorStatus?.status ?? "unknown"}`);
+          if (this.resumePending)
+            skipReasons.push("resume_pending");
+          if (!canResumeCoordinator)
+            skipReasons.push("resume_in_flight_limit");
+          if (!this.coordinatorJobId)
+            skipReasons.push("missing_coordinator_job");
+          if (!this.coordinatorController)
+            skipReasons.push("missing_coordinator_controller");
+          this.appendNodeEvent("coordinator_resume_skipped", {
+            node_id: this.opts.nodeId,
+            coordinator_job_id: this.coordinatorJobId,
+            member_update_count: changes.length,
+            reasons: skipReasons
+          });
+        }
+        if (shouldResumeCoordinator && this.coordinatorJobId && this.coordinatorController) {
           this.resumePending = true;
           this.coordinatorResumesInFlight += 1;
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resume_state", {
-              node_id: this.opts.nodeId,
-              resume_pending: true
-            });
-          } catch {}
+          this.persistNodeEvent("run.coordinator_resume_state.pending", "coordinator_resume_state", {
+            node_id: this.opts.nodeId,
+            resume_pending: true
+          });
           try {
             const payload = this.buildResumePayload(changes);
             await this.coordinatorController.resumeJob(this.coordinatorJobId, payload);
@@ -25920,25 +26480,27 @@ class NodeSupervisor {
             this.resumePending = false;
             this.coordinatorResumesInFlight = Math.max(0, this.coordinatorResumesInFlight - 1);
           }
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resume_state", {
-              node_id: this.opts.nodeId,
-              resume_pending: false
-            });
-          } catch {}
-          try {
-            this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "coordinator_resumed", {
-              node_id: this.opts.nodeId,
-              coordinator_job_id: this.coordinatorJobId,
-              member_update_count: changes.length,
-              degraded_resume_count: this.degradedResumeCount
-            });
-          } catch {}
+          this.persistNodeEvent("run.coordinator_resume_state.cleared", "coordinator_resume_state", {
+            node_id: this.opts.nodeId,
+            resume_pending: false
+          });
+          this.persistNodeEvent("run.coordinator_resumed", "coordinator_resumed", {
+            node_id: this.opts.nodeId,
+            coordinator_job_id: this.coordinatorJobId,
+            member_update_count: changes.length,
+            degraded_resume_count: this.degradedResumeCount
+          });
           if (this.status === "running") {
             this.transition("waiting", "coordinator_resumed_waiting_for_actions");
           }
         }
-        const allTerminal = this.getMembers().every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const memberSnapshot = this.getMembers();
+        const allTerminal = memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const allStopped = memberSnapshot.length > 0 && memberSnapshot.every((member) => member.status === "stopped");
+        if (allStopped) {
+          this.transition("stopped", "all_members_stopped");
+          break;
+        }
         if (allTerminal) {
           this.transition("done", "all_members_terminal");
           try {
@@ -25948,6 +26510,9 @@ class NodeSupervisor {
               nodeId: this.opts.nodeId
             });
           }
+          break;
+        }
+        if (this.maybeTriggerNoProgressWatchdog()) {
           break;
         }
         await sleep2(this.getNextPollIntervalMs(changes.length));
@@ -25985,7 +26550,7 @@ class NodeSupervisor {
     return [...this.members.values()].map((member) => ({ ...member }));
   }
 }
-var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, MAX_DEGRADED_COORDINATOR_RESUMES = 1, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
+var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE = 1, NO_PROGRESS_WATCHDOG_MS = 120000, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES, coordinatorActionSchema, coordinatorMemoryPatchEntrySchema, coordinatorOutputSchema;
 var init_node_supervisor = __esm(() => {
   init_zod();
   init_job_control();
@@ -25994,7 +26559,7 @@ var init_node_supervisor = __esm(() => {
     starting: ["running", "error", "stopped"],
     running: ["waiting", "degraded", "done", "error", "stopped"],
     waiting: ["running", "degraded", "done", "error", "stopped"],
-    degraded: ["running", "error", "stopped"],
+    degraded: ["running", "done", "error", "stopped"],
     error: [],
     done: [],
     stopped: []
@@ -26006,24 +26571,27 @@ var init_node_supervisor = __esm(() => {
     objectType({
       type: literalType("resume"),
       memberId: stringType().min(1),
-      task: stringType().min(1)
+      task: stringType().min(1),
+      dependsOnActionId: stringType().min(1).optional()
     }),
     objectType({
       type: literalType("steer"),
       memberId: stringType().min(1),
-      message: stringType().min(1)
+      message: stringType().min(1),
+      dependsOnActionId: stringType().min(1).optional()
     }),
     objectType({
       type: literalType("stop"),
-      memberId: stringType().min(1)
+      memberId: stringType().min(1),
+      dependsOnActionId: stringType().min(1).optional()
     })
   ]);
   coordinatorMemoryPatchEntrySchema = objectType({
     entry_type: enumType(["fact", "question", "decision"]),
     entry_id: stringType().min(1).optional(),
     summary: stringType().min(1),
-    source_member_id: stringType().min(1).optional(),
-    confidence: numberType().min(0).max(1).optional(),
+    source_member_id: stringType().min(1),
+    confidence: numberType().min(0).max(1),
     provenance: recordType(stringType(), unknownType()).optional()
   });
   coordinatorOutputSchema = objectType({
@@ -26043,16 +26611,16 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { readFileSync as readFileSync10 } from "fs";
+import { existsSync as existsSync15, readFileSync as readFileSync10, readdirSync as readdirSync6 } from "fs";
 import { randomUUID } from "crypto";
 import { spawnSync as spawnSync13 } from "child_process";
-import { join as join16 } from "path";
+import { basename as basename4, join as join16, resolve as resolve6 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
-  if (command !== "run" && command !== "status" && command !== "feed" && command !== "promote") {
-    throw new Error("Usage: specialists node <run|status|feed|promote> [options]");
+  if (command !== "run" && command !== "list" && command !== "status" && command !== "feed" && command !== "promote") {
+    throw new Error("Usage: specialists node <run|list|status|feed|promote> [options]");
   }
-  let nodeConfigFile;
+  let nodeConfigInput;
   let inlineJson;
   let nodeId;
   let findingId;
@@ -26101,8 +26669,8 @@ function parseNodeArgs(argv) {
       i += 1;
       continue;
     }
-    if (!token.startsWith("--") && command === "run" && !nodeConfigFile) {
-      nodeConfigFile = token;
+    if (!token.startsWith("--") && command === "run" && !nodeConfigInput) {
+      nodeConfigInput = token;
       continue;
     }
     if (!token.startsWith("--") && (command === "feed" || command === "promote") && !nodeId) {
@@ -26115,8 +26683,8 @@ function parseNodeArgs(argv) {
     }
     throw new Error(`Unknown argument: ${token}`);
   }
-  if (command === "run" && !nodeConfigFile && !inlineJson) {
-    throw new Error("Usage: specialists node run <node-config-file> [--inline JSON] [--bead <bead-id>] [--json]");
+  if (command === "run" && !nodeConfigInput && !inlineJson) {
+    throw new Error("Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--json]");
   }
   if (command === "promote") {
     if (!nodeId || !findingId || !toBead) {
@@ -26128,7 +26696,7 @@ function parseNodeArgs(argv) {
   }
   return {
     command,
-    nodeConfigFile,
+    nodeConfigInput,
     inlineJson,
     nodeId,
     findingId,
@@ -26136,6 +26704,39 @@ function parseNodeArgs(argv) {
     beadId,
     jsonMode
   };
+}
+function toNodeName(filePath) {
+  const fileName = basename4(filePath);
+  return fileName.endsWith(NODE_CONFIG_SUFFIX) ? fileName.slice(0, -NODE_CONFIG_SUFFIX.length) : fileName;
+}
+function discoverNodeConfigs(cwd) {
+  const discoveredByName = new Map;
+  for (const directory of NODE_DISCOVERY_DIRS) {
+    const absoluteDir = resolve6(cwd, directory.path);
+    if (!existsSync15(absoluteDir))
+      continue;
+    const files = readdirSync6(absoluteDir).filter((fileName) => fileName.endsWith(NODE_CONFIG_SUFFIX));
+    for (const fileName of files) {
+      const path = join16(absoluteDir, fileName);
+      const name = toNodeName(fileName);
+      if (discoveredByName.has(name))
+        continue;
+      discoveredByName.set(name, { name, path, source: directory.source });
+    }
+  }
+  return [...discoveredByName.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+function resolveNodeConfigPath(cwd, input2) {
+  const explicitPath = resolve6(cwd, input2);
+  if (existsSync15(explicitPath)) {
+    return explicitPath;
+  }
+  const normalizedName = input2.endsWith(NODE_CONFIG_SUFFIX) ? input2.slice(0, -NODE_CONFIG_SUFFIX.length) : input2;
+  const discovered = discoverNodeConfigs(cwd).find((entry) => entry.name === normalizedName);
+  if (discovered) {
+    return discovered.path;
+  }
+  throw new Error(`Node config not found: ${input2}. Checked explicit path and discovery dirs: ${NODE_DISCOVERY_DIRS.map((entry) => entry.path).join(", ")}`);
 }
 function parseNodeConfig(raw) {
   const parsed = JSON.parse(raw);
@@ -26180,15 +26781,34 @@ function formatTimestamp(ms) {
   const value = new Date(ms);
   return Number.isNaN(value.getTime()) ? "-" : value.toISOString();
 }
+function parseStatusJson(row) {
+  try {
+    return JSON.parse(row.status_json);
+  } catch {
+    return {};
+  }
+}
+function readStatusReason(row) {
+  const statusJson = parseStatusJson(row);
+  const reason = statusJson.reason;
+  return typeof reason === "string" && reason.trim() ? reason : "-";
+}
+function summarizeMembers(members) {
+  if (members.length === 0)
+    return "-";
+  return members.map((member) => `${member.member_id}:${member.status}${member.enabled === false ? " (disabled)" : ""}`).join(", ");
+}
 function printNodeRunsTable(rows) {
-  const headers = ["node_id", "node_name", "status", "started_at", "updated_at", "coordinator_job_id"];
+  const headers = ["node_id", "node_name", "status", "reason", "started_at", "updated_at", "coordinator_job_id", "members"];
   const body = rows.map((row) => [
     row.id,
     row.node_name,
     row.status,
+    readStatusReason(row),
     formatTimestamp(row.started_at_ms),
     formatTimestamp(row.updated_at_ms),
-    row.coordinator_job_id ?? "-"
+    row.coordinator_job_id ?? "-",
+    row.member_summary
   ]);
   const allRows = [headers, ...body];
   const widths = headers.map((_, colIndex) => Math.max(...allRows.map((r) => (r[colIndex] ?? "").length)));
@@ -26205,7 +26825,7 @@ async function handleNodeRun(args) {
     throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
   }
   try {
-    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync10(args.nodeConfigFile, "utf-8");
+    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync10(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput), "utf-8");
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
     const runner = new SpecialistRunner({
@@ -26288,14 +26908,16 @@ async function handleNodeRun(args) {
     sqliteClient.close();
   }
 }
-function printNodeRunDetail(row) {
+function printNodeRunDetail(row, members) {
   const detail = {
     node_id: row.id,
     node_name: row.node_name,
     status: row.status,
+    reason: readStatusReason(row),
     started_at: formatTimestamp(row.started_at_ms),
     updated_at: formatTimestamp(row.updated_at_ms),
-    coordinator_job_id: row.coordinator_job_id ?? "-"
+    coordinator_job_id: row.coordinator_job_id ?? "-",
+    member_summary: summarizeMembers(members)
   };
   for (const [key, value] of Object.entries(detail)) {
     console.log(`${key}: ${value}`);
@@ -26327,10 +26949,40 @@ async function handleNodeFeed(args) {
       return;
     }
     for (const event of events) {
-      console.log(`[${new Date(event.t).toISOString()}] ${event.type}`);
+      let payload = {};
+      try {
+        payload = JSON.parse(event.event_json);
+      } catch {
+        payload = {};
+      }
+      const metadata = [
+        typeof payload.member_id === "string" ? `member=${payload.member_id}` : null,
+        typeof payload.job_id === "string" ? `job=${payload.job_id}` : null,
+        typeof payload.status === "string" ? `status=${payload.status}` : null,
+        typeof payload.reason === "string" ? `reason=${payload.reason}` : null,
+        typeof payload.trigger === "string" ? `trigger=${payload.trigger}` : null,
+        typeof payload.context_health === "string" ? `context=${payload.context_health}` : null,
+        typeof payload.generation === "number" ? `generation=${payload.generation}` : null,
+        typeof payload.action_type === "string" ? `action=${payload.action_type}` : null
+      ].filter((value) => value !== null);
+      console.log(`[${new Date(event.t).toISOString()}] ${event.type}${metadata.length > 0 ? ` | ${metadata.join(" ")}` : ""}`);
     }
   } finally {
     sqliteClient.close();
+  }
+}
+async function handleNodeList(args) {
+  const nodes = discoverNodeConfigs(process.cwd());
+  if (args.jsonMode) {
+    console.log(JSON.stringify(nodes, null, 2));
+    return;
+  }
+  if (nodes.length === 0) {
+    console.log("No node configs found. Checked: .specialists/default/nodes and config/nodes");
+    return;
+  }
+  for (const node of nodes) {
+    console.log(`${node.name}	${node.source}	${node.path}`);
   }
 }
 async function handleNodeStatus(args) {
@@ -26350,29 +27002,50 @@ async function handleNodeStatus(args) {
         process.exitCode = 1;
         return;
       }
+      const members = sqliteClient.readNodeMembers(row.id);
       if (args.jsonMode) {
         console.log(JSON.stringify({
           node_id: row.id,
           node_name: row.node_name,
           status: row.status,
+          reason: readStatusReason(row),
           started_at: row.started_at_ms,
           updated_at: row.updated_at_ms,
-          coordinator_job_id: row.coordinator_job_id ?? null
+          coordinator_job_id: row.coordinator_job_id ?? null,
+          members: members.map((member) => ({
+            member_id: member.member_id,
+            job_id: member.job_id ?? null,
+            specialist: member.specialist,
+            status: member.status,
+            enabled: member.enabled ?? true,
+            generation: member.generation ?? 0
+          })),
+          member_summary: summarizeMembers(members)
         }, null, 2));
       } else {
-        printNodeRunDetail(row);
+        printNodeRunDetail(row, members);
       }
       return;
     }
     const rows = sqliteClient.listNodeRuns();
+    const rowsWithMembers = rows.map((row) => {
+      const members = sqliteClient.readNodeMembers(row.id);
+      return {
+        ...row,
+        members,
+        member_summary: summarizeMembers(members)
+      };
+    });
     if (args.jsonMode) {
-      console.log(JSON.stringify(rows.map((row) => ({
+      console.log(JSON.stringify(rowsWithMembers.map((row) => ({
         node_id: row.id,
         node_name: row.node_name,
         status: row.status,
+        reason: readStatusReason(row),
         started_at: row.started_at_ms,
         updated_at: row.updated_at_ms,
-        coordinator_job_id: row.coordinator_job_id ?? null
+        coordinator_job_id: row.coordinator_job_id ?? null,
+        member_summary: row.member_summary
       })), null, 2));
       return;
     }
@@ -26380,7 +27053,7 @@ async function handleNodeStatus(args) {
       console.log("No node runs found.");
       return;
     }
-    printNodeRunsTable(rows);
+    printNodeRunsTable(rowsWithMembers);
   } finally {
     sqliteClient.close();
   }
@@ -26480,6 +27153,10 @@ async function handleNodeCommand(argv) {
     await handleNodeRun(parsed);
     return;
   }
+  if (parsed.command === "list") {
+    await handleNodeList(parsed);
+    return;
+  }
   if (parsed.command === "feed") {
     await handleNodeFeed(parsed);
     return;
@@ -26490,12 +27167,17 @@ async function handleNodeCommand(argv) {
   }
   await handleNodeStatus(parsed);
 }
+var NODE_CONFIG_SUFFIX = ".node.json", NODE_DISCOVERY_DIRS;
 var init_node = __esm(() => {
   init_loader();
   init_runner();
   init_circuitBreaker();
   init_hooks();
   init_observability_sqlite();
+  NODE_DISCOVERY_DIRS = [
+    { path: ".specialists/default/nodes", source: "default" },
+    { path: "config/nodes", source: "project" }
+  ];
 });
 
 // src/cli/status.ts
@@ -26504,7 +27186,7 @@ __export(exports_status, {
   run: () => run12
 });
 import { spawnSync as spawnSync14 } from "child_process";
-import { existsSync as existsSync15, readFileSync as readFileSync11 } from "fs";
+import { existsSync as existsSync16, readFileSync as readFileSync11 } from "fs";
 import { join as join17 } from "path";
 function ok2(msg) {
   console.log(`  ${green8("\u2713")} ${msg}`);
@@ -26541,20 +27223,22 @@ function formatElapsed2(s) {
   const sec = s.elapsed_s % 60;
   return m > 0 ? `${m}m${sec.toString().padStart(2, "0")}s` : `${sec}s`;
 }
-function statusColor(status) {
-  switch (status) {
+function statusColor(job) {
+  if (job.is_dead)
+    return red2("dead \u2620");
+  switch (job.status) {
     case "running":
-      return cyan5(status);
+      return cyan5(job.status);
     case "done":
-      return green8(status);
+      return green8(job.status);
     case "error":
-      return red2(status);
+      return red2(job.status);
     case "starting":
-      return yellow10(status);
+      return yellow10(job.status);
     case "waiting":
-      return magenta3(status);
+      return magenta3(job.status);
     default:
-      return status;
+      return job.status;
   }
 }
 function parseStatusArgs(argv) {
@@ -26595,7 +27279,7 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
     console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
   const eventsFile = join17(jobsDir, jobId, "events.jsonl");
-  if (!existsSync15(eventsFile))
+  if (!existsSync16(eventsFile))
     return 0;
   const raw = readFileSync11(eventsFile, "utf-8").trim();
   if (!raw)
@@ -26629,7 +27313,7 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
     console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
   const eventsFile = join17(jobsDir, jobId, "events.jsonl");
-  if (!existsSync15(eventsFile))
+  if (!existsSync16(eventsFile))
     return null;
   const lines = readFileSync11(eventsFile, "utf-8").split(`
 `);
@@ -26675,7 +27359,7 @@ ${bold9("specialists status")}
 `);
   section(`Job ${job.id}`);
   console.log(`  specialist   ${job.specialist}`);
-  console.log(`  status       ${statusColor(job.status)}`);
+  console.log(`  status       ${statusColor(job)}`);
   console.log(`  model        ${job.model ?? "n/a"}`);
   console.log(`  backend      ${job.backend ?? "n/a"}`);
   console.log(`  elapsed      ${formatElapsed2(job)}`);
@@ -26723,6 +27407,7 @@ async function run12() {
   }
   const { jsonMode, jobId } = parsedArgs;
   const sqliteClient = createObservabilitySqliteClient();
+  let supervisor = null;
   try {
     const loader = new SpecialistLoader;
     const allSpecialists = await loader.list();
@@ -26733,12 +27418,11 @@ async function run12() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
     const bdInstalled = isInstalled2("bd");
     const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-    const beadsPresent = existsSync15(join17(process.cwd(), ".beads"));
+    const beadsPresent = existsSync16(join17(process.cwd(), ".beads"));
     const specialistsBin = cmd("which", ["specialists"]);
     const jobsDir = resolveJobsDir();
     let jobs = [];
-    let supervisor = null;
-    if (existsSync15(jobsDir)) {
+    if (existsSync16(jobsDir)) {
       supervisor = new Supervisor({
         runner: null,
         runOptions: null,
@@ -26808,7 +27492,8 @@ async function run12() {
           elapsed_s: j.elapsed_s,
           current_tool: j.current_tool ?? null,
           metrics: j.metrics ?? null,
-          error: j.error ?? null
+          error: j.error ?? null,
+          is_dead: j.is_dead
         }))
       };
       console.log(JSON.stringify(output2, null, 2));
@@ -26870,13 +27555,14 @@ ${bold9("specialists status")}
       for (const job of jobs) {
         const elapsed = formatElapsed2(job);
         const metricsInline = formatMetricsInline(job.metrics);
-        const detail = job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.status === "waiting" ? magenta3(`resume: specialists resume ${job.id} "..."`) : job.current_tool ? dim8(`tool: ${job.current_tool}`) : metricsInline ? dim8(metricsInline) : dim8(job.current_event ?? "");
-        console.log(`  ${dim8(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job.status).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
+        const detail = job.is_dead ? red2("[dead]") : job.status === "error" ? red2(job.error?.slice(0, 40) ?? "error") : job.status === "waiting" ? magenta3(`resume: specialists resume ${job.id} "..."`) : job.current_tool ? dim8(`tool: ${job.current_tool}`) : metricsInline ? dim8(metricsInline) : dim8(job.current_event ?? "");
+        console.log(`  ${dim8(job.id)}  ${job.specialist.padEnd(20)}  ${statusColor(job).padEnd(7)}  ${elapsed.padStart(6)}  ${detail}`);
       }
     }
     console.log();
   } finally {
     sqliteClient?.close();
+    await supervisor?.dispose();
   }
 }
 var init_status = __esm(() => {
@@ -26893,7 +27579,7 @@ __export(exports_ps, {
   run: () => run13
 });
 import { spawnSync as spawnSync15 } from "child_process";
-import { existsSync as existsSync16, readdirSync as readdirSync6, readFileSync as readFileSync12 } from "fs";
+import { existsSync as existsSync17, readdirSync as readdirSync7, readFileSync as readFileSync12 } from "fs";
 import { join as join18 } from "path";
 function parseArgs7(argv) {
   const positional = argv.filter((a) => !a.startsWith("-"));
@@ -26910,12 +27596,12 @@ function isVisibleStatus(status, all) {
   return ACTIVE_STATES.includes(status);
 }
 function readStatusesFromFiles(jobsDir) {
-  if (!existsSync16(jobsDir))
+  if (!existsSync17(jobsDir))
     return [];
   const statuses = [];
-  for (const entry of readdirSync6(jobsDir)) {
+  for (const entry of readdirSync7(jobsDir)) {
     const statusPath = join18(jobsDir, entry, "status.json");
-    if (!existsSync16(statusPath))
+    if (!existsSync17(statusPath))
       continue;
     try {
       statuses.push(JSON.parse(readFileSync12(statusPath, "utf-8")));
@@ -26992,6 +27678,8 @@ function getTreeNewestStart(jobs) {
 function groupByTree(jobs) {
   const groups = new Map;
   for (const job of jobs) {
+    if (job.node_id)
+      continue;
     const ownerId = job.worktree_owner_job_id ?? job.id;
     if (!groups.has(ownerId))
       groups.set(ownerId, []);
@@ -27018,6 +27706,65 @@ function groupByTree(jobs) {
   }
   return trees;
 }
+function resolveNodeRunMap(nodeIds) {
+  const nodeIdSet = new Set(nodeIds.filter((nodeId) => nodeId.length > 0));
+  if (nodeIdSet.size === 0)
+    return new Map;
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient)
+    return new Map;
+  try {
+    const byId = new Map;
+    const rows = sqliteClient.listNodeRuns();
+    for (const row of rows) {
+      if (!nodeIdSet.has(row.id))
+        continue;
+      byId.set(row.id, { node_name: row.node_name, status: row.status });
+    }
+    return byId;
+  } catch {
+    return new Map;
+  } finally {
+    sqliteClient.close();
+  }
+}
+function groupByNode(jobs) {
+  const nodeGroups = new Map;
+  for (const job of jobs) {
+    if (!job.node_id)
+      continue;
+    if (!nodeGroups.has(job.node_id))
+      nodeGroups.set(job.node_id, []);
+    nodeGroups.get(job.node_id).push(job);
+  }
+  const nodeInfoById = resolveNodeRunMap([...nodeGroups.keys()]);
+  const nodeTrees = [];
+  for (const [nodeId, nodeJobs] of nodeGroups.entries()) {
+    const representative = nodeJobs[0];
+    const nodeInfo = nodeInfoById.get(nodeId);
+    const members = nodeJobs.map((job) => toJobNode(job)).sort((a, b) => {
+      const urgencyDelta = STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status];
+      if (urgencyDelta !== 0)
+        return urgencyDelta;
+      return b.started_at_ms - a.started_at_ms;
+    });
+    nodeTrees.push({
+      node_id: nodeId,
+      node_name: nodeInfo?.node_name ?? representative?.specialist ?? "node",
+      status: nodeInfo?.status ?? representative?.status ?? "unknown",
+      member_count: members.length,
+      newest_activity_ms: getTreeNewestStart(nodeJobs),
+      members
+    });
+  }
+  nodeTrees.sort((a, b) => {
+    const timeDelta = b.newest_activity_ms - a.newest_activity_ms;
+    if (timeDelta !== 0)
+      return timeDelta;
+    return a.node_id.localeCompare(b.node_id);
+  });
+  return nodeTrees;
+}
 function statusLabel(status) {
   if (status === "running")
     return cyan5(status);
@@ -27029,25 +27776,10 @@ function statusLabel(status) {
     return red2(status);
   return yellow10(status);
 }
-function isPidAlive(pid) {
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
-    return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function isDeadActiveJob(job) {
-  if (job.status !== "running" && job.status !== "waiting")
-    return false;
-  return !isPidAlive(job.pid);
-}
 function withPidLiveness(statuses) {
   return statuses.map((job) => ({
     ...job,
-    is_dead: isDeadActiveJob(job)
+    is_dead: isJobDead(job)
   }));
 }
 function formatElapsed3(seconds) {
@@ -27175,10 +27907,21 @@ function renderTreeNodes(nodes, beadTitles, prefix, counter) {
     }
   }
 }
-function renderHuman(jobs, trees, all) {
+function renderHuman(jobs, nodes, trees, all) {
   const beadTitles = buildBeadTitleCache(jobs);
   const counter = { running: 0, waiting: 0 };
   console.log("");
+  for (const node of nodes) {
+    console.log(`${cyan5("\u2B22")} ${node.node_id} \xB7 ${node.node_name} \xB7 ${statusLabel(node.status)} \xB7 ${node.member_count} members`);
+    for (const member of node.members) {
+      if (member.status === "running")
+        counter.running += 1;
+      if (member.status === "waiting")
+        counter.waiting += 1;
+      console.log(renderJobLine(member, beadTitles, "    ", ""));
+    }
+    console.log("");
+  }
   for (const tree of trees) {
     const branch = tree.branch ?? "master";
     const beadId = tree.children[0]?.bead_id;
@@ -27187,11 +27930,11 @@ function renderHuman(jobs, trees, all) {
     renderTreeNodes(tree.children, beadTitles, "", counter);
     console.log("");
   }
-  if (trees.length === 0) {
+  if (nodes.length === 0 && trees.length === 0) {
     console.log(dim8("  no active jobs"));
     console.log("");
   }
-  console.log(dim8(`${jobs.length} jobs \xB7 ${trees.length} worktrees \xB7 ${counter.running} running \xB7 ${counter.waiting} waiting`));
+  console.log(dim8(`${jobs.length} jobs \xB7 ${nodes.length} nodes \xB7 ${trees.length} worktrees \xB7 ${counter.running} running \xB7 ${counter.waiting} waiting`));
 }
 function renderInspect(jobId) {
   const statuses = withPidLiveness(loadStatuses());
@@ -27247,12 +27990,13 @@ ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job
   console.log(`
   ${dim8(inspectActions.join(" | "))}`);
 }
-function renderJson(jobs, trees, _all) {
+function renderJson(jobs, nodes, trees, _all) {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: _all,
     counts: {
       jobs: jobs.length,
+      nodes: nodes.length,
       trees: trees.length
     },
     flat: jobs.map((job) => ({
@@ -27273,6 +28017,7 @@ function renderJson(jobs, trees, _all) {
       context_pct: job.context_pct,
       context_health: job.context_health
     })),
+    nodes,
     trees
   }, null, 2));
 }
@@ -27285,12 +28030,13 @@ function render(args) {
       return true;
     return !job.is_dead;
   });
+  const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
   if (args.json) {
-    renderJson(visibleStatuses, trees, args.all);
+    renderJson(visibleStatuses, nodes, trees, args.all);
     return;
   }
-  renderHuman(visibleStatuses, trees, args.all);
+  renderHuman(visibleStatuses, nodes, trees, args.all);
 }
 async function follow(args) {
   render(args);
@@ -27316,6 +28062,7 @@ async function run13() {
 var ACTIVE_STATES, BEAD_TITLE_CACHE, STATUS_PRIORITY;
 var init_ps = __esm(() => {
   init_format_helpers();
+  init_supervisor();
   init_job_root();
   init_observability_sqlite();
   ACTIVE_STATES = ["starting", "running", "waiting"];
@@ -27334,7 +28081,7 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run14
 });
-import { existsSync as existsSync17, readFileSync as readFileSync13 } from "fs";
+import { existsSync as existsSync18, readFileSync as readFileSync13 } from "fs";
 import { join as join19 } from "path";
 function parseArgs8(argv) {
   const jobId = argv[0];
@@ -27419,7 +28166,7 @@ async function run14() {
       } catch (error2) {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error2);
       }
-      if (!existsSync17(resultPath)) {
+      if (!existsSync18(resultPath)) {
         return null;
       }
       return readFileSync13(resultPath, "utf-8");
@@ -27557,6 +28304,7 @@ async function run14() {
     emitHumanResult(output2, status);
   } finally {
     sqliteClient?.close();
+    await supervisor.dispose();
   }
 }
 var dim10 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
@@ -27567,10 +28315,10 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync18, readdirSync as readdirSync7, readFileSync as readFileSync14 } from "fs";
-import { basename as basename4, join as join20 } from "path";
+import { existsSync as existsSync19, readdirSync as readdirSync8, readFileSync as readFileSync14 } from "fs";
+import { basename as basename5, join as join20 } from "path";
 function readJobEvents(jobDir) {
-  const jobId = basename4(jobDir);
+  const jobId = basename5(jobDir);
   try {
     const sqliteEvents = createObservabilitySqliteClient()?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
@@ -27579,7 +28327,7 @@ function readJobEvents(jobDir) {
     }
   } catch {}
   const eventsPath = join20(jobDir, "events.jsonl");
-  if (!existsSync18(eventsPath))
+  if (!existsSync19(eventsPath))
     return [];
   const content = readFileSync14(eventsPath, "utf-8");
   const lines = content.split(`
@@ -27597,10 +28345,10 @@ function readJobEventsById(jobsDir, jobId) {
   return readJobEvents(join20(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  if (!existsSync18(jobsDir))
+  if (!existsSync19(jobsDir))
     return [];
   const batches = [];
-  const entries = readdirSync7(jobsDir);
+  const entries = readdirSync8(jobsDir);
   for (const entry of entries) {
     const jobDir = join20(jobsDir, entry);
     try {
@@ -27614,7 +28362,7 @@ function readAllJobEvents(jobsDir) {
     const statusPath = join20(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync18(statusPath)) {
+    if (existsSync19(statusPath)) {
       try {
         const status = JSON.parse(readFileSync14(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
@@ -27713,10 +28461,10 @@ __export(exports_feed, {
 });
 import {
   closeSync as closeSync2,
-  existsSync as existsSync19,
+  existsSync as existsSync20,
   openSync as openSync2,
   readFileSync as readFileSync15,
-  readdirSync as readdirSync8,
+  readdirSync as readdirSync9,
   statSync as statSync2
 } from "fs";
 import { join as join21 } from "path";
@@ -27846,7 +28594,20 @@ function isStandaloneJobStatus(status) {
 }
 function isTerminalJobStatus(sqliteClient, jobsDir, jobId) {
   const status = readStatusJson(sqliteClient, jobsDir, jobId);
-  return status?.status === "done" || status?.status === "error";
+  return status?.status === "done" || status?.status === "error" || status?.status === "cancelled";
+}
+function isKeepAliveJobStatus(status) {
+  return status?.status === "waiting";
+}
+function isJobCompleteForFollow(sqliteClient, jobsDir, jobId, events) {
+  const status = readStatusJson(sqliteClient, jobsDir, jobId);
+  if (isKeepAliveJobStatus(status)) {
+    return false;
+  }
+  if (events.some(isRunCompleteEvent)) {
+    return true;
+  }
+  return status?.status === "done" || status?.status === "error" || status?.status === "cancelled";
 }
 function readJobMeta(sqliteClient, jobsDir, jobId) {
   const status = readStatusJson(sqliteClient, jobsDir, jobId);
@@ -27994,9 +28755,6 @@ function compareMergedEvents(a, b) {
     return jobDiff;
   return (a.event.seq ?? 0) - (b.event.seq ?? 0);
 }
-function isCompletionEvent(event) {
-  return isRunCompleteEvent(event);
-}
 function isEventAtOrAfterCursor(jobId, event, from) {
   if (!from)
     return true;
@@ -28017,10 +28775,10 @@ function filterStandaloneMergedEvents(sqliteClient, jobsDir, merged) {
   return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
 }
 function listMatchingJobIds(sqliteClient, jobsDir, options) {
-  if (!existsSync19(jobsDir))
+  if (!existsSync20(jobsDir))
     return [];
   const jobIds = [];
-  for (const entry of readdirSync8(jobsDir)) {
+  for (const entry of readdirSync9(jobsDir)) {
     const jobDir = join21(jobsDir, entry);
     try {
       if (!statSync2(jobDir).isDirectory())
@@ -28102,7 +28860,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
       const maxT = Math.max(...batch.events.map((event) => event.t));
       lastSeenT.set(batch.jobId, maxT);
     }
-    if (trackedJobs.has(batch.jobId) && batch.events.some(isCompletionEvent)) {
+    if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
       completedJobs.add(batch.jobId);
     }
   }
@@ -28128,7 +28886,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
   }
   const lastPrintedEventKey = new Map;
   const seenMetaKey = new Map;
-  await new Promise((resolve6) => {
+  await new Promise((resolve7) => {
     const interval = setInterval(() => {
       const batches = filteredBatches();
       for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
@@ -28158,7 +28916,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
             });
           }
         }
-        if (trackedJobs.has(batch.jobId) && (batch.events.some(isCompletionEvent) || isTerminalJobStatus(sqliteClient, jobsDir, batch.jobId))) {
+        if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
           completedJobs.add(batch.jobId);
         }
       }
@@ -28201,7 +28959,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
       }
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
-        resolve6();
+        resolve7();
       }
     }, 500);
   });
@@ -28211,7 +28969,7 @@ async function run15() {
   const sqliteClient = createObservabilitySqliteClient();
   try {
     const jobsDir = join21(process.cwd(), ".specialists", "jobs");
-    if (!existsSync19(jobsDir)) {
+    if (!existsSync20(jobsDir)) {
       console.log(dim8("No jobs directory found."));
       return;
     }
@@ -28245,7 +29003,7 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run16
 });
-import { existsSync as existsSync20, readFileSync as readFileSync16 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync16 } from "fs";
 import { join as join22 } from "path";
 function parseArgs10(argv) {
   let jobId;
@@ -28286,14 +29044,14 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
   const jobDir = join22(jobsDir, jobId);
   const statusPath = join22(jobDir, "status.json");
   let status = null;
-  if (existsSync20(statusPath)) {
+  if (existsSync21(statusPath)) {
     try {
       status = JSON.parse(readFileSync16(statusPath, "utf-8"));
     } catch {}
   }
   const resultPath = join22(jobDir, "result.txt");
   let fullOutput = "";
-  if (existsSync20(resultPath)) {
+  if (existsSync21(resultPath)) {
     try {
       fullOutput = readFileSync16(resultPath, "utf-8");
     } catch {}
@@ -28329,7 +29087,7 @@ async function run16() {
   const { jobId, cursor, outputCursor } = parseArgs10(process.argv.slice(3));
   const jobsDir = join22(process.cwd(), ".specialists", "jobs");
   const jobDir = join22(jobsDir, jobId);
-  if (!existsSync20(jobDir)) {
+  if (!existsSync21(jobDir)) {
     const result2 = {
       job_id: jobId,
       status: "error",
@@ -28370,33 +29128,37 @@ async function run17() {
   }
   const jobsDir = resolveJobsDir();
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const status = supervisor.readStatus(jobId);
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
-  if (status.status === "done" || status.status === "error") {
-    process.stderr.write(`Job ${jobId} is already ${status.status}.
-`);
-    process.exit(1);
-  }
-  if (!status.fifo_path) {
-    process.stderr.write(`${red4("Error:")} Job ${jobId} has no steer pipe.
-`);
-    process.stderr.write(`FIFO support may not be available on this system (mkfifo failed at job start).
-`);
-    process.exit(1);
-  }
   try {
-    const payload = JSON.stringify({ type: "steer", message }) + `
+    const status = supervisor.readStatus(jobId);
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
+    }
+    if (status.status === "done" || status.status === "error") {
+      process.stderr.write(`Job ${jobId} is already ${status.status}.
+`);
+      process.exit(1);
+    }
+    if (!status.fifo_path) {
+      process.stderr.write(`${red4("Error:")} Job ${jobId} has no steer pipe.
+`);
+      process.stderr.write(`FIFO support may not be available on this system (mkfifo failed at job start).
+`);
+      process.exit(1);
+    }
+    try {
+      const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-    writeFileSync6(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
+      writeFileSync6(status.fifo_path, payload, { flag: "a" });
+      process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
 `);
-  } catch (err) {
-    process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
+    } catch (err) {
+      process.stderr.write(`${red4("Error:")} Failed to write to steer pipe: ${err?.message}
 `);
-    process.exit(1);
+      process.exit(1);
+    }
+  } finally {
+    await supervisor.dispose();
   }
 }
 var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red4 = (s) => `\x1B[31m${s}\x1B[0m`;
@@ -28420,35 +29182,39 @@ async function run18() {
   }
   const jobsDir = resolveJobsDir();
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const status = supervisor.readStatus(jobId);
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
-  if (status.status !== "waiting") {
-    process.stderr.write(`${red5("Error:")} Job ${jobId} is not in waiting state (status: ${status.status}).
-`);
-    process.stderr.write(`resume is only valid for keep-alive jobs in waiting state. Use steer for running jobs.
-`);
-    process.exit(1);
-  }
-  if (!status.fifo_path) {
-    process.stderr.write(`${red5("Error:")} Job ${jobId} has no steer pipe.
-`);
-    process.exit(1);
-  }
   try {
-    const payload = JSON.stringify({ type: "resume", task }) + `
+    const status = supervisor.readStatus(jobId);
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
+    }
+    if (status.status !== "waiting") {
+      process.stderr.write(`${red5("Error:")} Job ${jobId} is not in waiting state (status: ${status.status}).
+`);
+      process.stderr.write(`resume is only valid for keep-alive jobs in waiting state. Use steer for running jobs.
+`);
+      process.exit(1);
+    }
+    if (!status.fifo_path) {
+      process.stderr.write(`${red5("Error:")} Job ${jobId} has no steer pipe.
+`);
+      process.exit(1);
+    }
+    try {
+      const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-    writeFileSync7(status.fifo_path, payload, { flag: "a" });
-    process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
+      writeFileSync7(status.fifo_path, payload, { flag: "a" });
+      process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
 `);
-    process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
+      process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
 `);
-  } catch (err) {
-    process.stderr.write(`${red5("Error:")} Failed to write to steer pipe: ${err?.message}
+    } catch (err) {
+      process.stderr.write(`${red5("Error:")} Failed to write to steer pipe: ${err?.message}
 `);
-    process.exit(1);
+      process.exit(1);
+    }
+  } finally {
+    await supervisor.dispose();
   }
 }
 var green11 = (s) => `\x1B[32m${s}\x1B[0m`, red5 = (s) => `\x1B[31m${s}\x1B[0m`;
@@ -28469,12 +29235,12 @@ async function run19() {
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync21, readdirSync as readdirSync9, readFileSync as readFileSync17 } from "fs";
+import { existsSync as existsSync22, readdirSync as readdirSync10, readFileSync as readFileSync17 } from "fs";
 import { join as join23 } from "path";
 import { spawnSync as spawnSync16 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join23(jobDir, "status.json");
-  if (!existsSync21(statusPath))
+  if (!existsSync22(statusPath))
     return null;
   try {
     return JSON.parse(readFileSync17(statusPath, "utf-8"));
@@ -28489,10 +29255,10 @@ function isActive(status) {
   return ACTIVE_STATUSES.has(status);
 }
 function collectWorktreeGcCandidates(jobsDir) {
-  if (!existsSync21(jobsDir))
+  if (!existsSync22(jobsDir))
     return [];
   const candidates = [];
-  for (const entry of readdirSync9(jobsDir, { withFileTypes: true })) {
+  for (const entry of readdirSync10(jobsDir, { withFileTypes: true })) {
     if (!entry.isDirectory())
       continue;
     const status = readJobStatus2(join23(jobsDir, entry.name));
@@ -28505,7 +29271,7 @@ function collectWorktreeGcCandidates(jobsDir) {
     const { worktree_path: worktreePath, branch } = status;
     if (!worktreePath)
       continue;
-    if (!existsSync21(worktreePath))
+    if (!existsSync22(worktreePath))
       continue;
     candidates.push({
       jobId: status.id,
@@ -28551,8 +29317,8 @@ __export(exports_clean, {
   run: () => run20
 });
 import {
-  existsSync as existsSync22,
-  readdirSync as readdirSync10,
+  existsSync as existsSync23,
+  readdirSync as readdirSync11,
   readFileSync as readFileSync18,
   rmSync as rmSync2,
   statSync as statSync3
@@ -28611,7 +29377,7 @@ function parseOptions(argv) {
 }
 function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
-  const entries = readdirSync10(directoryPath, { withFileTypes: true });
+  const entries = readdirSync11(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
     const entryPath = join24(directoryPath, entry.name);
     const stats = statSync3(entryPath);
@@ -28624,7 +29390,7 @@ function readDirectorySizeBytes(directoryPath) {
   return totalBytes;
 }
 function containsProtectedSqliteArtifact(directoryPath) {
-  const entries = readdirSync10(directoryPath, { withFileTypes: true });
+  const entries = readdirSync11(directoryPath, { withFileTypes: true });
   for (const entry of entries) {
     const entryPath = join24(directoryPath, entry.name);
     if (entry.isDirectory()) {
@@ -28645,7 +29411,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   if (containsProtectedSqliteArtifact(directoryPath))
     return null;
   const statusFilePath = join24(directoryPath, "status.json");
-  if (!existsSync22(statusFilePath))
+  if (!existsSync23(statusFilePath))
     return null;
   let statusData;
   try {
@@ -28665,7 +29431,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   };
 }
 function collectCompletedJobDirectories(jobsDirectoryPath) {
-  const entries = readdirSync10(jobsDirectoryPath, { withFileTypes: true });
+  const entries = readdirSync11(jobsDirectoryPath, { withFileTypes: true });
   const completedJobs = [];
   for (const entry of entries) {
     const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
@@ -28746,7 +29512,7 @@ async function run20() {
     printUsageAndExit(message);
   }
   const jobsDirectoryPath = resolveJobsDir();
-  if (!existsSync22(jobsDirectoryPath)) {
+  if (!existsSync23(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
   }
@@ -28791,45 +29557,49 @@ async function run21() {
   }
   const jobsDir = join25(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
-  const status = supervisor.readStatus(jobId);
-  if (!status) {
-    console.error(`No job found: ${jobId}`);
-    process.exit(1);
-  }
-  if (status.status === "done" || status.status === "error") {
-    process.stderr.write(`${dim11(`Job ${jobId} is already ${status.status}.`)}
-`);
-    return;
-  }
-  if (!status.pid) {
-    process.stderr.write(`${red6(`No PID recorded for job ${jobId}.`)}
-`);
-    process.exit(1);
-  }
-  const tmuxSession = status.tmux_session;
   try {
-    process.kill(status.pid, "SIGTERM");
-    process.stdout.write(`${green12("\u2713")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
-`);
-    if (tmuxSession) {
-      killTmuxSession(tmuxSession);
-      process.stdout.write(`${dim11(`  tmux session ${tmuxSession} killed`)}
-`);
+    const status = supervisor.readStatus(jobId);
+    if (!status) {
+      console.error(`No job found: ${jobId}`);
+      process.exit(1);
     }
-  } catch (err) {
-    if (err.code === "ESRCH") {
-      process.stderr.write(`${red6(`Process ${status.pid} not found.`)} Job may have already completed.
+    if (status.status === "done" || status.status === "error") {
+      process.stderr.write(`${dim11(`Job ${jobId} is already ${status.status}.`)}
+`);
+      return;
+    }
+    if (!status.pid) {
+      process.stderr.write(`${red6(`No PID recorded for job ${jobId}.`)}
+`);
+      process.exit(1);
+    }
+    const tmuxSession = status.tmux_session;
+    try {
+      process.kill(status.pid, "SIGTERM");
+      process.stdout.write(`${green12("\u2713")} Sent SIGTERM to PID ${status.pid} (job ${jobId})
 `);
       if (tmuxSession) {
         killTmuxSession(tmuxSession);
         process.stdout.write(`${dim11(`  tmux session ${tmuxSession} killed`)}
 `);
       }
-    } else {
-      process.stderr.write(`${red6("Error:")} ${err.message}
+    } catch (err) {
+      if (err.code === "ESRCH") {
+        process.stderr.write(`${red6(`Process ${status.pid} not found.`)} Job may have already completed.
 `);
-      process.exit(1);
+        if (tmuxSession) {
+          killTmuxSession(tmuxSession);
+          process.stdout.write(`${dim11(`  tmux session ${tmuxSession} killed`)}
+`);
+        }
+      } else {
+        process.stderr.write(`${red6("Error:")} ${err.message}
+`);
+        process.exit(1);
+      }
     }
+  } finally {
+    await supervisor.dispose();
   }
 }
 var green12 = (s) => `\x1B[32m${s}\x1B[0m`, red6 = (s) => `\x1B[31m${s}\x1B[0m`, dim11 = (s) => `\x1B[2m${s}\x1B[0m`;
@@ -29128,8 +29898,8 @@ __export(exports_doctor, {
 });
 import { createHash as createHash3 } from "crypto";
 import { spawnSync as spawnSync18 } from "child_process";
-import { existsSync as existsSync23, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync11, readFileSync as readFileSync20, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname5, join as join27, relative, resolve as resolve6 } from "path";
+import { existsSync as existsSync24, lstatSync as lstatSync2, mkdirSync as mkdirSync5, readdirSync as readdirSync12, readFileSync as readFileSync20, readlinkSync as readlinkSync2, writeFileSync as writeFileSync8 } from "fs";
+import { dirname as dirname5, join as join27, relative, resolve as resolve7 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
@@ -29158,7 +29928,7 @@ function isInstalled3(bin) {
   return spawnSync18("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
-  if (!existsSync23(path))
+  if (!existsSync24(path))
     return null;
   try {
     return JSON.parse(readFileSync20(path, "utf8"));
@@ -29204,7 +29974,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim13(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync23(join27(CWD, ".beads")))
+  if (existsSync24(join27(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn2(".beads/ not found in project");
@@ -29225,7 +29995,7 @@ function checkHooks() {
   let allPresent = true;
   for (const name of HOOK_NAMES) {
     const dest = join27(HOOKS_DIR, name);
-    if (!existsSync23(dest)) {
+    if (!existsSync24(dest)) {
       fail4(`${name}  ${red7("missing")}`);
       fix("specialists install");
       allPresent = false;
@@ -29274,7 +30044,7 @@ function hashFile(path) {
 function collectFileHashes(rootDir) {
   const hashes = new Map;
   const visit2 = (dir) => {
-    for (const entry of readdirSync11(dir, { withFileTypes: true })) {
+    for (const entry of readdirSync12(dir, { withFileTypes: true })) {
       const fullPath = join27(dir, entry.name);
       if (entry.isDirectory()) {
         visit2(fullPath);
@@ -29286,12 +30056,12 @@ function collectFileHashes(rootDir) {
       hashes.set(relPath, hashFile(fullPath));
     }
   };
-  if (existsSync23(rootDir))
+  if (existsSync24(rootDir))
     visit2(rootDir);
   return hashes;
 }
 function isSymlinkTo(linkPath, expectedTargetPath) {
-  if (!existsSync23(linkPath))
+  if (!existsSync24(linkPath))
     return { ok: false, reason: "missing" };
   let stats;
   try {
@@ -29303,8 +30073,8 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
     return { ok: false, reason: "not-symlink" };
   try {
     const rawTarget = readlinkSync2(linkPath);
-    const resolvedTarget = resolve6(dirname5(linkPath), rawTarget);
-    const resolvedExpected = resolve6(expectedTargetPath);
+    const resolvedTarget = resolve7(dirname5(linkPath), rawTarget);
+    const resolvedExpected = resolve7(expectedTargetPath);
     if (resolvedTarget !== resolvedExpected) {
       return { ok: false, reason: "wrong-target", target: rawTarget };
     }
@@ -29315,12 +30085,12 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
 }
 function checkSkillDrift() {
   section3("Skill drift  (.xtrm skill sync)");
-  if (!existsSync23(CONFIG_SKILLS_DIR)) {
+  if (!existsSync24(CONFIG_SKILLS_DIR)) {
     fail4("config/skills/ missing");
     fix("restore config/skills/ from git");
     return false;
   }
-  if (!existsSync23(XTRM_DEFAULT_SKILLS_DIR)) {
+  if (!existsSync24(XTRM_DEFAULT_SKILLS_DIR)) {
     fail4(".xtrm/skills/default/ missing");
     fix("specialists init --sync-skills");
     return false;
@@ -29363,13 +30133,13 @@ function checkSkillDrift() {
   let linksOk = true;
   for (const scope of ["claude", "pi"]) {
     const activeRoot = join27(XTRM_ACTIVE_SKILLS_DIR, scope);
-    if (!existsSync23(activeRoot)) {
+    if (!existsSync24(activeRoot)) {
       fail4(`${relative(CWD, activeRoot)}/ missing`);
       fix("specialists init --sync-skills");
       linksOk = false;
       continue;
     }
-    const defaultSkills = readdirSync11(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const defaultSkills = readdirSync12(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const skillName of defaultSkills) {
       const activeLinkPath = join27(activeRoot, skillName);
       const expectedTarget = join27(XTRM_DEFAULT_SKILLS_DIR, skillName);
@@ -29422,14 +30192,14 @@ function checkRuntimeDirs() {
   const jobsDir = join27(rootDir, "jobs");
   const readyDir = join27(rootDir, "ready");
   let allOk = true;
-  if (!existsSync23(rootDir)) {
+  if (!existsSync24(rootDir)) {
     warn2(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync23(subDir)) {
+      if (!existsSync24(subDir)) {
         warn2(`.specialists/${label}/ missing \u2014 auto-creating`);
         mkdirSync5(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
@@ -29472,7 +30242,7 @@ function setStatusError(statusPath) {
 function cleanupProcesses(jobsDir, dryRun) {
   let entries;
   try {
-    entries = readdirSync11(jobsDir);
+    entries = readdirSync12(jobsDir);
   } catch {
     entries = [];
   }
@@ -29485,7 +30255,7 @@ function cleanupProcesses(jobsDir, dryRun) {
   };
   for (const jobId of entries) {
     const statusPath = join27(jobsDir, jobId, "status.json");
-    if (!existsSync23(statusPath))
+    if (!existsSync24(statusPath))
       continue;
     try {
       const status = JSON.parse(readFileSync20(statusPath, "utf8"));
@@ -29522,7 +30292,7 @@ function renderProcessSummary(result, dryRun) {
 function checkZombieJobs() {
   section3("Background jobs");
   const jobsDir = join27(CWD, ".specialists", "jobs");
-  if (!existsSync23(jobsDir)) {
+  if (!existsSync24(jobsDir)) {
     hint("No .specialists/jobs/ \u2014 skipping");
     return true;
   }
