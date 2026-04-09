@@ -37,10 +37,11 @@ export class StallTimeoutError extends Error {
 //   done                    — message-level completion
 //   error                   — message-level error
 //
+import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { isAbsolute, resolve, sep, join } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -92,6 +93,8 @@ export type SessionMetricEvent =
 export interface PiSessionOptions {
   model: string;
   systemPrompt?: string;
+  /** Absolute path boundary for write-side tools; undefined disables enforcement */
+  worktreeBoundary?: string;
   /** Permission level from specialist YAML — controls which pi tools are enabled */
   permissionLevel?: string;
   /** Skill files loaded via pi --skill (injected into system prompt natively) */
@@ -323,6 +326,101 @@ function isTestCommand(command: string): boolean {
   return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
 }
 
+const WRITE_BOUNDARY_TOOL_NAMES = new Set(['edit', 'write', 'multiEdit', 'notebookEdit']);
+const WORKTREE_BOUNDARY_ENV_KEY = 'SPECIALISTS_WORKTREE_BOUNDARY';
+
+function isPathWithinBoundary(path: string, boundary: string): boolean {
+  const resolvedPath = resolve(path);
+  const resolvedBoundary = resolve(boundary);
+  if (resolvedPath === resolvedBoundary) return true;
+  const boundaryPrefix = resolvedBoundary.endsWith(sep) ? resolvedBoundary : `${resolvedBoundary}${sep}`;
+  return resolvedPath.startsWith(boundaryPrefix);
+}
+
+export function validateWriteToolPathAgainstBoundary(
+  toolName: string,
+  toolArgs: Record<string, unknown> | undefined,
+  worktreeBoundary: string | undefined,
+): string | undefined {
+  if (!worktreeBoundary) return undefined;
+  if (!WRITE_BOUNDARY_TOOL_NAMES.has(toolName)) return undefined;
+  if (!toolArgs || typeof toolArgs !== 'object') return undefined;
+
+  const candidatePath = typeof toolArgs.path === 'string'
+    ? toolArgs.path
+    : (typeof toolArgs.file_path === 'string' ? toolArgs.file_path : undefined);
+  if (!candidatePath || !isAbsolute(candidatePath)) return undefined;
+
+  if (isPathWithinBoundary(candidatePath, worktreeBoundary)) return undefined;
+
+  const resolvedBoundary = resolve(worktreeBoundary);
+  return `Path '${candidatePath}' is outside worktree boundary ('${resolvedBoundary}'). Use a relative path or a path within the worktree.`;
+}
+
+function getWorktreeBoundaryExtensionPath(worktreeBoundary: string): string | null {
+  const boundaryHash = createHash('sha256').update(resolve(worktreeBoundary)).digest('hex').slice(0, 16);
+  const extensionsDir = join(tmpdir(), 'specialists-pi-extensions');
+  try {
+    mkdirSync(extensionsDir, { recursive: true });
+  } catch (err) {
+    process.stderr.write(
+      `[worktree-boundary] WARN: could not create extensions directory at ${extensionsDir}: ${(err as Error).message}. ` +
+      `Boundary enforcement will NOT apply for this session.\n`,
+    );
+    return null;
+  }
+  const extensionPath = join(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync(extensionPath)) return extensionPath;
+
+  const extensionSource = `
+import { isAbsolute, resolve } from 'node:path';
+
+const WRITE_TOOLS = new Set(['edit', 'write', 'multiEdit', 'notebookEdit']);
+const WORKTREE_BOUNDARY_ENV_KEY = '${WORKTREE_BOUNDARY_ENV_KEY}';
+
+function isPathWithinBoundary(path, boundary) {
+  const resolvedPath = resolve(path);
+  const resolvedBoundary = resolve(boundary);
+  if (resolvedPath === resolvedBoundary) return true;
+  return resolvedPath.startsWith(resolvedBoundary.endsWith('/') ? resolvedBoundary : resolvedBoundary + '/');
+}
+
+export default function(pi) {
+  const worktreeBoundary = process.env[WORKTREE_BOUNDARY_ENV_KEY];
+  if (!worktreeBoundary) return;
+
+  pi.on('tool_call', (event) => {
+    if (!WRITE_TOOLS.has(event.toolName)) return undefined;
+
+    const input = event.input && typeof event.input === 'object' ? event.input : {};
+    const rawPath = typeof input.path === 'string'
+      ? input.path
+      : (typeof input.file_path === 'string' ? input.file_path : undefined);
+
+    if (!rawPath || !isAbsolute(rawPath)) return undefined;
+
+    if (isPathWithinBoundary(rawPath, worktreeBoundary)) return undefined;
+
+    return {
+      block: true,
+      reason: \`Path '\${rawPath}' is outside worktree boundary ('\${resolve(worktreeBoundary)}'). Use a relative path or a path within the worktree.\`,
+    };
+  });
+}
+`.trimStart();
+
+  try {
+    writeFileSync(extensionPath, extensionSource, 'utf-8');
+  } catch (err) {
+    process.stderr.write(
+      `[worktree-boundary] WARN: could not write extension file at ${extensionPath}: ${(err as Error).message}. ` +
+      `Boundary enforcement will NOT apply for this session.\n`,
+    );
+    return null;
+  }
+  return extensionPath;
+}
+
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -419,11 +517,22 @@ export class PiAgentSession {
       args.push('--append-system-prompt', this.options.systemPrompt);
     }
 
+    const worktreeBoundary = this.options.worktreeBoundary ? resolve(this.options.worktreeBoundary) : undefined;
+    if (worktreeBoundary) {
+      const boundaryExtPath = getWorktreeBoundaryExtensionPath(worktreeBoundary);
+      if (boundaryExtPath) {
+        args.push('-e', boundaryExtPath);
+      }
+    }
+
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: sessionCwd,
+      env: worktreeBoundary
+        ? { ...process.env, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary }
+        : process.env,
     });
 
     const donePromise = new Promise<void>((resolve, reject) => {
