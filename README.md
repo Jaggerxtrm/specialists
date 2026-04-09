@@ -126,10 +126,13 @@ Use `specialists init` instead.
 
 ```bash
 bun run build
-bun test
+bun test           # bun vitest run (default)
+bun run test:node  # node vitest run (subprocess-safe alternative)
 specialists help
 specialists quickstart
 ```
+
+`test:node` uses plain `node vitest run` as an alternative to `bun --bun vitest`. Useful for executor/codex subprocess chains that may trigger stall detection during vitest's tinypool worker initialization silence.
 
 ## License
 

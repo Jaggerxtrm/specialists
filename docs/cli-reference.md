@@ -4,7 +4,7 @@ scope: cli
 category: reference
 version: 2.0.0
 updated: 2026-04-08
-synced_at: 86c4baba
+synced_at: 36cfce04
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -75,6 +75,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--worktree`: Provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
 - `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`.
 - `--no-worktree`: Bypass the worktree guard for `MEDIUM`/`HIGH`-permission specialists (see [Worktree guard](#worktree-guard) below). The caller accepts last-writer-wins risk.
+- `--force-job`: Bypass the `--job` concurrency guard when the target job is still `starting`/`running` or has an unknown status. MEDIUM/HIGH specialists normally block on active jobs to prevent concurrent worktree corruption; this flag forces entry at the caller's risk.
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
 - `--model <provider/model>`: Per-run model override.
 - `--no-beads`: Disable tracking bead creation (does **not** disable bead reading when `--bead` is used).
@@ -282,6 +283,7 @@ In the job list, waiting status includes an inline action:
 Status output also includes context telemetry fields:
 - `context_pct`: current context usage percentage.
 - `context_health`: health classification derived from context usage.
+- `is_dead`: computed liveness flag (PID gone OR tmux session gone). Never persisted — computed at read time to avoid stale state.
 
 `status` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
 
@@ -424,6 +426,7 @@ specialists list [--category <name>] [--scope default|user] [--live] [--json]
 - `--category <name>`: Filter by category tag.
 - `--scope <default|user>`: Filter by specialist scope.
 - `--live`: Show running/waiting tmux sessions and attach via interactive selector.
+- `--show-dead`: In `--live` mode, include jobs whose PID or tmux session is gone (filtered out by default). Useful for debugging dead sessions.
 - `--json`: JSON output.
 
 ### Examples

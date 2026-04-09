@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.3.0
-updated: 2026-04-08
-synced_at: 86c4baba
+version: 2.4.0
+updated: 2026-04-09
+synced_at: 36cfce04
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, and worktree/bead ownership semantics.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -330,6 +330,25 @@ Stall/staleness is enforced at two layers:
 - `_markActivity()` resets a timer on each parsed event
 - if no activity for `stallTimeoutMs`, session throws `StallTimeoutError` and kills Pi
 
+**Test-aware stall detection:** PiAgentSession extends the stall timeout window when bash tool commands match test runner patterns:
+
+```typescript
+const TEST_COMMAND_PATTERNS = [
+  /(?:^|\s)(?:bun\s+--bun\s+)?vitest(?:\s|$)/i,
+  /(?:^|\s)bun\s+test(?:\s|$)/i,
+  /(?:^|\s)npm\s+test(?:\s|$)/i,
+  // ... npm/pnpm/yarn test, jest, pytest
+];
+const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;  // 5 minutes
+```
+
+When a test command is detected:
+- Effective timeout = `max(base_timeout, test_timeout)`
+- Stall watchdog still fires for actual hangs
+- Window restored after `tool_execution_end`
+
+This prevents false-positive kills during vitest's tinypool worker initialization, which can exceed the standard 30-120s stall window.
+
 #### Supervisor-level staleness (`supervisor.ts`)
 
 Defaults (`STALL_DETECTION_DEFAULTS`):
@@ -350,6 +369,64 @@ On `run()`, Supervisor scans job dirs for:
 - `running`/`starting` jobs with dead PID → mark as `error`
 - `running` jobs with prolonged silence → mark as `error`
 - `waiting` jobs with prolonged silence → emit `stale_warning` event (preserve state)
+
+### Liveness checks (`isJobDead`)
+
+`Supervisor.isJobDead()` cross-checks PID + tmux session to determine if a job is dead:
+
+```typescript
+function isJobDead(status: SupervisorStatus): boolean {
+  if (!status.pid) return true;  // no pid recorded = dead
+  if (!isProcessAlive(status.pid)) return true;
+  if (status.tmux_session && !isTmuxSessionAlive(status.tmux_session)) return true;
+  return false;
+}
+```
+
+`is_dead` is **computed at read time**, never persisted. This prevents stale state where:
+- A dead job is marked alive because its `status.json` wasn't updated
+- An alive job is marked dead because `is_dead` was persisted before the process recovered
+
+**`isTmuxSessionAlive()`** (in `src/cli/tmux-utils.ts`) uses a 2000ms timeout and returns false on timeout or non-zero exit. This prevents hangs on tmux socket issues.
+
+### Async dispose + pending-ops tracker
+
+Supervisor's `dispose()` is now async to prevent "Cannot use a closed database" errors:
+
+```typescript
+async dispose(): Promise<void> {
+  this._disposed = true;
+  await this._pendingOpsTracker.flush();  // wait for in-flight SQLite ops
+  this.sqliteClient?.close();
+}
+```
+
+Root cause: async operations (stall detection interval, FIFO callbacks, Promise microtasks) fired **after** `dispose()` closed the SQLite connection. The retry loop in observability-sqlite.ts never helped because "Cannot use a closed database" wasn't retryable.
+
+Solution: a pending-operations tracker that:
+1. Wraps every SQLite operation in `_pendingOpsTracker.run(op)`
+2. `dispose()` awaits the tracker's flush before closing
+3. CLI entry points (`run`, `status`, `resume`, `steer`, `stop`) await `supervisor.dispose()` before exit
+
+### Job reuse concurrency guard
+
+When `--job <id>` is passed, `resolveWorkingDirectory()` enforces a concurrency guard for MEDIUM/HIGH specialists:
+
+```typescript
+const BLOCKED_JOB_REUSE_STATUSES = new Set(['starting', 'running']);
+
+if (editCapable && !args.forceJob && BLOCKED_JOB_REUSE_STATUSES.has(targetJobStatus)) {
+  // Block: cannot enter an active worktree
+  process.exit(1);
+}
+```
+
+- `starting`/`running`: blocked for MEDIUM/HIGH (can corrupt files)
+- `waiting`/`done`/`error`/`cancelled`: allowed for all
+- Unknown status: blocked conservatively (unless `--force-job`)
+- `--force-job`: bypass guard at caller's risk
+
+READ_ONLY and LOW specialists bypass the guard entirely — they cannot corrupt files.
 
 ### Bead ownership and lifecycle semantics
 

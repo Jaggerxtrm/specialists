@@ -1,7 +1,7 @@
 ---
 title: pi/rpc Boundary
 description: Canonical ownership boundary between pi/rpc protocol surfaces and Specialists runtime adaptation.
-synced_at: 0972c0b0
+synced_at: 36cfce04
 ---
 
 # pi/rpc Boundary
@@ -37,7 +37,7 @@ Own this in Specialists runtime code:
 
 - `src/pi/session.ts` as adapter from canonical pi/rpc events into Specialists callbacks and lifecycle hooks
 - Mapping raw pi event stream into Specialists event labels (`message_start_assistant`, `turn_start`, `tool_execution_start`, etc.)
-- Runtime liveness/operational policy: stall watchdog, process lifecycle, kill/abort behavior
+- Runtime liveness/operational policy: stall watchdog, process lifecycle, kill/abort behavior, **test-aware stall timeout extension**
 - Supervisor durability model (`status.json`, `events.jsonl`, `result.txt`) and job lifecycle decisions
 - Specialists timeline abstraction in `src/specialist/timeline-events.ts`
 
@@ -63,7 +63,20 @@ When deciding where a change belongs:
 - **Specialists change** if it changes orchestration, persistence, timeline modeling, or job lifecycle policy while consuming the same pi/rpc contract.
 - **transport-only change** if it only affects framing, buffering, or subprocess I/O mechanics without semantic changes.
 
-## 5) Invariants
+## 5) Specialists-owned stall detection
+
+The stall timeout mechanism is entirely Specialists-owned:
+
+- **Base timeout**: configured via `execution.stall_timeout_ms` in specialist YAML, passed to PiAgentSession
+- **Test-aware extension**: PiAgentSession detects test command patterns (vitest, bun test, jest, pytest) and extends the stall window to 300s during tool execution
+- **Session kills**: StallTimeoutError thrown by PiAgentSession when no activity is detected within the effective timeout
+- **Supervisor staleness**: Separate mechanism (running_silence_warn_ms, waiting_stale_ms) that emits timeline events but does not kill the session
+
+This distinction matters: pi/rpc provides the event stream, but Specialists determines when "no activity" becomes a timeout. The test-aware extension is a Specialists policy decision, not a protocol feature.
+
+---
+
+## 6) Invariants
 
 - `pi/rpc/*.ts` remains the canonical protocol surface.
 - `src/pi/session.ts` remains an adapter, not a competing protocol definition.

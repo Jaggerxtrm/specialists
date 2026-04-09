@@ -9,7 +9,8 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.2
+version: 4.3
+synced_at: 36cfce04
 ---
 
 # Specialists Usage
@@ -222,9 +223,25 @@ specialists run reviewer --job 49adda --keep-alive --background
 specialists run executor --bead hgpu.3-fix --job 49adda --context-depth 2 --background
 ```
 
-**Concurrency guard:**
-- READ_ONLY specialists (explorer, reviewer): allowed while owning job is still running
-- MEDIUM/HIGH permission specialists (executor): **blocked** until owning job reaches terminal state
+**Concurrency guard (MEDIUM/HIGH specialists):**
+
+Blocked from entering while target job is `starting` or `running` — prevents concurrent file corruption.
+
+| Target status | MEDIUM/HIGH | READ_ONLY/LOW |
+|---------------|:-----------:|:-------------:|
+| `starting` | ✗ Blocked | ✓ Allowed |
+| `running` | ✗ Blocked | ✓ Allowed |
+| `waiting` | ✓ Allowed | ✓ Allowed |
+| `done`/`error`/`cancelled` | ✓ Allowed | ✓ Allowed |
+| Unknown | ✗ Blocked (conservative) | ✓ Allowed |
+
+**Bypass with `--force-job`:**
+
+```bash
+specialists run executor --job 49adda --force-job --bead fix-123
+```
+
+Use when the caller explicitly accepts concurrent write risk (e.g., target job known to be stalled but not yet terminal, emergency fix entry).
 
 ### When to use each flag
 
@@ -233,6 +250,7 @@ specialists run executor --bead hgpu.3-fix --job 49adda --context-depth 2 --back
 | First executor run for a task | `--worktree --bead <impl-bead>` |
 | Reviewer on executor's output | `--job <exec-job-id>` (no `--worktree`) |
 | Fix executor after reviewer PARTIAL | `--bead <fix-bead> --job <exec-job-id>` |
+| Force entry to blocked worktree | `--bead <fix-bead> --job <exec-job-id> --force-job` |
 | Explorer (READ_ONLY) | Neither — explorers don't need worktrees |
 | Overthinker, planner, debugger | Neither — read-only and interactive specialists |
 
@@ -538,7 +556,7 @@ specialists stop <job-id>   # when satisfied
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 ```
 
-### Monitoring with `sp ps`
+### Monitoring with `sp ps` and `sp list --live`
 
 Use `specialists ps` (alias `sp ps`) for job monitoring instead of manual JSON polling:
 
@@ -557,6 +575,23 @@ specialists ps <job-id>
 # - 65-80% = WARN (▲ indicator shown)
 # - >80% = CRITICAL (▲ indicator shown)
 ```
+
+**Live tmux session selector (`sp list --live`):**
+
+```bash
+# Interactive selector for running/waiting tmux sessions
+specialists list --live
+# Shows: tmux session name, specialist, elapsed, status
+# Arrow keys to select, Enter to attach
+
+# Include dead sessions (PID or tmux gone)
+specialists list --live --show-dead
+# Dead sessions shown with 'dead' status instead of filtered out
+```
+
+Dead job detection (`is_dead`) is computed at read time — never persisted to avoid stale state. A job is dead when:
+- PID no longer exists (`kill -0 <pid>` fails)
+- tmux session gone (`tmux has-session -t <name>` fails or times out)
 
 ---
 

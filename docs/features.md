@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.5.0
-updated: 2026-04-08
-synced_at: 86c4baba
+version: 1.6.0
+updated: 2026-04-09
+synced_at: 36cfce04
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -270,7 +270,56 @@ sp feed <job-id> --follow
 
 ---
 
-## 5) Stuck detection configuration
+## 5) --job concurrency guard
+
+When `--job <id>` reuses an existing job's worktree, MEDIUM/HIGH permission specialists are blocked from entering while the target job is still `starting` or `running`. This prevents concurrent file corruption.
+
+### Blocked statuses
+
+| Status | Blocked for MEDIUM/HIGH | Allowed for READ_ONLY/LOW |
+|--------|:-----------------------:|:------------------------:|
+| `starting` | ✗ Blocked | ✓ Allowed |
+| `running` | ✗ Blocked | ✓ Allowed |
+| `waiting` | ✓ Allowed | ✓ Allowed |
+| `done` | ✓ Allowed | ✓ Allowed |
+| `error` | ✓ Allowed | ✓ Allowed |
+| `cancelled` | ✓ Allowed | ✓ Allowed |
+| Unknown | ✗ Blocked (conservative) | ✓ Allowed |
+
+### Bypass with --force-job
+
+```bash
+sp run executor --job a1b2c3 --force-job --bead fix-123
+```
+
+Use `--force-job` when:
+- The target job's status is stale/unknown but the worktree is known to be safe
+- Emergency fix entry when the original job is stalled but not terminal
+- Caller explicitly accepts concurrent write risk
+
+READ_ONLY and LOW specialists bypass the guard entirely — they cannot corrupt files.
+
+---
+
+## 6) Liveness checks for `sp list --live`
+
+The `--live` mode in `sp list` filters out dead jobs by default. A job is **dead** when:
+- Its PID no longer exists (`ps -p <pid>` fails)
+- Its tmux session is gone (`tmux has-session -t <name>` fails or times out)
+
+`is_dead` is a **computed field**, never persisted to `status.json`. This avoids stale state where a dead job is marked alive or vice versa.
+
+### `--show-dead` flag
+
+```bash
+sp list --live --show-dead
+```
+
+Shows dead jobs with a `dead` status indicator. Useful for debugging sessions that crashed or were killed externally.
+
+---
+
+## 7) Stuck detection configuration
 
 There are two complementary mechanisms.
 
@@ -316,7 +365,33 @@ Supervisor outcomes:
 
 ---
 
-## 6) Specialist authoring example (executor-style)
+## 8) Test-aware stall detection
+
+PiAgentSession extends the stall timeout window when a bash tool command matches a test runner pattern:
+
+- `vitest` (including `bun --bun vitest`)
+- `bun test`
+- `npm/pnpm/yarn test`
+- `jest`
+- `pytest`
+
+During detected test commands, the effective timeout is `max(base_timeout, test_timeout)` where `test_timeout` defaults to 300s. This prevents the stall watchdog from killing test runners during tinypool worker initialization, which can take longer than the standard 30-120s stall window.
+
+### Extended window lifecycle
+
+1. `tool_execution_start` detected → pattern match on command string
+2. If test pattern matched → extend stall timeout for this tool call
+3. `tool_execution_end` → restore base stall timeout
+4. Stall watchdog still fires for actual hangs — no upper-bound removal
+
+### Known limitations
+
+- Pattern-based detection may miss custom test wrappers
+- Process-group isolation not implemented (deeper refactor needed)
+
+---
+
+## 9) Specialist authoring example (executor-style)
 
 Example with structured-friendly settings and stall controls (JSON format):
 
@@ -365,7 +440,7 @@ Authoring notes:
 
 ---
 
-## 7) Configuration presets (`--preset`)
+## 10) Configuration presets (`--preset`)
 
 Presets provide one-shot configuration profiles for quick adaptation to different task types without editing specialist configs.
 
@@ -402,7 +477,7 @@ This mutates the specialist's JSON config in place, updating:
 
 ---
 
-## 8) Configuration format: JSON-first with YAML fallback
+## 11) Configuration format: JSON-first with YAML fallback
 
 Specialist configurations migrated from YAML to JSON in v2.1.15+.
 
@@ -450,7 +525,7 @@ JSON supports all YAML fields plus additional metadata:
 All configs are validated against `src/specialist/schema.ts` at load time. Invalid configs are skipped with an error message.
 
 ---
-## 9) Auto GitNexus reindex after high-permission jobs
+## 12) Auto GitNexus reindex after high-permission jobs
 
 Supervisor automatically triggers a GitNexus reindex after jobs with elevated file access complete.
 ### Trigger conditions
@@ -492,7 +567,7 @@ To disable auto-reindex for a high-permission specialist, set `permission_requir
 
 ---
 
-## 10) Debugger v2.0 — Keep-alive iterative debugging
+## 13) Debugger v2.0 — Keep-alive iterative debugging
 
 The `debugger` specialist was upgraded to v2.0 with enhanced capabilities for iterative debug-fix-verify cycles.
 
@@ -556,7 +631,7 @@ sp result <job-id>          # Read bug report + resume footer
 
 ---
 
-## 11) Worktree isolation (`--worktree`, `--job`)
+## 14) Worktree isolation (`--worktree`, `--job`)
 
 Each edit-permission specialist runs in an isolated git worktree (branch). This prevents concurrent file corruption when multiple executors modify overlapping paths, and produces a clean per-task branch that the orchestrator merges in dependency order.
 
@@ -634,7 +709,7 @@ GC candidates must satisfy all conditions:
 For full technical details, see [worktrees.md](worktrees.md).
 
 ---
-## 12) Context denormalization in `status.json`
+## 15) Context denormalization in `status.json`
 
 Context utilization fields are denormalized directly into `status.json` on every `turn_summary` event, so any consumer reading `status.json` gets the latest context percentage without having to scan `events.jsonl`.
 
@@ -674,7 +749,7 @@ interface SupervisorStatus {
 
 ---
 
-## 13) Job lineage tracking (`reused_from_job_id`, `worktree_owner_job_id`)
+## 16) Job lineage tracking (`reused_from_job_id`, `worktree_owner_job_id`)
 
 When `--job <id>` is used, the new job records two lineage fields in its `status.json`. These enable `sp ps` to reconstruct worktree trees reliably without guessing from directory paths.
 
