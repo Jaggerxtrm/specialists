@@ -41,6 +41,7 @@ import {
 import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
+import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
 
@@ -77,6 +78,8 @@ export interface SupervisorStatus {
   context_health?: ContextHealth;
   error?: string;
 }
+
+export type SupervisorStatusView = SupervisorStatus & { is_dead: boolean };
 
 export interface SupervisorOptions {
   runner: SpecialistRunner;
@@ -333,6 +336,23 @@ run();
   return watchdog.pid ?? undefined;
 }
 
+export function isPidAlive(pid: number | undefined): boolean {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isJobDead(status: Pick<SupervisorStatus, 'status' | 'pid' | 'tmux_session'>): boolean {
+  if (status.status !== 'starting' && status.status !== 'running' && status.status !== 'waiting') return false;
+  if (status.pid !== undefined && !isPidAlive(status.pid)) return true;
+  if (status.tmux_session && !isTmuxSessionAlive(status.tmux_session)) return true;
+  return false;
+}
+
 export class Supervisor {
   private readonly sqliteClient: ObservabilitySqliteClient | null;
   private readonly resolvedJobsDir: string;
@@ -382,36 +402,53 @@ export class Supervisor {
     writeFileSync(join(this.readyDir(), id), '', 'utf-8');
   }
 
-  readStatus(id: string): SupervisorStatus | null {
+  private withComputedLiveness(status: SupervisorStatus): SupervisorStatusView {
+    return {
+      ...status,
+      is_dead: isJobDead(status),
+    };
+  }
+
+  readStatus(id: string): SupervisorStatusView | null {
     try {
       const sqliteStatus = this.sqliteClient?.readStatus(id);
-      if (sqliteStatus) return sqliteStatus;
+      if (sqliteStatus) return this.withComputedLiveness(sqliteStatus);
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite readStatus failed, falling back to file state: ${String(error)}`);
     }
 
     const path = this.statusPath(id);
     if (!existsSync(path)) return null;
-    try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
+    try {
+      const status = JSON.parse(readFileSync(path, 'utf-8')) as SupervisorStatus;
+      return this.withComputedLiveness(status);
+    } catch {
+      return null;
+    }
   }
 
   /** List all jobs sorted newest-first. */
-  listJobs(): SupervisorStatus[] {
+  listJobs(): SupervisorStatusView[] {
     try {
       const sqliteJobs = this.sqliteClient?.listStatuses() ?? [];
       if (sqliteJobs.length > 0) {
-        return sqliteJobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
+        return sqliteJobs
+          .map((status) => this.withComputedLiveness(status))
+          .sort((a, b) => b.started_at_ms - a.started_at_ms);
       }
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error)}`);
     }
 
     if (!existsSync(this.resolvedJobsDir)) return [];
-    const jobs: SupervisorStatus[] = [];
+    const jobs: SupervisorStatusView[] = [];
     for (const entry of readdirSync(this.resolvedJobsDir)) {
       const path = join(this.resolvedJobsDir, entry, 'status.json');
       if (!existsSync(path)) continue;
-      try { jobs.push(JSON.parse(readFileSync(path, 'utf-8'))); } catch { /* skip */ }
+      try {
+        const status = JSON.parse(readFileSync(path, 'utf-8')) as SupervisorStatus;
+        jobs.push(this.withComputedLiveness(status));
+      } catch { /* skip */ }
     }
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
