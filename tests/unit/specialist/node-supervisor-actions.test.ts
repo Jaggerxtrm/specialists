@@ -32,7 +32,7 @@ const sqliteClient = {
   readNodeMemory: vi.fn().mockReturnValue([]),
 } satisfies Partial<ObservabilitySqliteClient>;
 
-function createSupervisor(mod: any): any {
+function createSupervisor(mod: any, overrides: Record<string, unknown> = {}): any {
   return new mod.NodeSupervisor({
     nodeId: 'node-actions-1',
     nodeName: 'node-actions',
@@ -43,6 +43,7 @@ function createSupervisor(mod: any): any {
     runOptions: { name: 'node-coordinator', prompt: 'x', keepAlive: true, contextDepth: 1 },
     runner: { run: vi.fn() },
     completionStrategy: 'manual',
+    ...overrides,
   });
 }
 
@@ -84,6 +85,42 @@ describe('NodeSupervisor Wave 2B action handlers', () => {
     );
   });
 
+  it('create_bead failure emits action_failed and preserves node state', async () => {
+    const mod = await import('../../../src/specialist/node-supervisor.js');
+    const supervisor = createSupervisor(mod);
+    (supervisor as any).status = 'running';
+
+    spawnSyncMock.mockReturnValueOnce({ status: 1, stdout: 'not-json', stderr: 'bd create failed' });
+
+    const memberCountBefore = (supervisor as any).members.size;
+    (supervisor as any).executeCreateBeadAction({
+      type: 'create_bead',
+      title: 'Broken bead',
+      description: 'desc',
+      bead_type: 'task',
+      priority: 2,
+    }, 'action-fail-1');
+
+    expect((supervisor as any).status).toBe('running');
+    expect((supervisor as any).members.size).toBe(memberCountBefore);
+    expect(sqliteClient.appendNodeEvent).toHaveBeenCalledWith(
+      'node-actions-1',
+      expect.any(Number),
+      'action_failed',
+      expect.objectContaining({
+        action_id: 'action-fail-1',
+        action_type: 'create_bead',
+      }),
+    );
+    expect(sqliteClient.appendNodeEvent).not.toHaveBeenCalledWith(
+      'node-actions-1',
+      expect.any(Number),
+      'node_state_changed',
+      expect.anything(),
+    );
+    expect(sqliteClient.upsertNodeMember).not.toHaveBeenCalled();
+  });
+
   it('spawn_member dynamic persists member lineage and event', async () => {
     const mod = await import('../../../src/specialist/node-supervisor.js');
     const supervisor = createSupervisor(mod);
@@ -109,6 +146,39 @@ describe('NodeSupervisor Wave 2B action handlers', () => {
       expect.any(Number),
       'member_spawned_dynamic',
       expect.objectContaining({ member_key: 'fixer-1', phase_id: 'phase-1' }),
+    );
+  });
+
+  it('complete_node with pr strategy fails on gate failure without force_draft_pr', async () => {
+    const mod = await import('../../../src/specialist/node-supervisor.js');
+    const supervisor = createSupervisor(mod, { completionStrategy: 'pr' });
+    (supervisor as any).status = 'running';
+
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'lint failed' })
+      .mockReturnValueOnce({ status: 0, stdout: '', stderr: '' });
+
+    await (supervisor as any).executeCompleteNodeAction({
+      type: 'complete_node',
+      gate_results: [],
+      report_payload_ref: 'report-pr-fail',
+    });
+
+    expect((supervisor as any).status).toBe('failed');
+    expect(sqliteClient.appendNodeEvent).not.toHaveBeenCalledWith(
+      'node-actions-1',
+      expect.any(Number),
+      'pr_created',
+      expect.anything(),
+    );
+    expect(sqliteClient.appendNodeEvent).toHaveBeenCalledWith(
+      'node-actions-1',
+      expect.any(Number),
+      'node_completed',
+      expect.objectContaining({
+        final_state: 'failed',
+        gate_results: { lint: 'fail', tsc: 'pass' },
+      }),
     );
   });
 

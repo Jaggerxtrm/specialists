@@ -1734,6 +1734,11 @@ export class NodeSupervisor {
     }
 
     if (memberSpawn.isolated) {
+      console.warn('node supervisor isolated spawn_member requested', {
+        node_id: this.opts.nodeId,
+        member_key: memberSpawn.member_key,
+        message: 'isolated flag is reserved for Wave 3 runtime; proceeding without isolation',
+      });
       this.appendNodeEvent('action_dropped', {
         node_id: this.opts.nodeId,
         action_type: ACTION_TYPES.SPAWN_MEMBER,
@@ -1821,13 +1826,12 @@ export class NodeSupervisor {
       }
     }
 
-    const gateResults = this.runFinalQualityGates(this.opts.runOptions?.workingDirectory ?? process.cwd());
-    const hasFailingGate = Object.values(gateResults).includes('fail');
-
     this.appendCompletionSummaryToBead({
-      gateResults,
       reportPayloadRef: action.report_payload_ref,
     });
+
+    const gateResults = this.runFinalQualityGates(this.opts.runOptions?.workingDirectory ?? process.cwd());
+    const hasFailingGate = Object.values(gateResults).includes('fail');
 
     const completionStrategy = this.opts.completionStrategy ?? 'pr';
     let prMetadata: { pr_number?: number; pr_url?: string; pr_head_sha?: string } = {};
