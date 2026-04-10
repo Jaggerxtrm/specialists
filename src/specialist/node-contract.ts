@@ -76,22 +76,20 @@ export const coordinatorMemoryPatchEntrySchema = z.object({
   provenance: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const coordinatorOutputSchema = z.object({
-  summary: z.string().min(1),
-  node_status: z.enum(['in_progress', 'complete', 'blocked', 'aborted']),
-  phases: z.array(phaseSchema).default([]),
-  memory_patch: z.array(coordinatorMemoryPatchEntrySchema).default([]),
-  actions: z.array(coordinatorActionSchema).default([]),
-  validation: z
-    .object({
-      ok: z.boolean().optional(),
-      issues: z.array(z.string()).optional(),
-      notes: z.string().optional(),
-    })
-    .passthrough(),
-});
+export interface CoordinatorOutputContract {
+  summary: string;
+  node_status: 'in_progress' | 'complete' | 'blocked' | 'aborted';
+  phases: z.infer<typeof phaseSchema>[];
+  memory_patch: z.infer<typeof coordinatorMemoryPatchEntrySchema>[];
+  actions: z.infer<typeof coordinatorActionSchema>[];
+  validation: {
+    ok?: boolean;
+    issues?: string[];
+    notes?: string;
+    [key: string]: unknown;
+  };
+}
 
-export type CoordinatorOutputContract = z.infer<typeof coordinatorOutputSchema>;
 export type CoordinatorAction = z.infer<typeof coordinatorActionSchema>;
 export type MemberSpawn = z.infer<typeof memberSpawnSchema>;
 export type NodeCompletionStrategy = z.infer<typeof completionStrategySchema>;
@@ -300,115 +298,3 @@ export function renderForDocs(): string {
   ].join('\n');
 }
 
-export function buildCoordinatorOutputJsonSchema(): Record<string, unknown> {
-  return {
-    type: 'object',
-    required: ['summary', 'node_status', 'phases', 'memory_patch', 'actions', 'validation'],
-    properties: {
-      summary: { type: 'string' },
-      node_status: { type: 'string', enum: ['in_progress', 'complete', 'blocked', 'aborted'] },
-      phases: {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['phase_id', 'phase_kind', 'barrier', 'members'],
-          properties: {
-            phase_id: { type: 'string' },
-            phase_kind: { type: 'string', enum: Object.values(PHASE_KINDS) },
-            barrier: { type: 'string', enum: ['all_members_terminal'] },
-            members: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['member_key', 'role', 'bead_id', 'scope', 'failure_policy', 'isolated', 'retry_of'],
-                properties: {
-                  member_key: { type: 'string' },
-                  role: { type: 'string' },
-                  bead_id: { type: 'string' },
-                  scope: {
-                    type: 'object',
-                    required: ['paths', 'mutates'],
-                    properties: {
-                      paths: { type: 'array', items: { type: 'string' } },
-                      mutates: { type: 'boolean' },
-                    },
-                  },
-                  depends_on: { type: 'array', items: { type: 'string' } },
-                  failure_policy: { type: 'string', enum: ['blocking', 'non_blocking'] },
-                  isolated: { type: 'boolean' },
-                  retry_of: { type: ['string', 'null'] },
-                },
-              },
-            },
-          },
-        },
-      },
-      memory_patch: {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['entry_type', 'summary', 'source_member_id', 'confidence'],
-          properties: {
-            entry_type: { type: 'string', enum: ['fact', 'question', 'decision'] },
-            entry_id: { type: 'string' },
-            summary: { type: 'string' },
-            source_member_id: { type: 'string' },
-            confidence: { type: 'number' },
-            provenance: { type: 'object' },
-          },
-        },
-      },
-      actions: {
-        type: 'array',
-        items: {
-          oneOf: [
-            {
-              type: 'object',
-              required: ['type', 'title', 'description', 'bead_type', 'priority'],
-              properties: {
-                type: { type: 'string', enum: [ACTION_TYPES.CREATE_BEAD] },
-                title: { type: 'string' },
-                description: { type: 'string' },
-                bead_type: { type: 'string', enum: ['task', 'bug', 'feature', 'epic', 'chore', 'decision'] },
-                priority: { type: 'integer', minimum: 0, maximum: 4 },
-                parent_bead_id: { type: 'string' },
-                depends_on: { type: 'array', items: { type: 'string' } },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'gate_results', 'report_payload_ref'],
-              properties: {
-                type: { type: 'string', enum: [ACTION_TYPES.COMPLETE_NODE] },
-                gate_results: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    required: ['gate', 'status'],
-                    properties: {
-                      gate: { type: 'string' },
-                      status: { type: 'string', enum: ['pass', 'fail', 'skip'] },
-                      details: { type: 'string' },
-                    },
-                  },
-                },
-                report_payload_ref: { type: 'string' },
-                force_draft_pr: { type: 'boolean' },
-              },
-            },
-          ],
-        },
-      },
-      validation: {
-        type: 'object',
-        properties: {
-          ok: { type: 'boolean' },
-          issues: { type: 'array', items: { type: 'string' } },
-          notes: { type: 'string' },
-        },
-        additionalProperties: true,
-      },
-    },
-    additionalProperties: false,
-  };
-}
