@@ -78,6 +78,8 @@ describe('node contract consistency', () => {
       'bead_created',
       'worktree_provisioned',
       'member_spawned_dynamic',
+      'member_replaced',
+      'coordinator_restarted',
       'phase_started',
       'phase_completed',
       'pr_created',

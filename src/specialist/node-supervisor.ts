@@ -4,6 +4,7 @@ import type { RunOptions, SpecialistRunner } from './runner.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
 import { stripJsonFences } from './json-output.js';
+import { provisionWorktree } from './worktree.js';
 import {
   ACTION_TYPES,
   PHASE_KINDS,
@@ -27,6 +28,7 @@ const MAX_QUEUED_ACTIONS_PER_MEMBER = 5;
 const MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2;
 const MAX_DEGRADED_RECOVERY_RESUMES_PER_CYCLE = 1;
 const NO_PROGRESS_WATCHDOG_MS = 120_000;
+const MAX_COORDINATOR_RESTARTS = 1;
 
 const VALID_TRANSITIONS: Record<NodeRunStatus, NodeRunStatus[]> = VALID_STATE_TRANSITIONS;
 
@@ -61,7 +63,7 @@ export interface NodeSupervisorOptions {
     specialist: string;
     model?: string;
     role?: string;
-    worktree?: string;
+    worktree?: boolean | string;
     worktreePath?: string;
     parentMemberId?: string;
     replacedMemberId?: string;
@@ -215,6 +217,7 @@ export class NodeSupervisor {
   private lastCoordinatorOutputAtMs = Date.now();
   private lastCompletedActionAtMs = Date.now();
   private lastMemberTransitionAtMs = Date.now();
+  private coordinatorRestartCount = 0;
 
   constructor(opts: NodeSupervisorOptions) {
     this.opts = opts;
@@ -231,7 +234,7 @@ export class NodeSupervisor {
           enabled: true,
           lastSeenOutputHash: null,
           generation: 0,
-          worktreePath: member.worktreePath ?? member.worktree,
+          worktreePath: member.worktreePath ?? (typeof member.worktree === 'string' ? member.worktree : undefined),
           parentMemberId: member.parentMemberId,
           replacedMemberId: member.replacedMemberId,
           phaseId: member.phaseId,
@@ -561,21 +564,41 @@ export class NodeSupervisor {
     }
   }
 
-  private createBaseRunOptions(specialist: string, prompt: string): RunOptions {
+  private createBaseRunOptions(
+    specialist: string,
+    prompt: string,
+    overrides?: {
+      contextDepth?: number;
+      workingDirectory?: string;
+      worktreeBoundary?: string;
+      inputBeadId?: string;
+      reusedFromJobId?: string;
+      worktreeOwnerJobId?: string;
+      variables?: Record<string, string>;
+    },
+  ): RunOptions {
     const runOptions = this.opts.runOptions;
     if (!this.opts.runner || !runOptions) {
       throw new Error('NodeSupervisor requires opts.runner and opts.runOptions to spawn jobs');
     }
 
+    const resolvedContextDepth = overrides?.contextDepth ?? runOptions.contextDepth ?? 2;
+
     return {
       ...runOptions,
       name: specialist,
       prompt,
-      contextDepth: runOptions.contextDepth,
+      contextDepth: resolvedContextDepth,
+      workingDirectory: overrides?.workingDirectory ?? runOptions.workingDirectory,
+      worktreeBoundary: overrides?.worktreeBoundary ?? runOptions.worktreeBoundary,
+      inputBeadId: overrides?.inputBeadId ?? runOptions.inputBeadId,
+      reusedFromJobId: overrides?.reusedFromJobId ?? runOptions.reusedFromJobId,
+      worktreeOwnerJobId: overrides?.worktreeOwnerJobId ?? runOptions.worktreeOwnerJobId,
       keepAlive: true,
       noKeepAlive: false,
       variables: {
         ...(runOptions.variables ?? {}),
+        ...(overrides?.variables ?? {}),
         node_id: this.opts.nodeId,
         SPECIALISTS_NODE_ID: this.opts.nodeId,
       },
@@ -594,6 +617,70 @@ export class NodeSupervisor {
       'Do not start investigation or produce substantive work until explicitly resumed.',
       roleText,
     ].join('\n').trim();
+  }
+
+  private buildReplacementBootstrapPrompt(member: NodeMemberEntry, previousOutput: string | null, failureReason: string | null): string {
+    const basePrompt = this.buildMemberIdleBootstrapPrompt(member);
+    const previousOutputExcerpt = previousOutput ? previousOutput.slice(0, 1_500) : '(no prior output captured)';
+    const reasonText = failureReason ?? 'previous attempt ended without an explicit failure reason';
+
+    return [
+      basePrompt,
+      '',
+      'replacement_context:',
+      `- previous_member_id: ${member.memberId}`,
+      `- previous_generation: ${Math.max(0, member.generation - 1)}`,
+      `- failure_reason: ${reasonText}`,
+      '- previous_member_output:',
+      previousOutputExcerpt,
+    ].join('\n');
+  }
+
+  private extractMemberSpawnOverrides(rawPayload: unknown): Map<string, {
+    contextDepth?: number;
+    worktreeFrom?: string;
+    worktree?: boolean;
+    parentMemberId?: string;
+  }> {
+    const overrides = new Map<string, { contextDepth?: number; worktreeFrom?: string; worktree?: boolean; parentMemberId?: string }>();
+    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) return overrides;
+
+    const payload = rawPayload as { phases?: unknown[] };
+    if (!Array.isArray(payload.phases)) return overrides;
+
+    for (const phase of payload.phases) {
+      if (!phase || typeof phase !== 'object' || Array.isArray(phase)) continue;
+      const phaseId = typeof (phase as { phase_id?: unknown }).phase_id === 'string'
+        ? (phase as { phase_id: string }).phase_id
+        : null;
+      const members = (phase as { members?: unknown[] }).members;
+      if (!phaseId || !Array.isArray(members)) continue;
+
+      for (const member of members) {
+        if (!member || typeof member !== 'object' || Array.isArray(member)) continue;
+        const memberKey = typeof (member as { member_key?: unknown }).member_key === 'string'
+          ? (member as { member_key: string }).member_key
+          : null;
+        if (!memberKey) continue;
+
+        const key = `${phaseId}:${memberKey}`;
+        const contextDepthRaw = (member as { context_depth?: unknown }).context_depth;
+        const contextDepth = typeof contextDepthRaw === 'number' ? contextDepthRaw : undefined;
+        const worktreeFrom = typeof (member as { worktree_from?: unknown }).worktree_from === 'string'
+          ? (member as { worktree_from: string }).worktree_from
+          : undefined;
+        const worktree = typeof (member as { worktree?: unknown }).worktree === 'boolean'
+          ? (member as { worktree: boolean }).worktree
+          : undefined;
+        const parentMemberId = typeof (member as { parent_member_id?: unknown }).parent_member_id === 'string'
+          ? (member as { parent_member_id: string }).parent_member_id
+          : undefined;
+
+        overrides.set(key, { contextDepth, worktreeFrom, worktree, parentMemberId });
+      }
+    }
+
+    return overrides;
   }
 
   private getBeadGoalSummary(): string {
@@ -618,7 +705,7 @@ export class NodeSupervisor {
       generation: member.generation,
       status: member.status,
       enabled: member.enabled,
-      worktree: this.opts.members.find((candidate) => candidate.memberId === member.memberId)?.worktree ?? null,
+      worktree: member.worktreePath ?? null,
     }));
 
     return renderForFirstTurnContext({
@@ -639,8 +726,28 @@ export class NodeSupervisor {
 
   private async spawnMembers(): Promise<void> {
     for (const member of this.members.values()) {
+      const staticConfig = this.opts.members.find((candidate) => candidate.memberId === member.memberId);
+      const shouldProvisionStaticWorktree = staticConfig?.worktree === true;
+      if (shouldProvisionStaticWorktree && !member.worktreePath) {
+        const provisioned = provisionWorktree({
+          beadId: this.opts.nodeId,
+          specialistName: member.memberId,
+          cwd: this.opts.runOptions?.workingDirectory ?? process.cwd(),
+        });
+        member.worktreePath = provisioned.worktreePath;
+        this.persistNodeEvent('spawnMembers.worktree_provisioned', 'worktree_provisioned', {
+          node_id: this.opts.nodeId,
+          member_key: member.memberId,
+          worktree_path: provisioned.worktreePath,
+          branch: provisioned.branch,
+        });
+      }
+
       const prompt = this.buildMemberIdleBootstrapPrompt(member);
-      const runOptions = this.createBaseRunOptions(member.specialist, prompt);
+      const runOptions = this.createBaseRunOptions(member.specialist, prompt, {
+        workingDirectory: member.worktreePath,
+        worktreeBoundary: member.worktreePath,
+      });
       const controller = new JobControl({
         runner: this.opts.runner!,
         runOptions,
@@ -687,6 +794,7 @@ export class NodeSupervisor {
         if (member.worktreePath) {
           this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), 'worktree_provisioned', {
             node_id: this.opts.nodeId,
+            member_key: member.memberId,
             worktree_path: member.worktreePath,
             branch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
           });
@@ -1472,6 +1580,7 @@ export class NodeSupervisor {
       }
 
       const coordinatorOutput = parseResult.data;
+      const memberSpawnOverrides = this.extractMemberSpawnOverrides(parsedJson);
       const runtimeMismatch = this.validateCoordinatorContractRuntime(coordinatorOutput);
       if (runtimeMismatch) {
         this.appendNodeEvent('coordinator_output_invalid', {
@@ -1542,7 +1651,25 @@ export class NodeSupervisor {
         }
 
         for (const memberSpawn of phase.members) {
-          await this.spawnDynamicMember(phase.phase_id, memberSpawn);
+          const overrideKey = `${phase.phase_id}:${memberSpawn.member_key}`;
+          const override = memberSpawnOverrides.get(overrideKey);
+          try {
+            await this.spawnDynamicMember(phase.phase_id, memberSpawn, override);
+          } catch (error) {
+            this.persistNodeEvent('handleCoordinatorOutput.action_failed', 'action_failed', {
+              node_id: this.opts.nodeId,
+              action_type: ACTION_TYPES.SPAWN_MEMBER,
+              member_key: memberSpawn.member_key,
+              phase_id: phase.phase_id,
+              reason: toErrorMessage(error),
+            });
+            this.appendNodeEvent('coordinator_resume_skipped', {
+              node_id: this.opts.nodeId,
+              coordinator_job_id: this.coordinatorJobId,
+              member_update_count: 0,
+              reasons: [`spawn_member_failed:${memberSpawn.member_key}`],
+            });
+          }
         }
 
         this.persistNodeEvent('handleCoordinatorOutput.phase_completed', 'phase_completed', {
@@ -1727,33 +1854,64 @@ export class NodeSupervisor {
     }
   }
 
-  private async spawnDynamicMember(phaseId: string, memberSpawn: CoordinatorOutputContract['phases'][number]['members'][number]): Promise<void> {
+  private async spawnDynamicMember(
+    phaseId: string,
+    memberSpawn: CoordinatorOutputContract['phases'][number]['members'][number],
+    overrides?: { contextDepth?: number; worktreeFrom?: string; worktree?: boolean; parentMemberId?: string },
+  ): Promise<void> {
     const availableSpecialists = new Set(this.opts.availableSpecialists ?? []);
     if (availableSpecialists.size > 0 && !availableSpecialists.has(memberSpawn.role)) {
       throw new Error(`Unknown specialist role '${memberSpawn.role}' for member_key='${memberSpawn.member_key}'.`);
     }
 
-    if (memberSpawn.isolated) {
-      console.warn('node supervisor isolated spawn_member requested', {
-        node_id: this.opts.nodeId,
-        member_key: memberSpawn.member_key,
-        message: 'isolated flag is reserved for Wave 3 runtime; proceeding without isolation',
-      });
-      this.appendNodeEvent('action_dropped', {
-        node_id: this.opts.nodeId,
-        action_type: ACTION_TYPES.SPAWN_MEMBER,
-        member_key: memberSpawn.member_key,
-        reason: 'isolated_requested_but_not_implemented_wave_2b',
-      });
+    const replacementKey = memberSpawn.retry_of ?? null;
+    const logicalMemberId = replacementKey ?? memberSpawn.member_key;
+    const existing = this.members.get(logicalMemberId);
+    const isReplacement = Boolean(replacementKey);
+
+    if (isReplacement && !existing) {
+      throw new Error(`Replacement requested for unknown member '${replacementKey}'.`);
     }
 
-    const existing = this.members.get(memberSpawn.member_key);
-    if (existing) {
+    if (existing && !isReplacement) {
       return;
     }
 
-    const member: NodeMemberEntry = {
-      memberId: memberSpawn.member_key,
+    if (existing && isReplacement && !TERMINAL_MEMBER_STATUSES.has(existing.status)) {
+      throw new Error(`Replacement rejected: member '${existing.memberId}' is not terminal (status=${existing.status}).`);
+    }
+
+    let inheritedWorktreePath = existing?.worktreePath;
+    const worktreeFrom = overrides?.worktreeFrom;
+    if (worktreeFrom) {
+      const sourceMember = this.members.get(worktreeFrom);
+      if (!sourceMember?.worktreePath) {
+        throw new Error(`worktree_from '${worktreeFrom}' has no worktree_path.`);
+      }
+      inheritedWorktreePath = sourceMember.worktreePath;
+    }
+
+    const shouldProvisionIsolated = memberSpawn.isolated || overrides?.worktree === true;
+    if (shouldProvisionIsolated && !inheritedWorktreePath) {
+      const provisioned = provisionWorktree({
+        beadId: this.opts.nodeId,
+        specialistName: logicalMemberId,
+        cwd: this.opts.runOptions?.workingDirectory ?? process.cwd(),
+      });
+      inheritedWorktreePath = provisioned.worktreePath;
+      this.persistNodeEvent('spawnDynamicMember.worktree_provisioned', 'worktree_provisioned', {
+        node_id: this.opts.nodeId,
+        member_key: logicalMemberId,
+        worktree_path: provisioned.worktreePath,
+        branch: provisioned.branch,
+      });
+    }
+
+    const nextGeneration = isReplacement ? (existing?.generation ?? 0) + 1 : 1;
+    const previousJobId = existing?.jobId ?? null;
+
+    const member: NodeMemberEntry = existing ?? {
+      memberId: logicalMemberId,
       jobId: null,
       specialist: memberSpawn.role,
       role: memberSpawn.role,
@@ -1761,12 +1919,35 @@ export class NodeSupervisor {
       enabled: true,
       lastSeenOutputHash: null,
       generation: 0,
-      parentMemberId: memberSpawn.retry_of ?? undefined,
-      phaseId,
     };
-    this.members.set(member.memberId, member);
 
-    const runOptions = this.createBaseRunOptions(member.specialist, this.buildMemberIdleBootstrapPrompt(member));
+    member.specialist = memberSpawn.role;
+    member.role = memberSpawn.role;
+    member.parentMemberId = overrides?.parentMemberId ?? member.parentMemberId ?? undefined;
+    member.replacedMemberId = isReplacement ? (previousJobId ?? undefined) : member.replacedMemberId;
+    member.phaseId = phaseId;
+    member.worktreePath = inheritedWorktreePath;
+
+    const previousOutput = isReplacement && previousJobId
+      ? this.memberControllers.get(member.memberId)?.readResult(previousJobId)
+        ?? this.opts.sqliteClient.readResult(previousJobId)
+      : null;
+    const replacementPrompt = isReplacement
+      ? this.buildReplacementBootstrapPrompt(member, previousOutput, existing?.status ?? null)
+      : this.buildMemberIdleBootstrapPrompt(member);
+
+    const runOptions = this.createBaseRunOptions(member.specialist, replacementPrompt, {
+      contextDepth: overrides?.contextDepth,
+      workingDirectory: member.worktreePath,
+      worktreeBoundary: member.worktreePath,
+      inputBeadId: memberSpawn.bead_id,
+      reusedFromJobId: previousJobId ?? undefined,
+      variables: {
+        member_generation: String(nextGeneration),
+        member_bead_id: memberSpawn.bead_id,
+      },
+    });
+
     const controller = new JobControl({
       runner: this.opts.runner!,
       runOptions,
@@ -1776,8 +1957,10 @@ export class NodeSupervisor {
     const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
     member.jobId = jobId;
     member.status = 'starting';
-    member.generation = 1;
+    member.generation = nextGeneration;
+    this.clearMemberPendingActions(member.memberId);
     this.memberControllers.set(member.memberId, controller);
+    this.members.set(member.memberId, member);
 
     this.opts.sqliteClient.upsertNodeMember({
       node_run_id: this.opts.nodeId,
@@ -1801,7 +1984,22 @@ export class NodeSupervisor {
       bead_id: memberSpawn.bead_id,
       phase_id: phaseId,
       parent_member_id: member.parentMemberId ?? null,
+      generation: member.generation,
+      worktree_path: member.worktreePath ?? null,
     });
+
+    if (isReplacement) {
+      this.persistNodeEvent('spawnDynamicMember.member_replaced', 'member_replaced', {
+        node_id: this.opts.nodeId,
+        member_key: member.memberId,
+        previous_generation: nextGeneration - 1,
+        new_generation: nextGeneration,
+        previous_job_id: previousJobId,
+        new_job_id: jobId,
+        bead_id: memberSpawn.bead_id,
+        worktree_inherited: Boolean(member.worktreePath),
+      });
+    }
   }
 
   private runFinalQualityGates(cwd: string): Record<string, 'pass' | 'fail'> {
@@ -1943,8 +2141,102 @@ export class NodeSupervisor {
       last_completed_action_at_ms: this.lastCompletedActionAtMs,
       last_member_transition_at_ms: this.lastMemberTransitionAtMs,
     });
-    this.transition('error', 'no_progress_watchdog_triggered');
     return true;
+  }
+
+  private buildCoordinatorRecoveryPrompt(reason: string): string {
+    const memoryEntries = this.opts.sqliteClient
+      .readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined);
+    const registrySnapshot = this.getMembers().map((member) => ({
+      memberId: member.memberId,
+      specialist: member.specialist,
+      role: member.role ?? null,
+      generation: member.generation,
+      status: member.status,
+      enabled: member.enabled,
+      worktree: member.worktreePath ?? null,
+      beadId: this.opts.runOptions?.inputBeadId ?? null,
+    }));
+
+    const recoveryDigest = {
+      reason,
+      restart_generation: this.coordinatorRestartCount + 1,
+      state_digest: this.buildStateDigest(memoryEntries),
+      memory_patch_summary: memoryEntries.slice(-MAX_MEMORY_ENTRIES_IN_RESUME),
+      action_ledger: this.buildActionLedgerSummary(),
+      member_registry: registrySnapshot,
+    };
+
+    return renderForFirstTurnContext({
+      nodeId: this.opts.nodeId,
+      nodeName: this.opts.nodeName,
+      sourceBeadId: this.opts.sourceBeadId ?? null,
+      beadGoal: this.getBeadGoalSummary(),
+      memberRegistry: registrySnapshot,
+      availableSpecialists: this.opts.availableSpecialists ?? [],
+      qualityGates: this.opts.qualityGates ?? ['npm run lint', 'npx tsc --noEmit'],
+      nodeConfigSnapshot: this.opts.nodeConfigSnapshot ?? {},
+      completionStrategy: this.opts.completionStrategy ?? 'pr',
+      maxRetries: this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT,
+      baseBranch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
+      coordinatorGoal: `Recovery restart required. Use this replayed state digest:\n${JSON.stringify(recoveryDigest, null, 2)}`,
+    });
+  }
+
+  private async restartCoordinator(reason: string): Promise<boolean> {
+    if (this.coordinatorRestartCount >= MAX_COORDINATOR_RESTARTS) {
+      this.transition('failed', `coordinator_restart_exhausted:${reason}`);
+      return false;
+    }
+
+    if (!this.opts.runner || !this.opts.runOptions) {
+      this.transition('failed', `coordinator_restart_unavailable:${reason}`);
+      return false;
+    }
+
+    try {
+      if (this.coordinatorJobId && this.coordinatorController) {
+        const status = this.coordinatorController.readStatus(this.coordinatorJobId)?.status;
+        if (status && !TERMINAL_JOB_STATUSES.has(status)) {
+          await this.coordinatorController.stopJob(this.coordinatorJobId);
+          await this.coordinatorController.waitForTerminal(this.coordinatorJobId, 5_000);
+        }
+      }
+
+      this.coordinatorRestartCount += 1;
+      const recoveryPrompt = this.buildCoordinatorRecoveryPrompt(reason);
+      const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, recoveryPrompt);
+      const controller = new JobControl({
+        runner: this.opts.runner,
+        runOptions,
+        jobsDir: this.opts.jobsDir,
+      });
+
+      const previousJobId = this.coordinatorJobId;
+      this.coordinatorJobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: 'coordinator' });
+      this.coordinatorController = controller;
+      this.lastCoordinatorOutputAtMs = Date.now();
+
+      this.persistNodeEvent('restartCoordinator.coordinator_restarted', 'coordinator_restarted', {
+        node_id: this.opts.nodeId,
+        generation: this.coordinatorRestartCount,
+        reason,
+        previous_job_id: previousJobId,
+        new_job_id: this.coordinatorJobId,
+        recovery_context_length: recoveryPrompt.length,
+      });
+
+      if (this.status === 'error' || this.status === 'failed') {
+        return true;
+      }
+      if (this.status !== 'running' && this.status !== 'waiting') {
+        this.transition('running', `coordinator_restarted:${reason}`);
+      }
+      return true;
+    } catch (error) {
+      this.transition('failed', `coordinator_restart_failed:${toErrorMessage(error)}`);
+      return false;
+    }
   }
 
   private async cleanupJobs(): Promise<string[]> {
@@ -2147,7 +2439,10 @@ export class NodeSupervisor {
         const coordinatorStatusValue = coordinatorStatus?.status as string | undefined;
 
         if (coordinatorStatusValue === 'error') {
-          this.transition('error', 'coordinator_crash');
+          const restarted = await this.restartCoordinator('coordinator_crash');
+          if (restarted) {
+            continue;
+          }
           break;
         }
 
@@ -2157,6 +2452,17 @@ export class NodeSupervisor {
         }
 
         if (coordinatorStatusValue === 'done') {
+          const doneOutput = this.coordinatorJobId
+            ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null
+            : null;
+          if (!doneOutput || doneOutput.trim().length === 0) {
+            const restarted = await this.restartCoordinator('coordinator_empty_output');
+            if (restarted) {
+              continue;
+            }
+            break;
+          }
+
           this.transition('done', 'coordinator_done');
           break;
         }
@@ -2255,6 +2561,10 @@ export class NodeSupervisor {
         }
 
         if (this.maybeTriggerNoProgressWatchdog()) {
+          const restarted = await this.restartCoordinator('watchdog_no_progress');
+          if (restarted) {
+            continue;
+          }
           break;
         }
 

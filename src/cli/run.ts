@@ -516,7 +516,7 @@ export async function run(): Promise<void> {
 
   process.stderr.write(`\n${bold(`Running ${cyan(args.name)}`)}\n\n`);
 
-  let jobId: string;
+  let jobId = '';
   let runError: any;
   try {
     jobId = await supervisor.run();

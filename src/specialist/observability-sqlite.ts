@@ -533,6 +533,8 @@ export type NodeEventType =
   | 'bead_created'
   | 'worktree_provisioned'
   | 'member_spawned_dynamic'
+  | 'member_replaced'
+  | 'coordinator_restarted'
   | 'pr_created'
   | 'pr_updated'
   | 'node_completed';
