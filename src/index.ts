@@ -377,7 +377,7 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach> [options]',
+        'Usage: specialists node <run|list|status|feed|result|promote|members|memory|steer|stop|attach> [options]',
         '',
         'Commands:',
         '  run <node-config> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]',
@@ -385,6 +385,8 @@ async function run() {
         '  list [--json]                                       List available node configs',
         '  status [--node <node-id>] [--json]                 Show node runs from SQLite',
         '  feed <node-id> [--json]                            Show node events for a run',
+        '  result --node <node-id> --member <key> [--full] [--json]',
+        '                                                      Show persisted result for a member job',
         '  members <node-id> [--json]                         Show member state + lineage metadata',
         '  memory <node-id> [--json]                          Show accumulated node memory summaries',
         '  steer <node-id> <message> [--json]                 Send steer command to coordinator',
@@ -399,6 +401,7 @@ async function run() {
         '  specialists node members research-abc123 --json',
         '  specialists node memory research-abc123',
         '  specialists node feed research-abc123',
+        '  specialists node result --node research-abc123 --member explore-1 --full --json',
         '  specialists node steer research-abc123 "hold wave 2"',
         '  specialists node stop research-abc123',
         '  specialists node attach research-abc123',

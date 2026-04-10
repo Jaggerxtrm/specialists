@@ -42,7 +42,7 @@ interface NodeConfig {
   baseBranch: string;
 }
 
-type NodeCommand = 'run' | 'list' | 'status' | 'feed' | 'promote' | 'members' | 'memory' | 'steer' | 'stop' | 'attach' | 'spawn-member' | 'create-bead' | 'complete' | 'wait-phase';
+type NodeCommand = 'run' | 'list' | 'status' | 'feed' | 'result' | 'promote' | 'members' | 'memory' | 'steer' | 'stop' | 'attach' | 'spawn-member' | 'create-bead' | 'complete' | 'wait-phase';
 
 interface ParsedNodeArgs {
   command: NodeCommand;
@@ -65,14 +65,17 @@ interface ParsedNodeArgs {
   forceDraftPr?: boolean;
   memberKeys?: string[];
   timeoutMs?: number;
+  fullResult: boolean;
   jsonMode: boolean;
 }
 
+const NODE_RESULT_PREVIEW_CHAR_LIMIT = 4_000;
+
 function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   const command = argv[0] as NodeCommand | undefined;
-  const supportedCommands = new Set<NodeCommand>(['run', 'list', 'status', 'feed', 'promote', 'members', 'memory', 'steer', 'stop', 'attach', 'spawn-member', 'create-bead', 'complete', 'wait-phase']);
+  const supportedCommands = new Set<NodeCommand>(['run', 'list', 'status', 'feed', 'result', 'promote', 'members', 'memory', 'steer', 'stop', 'attach', 'spawn-member', 'create-bead', 'complete', 'wait-phase']);
   if (!command || !supportedCommands.has(command)) {
-    throw new Error('Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach|spawn-member|create-bead|complete|wait-phase> [options]');
+    throw new Error('Usage: specialists node <run|list|status|feed|result|promote|members|memory|steer|stop|attach|spawn-member|create-bead|complete|wait-phase> [options]');
   }
   let nodeConfigInput: string | undefined;
   let inlineJson: string | undefined;
@@ -93,6 +96,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   let forceDraftPr = false;
   let memberKeys: string[] | undefined;
   let timeoutMs: number | undefined;
+  let fullResult = false;
   let jsonMode = false;
 
   for (let i = 1; i < argv.length; i += 1) {
@@ -105,6 +109,11 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
 
     if (token === '--force-draft-pr') {
       forceDraftPr = true;
+      continue;
+    }
+
+    if (token === '--full') {
+      fullResult = true;
       continue;
     }
 
@@ -142,8 +151,8 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
-    if (token === '--member-key') {
-      memberKey = readValue('--member-key');
+    if (token === '--member' || token === '--member-key') {
+      memberKey = readValue(token);
       continue;
     }
 
@@ -240,6 +249,10 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     throw new Error('Usage: specialists node steer <node-id> <message> [--json]');
   }
 
+  if (command === 'result' && (!nodeId || !memberKey)) {
+    throw new Error('Usage: specialists node result --node <id> --member <key> [--full] [--json]');
+  }
+
   if (command === 'spawn-member' || command === 'create-bead' || command === 'complete' || command === 'wait-phase') {
     if (!nodeId) {
       throw new Error(`--node is required for specialists node ${command}`);
@@ -283,6 +296,7 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     forceDraftPr,
     memberKeys,
     timeoutMs,
+    fullResult,
     jsonMode,
   };
 }
@@ -828,6 +842,105 @@ function requireNodeRun(sqliteClient: NonNullable<ReturnType<typeof createObserv
   return row;
 }
 
+function requireNodeMember(
+  sqliteClient: NonNullable<ReturnType<typeof createObservabilitySqliteClient>>,
+  nodeId: string,
+  memberKey: string,
+): NodeMemberRow {
+  requireNodeRun(sqliteClient, nodeId);
+  const member = sqliteClient.readNodeMembers(nodeId).find((entry) => entry.member_id === memberKey);
+  if (!member) {
+    throw new Error(`Member '${memberKey}' not found in node '${nodeId}'`);
+  }
+  return member;
+}
+
+function readPersistedJobResult(
+  sqliteClient: NonNullable<ReturnType<typeof createObservabilitySqliteClient>>,
+  jobId: string,
+): string | null {
+  const sqliteResult = sqliteClient.readResult(jobId);
+  if (sqliteResult !== null) {
+    return sqliteResult;
+  }
+
+  const resultPath = join(resolveJobsDir(), jobId, 'result.txt');
+  if (!existsSync(resultPath)) {
+    return null;
+  }
+
+  try {
+    return readFileSync(resultPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+function emitResultTruncationNote(jobId: string, charCount: number): void {
+  process.stderr.write(
+    `Result for job ${jobId} truncated to ${NODE_RESULT_PREVIEW_CHAR_LIMIT} of ${charCount} chars. Re-run with --full for the complete output.\n`,
+  );
+}
+
+async function handleNodeResult(args: ParsedNodeArgs): Promise<void> {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    emitNodeCommandError('Observability SQLite DB is unavailable. Run: specialists db setup', args.jsonMode);
+    return;
+  }
+
+  try {
+    const nodeId = args.nodeId!;
+    const member = requireNodeMember(sqliteClient, nodeId, args.memberKey!);
+    const jobId = member.job_id;
+
+    if (!jobId) {
+      throw new Error(`Member '${member.member_id}' in node '${nodeId}' has no job id yet`);
+    }
+
+    const persistedResult = readPersistedJobResult(sqliteClient, jobId);
+    if (persistedResult === null) {
+      throw new Error(`No persisted result found yet for member '${member.member_id}' in node '${nodeId}' (job ${jobId})`);
+    }
+
+    const charCount = persistedResult.length;
+    const truncated = !args.fullResult && charCount > NODE_RESULT_PREVIEW_CHAR_LIMIT;
+    const result = truncated
+      ? persistedResult.slice(0, NODE_RESULT_PREVIEW_CHAR_LIMIT)
+      : persistedResult;
+
+    if (truncated) {
+      emitResultTruncationNote(jobId, charCount);
+    }
+
+    if (args.jsonMode) {
+      console.log(JSON.stringify({
+        ok: true,
+        node_id: nodeId,
+        member_id: member.member_id,
+        generation: member.generation ?? 0,
+        phase_id: member.phase_id ?? null,
+        specialist: member.specialist,
+        job_id: jobId,
+        status: member.status,
+        char_count: charCount,
+        truncated,
+        result,
+      }));
+      return;
+    }
+
+    process.stdout.write(result);
+    if (!result.endsWith('\n')) {
+      process.stdout.write('\n');
+    }
+  } catch (error) {
+    emitNodeCommandError(error, args.jsonMode);
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 async function handleNodeMembers(args: ParsedNodeArgs): Promise<void> {
   const sqliteClient = createObservabilitySqliteClient();
   if (!sqliteClient) {
@@ -1247,6 +1360,11 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
 
   if (parsed.command === 'feed') {
     await handleNodeFeed(parsed);
+    return;
+  }
+
+  if (parsed.command === 'result') {
+    await handleNodeResult(parsed);
     return;
   }
 

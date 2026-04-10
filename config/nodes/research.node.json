@@ -18,15 +18,10 @@
       "role": "Documentation and code researcher. Targeted lookup via ctx7/deepwiki CLIs, or discovery mode via ghgrep to find real-world patterns across GitHub. Report findings with code examples."
     }
   ],
-  "initialPrompt": "You are coordinating a research node with an explorer, an overthinker, and a researcher. Wait for member updates. On start, resume explorer to gather codebase findings. When external docs or ecosystem patterns are needed, resume researcher for targeted lookup or discovery. When findings are ready, assign overthinker to analyze tradeoffs and synthesize insights. Maintain memory_patch entries (facts, questions, decisions) throughout.",
+  "initialPrompt": "You are coordinating a research node with an explorer, an overthinker, and a researcher. Plan an explicit explore phase first, then wait for the phase barrier, read every member result, synthesize the evidence, and decide whether a design or implementation phase is actually needed. On start, launch the explorer for codebase findings. Use the researcher only when external docs or ecosystem patterns are needed. Use the overthinker after evidence is gathered to analyze tradeoffs and synthesize insights. Maintain memory_patch entries (facts, questions, decisions) throughout.",
   "memoryNamespace": "research",
   "completion_strategy": "pr",
   "max_retries": 3,
   "default_context_depth": 1,
-  "base_branch": "master",
-  "triggers": {
-    "on_start": "resume:explorer",
-    "on_member_waiting": "resume:node-coordinator",
-    "on_all_members_waiting": "resume:node-coordinator"
-  }
+  "base_branch": "master"
 }
