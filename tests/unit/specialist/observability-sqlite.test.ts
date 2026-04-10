@@ -10,6 +10,7 @@ import {
   parseJournalMode,
   verifyWalMode,
 } from '../../../src/specialist/observability-sqlite.js';
+import { loadEpicReadinessSummary } from '../../../src/specialist/epic-readiness.js';
 import {
   OBSERVABILITY_SCHEMA_VERSION,
   ensureObservabilityDbFile,
@@ -463,7 +464,7 @@ describe('observability-sqlite', () => {
         epic_id: 'unitAI-epic',
         chain_root_bead_id: 'unitAI-100',
         chain_root_job_id: 'chain-root',
-        updated_at_ms: Date.now(),
+        updated_at_ms: 100,
       });
 
       expect(client.listChainJobIds('chain-root')).toEqual(['chain-root', 'chain-child']);
@@ -479,6 +480,54 @@ describe('observability-sqlite', () => {
         chain_root_job_id: 'chain-root',
         chain_root_bead_id: 'unitAI-100',
       });
+
+      const location = resolveObservabilityDbLocation(tempRoot);
+      db = new Database(location.dbPath);
+      const persistedRow = db.query(`
+        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id
+        FROM specialist_jobs
+        WHERE job_id = 'chain-root'
+        LIMIT 1
+      `).get() as {
+        chain_kind: string;
+        chain_id: string;
+        chain_root_job_id: string;
+        chain_root_bead_id: string;
+        epic_id: string;
+      };
+
+      expect(persistedRow.chain_kind).toBe('chain');
+      expect(typeof persistedRow.chain_id).toBe('string');
+      expect(typeof persistedRow.chain_root_job_id).toBe('string');
+      expect(typeof persistedRow.chain_root_bead_id).toBe('string');
+      expect(typeof persistedRow.epic_id).toBe('string');
+    });
+
+    it('handles migration-style missing metadata deterministically', () => {
+      const client = createClient();
+      const location = resolveObservabilityDbLocation(tempRoot);
+      db = new Database(location.dbPath);
+
+      db.run(
+        `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms, chain_kind)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['legacy-prep', 'explorer', 'done', '{"status":"done"}', 10, ''],
+      );
+
+      db.run(
+        `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms, chain_kind, chain_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['legacy-chain', 'executor', 'done', '{"status":"done"}', 11, 'chain', 'chain-legacy'],
+      );
+
+      expect(client.readChainIdentity('legacy-prep')).toEqual({ chain_kind: 'prep' });
+      expect(client.resolveChainEpicLinkByJobId('legacy-chain')).toEqual({
+        chain_id: 'chain-legacy',
+        epic_id: null,
+        chain_root_job_id: 'chain-legacy',
+        chain_root_bead_id: null,
+      });
+      expect(client.resolveChainEpicLinkByJobId('legacy-prep')).toBeNull();
     });
   });
 
@@ -558,6 +607,82 @@ describe('observability-sqlite', () => {
       expect(client.resolveEpicByChainId('missing-chain')).toBeNull();
       expect(client.resolveEpicByChainRootBeadId('missing-root')).toBeNull();
       expect(client.listEpicChains('missing-epic')).toEqual([]);
+    });
+  });
+
+  describe('loadEpicReadinessSummary', () => {
+    it('reconstructs merge readiness from persisted sqlite rows after restart', () => {
+      const client = createClient();
+
+      client.upsertEpicRun({
+        epic_id: 'unitAI-restart-epic',
+        status: 'resolving',
+        updated_at_ms: 1,
+        status_json: JSON.stringify({ status: 'resolving' }),
+      });
+
+      client.upsertStatus({
+        id: 'prep-done',
+        specialist: 'explorer',
+        status: 'done',
+        started_at_ms: 1,
+        epic_id: 'unitAI-restart-epic',
+        chain_kind: 'prep',
+      });
+
+      client.upsertStatus({
+        id: 'chain-review',
+        specialist: 'reviewer',
+        status: 'done',
+        started_at_ms: 2,
+        epic_id: 'unitAI-restart-epic',
+        chain_kind: 'chain',
+        chain_id: 'chain-r',
+        chain_root_job_id: 'chain-r',
+        chain_root_bead_id: 'unitAI-chain-r',
+      });
+      client.upsertResult('chain-review', '## Compliance Verdict\n- Verdict: PASS');
+
+      client.upsertEpicChainMembership({
+        chain_id: 'chain-r',
+        epic_id: 'unitAI-restart-epic',
+        chain_root_bead_id: 'unitAI-chain-r',
+        chain_root_job_id: 'chain-r',
+        updated_at_ms: 2,
+      });
+
+      const summary = loadEpicReadinessSummary(client, 'unitAI-restart-epic');
+
+      expect(summary.readiness_state).toBe('merge_ready');
+      expect(summary.next_state).toBe('merge_ready');
+      expect(summary.chains).toHaveLength(1);
+      expect(summary.chains[0]?.chain_id).toBe('chain-r');
+      expect(summary.prep.done).toBe(1);
+    });
+
+    it('does not treat prep jobs as chain members when membership table is empty', () => {
+      const client = createClient();
+
+      client.upsertEpicRun({
+        epic_id: 'unitAI-prep-only-restart',
+        status: 'resolving',
+        updated_at_ms: 1,
+        status_json: JSON.stringify({ status: 'resolving' }),
+      });
+      client.upsertStatus({
+        id: 'prep-1',
+        specialist: 'explorer',
+        status: 'done',
+        started_at_ms: 1,
+        epic_id: 'unitAI-prep-only-restart',
+        chain_kind: 'prep',
+      });
+
+      const summary = loadEpicReadinessSummary(client, 'unitAI-prep-only-restart');
+
+      expect(summary.chains).toEqual([]);
+      expect(summary.prep.total).toBe(1);
+      expect(summary.readiness_state).toBe('merge_ready');
     });
   });
 
