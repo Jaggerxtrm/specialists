@@ -2,13 +2,14 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.1.0
+version: 2.2.0
 updated: 2026-04-10
-synced_at: a1e9f935
+synced_at: 3f7b-wave4b
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
   - src/cli/run.ts
+  - src/cli/node.ts
   - src/cli/feed.ts
   - src/cli/poll.ts
   - src/cli/result.ts
@@ -33,6 +34,7 @@ source_of_truth_for:
 | Section | Summary |
 |---|---|
 | [`specialists run`](#specialists-run) | - `--prompt <text>`: Ad-hoc prompt |
+| [`specialists node`](#specialists-node) | NodeSupervisor control surface: run/list/status/feed/promote/members/memory/steer/stop/attach |
 | [`specialists feed`](#specialists-feed) | - `--job <id>`: Filter by job ID |
 | [`specialists poll`](#specialists-poll) | - `--cursor <n>`: Event cursor offset (default `0`) |
 | [`specialists result`](#specialists-result) | - `--wait`: Poll until terminal state |
@@ -133,6 +135,81 @@ Notes:
 - Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
 - `--background` is removed and exits with error.
+
+---
+
+## `specialists node`
+
+### Synopsis
+
+```bash
+specialists node run <node-config-name-or-file> [--inline <json>] [--bead <id>] [--context-depth <n>] [--json]
+specialists node list [--json]
+specialists node status [--node <id>] [--json]
+specialists node feed <node-id> [--json]
+specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]
+specialists node members <node-id> [--json]
+specialists node memory <node-id> [--json]
+specialists node steer <node-id> <message> [--json]
+specialists node stop <node-id> [--json]
+specialists node attach <node-id>
+```
+
+### Subcommands
+
+- `run`: Start a node run from discovered config name, config path, or inline JSON.
+- `list`: List discovered node configs from `.specialists/default/nodes` then `config/nodes` (default wins on collision).
+- `status`: Show one/all node runs with coordinator job, reason, and member/memory summaries.
+- `feed`: Print node events (human or JSON).
+- `promote`: Promote one node memory finding into bead notes.
+- `members`: Inspect member generation/status/worktree lineage.
+- `memory`: Inspect node memory entries and aggregate counts.
+- `steer`: Send a coordinator steer message.
+- `stop`: SIGTERM coordinator process.
+- `attach`: Attach to coordinator tmux session.
+
+### Flags
+
+Common:
+- `--json`: Machine-readable output.
+
+`run`:
+- `--inline <json>`: Inline node config JSON.
+- `--bead <id>`: Build bead_context from bead + completed blockers.
+- `--context-depth <n>`: Bead blocker depth override for node run context injection.
+
+`status`:
+- `--node <id>`: Inspect one node id.
+
+`promote`:
+- `--to-bead <id>`: Target bead for promoted finding (required).
+
+### Examples
+
+```bash
+specialists node run research --bead unitAI-3f7b.7 --context-depth 2
+specialists node run ./config/nodes/research.node.json --json
+specialists node status
+specialists node status --node research-abc12345 --json
+specialists node feed research-abc12345
+specialists node members research-abc12345 --json
+specialists node memory research-abc12345
+specialists node steer research-abc12345 "focus on fix loop for failing gate"
+specialists node stop research-abc12345
+specialists node attach research-abc12345
+specialists node promote research-abc12345 finding-001 --to-bead unitAI-999
+```
+
+### Exit codes
+
+- `0`: Success.
+- `1`: Invalid args, missing ids, runtime/control failure, or unavailable coordinator control surface.
+
+### Notes
+
+- Coordinator is declarative; NodeSupervisor executes side effects.
+- `--context-depth` on `node run` controls bead dependency context injection for node bootstrap.
+- `node members` and `node status --json` expose generation/worktree lineage fields used by operator tooling.
 
 ---
 

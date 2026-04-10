@@ -1,532 +1,222 @@
-# Nodes: NodeSupervisor architecture, CLI, and lifecycle
+# Nodes: coordinator contract, runtime architecture, and operator flow
 
-## Doc contract (sync-docs style)
+## Doc contract
 
-- **Source of truth:** implementation-first, generated from runtime code paths.
-- **Validated against:**
+- **Source of truth:**
+  - `src/specialist/node-contract.ts`
   - `src/specialist/node-supervisor.ts`
   - `src/specialist/job-control.ts`
   - `src/cli/node.ts`
-  - `src/specialist/observability-sqlite.ts` (z5ml tables)
-  - `node-coordination.md`
-- **Drift policy:** if any state/event/CLI/schema changes, update this document in the same PR.
+  - `src/specialist/observability-sqlite.ts`
+- **Drift rule:** update this doc in the same change whenever node contract, lifecycle, or `sp node` CLI behavior changes.
 
 ---
 
-## 1) Overview
+## 1) Architecture (redesigned runtime)
 
-A **node** is a long-lived multi-agent orchestration run managed by `NodeSupervisor`.
+Node execution follows a strict split:
 
-Instead of running one specialist in isolation, a node coordinates:
+- **Coordinator specialist**: READ_ONLY JSON planner.
+- **NodeSupervisor**: effect executor (spawn/control/complete/persist).
+- **Members**: worker specialists started and managed by NodeSupervisor.
 
-- one **coordinator** specialist (decision engine), and
-- N **member** specialists (workers with explicit `memberId`s).
+Coordinator never performs direct side effects. It emits typed intent (`phases`, `memory_patch`, `actions`) and NodeSupervisor executes that intent.
 
-Why this exists:
+### Why this split exists
 
-- Some tasks need **parallel specialist work** + iterative coordination.
-- The coordinator can react to member outputs/status changes over time.
-- Shared node memory captures findings and supports downstream promotion to beads.
-- Node run state is persisted in SQLite so runs are inspectable/recoverable.
-
----
-
-## 2) Architecture
-
-### Core components
-
-- **`NodeSupervisor`** (`src/specialist/node-supervisor.ts`)
-  - Owns node state machine.
-  - Spawns coordinator + members.
-  - Polls member status/output.
-  - Resumes coordinator with member/memory context.
-  - Validates coordinator JSON contract.
-  - Dispatches coordinator actions (`resume|steer|stop`) to members.
-  - Persists node runs/events/memory best-effort to SQLite.
-
-- **`JobControl`** (`src/specialist/job-control.ts`)
-  - Thin adapter over `Supervisor` for member/coordinator jobs.
-  - Starts keep-alive jobs with injected `node_id` + `member_id` variables.
-  - Sends control messages via FIFO (`resume`, `steer`, `close`).
-  - Reads status/result (SQLite-first, file fallback).
-
-- **Node CLI surface** (`src/cli/node.ts`)
-  - `sp node run` starts a node.
-  - `sp node status` inspects one/all nodes.
-  - `sp node feed` streams node event log.
-  - `sp node promote` moves a node memory finding into bead notes.
-
-### Coordinator/member model
-
-- Coordinator speaks in logical `memberId` references only.
-- `NodeSupervisor` is the translation layer from `memberId -> jobId/controller`.
-- Members are started once, then resumed/steered/stopped based on coordinator actions.
-- Coordinator is resumed when member changes arrive and coordinator is `waiting`.
+- deterministic control plane,
+- explicit contract validation,
+- resumable state machine,
+- auditable event timeline in SQLite,
+- safer multi-member orchestration than free-form coordinator control.
 
 ---
 
-## 3) State machine
+## 2) Coordinator action model
 
-`NodeRunStatus` states (8 total):
+Canonical schema lives in `node-contract.ts`.
 
-1. `created`
-2. `starting`
-3. `running`
-4. `waiting`
-5. `degraded`
-6. `error` (terminal)
-7. `done` (terminal)
-8. `stopped` (terminal)
+### Top-level output
 
-### Valid transitions (from `VALID_TRANSITIONS`)
+Coordinator must emit one JSON object containing:
+- `summary`
+- `node_status` (`in_progress | complete | blocked | aborted`)
+- `phases[]`
+- `memory_patch[]`
+- `actions[]`
+- `validation`
 
-- `created -> starting | stopped`
-- `starting -> running | error | stopped`
-- `running -> waiting | degraded | done | error | stopped`
-- `waiting -> running | degraded | done | error | stopped`
-- `degraded -> running | error | stopped`
-- terminal states: no outbound transitions
+### Phase/member declarations (`spawn_member` intent)
 
-> Historical planning docs call this “17 transitions”; current implementation table validates **18** directed transitions (including `waiting -> done`).
+`spawn_member` is represented by `phases[].members[]` entries, not by direct side-effect commands.
 
-### Terminal states
+Each member declaration includes:
+- `member_key`
+- `role` (specialist)
+- `bead_id`
+- `scope.paths[]` + `scope.mutates`
+- `depends_on[]`
+- `failure_policy`
+- schema-reserved fields: `isolated`, `retry_of`
 
+### Action vocabulary
+
+`actions[]` supports:
+
+- `create_bead`
+- `complete_node`
+
+No direct `resume/steer/stop` action is accepted in coordinator payload; these are internal NodeSupervisor dispatch concerns.
+
+---
+
+## 3) Lifecycle and state machine
+
+Node states:
+- `created`
+- `starting`
+- `running`
+- `waiting`
+- `degraded`
+- `awaiting_merge`
+- `fixing_after_review`
+- `failed`
 - `error`
 - `done`
 - `stopped`
 
-### Degraded recovery behavior
+Terminal set for runtime loop handling includes:
+- `error`, `done`, `stopped`, `failed`, `awaiting_merge`
 
-`NodeSupervisor` moves to `degraded` when:
-
-- any member status becomes `error`, or
-- any member context health reaches `CRITICAL`.
-
-It recovers from `degraded -> running` when health/status conditions normalize.
+`awaiting_merge` is terminal from NodeSupervisor perspective when completion strategy is PR-based and publication is pending outside the node run.
 
 ---
 
-## 4) CLI surface
+## 4) Completion behavior
 
-## `sp node run`
+Completion behavior is driven by `complete_node` action + runtime completion strategy.
 
-Run a node from a discovered config name, config file path, or inline JSON.
+### Strategies
 
-```bash
-sp node run research
-sp node run ./node-config.json
-sp node run ./node-config.json --bead unitAI-123
-sp node run --inline '{"name":"research","coordinator":"node-coordinator","members":[{"memberId":"explorer-1","specialist":"explorer"}],"initialPrompt":"Investigate X"}' --json
-```
+- `pr` (default):
+  - NodeSupervisor performs completion flow,
+  - can create PR metadata,
+  - transitions to `awaiting_merge` on successful completion intent.
 
-### Node config discovery
+- `manual`:
+  - no PR requirement,
+  - transitions to `done` when gates pass.
 
-`sp node run <name>` and `sp node list` discover configs from:
+### Gate behavior
 
-1. `.specialists/default/nodes/*.node.json` (installed by `sp init --sync-defaults`)
-2. `config/nodes/*.node.json`
-
-If the same node name exists in both locations, `.specialists/default/nodes/` wins.
-
-### Presets / examples
-
-Use the built-in research preset:
-
-```bash
-sp node run research --bead <id>
-# equivalent to: sp node run config/nodes/research.node.json --bead <id>
-```
-
-This preset uses:
-
-- coordinator: `node-coordinator`
-- members: `explorer`, `overthinker`
-- memory namespace: `research`
-- trigger intent:
-  - `on_start` -> resume explorer
-  - `on_member_waiting` -> resume coordinator
-  - `on_all_members_waiting` -> resume coordinator
-
-## `sp node list`
-
-List discovered node configs.
-
-```bash
-sp node list
-sp node list --json
-```
-
-## `sp node status`
-
-Show one node run or list all node runs.
-
-```bash
-sp node status
-sp node status --node research-abc12345
-sp node status --node research-abc12345 --json
-```
-
-## `sp node feed`
-
-Read node-only event stream.
-
-```bash
-sp node feed research-abc12345
-sp node feed research-abc12345 --json
-```
-
-## `sp node promote`
-
-Promote one node memory finding into bead notes.
-
-```bash
-sp node promote research-abc12345 finding-001 --to-bead unitAI-999
-sp node promote research-abc12345 finding-001 --to-bead unitAI-999 --json
-```
+- failing gates with `force_draft_pr=false` cause rejection/failure behavior,
+- failing gates with `force_draft_pr=true` allow draft PR completion intent,
+- quality gates are executed by NodeSupervisor, not coordinator.
 
 ---
 
-## 5) Node config format
+## 5) Intentional behavior change: member idle-wait bootstrap
 
-`sp node run` accepts JSON with this shape:
+Members now start with an idle bootstrap prompt:
+- acknowledge readiness,
+- wait for explicit coordinator resume/steer instructions,
+- do not begin substantive work immediately.
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["name", "coordinator", "members", "initialPrompt"],
-  "properties": {
-    "name": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Human-readable node name; used in generated node_id prefix"
-    },
-    "coordinator": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Specialist name for coordinator job"
-    },
-    "members": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["memberId", "specialist"],
-        "properties": {
-          "memberId": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Stable logical identifier used by coordinator actions"
-          },
-          "specialist": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Specialist to run for this member"
-          },
-          "model": {
-            "type": "string",
-            "description": "Optional model override metadata"
-          },
-          "role": {
-            "type": "string",
-            "description": "Optional role prompt for initial member spawn"
-          }
-        }
-      }
-    },
-    "initialPrompt": {
-      "type": "string",
-      "minLength": 1,
-      "description": "First prompt sent when coordinator starts"
-    },
-    "memoryNamespace": {
-      "type": "string",
-      "description": "Optional namespace for node memory segmentation"
-    }
-  }
-}
-```
-
-Field notes:
-
-- `name` + random suffix produce runtime `node_id` (`<name>-<8char>`).
-- `memberId` must be stable: coordinator contract references this ID.
-- `role` defaults to a generic member prompt when omitted.
+This replaces earlier eager startup behavior and is intentional to prevent uncontrolled member rampage before coordinator routing.
 
 ---
 
-## 6) Coordinator contract
+## 6) Context-depth chaining
 
-Coordinator output is strict JSON validated with Zod:
+Node run context depth precedence:
+1. member-level override (`context_depth` in raw phase member payload when present),
+2. node default (`defaultContextDepth` in node config),
+3. runtime fallback (`2`).
 
-```json
-{
-  "summary": "string (required)",
-  "memory_patch": [
-    {
-      "entry_type": "fact|question|decision",
-      "summary": "string",
-      "entry_id": "string (optional)",
-      "source_member_id": "string (optional)",
-      "confidence": "number 0..1 (optional)",
-      "provenance": "object (optional)"
-    }
-  ],
-  "actions": [
-    { "type": "resume", "memberId": "string", "task": "string" },
-    { "type": "steer", "memberId": "string", "message": "string" },
-    { "type": "stop", "memberId": "string" }
-  ],
-  "validation": {
-    "ok": "boolean (optional)",
-    "issues": ["string"],
-    "notes": "string"
-  }
-}
-```
-
-### Runtime contract enforcement
-
-`NodeSupervisor.handleCoordinatorOutput()` enforces:
-
-1. valid JSON parse,
-2. schema conformance,
-3. runtime member-state compatibility (`memberId` exists, enabled, has `jobId`, has controller).
-
-If invalid, supervisor sends a **repair prompt** and retries.
-
-### 3-attempt repair loop
-
-- Failure classes:
-  - `invalid_json`
-  - `schema_validation_failure`
-  - `runtime_state_mismatch`
-- Max attempts: **3**
-- After 3 failures: node transitions to `error` with reason `coordinator_output_invalid_after_3_attempts`.
+CLI `sp node run --context-depth <n>` sets run-level context depth that feeds coordinator/member options unless overridden downstream by member-level declaration.
 
 ---
 
-## 7) Feed isolation
+## 7) Worktree inheritance and fix loops
 
-Node jobs are isolated from standalone specialist jobs in two ways:
+NodeSupervisor supports worktree-aware spawning and replacement metadata.
 
-1. **Tagging at job start**
-   - `JobControl.startJob()` injects `node_id` and `member_id` into run variables.
-   - Status rows include `node_id` for member/coordinator jobs.
+Coordinator guidance:
+- keep mutating scopes disjoint for safe parallelism,
+- use explicit phase ordering for overlapping mutating work,
+- model fix loops via `review -> fix -> re_review`,
+- use retry lineage fields (`retry_of`, parent metadata) for replacements.
 
-2. **Read-path filtering**
-   - General job feed/status helpers classify jobs with `node_id` as node-owned.
-   - `sp node feed <node-id>` reads only `node_events` for that node.
-
-Result: node orchestration logs do not pollute standalone feed workflows.
+Worktree inheritance intent can be supplied through member metadata (`worktree_from`/`worktree` in runtime payload handling). Coordinator declares intent; NodeSupervisor resolves execution details.
 
 ---
 
-## 8) Memory system
+## 8) Observability and events
 
-Memory is coordinator-authored via `memory_patch` entries.
+Node state is persisted in SQLite tables:
+- `node_runs`
+- `node_members`
+- `node_events`
+- `node_memory`
 
-Flow:
+### Event taxonomy
 
-1. Coordinator emits `memory_patch[]`.
-2. `NodeSupervisor.applyMemoryPatch()` validates each entry before persistence.
-3. Required fields:
-   - `source_member_id` must be present
-   - `confidence` must be present and within `0..1`
-4. Validation failures are non-fatal:
-   - invalid entry is skipped
-   - `memory_patch_rejected` event is emitted with rejection reason
-   - processing continues for remaining entries
-5. Dedup behavior:
-   - dedupe key is `(node_run_id, namespace, entry_id)` logical scope
-   - when `entry_id` already exists for the node/namespace, write path performs upsert (update existing row)
-   - `memory_patch_deduplicated` event is emitted for that mutation
-6. Accepted entries are upserted into `node_memory` and emit `memory_updated`.
-7. `sp node promote <node-id> <finding-id> --to-bead <id>`:
-   - reads `node_memory` by `entry_id`,
-   - builds “Node finding promoted” notes,
-   - appends notes to target bead with `bd update --notes`.
+Canonical dispatch event is `action_written` (legacy `action_dispatched` is removed).
 
-This gives structured node memory + explicit human workflow promotion with audit trail for accepted, rejected, and deduplicated entries.
+Key event families:
+- node lifecycle (`node_created`, `node_started`, `node_state_changed`, ...)
+- member lifecycle (`member_started`, `member_state_changed`, `member_spawned_dynamic`, `member_replaced`, ...)
+- coordinator lifecycle (`coordinator_resumed`, `coordinator_output_received`, `coordinator_output_invalid`, ...)
+- memory lifecycle (`memory_updated`, `memory_patch_rejected`, `memory_patch_deduplicated`)
+- action lifecycle (`action_queued`, `action_written`, `action_observed`, `action_completed`, `action_failed`, `action_dropped`)
+- completion lifecycle (`pr_created`, `node_completed`)
 
----
+### CLI inspection paths
 
-## 9) Context health
+- `sp node status [--node <id>] [--json]`
+- `sp node feed <id> [--json]`
+- `sp node members <id> [--json]`
+- `sp node memory <id> [--json]`
 
-Each coordinator resume payload includes `member_updates` with:
-
-- `context_pct`
-- `context_health`
-
-Current thresholds implemented in `toContextHealth()`:
-
-- `OK`: `< 60`
-- `MONITOR`: `60..75`
-- `WARN`: `>75..90`
-- `CRITICAL`: `> 90`
-- `UNKNOWN`: no metric available
-
-`context_pct` source is SQLite query over member job metrics (`queryMemberContextHealth`).
-
-When a member is `CRITICAL`, node can transition into `degraded`.
+`members`/`status` JSON includes generation and lineage (`reused_from_job_id`, `worktree_owner_job_id`) where available.
 
 ---
 
-## 10) SQLite tables (z5ml)
+## 9) `sp node` command surface (current)
 
-Node runtime persistence lives in schema v4:
-
-### `node_runs`
-
-- `id` (PK)
-- `node_name`
-- `status`
-- `coordinator_job_id`
-- `started_at_ms`
-- `updated_at_ms`
-- `waiting_on`
-- `error`
-- `memory_namespace`
-- `status_json`
-
-### `node_members`
-
-- `id` (PK autoincrement)
-- `node_run_id`
-- `member_id`
-- `job_id`
-- `specialist`
-- `model`
-- `role`
-- `status`
-- `enabled`
-
-### `node_events`
-
-- `id` (PK autoincrement)
-- `node_run_id`
-- `t`
-- `type`
-- `event_json`
-
-Supported event types (`NodeEventType`), grouped by lifecycle:
-
-- **Node lifecycle**
-  - `node_created`
-  - `node_started`
-  - `node_state_changed`
-  - `node_recovered`
-  - `node_waiting`
-  - `node_done`
-  - `node_error`
-  - `node_stopped`
-- **Member lifecycle**
-  - `member_started`
-  - `member_state_changed`
-  - `member_output_received`
-  - `member_failed`
-  - `member_recovered`
-  - `member_respawned`
-  - `member_job_rebound`
-  - `member_disabled`
-- **Coordinator lifecycle**
-  - `coordinator_resumed`
-  - `coordinator_resume_state`
-  - `coordinator_resume_skipped`
-  - `coordinator_output_received`
-  - `coordinator_output_invalid`
-  - `coordinator_repair_requested`
-- **Memory lifecycle**
-  - `memory_updated`
-  - `memory_patch_rejected`
-  - `memory_patch_deduplicated`
-- **Action lifecycle**
-  - `action_queued`
-  - `action_written`
-  - `action_observed`
-  - `action_superseded`
-  - `action_completed`
-  - `action_failed`
-  - `action_dropped`
-
-### `node_memory`
-
-- `id` (PK autoincrement)
-- `node_run_id`
-- `namespace`
-- `entry_type`
-- `entry_id`
-- `summary`
-- `source_member_id`
-- `confidence`
-- `provenance_json`
-- `created_at_ms`
-- `updated_at_ms`
+- `sp node run <config-or-name> [--inline JSON] [--bead <id>] [--context-depth <n>] [--json]`
+- `sp node list [--json]`
+- `sp node status [--node <id>] [--json]`
+- `sp node feed <node-id> [--json]`
+- `sp node members <node-id> [--json]`
+- `sp node memory <node-id> [--json]`
+- `sp node steer <node-id> <message> [--json]`
+- `sp node stop <node-id> [--json]`
+- `sp node attach <node-id>`
+- `sp node promote <node-id> <finding-id> --to-bead <bead-id> [--json]`
 
 ---
 
-## 11) E2E lifecycle walkthrough
+## 10) Backward compatibility and additive changes
 
-Validated path from bootstrap to completion:
+### Backward-compatible additions
 
-1. **Bootstrap**
-   - `NodeSupervisor.run()` calls `bootstrap()`.
-   - SQLite `bootstrapNode()` writes:
-     - `node_runs` row with `created`,
-     - `node_created` + `node_started` events.
+- expanded node schema fields (phases/member metadata, completion metadata, lineage metadata) are additive,
+- event stream expanded with new lifecycle events while keeping JSON-first payload model,
+- CLI expanded with non-breaking new `sp node` subcommands.
 
-2. **Starting**
-   - State `created -> starting`.
-   - `spawnMembers()` starts keep-alive member jobs via `JobControl`.
-   - `spawnCoordinator()` starts coordinator job.
-   - State `starting -> running`.
+### Intentional behavior changes
 
-3. **Polling loop**
-   - Every `POLL_INTERVAL_MS` (5s), supervisor reads member statuses.
-   - Status/output changes emit `member_state_changed` and update registry.
-
-4. **Coordinator resume**
-   - If coordinator status is `waiting` and member changes exist:
-     - build `node_resume_payload` containing:
-       - member updates + context health,
-       - full registry snapshot,
-       - recent memory patch summary,
-     - `resumeJob()` coordinator.
-     - emit `coordinator_resumed`.
-     - state can move `running -> waiting`.
-
-5. **Coordinator output handling**
-   - New coordinator output hash triggers parse/validate path.
-   - Valid output:
-     - emit `coordinator_output_received`,
-     - apply `memory_patch` -> `node_memory` + `memory_updated` events,
-     - queue/write `actions[]` to target members (`action_queued` -> `action_written`).
-   - Invalid output:
-     - emit `coordinator_output_invalid`,
-     - run up to 3 repair attempts.
-
-6. **Health + degradation**
-   - Member error/critical context can transition to `degraded`.
-   - Recovery can return to `running`.
-
-7. **Terminal completion**
-   - When all members are terminal (`done|error|stopped`):
-     - transition to `done`,
-     - emit `node_done`,
-     - optionally append completion summary to source bead.
-
-8. **Promotion flow (post-run)**
-   - Operator promotes selected node finding(s) to bead via `sp node promote`.
+- member bootstrap switched to idle-wait mode,
+- completion flow now models `awaiting_merge` and explicit completion strategy,
+- coordinator contract now centers on `create_bead` / `complete_node` + phase member declarations instead of direct control actions.
 
 ---
 
-## Practical notes
+## 11) Practical coordinator heuristics
 
-- Node persistence is **best-effort** in supervisor paths (orchestration continues even if SQLite writes fail).
-- Runtime control path (`resume|steer|stop`) is FIFO-based through job status metadata.
-- Node contract deliberately separates:
-  - orchestration decisions (`coordinator` JSON),
-  - execution control (`JobControl`),
-  - storage (`observability-sqlite`).
+- Parallelize only disjoint mutating scopes.
+- Serialize dependent or overlapping edits.
+- Prefer short, explicit phases over implicit long-running waves.
+- Emit memory entries only when they change downstream decisions.
+- Emit `complete_node` only when completion evidence + gate intent are explicit.
