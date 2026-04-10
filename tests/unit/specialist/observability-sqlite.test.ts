@@ -411,6 +411,85 @@ describe('observability-sqlite', () => {
     });
   });
 
+  describe('epic persistence contract', () => {
+    it('persists epic run rows with lifecycle fields and reads them back', () => {
+      const client = createClient();
+
+      client.upsertEpicRun({
+        epic_id: 'unitAI-epic',
+        status: 'resolving',
+        updated_at_ms: 100,
+        status_json: JSON.stringify({
+          status: 'resolving',
+          owner_job_id: 'job-owner',
+          required_chains: ['chain-a'],
+        }),
+      });
+
+      client.upsertEpicRun({
+        epic_id: 'unitAI-epic',
+        status: 'merge_ready',
+        updated_at_ms: 200,
+        status_json: JSON.stringify({
+          status: 'merge_ready',
+          owner_job_id: 'job-owner',
+          required_chains: ['chain-a'],
+          note: 'ready',
+        }),
+      });
+
+      const row = client.readEpicRun('unitAI-epic');
+      expect(row).not.toBeNull();
+      expect(row?.epic_id).toBe('unitAI-epic');
+      expect(row?.status).toBe('merge_ready');
+      expect(row?.updated_at_ms).toBe(200);
+
+      const payload = JSON.parse(row?.status_json ?? '{}') as Record<string, unknown>;
+      expect(payload.status).toBe('merge_ready');
+      expect(payload.owner_job_id).toBe('job-owner');
+      expect(Array.isArray(payload.required_chains)).toBe(true);
+    });
+
+    it('persists chain membership and resolves by chain id or chain-root bead id', () => {
+      const client = createClient();
+
+      client.upsertEpicChainMembership({
+        chain_id: 'chain-a',
+        epic_id: 'unitAI-epic',
+        chain_root_bead_id: 'unitAI-chain-a',
+        chain_root_job_id: 'job-a',
+        updated_at_ms: 100,
+      });
+      client.upsertEpicChainMembership({
+        chain_id: 'chain-b',
+        epic_id: 'unitAI-epic',
+        chain_root_bead_id: 'unitAI-chain-b',
+        chain_root_job_id: 'job-b',
+        updated_at_ms: 200,
+      });
+
+      const byChainId = client.resolveEpicByChainId('chain-a');
+      expect(byChainId?.epic_id).toBe('unitAI-epic');
+      expect(byChainId?.chain_root_bead_id).toBe('unitAI-chain-a');
+
+      const byRootBead = client.resolveEpicByChainRootBeadId('unitAI-chain-b');
+      expect(byRootBead?.chain_id).toBe('chain-b');
+      expect(byRootBead?.chain_root_job_id).toBe('job-b');
+
+      const listed = client.listEpicChains('unitAI-epic');
+      expect(listed.map((row) => row.chain_id)).toEqual(['chain-b', 'chain-a']);
+    });
+
+    it('returns null/empty for unknown epic entities', () => {
+      const client = createClient();
+
+      expect(client.readEpicRun('missing-epic')).toBeNull();
+      expect(client.resolveEpicByChainId('missing-chain')).toBeNull();
+      expect(client.resolveEpicByChainRootBeadId('missing-root')).toBeNull();
+      expect(client.listEpicChains('missing-epic')).toEqual([]);
+    });
+  });
+
   describe('parseJournalMode', () => {
     it('normalizes journal mode to lowercase', () => {
       expect(parseJournalMode('WAL')).toBe('wal');

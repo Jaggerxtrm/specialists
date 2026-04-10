@@ -9,7 +9,8 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { spawnSync } from 'node:child_process';
-import { resolveMergeTargets, topologicallySortChains, run } from '../../../src/cli/merge.js';
+import * as observabilitySqlite from '../../../src/specialist/observability-sqlite.js';
+import { resolveChainEpicMembership, resolveMergeTargets, topologicallySortChains, run } from '../../../src/cli/merge.js';
 
 function asSpawnResult(partial: Partial<SpawnSyncReturns<string>>): SpawnSyncReturns<string> {
   return {
@@ -57,6 +58,45 @@ describe('merge CLI', () => {
     );
 
     expect(sorted.map(chain => chain.beadId)).toEqual(['unitAI-c', 'unitAI-b', 'unitAI-a']);
+  });
+
+  it('prefers sqlite chain->epic membership when available', () => {
+    const sqliteClient = {
+      resolveEpicByChainRootBeadId: vi.fn().mockReturnValue({ epic_id: 'unitAI-epic-from-sqlite' }),
+      close: vi.fn(),
+    };
+    vi.spyOn(observabilitySqlite, 'createObservabilitySqliteClient').mockReturnValue(sqliteClient as never);
+
+    const membership = resolveChainEpicMembership('unitAI-chain');
+    expect(membership).toEqual({ epicId: 'unitAI-epic-from-sqlite', source: 'sqlite' });
+    expect(sqliteClient.resolveEpicByChainRootBeadId).toHaveBeenCalledWith('unitAI-chain');
+    expect(sqliteClient.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to bead parent when sqlite membership is unavailable', () => {
+    vi.spyOn(observabilitySqlite, 'createObservabilitySqliteClient').mockReturnValue(null);
+
+    (spawnSync as unknown as ReturnType<typeof vi.fn>).mockImplementation((command: string, args: string[]) => {
+      if (command === 'bd' && args[0] === 'show') {
+        return asSpawnResult({ stdout: JSON.stringify([{ id: 'unitAI-chain', title: 'chain', parent: 'unitAI-epic-parent' }]) });
+      }
+      return asSpawnResult({ status: 1, stderr: 'unexpected command' });
+    });
+
+    expect(resolveChainEpicMembership('unitAI-chain')).toEqual({ epicId: 'unitAI-epic-parent', source: 'bead-parent' });
+  });
+
+  it('returns none when sqlite and bead-parent resolution both fail', () => {
+    vi.spyOn(observabilitySqlite, 'createObservabilitySqliteClient').mockReturnValue(null);
+
+    (spawnSync as unknown as ReturnType<typeof vi.fn>).mockImplementation((command: string, args: string[]) => {
+      if (command === 'bd' && args[0] === 'show') {
+        return asSpawnResult({ stdout: JSON.stringify([{ id: 'unitAI-chain', title: 'chain' }]) });
+      }
+      return asSpawnResult({ status: 1, stderr: 'unexpected command' });
+    });
+
+    expect(resolveChainEpicMembership('unitAI-chain')).toEqual({ source: 'none' });
   });
 
   it('resolves chain-root target to one branch', () => {
