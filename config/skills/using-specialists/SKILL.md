@@ -4,13 +4,13 @@ description: >
   Use this skill whenever you're about to start a substantial task — pause first and
   route the work through specialists instead of doing discovery or implementation
   yourself. Consult before any: code review, security audit, deep bug investigation,
-  test generation, multi-file refactor, architecture analysis, or multi-wave
+  test generation, multi-file refactor, architecture analysis, or multi-chain
   specialist orchestration. Also use for the mechanics of delegation: --bead
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.4
-synced_at: a1e9f935
+version: 4.5
+synced_at: zz22-docs
 ---
 
 # Specialists Usage
@@ -36,8 +36,8 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 3. **Run explorer before executor when context is lacking.** If the bead already has clear scope — files, symbols, approach — send executor directly. Only run explorer first when the issue lacks a clear track.
 4. **For tracked work, the bead is the prompt.** The bead description, notes, and parent context are the instruction surface.
 5. **`--bead` and `--prompt` are mutually exclusive.** If you need to refine instructions, update the bead notes; do not add `--prompt`.
-6. **Wave sequencing is strict.** Never start wave N+1 before wave N is complete AND merged. Within-wave parallelism is fine only for independent jobs.
-7. **Merge between waves is mandatory.** Executor worktree branches must be merged into master before the next wave starts. Use `sp merge <epic-id>` or `sp merge <chain-root-bead>` — never manual git merge. See "Merge Protocol" below.
+6. **Chains belong to epics.** A chain is a worktree lineage (executor → reviewer → fix). An epic is the merge-gated identity that owns chains. Use `sp epic merge <epic>` to publish — never merge individual chains that belong to an unresolved epic.
+7. **Merge through epics, not manual git.** Use `sp epic merge <epic-id>` for wave-bound chains or `sp merge <chain-root-bead>` for standalone chains. Never use manual `git merge` for specialist work.
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
 9. **Executor does not run tests.** Executor runs lint + tsc only. Tests are the reviewer's and test-runner's responsibility in the chained pipeline.
 
@@ -70,17 +70,30 @@ specialists run <name> --bead <id>            # foreground run (streams output)
 specialists run <name> --bead <id> --background  # background run
 specialists run <name> --bead <id> --worktree    # isolated worktree (edit-capable specialists)
 specialists run <name> --bead <id> --job <job-id> # reuse another job's worktree
+specialists run <name> --bead <id> --epic <epic-id> # explicitly declare epic membership
 specialists run <name> --prompt "..."         # ad-hoc (no bead tracking)
 specialists run <name> --bead <id> --keep-alive  # keep session alive after first turn
 specialists run <name> --bead <id> --context-depth 2  # inject parent bead context
 
 # Monitoring
-specialists ps                                # list all jobs (status, specialist, elapsed, bead)
+specialists ps                                # list all jobs (status, specialist, elapsed, bead, epic)
 specialists ps <job-id>                       # inspect single job (full detail + ctx% badge)
 specialists feed -f                           # tail merged feed (all jobs) — shows [ctx%] context window usage
 specialists feed <job-id>                     # events for a specific job
 specialists result <job-id>                   # final output text
 specialists status --job <job-id>             # single-job detail view (legacy — prefer `sp ps <id>`)
+
+# Epic lifecycle (canonical publication path)
+specialists epic list [--unresolved]          # list epics with lifecycle state
+specialists epic status <epic-id>             # show chains, blockers, readiness
+specialists epic resolve <epic-id>            # transition open -> resolving
+specialists epic merge <epic-id> [--pr]       # publish all epic-owned chains
+
+# Merge (for standalone chains only)
+specialists merge <chain-root-bead> [--rebuild]  # publish ONE standalone chain
+
+# Session close (chain-aware, epic-aware)
+specialists end [--pr]                        # close session, publish via merge or PR
 
 # Interaction
 specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
@@ -94,6 +107,62 @@ specialists clean --processes                 # kill all running/starting specia
 specialists init --sync-skills                # re-sync skills only (no full init)
 specialists init --no-xtrm-check              # skip xtrm prerequisite check (CI/testing)
 ```
+
+---
+
+## Taxonomy: Job | Chain | Epic
+
+The specialists orchestration model uses three levels:
+
+| Term | Definition | Persisted? | Merge scope |
+|------|------------|:----------:|:-----------:|
+| **Job** | One specialist run (atomic execution unit) | Yes (SQLite + files) | — |
+| **Chain** | Worktree lineage: executor → reviewer → fix → re-review (seeded by edit-capable specialist) | Yes (`worktree_owner_job_id`) | `sp merge <chain-root>` |
+| **Epic** | Top merge-gated identity that owns chains across stages | Yes (`epic_runs` table) | `sp epic merge <epic>` |
+| **Wave** | Human shorthand for dispatch batches ("Wave 1", "Wave 2b") — **speech only, NOT persisted** | No | — |
+
+### Key relationships
+
+- **Chains belong to epics**: When `--bead` is used, the chain defaults to the bead's parent epic. Override with `--epic <id>`.
+- **Jobs belong to chains**: Jobs sharing a `worktree_owner_job_id` form one chain.
+- **Merge through epics**: `sp epic merge <epic-id>` is the **canonical publication path** for wave-bound chains.
+- **Standalone chains**: `sp merge <chain-root-bead>` works only for chains NOT belonging to an unresolved epic.
+
+### Epic lifecycle
+
+```
+open → resolving → merge_ready → merged
+                  ↘ failed
+                  ↘ abandoned
+```
+
+| State | Meaning | Chains mergeable? |
+|-------|---------|:-----------------:|
+| `open` | Epic created, chains not yet running | — |
+| `resolving` | Chains are actively running | ✗ |
+| `merge_ready` | All chains terminal, reviewer PASS | ✓ (via `sp epic merge`) |
+| `merged` | Publication complete | — |
+| `failed` | One or more chains failed | — |
+| `abandoned` | Cancelled without merge | — |
+
+### Migration from "waves" vocabulary
+
+**Old terminology → New terminology:**
+
+| Old | New | Notes |
+|-----|-----|-------|
+| "Wave 1" | Stage 1 / Prep phase | Speech shorthand still works — just not persisted |
+| "Wave 2" | Implementation chains | Chains are the operative unit, grouped by epic |
+| "Between waves merge" | `sp epic merge` | Epic is the merge-gated identity |
+| "Parallel in wave" | Parallel chains under epic | Use `--epic` to declare membership explicitly |
+
+**Why this change?**
+
+1. **Waves had no identity**: "Wave 2" was just speech — no code could track it.
+2. **Merge gates were implicit**: Operators had to remember which chains to merge together.
+3. **Epics are explicit**: An epic bead ID persists, enabling `sp epic status` and `sp epic merge`.
+
+**Backward compatibility**: All existing workflows work unchanged. The new vocabulary is additive — you can still think in waves, but the system tracks epics.
 
 ---
 
@@ -188,17 +257,33 @@ bd close abc --reason "Fixed: token refresh retries on 401. Reviewer PASS."
 
 ---
 
-## --job and --worktree Semantics
+## --job, --worktree, and --epic Semantics
 
-These flags control **workspace isolation**. Executors run in isolated git worktrees so
-concurrent jobs don't corrupt shared files.
+These flags control **workspace isolation** and **epic membership**. Executors run in isolated git worktrees so concurrent jobs don't corrupt shared files. Chains declare epic membership to enable merge-gated publication.
 
-| Flag | Semantics | Creates worktree? |
-|------|-----------|:-:|
-| `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes |
-| `--job <id>` | Reuse the workspace of an existing job | No |
+| Flag | Semantics | Creates worktree? | Sets epic? |
+|------|-----------|:----------------:|:----------:|
+| `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes | Inherited from bead.parent |
+| `--job <id>` | Reuse the workspace of an existing job | No | Inherited from target job |
+| `--epic <id>` | Explicitly declare epic membership | No | Yes (overrides default) |
 
 `--worktree` and `--job` are **mutually exclusive**. Specifying both exits with an error.
+
+### Epic membership
+
+When `--bead` is used, the chain defaults to the bead's parent epic (if parent is an epic-type bead). Override this with `--epic <id>`:
+
+```bash
+# Chain inherits bead.parent as epic
+specialists run executor --worktree --bead unitAI-impl
+# → epic_id = bead.parent (if epic-type)
+
+# Explicit epic declaration (e.g., prep job with non-epic parent)
+specialists run explorer --bead prep-task.1 --epic unitAI-3f7b
+# → epic_id = unitAI-3f7b (explicit override)
+```
+
+**Why explicit --epic?** Prep jobs (explorer, planner, overthinker) often have non-epic parents but need to belong to the epic for `sp ps` grouping and `sp epic status` visibility.
 
 ### `--worktree`
 
@@ -253,6 +338,7 @@ Use when the caller explicitly accepts concurrent write risk (e.g., target job k
 | Reviewer on executor's output | `--job <exec-job-id>` (no `--worktree`) |
 | Fix executor after reviewer PARTIAL | `--bead <fix-bead> --job <exec-job-id>` |
 | Force entry to blocked worktree | `--bead <fix-bead> --job <exec-job-id> --force-job` |
+| Prep job belonging to epic (non-epic parent) | `--bead <prep-bead> --epic <epic-id>` |
 | Explorer (READ_ONLY) | Neither — explorers don't need worktrees |
 | Overthinker, planner, debugger | Neither — read-only and interactive specialists |
 
@@ -310,20 +396,19 @@ epic
   ├── child-2 → explore-2 → impl-2  (reviewer via --job impl-2-job)
   └── child-N → explore-N → impl-N  (reviewer via --job impl-N-job)
 ```
-Children within the same wave can run **in parallel** if they own disjoint files.
+Children (chains) within the same epic can run **in parallel** if they own disjoint files.
 
-### Parallel beads (same wave)
-Beads in the same wave share no intra-wave dependencies. They depend on the previous wave's
-output (same parent), not on each other.
+### Parallel chains (same stage)
+Chains in the same stage share no intra-stage dependencies. They depend on the previous stage's output (same epic parent), not on each other.
 ```
-# Wave 2 parallel executors (after shared Wave 1 explorer):
+# Stage 2 parallel executors (after shared Stage 1 explorer):
 bd dep add impl-a explore   # impl-a depends on explore, NOT on impl-b
 bd dep add impl-b explore   # impl-b depends on explore, NOT on impl-a
 ```
-Each runs in its own `--worktree`. Merge both branches before Wave 3.
+Each runs in its own `--worktree`. Merge via `sp epic merge <epic>` before Stage 3.
 
 ### Test beads (batched)
-Tests are **batched** — one test bead covers all impls in a wave, not per-impl.
+Tests are **batched** — one test bead covers all impls in a stage, not per-impl.
 The test bead depends on **all** impl beads it covers.
 ```
 bd dep add tests impl-a
@@ -393,11 +478,62 @@ bd close unitAI-task --reason "Reviewer PASS. All findings addressed."
 
 ---
 
-## Merge Protocol — `sp merge`
+## Merge Protocol — Epic Publication
 
-The orchestrator owns merge timing, but **no longer performs manual git merges**. Use `sp merge <target>` instead.
+The orchestrator owns merge timing, but **no longer performs manual git merges**. Use `sp epic merge` or `sp merge` instead.
 
-### When to merge vs when NOT to merge
+### The canonical path: `sp epic merge <epic-id>`
+
+**This is the ONLY legal publication path for wave-bound chains.**
+
+An epic is merge-gated: all chains must be terminal with reviewer PASS before publication. Use `sp epic merge` for:
+
+- Publishing multiple chains under one epic (topological order)
+- Ensuring merge gates are satisfied (no running jobs)
+- PR mode (`--pr`) for staged publication
+
+```bash
+# Check epic readiness
+sp epic status unitAI-3f7b
+# Shows: chains, blockers, readiness state, reviewer verdicts
+
+# Publish all epic-owned chains
+sp epic merge unitAI-3f7b
+# → merges in topological order, tsc gate after each
+
+# PR mode (creates PR instead of direct merge)
+sp epic merge unitAI-3f7b --pr
+```
+
+**What `sp epic merge` does:**
+
+1. Reads epic state from observability SQLite
+2. Checks all chains are terminal (`done`/`error`)
+3. Verifies latest reviewer verdict is PASS
+4. Topologically sorts chains by bead dependencies
+5. For each chain: `git merge <branch> --no-ff --no-edit`
+6. Runs `bunx tsc --noEmit` after each merge
+7. Optionally creates PR with `--pr` flag
+8. Updates epic state to `merged` on success
+
+### When NOT to merge: `sp merge <chain-root>` is blocked
+
+**Standalone chains only.** `sp merge <chain-root-bead>` works ONLY for chains NOT belonging to an unresolved epic:
+
+```bash
+# This FAILS if chain belongs to epic with status=open/resolving/merge_ready
+sp merge unitAI-impl
+# Error: Chain unitAI-impl belongs to unresolved epic unitAI-3f7b (status: resolving).
+# Use 'sp epic merge unitAI-3f7b' to publish all chains together.
+```
+
+**Why this guard exists:**
+
+1. **Merge gates are per-epic**: Publishing one chain without its siblings breaks the wave model.
+2. **Topological order matters**: Chain A may depend on Chain B — merging A first breaks deps.
+3. **Epics are explicit**: The epic bead ID is tracked in SQLite, enabling the guard.
+
+### When to merge within a chain vs NOT
 
 **Do NOT merge within a chain.** A chain is a sequence of specialists sharing one worktree:
 executor → reviewer → fix → re-review. The worktree stays live throughout. No merge until
@@ -408,68 +544,49 @@ executor --worktree --bead impl     ← creates worktree
 reviewer --job <exec-job>           ← enters same worktree (no merge)
 executor --bead fix --job <exec-job> ← re-enters same worktree (no merge)
 reviewer --job <exec-job>           ← re-enters same worktree (no merge)
-PASS → NOW run sp merge <impl-bead>
+PASS → NOW run sp epic merge <epic>
 ```
 
-**DO merge between waves.** When the next wave's beads depend on this wave's code existing
-on master, you must merge first. The dep graph tells you: beads connected by `--job` are
-one chain (same worktree, no merge). Beads connected by `bd dep add` across different
-file scopes are separate waves (different worktrees, merge between them).
-
-### `sp merge <target>` — the canonical path
-
-`sp merge` handles the full merge workflow:
-
-```bash
-# Merge a single chain (one executor's worktree branch)
-sp merge unitAI-impl-bead
-
-# Merge all chains under an epic (topological order, tsc gate after each)
-sp merge unitAI-epic
-
-# With rebuild after all merges complete
-sp merge unitAI-epic --rebuild
-```
-
-**What `sp merge` does:**
-
-1. Validates all target jobs are terminal (`done`/`error`/`cancelled`)
-2. Resolves chain-root jobs with worktree metadata
-3. Topologically sorts by bead dependencies (FIFO)
-4. For each branch: `git merge <branch> --no-ff --no-edit`
-5. Runs `bunx tsc --noEmit` after each merge (stops on type errors)
-6. Optionally rebuilds with `--rebuild` flag
-
-**Why use `sp merge` instead of manual git:**
-
-- Guarantees correct dependency order (bead deps → merge order)
-- Catches type errors immediately after each merge
-- Refuses merge if any chain job is still running
-- Handles epic-level batch merge with one command
+**DO merge between stages (via epic).** When the next stage's chains depend on this stage's code existing on master, merge the epic first. The dep graph tells you: beads connected by `--job` are one chain (same worktree, no merge). Beads connected by `bd dep add` across different file scopes are separate chains under the same epic.
 
 ### Planning context upfront
 
-Before dispatching any wave, identify:
-- **Chains** — beads that share a worktree via `--job` (executor → reviewer → fix → re-review)
-- **Waves** — groups of independent chains that can run in parallel ("Wave 1" / "Wave 2b" are orchestrator speech for dispatch batches)
-- **Merge points** — between waves, after all chains in the wave reach PASS
-- **Epics** — the top merge-gated identity (bead epic) that owns chains across multiple waves
+Before dispatching any chains, identify:
+- **Epics** — the top merge-gated identity (create epic-type bead first)
+- **Chains** — worktree lineages that belong to the epic (use `--epic` for prep jobs)
+- **Stages** — batches of independent chains ("Stage 1" / "Stage 2" are orchestrator speech)
 
-The dep graph encodes this. If bead B depends on bead A and they touch different files,
-they're separate waves with a merge point between them.
+The dep graph encodes this. If bead B depends on bead A and they touch different files, they're separate chains under the same epic with a merge point between stages.
+
+### Epic lifecycle commands
+
+```bash
+# List epics with state
+sp epic list
+sp epic list --unresolved   # show non-terminal epics
+
+# Inspect one epic
+sp epic status unitAI-3f7b
+# Shows: persisted_state, readiness_state, chains[], blockers[], summary
+
+# Transition states (manual)
+sp epic resolve unitAI-3f7b   # open → resolving
+
+# Publish
+sp epic merge unitAI-3f7b     # merge_ready → merged
+sp epic merge unitAI-3f7b --pr # PR mode
+```
 
 ### Conflict handling
 
-If `sp merge` hits a conflict:
+If merge hits a conflict:
 
 1. Command fails with list of conflicting files
 2. Resolve conflicts manually in your editor
 3. Run `bunx tsc --noEmit` to verify
-4. Continue with next chain (or re-run `sp merge <epic>` to resume)
+4. Continue with next chain (or re-run `sp epic merge <epic>` to resume)
 
-**Common conflict pattern:** Parallel executors in the same wave may both create the same
-utility file (e.g. `job-root.ts`). This is expected — implementations should be identical.
-Keep one, delete the duplicate during conflict resolution.
+**Common conflict pattern:** Parallel chains in the same stage may both create the same utility file (e.g. `job-root.ts`). This is expected — implementations should be identical. Keep one, delete the duplicate during conflict resolution.
 
 ---
 
@@ -679,87 +796,108 @@ specialists stop d4e5f6   # only when truly done iterating
 
 ---
 
-## Wave Orchestration
+## Chain and Epic Orchestration
 
-For multi-step work, dispatch specialists in **waves**.
+For multi-step work, dispatch chains under an **epic**.
 
-A **wave** is a set of specialist jobs that may run in parallel **only if they are independent**.
-Waves are strictly sequential: **never start wave N+1 before wave N completes AND is merged**.
+A **chain** is a worktree lineage (executor → reviewer → fix → re-review). Chains within the same epic may run in parallel **only if they are independent** (disjoint file scopes). Stages are strictly sequential: **never start Stage N+1 before Stage N completes AND is merged via `sp epic merge`**.
 
-### Wave rules
+### Chain rules
 
-1. **Sequence between waves.** Exploration → implementation → review → doc sync.
-2. **Parallelize only within a wave.** Jobs that don't depend on each other may run together.
-3. **Do not overlap waves.** Wait for every job, read results, update beads, merge.
-4. **Bead deps encode the pipeline.** The dependency graph should match wave order.
+1. **Sequence between stages.** Prep (explorer/planner) → implementation chains → review → tests → doc sync.
+2. **Parallelize only within a stage.** Chains that don't depend on each other may run together.
+3. **Do not overlap stages.** Wait for every chain job, read results, update beads, merge epic.
+4. **Bead deps encode the pipeline.** The dependency graph should match stage order.
 5. **`--context-depth 2` for all chained runs.** Each specialist sees parent + predecessor.
-6. **Merge between waves is mandatory.** See Merge Protocol above.
+6. **Merge via `sp epic merge` is mandatory.** See Merge Protocol above.
 
-### Polling a wave
+### Polling chains
 
 ```bash
-specialists ps                                # list all jobs — shows status, specialist, elapsed, bead
+specialists ps                                # list all jobs — shows epic grouping, status, elapsed
 specialists ps abc123                         # inspect specific job (full detail)
-specialists ps abc123 def456 ghi789           # inspect multiple jobs
+specialists ps --follow                       # live dashboard with epic grouping
 ```
 
-A wave is complete when every job is `completed` or `error` AND you have:
+`sp ps` shows epic-level grouping:
+
+```
+◆ epic:unitAI-3f7b · merge_ready · state:resolving · prep done=2/2 · chains pass=3/3
+  prep:exp-1 · done
+  prep:plan-2 · done
+  chain:impl-a (reviewer PASS) · branch:feature/unitAI-impl-a-executor
+  chain:impl-b (reviewer PASS) · branch:feature/unitAI-impl-b-executor
+  chain:impl-c (reviewer PASS) · branch:feature/unitAI-impl-c-executor
+```
+
+A stage is complete when every chain is terminal AND you have:
 1. Read results: `specialists result <job-id>` for each
 2. Updated/closed beads as needed
-3. Merged all worktree branches into master
+3. Published via `sp epic merge <epic-id>`
 
-### Canonical multi-wave example
+### Canonical multi-stage example
 
 ```bash
-# 0. Parent bead
-bd create --title "Add worktree isolation to executor" --type feature --priority 1
-# -> unitAI-root
+# 0. Create epic bead (top merge-gated identity)
+bd create --title "Add worktree isolation to executor" --type epic --priority 1
+# -> unitAI-3f7b
 
-# 1. Chained child beads
+# 1. Create prep and impl beads as children of the epic
 bd create --title "Explore: map job run architecture" --type task --priority 2  # -> unitAI-exp
-bd dep add exp root
+bd dep add exp 3f7b
 bd create --title "Implement: worktree isolation" --type task --priority 2  # -> unitAI-impl
 bd dep add impl exp
-# Note: reviewer runs via --job, test-runner gets its own bead
+# Note: reviewer runs via --job, inherits epic from impl bead.parent
 
-# Wave 1 — Explorer
-specialists run explorer --bead unitAI-exp --context-depth 2 --background
+# Stage 1 — Explorer (prep job, declares epic explicitly)
+specialists run explorer --bead unitAI-exp --epic unitAI-3f7b --context-depth 2 --background
 # -> Job started: job1
 specialists result job1
 
-# [MERGE] Nothing to merge from READ_ONLY wave
+# [NO MERGE] Prep stage has no worktrees to merge
 
-# Wave 2 — Executor
+# Stage 2 — Executor (chain inherits epic from bead.parent)
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 # -> Job started: job2  (worktree: .worktrees/unitAI-impl/unitAI-impl-executor)
+# epic_id = bead.parent (unitAI-3f7b)
 specialists result job2
 
-# [MERGE] Merge worktree branch into master (sp merge handles topological order + tsc gate)
-sp merge unitAI-impl --rebuild
-
-# Wave 3 — Reviewer (no bead, uses --job)
-specialists run reviewer --job job2 --keep-alive --background
+# Stage 3 — Reviewer (uses --job, same worktree)
+specialists run reviewer --job job2 --keep-alive --background --prompt "Review implementation"
 # -> Job started: job3
 specialists result job3
-# PASS → Wave 4. PARTIAL → fix loop.
+# PASS → ready for epic merge. PARTIAL → fix loop.
 
-# Wave 4 — Tests (if needed)
-bd create --title "Test: worktree isolation" --type task --priority 2  # -> unitAI-tests
-bd dep add tests impl
-specialists run test-runner --bead unitAI-tests --context-depth 2 --background
+# Stage 4 — Fix loop (if PARTIAL)
+bd create --title "Fix: reviewer gaps on impl" --type bug --priority 1  # -> unitAI-fix1
+bd dep add fix1 impl
+specialists run executor --bead fix1 --job job2 --context-depth 2 --background
+# Re-review
+specialists run reviewer --job job2 --keep-alive --background --prompt "Re-review after fix"
+
+# [MERGE] Publish epic
+sp epic status unitAI-3f7b  # verify readiness: merge_ready, all chains PASS
+sp epic merge unitAI-3f7b --rebuild
 
 # Close
-bd close root --reason "Worktree isolation implemented. Reviewer PASS. Tests green."
+bd close 3f7b --reason "Worktree isolation implemented. Reviewer PASS. Epic merged."
 ```
 
-### Within-wave parallelism
+### Within-stage parallelism (multiple chains)
 
 ```bash
-# Parallel executors — disjoint files, same parent explorer
+# Parallel executors — disjoint files, same parent epic
+bd create --title "Implement: component A" --type task --priority 2  # -> unitAI-impl-a
+bd dep add impl-a exp
+bd create --title "Implement: component B" --type task --priority 2  # -> unitAI-impl-b
+bd dep add impl-b exp
+
 specialists run executor --worktree --bead unitAI-impl-a --context-depth 2 --background
 specialists run executor --worktree --bead unitAI-impl-b --context-depth 2 --background
-# Each runs in its own worktree.
-# Do NOT start next wave until BOTH complete AND BOTH are merged.
+# Each runs in its own worktree, both belong to unitAI-3f7b (via bead.parent)
+
+# Do NOT start next stage until BOTH complete AND epic is merged
+sp epic merge unitAI-3f7b
 ```
 
 ---
@@ -769,7 +907,7 @@ specialists run executor --worktree --bead unitAI-impl-b --context-depth 2 --bac
 ### 1. Route work — don't explore or implement yourself
 Discovery goes to **explorer** first; implementation goes to **executor** only after discovery is done.
 
-### 2. Validate combined output after each wave
+### 2. Validate combined output after each stage
 ```bash
 npm run lint          # project quality gate
 npx tsc --noEmit      # type check
@@ -787,8 +925,8 @@ Options when a specialist fails:
 - **Switch**: e.g. sync-docs stalls → try executor
 - **Stop and report** to the user before doing it yourself
 
-### 4. Merge between waves (CRITICAL)
-See Merge Protocol above. No exceptions.
+### 4. Merge via epic (CRITICAL)
+See Merge Protocol above. Use `sp epic merge <epic-id>` — no exceptions.
 
 ### 5. Run drift detection after doc-heavy sessions
 ```bash
