@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { isEpicUnresolvedState, type EpicState } from '../specialist/epic-lifecycle.js';
 
 interface MergeCliOptions {
   target: string;
@@ -164,6 +165,59 @@ export function resolveChainEpicMembership(chainRootBeadId: string): { epicId?: 
   return { source: 'none' };
 }
 
+export interface EpicGuardResult {
+  blocked: boolean;
+  epicId?: string;
+  epicStatus?: EpicState;
+  message?: string;
+}
+
+export function checkEpicUnresolvedGuard(chainRootBeadId: string): EpicGuardResult {
+  const membership = resolveChainEpicMembership(chainRootBeadId);
+
+  if (!membership.epicId) {
+    return { blocked: false };
+  }
+
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    // SQLite unavailable during migration/fallback: allow merge but warn
+    return {
+      blocked: false,
+      epicId: membership.epicId,
+      message: `Warning: unable to verify epic ${membership.epicId} status (observability DB unavailable). Proceeding with chain merge.`,
+    };
+  }
+
+  try {
+    const epicRun = sqliteClient.readEpicRun(membership.epicId);
+    if (!epicRun) {
+      // Epic metadata missing during migration: allow merge but warn
+      return {
+        blocked: false,
+        epicId: membership.epicId,
+        message: `Warning: epic ${membership.epicId} has no run record. Proceeding with chain merge.`,
+      };
+    }
+
+    const status = epicRun.status as EpicState;
+    if (!isEpicUnresolvedState(status)) {
+      // Epic is terminal (merged, failed, abandoned): allow chain merge
+      return { blocked: false, epicId: membership.epicId, epicStatus: status };
+    }
+
+    // Epic is unresolved: block chain merge
+    return {
+      blocked: true,
+      epicId: membership.epicId,
+      epicStatus: status,
+      message: `Chain ${chainRootBeadId} belongs to unresolved epic ${membership.epicId} (status: ${status}).\nUse 'sp epic merge ${membership.epicId}' to publish all chains together, or 'sp epic status ${membership.epicId}' to inspect the epic state.`,
+    };
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 function readAllJobStatuses(): JobStatusRecord[] {
   const jobsDir = resolveJobsDir();
   if (!existsSync(jobsDir)) return [];
@@ -292,7 +346,15 @@ export function resolveMergeTargets(target: string): ChainMergeTarget[] {
     if (!chain) {
       throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
     }
-    resolveChainEpicMembership(chain.beadId);
+
+    const guardResult = checkEpicUnresolvedGuard(chain.beadId);
+    if (guardResult.message && !guardResult.blocked) {
+      console.warn(guardResult.message);
+    }
+    if (guardResult.blocked) {
+      throw new Error(guardResult.message!);
+    }
+
     ensureTerminalJobs([chain]);
     return [chain];
   }
