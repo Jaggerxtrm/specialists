@@ -55,10 +55,12 @@ export const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig> = {
   tool_duration_warn_ms: 120_000,
 };
 
+export type SupervisorJobStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
+
 export interface SupervisorStatus {
   id: string;
   specialist: string;
-  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+  status: SupervisorJobStatus;
   current_event?: string;
   current_tool?: string;
   model?: string;
@@ -483,6 +485,22 @@ export class Supervisor {
     } catch {
       return null;
     }
+  }
+
+  updateJobStatus(id: string, status: Extract<SupervisorJobStatus, 'done' | 'cancelled' | 'error' | 'waiting' | 'running' | 'starting'>, error?: string): SupervisorStatusView | null {
+    const currentStatus = this.readStatus(id);
+    if (!currentStatus) return null;
+
+    const updatedStatus: SupervisorStatus = {
+      ...currentStatus,
+      status,
+      current_event: undefined,
+      error,
+      last_event_at_ms: Date.now(),
+    };
+
+    this.writeStatusFile(id, updatedStatus);
+    return this.withComputedLiveness(updatedStatus);
   }
 
   /** List all jobs sorted newest-first. */
