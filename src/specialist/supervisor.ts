@@ -42,6 +42,7 @@ import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { resolveChainId } from './epic-lifecycle.js';
+import { derivePersistedChainIdentity } from './chain-identity.js';
 import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
@@ -73,7 +74,10 @@ export interface SupervisorStatus {
   worktree_path?: string;
   reused_from_job_id?: string;
   worktree_owner_job_id?: string;
+  chain_kind?: 'chain' | 'prep';
   chain_id?: string;
+  chain_root_job_id?: string;
+  chain_root_bead_id?: string;
   epic_id?: string;
   branch?: string;
   metrics?: SessionRunMetrics;
@@ -512,12 +516,30 @@ export class Supervisor {
   }
 
   private withStatusLineageDefaults(id: string, status: SupervisorStatus): SupervisorStatus {
-    if (!status.worktree_path) return status;
-    const worktreeOwnerJobId = status.worktree_owner_job_id ?? id;
+    const chainRootJobId = status.chain_root_job_id ?? status.worktree_owner_job_id;
+    const chainRootSnapshot = chainRootJobId && chainRootJobId !== id
+      ? this.readStatus(chainRootJobId) ?? undefined
+      : undefined;
+
+    const identity = derivePersistedChainIdentity(status, chainRootSnapshot);
+
+    if (identity.chain_kind === 'prep') {
+      return {
+        ...status,
+        chain_kind: 'prep',
+        chain_id: undefined,
+        chain_root_job_id: undefined,
+        chain_root_bead_id: undefined,
+      };
+    }
+
     return {
       ...status,
-      worktree_owner_job_id: worktreeOwnerJobId,
-      chain_id: status.chain_id ?? worktreeOwnerJobId,
+      worktree_owner_job_id: identity.chain_root_job_id,
+      chain_kind: 'chain',
+      chain_id: identity.chain_id,
+      chain_root_job_id: identity.chain_root_job_id,
+      chain_root_bead_id: identity.chain_root_bead_id,
     };
   }
 
@@ -551,16 +573,16 @@ export class Supervisor {
             status: 'open',
             source: 'supervisor',
             chain_id: chainId,
-            chain_root_bead_id: normalizedStatus.bead_id ?? null,
-            chain_root_job_id: normalizedStatus.worktree_owner_job_id ?? normalizedStatus.id,
+            chain_root_bead_id: normalizedStatus.chain_root_bead_id ?? null,
+            chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
           }),
         });
 
         client.upsertEpicChainMembership({
           chain_id: chainId,
           epic_id: normalizedStatus.epic_id,
-          chain_root_bead_id: normalizedStatus.bead_id,
-          chain_root_job_id: normalizedStatus.worktree_owner_job_id ?? normalizedStatus.id,
+          chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+          chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
           updated_at_ms: Date.now(),
         });
       });
@@ -680,8 +702,12 @@ export class Supervisor {
       ...(runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {}),
       ...(runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {}),
       ...((runOptions.worktreeOwnerJobId || runOptions.workingDirectory)
-        ? { chain_id: runOptions.worktreeOwnerJobId ?? id }
-        : {}),
+        ? {
+            chain_kind: 'chain' as const,
+            chain_id: runOptions.worktreeOwnerJobId ?? id,
+            chain_root_job_id: runOptions.worktreeOwnerJobId ?? id,
+          }
+        : { chain_kind: 'prep' as const }),
       ...(runOptions.epicId ? { epic_id: runOptions.epicId } : {}),
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }

@@ -9,6 +9,7 @@ import {
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
+import { derivePersistedChainIdentity } from '../specialist/chain-identity.js';
 import { parseTimelineEvent } from '../specialist/timeline-events.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -189,23 +190,33 @@ function runBackfill(options: BackfillOptions): void {
           continue;
         }
 
-        sqliteClient.upsertStatus(status);
-        if (status.epic_id && status.chain_id) {
+        const chainIdentity = derivePersistedChainIdentity(status);
+        const normalizedStatus: SupervisorStatus = {
+          ...status,
+          chain_kind: chainIdentity.chain_kind,
+          chain_id: chainIdentity.chain_id,
+          chain_root_job_id: chainIdentity.chain_root_job_id,
+          chain_root_bead_id: chainIdentity.chain_root_bead_id,
+        };
+
+        sqliteClient.upsertStatus(normalizedStatus);
+        if (normalizedStatus.epic_id && normalizedStatus.chain_id) {
           sqliteClient.upsertEpicRun({
-            epic_id: status.epic_id,
+            epic_id: normalizedStatus.epic_id,
             status: 'open',
             updated_at_ms: Date.now(),
             status_json: JSON.stringify({
-              epic_id: status.epic_id,
+              epic_id: normalizedStatus.epic_id,
               status: 'open',
               source: 'db-backfill',
+              chain_id: normalizedStatus.chain_id,
             }),
           });
           sqliteClient.upsertEpicChainMembership({
-            epic_id: status.epic_id,
-            chain_id: status.chain_id,
-            chain_root_bead_id: status.bead_id,
-            chain_root_job_id: status.worktree_owner_job_id ?? status.id,
+            epic_id: normalizedStatus.epic_id,
+            chain_id: normalizedStatus.chain_id,
+            chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+            chain_root_job_id: normalizedStatus.chain_root_job_id,
             updated_at_ms: Date.now(),
           });
         }
