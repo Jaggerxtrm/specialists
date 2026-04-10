@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import type { RunOptions, SpecialistRunner } from './runner.js';
-import type { ObservabilitySqliteClient } from './observability-sqlite.js';
+import { createObservabilitySqliteClient, type NodeMemberRow, type NodeRunRow, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { JobControl } from './job-control.js';
+import { resolveJobsDir } from './job-root.js';
 import { stripJsonFences } from './json-output.js';
 import { provisionWorktree } from './worktree.js';
 import {
@@ -190,6 +191,273 @@ function toContextHealth(contextPct: number | null): 'OK' | 'MONITOR' | 'WARN' |
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export interface SpawnDynamicMemberActionInput {
+  nodeId: string;
+  memberKey: string;
+  specialist: string;
+  beadId?: string;
+  phaseId?: string;
+  scopePaths?: string[];
+  jobsDir?: string;
+  runner: SpecialistRunner;
+  runOptions: Omit<RunOptions, 'name' | 'prompt'>;
+}
+
+export interface SpawnDynamicMemberActionResult {
+  memberKey: string;
+  jobId: string;
+  specialist: string;
+}
+
+export interface CreateBeadActionInput {
+  nodeId: string;
+  title: string;
+  description: string;
+  beadType: 'task' | 'bug' | 'feature' | 'epic' | 'chore' | 'decision';
+  priority: number;
+  dependsOn?: string[];
+}
+
+export interface CreateBeadActionResult {
+  beadId: string;
+  title: string;
+}
+
+export interface CompleteNodeActionInput {
+  nodeId: string;
+  strategy: 'pr' | 'manual';
+  forceDraftPr?: boolean;
+}
+
+export interface CompleteNodeActionResult {
+  strategy: 'pr' | 'manual';
+  prUrl?: string;
+}
+
+function requireNodeRunRow(sqliteClient: ObservabilitySqliteClient, nodeId: string): NodeRunRow {
+  const nodeRun = sqliteClient.readNodeRun(nodeId);
+  if (!nodeRun) {
+    throw new Error(`Node run not found: ${nodeId}`);
+  }
+  return nodeRun;
+}
+
+function parseCreatedBeadId(stdout: string): string {
+  try {
+    const parsed = JSON.parse(stdout) as { id?: string };
+    if (typeof parsed.id === 'string' && parsed.id.trim().length > 0) {
+      return parsed.id;
+    }
+  } catch {
+    // fallback to regex parsing
+  }
+
+  const match = stdout.match(/"id"\s*:\s*"([^"]+)"/);
+  if (!match?.[1]) {
+    throw new Error('Unable to parse created bead id from bd create output');
+  }
+  return match[1];
+}
+
+function runCommandOrThrow(command: string, args: string[], cwd = process.cwd()): string {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const message = result.stderr?.trim() || result.stdout?.trim() || `${command} ${args.join(' ')} failed`;
+    throw new Error(message);
+  }
+
+  return result.stdout ?? '';
+}
+
+export async function spawnDynamicMember(input: SpawnDynamicMemberActionInput): Promise<SpawnDynamicMemberActionResult> {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+  }
+
+  try {
+    requireNodeRunRow(sqliteClient, input.nodeId);
+
+    const existing = sqliteClient.readNodeMembers(input.nodeId).find((member: NodeMemberRow) => member.member_id === input.memberKey);
+    const existingGeneration = existing?.generation ?? 0;
+    const previousJobId = existing?.job_id;
+
+    if (existing && !TERMINAL_MEMBER_STATUSES.has(existing.status)) {
+      throw new Error(`Member '${input.memberKey}' is not terminal (status=${existing.status})`);
+    }
+
+    const runOptions: RunOptions = {
+      ...input.runOptions,
+      name: input.specialist,
+      prompt: `You are node member ${input.memberKey}. Bootstrap state: idle_wait. Wait for coordinator instructions.`,
+      keepAlive: true,
+      noKeepAlive: false,
+      inputBeadId: input.beadId ?? input.runOptions.inputBeadId,
+      reusedFromJobId: previousJobId,
+      variables: {
+        ...(input.runOptions.variables ?? {}),
+        node_id: input.nodeId,
+        SPECIALISTS_NODE_ID: input.nodeId,
+        member_id: input.memberKey,
+        member_generation: String(existingGeneration + 1),
+        member_phase_id: input.phaseId ?? '',
+        member_scope_paths: (input.scopePaths ?? []).join(','),
+      },
+    };
+
+    const controller = new JobControl({
+      runner: input.runner,
+      runOptions,
+      jobsDir: input.jobsDir ?? resolveJobsDir(input.runOptions.workingDirectory ?? process.cwd()),
+    });
+
+    const jobId = await controller.startJob({ nodeId: input.nodeId, memberId: input.memberKey });
+
+    sqliteClient.upsertNodeMember({
+      node_run_id: input.nodeId,
+      member_id: input.memberKey,
+      job_id: jobId,
+      specialist: input.specialist,
+      role: input.specialist,
+      status: 'starting',
+      enabled: true,
+      generation: existingGeneration + 1,
+      phase_id: input.phaseId,
+      replaced_member_id: previousJobId,
+      parent_member_id: existing?.parent_member_id,
+      worktree_path: existing?.worktree_path,
+    });
+
+    sqliteClient.appendNodeEvent(input.nodeId, Date.now(), 'member_spawned_dynamic', {
+      node_id: input.nodeId,
+      member_key: input.memberKey,
+      specialist: input.specialist,
+      bead_id: input.beadId ?? null,
+      phase_id: input.phaseId ?? null,
+      scope_paths: input.scopePaths ?? [],
+      generation: existingGeneration + 1,
+      job_id: jobId,
+      source: 'cli_action',
+    });
+
+    return {
+      memberKey: input.memberKey,
+      jobId,
+      specialist: input.specialist,
+    };
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+export function executeCreateBeadAction(input: CreateBeadActionInput): CreateBeadActionResult {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+  }
+
+  try {
+    requireNodeRunRow(sqliteClient, input.nodeId);
+
+    const stdout = runCommandOrThrow('bd', [
+      'create',
+      '--title',
+      input.title,
+      '--description',
+      input.description,
+      '--type',
+      input.beadType,
+      '--priority',
+      String(input.priority),
+      '--json',
+    ]);
+
+    const beadId = parseCreatedBeadId(stdout);
+
+    for (const dependency of input.dependsOn ?? []) {
+      runCommandOrThrow('bd', ['dep', 'add', beadId, dependency]);
+    }
+
+    sqliteClient.appendNodeEvent(input.nodeId, Date.now(), 'bead_created', {
+      node_id: input.nodeId,
+      created_bead_id: beadId,
+      title: input.title,
+      depends_on: input.dependsOn ?? [],
+      source: 'cli_action',
+    });
+
+    return {
+      beadId,
+      title: input.title,
+    };
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+export async function executeCompleteNodeAction(input: CompleteNodeActionInput): Promise<CompleteNodeActionResult> {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+  }
+
+  try {
+    const nodeRun = requireNodeRunRow(sqliteClient, input.nodeId);
+    const status = input.strategy === 'pr' ? 'awaiting_merge' : 'done';
+
+    let prUrl: string | undefined;
+    if (input.strategy === 'pr') {
+      const currentBranch = runCommandOrThrow('git', ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+      const title = `${nodeRun.node_name}: node completion`;
+      const body = `Node ${input.nodeId} completed via CLI action.`;
+      const prArgs = ['pr', 'create', '--base', NODE_BASE_BRANCH_DEFAULT, '--head', currentBranch, '--title', title, '--body', body];
+      if (input.forceDraftPr) {
+        prArgs.splice(1, 0, '--draft');
+      }
+      prUrl = runCommandOrThrow('gh', prArgs).trim() || undefined;
+    }
+
+    const now = Date.now();
+    sqliteClient.upsertNodeRun({
+      ...nodeRun,
+      status,
+      updated_at_ms: now,
+      completion_strategy: input.strategy,
+      pr_url: prUrl,
+      status_json: JSON.stringify({
+        status,
+        reason: 'complete_node_cli_action',
+        strategy: input.strategy,
+        pr_url: prUrl ?? null,
+      }),
+    });
+
+    sqliteClient.appendNodeEvent(input.nodeId, now, 'node_completed', {
+      node_id: input.nodeId,
+      final_state: status,
+      strategy: input.strategy,
+      pr_url: prUrl ?? null,
+      source: 'cli_action',
+    });
+
+    return {
+      strategy: input.strategy,
+      prUrl,
+    };
+  } finally {
+    sqliteClient.close();
+  }
 }
 
 export class NodeSupervisor {

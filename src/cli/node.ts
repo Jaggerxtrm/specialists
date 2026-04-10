@@ -15,6 +15,11 @@ import {
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor, type SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
+import {
+  executeCompleteNodeAction,
+  executeCreateBeadAction,
+  spawnDynamicMember,
+} from '../specialist/node-supervisor.js';
 
 interface NodeMemberConfig {
   memberId: string;
@@ -37,8 +42,10 @@ interface NodeConfig {
   baseBranch: string;
 }
 
+type NodeCommand = 'run' | 'list' | 'status' | 'feed' | 'promote' | 'members' | 'memory' | 'steer' | 'stop' | 'attach' | 'spawn-member' | 'create-bead' | 'complete' | 'wait-phase';
+
 interface ParsedNodeArgs {
-  command: 'run' | 'list' | 'status' | 'feed' | 'promote' | 'members' | 'memory' | 'steer' | 'stop' | 'attach';
+  command: NodeCommand;
   nodeConfigInput?: string;
   inlineJson?: string;
   nodeId?: string;
@@ -46,16 +53,27 @@ interface ParsedNodeArgs {
   toBead?: string;
   beadId?: string;
   contextDepth?: number;
+  memberKey?: string;
+  specialist?: string;
+  phaseId?: string;
+  scope?: string[];
+  title?: string;
+  beadType?: 'task' | 'bug' | 'feature' | 'epic' | 'chore' | 'decision';
+  priority?: number;
+  dependsOn?: string[];
+  strategy?: 'pr' | 'manual';
+  forceDraftPr?: boolean;
+  memberKeys?: string[];
+  timeoutMs?: number;
   jsonMode: boolean;
 }
 
 function parseNodeArgs(argv: string[]): ParsedNodeArgs {
-  const command = argv[0];
-  const supportedCommands = new Set(['run', 'list', 'status', 'feed', 'promote', 'members', 'memory', 'steer', 'stop', 'attach']);
+  const command = argv[0] as NodeCommand | undefined;
+  const supportedCommands = new Set<NodeCommand>(['run', 'list', 'status', 'feed', 'promote', 'members', 'memory', 'steer', 'stop', 'attach', 'spawn-member', 'create-bead', 'complete', 'wait-phase']);
   if (!command || !supportedCommands.has(command)) {
-    throw new Error('Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach> [options]');
+    throw new Error('Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach|spawn-member|create-bead|complete|wait-phase> [options]');
   }
-
   let nodeConfigInput: string | undefined;
   let inlineJson: string | undefined;
   let nodeId: string | undefined;
@@ -63,6 +81,18 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   let toBead: string | undefined;
   let beadId: string | undefined;
   let contextDepth: number | undefined;
+  let memberKey: string | undefined;
+  let specialist: string | undefined;
+  let phaseId: string | undefined;
+  let scope: string[] | undefined;
+  let title: string | undefined;
+  let beadType: ParsedNodeArgs['beadType'] = 'task';
+  let priority = 2;
+  let dependsOn: string[] | undefined;
+  let strategy: ParsedNodeArgs['strategy'];
+  let forceDraftPr = false;
+  let memberKeys: string[] | undefined;
+  let timeoutMs: number | undefined;
   let jsonMode = false;
 
   for (let i = 1; i < argv.length; i += 1) {
@@ -73,54 +103,101 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
       continue;
     }
 
-    if (token === '--inline') {
+    if (token === '--force-draft-pr') {
+      forceDraftPr = true;
+      continue;
+    }
+
+    const readValue = (flag: string): string => {
       const value = argv[i + 1];
       if (!value || value.startsWith('--')) {
-        throw new Error('--inline requires a JSON string value');
+        throw new Error(`${flag} requires a value`);
       }
-      inlineJson = value;
       i += 1;
+      return value;
+    };
+
+    if (token === '--inline') {
+      inlineJson = readValue('--inline');
       continue;
     }
 
     if (token === '--node') {
-      const value = argv[i + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error('--node requires a node id value');
-      }
-      nodeId = value;
-      i += 1;
+      nodeId = readValue('--node');
       continue;
     }
 
     if (token === '--to-bead') {
-      const value = argv[i + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error('--to-bead requires a bead id value');
-      }
-      toBead = value;
-      i += 1;
+      toBead = readValue('--to-bead');
       continue;
     }
 
     if (token === '--bead') {
-      const value = argv[i + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error('--bead requires a bead id value');
-      }
-      beadId = value;
-      i += 1;
+      beadId = readValue('--bead');
       continue;
     }
 
     if (token === '--context-depth') {
-      const value = argv[i + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error('--context-depth requires a numeric value');
+      contextDepth = Math.max(0, Number.parseInt(readValue('--context-depth'), 10) || 0);
+      continue;
+    }
+
+    if (token === '--member-key') {
+      memberKey = readValue('--member-key');
+      continue;
+    }
+
+    if (token === '--specialist') {
+      specialist = readValue('--specialist');
+      continue;
+    }
+
+    if (token === '--phase') {
+      phaseId = readValue('--phase');
+      continue;
+    }
+
+    if (token === '--scope') {
+      scope = readValue('--scope').split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+      continue;
+    }
+
+    if (token === '--title') {
+      title = readValue('--title');
+      continue;
+    }
+
+    if (token === '--type') {
+      beadType = readValue('--type') as ParsedNodeArgs['beadType'];
+      continue;
+    }
+
+    if (token === '--priority') {
+      priority = Math.max(0, Math.min(4, Number.parseInt(readValue('--priority'), 10) || 2));
+      continue;
+    }
+
+    if (token === '--depends-on') {
+      dependsOn = readValue('--depends-on').split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+      continue;
+    }
+
+    if (token === '--strategy') {
+      const strategyValue = readValue('--strategy');
+      if (strategyValue !== 'pr' && strategyValue !== 'manual') {
+        throw new Error(`Invalid value for --strategy: ${strategyValue}. Expected one of: pr, manual`);
       }
-      const parsed = Number.parseInt(value, 10);
-      contextDepth = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-      i += 1;
+      strategy = strategyValue;
+      continue;
+    }
+
+    if (token === '--members') {
+      memberKeys = readValue('--members').split(',').map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+      continue;
+    }
+
+    if (token === '--timeout') {
+      timeoutMs = Math.max(1, Number.parseInt(readValue('--timeout'), 10) || 1);
       continue;
     }
 
@@ -151,34 +228,42 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     throw new Error('Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]');
   }
 
-  if (command === 'promote') {
-    if (!nodeId || !findingId || !toBead) {
-      throw new Error('Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]');
-    }
+  if (command === 'promote' && (!nodeId || !findingId || !toBead)) {
+    throw new Error('Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]');
   }
 
-  if (command === 'feed' && !nodeId) {
-    throw new Error('Usage: specialists node feed <node-id> [--json]');
-  }
-
-  if (command === 'members' && !nodeId) {
-    throw new Error('Usage: specialists node members <node-id> [--json]');
-  }
-
-  if (command === 'memory' && !nodeId) {
-    throw new Error('Usage: specialists node memory <node-id> [--json]');
+  if ((command === 'feed' || command === 'members' || command === 'memory' || command === 'stop' || command === 'attach') && !nodeId) {
+    throw new Error(`Usage: specialists node ${command} <node-id> [--json]`);
   }
 
   if (command === 'steer' && (!nodeId || !findingId)) {
     throw new Error('Usage: specialists node steer <node-id> <message> [--json]');
   }
 
-  if ((command === 'stop' || command === 'attach') && !nodeId) {
-    throw new Error(`Usage: specialists node ${command} <node-id>${command === 'stop' ? ' [--json]' : ''}`);
+  if (command === 'spawn-member' || command === 'create-bead' || command === 'complete' || command === 'wait-phase') {
+    if (!nodeId) {
+      throw new Error(`--node is required for specialists node ${command}`);
+    }
+  }
+
+  if (command === 'spawn-member' && (!memberKey || !specialist)) {
+    throw new Error('Usage: specialists node spawn-member --node <id> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]');
+  }
+
+  if (command === 'create-bead' && !title) {
+    throw new Error('Usage: specialists node create-bead --node <id> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]');
+  }
+
+  if (command === 'complete' && !strategy) {
+    throw new Error('Usage: specialists node complete --node <id> --strategy <pr|manual> [--force-draft-pr] [--json]');
+  }
+
+  if (command === 'wait-phase' && (!phaseId || !memberKeys || memberKeys.length === 0)) {
+    throw new Error('Usage: specialists node wait-phase --node <id> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]');
   }
 
   return {
-    command: command as ParsedNodeArgs['command'],
+    command,
     nodeConfigInput,
     inlineJson,
     nodeId,
@@ -186,6 +271,18 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     toBead,
     beadId,
     contextDepth,
+    memberKey,
+    specialist,
+    phaseId,
+    scope,
+    title,
+    beadType,
+    priority,
+    dependsOn,
+    strategy,
+    forceDraftPr,
+    memberKeys,
+    timeoutMs,
     jsonMode,
   };
 }
@@ -999,13 +1096,142 @@ async function handleNodePromote(args: ParsedNodeArgs): Promise<void> {
   }
 }
 
+function buildActionError(error: unknown): { ok: false; error: string } {
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
+function hasJsonFlag(argv: string[]): boolean {
+  return argv.includes('--json');
+}
+
+function emitNodeCommandError(error: unknown, jsonMode: boolean): void {
+  const payload = buildActionError(error);
+  if (jsonMode) {
+    console.log(JSON.stringify(payload));
+    process.exitCode = 1;
+    return;
+  }
+
+  console.error(payload.error);
+  process.exitCode = 1;
+}
+
+async function createNodeActionRunnerDependencies(): Promise<{ loader: SpecialistLoader; runner: SpecialistRunner }> {
+  const loader = new SpecialistLoader();
+  const runner = new SpecialistRunner({
+    loader,
+    hooks: new HookEmitter({ tracePath: join(process.cwd(), '.specialists', 'trace.jsonl') }),
+    circuitBreaker: new CircuitBreaker(),
+  });
+  return { loader, runner };
+}
+
+async function handleNodeAction(args: ParsedNodeArgs): Promise<void> {
+  try {
+    if (args.command === 'spawn-member') {
+      const { loader, runner } = await createNodeActionRunnerDependencies();
+      const available = new Set((await loader.list()).map((entry) => entry.name));
+      if (!available.has(args.specialist!)) {
+        throw new Error(`Unknown specialist: ${args.specialist}`);
+      }
+
+      const result = await spawnDynamicMember({
+        nodeId: args.nodeId!,
+        memberKey: args.memberKey!,
+        specialist: args.specialist!,
+        beadId: args.beadId,
+        phaseId: args.phaseId,
+        scopePaths: args.scope,
+        runner,
+        jobsDir: resolveJobsDir(),
+        runOptions: {
+          inputBeadId: args.beadId,
+          contextDepth: 2,
+          workingDirectory: process.cwd(),
+          variables: {
+            bead_id: args.beadId ?? '',
+          },
+        },
+      });
+
+      console.log(JSON.stringify({ ok: true, member_key: result.memberKey, job_id: result.jobId, specialist: result.specialist }, null, args.jsonMode ? 0 : 2));
+      return;
+    }
+
+    if (args.command === 'create-bead') {
+      const description = `Node action created bead from node ${args.nodeId}.`;
+      const result = executeCreateBeadAction({
+        nodeId: args.nodeId!,
+        title: args.title!,
+        description,
+        beadType: args.beadType ?? 'task',
+        priority: args.priority ?? 2,
+        dependsOn: args.dependsOn,
+      });
+
+      console.log(JSON.stringify({ ok: true, bead_id: result.beadId, title: result.title }, null, args.jsonMode ? 0 : 2));
+      return;
+    }
+
+    if (args.command === 'complete') {
+      const result = await executeCompleteNodeAction({
+        nodeId: args.nodeId!,
+        strategy: args.strategy!,
+        forceDraftPr: args.forceDraftPr,
+      });
+
+      console.log(JSON.stringify({ ok: true, strategy: result.strategy, pr_url: result.prUrl ?? null }, null, args.jsonMode ? 0 : 2));
+      return;
+    }
+
+    if (args.command === 'wait-phase') {
+      const sqliteClient = createObservabilitySqliteClient();
+      if (!sqliteClient) throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+      try {
+        requireNodeRun(sqliteClient, args.nodeId!);
+        const deadline = args.timeoutMs ? Date.now() + args.timeoutMs : null;
+        const memberKeys = args.memberKeys ?? [];
+
+        while (true) {
+          const members = sqliteClient.readNodeMembers(args.nodeId!).filter((member) => member.phase_id === args.phaseId && memberKeys.includes(member.member_id));
+          const outcomes = Object.fromEntries(members.map((member) => [member.member_id, { status: member.status, result: member.job_id ? sqliteClient.readResult(member.job_id) : null }]));
+          const allTerminal = memberKeys.every((key) => {
+            const current = members.find((member) => member.member_id === key);
+            return current ? ['done', 'error', 'stopped'].includes(current.status) : false;
+          });
+
+          if (allTerminal) {
+            console.log(JSON.stringify({ ok: true, phase: args.phaseId, outcomes }, null, args.jsonMode ? 0 : 2));
+            return;
+          }
+
+          if (deadline !== null && Date.now() >= deadline) {
+            throw new Error(`Timed out waiting for phase '${args.phaseId}' members: ${memberKeys.join(', ')}`);
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      } finally {
+        sqliteClient.close();
+      }
+    }
+
+    throw new Error(`Unsupported node action: ${args.command}`);
+  } catch (error) {
+    console.log(JSON.stringify(buildActionError(error), null, args.jsonMode ? 0 : 2));
+    process.exitCode = 1;
+  }
+}
+
 export async function handleNodeCommand(argv: string[]): Promise<void> {
   let parsed: ParsedNodeArgs;
   try {
     parsed = parseNodeArgs(argv);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    emitNodeCommandError(error, hasJsonFlag(argv));
     return;
   }
 
@@ -1051,6 +1277,11 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
 
   if (parsed.command === 'attach') {
     await handleNodeAttach(parsed);
+    return;
+  }
+
+  if (parsed.command === 'spawn-member' || parsed.command === 'create-bead' || parsed.command === 'complete' || parsed.command === 'wait-phase') {
+    await handleNodeAction(parsed);
     return;
   }
 
