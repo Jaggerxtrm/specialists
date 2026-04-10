@@ -64,7 +64,7 @@ source_of_truth_for:
 
 ```bash
 specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] \
-  [--no-worktree] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
+  [--epic <id>] [--no-worktree] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
   [--keep-alive|--no-keep-alive] [--json | --raw]
 ```
 
@@ -74,6 +74,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--bead <id>`: Read prompt/context from bead.
 - `--worktree`: Provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
 - `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`.
+- `--epic <id>`: Explicitly declare epic membership for this job. When `--bead` is used, defaults to `bead.parent`; this flag overrides that default. Useful for prep jobs or chain-root jobs that should belong to a merge-gated epic.
 - `--no-worktree`: Bypass the worktree guard for `MEDIUM`/`HIGH`-permission specialists (see [Worktree guard](#worktree-guard) below). The caller accepts last-writer-wins risk.
 - `--force-job`: Bypass the `--job` concurrency guard when the target job is still `starting`/`running` or has an unknown status. MEDIUM/HIGH specialists normally block on active jobs to prevent concurrent worktree corruption; this flag forces entry at the caller's risk.
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
@@ -95,6 +96,7 @@ specialists run reviewer --prompt "check logs" --json
 specialists run reviewer --prompt "check logs" --raw
 specialists run executor --worktree --bead hgpu.3
 specialists run executor --job a1b2c3 --bead hgpu.4
+specialists run explorer --bead prep-task.1 --epic unitAI-100
 ```
 
 ### Worktree guard
@@ -126,6 +128,7 @@ Notes:
 - `--prompt` and `--bead` are mutually exclusive.
 - `--worktree` and `--job` are mutually exclusive.
 - `--worktree` requires `--bead <id>` to derive a deterministic branch name.
+- `--epic` can be used standalone or with `--bead`. When used with `--bead`, it overrides the bead's parent epic.
 - `--no-worktree` bypasses the worktree guard — only for `MEDIUM`/`HIGH` specialists when isolation is not feasible.
 - Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
