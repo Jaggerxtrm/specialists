@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              status, ps, result, feed, poll, clean, merge, epic, stop, attach, quickstart, help
+ *              status, ps, result, feed, poll, clean, merge, epic, end, stop, attach, quickstart, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -416,14 +416,15 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists epic <list|status|resolve> [options]',
+        'Usage: specialists epic <list|status|resolve|merge> [options]',
         '',
  'Epic lifecycle management for wave-bound chain groups.',
         '',
         'Commands:',
-        '  list [--unresolved] [--json]          Enumerate epics with lifecycle state and readiness',
-        '  status <epic-id> [--json]             Show chains, blockers, and merge readiness',
-        '  resolve <epic-id> [--dry-run] [--json]  Transition epic from open -> resolving',
+        '  list [--unresolved] [--json]                Enumerate epics with lifecycle state and readiness',
+        '  status <epic-id> [--json]                   Show chains, blockers, and merge readiness',
+        '  resolve <epic-id> [--dry-run] [--json]      Transition epic from open -> resolving',
+        '  merge <epic-id> [--rebuild] [--pr] [--json] Publish epic chains (direct merge or PR mode)',
         '',
         'Options:',
         '  --unresolved    Filter list to non-terminal (open, resolving, merge_ready) epics',
@@ -440,6 +441,7 @@ async function run() {
         '  specialists epic status unitAI-epic1',
         '  specialists epic resolve unitAI-epic1',
         '  specialists epic resolve unitAI-epic1 --dry-run',
+        '  specialists epic merge unitAI-epic1 --pr',
         '',
       ].join('\n'));
       return;
@@ -733,11 +735,11 @@ async function run() {
         '',
         'Usage: specialists merge <target-bead-id> [--rebuild]',
         '',
-        'Merge a chain root bead branch or all chain branches under an epic.',
+        'Publish a chain root bead branch. Epic publication belongs to `sp epic merge`.',
         '',
         'Behavior:',
         '  - chain root target: merges one associated branch',
-        '  - epic target: merges child chain branches in dependency topological order',
+        '  - unresolved epic member: refuses and points to `sp epic merge <epic-id>`',
         '  - runs `bunx tsc --noEmit` after each merge and stops on failure',
         '  - stops on first merge conflict and reports conflicting files',
         '  - NOTE: for epic publication with lifecycle management, use `sp epic merge`',
@@ -747,10 +749,11 @@ async function run() {
         '',
         'Examples:',
         '  specialists merge unitAI-abc1',
-        '  specialists merge unitAI-epic1 --rebuild',
+        '  specialists merge unitAI-abc1 --rebuild',
         '',
         'See also:',
-        '  specialists epic merge <epic-id>   # lifecycle-gated publication',
+        '  specialists epic merge <epic-id> [--pr]   # lifecycle-gated epic publication',
+        '  specialists end [--pr]                       # session-close publication helper',
         '',
       ].join('\n'));
       return;
@@ -763,6 +766,32 @@ async function run() {
     const { handleEpicCommand } = await import('./cli/epic.js');
     await handleEpicCommand(process.argv.slice(3));
     return;
+  }
+
+  if (sub === 'end') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists end [--bead <id>|--epic <id>] [--pr] [--rebuild]',
+        '',
+        'Session-close publication helper aware of chain/epic lifecycle rules.',
+        '',
+        'Behavior:',
+        '  - if --epic is provided: routes to `sp epic merge <epic-id>`',
+        '  - if chain belongs to unresolved epic: redirects to epic publication',
+        '  - otherwise publishes current/selected chain via `sp merge` semantics',
+        '  - --pr publishes via pull request instead of direct merge',
+        '',
+        'Examples:',
+        '  specialists end --bead unitAI-abc1',
+        '  specialists end --epic unitAI-epic1 --pr',
+        '  specialists end --pr',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/end.js');
+    return handler();
   }
 
   if (sub === 'stop') {

@@ -12,7 +12,7 @@ import type { ObservabilitySqliteClient } from '../specialist/observability-sqli
 import {
   resolveMergeTargetsForBeadIds,
   parseChildBeadIds,
-  runMergePlan,
+  executePublicationPlan,
   type ChainMergeTarget,
   type MergeStepResult,
 } from './merge.js';
@@ -23,6 +23,7 @@ interface EpicMergeCliOptions {
   epicId: string;
   rebuild: boolean;
   json: boolean;
+  pr: boolean;
 }
 
 interface EpicListOptions {
@@ -65,6 +66,7 @@ interface EpicMergeResult {
   mergedChains: Array<{ beadId: string; branch: string; changedFiles: string[] }>;
   blockedChains: string[];
   error?: string;
+  pullRequestUrl?: string;
 }
 
 function runCommand(command: string, args: readonly string[], cwd = process.cwd()) {
@@ -96,6 +98,7 @@ function parseMergeOptions(argv: readonly string[]): EpicMergeCliOptions {
   const epicId = parseEpicId(argv);
   let rebuild = false;
   let json = false;
+  let pr = false;
 
   for (const argument of argv) {
     if (argument === '--rebuild') {
@@ -106,12 +109,16 @@ function parseMergeOptions(argv: readonly string[]): EpicMergeCliOptions {
       json = true;
       continue;
     }
-    if (argument.startsWith('-') && argument !== '--rebuild' && argument !== '--json') {
+    if (argument === '--pr') {
+      pr = true;
+      continue;
+    }
+    if (argument.startsWith('-') && argument !== '--rebuild' && argument !== '--json' && argument !== '--pr') {
       throw new Error(`Unknown option: ${argument}`);
     }
   }
 
-  return { epicId, rebuild, json };
+  return { epicId, rebuild, json, pr };
 }
 
 function parseListOptions(argv: readonly string[]): EpicListOptions {
@@ -338,11 +345,15 @@ function updateEpicState(epicId: string, fromState: EpicState, toState: EpicStat
   }
 }
 
-function mergeEpicChains(context: EpicMergeContext, rebuild: boolean): MergeStepResult[] {
-  return runMergePlan(context.chainTargets, { rebuild });
+function mergeEpicChains(context: EpicMergeContext, rebuild: boolean, pr: boolean): { steps: MergeStepResult[]; pullRequestUrl?: string } {
+  return executePublicationPlan(context.chainTargets, {
+    rebuild,
+    mode: pr ? 'pr' : 'direct',
+    publicationLabel: `epic-${context.epicId}`,
+  });
 }
 
-function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void {
+function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean, pr: boolean): void {
   console.log('');
   console.log(`Epic ${result.epicId}: ${result.fromState} → ${result.toState}`);
 
@@ -364,6 +375,11 @@ function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void 
     console.log('TypeScript gate: passed after each merge');
     if (rebuild) {
       console.log('Rebuild: bun run build (passed)');
+    }
+    if (pr) {
+      console.log(`Publication mode: PR${result.pullRequestUrl ? ` (${result.pullRequestUrl})` : ''}`);
+    } else {
+      console.log('Publication mode: direct merge');
     }
   } else {
     console.log('');
@@ -512,7 +528,7 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     console.error('');
-    console.error('Usage: specialists epic merge <epic-id> [--rebuild] [--json]');
+    console.error('Usage: specialists epic merge <epic-id> [--rebuild] [--pr] [--json]');
     process.exit(1);
   }
 
@@ -556,10 +572,15 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
   let mergedChains: MergeStepResult[] = [];
   let mergeError: string | undefined;
   let toState: EpicState = currentState;
+  let pullRequestUrl: string | undefined;
 
   try {
-    mergedChains = mergeEpicChains(context, options.rebuild);
-    toState = transitionEpicState(currentState, 'merged');
+    const publicationResult = mergeEpicChains(context, options.rebuild, options.pr);
+    mergedChains = publicationResult.steps;
+    pullRequestUrl = publicationResult.pullRequestUrl;
+    toState = options.pr
+      ? currentState
+      : transitionEpicState(currentState, 'merged');
     updateEpicState(context.epicId, currentState, toState);
   } catch (error: unknown) {
     mergeError = error instanceof Error ? error.message : String(error);
@@ -575,12 +596,13 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
     mergedChains,
     blockedChains: [],
     error: mergeError,
+    pullRequestUrl,
   };
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    printEpicMergeSummary(result, options.rebuild);
+    printEpicMergeSummary(result, options.rebuild, options.pr);
   }
 
   if (!result.success) {
@@ -690,7 +712,7 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  list [--unresolved] [--json]                    List epics with lifecycle and readiness summary',
       '  status <epic-id> [--json]                       Show epic state, chain statuses, and merge readiness',
       '  resolve <epic-id> [--dry-run] [--json]          Transition epic from open to resolving',
-      '  merge <epic-id> [--rebuild] [--json]            Publish epic-owned chains in dependency order',
+      '  merge <epic-id> [--rebuild] [--pr] [--json]     Publish epic-owned chains in dependency order',
       '',
       'Epic lifecycle states:',
       '  open        → resolving → merge_ready → merged',
@@ -700,6 +722,7 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  - Requires epic state: resolving or merge_ready',
       '  - All chain jobs must be terminal before publication',
       '  - Chains merged in topological dependency order',
+      '  - Use --pr to publish via pull request instead of direct merge',
       '  - TypeScript gate runs after each merge',
       '  - Lifecycle transitions persisted to SQLite',
       '',
@@ -709,6 +732,7 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  specialists epic resolve unitAI-3f7b',
       '  specialists epic status unitAI-3f7b --json',
       '  specialists epic merge unitAI-3f7b --rebuild',
+      '  specialists epic merge unitAI-3f7b --pr',
       '',
     ].join('\n'));
     return;
