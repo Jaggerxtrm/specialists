@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.4.0
-updated: 2026-04-10
-synced_at: 11f5e768
+version: 2.4.1
+updated: 2026-04-11
+synced_at: 0080a53d
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -1081,16 +1081,17 @@ sp epic status unitAI-3f7b
 2. Verifies all chains are terminal (`done`/`error`)
 3. Verifies latest reviewer verdict is PASS for each chain
 4. Topologically sorts chains by bead dependencies
-5. For each chain: `git merge <branch> --no-ff --no-edit`
-6. Runs `bunx tsc --noEmit` after each merge
-7. Creates PR if `--pr` is set
-8. Updates epic state to `merged` on success
+5. For each chain: preview merge delta and check worthiness (blocks empty/noise-only)
+6. For each chain: `git merge <branch> --no-ff --no-edit`
+7. Runs `bunx tsc --noEmit` after each merge
+8. Creates PR if `--pr` is set
+9. Updates epic state to `merged` on success
 
 **Safety checks**:
 - Refuses merge if any chain job is non-terminal
 - Refuses merge if any chain lacks PASS verdict
 - Refuses merge if epic state is not `merge_ready` (use `--force-resolving` to auto-transition)
-- Refuses merge if branch has no source changes under `src/` compared to master (prevents empty merges)
+- Refuses merge if branch has empty delta or noise-only delta (see [Merge-preview worthiness guard](#merge-preview-worthiness-guard))
 
 **File listing**: Uses `git diff HEAD^1 HEAD` for accurate changed-file reporting (not `git diff-tree`).
 
@@ -1146,7 +1147,7 @@ specialists merge <chain-root-bead-id> [--rebuild]
 1. Read bead via `bd show --json`
 2. Check epic membership via `resolveChainEpicMembership()`
 3. If chain belongs to unresolved epic, **refuse merge** with error message
-4. Validate branch has source changes under `src/` vs master (refuse if empty)
+4. Preview merge delta and evaluate worthiness (refuse empty/noise-only)
 5. Find the newest terminal job with `worktree_path` and `branch` for that bead
 6. Merge the branch with `--no-ff --no-edit`
 7. Run TypeScript gate (`bunx tsc --noEmit`)
@@ -1176,7 +1177,7 @@ specialists merge unitAI-55d --rebuild
 ### Exit codes
 
 - `0`: Merge succeeded, TypeScript gate passed.
-- `1`: Invalid args, bead not found, no chain branch found, **chain belongs to unresolved epic**, **no source changes**, non-terminal job, merge conflict, or TypeScript gate failure.
+- `1`: Invalid args, bead not found, no chain branch found, **chain belongs to unresolved epic**, **empty/noise-only merge delta**, non-terminal job, merge conflict, or TypeScript gate failure.
 
 ### Notes
 
@@ -1184,3 +1185,44 @@ specialists merge unitAI-55d --rebuild
 - This command is only for standalone chains NOT belonging to an epic.
 - Uses `--no-ff` to preserve branch history.
 - Source: `src/cli/merge.ts`
+
+### Merge-preview worthiness guard
+
+Both `sp merge` and `sp epic merge` use a preview-based worthiness guard to prevent merging branches with no substantive changes.
+
+**How it works**:
+
+1. `previewBranchMergeDelta()` — performs a trial merge with `--no-commit`, inspects staged delta against HEAD
+2. Categorizes files into **substantive** and **noise** based on path prefixes
+3. `evaluateMergeWorthiness()` — decides if merge is worth doing
+
+**Noise paths** (ignored for worthiness):
+
+- `.xtrm/reports/`
+- `.wolf/`
+- `.specialists/jobs/`
+
+**Blocking conditions**:
+
+| Reason | Meaning | Blocked? |
+|--------|---------|:--------:|
+| `empty-delta` | No files changed at all | ✓ Blocked |
+| `noise-only-delta` | Only noise paths changed | ✓ Blocked |
+| `ok` | At least one substantive file | ✓ Allowed |
+
+**Error output** (when blocked):
+
+```
+Error: Refusing merge for 'feature/unitAI-55d': empty merge delta.
+Diagnostics: beadId=unitAI-55d jobId=a1b2c3 branch=feature/unitAI-55d total=0 substantive=0 noise=0
+
+Error: Refusing merge for 'feature/unitAI-sync': noise-only merge delta.
+Diagnostics: beadId=unitAI-sync jobId=d4e5f6 branch=feature/unitAI-sync total=5 substantive=0 noise=5
+```
+
+**Why this matters**:
+
+- **Old behavior**: hardcoded `src/` check — blocked doc-only merges, config-only merges, skill-only merges
+- **New behavior**: noise-aware preview — allows docs, config, skills, any substantive content
+
+This enables doc-sync specialists and workflow-only changes to merge without false positives.
