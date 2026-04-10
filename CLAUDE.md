@@ -164,7 +164,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ### Core surfaces
 
-- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|doctor`
+- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor`
 - **MCP tools**: `use_specialist` only (foreground, returns result directly to conversation context)
 - **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
 
@@ -197,12 +197,17 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 
 ## Key Files Reference (current)
 
-- `src/cli/run.ts` — run command, `--bead`, output modes (`human|json|raw`), event tailing
+- `src/cli/run.ts` — run command, `--bead`, `--epic`, output modes (`human|json|raw`), event tailing
 - `src/cli/resume.ts` — resume keep-alive jobs in `waiting`
 - `src/cli/steer.ts` — mid-run steering via FIFO pipe (all running jobs)
 - `src/cli/feed.ts` — merged feed stream, envelope metadata, cursor behavior
 - `src/cli/status.ts` — health check + `--job <id>` single-job detail view
-- `src/cli/ps.ts` — process snapshot: worktree trees, context%, bead titles, urgency sort, follow mode
+- `src/cli/ps.ts` — process snapshot: worktree trees, context%, bead titles, urgency sort, epic/chain grouping
+- `src/cli/epic.ts` — epic lifecycle: `list|status|merge|resolve`, merge-gated publication
+- `src/cli/end.ts` — session close: epic-aware, `--pr` publication, auto-redirect to `sp epic merge`
+- `src/specialist/epic-lifecycle.ts` — epic state machine (`open→resolving→merge_ready→merged/failed`)
+- `src/specialist/chain-identity.ts` — chain→epic linkage persistence
+- `src/specialist/epic-readiness.ts` — merge readiness detection (all chains terminal, tsc pass)
 - `src/specialist/runner.ts` — execution, retry logic, output contract injection, bead-aware prompt
 - `src/specialist/supervisor.ts` — job lifecycle, FIFO creation, READ_ONLY output auto-append
 - `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
@@ -226,6 +231,16 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
 - **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
 
+## Epic/Chain Lifecycle (wave-bound publication)
+
+- `sp epic list` — enumerate epics with status and chain counts
+- `sp epic status <id>` — chains, blockers, readiness, merge readiness check
+- `sp epic merge <id>` — canonical publication for wave-bound chains (topological merge, tsc gate)
+- `sp epic resolve <id>` — transition `open→resolving` (operator marks epic as merge-ready target)
+- `--epic <id>` on `sp run` — explicit epic membership (prep jobs, chain-root seeding)
+- `sp merge <chain>` — guarded: refuses if chain belongs to unresolved epic
+- `sp end [--epic <id>] [--pr]` — session close with PR publication; auto-redirects to `sp epic merge` for epic-bound chains
+
 ## Documentation
 
 - `docs/cli-reference.md` — complete CLI command reference
@@ -237,7 +252,7 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (3124 symbols, 7054 relationships, 265 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (3302 symbols, 7642 relationships, 280 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
