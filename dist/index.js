@@ -28822,16 +28822,65 @@ async function handleNodeSteer(args) {
 }
 async function handleNodeStop(args) {
   const nodeId = args.nodeId;
-  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
-  if (!coordinatorStatus.pid) {
-    throw new Error(`Coordinator job ${coordinatorJobId} has no pid`);
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
   }
-  process.kill(coordinatorStatus.pid, "SIGTERM");
-  if (args.jsonMode) {
-    console.log(JSON.stringify({ node_id: nodeId, coordinator_job_id: coordinatorJobId, stopped: true, pid: coordinatorStatus.pid }, null, 2));
-    return;
+  const nodeRun = requireNodeRun(sqliteClient, nodeId);
+  if (!nodeRun.coordinator_job_id) {
+    throw new Error(`Node ${nodeId} has no coordinator job id`);
   }
-  console.log(`Sent SIGTERM to node ${nodeId} coordinator (${coordinatorJobId}, pid=${coordinatorStatus.pid})`);
+  const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir: resolveJobsDir() });
+  const stoppedMembers = [];
+  const skippedMembers = [];
+  try {
+    const members = sqliteClient.readNodeMembers(nodeRun.id);
+    const terminalStatuses = new Set(["done", "error", "cancelled", "stopped"]);
+    for (const member of members) {
+      if (!member.job_id) {
+        skippedMembers.push({ member_id: member.member_id, job_id: "", reason: "no job_id" });
+        continue;
+      }
+      if (terminalStatuses.has(member.status)) {
+        skippedMembers.push({ member_id: member.member_id, job_id: member.job_id, reason: `already ${member.status}` });
+        continue;
+      }
+      const memberStatus = supervisor.readStatus(member.job_id);
+      if (!memberStatus?.pid) {
+        skippedMembers.push({ member_id: member.member_id, job_id: member.job_id, reason: "no pid" });
+        continue;
+      }
+      try {
+        process.kill(memberStatus.pid, "SIGTERM");
+        stoppedMembers.push({ member_id: member.member_id, job_id: member.job_id, pid: memberStatus.pid });
+      } catch {
+        skippedMembers.push({ member_id: member.member_id, job_id: member.job_id, reason: "SIGTERM failed (process already gone)" });
+      }
+    }
+    const coordinatorStatus = supervisor.readStatus(nodeRun.coordinator_job_id);
+    if (!coordinatorStatus?.pid) {
+      throw new Error(`Coordinator job ${nodeRun.coordinator_job_id} has no pid`);
+    }
+    process.kill(coordinatorStatus.pid, "SIGTERM");
+    if (args.jsonMode) {
+      console.log(JSON.stringify({
+        node_id: nodeId,
+        coordinator_job_id: nodeRun.coordinator_job_id,
+        stopped: true,
+        pid: coordinatorStatus.pid,
+        members_stopped: stoppedMembers,
+        members_skipped: skippedMembers
+      }, null, 2));
+      return;
+    }
+    console.log(`Sent SIGTERM to node ${nodeId} coordinator (${nodeRun.coordinator_job_id}, pid=${coordinatorStatus.pid})`);
+    if (stoppedMembers.length > 0) {
+      console.log(`Stopped ${stoppedMembers.length} member(s): ${stoppedMembers.map((m) => `${m.member_id}(${m.job_id})`).join(", ")}`);
+    }
+  } finally {
+    supervisor.dispose();
+    sqliteClient.close();
+  }
 }
 async function handleNodeAttach(args) {
   const nodeId = args.nodeId;
