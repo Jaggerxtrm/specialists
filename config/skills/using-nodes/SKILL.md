@@ -66,8 +66,6 @@ NodeSupervisor owns side effects and lifecycle transitions.
 | `sp node stop <node-id>` | Operator | Stop the coordinator process. |
 | `sp node promote <node-id> <finding-id> --to-bead <bead-id> [--json]` | Operator | Promote a finding into a bead note. |
 | `sp node steer <node-id> <message> [--json]` | Operator-only | Steer the coordinator externally. Never call this from the coordinator. |
-| `sp steer <job_id> "message"` | Coordinator | Redirect a **running** member mid-execution. `job_id` is in the resume payload member registry. |
-| `sp resume <job_id> "message"` | Coordinator | Send the next task to a **waiting** (keep-alive) member. `job_id` is in the resume payload member registry. |
 
 ---
 
@@ -118,22 +116,10 @@ Do not complete based only on status transitions. `wait-phase` tells you the mem
 
 ### Steering guidance
 
-After `wait-phase`, read member results. If a result reveals a gap, contradiction, or missed scope — act on it before completing or advancing.
+Only steer when concrete result evidence shows a gap, contradiction, or missed requirement.
 
-**Redirect a running member:**
-```bash
-sp steer <job_id> "focus only on the retry logic in supervisor.ts, ignore the rest"
-```
-
-**Send the next task to a waiting member:**
-```bash
-sp resume <job_id> "the explorer found the token refresh bug in runner.ts:245 — analyze the tradeoff between retry approaches"
-```
-
-`job_id` for each member is in the resume payload member registry (field: `jobId`) and in `sp node status --json`.
-
-Do **not** steer speculatively. Base every steer or resume on concrete evidence from `sp node result`.
-- Good: explorer result shows token refresh bug → resume overthinker with that specific context.
+Do **not** steer speculatively.
+- Good: result evidence shows a reviewer found a missing acceptance criterion.
 - Bad: steering a member before reading its completed output.
 
 ---
@@ -191,22 +177,7 @@ sp node result --node $SPECIALISTS_NODE_ID --member impl-1 --full --json
 sp node complete --node $SPECIALISTS_NODE_ID --strategy pr --json
 ```
 
-### Sequence B: read explorer → steer researcher based on findings
-
-```bash
-sp node status --node $SPECIALISTS_NODE_ID --json
-sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json
-sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key research-1 --specialist researcher --phase explore-1 --keep-alive --json
-sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json
-sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json
-# Explorer found retry logic bug in runner.ts:245 — direct researcher to relevant external docs
-sp resume <research-1-job_id> "look up the Anthropic SDK retry backoff API and find how other projects handle 429 retries"
-sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members research-1 --json
-sp node result --node $SPECIALISTS_NODE_ID --member research-1 --full --json
-# Synthesize both findings, then proceed to impl or overthinker phase
-```
-
-### Sequence C: discovered work + review synthesis + manual completion
+### Sequence B: discovered work + review synthesis + manual completion
 
 ```bash
 sp node status --node $SPECIALISTS_NODE_ID --json
