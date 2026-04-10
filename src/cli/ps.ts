@@ -380,12 +380,12 @@ function groupByNode(jobs: SupervisorStatus[]): NodeTree[] {
 }
 
 function statusLabel(status: JobState): string {
-  if (status === 'running') return cyan(status);
-  if (status === 'waiting') return magenta(status);
-  if (status === 'done') return green(status);
-  if (status === 'error') return red(status);
+  if (status === 'running') return bold(green(status));
+  if (status === 'waiting') return bold(magenta(status));
+  if (status === 'done') return dim(status);
+  if (status === 'error') return bold(red(status));
   if (status === 'cancelled') return dim(status);
-  return yellow(status);
+  return bold(yellow(status));
 }
 
 function epicStateLabel(state: EpicReadinessSummary['readiness_state'] | undefined): string {
@@ -441,6 +441,10 @@ function getBeadTitleFromBd(beadId: string): string | null {
   return null;
 }
 
+function sanitizeBeadTitle(title: string): string {
+  return title.replace(/\s+/g, ' ').trim();
+}
+
 function buildBeadTitleCache(jobs: SupervisorStatus[]): Map<string, string> {
   const titles = new Map(BEAD_TITLE_CACHE);
 
@@ -451,7 +455,7 @@ function buildBeadTitleCache(jobs: SupervisorStatus[]): Map<string, string> {
 
     const cachedTitle = beadAwareStatus.bead_title;
     if (typeof cachedTitle === 'string' && cachedTitle.trim().length > 0) {
-      const title = cachedTitle.trim();
+      const title = sanitizeBeadTitle(cachedTitle);
       titles.set(beadId, title);
       BEAD_TITLE_CACHE.set(beadId, title);
       continue;
@@ -459,8 +463,9 @@ function buildBeadTitleCache(jobs: SupervisorStatus[]): Map<string, string> {
 
     const resolvedTitle = getBeadTitleFromBd(beadId);
     if (resolvedTitle) {
-      titles.set(beadId, resolvedTitle);
-      BEAD_TITLE_CACHE.set(beadId, resolvedTitle);
+      const title = sanitizeBeadTitle(resolvedTitle);
+      titles.set(beadId, title);
+      BEAD_TITLE_CACHE.set(beadId, title);
     }
   }
 
@@ -502,27 +507,28 @@ function renderJobLine(
   const icon = getStatusIcon(job);
   const id = job.id.padEnd(8);
   const spec = job.specialist.slice(0, 13).padEnd(13);
-  const ctx = formatCtxWithIndicator(job.context_pct, job.context_health);
+  const status = statusLabel(job.status).padEnd(18);
+  const ctx = dim(formatCtxWithIndicator(job.context_pct, job.context_health));
   const elapsedBase = formatElapsed(job.elapsed_s);
   const metricParts: string[] = [];
   if (job.metrics?.turns) metricParts.push(`${job.metrics.turns}t`);
   if (job.metrics?.tool_calls) metricParts.push(`${job.metrics.tool_calls}tc`);
   const totalTokens = job.metrics?.token_usage?.total_tokens;
   if (totalTokens) metricParts.push(`${totalTokens}tok`);
-  const elapsed = metricParts.length > 0 ? `${elapsedBase} ${dim(metricParts.join('·'))}` : elapsedBase;
+  const elapsed = metricParts.length > 0 ? dim(`${elapsedBase} ${metricParts.join('·')}`) : dim(elapsedBase);
   const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-  const beadCol = job.bead_id ? job.bead_id : '';
+  const beadCol = dim((job.bead_id ? job.bead_id : '').padEnd(14));
   const action = getNextAction(job);
   const actionCol = job.is_dead ? red(action) : dim(action);
   const titleSuffix = beadTitle ? dim(` ${beadTitle.slice(0, 40)}`) : '';
-  return `${prefix}${connector}${icon} ${id} ${spec} ${ctx} ${elapsed}  ${beadCol.padEnd(14)} ${actionCol}${titleSuffix}`;
+  return `${prefix}${connector}${icon} ${id} ${spec} ${status} ${ctx} ${elapsed} ${beadCol} ${actionCol}${titleSuffix}`;
 }
 
 function renderTreeNodes(
   nodes: readonly JobNode[],
   beadTitles: Map<string, string>,
   prefix: string,
-  counter: { running: number; waiting: number },
+  renderedJobIds: Set<string>,
 ): void {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
@@ -530,13 +536,13 @@ function renderTreeNodes(
     const connector = prefix === '' ? '  ' : isLast ? '└ ' : '├ ';
     const childPrefix = prefix === '' ? '  ' : prefix + (isLast ? '  ' : '│ ');
 
-    if (node.status === 'running') counter.running += 1;
-    if (node.status === 'waiting') counter.waiting += 1;
-
-    console.log(renderJobLine(node, beadTitles, prefix, connector));
+    if (!renderedJobIds.has(node.id)) {
+      renderedJobIds.add(node.id);
+      console.log(renderJobLine(node, beadTitles, prefix, connector));
+    }
 
     if (node.children.length > 0) {
-      renderTreeNodes(node.children, beadTitles, childPrefix, counter);
+      renderTreeNodes(node.children, beadTitles, childPrefix, renderedJobIds);
     }
   }
 }
@@ -565,7 +571,7 @@ function resolveEpicReadinessMap(jobs: readonly SupervisorStatus[]): EpicReadine
 
 function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean, epicReadiness: EpicReadinessMap): void {
   const beadTitles = buildBeadTitleCache(jobs);
-  const counter = { running: 0, waiting: 0 };
+  const renderedJobIds = new Set<string>();
   const epicGroups = buildEpicGroups(jobs, epicReadiness);
 
   console.log('');
@@ -583,16 +589,19 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
       ? `chains ${readiness.chains.filter((chain) => chain.state === 'pass').length}/${readiness.chains.length} pass`
       : `chains ${chainCount}`;
 
-    console.log(`${bold('◆')} epic:${bold(epic.epic_id)} · ${epicStateLabel(readiness?.readiness_state)} · state:${persistedState} · ${prepSummary} · ${chainSummary}`);
+    const epicBanner = bold(cyan(`┏━ EPIC ${epic.epic_id} ━ ${String(readinessState).toUpperCase()} ━ ${prepSummary} ━ ${chainSummary}`));
+    console.log(epicBanner);
+    console.log(`  ${dim(`state:${persistedState}`)} · ${epicStateLabel(readiness?.readiness_state)}`);
 
     console.log(`  ${bold('Prep')}`);
     if (epic.prep_jobs.length === 0) {
       console.log(dim('    (none)'));
     } else {
       for (const prepJob of epic.prep_jobs) {
-        if (prepJob.status === 'running') counter.running += 1;
-        if (prepJob.status === 'waiting') counter.waiting += 1;
-        console.log(renderJobLine(prepJob, beadTitles, '    ', ''));
+        if (!renderedJobIds.has(prepJob.id)) {
+          renderedJobIds.add(prepJob.id);
+          console.log(renderJobLine(prepJob, beadTitles, '    ', ''));
+        }
       }
     }
 
@@ -609,7 +618,7 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
         for (const tree of chain.trees) {
           const branch = tree.branch ?? 'master';
           console.log(`      ${dim(branch)}`);
-          renderTreeNodes(tree.children, beadTitles, '      ', counter);
+          renderTreeNodes(tree.children, beadTitles, '      ', renderedJobIds);
         }
       }
     }
@@ -623,9 +632,10 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
   for (const node of legacyNodes) {
     console.log(`${cyan('⬢')} ${node.node_id} · ${node.node_name} · ${statusLabel(node.status as JobState)} · ${node.member_count} members`);
     for (const member of node.members) {
-      if (member.status === 'running') counter.running += 1;
-      if (member.status === 'waiting') counter.waiting += 1;
-      console.log(renderJobLine(member, beadTitles, '    ', ''));
+      if (!renderedJobIds.has(member.id)) {
+        renderedJobIds.add(member.id);
+        console.log(renderJobLine(member, beadTitles, '    ', ''));
+      }
     }
     console.log('');
   }
@@ -636,7 +646,7 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
     const beadSuffix = beadId ? ` · ${beadId}` : '';
     console.log(`${dim(branch)}${dim(beadSuffix)}`);
 
-    renderTreeNodes(tree.children, beadTitles, '', counter);
+    renderTreeNodes(tree.children, beadTitles, '', renderedJobIds);
     console.log('');
   }
 
@@ -645,7 +655,11 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
     console.log('');
   }
 
-  console.log(dim(`${jobs.length} jobs · ${epicGroups.length} epics · ${legacyNodes.length} nodes · ${legacyTrees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting${all ? ' · include terminal' : ''}`));
+  const renderedJobs = jobs.filter((job) => renderedJobIds.has(job.id));
+  const runningCount = renderedJobs.filter((job) => job.status === 'running').length;
+  const waitingCount = renderedJobs.filter((job) => job.status === 'waiting').length;
+
+  console.log(dim(`${renderedJobIds.size} jobs · ${epicGroups.length} epics · ${legacyNodes.length} nodes · ${legacyTrees.length} worktrees · ${runningCount} running · ${waitingCount} waiting${all ? ' · include terminal' : ''}`));
 }
 
 function renderInspect(jobId: string): void {
@@ -755,8 +769,25 @@ function renderJson(
   }, null, 2));
 }
 
+function dedupeStatusesById(statuses: Array<SupervisorStatus & { is_dead: boolean }>): Array<SupervisorStatus & { is_dead: boolean }> {
+  const byId = new Map<string, SupervisorStatus & { is_dead: boolean }>();
+
+  for (const status of statuses) {
+    const existing = byId.get(status.id);
+    if (!existing) {
+      byId.set(status.id, status);
+      continue;
+    }
+
+    const shouldReplace = status.started_at_ms >= existing.started_at_ms;
+    if (shouldReplace) byId.set(status.id, status);
+  }
+
+  return [...byId.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
+}
+
 function render(args: PsArgs): void {
-  const statusesWithLiveness = withPidLiveness(loadStatuses());
+  const statusesWithLiveness = dedupeStatusesById(withPidLiveness(loadStatuses()));
   const epicReadiness = resolveEpicReadinessMap(statusesWithLiveness);
 
   const visibleStatuses = statusesWithLiveness.filter((job) => {
@@ -802,13 +833,17 @@ async function follow(args: PsArgs): Promise<void> {
   process.stdout.write('\x1B[?25l'); // hide cursor while updating
   process.on('exit', () => process.stdout.write('\x1B[?25h')); // restore on exit
 
-  process.stdout.write(renderBuffered(args) + '\n');
+  const drawFrame = (): void => {
+    const frame = renderBuffered(args);
+    process.stdout.write(`\x1B[H\x1B[J${frame}\n`);
+  };
+
+  process.stdout.write('\x1B[2J\x1B[H');
+  drawFrame();
 
   await new Promise<void>(() => {
     setInterval(() => {
-      const content = renderBuffered(args);
-      // Move cursor to home, write new content, clear from cursor to end of screen
-      process.stdout.write('\x1B[H' + content + '\n\x1B[J');
+      drawFrame();
     }, 1000);
   });
 }
