@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+**Job lifecycle fixes**
+- **`cancelled` status** — new terminal status for jobs stopped without `run_complete` evidence (260e7246)
+- **`sp stop` terminal write** — writes terminal status (`done`/`cancelled`) to `status.json` BEFORE SIGTERM, preventing zombie waiting jobs (260e7246)
+- **`sp merge` validation** — refuses branches with no source changes under `src/` vs master, preventing empty merges (ecf6035a)
+- **`sp merge` file listing** — uses `git diff HEAD^1 HEAD` for accurate changed-file reporting (ecf6035a)
+- **crashRecovery reconciliation** — dead waiting jobs with `run_complete` → `done`; dead without evidence + non-node → `error` (ug51)
+- **`waiting_stale_ms` timeout** — 6h default; dead waiting jobs past timeout transition to `error` (ug51)
+- **Epic chain membership auto-sync** — supervisor calls `upsertEpicChainMembership` + readiness sync on both completion paths (vozx)
+
+### Added
 - **Phase 3A — SQLite schema foundation (fdtq/ftu5 stream)** (`aec1c98f`) — added initial SQLite schema and persistence columns (`schema_version`, `worktree_column`, text-capture fields) to bootstrap job/session persistence.
 - **Phase 3B — atomic SQLite dual-write at job boundaries** (`a86f05ef`) — introduced atomic dual-write behavior so lifecycle boundary updates are persisted consistently.
 - **Phase 3C — SQLite durability + connection model hardening** (`eacf3ace`) — enforced WAL mode, added `--git-common-dir` handling, and switched to persistent `bun:sqlite` connections.

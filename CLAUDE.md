@@ -197,9 +197,26 @@ Coordinator currently polls status and completes — doesn't read member output,
 
 ### Core surfaces
 
-- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor`
+- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor|merge`
 - **MCP tools**: `use_specialist` only (foreground, returns result directly to conversation context)
 - **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
+
+### Job status lifecycle
+
+```
+starting → running → waiting → (resume) → running → ... → done/error/cancelled
+```
+
+**Terminal statuses**:
+- `done` — normal completion with `run_complete` event
+- `error` — failure (exception, timeout, crash)
+- `cancelled` — intentional stop without completion evidence
+
+**`sp stop` behavior**:
+- Checks for `run_complete` event before SIGTERM
+- If found → writes `done` to `status.json`
+- If not found → writes `cancelled` to `status.json`
+- Prevents zombie "waiting" jobs after external kills
 
 ### Execution semantics
 
@@ -236,7 +253,9 @@ Coordinator currently polls status and completes — doesn't read member output,
 - `src/cli/feed.ts` — merged feed stream, envelope metadata, cursor behavior
 - `src/cli/status.ts` — health check + `--job <id>` single-job detail view
 - `src/cli/ps.ts` — process snapshot: worktree trees, context%, bead titles, urgency sort, epic/chain grouping
+- `src/cli/stop.ts` — SIGTERM with terminal status resolution (`done` vs `cancelled` based on `run_complete` evidence)
 - `src/cli/epic.ts` — epic lifecycle: `list|status|merge|resolve`, merge-gated publication
+- `src/cli/merge.ts` — chain merge with epic guard, `src/` validation, TypeScript gate
 - `src/cli/end.ts` — session close: epic-aware, `--pr` publication, auto-redirect to `sp epic merge`
 - `src/specialist/epic-lifecycle.ts` — epic state machine (`open→resolving→merge_ready→merged/failed`)
 - `src/specialist/chain-identity.ts` — chain→epic linkage persistence
@@ -254,6 +273,7 @@ Coordinator currently polls status and completes — doesn't read member output,
 - Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
 - Observe jobs with `specialists feed -f`
 - Monitor all active jobs: `specialists ps` (live: `specialists ps --follow`)
+- Stop jobs with terminal status resolution: `specialists stop <job-id>`
 - Use `specialists result <job-id>` for final output text
 - Edit specialist configs with dot-path syntax: `specialists edit <name> specialist.execution.model anthropic/claude-sonnet-4-6`
 - Apply presets for common configurations: `specialists edit <name> --preset cheap|medium|power`
@@ -264,11 +284,25 @@ Coordinator currently polls status and completes — doesn't read member output,
 - **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
 - **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
 
+## Crash Recovery
+
+Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
+
+**Dead running/starting jobs**:
+- Dead PID → `error` ("Process crashed or was killed")
+- Node members → `waiting`/`recovery_pending` (preserved for NodeSupervisor)
+
+**Dead waiting jobs**:
+- Emits `stale_warning` if idle past threshold
+- Does NOT auto-close — keep-alive sessions remain recoverable
+- Node members preserved
+
 ## Epic/Chain Lifecycle (wave-bound publication)
 
 - `sp epic list` — enumerate epics with status and chain counts
 - `sp epic status <id>` — chains, blockers, readiness, merge readiness check
 - `sp epic merge <id>` — canonical publication for wave-bound chains (topological merge, tsc gate)
+- Epic chain membership auto-syncs on job completion (both success/error paths)
 - `sp epic resolve <id>` — transition `open→resolving` (operator marks epic as merge-ready target)
 - `--epic <id>` on `sp run` — explicit epic membership (prep jobs, chain-root seeding)
 - `sp merge <chain>` — guarded: refuses if chain belongs to unresolved epic
