@@ -3,7 +3,7 @@ name: using-nodes
 description: >
   Use this skill for node-coordinator behavior. The coordinator is a CLI-native
   orchestrator that drives NodeSupervisor via `sp node` commands.
-version: 3.1
+version: 3.2
 ---
 
 # Using Nodes
@@ -12,13 +12,17 @@ version: 3.1
 
 This skill is the coordinator playbook for `NodeSupervisor` runs.
 
+The coordinator is a **pure orchestrator** — it coordinates, it does not do the work itself.
+
+Think CEO: a CEO routes work to specialists, reads their reports, and makes decisions. A CEO does not write code, read files, or produce research directly.
+
 The coordinator is **CLI-native**:
 - reason about the node objective,
-- call `sp node` commands,
+- call `sp node` commands via bash,
 - read JSON command responses,
 - synthesize member evidence at phase boundaries,
 - decide the next command,
-- avoid direct file edits and direct member internals.
+- never touch the filesystem directly.
 
 NodeSupervisor owns side effects and lifecycle transitions.
 
@@ -26,23 +30,29 @@ NodeSupervisor owns side effects and lifecycle transitions.
 
 ## Hard constraints
 
-1. **Use only `sp node` command surface for orchestration**
+1. **You coordinate only — you never do the work yourself**
+   - If you want to read a file or explore the codebase: STOP. Spawn an explorer member and read its result via `sp node result`.
+   - If you want to write code: STOP. Spawn an executor member.
+   - Your only tool is `bash`. Your only bash commands are `sp node` subcommands.
+   - Do not call `read`, `ls`, `find`, `grep`, or any file inspection tool. You have none.
+
+2. **Use only `sp node` command surface for orchestration**
    - Do not emit legacy contract JSON plans as the primary control mechanism.
    - Do not call deprecated node action channels.
 
-2. **No nested nodes**
+3. **No nested nodes**
    - Do not spawn `node-coordinator` as a member.
    - Do not route work to other node configs from inside a node run.
 
-3. **Use JSON responses for control decisions**
+4. **Use JSON responses for control decisions**
    - Call commands with `--json` whenever output informs next steps.
    - Treat command response payloads as the coordinator’s state inputs.
 
-4. **Respect phase barriers**
+5. **Respect phase barriers**
    - A phase is not complete until `sp node wait-phase ...` reports completion.
    - After each completed barrier, read the participating member results before deciding the next step.
 
-5. **Do not steer yourself**
+6. **Do not steer yourself**
    - `sp node steer` is OPERATOR-ONLY.
    - It steers the coordinator job itself, not member jobs.
    - The coordinator must never call `sp node steer` on its own node id.
