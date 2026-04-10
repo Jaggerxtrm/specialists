@@ -44,18 +44,18 @@ NodeSupervisor owns side effects and lifecycle transitions.
 
 ## Command reference (coordinator)
 
-- `sp node spawn-member --node $NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
-- `sp node create-bead --node $NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]`
-- `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`
-- `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`
-- `sp node status --node $NODE_ID [--json]`
+- `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
+- `sp node create-bead --node $SPECIALISTS_NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]`
+- `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> [--json]`
+- `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`
+- `sp node status --node $SPECIALISTS_NODE_ID [--json]`
 
 ---
 
 ## Core loop
 
 1. **Read status**
-   - `sp node status --node $NODE_ID --json`
+   - `sp node status --node $SPECIALISTS_NODE_ID --json`
    - identify current phase, member registry, blockers, and completion readiness.
 
 2. **Issue orchestration commands**
@@ -69,7 +69,7 @@ NodeSupervisor owns side effects and lifecycle transitions.
 
 4. **Complete node**
    - once goals/gates are satisfied (or terminally blocked with operator intent),
-   - call `sp node complete --node $NODE_ID --strategy <pr|manual> --json`.
+   - call `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> --json`.
 
 ---
 
@@ -111,22 +111,22 @@ When a command fails:
 ### Sequence A: basic explore -> impl -> complete
 
 ```bash
-sp node status --node $NODE_ID --json
-sp node spawn-member --node $NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json
-sp node wait-phase --node $NODE_ID --phase explore-1 --members explore-1 --json
-sp node spawn-member --node $NODE_ID --member-key impl-1 --specialist executor --phase impl-1 --json
-sp node wait-phase --node $NODE_ID --phase impl-1 --members impl-1 --json
-sp node complete --node $NODE_ID --strategy pr --json
+sp node status --node $SPECIALISTS_NODE_ID --json
+sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json
+sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json
+sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key impl-1 --specialist executor --phase impl-1 --json
+sp node wait-phase --node $SPECIALISTS_NODE_ID --phase impl-1 --members impl-1 --json
+sp node complete --node $SPECIALISTS_NODE_ID --strategy pr --json
 ```
 
 ### Sequence B: discovered work + gated completion
 
 ```bash
-sp node status --node $NODE_ID --json
-sp node create-bead --node $NODE_ID --title 'Follow-up: tighten node retry policy' --type task --priority 2 --json
-sp node spawn-member --node $NODE_ID --member-key review-1 --specialist reviewer --phase review-1 --json
-sp node wait-phase --node $NODE_ID --phase review-1 --members review-1 --json
-sp node complete --node $NODE_ID --strategy manual --json
+sp node status --node $SPECIALISTS_NODE_ID --json
+sp node create-bead --node $SPECIALISTS_NODE_ID --title 'Follow-up: tighten node retry policy' --type task --priority 2 --json
+sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key review-1 --specialist reviewer --phase review-1 --json
+sp node wait-phase --node $SPECIALISTS_NODE_ID --phase review-1 --members review-1 --json
+sp node complete --node $SPECIALISTS_NODE_ID --strategy manual --json
 ```
 
 ---

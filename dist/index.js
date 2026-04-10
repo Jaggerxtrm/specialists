@@ -31180,12 +31180,28 @@ function render(args) {
   }
   renderHuman(visibleStatuses, nodes, trees, args.all, epicReadiness);
 }
+function renderBuffered(args) {
+  const lines = [];
+  const origLog = console.log;
+  console.log = (...logArgs) => lines.push(logArgs.map(String).join(" "));
+  try {
+    render(args);
+  } finally {
+    console.log = origLog;
+  }
+  return lines.join(`
+`);
+}
 async function follow(args) {
-  render(args);
+  process.stdout.write("\x1B[?25l");
+  process.on("exit", () => process.stdout.write("\x1B[?25h"));
+  process.stdout.write(renderBuffered(args) + `
+`);
   await new Promise(() => {
     setInterval(() => {
-      process.stdout.write("\x1Bc");
-      render(args);
+      const content = renderBuffered(args);
+      process.stdout.write("\x1B[H" + content + `
+\x1B[J`);
     }, 1000);
   });
 }

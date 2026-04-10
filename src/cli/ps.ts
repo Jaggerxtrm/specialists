@@ -783,13 +783,30 @@ function render(args: PsArgs): void {
   renderHuman(visibleStatuses, nodes, trees, args.all, epicReadiness);
 }
 
+function renderBuffered(args: PsArgs): string {
+  const lines: string[] = [];
+  const origLog = console.log;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  console.log = (...logArgs: any[]) => lines.push(logArgs.map(String).join(' '));
+  try {
+    render(args);
+  } finally {
+    console.log = origLog;
+  }
+  return lines.join('\n');
+}
+
 async function follow(args: PsArgs): Promise<void> {
-  render(args);
+  process.stdout.write('\x1B[?25l'); // hide cursor while updating
+  process.on('exit', () => process.stdout.write('\x1B[?25h')); // restore on exit
+
+  process.stdout.write(renderBuffered(args) + '\n');
 
   await new Promise<void>(() => {
     setInterval(() => {
-      process.stdout.write('\x1Bc');
-      render(args);
+      const content = renderBuffered(args);
+      // Move cursor to home, write new content, clear from cursor to end of screen
+      process.stdout.write('\x1B[H' + content + '\n\x1B[J');
     }, 1000);
   });
 }

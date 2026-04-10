@@ -103,6 +103,8 @@ export interface PiSessionOptions {
   thinkingLevel?: string;
   /** Working directory for the pi process — defaults to process.cwd() if not set */
   cwd?: string;
+  /** Extra environment variables injected into the pi process */
+  env?: Record<string, string>;
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -527,12 +529,13 @@ export class PiAgentSession {
 
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
+    const baseEnv = { ...process.env, ...(this.options.env ?? {}) };
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: sessionCwd,
       env: worktreeBoundary
-        ? { ...process.env, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary }
-        : process.env,
+        ? { ...baseEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary }
+        : baseEnv,
     });
 
     const donePromise = new Promise<void>((resolve, reject) => {

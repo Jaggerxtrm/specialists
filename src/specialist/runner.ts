@@ -877,6 +877,11 @@ _Injected because .gitnexus/ exists — project is indexed_
     const maxAttempts = maxRetries + 1;
 
     try {
+      // Forward selected specialist variables as real shell env vars for bash tool access
+      const envVars: Record<string, string> = {};
+      for (const key of ['SPECIALISTS_NODE_ID', 'SPECIALISTS_JOB_ID'] as const) {
+        if (options.variables?.[key]) envVars[key] = options.variables[key];
+      }
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
@@ -886,6 +891,7 @@ _Injected because .gitnexus/ exists — project is indexed_
         stallTimeoutMs: execution.stall_timeout_ms,
         cwd: runCwd,
         worktreeBoundary: options.worktreeBoundary,
+        ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
         onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
