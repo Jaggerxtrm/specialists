@@ -400,13 +400,48 @@ export function resolveMergeTargets(target: string): ChainMergeTarget[] {
   return chains;
 }
 
-function readChangedFilesForHead(): string[] {
-  const diff = runCommand('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']);
+function readChangedFilesForLastMerge(): string[] {
+  const diff = runCommand('git', ['diff', '--name-only', 'HEAD^1', 'HEAD']);
   if (diff.status !== 0) return [];
   return diff.stdout
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean);
+}
+
+function readBranchSourceChangesAgainstMaster(branch: string): string[] {
+  const result = runCommand('git', ['diff', '--name-only', `master...${branch}`, '--', 'src/']);
+  if (result.status !== 0) {
+    throw new Error(`Unable to inspect source diff for '${branch}' against master.`);
+  }
+
+  return result.stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function readBranchDiffStatAgainstMaster(branch: string): string {
+  const result = runCommand('git', ['diff', '--stat', `master...${branch}`]);
+  if (result.status !== 0) {
+    return '(unable to compute diff stat)';
+  }
+
+  const stat = result.stdout.trim();
+  return stat.length > 0 ? stat : '(no file changes relative to master)';
+}
+
+function assertBranchHasSourceDiff(branch: string): void {
+  const sourceChanges = readBranchSourceChangesAgainstMaster(branch);
+  if (sourceChanges.length > 0) {
+    return;
+  }
+
+  const diffStat = readBranchDiffStatAgainstMaster(branch);
+  throw new Error(
+    `Refusing merge for '${branch}': no source changes detected under src/ compared to master.\n` +
+    `Diff stat (master...${branch}):\n${diffStat}`,
+  );
 }
 
 function getConflictFiles(): string[] {
@@ -479,12 +514,13 @@ export function runMergePlan(
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
+    assertBranchHasSourceDiff(target.branch);
     mergeBranch(target.branch);
     runTypecheckGate();
     mergedSteps.push({
       beadId: target.beadId,
       branch: target.branch,
-      changedFiles: readChangedFilesForHead(),
+      changedFiles: readChangedFilesForLastMerge(),
     });
   }
 
