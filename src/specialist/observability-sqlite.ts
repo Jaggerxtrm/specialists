@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // bun:sqlite is Bun-only — lazy-load to avoid breaking Node/vitest imports.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,6 +19,7 @@ function loadBunDatabase(): (new (path: string) => BunDb) | null {
   return _BunDatabase;
 }
 import { resolveObservabilityDbLocation } from './observability-db.js';
+import { resolveJobsDir } from './job-root.js';
 import type { TimelineEvent } from './timeline-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
@@ -1433,6 +1435,38 @@ class SqliteClient implements ObservabilitySqliteClient {
   close(): void {
     this.db.close();
   }
+}
+
+export function hasRunCompleteEvent(jobId: string, cwd: string = process.cwd()): boolean {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+
+  try {
+    if (sqliteClient) {
+      const events = sqliteClient.readEvents(jobId);
+      return events.some((event) => event.type === 'run_complete');
+    }
+  } finally {
+    sqliteClient?.close();
+  }
+
+  const eventsPath = join(resolveJobsDir(cwd), jobId, 'events.jsonl');
+  if (!existsSync(eventsPath)) return false;
+
+  try {
+    const lines = readFileSync(eventsPath, 'utf-8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    for (const line of lines) {
+      const event = JSON.parse(line) as { type?: string };
+      if (event.type === 'run_complete') return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
 }
 
 export function createObservabilitySqliteClient(cwd: string = process.cwd()): ObservabilitySqliteClient | null {

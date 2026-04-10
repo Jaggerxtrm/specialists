@@ -172,8 +172,8 @@ export interface TimelineEventTurn extends TimelineEventBase {
 
 export interface TimelineEventStatusChange extends TimelineEventBase {
   type: 'status_change';
-  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
-  previous_status?: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+  status: 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
+  previous_status?: 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
 }
 
 /**

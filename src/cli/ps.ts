@@ -73,7 +73,7 @@ interface EpicGroup {
 }
 
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
-const TERMINAL_STATES: readonly JobState[] = ['done', 'error'];
+const TERMINAL_STATES: readonly JobState[] = ['done', 'error', 'cancelled'];
 const BEAD_TITLE_CACHE = new Map<string, string>();
 const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
   waiting: 3,
@@ -81,6 +81,7 @@ const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
   starting: 1,
   done: 0,
   error: 0,
+  cancelled: 0,
 };
 const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⣺', '⣹', '⣸', '⣷', '⣶'] as const;
 
@@ -383,6 +384,7 @@ function statusLabel(status: JobState): string {
   if (status === 'waiting') return magenta(status);
   if (status === 'done') return green(status);
   if (status === 'error') return red(status);
+  if (status === 'cancelled') return dim(status);
   return yellow(status);
 }
 
