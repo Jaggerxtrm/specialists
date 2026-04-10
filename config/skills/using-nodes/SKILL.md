@@ -68,7 +68,7 @@ NodeSupervisor owns side effects and lifecycle transitions.
 | `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]` | Coordinator | Block until the named phase members reach terminal state. |
 | `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json` | Coordinator | Read the persisted output for a specific member after a phase barrier. |
 | `sp node create-bead --node $SPECIALISTS_NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]` | Coordinator | Create follow-up tracked work discovered during orchestration. |
-| `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr\|manual> [--json]` | Coordinator | Finish the node once evidence, gates, and follow-ups are handled. |
+| `sp node complete --node <node-id> --strategy <pr\|manual> [--json]` | Operator-only | Force-close node lifecycle when coordinator has reached waiting and operator decides to finalize. |
 | `sp node feed <node-id>` | Operator | Inspect node event history. |
 | `sp node members <node-id> [--json]` | Operator | Inspect member registry and lineage. |
 | `sp node memory <node-id> [--json]` | Operator | Inspect persisted node memory entries. |
@@ -98,9 +98,10 @@ NodeSupervisor owns side effects and lifecycle transitions.
    - re-read node status after each command sequence,
    - adjust the plan from actual runtime state.
 
-5. **Complete node**
-   - once goals and gates are satisfied (or terminally blocked with explicit reason),
-   - call `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> --json`.
+5. **Coordinator terminal behavior**
+   - once goals are satisfied (or terminally blocked with explicit reason),
+   - synthesize evidence and enter/remain in `waiting`.
+   - do not issue a completion command; operator decides lifecycle closure via `sp node stop` (or force-close via `sp node complete`).
 
 ---
 
@@ -116,13 +117,13 @@ Use this exact loop:
 4. `wait-phase`
 5. `result --full`
 6. synthesize evidence
-7. choose next action or `complete`
+7. choose next action or enter waiting after synthesis
 
 ### Synthesis mandate
 
-Before `sp node complete`, the coordinator **MUST** read the persisted results for the members that produced the evidence the completion decision depends on.
+Before declaring synthesis complete, the coordinator **MUST** read the persisted results for the members that produced the evidence.
 
-Do not complete based only on status transitions. `wait-phase` tells you the members are terminal; `sp node result` tells you what they actually found or changed.
+Do not rely only on status transitions. `wait-phase` tells you the members are terminal; `sp node result` tells you what they actually found or changed. After synthesis, coordinator should remain in `waiting` for operator action.
 
 ### Steering guidance
 
@@ -158,7 +159,7 @@ When a command fails:
 1. inspect the error JSON payload,
 2. classify the failure (invalid args, missing member/bead, transient runtime condition),
 3. retry with corrected arguments when recoverable,
-4. if not recoverable, create a tracking bead and/or complete the node with an explicit blocked reason.
+4. if not recoverable, create a tracking bead and leave explicit blocked guidance for operator closure.
 
 ### Example recovery cases
 
@@ -166,13 +167,13 @@ When a command fails:
 - `wait-phase` references an unknown member: refresh via `status --json`, then retry with the valid member set.
 - `result` reports no `job_id` yet: the member was not launched or not persisted yet; re-check `status --json`.
 - `result` reports no persisted output yet: the member finished without a stored result; inspect `members`, `feed`, or escalate with a follow-up bead.
-- completion rejected by current state: refresh status, satisfy unmet prerequisites, retry `complete`.
+- operator close/force-close rejected by current state: refresh status, satisfy unmet prerequisites, retry from operator context.
 
 ---
 
 ## Example command sequences
 
-### Sequence A: explore -> synthesis -> impl -> complete
+### Sequence A: explore -> synthesis -> impl -> waiting
 
 ```bash
 sp node status --node $SPECIALISTS_NODE_ID --json
@@ -183,11 +184,11 @@ sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json
 sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key impl-1 --specialist executor --phase impl-1 --json
 sp node wait-phase --node $SPECIALISTS_NODE_ID --phase impl-1 --members impl-1 --json
 sp node result --node $SPECIALISTS_NODE_ID --member impl-1 --full --json
-# Synthesize impl evidence, then complete.
-sp node complete --node $SPECIALISTS_NODE_ID --strategy pr --json
+# Synthesize impl evidence, then stay in waiting for operator closure.
+sp node status --node $SPECIALISTS_NODE_ID --json
 ```
 
-### Sequence B: discovered work + review synthesis + manual completion
+### Sequence B: discovered work + review synthesis + operator closure
 
 ```bash
 sp node status --node $SPECIALISTS_NODE_ID --json
@@ -196,7 +197,8 @@ sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key review-1 --special
 sp node wait-phase --node $SPECIALISTS_NODE_ID --phase review-1 --members review-1 --json
 sp node result --node $SPECIALISTS_NODE_ID --member review-1 --full --json
 # Synthesize the review evidence, then decide whether a fix phase is needed.
-sp node complete --node $SPECIALISTS_NODE_ID --strategy manual --json
+# If no more phases are needed, remain waiting and let operator close/stop the node.
+sp node status --node $SPECIALISTS_NODE_ID --json
 ```
 
 ---
@@ -207,7 +209,7 @@ sp node complete --node $SPECIALISTS_NODE_ID --strategy manual --json
 - Prefer explicit short phases over long implicit waves.
 - Re-read `status --json` before every major transition.
 - Keep retries bounded; avoid infinite command loops.
-- If progress stalls, surface the blocker via `create-bead` and choose completion strategy deliberately.
+- If progress stalls, surface the blocker via `create-bead` and remain waiting with explicit operator guidance.
 - Treat `wait-phase` + `result --full` as a pair. One without the other is incomplete coordination.
 
 ---
@@ -218,13 +220,16 @@ sp node complete --node $SPECIALISTS_NODE_ID --strategy manual --json
 ### Coordinator command set
 - `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
 - `sp node create-bead --node $SPECIALISTS_NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`
-- `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> [--json]`
 - `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`
 - `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json`
 - `sp node status --node $SPECIALISTS_NODE_ID [--json]`
 
+### Operator-only closure commands
+- `sp node stop <node-id>`
+- `sp node complete --node <node-id> --strategy <pr|manual> [--json]`
+
 ### Phase-boundary synthesis rule
-- After `wait-phase` completes, read every participating member result with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or node completion.
+- After `wait-phase` completes, read every participating member result with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or stay waiting for operator closure.
 
 ### Phase kinds
 - `explore`: Discovery and evidence gathering.
