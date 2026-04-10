@@ -802,6 +802,25 @@ export class SpecialistRunner {
       // Non-fatal — bd prime may be unavailable in some contexts
     }
 
+    // 3. Inject GitNexus cheatsheet if project is indexed (~100 tokens)
+    try {
+      const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
+      if (existsSync(gitnexusMetaPath)) {
+        agentsMd += `\n\n---\n## GitNexus (use before any edit)
+_Injected because .gitnexus/ exists — project is indexed_
+
+- **gitnexus_impact**({target: "symbolName", direction: "upstream"}) — blast radius before editing
+- **gitnexus_context**({name: "symbolName"}) — callers, callees, execution flows
+- **gitnexus_query**({query: "concept"}) — find relevant execution flows
+- **gitnexus_detect_changes**() — verify scope before completing
+
+**Rule**: Run gitnexus_impact before modifying any function/class/method.
+---\n`;
+      }
+    } catch {
+      // Non-fatal — GitNexus not indexed, skip injection
+    }
+
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
     const outputType = (execution.output_type ?? 'custom') as OutputType;
     const specialistOutputSchema = prompt.output_schema as JsonSchema | undefined;

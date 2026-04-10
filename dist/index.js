@@ -19196,6 +19196,25 @@ ${bdPrime}
 ---
 `;
     } catch {}
+    try {
+      const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
+      if (existsSync3(gitnexusMetaPath)) {
+        agentsMd += `
+
+---
+## GitNexus (use before any edit)
+_Injected because .gitnexus/ exists \u2014 project is indexed_
+
+- **gitnexus_impact**({target: "symbolName", direction: "upstream"}) \u2014 blast radius before editing
+- **gitnexus_context**({name: "symbolName"}) \u2014 callers, callees, execution flows
+- **gitnexus_query**({query: "concept"}) \u2014 find relevant execution flows
+- **gitnexus_detect_changes**() \u2014 verify scope before completing
+
+**Rule**: Run gitnexus_impact before modifying any function/class/method.
+---
+`;
+      }
+    } catch {}
     const responseFormat = execution.response_format ?? "text";
     const outputType = execution.output_type ?? "custom";
     const specialistOutputSchema = prompt.output_schema;
