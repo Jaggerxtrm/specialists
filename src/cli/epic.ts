@@ -7,6 +7,7 @@ import {
   evaluateEpicMergeReadiness,
   summarizeEpicTransition,
 } from '../specialist/epic-lifecycle.js';
+import { loadEpicReadinessSummary, type EpicReadinessSummary } from '../specialist/epic-readiness.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
@@ -41,12 +42,34 @@ interface EpicResolveOptions {
   json: boolean;
 }
 
+interface EpicRecoverOptions {
+  epicId?: string;
+  unresolvedOnly: boolean;
+  json: boolean;
+}
+
 interface EpicListEntry {
   epic_id: string;
   state: EpicState;
   chain_count: number;
   readiness: EpicReadinessResult;
   updated_at_ms: number;
+}
+
+interface EpicRecoveryEntry {
+  epic_id: string;
+  persisted_state: EpicState;
+  readiness_state: EpicReadinessSummary['readiness_state'];
+  next_state: EpicState;
+  can_transition: boolean;
+  updated_at_ms: number;
+  blockers: string[];
+  outstanding_chain_ids: string[];
+  merge_candidate: boolean;
+  publication_priority: number;
+  summary: string;
+  prep: EpicReadinessSummary['prep'];
+  chains: EpicReadinessSummary['chains'];
 }
 
 interface EpicMergeContext {
@@ -174,6 +197,36 @@ function parseResolveOptions(argv: readonly string[]): EpicResolveOptions {
   return { epicId, dryRun, json };
 }
 
+function parseRecoverOptions(argv: readonly string[]): EpicRecoverOptions {
+  let unresolvedOnly = true;
+  let json = false;
+  let epicId: string | undefined;
+
+  for (const argument of argv) {
+    if (argument === '--unresolved') {
+      unresolvedOnly = true;
+      continue;
+    }
+    if (argument === '--all') {
+      unresolvedOnly = false;
+      continue;
+    }
+    if (argument === '--json') {
+      json = true;
+      continue;
+    }
+    if (argument.startsWith('-')) {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+    if (epicId) {
+      throw new Error('Only one epic ID is supported');
+    }
+    epicId = argument;
+  }
+
+  return { epicId, unresolvedOnly, json };
+}
+
 function readEpicChildrenFromBeads(epicId: string): string[] {
   const result = runCommand('bd', ['children', epicId]);
   if (result.status !== 0) {
@@ -236,6 +289,66 @@ function gatherEpicList(sqlite: ObservabilitySqliteClient, unresolvedOnly: boole
         updated_at_ms: run.updated_at_ms,
       };
     });
+}
+
+function listRecoverableEpicIds(sqlite: ObservabilitySqliteClient): string[] {
+  const epicIds = new Set<string>();
+
+  for (const run of sqlite.listEpicRuns()) {
+    epicIds.add(run.epic_id);
+  }
+
+  for (const status of sqlite.listStatuses()) {
+    if (status.epic_id) {
+      epicIds.add(status.epic_id);
+    }
+  }
+
+  return [...epicIds].sort((a, b) => a.localeCompare(b));
+}
+
+function toPublicationPriority(entry: Pick<EpicRecoveryEntry, 'merge_candidate' | 'blockers' | 'outstanding_chain_ids' | 'updated_at_ms'>): number {
+  if (entry.merge_candidate) return 0;
+  if (entry.blockers.length === 0 && entry.outstanding_chain_ids.length === 0) return 1;
+  if (entry.blockers.length === 0) return 2;
+  return 3;
+}
+
+function gatherEpicRecovery(sqlite: ObservabilitySqliteClient, options: EpicRecoverOptions): EpicRecoveryEntry[] {
+  const epicIds = options.epicId ? [options.epicId] : listRecoverableEpicIds(sqlite);
+
+  const entries = epicIds.map((epicId) => {
+    const readiness = loadEpicReadinessSummary(sqlite, epicId);
+    const epicRun = sqlite.readEpicRun(epicId);
+    const outstandingChainIds = readiness.chains
+      .filter((chain) => chain.state === 'pending' || chain.state === 'blocked' || chain.state === 'failed')
+      .map((chain) => chain.chain_id);
+
+    const entry: EpicRecoveryEntry = {
+      epic_id: epicId,
+      persisted_state: readiness.persisted_state,
+      readiness_state: readiness.readiness_state,
+      next_state: readiness.next_state,
+      can_transition: readiness.can_transition,
+      updated_at_ms: epicRun?.updated_at_ms ?? 0,
+      blockers: readiness.blockers,
+      outstanding_chain_ids: outstandingChainIds,
+      merge_candidate: readiness.readiness_state === 'merge_ready',
+      publication_priority: 0,
+      summary: readiness.summary,
+      prep: readiness.prep,
+      chains: readiness.chains,
+    };
+
+    return {
+      ...entry,
+      publication_priority: toPublicationPriority(entry),
+    };
+  });
+
+  return entries
+    .filter((entry) => !options.unresolvedOnly || isEpicUnresolvedState(entry.persisted_state))
+    .sort((a, b) => a.publication_priority - b.publication_priority || b.updated_at_ms - a.updated_at_ms || a.epic_id.localeCompare(b.epic_id));
 }
 
 function gatherEpicContext(options: EpicMergeCliOptions): EpicMergeContext {
@@ -678,19 +791,126 @@ export async function handleEpicStatusCommand(argv: readonly string[]): Promise<
   }
 }
 
+export async function handleEpicRecoverCommand(argv: readonly string[]): Promise<void> {
+  let options: EpicRecoverOptions;
+  try {
+    options = parseRecoverOptions(argv);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    console.error('Usage: specialists epic recover [epic-id] [--unresolved|--all] [--json]');
+    process.exit(1);
+  }
+
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    const message = 'Observability SQLite database not available. Run `sp db setup` first.';
+    if (options.json) {
+      console.log(JSON.stringify({ error: message }, null, 2));
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
+  }
+
+  try {
+    const entries = gatherEpicRecovery(sqlite, options);
+    const mergeQueue = entries.filter((entry) => entry.merge_candidate).map((entry) => entry.epic_id);
+    const blockedEpics = entries.filter((entry) => !entry.merge_candidate).map((entry) => entry.epic_id);
+    const generatedAt = Date.now();
+
+    if (options.json) {
+      console.log(JSON.stringify({
+        generated_at_ms: generatedAt,
+        scope: {
+          epic_id: options.epicId ?? null,
+          unresolved_only: options.unresolvedOnly,
+        },
+        workflow: {
+          question_set: [
+            'what is active?',
+            'what is blocked?',
+            'what can merge next?',
+          ],
+          command_sequence: [
+            'sp epic recover --json',
+            'sp epic status <epic-id> --json',
+            'sp epic resolve <epic-id>',
+            'sp epic merge <epic-id>',
+          ],
+        },
+        data_boundary: {
+          sqlite_recovery_state: ['epic_runs', 'epic_chain_membership', 'specialist_jobs.status_json', 'specialist_jobs.last_output'],
+          beads_narrative_context: 'Use bd show <bead-id> for rationale, notes, and human narrative. Recovery readiness is sourced from SQLite state only.',
+        },
+        merge_queue: mergeQueue,
+        blocked_epics: blockedEpics,
+        epics: entries,
+      }, null, 2));
+      return;
+    }
+
+    console.log('');
+    console.log('Epic recovery view (post-compaction)');
+    console.log(`Generated: ${new Date(generatedAt).toISOString()}`);
+    console.log('Recovery source: SQLite observability state (epic_runs, epic_chain_membership, specialist_jobs).');
+    console.log('Narrative source: beads notes/history via bd show when you need human context.');
+    console.log('');
+
+    if (entries.length === 0) {
+      console.log('No epic recovery records found for the selected scope.');
+      console.log('');
+      return;
+    }
+
+    if (mergeQueue.length > 0) {
+      console.log(`Merge queue hint: ${mergeQueue.join(' -> ')}`);
+    } else {
+      console.log('Merge queue hint: none (all active epics currently blocked)');
+    }
+    console.log('');
+
+    for (const entry of entries) {
+      const status = entry.merge_candidate ? 'merge-ready' : 'action-required';
+      console.log(`${entry.epic_id}  ${entry.persisted_state} -> ${entry.next_state}  ${status}`);
+      console.log(`  ${entry.summary}`);
+      if (entry.updated_at_ms > 0) {
+        console.log(`  updated: ${new Date(entry.updated_at_ms).toISOString()}`);
+      }
+      if (entry.blockers.length > 0) {
+        console.log(`  blockers: ${entry.blockers.join(', ')}`);
+      }
+      if (entry.outstanding_chain_ids.length > 0) {
+        console.log(`  outstanding chains: ${entry.outstanding_chain_ids.join(', ')}`);
+      }
+    }
+
+    console.log('');
+    console.log('Operator workflow:');
+    console.log('  1) Run `sp epic recover` to rebuild active epic state after compaction.');
+    console.log('  2) Drill into one epic with `sp epic status <epic-id>`.');
+    console.log('  3) Move open epics to resolving with `sp epic resolve <epic-id>`.');
+    console.log('  4) Publish ready epics with `sp epic merge <epic-id>`.');
+    console.log('');
+  } finally {
+    sqlite.close();
+  }
+}
+
 export async function handleEpicCommand(argv: readonly string[]): Promise<void> {
   const subcommand = argv[0];
 
   if (!subcommand || subcommand === '--help' || subcommand === '-h') {
     console.log([
       '',
-      'Usage: specialists epic <list|status|resolve|merge> [options]',
+      'Usage: specialists epic <list|status|resolve|recover|merge> [options]',
       '',
       'Commands:',
       '  list [--unresolved] [--json]                    List epics with lifecycle and readiness summary',
       '  status <epic-id> [--json]                       Show epic state, chain statuses, and merge readiness',
       '  resolve <epic-id> [--dry-run] [--json]          Transition epic from open to resolving',
-      '  merge <epic-id> [--rebuild] [--json]            Publish epic-owned chains in dependency order',
+      '  recover [epic-id] [--unresolved|--all] [--json] Recovery-first view after compaction/context loss',
+      '  merge <epic-id> [--rebuild] [--json]             Publish epic-owned chains in dependency order',
       '',
       'Epic lifecycle states:',
       '  open        → resolving → merge_ready → merged',
@@ -708,6 +928,7 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  specialists epic list --unresolved --json',
       '  specialists epic resolve unitAI-3f7b',
       '  specialists epic status unitAI-3f7b --json',
+      '  specialists epic recover --json',
       '  specialists epic merge unitAI-3f7b --rebuild',
       '',
     ].join('\n'));
@@ -734,7 +955,12 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
     return;
   }
 
+  if (subcommand === 'recover') {
+    await handleEpicRecoverCommand(argv.slice(1));
+    return;
+  }
+
   console.error(`Unknown epic subcommand: ${subcommand}`);
-  console.error('Usage: specialists epic <list|status|resolve|merge>');
+  console.error('Usage: specialists epic <list|status|resolve|recover|merge>');
   process.exit(1);
 }

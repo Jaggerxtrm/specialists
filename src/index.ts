@@ -416,14 +416,16 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists epic <list|status|resolve> [options]',
+        'Usage: specialists epic <list|status|resolve|recover|merge> [options]',
         '',
  'Epic lifecycle management for wave-bound chain groups.',
         '',
         'Commands:',
-        '  list [--unresolved] [--json]          Enumerate epics with lifecycle state and readiness',
-        '  status <epic-id> [--json]             Show chains, blockers, and merge readiness',
-        '  resolve <epic-id> [--dry-run] [--json]  Transition epic from open -> resolving',
+        '  list [--unresolved] [--json]                    Enumerate epics with lifecycle state and readiness',
+        '  status <epic-id> [--json]                       Show chains, blockers, and merge readiness',
+        '  resolve <epic-id> [--dry-run] [--json]          Transition epic from open -> resolving',
+        '  recover [epic-id] [--unresolved|--all] [--json] Reconstruct active epic state after compaction',
+        '  merge <epic-id> [--rebuild] [--json]            Publish epic-owned chains in dependency order',
         '',
         'Options:',
         '  --unresolved    Filter list to non-terminal (open, resolving, merge_ready) epics',
@@ -439,6 +441,7 @@ async function run() {
         '  specialists epic list --unresolved',
         '  specialists epic status unitAI-epic1',
         '  specialists epic resolve unitAI-epic1',
+        '  specialists epic recover --json',
         '  specialists epic resolve unitAI-epic1 --dry-run',
         '',
       ].join('\n'));
