@@ -190,6 +190,25 @@ function runBackfill(options: BackfillOptions): void {
         }
 
         sqliteClient.upsertStatus(status);
+        if (status.epic_id && status.chain_id) {
+          sqliteClient.upsertEpicRun({
+            epic_id: status.epic_id,
+            status: 'open',
+            updated_at_ms: Date.now(),
+            status_json: JSON.stringify({
+              epic_id: status.epic_id,
+              status: 'open',
+              source: 'db-backfill',
+            }),
+          });
+          sqliteClient.upsertEpicChainMembership({
+            epic_id: status.epic_id,
+            chain_id: status.chain_id,
+            chain_root_bead_id: status.bead_id,
+            chain_root_job_id: status.worktree_owner_job_id ?? status.id,
+            updated_at_ms: Date.now(),
+          });
+        }
         summary.jobsBackfilled += 1;
 
         if (options.importEvents) {
