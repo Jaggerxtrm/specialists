@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.0.0
+version: 2.1.0
 updated: 2026-04-10
-synced_at: zz22-docs
+synced_at: 11f5e768
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -323,7 +323,30 @@ Shows dead jobs with a `dead` status indicator. Useful for debugging sessions th
 
 ---
 
-## 7) Stuck detection configuration
+## 7) Job status lifecycle
+
+Supervisor tracks job status through a state machine:
+
+```
+starting → running → waiting → (resume) → running → ... → done/error/cancelled
+         ↘ error
+```
+
+**Terminal statuses**:
+- `done` — job completed normally with `run_complete` event
+- `error` — job failed (exception, timeout, crash)
+- `cancelled` — job stopped intentionally without completion evidence
+
+**`cancelled` status**:
+
+Introduced to distinguish intentional stops from failures:
+- Set by `sp stop` when job has no `run_complete` event
+- Preserved in SQLite + file-based `status.json`
+- Rendered in `sp ps` and `sp status` (gray color)
+
+---
+
+## 8) Stuck detection configuration
 
 There are two complementary mechanisms.
 
@@ -358,18 +381,19 @@ Defaults (if omitted):
 
 - `running_silence_warn_ms`: 60s
 - `running_silence_error_ms`: 300s
-- `waiting_stale_ms`: 3600s
+- `waiting_stale_ms`: 1h (3600s) — waiting jobs past this threshold emit `stale_warning` events
 - `tool_duration_warn_ms`: 120s
 
 Supervisor outcomes:
 
 - Emits `stale_warning` timeline events
 - Can promote long-running silence to `status=error`
-- Emits waiting-state stale warnings without auto-closing keep-alive jobs
+- Dead waiting jobs with no `run_complete` evidence transition to `error` (non-node only)
+- Dead waiting jobs with `run_complete` evidence reconcile to `done`
 
 ---
 
-## 8) Test-aware stall detection
+## 9) Test-aware stall detection
 
 PiAgentSession extends the stall timeout window when a bash tool command matches a test runner pattern:
 
@@ -395,7 +419,7 @@ During detected test commands, the effective timeout is `max(base_timeout, test_
 
 ---
 
-## 9) Specialist authoring example (executor-style)
+## 10) Specialist authoring example (executor-style)
 
 Example with structured-friendly settings and stall controls (JSON format):
 
@@ -444,7 +468,7 @@ Authoring notes:
 
 ---
 
-## 10) Configuration presets (`--preset`)
+## 11) Configuration presets (`--preset`)
 
 Presets provide one-shot configuration profiles for quick adaptation to different task types without editing specialist configs.
 
@@ -481,7 +505,7 @@ This mutates the specialist's JSON config in place, updating:
 
 ---
 
-## 11) Configuration format: JSON-first with YAML fallback
+## 12) Configuration format: JSON-first with YAML fallback
 
 Specialist configurations migrated from YAML to JSON in v2.1.15+.
 
@@ -529,7 +553,7 @@ JSON supports all YAML fields plus additional metadata:
 All configs are validated against `src/specialist/schema.ts` at load time. Invalid configs are skipped with an error message.
 
 ---
-## 12) Auto GitNexus reindex after high-permission jobs
+## 13) Auto GitNexus reindex after high-permission jobs
 
 Supervisor automatically triggers a GitNexus reindex after jobs with elevated file access complete.
 ### Trigger conditions
@@ -571,7 +595,7 @@ To disable auto-reindex for a high-permission specialist, set `permission_requir
 
 ---
 
-## 13) Debugger v2.0 — Keep-alive iterative debugging
+## 14) Debugger v2.0 — Keep-alive iterative debugging
 
 The `debugger` specialist was upgraded to v2.0 with enhanced capabilities for iterative debug-fix-verify cycles.
 
@@ -635,7 +659,7 @@ sp result <job-id>          # Read bug report + resume footer
 
 ---
 
-## 14) Worktree isolation (`--worktree`, `--job`)
+## 15) Worktree isolation (`--worktree`, `--job`)
 
 Each edit-permission specialist runs in an isolated git worktree (branch). This prevents concurrent file corruption when multiple executors modify overlapping paths, and produces a clean per-task branch that the orchestrator merges in dependency order.
 
@@ -734,7 +758,7 @@ GC candidates must satisfy all conditions:
 For full technical details, see [worktrees.md](worktrees.md).
 
 ---
-## 15) Context denormalization in `status.json`
+## 16) Context denormalization in `status.json`
 
 Context utilization fields are denormalized directly into `status.json` on every `turn_summary` event, so any consumer reading `status.json` gets the latest context percentage without having to scan `events.jsonl`.
 
@@ -774,7 +798,7 @@ interface SupervisorStatus {
 
 ---
 
-## 16) Job lineage tracking (`reused_from_job_id`, `worktree_owner_job_id`)
+## 17) Job lineage tracking (`reused_from_job_id`, `worktree_owner_job_id`)
 
 When `--job <id>` is used, the new job records two lineage fields in its `status.json`. These enable `sp ps` to reconstruct worktree trees reliably without guessing from directory paths.
 
@@ -816,7 +840,7 @@ sp run validator --job d4e5f6 --bead unitAI-55d-validate
 
 ---
 
-## 17) `sp merge`: chain merge with epic guard
+## 18) `sp merge`: chain merge with epic guard
 
 `sp merge` handles standalone chain merges. For wave-bound chains, use `sp epic merge`.
 
@@ -867,8 +891,13 @@ sp merge <chain-root-bead-id> [--rebuild]
 
 - Non-terminal jobs block merge (`starting`, `running` statuses)
 - Epic guard blocks if chain belongs to unresolved epic
+- **Branch must have source changes under `src/`** vs master — empty branches refused
 - TypeScript gate after merge
 - Uses `--no-ff` to preserve branch history
+
+### File listing
+
+Merge output uses `git diff HEAD^1 HEAD` for accurate changed-file reporting (not `git diff-tree`).
 
 ### Example
 
@@ -894,7 +923,7 @@ Key functions:
 
 ---
 
-## 18) `sp epic merge`: canonical publication for wave-bound chains
+## 19) `sp epic merge`: canonical publication for wave-bound chains
 
 `sp epic merge` is the canonical publication path for wave-bound chain groups.
 
@@ -944,7 +973,7 @@ sp epic merge unitAI-3f7b --rebuild
 
 ---
 
-## 19) `sp end`: epic-aware session close
+## 20) `sp end`: epic-aware session close
 
 `sp end` integrates with epic lifecycle for publication.
 
@@ -975,7 +1004,7 @@ sp end
 
 ---
 
-## 20) Chain identity: chain vs prep jobs
+## 21) Chain identity: chain vs prep jobs
 
 Jobs are classified as `chain` or `prep` based on worktree lineage.
 
@@ -1004,9 +1033,45 @@ const isChainJob = Boolean(
 
 ---
 
+## 22) Crash recovery for zombie jobs
+
+`crashRecovery()` runs at Supervisor startup and reconciles orphaned job states:
+
+**Dead running/starting jobs**:
+- Dead PID + non-node → status becomes `error` ("Process crashed or was killed")
+- Dead PID + node member → status becomes `waiting` ("recovery_pending") — preserved for NodeSupervisor
+
+**Dead waiting jobs**:
+- Emits `stale_warning` event if idle past `waiting_stale_ms` threshold
+- Does NOT auto-close waiting jobs — keep-alive sessions remain recoverable
+- Node members preserved for NodeSupervisor recovery
+
+**`hasRunCompleteEvent()`**:
+
+Used by `sp stop` to resolve terminal status:
+```typescript
+// SQLite-first, then events.jsonl fallback
+export function hasRunCompleteEvent(jobId: string): boolean;
+```
+
 ---
 
-## 18) Worktree write-boundary enforcement
+## 23) Epic chain membership auto-sync
+
+Supervisor automatically syncs epic chain membership on job completion:
+
+**Trigger**: Both success (`done`) and error paths
+
+**Actions**:
+1. `upsertEpicChainMembership()` — persist chain→epic linkage
+2. `loadEpicReadinessSummary()` — recompute readiness state
+3. `syncEpicStateFromReadiness()` — update epic state machine
+
+This ensures epic readiness is always current without manual sync steps.
+
+---
+
+## 24) Worktree write-boundary enforcement
 
 When a specialist runs with `--worktree`, the pi session enforces a **write-boundary** on tool calls. This prevents accidental modifications to files outside the isolated worktree.
 
@@ -1064,7 +1129,7 @@ Enforcement lives in pi session layer (not specialists code):
 
 ---
 
-## 19) Memory injection at specialist spawn
+## 25) Memory injection at specialist spawn
 
 Runner injects project memory context at specialist spawn to prevent rediscovering known gotchas on every run.
 
@@ -1120,7 +1185,7 @@ All injection sources are non-fatal:
 
 ---
 
-## 20) Edit gate bead-claim KV pattern
+## 26) Edit gate bead-claim KV pattern
 
 The edit gate hooks check two KV keys before allowing file edits:
 
