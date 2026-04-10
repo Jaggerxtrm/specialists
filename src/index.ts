@@ -740,6 +740,7 @@ async function run() {
         '  - epic target: merges child chain branches in dependency topological order',
         '  - runs `bunx tsc --noEmit` after each merge and stops on failure',
         '  - stops on first merge conflict and reports conflicting files',
+        '  - NOTE: for epic publication with lifecycle management, use `sp epic merge`',
         '',
         'Options:',
         '  --rebuild   Run `bun run build` after all merges complete',
@@ -748,11 +749,20 @@ async function run() {
         '  specialists merge unitAI-abc1',
         '  specialists merge unitAI-epic1 --rebuild',
         '',
+        'See also:',
+        '  specialists epic merge <epic-id>   # lifecycle-gated publication',
+        '',
       ].join('\n'));
       return;
     }
     const { run: handler } = await import('./cli/merge.js');
     return handler();
+  }
+
+  if (sub === 'epic') {
+    const { handleEpicCommand } = await import('./cli/epic.js');
+    await handleEpicCommand(process.argv.slice(3));
+    return;
   }
 
   if (sub === 'stop') {

@@ -1,454 +1,426 @@
 import { spawnSync } from 'node:child_process';
+import type { EpicState, EpicRunRecord, EpicChainRecord } from '../specialist/epic-lifecycle.js';
 import {
-  EPIC_STATES,
-  EPIC_TERMINAL_STATES,
-  VALID_EPIC_TRANSITIONS,
-  type EpicState,
-  type EpicRunRecord,
-  type EpicChainRecord,
-  type EpicReadinessResult,
-  evaluateEpicMergeReadiness,
-  canTransitionEpicState,
-  transitionEpicState,
   isEpicTerminalState,
-  isEpicUnresolvedState,
+  transitionEpicState,
+  evaluateEpicMergeReadiness,
+  summarizeEpicTransition,
 } from '../specialist/epic-lifecycle.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
-import type { SupervisorStatus } from '../specialist/supervisor.js';
+import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import {
+  resolveMergeTargetsForBeadIds,
+  parseChildBeadIds,
+  runMergePlan,
+  type ChainMergeTarget,
+  type MergeStepResult,
+} from './merge.js';
 
-interface EpicListArgs {
-  json: boolean;
-  unresolved: boolean;
-}
+const RUNNING_STATUSES = new Set(['starting', 'running', 'waiting', 'degraded']);
 
-interface EpicStatusArgs {
+interface EpicMergeCliOptions {
   epicId: string;
-  json: boolean;
+  rebuild: boolean;
 }
 
-interface EpicResolveArgs {
+interface EpicMergeContext {
   epicId: string;
-  json: boolean;
-  dryRun: boolean;
+  epicRecord: EpicRunRecord | null;
+  chainRecords: EpicChainRecord[];
+  chainTargets: ChainMergeTarget[];
+  chainJobStatuses: Map<string, { hasRunningJob: boolean; jobIds: string[] }>;
 }
 
-const ACTIVE_JOB_STATES: readonly SupervisorStatus['status'][] = ['starting', 'running', 'waiting'];
-
-function parseEpicArgs(argv: string[]): { command: string; args: EpicListArgs | EpicStatusArgs | EpicResolveArgs } {
-  const command = argv[0];
-
-  if (command !== 'list' && command !== 'status' && command !== 'resolve') {
-    throw new Error('Usage: specialists epic <list|status|resolve> [options]');
-  }
-
-  let epicId: string | undefined;
-  let json = false;
-  let unresolved = false;
-  let dryRun = false;
-
-  for (let i = 1; i < argv.length; i += 1) {
-    const token = argv[i];
-
-    if (token === '--json') {
-      json = true;
-      continue;
-    }
-
-    if (token === '--unresolved') {
-      unresolved = true;
-      continue;
-    }
-
-    if (token === '--dry-run') {
-      dryRun = true;
-      continue;
-    }
-
-    if (!token.startsWith('-') && !epicId) {
-      epicId = token;
-      continue;
-    }
-
-    throw new Error(`Unknown argument: ${token}`);
-  }
-
-  if (command === 'status' && !epicId) {
-    throw new Error('Usage: specialists epic status <epic-id> [--json]');
-  }
-
-  if (command === 'resolve' && !epicId) {
-    throw new Error('Usage: specialists epic resolve <epic-id> [--dry-run] [--json]');
-  }
-
-  if (command === 'list') {
-    return { command, args: { json, unresolved } };
-  }
-
-  if (command === 'status') {
-    return { command, args: { epicId: epicId!, json } };
-  }
-
-  return { command, args: { epicId: epicId!, json, dryRun } };
+interface EpicMergeResult {
+  epicId: string;
+  success: boolean;
+  fromState: EpicState;
+  toState: EpicState;
+  mergedChains: Array<{ beadId: string; branch: string; changedFiles: string[] }>;
+  blockedChains: string[];
+  error?: string;
 }
 
-function formatTimestamp(ms: number | undefined): string {
-  if (ms === undefined) return '-';
-  const value = new Date(ms);
-  return Number.isNaN(value.getTime()) ? '-' : value.toISOString();
-}
-
-function readBeadTitle(beadId: string): string | null {
-  const result = spawnSync('bd', ['show', beadId, '--json'], {
+function runCommand(command: string, args: readonly string[], cwd = process.cwd()) {
+  return spawnSync(command, args, {
+    cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-
-  if (result.status !== 0 || !result.stdout.trim()) return null;
-
-  try {
-    const parsed = JSON.parse(result.stdout) as unknown;
-    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
-    if (!bead || typeof bead !== 'object') return null;
-    const maybe = bead as { title?: string };
-    return maybe.title?.trim() ?? null;
-  } catch {
-    return null;
-  }
 }
 
-function getChainJobStatuses(
-  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
-  chains: EpicChainRecord[],
-): Array<{ chainId: string; beadId?: string; hasRunningJob: boolean; jobCount: number }> {
-  const results: Array<{ chainId: string; beadId?: string; hasRunningJob: boolean; jobCount: number }> = [];
+function parseOptions(argv: readonly string[]): EpicMergeCliOptions {
+  let epicId = '';
+  let rebuild = false;
 
-  for (const chain of chains) {
-    const jobIds = sqliteClient!.listChainJobIds(chain.chain_id);
-    let hasRunningJob = false;
-
-    for (const jobId of jobIds) {
-      const status = sqliteClient!.readStatus(jobId);
-      if (status && ACTIVE_JOB_STATES.includes(status.status)) {
-        hasRunningJob = true;
-        break;
-      }
+  for (const argument of argv) {
+    if (argument === '--rebuild') {
+      rebuild = true;
+      continue;
     }
 
-    results.push({
-      chainId: chain.chain_id,
-      beadId: chain.chain_root_bead_id,
-      hasRunningJob,
-      jobCount: jobIds.length,
+    if (argument.startsWith('-')) {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+
+    if (epicId) {
+      throw new Error('Only one epic ID is supported');
+    }
+    epicId = argument;
+  }
+
+  if (!epicId) {
+    throw new Error('Missing epic ID');
+  }
+
+  return { epicId, rebuild };
+}
+
+function readEpicChildrenFromBeads(epicId: string): string[] {
+  const result = runCommand('bd', ['children', epicId]);
+  if (result.status !== 0) {
+    throw new Error(`Unable to load children for epic '${epicId}'`);
+  }
+  const ids = parseChildBeadIds(result.stdout);
+  if (ids.length === 0) {
+    throw new Error(`No children found for epic '${epicId}'`);
+  }
+  return ids;
+}
+
+function buildChainJobStatuses(
+  sqlite: ObservabilitySqliteClient,
+  chainRecords: EpicChainRecord[],
+): Map<string, { hasRunningJob: boolean; jobIds: string[] }> {
+  const statuses = new Map<string, { hasRunningJob: boolean; jobIds: string[] }>();
+
+  for (const chain of chainRecords) {
+    const jobIds = sqlite.listChainJobIds(chain.chain_id);
+    const hasRunningJob = jobIds.some((jobId) => {
+      const status = sqlite.readStatus(jobId);
+      return status && RUNNING_STATUSES.has(status.status);
     });
+    statuses.set(chain.chain_id, { hasRunningJob, jobIds });
   }
 
-  return results;
+  return statuses;
 }
 
-function evaluateReadiness(
-  epic: EpicRunRecord,
-  chainStatuses: Array<{ chainId: string; beadId?: string; hasRunningJob: boolean; jobCount: number }>,
-): EpicReadinessResult {
-  return evaluateEpicMergeReadiness({
-    epicId: epic.epic_id,
-    epicStatus: epic.status,
-    chainStatuses: chainStatuses.map((chain) => ({
-      chainId: chain.chainId,
-      hasRunningJob: chain.hasRunningJob,
-    })),
-  });
-}
-
-interface EpicListRow {
-  epic_id: string;
-  status: EpicState;
-  chain_count: number;
-  blocking_chains: number;
-  is_ready: boolean;
-  updated_at: string;
-  bead_title?: string;
-}
-
-function handleEpicList(args: EpicListArgs): void {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+function gatherEpicContext(options: EpicMergeCliOptions): EpicMergeContext {
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    throw new Error('Observability SQLite database not available. Run `sp db setup` first.');
   }
 
   try {
-    const epics = sqliteClient.listEpicRuns();
-    let filtered = epics;
+    const epicRecord = sqlite.readEpicRun(options.epicId);
+    const chainRecords = sqlite.listEpicChains(options.epicId);
 
-    if (args.unresolved) {
-      filtered = epics.filter((epic) => isEpicUnresolvedState(epic.status));
+    const childBeadIds = chainRecords.length > 0
+      ? chainRecords
+        .map((chain) => chain.chain_root_bead_id)
+        .filter((id): id is string => Boolean(id))
+      : readEpicChildrenFromBeads(options.epicId);
+
+    if (childBeadIds.length === 0) {
+      throw new Error(`No chain-root bead IDs found for epic '${options.epicId}'`);
     }
 
-    const rows: EpicListRow[] = filtered.map((epic) => {
-      const chains = sqliteClient.listEpicChains(epic.epic_id);
-      const chainStatuses = getChainJobStatuses(sqliteClient, chains);
-      const readiness = evaluateReadiness(epic, chainStatuses);
+    const chainTargets = resolveMergeTargetsForBeadIds(childBeadIds);
+    const chainRecordsForStatus = chainRecords.length > 0
+      ? chainRecords
+      : chainTargets.map((chainTarget) => ({
+        chain_id: chainTarget.jobId,
+        epic_id: options.epicId,
+        chain_root_bead_id: chainTarget.beadId,
+        chain_root_job_id: chainTarget.jobId,
+        updated_at_ms: chainTarget.startedAtMs,
+      }));
 
-      const beadTitle = chains.length > 0 && chains[0].chain_root_bead_id
-        ? readBeadTitle(epic.epic_id) ?? undefined
-        : undefined;
-
-      return {
-        epic_id: epic.epic_id,
-        status: epic.status,
-        chain_count: chains.length,
-        blocking_chains: readiness.blockingChains.length,
-        is_ready: readiness.isReady,
-        updated_at: formatTimestamp(epic.updated_at_ms),
-        bead_title: beadTitle,
-      };
-    });
-
-    if (args.json) {
-      console.log(JSON.stringify(rows, null, 2));
-      return;
-    }
-
-    if (rows.length === 0) {
-      console.log(args.unresolved ? 'No unresolved epics found.' : 'No epics found.');
-      return;
-    }
-
-    const headers = ['epic_id', 'status', 'chains', 'blocking', 'ready', 'updated_at'];
-    const body = rows.map((row) => [
-      row.epic_id,
-      row.status,
-      String(row.chain_count),
-      String(row.blocking_chains),
-      row.is_ready ? 'yes' : 'no',
-      row.updated_at,
-    ]);
-
-    const allRows = [headers, ...body];
-    const widths = headers.map((_, colIndex) =>
-      Math.max(...allRows.map((r) => (r[colIndex] ?? '').length)),
-    );
-
-    const renderRow = (r: string[]) => r.map((cell, i) => cell.padEnd(widths[i])).join('  ');
-
-    console.log(renderRow(headers));
-    console.log(widths.map((w) => '-'.repeat(w)).join('  '));
-    for (const row of body) {
-      console.log(renderRow(row));
-    }
-  } finally {
-    sqliteClient.close();
-  }
-}
-
-interface EpicStatusRow {
-  epic_id: string;
-  status: EpicState;
-  updated_at: string;
-  is_terminal: boolean;
-  valid_transitions: readonly EpicState[];
-  readiness?: EpicReadinessResult;
-  chains: Array<{
-    chain_id: string;
-    bead_id?: string;
-    job_count: number;
-    has_running_job: boolean;
-    bead_title?: string;
-  }>;
-}
-
-function handleEpicStatus(args: EpicStatusArgs): void {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
-  }
-
-  try {
-    const epic = sqliteClient.readEpicRun(args.epicId);
-    if (!epic) {
-      if (args.json) {
-        console.log(JSON.stringify({ error: `Epic not found: ${args.epicId}` }, null, 2));
-      } else {
-        console.error(`Epic not found: ${args.epicId}`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    const chains = sqliteClient.listEpicChains(args.epicId);
-    const chainStatuses = getChainJobStatuses(sqliteClient, chains);
-    const readiness = evaluateReadiness(epic, chainStatuses);
-
-    const chainsWithTitle = chainStatuses.map((chain) => ({
-      chain_id: chain.chainId,
-      bead_id: chain.beadId,
-      job_count: chain.jobCount,
-      has_running_job: chain.hasRunningJob,
-      bead_title: chain.beadId ? readBeadTitle(chain.beadId) ?? undefined : undefined,
-    }));
-
-    const row: EpicStatusRow = {
-      epic_id: epic.epic_id,
-      status: epic.status,
-      updated_at: formatTimestamp(epic.updated_at_ms),
-      is_terminal: isEpicTerminalState(epic.status),
-      valid_transitions: VALID_EPIC_TRANSITIONS[epic.status],
-      readiness,
-      chains: chainsWithTitle,
+    return {
+      epicId: options.epicId,
+      epicRecord,
+      chainRecords,
+      chainTargets,
+      chainJobStatuses: buildChainJobStatuses(sqlite, chainRecordsForStatus),
     };
-
-    if (args.json) {
-      console.log(JSON.stringify(row, null, 2));
-      return;
-    }
-
-    console.log(`epic_id: ${row.epic_id}`);
-    console.log(`status: ${row.status}`);
-    console.log(`updated_at: ${row.updated_at}`);
-    console.log(`is_terminal: ${row.is_terminal}`);
-
-    if (row.valid_transitions.length > 0) {
-      console.log(`valid_transitions: ${row.valid_transitions.join(', ')}`);
-    } else {
-      console.log('valid_transitions: (none — terminal state)');
-    }
-
-    console.log('');
-    console.log('## Readiness');
-    if (row.readiness) {
-      console.log(`is_ready: ${row.readiness.isReady}`);
-      console.log(`blocking_chains: ${row.readiness.blockingChains.length > 0 ? row.readiness.blockingChains.join(', ') : '(none)'}`);
-      console.log(`summary: ${row.readiness.summary}`);
-    } else {
-      console.log('(no readiness data)');
-    }
-
-    console.log('');
-    console.log('## Chains');
-    if (row.chains.length === 0) {
-      console.log('(no chains registered)');
-    } else {
-      for (const chain of row.chains) {
-        const statusIcon = chain.has_running_job ? '◉' : '○';
-        const titleSuffix = chain.bead_title ? ` (${chain.bead_title.slice(0, 40)}${chain.bead_title.length > 40 ? '...' : ''})` : '';
-        console.log(`  ${statusIcon} ${chain.chain_id}${titleSuffix}`);
-        console.log(`      bead_id: ${chain.bead_id ?? '-'}`);
-        console.log(`      jobs: ${chain.job_count}`);
-        console.log(`      running: ${chain.has_running_job ? 'yes' : 'no'}`);
-      }
-    }
   } finally {
-    sqliteClient.close();
+    sqlite.close();
   }
 }
 
-function handleEpicResolve(args: EpicResolveArgs): void {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+function validateEpicMergeReadiness(context: EpicMergeContext): EpicState {
+  const epicState: EpicState = context.epicRecord?.status ?? 'open';
+
+  if (isEpicTerminalState(epicState)) {
+    throw new Error(`Epic ${context.epicId} is already in terminal state '${epicState}'. No further merges allowed.`);
+  }
+
+  if (epicState !== 'resolving' && epicState !== 'merge_ready') {
+    throw new Error(
+      `Epic ${context.epicId} is in state '${epicState}'. Must be 'resolving' or 'merge_ready' before publication.`,
+    );
+  }
+
+  const chainStatuses = [...context.chainJobStatuses.entries()].map(([chainId, status]) => ({
+    chainId,
+    hasRunningJob: status.hasRunningJob,
+  }));
+  const readiness = evaluateEpicMergeReadiness({
+    epicId: context.epicId,
+    epicStatus: epicState,
+    chainStatuses,
+  });
+
+  if (readiness.blockingChains.length > 0) {
+    throw new Error(
+      `Epic ${context.epicId} has running chains: ${readiness.blockingChains.join(', ')}.\n` +
+      'All chain jobs must be terminal before publication.',
+    );
+  }
+
+  return epicState;
+}
+
+function updateEpicState(epicId: string, fromState: EpicState, toState: EpicState): void {
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    throw new Error('Observability SQLite database not available. Cannot persist epic state transition.');
   }
 
   try {
-    const epic = sqliteClient.readEpicRun(args.epicId);
-    if (!epic) {
-      if (args.json) {
-        console.log(JSON.stringify({ error: `Epic not found: ${args.epicId}` }, null, 2));
-      } else {
-        console.error(`Epic not found: ${args.epicId}`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    const fromState = epic.status;
-    const toState: EpicState = 'resolving';
-
-    if (!canTransitionEpicState(fromState, toState)) {
-      const validTargets = VALID_EPIC_TRANSITIONS[fromState];
-      const message = fromState === 'resolving'
-        ? `Epic ${args.epicId} is already in 'resolving' state.`
-        : `Invalid transition: ${fromState} -> ${toState}. Valid transitions from '${fromState}': ${validTargets.length > 0 ? validTargets.join(', ') : '(none)'}`;
-
-      if (args.json) {
-        console.log(JSON.stringify({
-          error: 'invalid_transition',
-          epic_id: args.epicId,
-          from_state: fromState,
-          attempted_to: toState,
-          valid_transitions: validTargets,
-          message,
-        }, null, 2));
-      } else {
-        console.error(message);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    if (args.dryRun) {
-      if (args.json) {
-        console.log(JSON.stringify({
-          epic_id: args.epicId,
-          from_state: fromState,
-          to_state: toState,
-          dry_run: true,
-          would_transition: true,
-        }, null, 2));
-      } else {
-        console.log(`Would transition epic ${args.epicId}: ${fromState} -> ${toState}`);
-      }
-      return;
-    }
-
-    // Perform the transition
-    const newStatus = transitionEpicState(fromState, toState);
     const now = Date.now();
-
-    sqliteClient.upsertEpicRun({
-      epic_id: args.epicId,
-      status: newStatus,
+    sqlite.upsertEpicRun({
+      epic_id: epicId,
+      status: toState,
       status_json: JSON.stringify({
-        previous_state: fromState,
-        transition_reason: 'operator_resolve',
+        epic_id: epicId,
+        status: toState,
+        previous_status: fromState,
         transitioned_at_ms: now,
       }),
       updated_at_ms: now,
     });
-
-    if (args.json) {
-      console.log(JSON.stringify({
-        epic_id: args.epicId,
-        from_state: fromState,
-        to_state: newStatus,
-        transitioned_at: formatTimestamp(now),
-      }, null, 2));
-    } else {
-      console.log(`Epic ${args.epicId}: ${fromState} -> ${newStatus}`);
-      console.log(`Use 'specialists epic status ${args.epicId}' to inspect chain readiness.`);
-    }
   } finally {
-    sqliteClient.close();
+    sqlite.close();
   }
 }
 
-export function handleEpicCommand(argv: string[]): void {
-  let parsed: { command: string; args: EpicListArgs | EpicStatusArgs | EpicResolveArgs };
+function mergeEpicChains(context: EpicMergeContext, rebuild: boolean): MergeStepResult[] {
+  return runMergePlan(context.chainTargets, { rebuild });
+}
+
+function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void {
+  console.log('');
+  console.log(`Epic ${result.epicId}: ${result.fromState} → ${result.toState}`);
+
+  if (result.success) {
+    console.log('');
+    console.log('Publication successful.');
+    console.log('');
+    console.log('Merged chains (dependency order):');
+    for (const chain of result.mergedChains) {
+      console.log(`  ${chain.branch} (${chain.beadId})`);
+      if (chain.changedFiles.length === 0) {
+        console.log('    files: (none)');
+      } else {
+        console.log(`    files: ${chain.changedFiles.join(', ')}`);
+      }
+    }
+
+    console.log('');
+    console.log('TypeScript gate: passed after each merge');
+    if (rebuild) {
+      console.log('Rebuild: bun run build (passed)');
+    }
+  } else {
+    console.log('');
+    console.log('Publication failed.');
+    if (result.error) {
+      console.log(`Error: ${result.error}`);
+    }
+    if (result.blockedChains.length > 0) {
+      console.log(`Blocked chains: ${result.blockedChains.join(', ')}`);
+    }
+  }
+
+  console.log('');
+}
+
+export async function handleEpicMergeCommand(argv: readonly string[]): Promise<void> {
+  let options: EpicMergeCliOptions;
   try {
-    parsed = parseEpicArgs(argv);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    options = parseOptions(argv);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    console.error('');
+    console.error('Usage: specialists epic merge <epic-id> [--rebuild]');
     process.exit(1);
+  }
+
+  let context: EpicMergeContext;
+  try {
+    context = gatherEpicContext(options);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Failed to gather epic context: ${message}`);
+    process.exit(1);
+  }
+
+  let currentState: EpicState;
+  try {
+    currentState = validateEpicMergeReadiness(context);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Merge blocked: ${message}`);
+    process.exit(1);
+  }
+
+  const fromState = currentState;
+
+  if (currentState === 'resolving') {
+    const nextState = transitionEpicState(currentState, 'merge_ready');
+    updateEpicState(context.epicId, currentState, nextState);
+    console.log(summarizeEpicTransition(context.epicId, currentState, nextState));
+    currentState = nextState;
+  }
+
+  let mergedChains: MergeStepResult[] = [];
+  let mergeError: string | undefined;
+  let toState: EpicState = currentState;
+
+  try {
+    mergedChains = mergeEpicChains(context, options.rebuild);
+    toState = transitionEpicState(currentState, 'merged');
+    updateEpicState(context.epicId, currentState, toState);
+  } catch (error: unknown) {
+    mergeError = error instanceof Error ? error.message : String(error);
+    toState = transitionEpicState(currentState, 'failed');
+    updateEpicState(context.epicId, currentState, toState);
+  }
+
+  const result: EpicMergeResult = {
+    epicId: context.epicId,
+    success: !mergeError,
+    fromState,
+    toState,
+    mergedChains,
+    blockedChains: [],
+    error: mergeError,
+  };
+
+  printEpicMergeSummary(result, options.rebuild);
+
+  if (!result.success) {
+    process.exit(1);
+  }
+}
+
+export async function handleEpicStatusCommand(argv: readonly string[]): Promise<void> {
+  const epicId = argv[0];
+
+  if (!epicId) {
+    console.error('Missing epic ID');
+    console.error('Usage: specialists epic status <epic-id>');
+    process.exit(1);
+  }
+
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    console.error('Observability SQLite database not available. Run `sp db setup` first.');
+    process.exit(1);
+  }
+
+  try {
+    const epicRecord = sqlite.readEpicRun(epicId);
+    const chainRecords = sqlite.listEpicChains(epicId);
+
+    console.log('');
+    console.log(`Epic: ${epicId}`);
+
+    if (epicRecord) {
+      console.log(`State: ${epicRecord.status}`);
+      console.log(`Updated: ${new Date(epicRecord.updated_at_ms).toISOString()}`);
+    } else {
+      console.log('State: (not tracked in SQLite)');
+    }
+
+    console.log('');
+    console.log('Chains:');
+    if (chainRecords.length === 0) {
+      console.log('  (none tracked)');
+    } else {
+      for (const chain of chainRecords) {
+        const jobIds = sqlite.listChainJobIds(chain.chain_id);
+        const runningJobs = jobIds.filter((jobId) => {
+          const status = sqlite.readStatus(jobId);
+          return status && RUNNING_STATUSES.has(status.status);
+        });
+
+        const statusIndicator = runningJobs.length > 0 ? '◉ running' : '○ terminal';
+        console.log(`  ${chain.chain_id}: ${statusIndicator}`);
+        if (chain.chain_root_bead_id) {
+          console.log(`    bead: ${chain.chain_root_bead_id}`);
+        }
+        if (runningJobs.length > 0) {
+          console.log(`    running jobs: ${runningJobs.join(', ')}`);
+        }
+      }
+    }
+
+    console.log('');
+  } finally {
+    sqlite.close();
+  }
+}
+
+export async function handleEpicCommand(argv: readonly string[]): Promise<void> {
+  const subcommand = argv[0];
+
+  if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+    console.log([
+      '',
+      'Usage: specialists epic <merge|status> [options]',
+      '',
+      'Commands:',
+      '  merge <epic-id> [--rebuild]                      Publish epic-owned chains in dependency order',
+      '  status <epic-id>                                  Show epic state and chain statuses',
+      '',
+      'Epic lifecycle states:',
+      '  open        → resolving → merge_ready → merged',
+      '  (any)       → failed / abandoned (terminal)',
+      '',
+      'Merge behavior:',
+      '  - Requires epic state: resolving or merge_ready',
+      '  - All chain jobs must be terminal before publication',
+      '  - Chains merged in topological dependency order',
+      '  - TypeScript gate runs after each merge',
+      '  - Lifecycle transitions persisted to SQLite',
+      '',
+      'Options:',
+      '  --rebuild           Run bun run build after all merges',
+      '',
+      'Examples:',
+      '  specialists epic merge unitAI-3f7b',
+      '  specialists epic merge unitAI-3f7b --rebuild',
+      '  specialists epic status unitAI-3f7b',
+      '',
+    ].join('\n'));
     return;
   }
 
-  if (parsed.command === 'list') {
-    handleEpicList(parsed.args as EpicListArgs);
+  if (subcommand === 'merge') {
+    await handleEpicMergeCommand(argv.slice(1));
     return;
   }
 
-  if (parsed.command === 'status') {
-    handleEpicStatus(parsed.args as EpicStatusArgs);
+  if (subcommand === 'status') {
+    await handleEpicStatusCommand(argv.slice(1));
     return;
   }
 
-  handleEpicResolve(parsed.args as EpicResolveArgs);
+  console.error(`Unknown epic subcommand: ${subcommand}`);
+  console.error('Usage: specialists epic <merge|status>');
+  process.exit(1);
 }

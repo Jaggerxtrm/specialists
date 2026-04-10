@@ -35,10 +35,14 @@ export interface ChainMergeTarget {
   startedAtMs: number;
 }
 
-interface MergeStepResult {
+export interface MergeStepResult {
   beadId: string;
   branch: string;
   changedFiles: string[];
+}
+
+export interface MergeExecutionOptions {
+  rebuild: boolean;
 }
 
 const TERMINAL_STATUSES = new Set(['done', 'error', 'cancelled']);
@@ -218,7 +222,7 @@ export function checkEpicUnresolvedGuard(chainRootBeadId: string): EpicGuardResu
   }
 }
 
-function readAllJobStatuses(): JobStatusRecord[] {
+export function readAllJobStatuses(): JobStatusRecord[] {
   const jobsDir = resolveJobsDir();
   if (!existsSync(jobsDir)) return [];
 
@@ -239,7 +243,7 @@ function readAllJobStatuses(): JobStatusRecord[] {
   return statuses;
 }
 
-function selectNewestChainRootJob(beadId: string, statuses: readonly JobStatusRecord[]): ChainMergeTarget | null {
+export function selectNewestChainRootJob(beadId: string, statuses: readonly JobStatusRecord[]): ChainMergeTarget | null {
   const candidates = statuses
     .filter(status => status.bead_id === beadId && status.branch && status.worktree_path)
     .sort((left, right) => (right.started_at_ms ?? 0) - (left.started_at_ms ?? 0));
@@ -256,7 +260,7 @@ function selectNewestChainRootJob(beadId: string, statuses: readonly JobStatusRe
   };
 }
 
-function ensureTerminalJobs(chains: readonly ChainMergeTarget[]): void {
+export function ensureTerminalJobs(chains: readonly ChainMergeTarget[]): void {
   const running = chains.filter(chain => !TERMINAL_STATUSES.has(chain.jobStatus));
   if (running.length === 0) return;
 
@@ -337,11 +341,27 @@ function loadDependenciesFor(beadIds: readonly string[]): Map<string, readonly s
   return dependenciesByBeadId;
 }
 
+export function resolveMergeTargetsForBeadIds(beadIds: readonly string[]): ChainMergeTarget[] {
+  const statuses = readAllJobStatuses();
+  const chains = beadIds
+    .map((beadId) => selectNewestChainRootJob(beadId, statuses))
+    .filter((chain): chain is ChainMergeTarget => Boolean(chain));
+
+  if (chains.length === 0) {
+    throw new Error('No mergeable chain branches found for provided bead IDs');
+  }
+
+  ensureTerminalJobs(chains);
+
+  const dependenciesByBeadId = loadDependenciesFor(chains.map((chain) => chain.beadId));
+  return topologicallySortChains(chains, dependenciesByBeadId);
+}
+
 export function resolveMergeTargets(target: string): ChainMergeTarget[] {
   const bead = readBead(target);
-  const statuses = readAllJobStatuses();
 
   if (bead.issue_type !== 'epic') {
+    const statuses = readAllJobStatuses();
     const chain = selectNewestChainRootJob(target, statuses);
     if (!chain) {
       throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
@@ -360,18 +380,12 @@ export function resolveMergeTargets(target: string): ChainMergeTarget[] {
   }
 
   const childIds = readEpicChildIds(target);
-  const chains = childIds
-    .map(childId => selectNewestChainRootJob(childId, statuses))
-    .filter((chain): chain is ChainMergeTarget => Boolean(chain));
-
+  const chains = resolveMergeTargetsForBeadIds(childIds);
   if (chains.length === 0) {
     throw new Error(`No mergeable chain branches found under epic '${target}'`);
   }
 
-  ensureTerminalJobs(chains);
-
-  const dependenciesByBeadId = loadDependenciesFor(chains.map(chain => chain.beadId));
-  return topologicallySortChains(chains, dependenciesByBeadId);
+  return chains;
 }
 
 function readChangedFilesForHead(): string[] {
@@ -392,7 +406,7 @@ function getConflictFiles(): string[] {
     .filter(Boolean);
 }
 
-function mergeBranch(branch: string): void {
+export function mergeBranch(branch: string): void {
   const result = runCommand('git', ['merge', branch, '--no-ff', '--no-edit']);
   if (result.status === 0) return;
 
@@ -404,7 +418,7 @@ function mergeBranch(branch: string): void {
   throw new Error(`Merge conflict while merging '${branch}'.${context}`);
 }
 
-function runTypecheckGate(): void {
+export function runTypecheckGate(): void {
   const tsc = runCommand('bunx', ['tsc', '--noEmit']);
   if (tsc.status === 0) return;
 
@@ -413,7 +427,7 @@ function runTypecheckGate(): void {
   throw new Error(`TypeScript gate failed after merge.\n${stderr || stdout || 'Unknown tsc error'}`);
 }
 
-function runRebuild(): void {
+export function runRebuild(): void {
   const build = runCommand('bun', ['run', 'build']);
   if (build.status === 0) return;
 
@@ -422,7 +436,7 @@ function runRebuild(): void {
   throw new Error(`Rebuild failed.\n${stderr || stdout || 'Unknown build error'}`);
 }
 
-function printSummary(steps: readonly MergeStepResult[], rebuild: boolean): void {
+export function printSummary(steps: readonly MergeStepResult[], rebuild: boolean): void {
   console.log('Merge complete.');
   console.log('Merged branches (in order):');
   for (const step of steps) {
@@ -446,16 +460,10 @@ function printUsageAndExit(message: string): never {
   process.exit(1);
 }
 
-export async function run(): Promise<void> {
-  let options: MergeCliOptions;
-  try {
-    options = parseOptions(process.argv.slice(3));
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    printUsageAndExit(message);
-  }
-
-  const targets = resolveMergeTargets(options.target);
+export function runMergePlan(
+  targets: readonly ChainMergeTarget[],
+  options: MergeExecutionOptions,
+): MergeStepResult[] {
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
@@ -472,5 +480,19 @@ export async function run(): Promise<void> {
     runRebuild();
   }
 
+  return mergedSteps;
+}
+
+export async function run(): Promise<void> {
+  let options: MergeCliOptions;
+  try {
+    options = parseOptions(process.argv.slice(3));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    printUsageAndExit(message);
+  }
+
+  const targets = resolveMergeTargets(options.target);
+  const mergedSteps = runMergePlan(targets, { rebuild: options.rebuild });
   printSummary(mergedSteps, options.rebuild);
 }
