@@ -30,6 +30,7 @@ interface JobNode {
   reused_from_job_id?: string;
   worktree_path?: string;
   branch?: string;
+  epic_id?: string;
   started_at_ms: number;
   elapsed_s?: number;
   context_pct?: number;
@@ -132,6 +133,7 @@ function toJobNode(job: SupervisorStatus & { is_dead?: boolean }): JobNode {
     reused_from_job_id: job.reused_from_job_id,
     worktree_path: job.worktree_path,
     branch: job.branch,
+    epic_id: job.epic_id,
     started_at_ms: job.started_at_ms,
     elapsed_s: job.elapsed_s,
     context_pct: job.context_pct,
@@ -476,6 +478,7 @@ function renderInspect(jobId: string): void {
   const chainStr = chainJobs.map((j) => j.id === job.id ? bold(j.id) : dim(j.id)).join(' → ');
 
   console.log(`\n${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
+  if (job.epic_id) console.log(`  epic      ${job.epic_id}`);
   console.log(`  model     ${job.model ?? '--'} ${job.backend ? `(${job.backend})` : ''}`);
   if (job.bead_id) console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ''}`);
   if (job.worktree_path || job.branch) {
@@ -527,6 +530,7 @@ function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, nodes:
       reused_from_job_id: job.reused_from_job_id,
       worktree_path: job.worktree_path,
       branch: job.branch,
+      epic_id: job.epic_id,
       started_at_ms: job.started_at_ms,
       elapsed_s: job.elapsed_s,
       context_pct: job.context_pct,

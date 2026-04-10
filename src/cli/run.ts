@@ -51,6 +51,8 @@ interface RunArgs {
   forceJob: boolean;
   /** Explicitly bypass the worktree requirement for edit-capable specialists. */
   noWorktree: boolean;
+  /** Owning epic for wave-bound chains. If --bead is set, defaults to bead.parent. */
+  epicId?: string;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
@@ -58,7 +60,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   if (!name || name.startsWith('--')) {
     console.error(
       'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
-      '[--worktree] [--job <id>] [--force-job] [--context-depth <n>] [--model <model>] ' +
+      '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--context-depth <n>] [--model <model>] ' +
       '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
     );
     process.exit(1);
@@ -78,6 +80,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let noWorktree = false;
   let reuseJobId: string | undefined;
   let forceJob = false;
+  let epicId: string | undefined;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -96,12 +99,22 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--no-worktree')   { noWorktree   = true; continue; }
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
     if (token === '--force-job')     { forceJob     = true; continue; }
+    if (token === '--epic'           && argv[i + 1]) { epicId       = argv[++i]; continue; }
   }
 
   // ── Mutual exclusion ─────────────────────────────────────────────────────────
   if (worktree && reuseJobId !== undefined) {
     console.error('Error: --worktree and --job are mutually exclusive. Use one or the other.');
     process.exit(1);
+  }
+
+  // ── Epic validation ───────────────────────────────────────────────────────────
+  // --epic with --job: validate that target job doesn't already belong to a different epic
+  if (epicId && reuseJobId !== undefined) {
+    // Note: we can't fully validate this here without reading the target job's status.
+    // The supervisor will handle this validation when it reads the target status.
+    // For now, we just warn the operator that this may be an override.
+    process.stderr.write(dim(`[warning: --epic ${epicId} with --job may override target job's epic membership]\n`));
   }
 
   // ── --worktree requires --bead ───────────────────────────────────────────────
@@ -134,7 +147,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, noWorktree,
+    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, noWorktree, epicId,
   };
 }
 
@@ -419,11 +432,17 @@ export async function run(): Promise<void> {
 
     const beadContext = buildBeadContext(bead, blockers);
     prompt = beadContext;
-    epicId = bead.parent;
+    // Explicit --epic overrides bead.parent; otherwise use bead's parent epic if set
+    epicId = args.epicId ?? bead.parent;
     variables = {
       bead_context: beadContext,
       bead_id: args.beadId,
     };
+  }
+
+  // For non-bead runs, use explicit --epic if provided
+  if (!args.beadId && args.epicId) {
+    epicId = args.epicId;
   }
 
   if (args.reuseJobId) {
