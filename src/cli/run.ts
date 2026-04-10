@@ -400,6 +400,7 @@ export async function run(): Promise<void> {
 
   let prompt = args.prompt;
   let variables: Record<string, string> | undefined;
+  let epicId: string | undefined;
 
   if (args.beadId) {
     const bead = beadReader.readBead(args.beadId);
@@ -418,6 +419,7 @@ export async function run(): Promise<void> {
 
     const beadContext = buildBeadContext(bead, blockers);
     prompt = beadContext;
+    epicId = bead.parent;
     variables = {
       bead_context: beadContext,
       bead_id: args.beadId,
@@ -475,6 +477,7 @@ export async function run(): Promise<void> {
       variables,
       backendOverride: args.model,
       inputBeadId: args.beadId,
+      epicId,
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
       beadsWriteNotes,

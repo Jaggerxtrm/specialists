@@ -41,6 +41,7 @@ import {
 import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
+import { resolveChainId } from './epic-lifecycle.js';
 import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 
 const JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
@@ -72,6 +73,8 @@ export interface SupervisorStatus {
   worktree_path?: string;
   reused_from_job_id?: string;
   worktree_owner_job_id?: string;
+  chain_id?: string;
+  epic_id?: string;
   branch?: string;
   metrics?: SessionRunMetrics;
   context_pct?: number;
@@ -510,10 +513,11 @@ export class Supervisor {
 
   private withStatusLineageDefaults(id: string, status: SupervisorStatus): SupervisorStatus {
     if (!status.worktree_path) return status;
-    if (status.worktree_owner_job_id) return status;
+    const worktreeOwnerJobId = status.worktree_owner_job_id ?? id;
     return {
       ...status,
-      worktree_owner_job_id: id,
+      worktree_owner_job_id: worktreeOwnerJobId,
+      chain_id: status.chain_id ?? worktreeOwnerJobId,
     };
   }
 
@@ -530,7 +534,36 @@ export class Supervisor {
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     this.writeStatusFileOnly(id, normalizedStatus);
     try {
-      this.withSqliteOperation('upsertStatus', (client) => client.upsertStatus(normalizedStatus));
+      this.withSqliteOperation('upsertStatus', (client) => {
+        client.upsertStatus(normalizedStatus);
+
+        const chainId = resolveChainId(normalizedStatus);
+        if (!normalizedStatus.epic_id || !chainId) {
+          return;
+        }
+
+        client.upsertEpicRun({
+          epic_id: normalizedStatus.epic_id,
+          status: 'open',
+          updated_at_ms: Date.now(),
+          status_json: JSON.stringify({
+            epic_id: normalizedStatus.epic_id,
+            status: 'open',
+            source: 'supervisor',
+            chain_id: chainId,
+            chain_root_bead_id: normalizedStatus.bead_id ?? null,
+            chain_root_job_id: normalizedStatus.worktree_owner_job_id ?? normalizedStatus.id,
+          }),
+        });
+
+        client.upsertEpicChainMembership({
+          chain_id: chainId,
+          epic_id: normalizedStatus.epic_id,
+          chain_root_bead_id: normalizedStatus.bead_id,
+          chain_root_job_id: normalizedStatus.worktree_owner_job_id ?? normalizedStatus.id,
+          updated_at_ms: Date.now(),
+        });
+      });
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);
     }
@@ -646,6 +679,10 @@ export class Supervisor {
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
       ...(runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {}),
       ...(runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {}),
+      ...((runOptions.worktreeOwnerJobId || runOptions.workingDirectory)
+        ? { chain_id: runOptions.worktreeOwnerJobId ?? id }
+        : {}),
+      ...(runOptions.epicId ? { epic_id: runOptions.epicId } : {}),
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),

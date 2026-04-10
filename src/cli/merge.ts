@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { resolveJobsDir } from '../specialist/job-root.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 
 interface MergeCliOptions {
   target: string;
@@ -12,6 +13,7 @@ interface BeadSummary {
   id: string;
   title: string;
   issue_type?: string;
+  parent?: string;
   dependencies?: Array<{ id?: string }>;
 }
 
@@ -139,6 +141,27 @@ function readEpicChildIds(epicId: string): string[] {
     throw new Error(`No children found for epic '${epicId}'`);
   }
   return idsFromText;
+}
+
+export function resolveChainEpicMembership(chainRootBeadId: string): { epicId?: string; source: 'sqlite' | 'bead-parent' | 'none' } {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (sqliteClient) {
+    try {
+      const membership = sqliteClient.resolveEpicByChainRootBeadId(chainRootBeadId);
+      if (membership?.epic_id) {
+        return { epicId: membership.epic_id, source: 'sqlite' };
+      }
+    } finally {
+      sqliteClient.close();
+    }
+  }
+
+  const bead = readBead(chainRootBeadId);
+  if (bead.parent) {
+    return { epicId: bead.parent, source: 'bead-parent' };
+  }
+
+  return { source: 'none' };
 }
 
 function readAllJobStatuses(): JobStatusRecord[] {
@@ -269,6 +292,7 @@ export function resolveMergeTargets(target: string): ChainMergeTarget[] {
     if (!chain) {
       throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
     }
+    resolveChainEpicMembership(chain.beadId);
     ensureTerminalJobs([chain]);
     return [chain];
   }

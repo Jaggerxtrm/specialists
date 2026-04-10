@@ -209,6 +209,8 @@ function renderJobDetail(
   console.log(`  backend      ${job.backend ?? 'n/a'}`);
   console.log(`  elapsed      ${formatElapsed(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? 'n/a'}`);
+  console.log(`  chain_id     ${job.chain_id ?? 'n/a'}`);
+  console.log(`  epic_id      ${job.epic_id ?? 'n/a'}`);
   console.log(`  events       ${eventCount}`);
   if (job.status === 'waiting') {
     console.log(`  action       ${magenta(`specialists resume ${job.id} "..."`)}`);

@@ -20,6 +20,7 @@ function loadBunDatabase(): (new (path: string) => BunDb) | null {
 import { resolveObservabilityDbLocation } from './observability-db.js';
 import type { TimelineEvent } from './timeline-events.js';
 import type { SupervisorStatus } from './supervisor.js';
+import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
 
 const BUSY_TIMEOUT_MS = 5000;
 const MAX_RETRY_ATTEMPTS = 5;
@@ -313,6 +314,8 @@ export function initSchema(db: BunDb): void {
     { name: 'worktree_column', definition: 'TEXT' },
     { name: 'bead_id', definition: 'TEXT' },
     { name: 'node_id', definition: 'TEXT' },
+    { name: 'chain_id', definition: 'TEXT' },
+    { name: 'epic_id', definition: 'TEXT' },
     { name: 'status', definition: "TEXT NOT NULL DEFAULT 'starting'" },
     { name: 'last_output', definition: 'TEXT' },
   ].filter(({ name }) => !specialistJobsColumns.has(name));
@@ -334,6 +337,8 @@ export function initSchema(db: BunDb): void {
         worktree_column TEXT,
         bead_id         TEXT,
         node_id         TEXT,
+        chain_id        TEXT,
+        epic_id         TEXT,
         status          TEXT NOT NULL,
         status_json     TEXT NOT NULL,
         updated_at_ms   INTEGER NOT NULL,
@@ -346,6 +351,8 @@ export function initSchema(db: BunDb): void {
           worktree_column,
           bead_id,
           node_id,
+          chain_id,
+          epic_id,
           COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
           status_json,
           updated_at_ms,
@@ -361,6 +368,7 @@ export function initSchema(db: BunDb): void {
   migrateToV5(db);
   migrateToV6(db);
   migrateToV7(db);
+  migrateToV8(db);
   verifyWalMode(db);
 }
 
@@ -491,6 +499,60 @@ function migrateToV7(db: BunDb): void {
   `);
 }
 
+function migrateToV8(db: BunDb): void {
+  const hasV8 = db.query('SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1').get() as { 1?: number } | undefined;
+
+  const specialistJobsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  for (const column of [
+    { name: 'chain_id', definition: 'TEXT' },
+    { name: 'epic_id', definition: 'TEXT' },
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL');
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_runs (
+      epic_id         TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL
+    );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_chain_membership (
+      chain_id            TEXT PRIMARY KEY,
+      epic_id             TEXT NOT NULL,
+      chain_root_bead_id  TEXT,
+      chain_root_job_id   TEXT,
+      updated_at_ms       INTEGER NOT NULL
+    );
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL');
+
+  if (hasV8) {
+    return;
+  }
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (8, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'awaiting_merge' | 'fixing_after_review' | 'failed' | 'error' | 'done' | 'stopped';
 
 export type NodeEventType =
@@ -588,6 +650,8 @@ export interface NodeMemoryRow {
 
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
+  upsertEpicRun(epic: EpicRunRecord): void;
+  upsertEpicChainMembership(chain: EpicChainRecord): void;
   upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
   upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
   appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
@@ -608,6 +672,11 @@ export interface ObservabilitySqliteClient {
   queryMemberContextHealth(jobId: string): number | null;
   readStatus(jobId: string): SupervisorStatus | null;
   listStatuses(): SupervisorStatus[];
+  readEpicRun(epicId: string): EpicRunRecord | null;
+  listEpicRuns(): EpicRunRecord[];
+  resolveEpicByChainId(chainId: string): EpicChainRecord | null;
+  resolveEpicByChainRootBeadId(chainRootBeadId: string): EpicChainRecord | null;
+  listEpicChains(epicId: string): EpicChainRecord[];
   readEvents(jobId: string): TimelineEvent[];
   readResult(jobId: string): string | null;
   close(): void;
@@ -631,13 +700,15 @@ class SqliteClient implements ObservabilitySqliteClient {
   private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, status, status_json, updated_at_ms, last_output)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_id, epic_id, status, status_json, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
         bead_id = excluded.bead_id,
         node_id = excluded.node_id,
+        chain_id = excluded.chain_id,
+        epic_id = excluded.epic_id,
         status = excluded.status,
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
@@ -648,10 +719,41 @@ class SqliteClient implements ObservabilitySqliteClient {
       status.worktree_path ?? null,
       status.bead_id ?? null,
       status.node_id ?? null,
+      status.chain_id ?? null,
+      status.epic_id ?? null,
       status.status,
       statusJson,
       Date.now(),
       lastOutput ?? null,
+    ]);
+  }
+
+  private writeEpicRunRow(epic: EpicRunRecord): void {
+    this.db.run(`
+      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(epic_id) DO UPDATE SET
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
+  }
+
+  private writeEpicChainMembershipRow(chain: EpicChainRecord): void {
+    this.db.run(`
+      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chain_id) DO UPDATE SET
+        epic_id = excluded.epic_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [
+      chain.chain_id,
+      chain.epic_id,
+      chain.chain_root_bead_id ?? null,
+      chain.chain_root_job_id ?? null,
+      chain.updated_at_ms,
     ]);
   }
 
@@ -872,6 +974,18 @@ class SqliteClient implements ObservabilitySqliteClient {
     withRetry(() => {
       this.writeStatusRow(status);
     }, 'upsertStatus');
+  }
+
+  upsertEpicRun(epic: EpicRunRecord): void {
+    withRetry(() => {
+      this.writeEpicRunRow(epic);
+    }, 'upsertEpicRun');
+  }
+
+  upsertEpicChainMembership(chain: EpicChainRecord): void {
+    withRetry(() => {
+      this.writeEpicChainMembershipRow(chain);
+    }, 'upsertEpicChainMembership');
   }
 
   upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void {
@@ -1124,6 +1238,39 @@ class SqliteClient implements ObservabilitySqliteClient {
       }
       return statuses;
     }, 'listStatuses');
+  }
+
+  readEpicRun(epicId: string): EpicRunRecord | null {
+    return withRetry(() => {
+      const row = this.db.query('SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1').get(epicId) as EpicRunRecord | undefined;
+      return row ?? null;
+    }, 'readEpicRun');
+  }
+
+  listEpicRuns(): EpicRunRecord[] {
+    return withRetry(() => {
+      return this.db.query('SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC').all() as EpicRunRecord[];
+    }, 'listEpicRuns');
+  }
+
+  resolveEpicByChainId(chainId: string): EpicChainRecord | null {
+    return withRetry(() => {
+      const row = this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1').get(chainId) as EpicChainRecord | undefined;
+      return row ?? null;
+    }, 'resolveEpicByChainId');
+  }
+
+  resolveEpicByChainRootBeadId(chainRootBeadId: string): EpicChainRecord | null {
+    return withRetry(() => {
+      const row = this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1').get(chainRootBeadId) as EpicChainRecord | undefined;
+      return row ?? null;
+    }, 'resolveEpicByChainRootBeadId');
+  }
+
+  listEpicChains(epicId: string): EpicChainRecord[] {
+    return withRetry(() => {
+      return this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC').all(epicId) as EpicChainRecord[];
+    }, 'listEpicChains');
   }
 
   readEvents(jobId: string): TimelineEvent[] {
