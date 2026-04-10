@@ -2,7 +2,7 @@
 
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ensureObservabilityDbFile,
@@ -357,10 +357,15 @@ function ensureProjectHookWiring(cwd: string): void {
 
 /**
  * Ensure .claude/skills and .pi/skills are symlinks to .xtrm active skill roots.
+ * Creates the symlink if missing (e.g. on a fresh repo where xt install hasn't wired .pi/skills yet).
  */
-function assertSkillRootSymlink(rootPath: string, expectedTargetPath: string): void {
+function ensureRootSymlink(rootPath: string, expectedTargetPath: string): void {
   if (!existsSync(rootPath)) {
-    throw new Error(`${rootPath} is missing. Expected symlink to ${expectedTargetPath}.`);
+    mkdirSync(dirname(rootPath), { recursive: true });
+    const relTarget = relative(dirname(rootPath), expectedTargetPath);
+    symlinkSync(relTarget, rootPath);
+    ok(`created ${basename(dirname(rootPath))}/${basename(rootPath)} → ${relTarget}`);
+    return;
   }
 
   const stats = lstatSync(rootPath);
@@ -432,8 +437,8 @@ function installProjectSkills(cwd: string, syncSkills: boolean): void {
   mkdirSync(activeClaudeRoot, { recursive: true });
   mkdirSync(activePiRoot, { recursive: true });
 
-  assertSkillRootSymlink(join(cwd, '.claude', 'skills'), activeClaudeRoot);
-  assertSkillRootSymlink(join(cwd, '.pi', 'skills'), activePiRoot);
+  ensureRootSymlink(join(cwd, '.claude', 'skills'), activeClaudeRoot);
+  ensureRootSymlink(join(cwd, '.pi', 'skills'), activePiRoot);
 
   let copied = 0;
   let refreshed = 0;
