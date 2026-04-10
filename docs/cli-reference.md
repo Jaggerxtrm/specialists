@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.3.0
+version: 2.4.0
 updated: 2026-04-10
-synced_at: zz22-docs
+synced_at: 11f5e768
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -485,6 +485,15 @@ specialists stop <job-id>
 
 No flags.
 
+### Behavior
+
+Before sending SIGTERM, `sp stop` resolves the terminal status:
+
+- If the job has a `run_complete` event in `events.jsonl` → status becomes `done`
+- Otherwise → status becomes `cancelled`
+
+This prevents zombie "waiting" jobs after external kills. Status is written to `status.json` **before** SIGTERM, ensuring the record reflects the actual outcome.
+
 ### Examples
 
 ```bash
@@ -495,6 +504,11 @@ specialists stop a1b2c3
 
 - `0`: Signal sent, already terminal, or process already gone (`ESRCH`).
 - `1`: Missing args, missing job, missing PID, or unexpected kill error.
+
+### Notes
+
+- `cancelled` is a new terminal status distinct from `done`/`error` — indicates intentional stop without completion.
+- `run_complete` evidence is checked via SQLite first, then `events.jsonl` fallback.
 
 ---
 
@@ -864,7 +878,7 @@ specialists ps [--json] [--all] [--follow | -f]
 ### Flags
 
 - `--json`: Machine-readable JSON output (see [JSON output](#ps-json-output) below).
-- `--all`: Include terminal (`done`/`error`) jobs in addition to active ones. Default shows only `starting`, `running`, and `waiting` jobs.
+- `--all`: Include terminal (`done`/`error`/`cancelled`) jobs in addition to active ones. Default shows only `starting`, `running`, and `waiting` jobs.
 - `--follow` / `-f`: Live-refresh mode — updates in place every 1 second using cursor repositioning (no screen flash).
 
 ### Description
@@ -884,7 +898,7 @@ Sorting: tree roots are ordered by urgency (`waiting > running > starting > done
 
 - **ctx%** — context window utilization (read from `context_pct` in `status.json`); `--` when not yet available.
 - **elapsed** — seconds/minutes since job started; `--` when not available.
-- **status** is color-coded: cyan=running, magenta=waiting, green=done, red=error, yellow=starting.
+- **status** is color-coded: cyan=running, magenta=waiting, green=done, red=error, yellow=starting, gray=cancelled.
 
 Worktree tree section:
 
@@ -1076,6 +1090,9 @@ sp epic status unitAI-3f7b
 - Refuses merge if any chain job is non-terminal
 - Refuses merge if any chain lacks PASS verdict
 - Refuses merge if epic state is not `merge_ready` (use `--force-resolving` to auto-transition)
+- Refuses merge if branch has no source changes under `src/` compared to master (prevents empty merges)
+
+**File listing**: Uses `git diff HEAD^1 HEAD` for accurate changed-file reporting (not `git diff-tree`).
 
 ### Examples
 
@@ -1129,10 +1146,11 @@ specialists merge <chain-root-bead-id> [--rebuild]
 1. Read bead via `bd show --json`
 2. Check epic membership via `resolveChainEpicMembership()`
 3. If chain belongs to unresolved epic, **refuse merge** with error message
-4. Find the newest terminal job with `worktree_path` and `branch` for that bead
-5. Merge the branch with `--no-ff --no-edit`
-6. Run TypeScript gate (`bunx tsc --noEmit`)
-7. Print summary with changed files
+4. Validate branch has source changes under `src/` vs master (refuse if empty)
+5. Find the newest terminal job with `worktree_path` and `branch` for that bead
+6. Merge the branch with `--no-ff --no-edit`
+7. Run TypeScript gate (`bunx tsc --noEmit`)
+8. Print summary with changed files (using `git diff HEAD^1 HEAD`)
 
 **Epic guard**:
 
@@ -1158,7 +1176,7 @@ specialists merge unitAI-55d --rebuild
 ### Exit codes
 
 - `0`: Merge succeeded, TypeScript gate passed.
-- `1`: Invalid args, bead not found, no chain branch found, **chain belongs to unresolved epic**, non-terminal job, merge conflict, or TypeScript gate failure.
+- `1`: Invalid args, bead not found, no chain branch found, **chain belongs to unresolved epic**, **no source changes**, non-terminal job, merge conflict, or TypeScript gate failure.
 
 ### Notes
 
