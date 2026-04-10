@@ -14,6 +14,7 @@ interface PsArgs {
   json: boolean;
   all: boolean;
   follow: boolean;
+  includeMerged: boolean;
   inspectId?: string;
 }
 
@@ -58,7 +59,21 @@ interface NodeTree {
   members: JobNode[];
 }
 
+interface EpicChainGroup {
+  chain_id: string;
+  chain_root_bead_id?: string;
+  trees: WorktreeTree[];
+}
+
+interface EpicGroup {
+  epic_id: string;
+  readiness?: EpicReadinessSummary;
+  prep_jobs: JobNode[];
+  chains: EpicChainGroup[];
+}
+
 const ACTIVE_STATES: readonly JobState[] = ['starting', 'running', 'waiting'];
+const TERMINAL_STATES: readonly JobState[] = ['done', 'error'];
 const BEAD_TITLE_CACHE = new Map<string, string>();
 const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
   waiting: 3,
@@ -75,6 +90,7 @@ function parseArgs(argv: string[]): PsArgs {
     json: argv.includes('--json'),
     all: argv.includes('--all'),
     follow: argv.includes('--follow') || argv.includes('-f'),
+    includeMerged: argv.includes('--include-merged'),
     inspectId: positional[0],
   };
 }
@@ -188,9 +204,13 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
     groups.get(ownerId)!.push(job);
   }
 
+  return groupTreeEntries([...groups.entries()]);
+}
+
+function groupTreeEntries(groupEntries: Array<[string, SupervisorStatus[]]>): WorktreeTree[] {
   const trees: WorktreeTree[] = [];
 
-  const sortedGroups = [...groups.entries()].sort(([ownerA, jobsA], [ownerB, jobsB]) => {
+  const sortedGroups = groupEntries.sort(([ownerA, jobsA], [ownerB, jobsB]) => {
     const urgencyDelta = getTreeUrgency(jobsB) - getTreeUrgency(jobsA);
     if (urgencyDelta !== 0) return urgencyDelta;
     const startDelta = getTreeNewestStart(jobsB) - getTreeNewestStart(jobsA);
@@ -210,6 +230,88 @@ function groupByTree(jobs: SupervisorStatus[]): WorktreeTree[] {
   }
 
   return trees;
+}
+
+function normalizeChainId(job: SupervisorStatus): string {
+  if (job.chain_kind === 'chain') {
+    if (job.chain_id) return job.chain_id;
+    if (job.worktree_owner_job_id) return job.worktree_owner_job_id;
+    return `chain:${job.id}`;
+  }
+
+  return 'prep';
+}
+
+function buildEpicGroups(jobs: SupervisorStatus[], epicReadiness: EpicReadinessMap): EpicGroup[] {
+  const byEpic = new Map<string, SupervisorStatus[]>();
+  for (const job of jobs) {
+    if (!job.epic_id) continue;
+    if (!byEpic.has(job.epic_id)) byEpic.set(job.epic_id, []);
+    byEpic.get(job.epic_id)!.push(job);
+  }
+
+  const groups: EpicGroup[] = [];
+
+  for (const [epicId, epicJobs] of byEpic.entries()) {
+    const prepJobs = epicJobs
+      .filter((job) => job.chain_kind !== 'chain')
+      .map((job) => toJobNode(job))
+      .sort((a, b) => {
+        const urgencyDelta = STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status];
+        if (urgencyDelta !== 0) return urgencyDelta;
+        return b.started_at_ms - a.started_at_ms;
+      });
+
+    const chainBuckets = new Map<string, SupervisorStatus[]>();
+    for (const job of epicJobs) {
+      if (job.chain_kind !== 'chain') continue;
+      const chainId = normalizeChainId(job);
+      if (!chainBuckets.has(chainId)) chainBuckets.set(chainId, []);
+      chainBuckets.get(chainId)!.push(job);
+    }
+
+    const chains: EpicChainGroup[] = [...chainBuckets.entries()]
+      .map(([chainId, chainJobs]) => {
+        const treeBuckets = new Map<string, SupervisorStatus[]>();
+        for (const chainJob of chainJobs) {
+          const ownerId = chainJob.worktree_owner_job_id ?? chainJob.id;
+          if (!treeBuckets.has(ownerId)) treeBuckets.set(ownerId, []);
+          treeBuckets.get(ownerId)!.push(chainJob);
+        }
+
+        const chainSummary = epicReadiness.get(epicId)?.chains.find((chain) => chain.chain_id === chainId);
+
+        return {
+          chain_id: chainId,
+          chain_root_bead_id: chainSummary?.chain_root_bead_id ?? chainJobs[0]?.chain_root_bead_id,
+          trees: groupTreeEntries([...treeBuckets.entries()]),
+        };
+      })
+      .sort((a, b) => a.chain_id.localeCompare(b.chain_id));
+
+    groups.push({
+      epic_id: epicId,
+      readiness: epicReadiness.get(epicId),
+      prep_jobs: prepJobs,
+      chains,
+    });
+  }
+
+  groups.sort((a, b) => {
+    const aNewest = Math.max(
+      ...a.prep_jobs.map((job) => job.started_at_ms),
+      ...a.chains.flatMap((chain) => chain.trees.flatMap((tree) => tree.children.map((child) => child.started_at_ms))),
+      0,
+    );
+    const bNewest = Math.max(
+      ...b.prep_jobs.map((job) => job.started_at_ms),
+      ...b.chains.flatMap((chain) => chain.trees.flatMap((tree) => tree.children.map((child) => child.started_at_ms))),
+      0,
+    );
+    return bNewest - aNewest;
+  });
+
+  return groups;
 }
 
 function resolveNodeRunMap(nodeIds: readonly string[]): Map<string, { node_name: string; status: string }> {
@@ -282,6 +384,16 @@ function statusLabel(status: JobState): string {
   if (status === 'done') return green(status);
   if (status === 'error') return red(status);
   return yellow(status);
+}
+
+function epicStateLabel(state: EpicReadinessSummary['readiness_state'] | undefined): string {
+  if (state === 'merge_ready') return green('merge_ready');
+  if (state === 'merged') return dim('merged');
+  if (state === 'failed') return red('failed');
+  if (state === 'blocked') return yellow('blocked');
+  if (state === 'resolving') return cyan('resolving');
+  if (state === 'abandoned') return dim('abandoned');
+  return magenta('unresolved');
 }
 
 function withPidLiveness(statuses: SupervisorStatus[]): Array<SupervisorStatus & { is_dead: boolean }> {
@@ -452,9 +564,61 @@ function resolveEpicReadinessMap(jobs: readonly SupervisorStatus[]): EpicReadine
 function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean, epicReadiness: EpicReadinessMap): void {
   const beadTitles = buildBeadTitleCache(jobs);
   const counter = { running: 0, waiting: 0 };
+  const epicGroups = buildEpicGroups(jobs, epicReadiness);
 
   console.log('');
-  for (const node of nodes) {
+
+  for (const epic of epicGroups) {
+    const prepCount = epic.prep_jobs.length;
+    const chainCount = epic.chains.length;
+    const readiness = epic.readiness;
+    const readinessState = readiness?.readiness_state ?? 'unresolved';
+    const persistedState = readiness?.persisted_state ?? 'open';
+    const prepSummary = readiness?.prep
+      ? `prep ${readiness.prep.done}/${readiness.prep.total} done${readiness.prep.running > 0 ? ` ${readiness.prep.running} running` : ''}${readiness.prep.failed > 0 ? ` ${readiness.prep.failed} failed` : ''}`
+      : `prep ${prepCount}`;
+    const chainSummary = readiness?.chains
+      ? `chains ${readiness.chains.filter((chain) => chain.state === 'pass').length}/${readiness.chains.length} pass`
+      : `chains ${chainCount}`;
+
+    console.log(`${bold('◆')} epic:${bold(epic.epic_id)} · ${epicStateLabel(readiness?.readiness_state)} · state:${persistedState} · ${prepSummary} · ${chainSummary}`);
+
+    console.log(`  ${bold('Prep')}`);
+    if (epic.prep_jobs.length === 0) {
+      console.log(dim('    (none)'));
+    } else {
+      for (const prepJob of epic.prep_jobs) {
+        if (prepJob.status === 'running') counter.running += 1;
+        if (prepJob.status === 'waiting') counter.waiting += 1;
+        console.log(renderJobLine(prepJob, beadTitles, '    ', ''));
+      }
+    }
+
+    console.log(`  ${bold('Chains')}`);
+    if (epic.chains.length === 0) {
+      console.log(dim('    (none)'));
+    } else {
+      for (const chain of epic.chains) {
+        const chainReadiness = readiness?.chains.find((entry) => entry.chain_id === chain.chain_id);
+        const readinessLabel = chainReadiness ? ` · ${chainReadiness.state}` : '';
+        const rootBeadSuffix = chain.chain_root_bead_id ? ` · root:${chain.chain_root_bead_id}` : '';
+        console.log(`    ${bold(chain.chain_id)}${dim(rootBeadSuffix)}${dim(readinessLabel)}`);
+
+        for (const tree of chain.trees) {
+          const branch = tree.branch ?? 'master';
+          console.log(`      ${dim(branch)}`);
+          renderTreeNodes(tree.children, beadTitles, '      ', counter);
+        }
+      }
+    }
+
+    console.log('');
+  }
+
+  const legacyNodes = nodes.filter((node) => !node.members.some((member) => member.epic_id));
+  const legacyTrees = trees.filter((tree) => !tree.children.some((child) => child.epic_id));
+
+  for (const node of legacyNodes) {
     console.log(`${cyan('⬢')} ${node.node_id} · ${node.node_name} · ${statusLabel(node.status as JobState)} · ${node.member_count} members`);
     for (const member of node.members) {
       if (member.status === 'running') counter.running += 1;
@@ -464,30 +628,27 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
     console.log('');
   }
 
-  for (const tree of trees) {
+  for (const tree of legacyTrees) {
     const branch = tree.branch ?? 'master';
     const beadId = tree.children[0]?.bead_id;
     const beadSuffix = beadId ? ` · ${beadId}` : '';
-    const epicId = tree.children.find((child) => child.epic_id)?.epic_id;
-    const readiness = epicId ? epicReadiness.get(epicId) : undefined;
-    const epicSuffix = epicId ? ` · epic:${epicId}` : '';
-    const readinessSuffix = readiness ? ` · ${readiness.readiness_state}` : '';
-    console.log(`${dim(branch)}${dim(beadSuffix)}${dim(epicSuffix)}${dim(readinessSuffix)}`);
+    console.log(`${dim(branch)}${dim(beadSuffix)}`);
 
     renderTreeNodes(tree.children, beadTitles, '', counter);
     console.log('');
   }
 
-  if (nodes.length === 0 && trees.length === 0) {
+  if (epicGroups.length === 0 && legacyNodes.length === 0 && legacyTrees.length === 0) {
     console.log(dim('  no active jobs'));
     console.log('');
   }
 
-  console.log(dim(`${jobs.length} jobs · ${nodes.length} nodes · ${trees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting`));
+  console.log(dim(`${jobs.length} jobs · ${epicGroups.length} epics · ${legacyNodes.length} nodes · ${legacyTrees.length} worktrees · ${counter.running} running · ${counter.waiting} waiting${all ? ' · include terminal' : ''}`));
 }
 
 function renderInspect(jobId: string): void {
   const statuses = withPidLiveness(loadStatuses());
+  const epicReadiness = resolveEpicReadinessMap(statuses);
   const job = statuses.find((s) => s.id.startsWith(jobId));
   if (!job) {
     console.error(`Job not found: ${jobId}`);
@@ -507,13 +668,21 @@ function renderInspect(jobId: string): void {
   const chainStr = chainJobs.map((j) => j.id === job.id ? bold(j.id) : dim(j.id)).join(' → ');
 
   console.log(`\n${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
-  if (job.epic_id) console.log(`  epic      ${job.epic_id}`);
+  if (job.epic_id) {
+    const readiness = epicReadiness.get(job.epic_id);
+    const readinessSuffix = readiness ? ` · ${readiness.readiness_state} (${readiness.persisted_state})` : '';
+    console.log(`  epic      ${job.epic_id}${readinessSuffix}`);
+  }
   console.log(`  model     ${job.model ?? '--'} ${job.backend ? `(${job.backend})` : ''}`);
   if (job.bead_id) console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ''}`);
   if (job.worktree_path || job.branch) {
     const wt = job.worktree_path ? dim(` ${job.worktree_path}`) : '';
     console.log(`  worktree  ${job.branch ?? 'master'}${wt}`);
   }
+  const chainRole = job.chain_kind === 'chain' ? 'chain' : 'prep';
+  const chainIdentity = job.chain_kind === 'chain' ? (job.chain_id ?? job.worktree_owner_job_id ?? '--') : '--';
+  console.log(`  role      ${chainRole}`);
+  console.log(`  chain_id  ${chainIdentity}`);
   if (chainJobs.length > 1) console.log(`  chain     ${chainStr}`);
   console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
   const tokenUsage = job.metrics?.token_usage;
@@ -543,10 +712,12 @@ function renderJson(
   trees: WorktreeTree[],
   _all: boolean,
   epicReadiness: EpicReadinessMap,
+  args: PsArgs,
 ): void {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: _all,
+    include_merged: args.includeMerged,
     counts: {
       jobs: jobs.length,
       nodes: nodes.length,
@@ -566,6 +737,10 @@ function renderJson(
       worktree_path: job.worktree_path,
       branch: job.branch,
       epic_id: job.epic_id,
+      chain_kind: job.chain_kind,
+      chain_id: job.chain_id,
+      chain_root_job_id: job.chain_root_job_id,
+      chain_root_bead_id: job.chain_root_bead_id,
       started_at_ms: job.started_at_ms,
       elapsed_s: job.elapsed_s,
       context_pct: job.context_pct,
@@ -573,23 +748,35 @@ function renderJson(
     })),
     nodes,
     trees,
+    epics: buildEpicGroups(jobs, epicReadiness),
     epic_readiness: Object.fromEntries([...epicReadiness.entries()].map(([epicId, summary]) => [epicId, summary])),
   }, null, 2));
 }
 
 function render(args: PsArgs): void {
   const statusesWithLiveness = withPidLiveness(loadStatuses());
+  const epicReadiness = resolveEpicReadinessMap(statusesWithLiveness);
+
   const visibleStatuses = statusesWithLiveness.filter((job) => {
-    if (!isVisibleStatus(job.status, args.all)) return false;
+    const readiness = job.epic_id ? epicReadiness.get(job.epic_id) : undefined;
+    const readinessState = readiness?.readiness_state;
+
+    if (readinessState === 'merged' && !args.includeMerged && !args.all) return false;
     if (args.all) return true;
-    return !job.is_dead;
+    if (job.is_dead) return false;
+    if (isVisibleStatus(job.status, false)) return true;
+
+    if (!job.epic_id) return false;
+    if (!TERMINAL_STATES.includes(job.status)) return false;
+    if (readinessState === 'merged' || readinessState === 'abandoned') return false;
+    return true;
   });
+
   const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
-  const epicReadiness = resolveEpicReadinessMap(visibleStatuses);
 
   if (args.json) {
-    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness);
+    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args);
     return;
   }
 
