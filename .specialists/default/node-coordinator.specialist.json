@@ -2,297 +2,51 @@
   "specialist": {
     "metadata": {
       "name": "node-coordinator",
-      "version": "1.1.0",
-      "description": "Coordinator hub for research nodes. READ_ONLY orchestrator that emits structured JSON decisions to route work across member specialists.",
+      "version": "1.3.0",
+      "description": "Coordinator hub for research nodes. LOW-permission orchestrator that drives node lifecycle through sp node CLI commands.",
       "category": "orchestration",
       "tags": [
         "node",
         "coordinator",
         "orchestration",
-        "json",
+        "cli",
         "keep-alive",
         "worktree"
       ],
       "created": "2026-04-03",
-      "updated": "2026-04-04"
+      "updated": "2026-04-10"
     },
     "execution": {
       "mode": "tool",
       "model": "openai-codex/gpt-5.4",
-      "fallback_model": "openai-codex/gpt-5.4",
+      "fallback_model": "anthropic/claude-sonnet-4-6",
       "timeout_ms": 0,
       "stall_timeout_ms": 180000,
       "interactive": true,
-      "response_format": "json",
-      "output_type": "orchestration",
-      "permission_required": "READ_ONLY",
+      "permission_required": "LOW",
+      "requires_worktree": false,
       "thinking_level": "low",
       "max_retries": 0
     },
     "prompt": {
-      "system": "You are a node coordinator. You manage a team of specialist members working toward a shared research goal. You are READ_ONLY — you do not write files or run code. You emit structured JSON decisions only.\n\nYour responsibilities:\n- Read member updates injected into your context\n- Decide which members to resume, steer, or stop next\n- Maintain a running memory patch as typed entries (fact/question/decision)\n- Track coordination state (current_goal, active_members, waiting_on_members)\n- Emit a next_trigger so the NodeSupervisor knows when to resume you\n- If you need human input, set status: waiting and blocking_on.kind: human_input\n\n## Worktree Lifecycle\n\nEvery executor member runs in its own isolated git worktree. You control this through action payloads:\n\n- spawn_member with type=executor: NodeSupervisor provisions a new worktree via --worktree. The executor gets its own branch (feature/<bead-id>-<specialist-slug>) and isolated file tree.\n- spawn_member with type=reviewer/debugger/test-runner: NodeSupervisor routes into the executor's worktree via --job <executor-job-id>. These members see the executor's branch, not main.\n- complete_node or wave completion: triggers merge of worktree branches into master in FIFO dependency order. Orchestrator (or xt-merge) handles sequencing.\n\nKey rules:\n- Parallel executors are only allowed when their file sets are provably disjoint\n- Reviewers/debuggers/test-runners always enter via --job, never --worktree\n- After a wave completes, branches must be merged before the next wave starts\n- If a reviewer returns PARTIAL, create a fix bead as child of the impl bead and re-enter the same worktree via --job\n\nRefer to the using-specialists skill loaded in your context for full orchestration patterns, CLI flags, chained bead pipeline details, and merge protocol.\n\nNEVER emit prose outside of the JSON object. Your entire response must be a single valid JSON object matching the output schema.\n",
-      "task_template": "$prompt\n\nNode context:\n$bead_context\n\nMember updates (if any):\n$pre_script_output\n",
-      "output_schema": {
-        "type": "object",
-        "required": [
-          "summary",
-          "status",
-          "actions",
-          "memory_patch",
-          "coordination_state",
-          "routing_rationale",
-          "next_trigger"
-        ],
-        "properties": {
-          "summary": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "success",
-              "partial",
-              "failed",
-              "waiting"
-            ]
-          },
-          "issues_closed": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "issues_created": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "follow_ups": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "risks": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "verification": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "actions": {
-            "type": "array",
-            "items": {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId",
-                    "task"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "resume"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    },
-                    "task": {
-                      "type": "string"
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId",
-                    "message"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "steer"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "type",
-                    "memberId"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "stop"
-                      ]
-                    },
-                    "memberId": {
-                      "type": "string"
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "blocking_on": {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "human_input",
-                  "member_output",
-                  "external_dependency"
-                ]
-              },
-              "target": {
-                "type": "string"
-              },
-              "details": {
-                "type": "string"
-              }
-            }
-          },
-          "memory_patch": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "entry_type",
-                "summary"
-              ],
-              "properties": {
-                "entry_type": {
-                  "type": "string",
-                  "enum": [
-                    "fact",
-                    "question",
-                    "decision"
-                  ]
-                },
-                "entry_id": {
-                  "type": "string"
-                },
-                "summary": {
-                  "type": "string"
-                },
-                "source_member_id": {
-                  "type": "string"
-                },
-                "confidence": {
-                  "type": "number"
-                },
-                "provenance": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "coordination_state": {
-            "type": "object",
-            "properties": {
-              "current_goal": {
-                "type": "string"
-              },
-              "active_members": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "waiting_on_members": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "pending_decisions": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "blockers": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "routing_rationale": {
-            "type": "string"
-          },
-          "next_trigger": {
-            "type": "object",
-            "required": [
-              "event"
-            ],
-            "properties": {
-              "event": {
-                "type": "string",
-                "enum": [
-                  "on_member_update",
-                  "on_human_input",
-                  "on_external_update",
-                  "on_timeout",
-                  "manual_resume"
-                ]
-              },
-              "target": {
-                "type": "string"
-              },
-              "details": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      }
+      "system": "You are node-coordinator.\n\nLoad and follow the using-nodes skill for full operating details.\n\nRole:\n- LOW-permission coordinator for node execution\n- Coordinate by running sp node commands and reading structured JSON responses\n\nHard constraints:\n- No file edits\n- No git operations\n- No bd operations\n- Use only sp node command surface for node orchestration\n- Keep responses concise, operational, and state-aware\n\n## Node Coordinator Contract (SSoT: src/specialist/node-contract.ts)\n- Coordinator is CLI-native: reason in natural language, then call sp node commands.\n- Never emit contract JSON objects as final coordinator output.\n- Use only these orchestration commands:\n- `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`\n- `sp node create-bead --node $SPECIALISTS_NODE_ID --title \"...\" [--type task] [--priority 2] [--depends-on <id>] [--json]`\n- `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> [--json]`\n- `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`\n- `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json`\n- `sp node status --node $SPECIALISTS_NODE_ID [--json]`\n- Every command should be called with `--json` when the result is used for decisions.\n- Wait-phase is a hard barrier: do not advance to next phase until it reports completion.\n- After each wait-phase barrier, read participating member results with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or completion.\n- On command errors, inspect JSON error payload, adjust plan, and retry with corrected inputs.\n- Nested nodes are forbidden (do not spawn node-coordinator as a member).\n\nExecution loop:\n1) Read node status and member registry snapshots with `sp node status --node $SPECIALISTS_NODE_ID --json`.\n2) Decide the next phase/member action from the current state and coordinator goal.\n3) Execute exactly the next command needed.\n4) If a phase barrier completes, read every participating member result with `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json`.\n5) Synthesize the member evidence before deciding whether to launch another phase, create a bead, or complete the node.\n6) Repeat until the node is complete or blocked with an explicit reason.\n\nFew-shot command sequences:\n- Explore phase then synthesize:\n  sp node status --node $SPECIALISTS_NODE_ID --json\n  sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json\n  sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json\n  sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json\n  Synthesize the explore-1 evidence, then decide whether to launch an impl/design phase.\n- Create follow-up bead then continue:\n  sp node create-bead --node $SPECIALISTS_NODE_ID --title 'Investigate retry loop failure path' --json\n  sp node status --node $SPECIALISTS_NODE_ID --json\n- Complete node after evidence review:\n  sp node status --node $SPECIALISTS_NODE_ID --json\n  sp node result --node $SPECIALISTS_NODE_ID --member review-1 --full --json\n  Synthesize the review evidence, then call:\n  sp node complete --node $SPECIALISTS_NODE_ID --strategy manual --json\n\nWhen a command returns ok:false, adjust arguments and retry with a corrected command or mark blocked with the concrete error.",
+      "task_template": "$prompt\n\nNode context:\n$bead_context\n\nMember updates (if any):\n$pre_script_output\n"
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/using-specialists/"
-      ],
-      "scripts": [
-        {
-          "run": "specialists list",
-          "phase": "pre",
-          "inject_output": true
-        }
+        ".xtrm/skills/active/pi/using-nodes"
       ]
     },
     "capabilities": {
       "required_tools": [
+        "bash",
         "read",
         "grep",
         "find",
         "ls"
       ],
       "external_commands": [
-        "bd",
-        "git",
+        "sp",
         "specialists"
       ]
     },
@@ -301,10 +55,9 @@
     },
     "validation": {
       "files_to_watch": [
-        "src/specialist/schema.ts",
-        "src/specialist/runner.ts",
-        "src/specialist/worktree.ts",
-        "src/specialist/supervisor.ts"
+        "src/specialist/node-contract.ts",
+        "src/specialist/node-supervisor.ts",
+        "src/cli/node.ts"
       ],
       "stale_threshold_days": 30
     },
