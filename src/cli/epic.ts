@@ -1,13 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import type { EpicState, EpicRunRecord, EpicChainRecord } from '../specialist/epic-lifecycle.js';
-import {
-  isEpicTerminalState,
-  transitionEpicState,
-  evaluateEpicMergeReadiness,
-  summarizeEpicTransition,
-} from '../specialist/epic-lifecycle.js';
+import type { EpicState } from '../specialist/epic-lifecycle.js';
+import { isEpicTerminalState, summarizeEpicTransition, transitionEpicState } from '../specialist/epic-lifecycle.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
-import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import {
+  loadEpicReadinessSummary,
+  syncEpicStateFromReadiness,
+  type EpicReadinessSummary,
+} from '../specialist/epic-readiness.js';
 import {
   resolveMergeTargetsForBeadIds,
   parseChildBeadIds,
@@ -16,8 +15,6 @@ import {
   type MergeStepResult,
 } from './merge.js';
 
-const RUNNING_STATUSES = new Set(['starting', 'running', 'waiting', 'degraded']);
-
 interface EpicMergeCliOptions {
   epicId: string;
   rebuild: boolean;
@@ -25,10 +22,8 @@ interface EpicMergeCliOptions {
 
 interface EpicMergeContext {
   epicId: string;
-  epicRecord: EpicRunRecord | null;
-  chainRecords: EpicChainRecord[];
+  readiness: EpicReadinessSummary;
   chainTargets: ChainMergeTarget[];
-  chainJobStatuses: Map<string, { hasRunningJob: boolean; jobIds: string[] }>;
 }
 
 interface EpicMergeResult {
@@ -37,7 +32,6 @@ interface EpicMergeResult {
   fromState: EpicState;
   toState: EpicState;
   mergedChains: Array<{ beadId: string; branch: string; changedFiles: string[] }>;
-  blockedChains: string[];
   error?: string;
 }
 
@@ -88,24 +82,6 @@ function readEpicChildrenFromBeads(epicId: string): string[] {
   return ids;
 }
 
-function buildChainJobStatuses(
-  sqlite: ObservabilitySqliteClient,
-  chainRecords: EpicChainRecord[],
-): Map<string, { hasRunningJob: boolean; jobIds: string[] }> {
-  const statuses = new Map<string, { hasRunningJob: boolean; jobIds: string[] }>();
-
-  for (const chain of chainRecords) {
-    const jobIds = sqlite.listChainJobIds(chain.chain_id);
-    const hasRunningJob = jobIds.some((jobId) => {
-      const status = sqlite.readStatus(jobId);
-      return status && RUNNING_STATUSES.has(status.status);
-    });
-    statuses.set(chain.chain_id, { hasRunningJob, jobIds });
-  }
-
-  return statuses;
-}
-
 function gatherEpicContext(options: EpicMergeCliOptions): EpicMergeContext {
   const sqlite = createObservabilitySqliteClient();
   if (!sqlite) {
@@ -113,36 +89,23 @@ function gatherEpicContext(options: EpicMergeCliOptions): EpicMergeContext {
   }
 
   try {
-    const epicRecord = sqlite.readEpicRun(options.epicId);
-    const chainRecords = sqlite.listEpicChains(options.epicId);
+    const readiness = loadEpicReadinessSummary(sqlite, options.epicId);
+    syncEpicStateFromReadiness(sqlite, readiness);
 
-    const childBeadIds = chainRecords.length > 0
-      ? chainRecords
-        .map((chain) => chain.chain_root_bead_id)
-        .filter((id): id is string => Boolean(id))
-      : readEpicChildrenFromBeads(options.epicId);
+    const childBeadIds = readiness.chains
+      .map((chain) => chain.chain_root_bead_id)
+      .filter((id): id is string => Boolean(id));
 
-    if (childBeadIds.length === 0) {
+    const resolvedBeadIds = childBeadIds.length > 0 ? childBeadIds : readEpicChildrenFromBeads(options.epicId);
+
+    if (resolvedBeadIds.length === 0) {
       throw new Error(`No chain-root bead IDs found for epic '${options.epicId}'`);
     }
 
-    const chainTargets = resolveMergeTargetsForBeadIds(childBeadIds);
-    const chainRecordsForStatus = chainRecords.length > 0
-      ? chainRecords
-      : chainTargets.map((chainTarget) => ({
-        chain_id: chainTarget.jobId,
-        epic_id: options.epicId,
-        chain_root_bead_id: chainTarget.beadId,
-        chain_root_job_id: chainTarget.jobId,
-        updated_at_ms: chainTarget.startedAtMs,
-      }));
-
     return {
       epicId: options.epicId,
-      epicRecord,
-      chainRecords,
-      chainTargets,
-      chainJobStatuses: buildChainJobStatuses(sqlite, chainRecordsForStatus),
+      readiness,
+      chainTargets: resolveMergeTargetsForBeadIds(resolvedBeadIds),
     };
   } finally {
     sqlite.close();
@@ -150,36 +113,21 @@ function gatherEpicContext(options: EpicMergeCliOptions): EpicMergeContext {
 }
 
 function validateEpicMergeReadiness(context: EpicMergeContext): EpicState {
-  const epicState: EpicState = context.epicRecord?.status ?? 'open';
+  const currentState = context.readiness.next_state;
 
-  if (isEpicTerminalState(epicState)) {
-    throw new Error(`Epic ${context.epicId} is already in terminal state '${epicState}'. No further merges allowed.`);
+  if (isEpicTerminalState(currentState)) {
+    throw new Error(`Epic ${context.epicId} is already in terminal state '${currentState}'. No further merges allowed.`);
   }
 
-  if (epicState !== 'resolving' && epicState !== 'merge_ready') {
-    throw new Error(
-      `Epic ${context.epicId} is in state '${epicState}'. Must be 'resolving' or 'merge_ready' before publication.`,
-    );
+  if (context.readiness.readiness_state === 'failed') {
+    throw new Error(`Epic ${context.epicId} is failed: ${context.readiness.summary}`);
   }
 
-  const chainStatuses = [...context.chainJobStatuses.entries()].map(([chainId, status]) => ({
-    chainId,
-    hasRunningJob: status.hasRunningJob,
-  }));
-  const readiness = evaluateEpicMergeReadiness({
-    epicId: context.epicId,
-    epicStatus: epicState,
-    chainStatuses,
-  });
-
-  if (readiness.blockingChains.length > 0) {
-    throw new Error(
-      `Epic ${context.epicId} has running chains: ${readiness.blockingChains.join(', ')}.\n` +
-      'All chain jobs must be terminal before publication.',
-    );
+  if (context.readiness.readiness_state !== 'merge_ready') {
+    throw new Error(`Epic ${context.epicId} is not merge-ready: ${context.readiness.summary}`);
   }
 
-  return epicState;
+  return currentState;
 }
 
 function updateEpicState(epicId: string, fromState: EpicState, toState: EpicState): void {
@@ -206,10 +154,6 @@ function updateEpicState(epicId: string, fromState: EpicState, toState: EpicStat
   }
 }
 
-function mergeEpicChains(context: EpicMergeContext, rebuild: boolean): MergeStepResult[] {
-  return runMergePlan(context.chainTargets, { rebuild });
-}
-
 function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void {
   console.log('');
   console.log(`Epic ${result.epicId}: ${result.fromState} → ${result.toState}`);
@@ -221,11 +165,7 @@ function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void 
     console.log('Merged chains (dependency order):');
     for (const chain of result.mergedChains) {
       console.log(`  ${chain.branch} (${chain.beadId})`);
-      if (chain.changedFiles.length === 0) {
-        console.log('    files: (none)');
-      } else {
-        console.log(`    files: ${chain.changedFiles.join(', ')}`);
-      }
+      console.log(chain.changedFiles.length === 0 ? '    files: (none)' : `    files: ${chain.changedFiles.join(', ')}`);
     }
 
     console.log('');
@@ -238,9 +178,6 @@ function printEpicMergeSummary(result: EpicMergeResult, rebuild: boolean): void 
     console.log('Publication failed.');
     if (result.error) {
       console.log(`Error: ${result.error}`);
-    }
-    if (result.blockedChains.length > 0) {
-      console.log(`Blocked chains: ${result.blockedChains.join(', ')}`);
     }
   }
 
@@ -278,20 +215,12 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
   }
 
   const fromState = currentState;
-
-  if (currentState === 'resolving') {
-    const nextState = transitionEpicState(currentState, 'merge_ready');
-    updateEpicState(context.epicId, currentState, nextState);
-    console.log(summarizeEpicTransition(context.epicId, currentState, nextState));
-    currentState = nextState;
-  }
-
   let mergedChains: MergeStepResult[] = [];
   let mergeError: string | undefined;
   let toState: EpicState = currentState;
 
   try {
-    mergedChains = mergeEpicChains(context, options.rebuild);
+    mergedChains = runMergePlan(context.chainTargets, { rebuild: options.rebuild });
     toState = transitionEpicState(currentState, 'merged');
     updateEpicState(context.epicId, currentState, toState);
   } catch (error: unknown) {
@@ -306,7 +235,6 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
     fromState,
     toState,
     mergedChains,
-    blockedChains: [],
     error: mergeError,
   };
 
@@ -333,38 +261,35 @@ export async function handleEpicStatusCommand(argv: readonly string[]): Promise<
   }
 
   try {
-    const epicRecord = sqlite.readEpicRun(epicId);
-    const chainRecords = sqlite.listEpicChains(epicId);
+    const readiness = loadEpicReadinessSummary(sqlite, epicId);
+    const persisted = syncEpicStateFromReadiness(sqlite, readiness);
 
     console.log('');
     console.log(`Epic: ${epicId}`);
+    console.log(`State: ${persisted.status}`);
+    console.log(`Readiness: ${readiness.readiness_state}`);
+    console.log(`Summary: ${readiness.summary}`);
+    console.log(`Updated: ${new Date(persisted.updated_at_ms).toISOString()}`);
 
-    if (epicRecord) {
-      console.log(`State: ${epicRecord.status}`);
-      console.log(`Updated: ${new Date(epicRecord.updated_at_ms).toISOString()}`);
-    } else {
-      console.log('State: (not tracked in SQLite)');
-    }
+    console.log('');
+    console.log('Prep:');
+    console.log(`  total: ${readiness.prep.total}`);
+    console.log(`  done: ${readiness.prep.done}`);
+    console.log(`  running: ${readiness.prep.running}`);
+    console.log(`  failed: ${readiness.prep.failed}`);
 
     console.log('');
     console.log('Chains:');
-    if (chainRecords.length === 0) {
+    if (readiness.chains.length === 0) {
       console.log('  (none tracked)');
     } else {
-      for (const chain of chainRecords) {
-        const jobIds = sqlite.listChainJobIds(chain.chain_id);
-        const runningJobs = jobIds.filter((jobId) => {
-          const status = sqlite.readStatus(jobId);
-          return status && RUNNING_STATUSES.has(status.status);
-        });
-
-        const statusIndicator = runningJobs.length > 0 ? '◉ running' : '○ terminal';
-        console.log(`  ${chain.chain_id}: ${statusIndicator}`);
+      for (const chain of readiness.chains) {
+        console.log(`  ${chain.chain_id}: ${chain.state} (reviewer=${chain.reviewer_verdict})`);
         if (chain.chain_root_bead_id) {
           console.log(`    bead: ${chain.chain_root_bead_id}`);
         }
-        if (runningJobs.length > 0) {
-          console.log(`    running jobs: ${runningJobs.join(', ')}`);
+        if (chain.blocking_reason) {
+          console.log(`    reason: ${chain.blocking_reason}`);
         }
       }
     }
@@ -385,18 +310,16 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '',
       'Commands:',
       '  merge <epic-id> [--rebuild]                      Publish epic-owned chains in dependency order',
-      '  status <epic-id>                                  Show epic state and chain statuses',
+      '  status <epic-id>                                  Show epic state and readiness summary',
       '',
       'Epic lifecycle states:',
       '  open        → resolving → merge_ready → merged',
       '  (any)       → failed / abandoned (terminal)',
       '',
-      'Merge behavior:',
-      '  - Requires epic state: resolving or merge_ready',
-      '  - All chain jobs must be terminal before publication',
-      '  - Chains merged in topological dependency order',
-      '  - TypeScript gate runs after each merge',
-      '  - Lifecycle transitions persisted to SQLite',
+      'Readiness behavior:',
+      '  - Includes prep + chain jobs from persisted SQLite state',
+      '  - Requires chain reviewer PASS verdicts',
+      '  - Non-PASS review + missing follow-up review keeps epic blocked/failed',
       '',
       'Options:',
       '  --rebuild           Run bun run build after all merges',
