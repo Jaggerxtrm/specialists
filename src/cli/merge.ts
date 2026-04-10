@@ -409,39 +409,118 @@ function readChangedFilesForLastMerge(): string[] {
     .filter(Boolean);
 }
 
-function readBranchSourceChangesAgainstMaster(branch: string): string[] {
-  const result = runCommand('git', ['diff', '--name-only', `master...${branch}`, '--', 'src/']);
-  if (result.status !== 0) {
-    throw new Error(`Unable to inspect source diff for '${branch}' against master.`);
-  }
-
-  return result.stdout
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean);
+interface MergePreviewFileDelta {
+  status: string;
+  path: string;
 }
 
-function readBranchDiffStatAgainstMaster(branch: string): string {
-  const result = runCommand('git', ['diff', '--stat', `master...${branch}`]);
-  if (result.status !== 0) {
-    return '(unable to compute diff stat)';
-  }
-
-  const stat = result.stdout.trim();
-  return stat.length > 0 ? stat : '(no file changes relative to master)';
+interface MergePreviewDelta {
+  branch: string;
+  files: MergePreviewFileDelta[];
+  substantiveFiles: MergePreviewFileDelta[];
+  noiseFiles: MergePreviewFileDelta[];
 }
 
-function assertBranchHasSourceDiff(branch: string): void {
-  const sourceChanges = readBranchSourceChangesAgainstMaster(branch);
-  if (sourceChanges.length > 0) {
-    return;
+interface MergeWorthinessDecision {
+  shouldMerge: boolean;
+  reason: 'ok' | 'empty-delta' | 'noise-only-delta';
+}
+
+const NOISE_PATH_PREFIXES = ['.xtrm/reports/', '.wolf/', '.specialists/jobs/'] as const;
+
+function parseNameStatusLine(line: string): MergePreviewFileDelta | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split(/\t+/);
+  if (parts.length < 2) return null;
+
+  const status = parts[0] ?? '';
+  if (!status) return null;
+
+  const path = parts.length >= 3 ? parts[parts.length - 1] ?? '' : parts[1] ?? '';
+  if (!path) return null;
+
+  return { status, path };
+}
+
+function isNoisePath(path: string): boolean {
+  return NOISE_PATH_PREFIXES.some(prefix => path.startsWith(prefix));
+}
+
+export function previewBranchMergeDelta(branch: string): MergePreviewDelta {
+  const previewMerge = runCommand('git', ['merge', branch, '--no-ff', '--no-commit']);
+  if (previewMerge.status !== 0) {
+    const conflicts = getConflictFiles();
+    runCommand('git', ['merge', '--abort']);
+    const conflictContext = conflicts.length > 0
+      ? `\nConflicting files:\n${conflicts.map(file => `- ${file}`).join('\n')}`
+      : '';
+    throw new Error(`Unable to preview merge for '${branch}'.${conflictContext}`);
   }
 
-  const diffStat = readBranchDiffStatAgainstMaster(branch);
+  try {
+    const stagedDelta = runCommand('git', ['diff', '--cached', '--name-status']);
+    if (stagedDelta.status !== 0) {
+      throw new Error(`Unable to read staged merge delta for '${branch}'.`);
+    }
+
+    const files = stagedDelta.stdout
+      .split('\n')
+      .map(parseNameStatusLine)
+      .filter((entry): entry is MergePreviewFileDelta => Boolean(entry));
+
+    const noiseFiles = files.filter(file => isNoisePath(file.path));
+    const substantiveFiles = files.filter(file => !isNoisePath(file.path));
+
+    return {
+      branch,
+      files,
+      noiseFiles,
+      substantiveFiles,
+    };
+  } finally {
+    runCommand('git', ['merge', '--abort']);
+  }
+}
+
+export function evaluateMergeWorthiness(preview: MergePreviewDelta): MergeWorthinessDecision {
+  if (preview.files.length === 0) {
+    return { shouldMerge: false, reason: 'empty-delta' };
+  }
+
+  if (preview.substantiveFiles.length === 0) {
+    return { shouldMerge: false, reason: 'noise-only-delta' };
+  }
+
+  return { shouldMerge: true, reason: 'ok' };
+}
+
+function throwWorthinessBlockError(target: ChainMergeTarget, preview: MergePreviewDelta, decision: MergeWorthinessDecision): never {
+  const summary = [
+    `beadId=${target.beadId}`,
+    `jobId=${target.jobId}`,
+    `branch=${target.branch}`,
+    `total=${preview.files.length}`,
+    `substantive=${preview.substantiveFiles.length}`,
+    `noise=${preview.noiseFiles.length}`,
+  ].join(' ');
+
+  const reason = decision.reason === 'empty-delta'
+    ? 'empty merge delta'
+    : 'noise-only merge delta';
+
   throw new Error(
-    `Refusing merge for '${branch}': no source changes detected under src/ compared to master.\n` +
-    `Diff stat (master...${branch}):\n${diffStat}`,
+    `Refusing merge for '${target.branch}': ${reason}.\n` +
+    `Diagnostics: ${summary}`,
   );
+}
+
+function assertBranchMergeWorthiness(target: ChainMergeTarget): void {
+  const preview = previewBranchMergeDelta(target.branch);
+  const decision = evaluateMergeWorthiness(preview);
+  if (decision.shouldMerge) return;
+  throwWorthinessBlockError(target, preview, decision);
 }
 
 function getConflictFiles(): string[] {
@@ -514,7 +593,7 @@ export function runMergePlan(
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
-    assertBranchHasSourceDiff(target.branch);
+    assertBranchMergeWorthiness(target);
     mergeBranch(target.branch);
     runTypecheckGate();
     mergedSteps.push({
