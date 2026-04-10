@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              status, ps, result, feed, poll, clean, merge, stop, attach, quickstart, help
+ *              status, ps, result, feed, poll, clean, merge, epic, stop, attach, quickstart, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -396,6 +396,43 @@ async function run() {
     }
     const { handleNodeCommand } = await import('./cli/node.js');
     await handleNodeCommand(process.argv.slice(3));
+    process.exit(0);
+  }
+
+  if (sub === 'epic') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists epic <list|status|resolve> [options]',
+        '',
+ 'Epic lifecycle management for wave-bound chain groups.',
+        '',
+        'Commands:',
+        '  list [--unresolved] [--json]          Enumerate epics with lifecycle state and readiness',
+        '  status <epic-id> [--json]             Show chains, blockers, and merge readiness',
+        '  resolve <epic-id> [--dry-run] [--json]  Transition epic from open -> resolving',
+        '',
+        'Options:',
+        '  --unresolved    Filter list to non-terminal (open, resolving, merge_ready) epics',
+        '  --dry-run       Preview transition without persisting',
+        '  --json          Machine-readable JSON output',
+        '',
+        'Lifecycle states:',
+        '  open -> resolving -> merge_ready -> merged',
+        '  (failed, abandoned are terminal)',
+        '',
+        'Examples:',
+        '  specialists epic list',
+        '  specialists epic list --unresolved',
+        '  specialists epic status unitAI-epic1',
+        '  specialists epic resolve unitAI-epic1',
+        '  specialists epic resolve unitAI-epic1 --dry-run',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { handleEpicCommand } = await import('./cli/epic.js');
+    handleEpicCommand(process.argv.slice(3));
     process.exit(0);
   }
 
