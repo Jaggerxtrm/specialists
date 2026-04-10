@@ -92,10 +92,10 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(4);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(9);
 
-      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 4 LIMIT 1').get() as { version?: number };
-      expect(schemaVersionRow.version).toBe(4);
+      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 9 LIMIT 1').get() as { version?: number };
+      expect(schemaVersionRow.version).toBe(9);
 
       const indexRows = db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_node_runs_status', 'idx_node_members_run', 'idx_node_members_job', 'idx_node_members_run_member', 'idx_node_events_run_t', 'idx_node_events_type', 'idx_node_memory_run', 'idx_node_memory_entry_id') ORDER BY name").all() as Array<{ name: string }>;
       expect(indexRows.map((row) => row.name)).toEqual([
@@ -115,8 +115,8 @@ describe('observability-sqlite', () => {
       expect(() => initSchema(db!)).not.toThrow();
       expect(() => initSchema(db!)).not.toThrow();
 
-      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 4 LIMIT 1').get() as { version?: number };
-      expect(schemaVersionRow.version).toBe(4);
+      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 9 LIMIT 1').get() as { version?: number };
+      expect(schemaVersionRow.version).toBe(9);
     });
   });
 
@@ -408,6 +408,77 @@ describe('observability-sqlite', () => {
       );
 
       expect(client.queryMemberContextHealth('job-1')).toBe(77);
+    });
+  });
+
+  describe('chain identity persistence', () => {
+    it('stores prep jobs with explicit prep chain_kind and no chain id', () => {
+      const client = createClient();
+      client.upsertStatus({
+        id: 'prep-1',
+        specialist: 'planner',
+        status: 'done',
+        started_at_ms: 1,
+        chain_kind: 'prep',
+      });
+
+      expect(client.readChainIdentity('prep-1')).toEqual({ chain_kind: 'prep' });
+      expect(client.resolveChainEpicLinkByJobId('prep-1')).toBeNull();
+    });
+
+    it('resolves chain membership and chain->epic linkage from sqlite', () => {
+      const client = createClient();
+
+      client.upsertStatus({
+        id: 'chain-root',
+        specialist: 'executor',
+        status: 'done',
+        started_at_ms: 1,
+        bead_id: 'unitAI-100',
+        worktree_path: '/tmp/worktree',
+        worktree_owner_job_id: 'chain-root',
+        chain_kind: 'chain',
+        chain_id: 'chain-root',
+        chain_root_job_id: 'chain-root',
+        chain_root_bead_id: 'unitAI-100',
+        epic_id: 'unitAI-epic',
+      });
+
+      client.upsertStatus({
+        id: 'chain-child',
+        specialist: 'reviewer',
+        status: 'waiting',
+        started_at_ms: 2,
+        bead_id: 'unitAI-101',
+        worktree_path: '/tmp/worktree',
+        worktree_owner_job_id: 'chain-root',
+        chain_kind: 'chain',
+        chain_id: 'chain-root',
+        chain_root_job_id: 'chain-root',
+        chain_root_bead_id: 'unitAI-100',
+      });
+
+      client.upsertEpicChainMembership({
+        chain_id: 'chain-root',
+        epic_id: 'unitAI-epic',
+        chain_root_bead_id: 'unitAI-100',
+        chain_root_job_id: 'chain-root',
+        updated_at_ms: Date.now(),
+      });
+
+      expect(client.listChainJobIds('chain-root')).toEqual(['chain-root', 'chain-child']);
+      expect(client.readChainIdentity('chain-child')).toEqual({
+        chain_kind: 'chain',
+        chain_id: 'chain-root',
+        chain_root_job_id: 'chain-root',
+        chain_root_bead_id: 'unitAI-100',
+      });
+      expect(client.resolveChainEpicLinkByJobId('chain-child')).toEqual({
+        chain_id: 'chain-root',
+        epic_id: 'unitAI-epic',
+        chain_root_job_id: 'chain-root',
+        chain_root_bead_id: 'unitAI-100',
+      });
     });
   });
 

@@ -21,6 +21,7 @@ import { resolveObservabilityDbLocation } from './observability-db.js';
 import type { TimelineEvent } from './timeline-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
+import type { PersistedChainIdentity } from './chain-identity.js';
 
 const BUSY_TIMEOUT_MS = 5000;
 const MAX_RETRY_ATTEMPTS = 5;
@@ -314,7 +315,10 @@ export function initSchema(db: BunDb): void {
     { name: 'worktree_column', definition: 'TEXT' },
     { name: 'bead_id', definition: 'TEXT' },
     { name: 'node_id', definition: 'TEXT' },
+    { name: 'chain_kind', definition: "TEXT NOT NULL DEFAULT 'prep'" },
     { name: 'chain_id', definition: 'TEXT' },
+    { name: 'chain_root_job_id', definition: 'TEXT' },
+    { name: 'chain_root_bead_id', definition: 'TEXT' },
     { name: 'epic_id', definition: 'TEXT' },
     { name: 'status', definition: "TEXT NOT NULL DEFAULT 'starting'" },
     { name: 'last_output', definition: 'TEXT' },
@@ -337,7 +341,10 @@ export function initSchema(db: BunDb): void {
         worktree_column TEXT,
         bead_id         TEXT,
         node_id         TEXT,
+        chain_kind      TEXT NOT NULL DEFAULT 'prep',
         chain_id        TEXT,
+        chain_root_job_id TEXT,
+        chain_root_bead_id TEXT,
         epic_id         TEXT,
         status          TEXT NOT NULL,
         status_json     TEXT NOT NULL,
@@ -351,7 +358,10 @@ export function initSchema(db: BunDb): void {
           worktree_column,
           bead_id,
           node_id,
+          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
           chain_id,
+          COALESCE(chain_root_job_id, chain_id),
+          chain_root_bead_id,
           epic_id,
           COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
           status_json,
@@ -369,6 +379,7 @@ export function initSchema(db: BunDb): void {
   migrateToV6(db);
   migrateToV7(db);
   migrateToV8(db);
+  migrateToV9(db);
   verifyWalMode(db);
 }
 
@@ -553,6 +564,53 @@ function migrateToV8(db: BunDb): void {
   `);
 }
 
+function migrateToV9(db: BunDb): void {
+  const hasV9 = db.query('SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1').get() as { 1?: number } | undefined;
+
+  const specialistJobsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  for (const column of [
+    { name: 'chain_kind', definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: 'chain_root_job_id', definition: 'TEXT' },
+    { name: 'chain_root_bead_id', definition: 'TEXT' },
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_kind = CASE
+      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
+      ELSE 'prep'
+    END
+    WHERE chain_kind IS NULL OR chain_kind = ''
+  `);
+
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
+    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
+  `);
+
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL');
+
+  if (hasV9) {
+    return;
+  }
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (9, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'awaiting_merge' | 'fixing_after_review' | 'failed' | 'error' | 'done' | 'stopped';
 
 export type NodeEventType =
@@ -648,6 +706,13 @@ export interface NodeMemoryRow {
   updated_at_ms?: number;
 }
 
+export interface ChainEpicLinkRecord {
+  chain_id: string;
+  epic_id?: string;
+  chain_root_job_id?: string;
+  chain_root_bead_id?: string;
+}
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   upsertEpicRun(epic: EpicRunRecord): void;
@@ -677,6 +742,9 @@ export interface ObservabilitySqliteClient {
   resolveEpicByChainId(chainId: string): EpicChainRecord | null;
   resolveEpicByChainRootBeadId(chainRootBeadId: string): EpicChainRecord | null;
   listEpicChains(epicId: string): EpicChainRecord[];
+  readChainIdentity(jobId: string): PersistedChainIdentity | null;
+  listChainJobIds(chainId: string): string[];
+  resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null;
   readEvents(jobId: string): TimelineEvent[];
   readResult(jobId: string): string | null;
   close(): void;
@@ -700,14 +768,17 @@ class SqliteClient implements ObservabilitySqliteClient {
   private writeStatusRow(status: SupervisorStatus, lastOutput?: string): void {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_id, epic_id, status, status_json, updated_at_ms, last_output)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
         bead_id = excluded.bead_id,
         node_id = excluded.node_id,
+        chain_kind = excluded.chain_kind,
         chain_id = excluded.chain_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
         epic_id = excluded.epic_id,
         status = excluded.status,
         status_json = excluded.status_json,
@@ -719,7 +790,10 @@ class SqliteClient implements ObservabilitySqliteClient {
       status.worktree_path ?? null,
       status.bead_id ?? null,
       status.node_id ?? null,
+      status.chain_kind ?? (status.chain_id ? 'chain' : 'prep'),
       status.chain_id ?? null,
+      status.chain_root_job_id ?? null,
+      status.chain_root_bead_id ?? null,
       status.epic_id ?? null,
       status.status,
       statusJson,
@@ -1271,6 +1345,61 @@ class SqliteClient implements ObservabilitySqliteClient {
     return withRetry(() => {
       return this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC').all(epicId) as EpicChainRecord[];
     }, 'listEpicChains');
+  }
+
+  readChainIdentity(jobId: string): PersistedChainIdentity | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
+        FROM specialist_jobs
+        WHERE job_id = ?
+        LIMIT 1
+      `).get(jobId) as { chain_kind?: string; chain_id?: string | null; chain_root_job_id?: string | null; chain_root_bead_id?: string | null } | undefined;
+
+      if (!row?.chain_kind) return null;
+
+      return {
+        chain_kind: row.chain_kind === 'chain' ? 'chain' : 'prep',
+        chain_id: row.chain_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
+      };
+    }, 'readChainIdentity');
+  }
+
+  listChainJobIds(chainId: string): string[] {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE chain_id = ?
+        ORDER BY updated_at_ms ASC
+      `).all(chainId) as Array<{ job_id?: string | null }>;
+
+      return rows
+        .map((row) => row.job_id)
+        .filter((jobId): jobId is string => typeof jobId === 'string' && jobId.length > 0);
+    }, 'listChainJobIds');
+  }
+
+  resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT
+          jobs.chain_id AS chain_id,
+          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
+          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
+          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
+        WHERE jobs.job_id = ?
+          AND jobs.chain_kind = 'chain'
+          AND jobs.chain_id IS NOT NULL
+        LIMIT 1
+      `).get(jobId) as ChainEpicLinkRecord | undefined;
+
+      return row ?? null;
+    }, 'resolveChainEpicLinkByJobId');
   }
 
   readEvents(jobId: string): TimelineEvent[] {

@@ -29,7 +29,7 @@ describe('observability-db', () => {
     it('exports schema version constant', async () => {
       const { OBSERVABILITY_SCHEMA_VERSION } = await import('../../../src/specialist/observability-db.js');
       
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(1);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(9);
       expect(typeof OBSERVABILITY_SCHEMA_VERSION).toBe('number');
     });
   });
