@@ -2605,4 +2605,23 @@ export class NodeSupervisor {
   getMembers(): NodeMemberEntry[] {
     return [...this.members.values()].map((member) => ({ ...member }));
   }
+
+  getCoordinatorJobId(): string | null {
+    return this.coordinatorJobId;
+  }
+
+  /**
+   * Enqueue a dispatch action (resume/steer/stop) for a member.
+   * Returns action ID on success, null on failure.
+   */
+  async enqueueAction(action: NodeDispatchAction): Promise<string | null> {
+    return this.dispatchAction(action);
+  }
+
+  /**
+   * Gracefully stop the node: stop coordinator and all members.
+   */
+  async gracefulStop(): Promise<void> {
+    await this.cleanupJobs();
+  }
 }

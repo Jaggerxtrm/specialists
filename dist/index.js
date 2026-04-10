@@ -20356,6 +20356,11 @@ function initSchema(db) {
     { name: "worktree_column", definition: "TEXT" },
     { name: "bead_id", definition: "TEXT" },
     { name: "node_id", definition: "TEXT" },
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_id", definition: "TEXT" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" },
     { name: "status", definition: "TEXT NOT NULL DEFAULT 'starting'" },
     { name: "last_output", definition: "TEXT" }
   ].filter(({ name }) => !specialistJobsColumns.has(name));
@@ -20371,6 +20376,11 @@ function initSchema(db) {
         worktree_column TEXT,
         bead_id         TEXT,
         node_id         TEXT,
+        chain_kind      TEXT NOT NULL DEFAULT 'prep',
+        chain_id        TEXT,
+        chain_root_job_id TEXT,
+        chain_root_bead_id TEXT,
+        epic_id         TEXT,
         status          TEXT NOT NULL,
         status_json     TEXT NOT NULL,
         updated_at_ms   INTEGER NOT NULL,
@@ -20383,6 +20393,11 @@ function initSchema(db) {
           worktree_column,
           bead_id,
           node_id,
+          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
+          chain_id,
+          COALESCE(chain_root_job_id, chain_id),
+          chain_root_bead_id,
+          epic_id,
           COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
           status_json,
           updated_at_ms,
@@ -20398,6 +20413,8 @@ function initSchema(db) {
   migrateToV5(db);
   migrateToV6(db);
   migrateToV7(db);
+  migrateToV8(db);
+  migrateToV9(db);
   verifyWalMode(db);
 }
 function migrateToV5(db) {
@@ -20492,6 +20509,82 @@ function migrateToV7(db) {
       VALUES (7, strftime('%s', 'now') * 1000);
   `);
 }
+function migrateToV8(db) {
+  const hasV8 = db.query("SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_runs (
+      epic_id         TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_chain_membership (
+      chain_id            TEXT PRIMARY KEY,
+      epic_id             TEXT NOT NULL,
+      chain_root_bead_id  TEXT,
+      chain_root_job_id   TEXT,
+      updated_at_ms       INTEGER NOT NULL
+    );
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL");
+  if (hasV8) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (8, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV9(db) {
+  const hasV9 = db.query("SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_kind = CASE
+      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
+      ELSE 'prep'
+    END
+    WHERE chain_kind IS NULL OR chain_kind = ''
+  `);
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
+    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL");
+  if (hasV9) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (9, strftime('%s', 'now') * 1000);
+  `);
+}
 
 class SqliteClient {
   db;
@@ -20504,13 +20597,18 @@ class SqliteClient {
   writeStatusRow(status, lastOutput) {
     const statusJson = JSON.stringify(status);
     this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, status, status_json, updated_at_ms, last_output)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
         specialist = excluded.specialist,
         worktree_column = excluded.worktree_column,
         bead_id = excluded.bead_id,
         node_id = excluded.node_id,
+        chain_kind = excluded.chain_kind,
+        chain_id = excluded.chain_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        epic_id = excluded.epic_id,
         status = excluded.status,
         status_json = excluded.status_json,
         updated_at_ms = excluded.updated_at_ms,
@@ -20521,10 +20619,42 @@ class SqliteClient {
       status.worktree_path ?? null,
       status.bead_id ?? null,
       status.node_id ?? null,
+      status.chain_kind ?? (status.chain_id ? "chain" : "prep"),
+      status.chain_id ?? null,
+      status.chain_root_job_id ?? null,
+      status.chain_root_bead_id ?? null,
+      status.epic_id ?? null,
       status.status,
       statusJson,
       Date.now(),
       lastOutput ?? null
+    ]);
+  }
+  writeEpicRunRow(epic) {
+    this.db.run(`
+      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(epic_id) DO UPDATE SET
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
+  }
+  writeEpicChainMembershipRow(chain) {
+    this.db.run(`
+      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chain_id) DO UPDATE SET
+        epic_id = excluded.epic_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [
+      chain.chain_id,
+      chain.epic_id,
+      chain.chain_root_bead_id ?? null,
+      chain.chain_root_job_id ?? null,
+      chain.updated_at_ms
     ]);
   }
   getNextSpecialistEventSeq(jobId) {
@@ -20732,6 +20862,16 @@ class SqliteClient {
     withRetry(() => {
       this.writeStatusRow(status);
     }, "upsertStatus");
+  }
+  upsertEpicRun(epic) {
+    withRetry(() => {
+      this.writeEpicRunRow(epic);
+    }, "upsertEpicRun");
+  }
+  upsertEpicChainMembership(chain) {
+    withRetry(() => {
+      this.writeEpicChainMembershipRow(chain);
+    }, "upsertEpicChainMembership");
   }
   upsertStatusWithEvent(status, event) {
     withRetry(() => {
@@ -20955,6 +21095,81 @@ class SqliteClient {
       return statuses;
     }, "listStatuses");
   }
+  readEpicRun(epicId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1").get(epicId);
+      return row ?? null;
+    }, "readEpicRun");
+  }
+  listEpicRuns() {
+    return withRetry(() => {
+      return this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC").all();
+    }, "listEpicRuns");
+  }
+  resolveEpicByChainId(chainId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1").get(chainId);
+      return row ?? null;
+    }, "resolveEpicByChainId");
+  }
+  resolveEpicByChainRootBeadId(chainRootBeadId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1").get(chainRootBeadId);
+      return row ?? null;
+    }, "resolveEpicByChainRootBeadId");
+  }
+  listEpicChains(epicId) {
+    return withRetry(() => {
+      return this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC").all(epicId);
+    }, "listEpicChains");
+  }
+  readChainIdentity(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
+        FROM specialist_jobs
+        WHERE job_id = ?
+        LIMIT 1
+      `).get(jobId);
+      if (!row?.chain_kind)
+        return null;
+      return {
+        chain_kind: row.chain_kind === "chain" ? "chain" : "prep",
+        chain_id: row.chain_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined
+      };
+    }, "readChainIdentity");
+  }
+  listChainJobIds(chainId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE chain_id = ?
+        ORDER BY updated_at_ms ASC
+      `).all(chainId);
+      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listChainJobIds");
+  }
+  resolveChainEpicLinkByJobId(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT
+          jobs.chain_id AS chain_id,
+          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
+          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
+          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
+        WHERE jobs.job_id = ?
+          AND jobs.chain_kind = 'chain'
+          AND jobs.chain_id IS NOT NULL
+        LIMIT 1
+      `).get(jobId);
+      return row ?? null;
+    }, "resolveChainEpicLinkByJobId");
+  }
   readEvents(jobId) {
     return withRetry(() => {
       const rows = this.db.query(`
@@ -21005,6 +21220,92 @@ var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTE
 var init_observability_sqlite = __esm(() => {
   init_observability_db();
 });
+
+// src/specialist/epic-lifecycle.ts
+function isEpicTerminalState(status) {
+  return EPIC_TERMINAL_STATES.includes(status);
+}
+function isEpicUnresolvedState(status) {
+  return !isEpicTerminalState(status);
+}
+function canTransitionEpicState(from, to) {
+  return VALID_EPIC_TRANSITIONS[from].includes(to);
+}
+function transitionEpicState(from, to) {
+  if (!canTransitionEpicState(from, to)) {
+    throw new Error(`Invalid epic transition: ${from} -> ${to}`);
+  }
+  return to;
+}
+function resolveChainId(status) {
+  if (status.chain_id)
+    return status.chain_id;
+  if (status.worktree_owner_job_id)
+    return status.worktree_owner_job_id;
+  if (status.worktree_path)
+    return status.id;
+  return;
+}
+function evaluateEpicMergeReadiness(input) {
+  const isEligibleState = input.epicStatus === "merge_ready";
+  const blockingChains = input.chainStatuses.filter((chain) => chain.hasRunningJob).map((chain) => chain.chainId);
+  const isReady = isEligibleState && blockingChains.length === 0;
+  if (!isEligibleState) {
+    return {
+      epicId: input.epicId,
+      epicStatus: input.epicStatus,
+      isReady,
+      blockingChains,
+      summary: `Epic ${input.epicId} is ${input.epicStatus}; expected merge_ready before publication.`
+    };
+  }
+  if (blockingChains.length > 0) {
+    return {
+      epicId: input.epicId,
+      epicStatus: input.epicStatus,
+      isReady,
+      blockingChains,
+      summary: `Epic ${input.epicId} is blocked by active chains: ${blockingChains.join(", ")}.`
+    };
+  }
+  return {
+    epicId: input.epicId,
+    epicStatus: input.epicStatus,
+    isReady,
+    blockingChains,
+    summary: `Epic ${input.epicId} is merge-ready and all chains are terminal.`
+  };
+}
+var EPIC_TERMINAL_STATES, VALID_EPIC_TRANSITIONS;
+var init_epic_lifecycle = __esm(() => {
+  EPIC_TERMINAL_STATES = ["merged", "failed", "abandoned"];
+  VALID_EPIC_TRANSITIONS = {
+    open: ["resolving", "abandoned"],
+    resolving: ["merge_ready", "failed", "abandoned"],
+    merge_ready: ["merged", "failed", "abandoned", "resolving"],
+    merged: [],
+    failed: [],
+    abandoned: []
+  };
+});
+
+// src/specialist/chain-identity.ts
+function derivePersistedChainIdentity(status, chainRootSnapshot) {
+  const isChainJob = Boolean(status.worktree_path || status.worktree_owner_job_id || status.chain_id || status.chain_root_job_id);
+  if (!isChainJob) {
+    return { chain_kind: "prep" };
+  }
+  const chainRootJobId = status.chain_root_job_id ?? status.worktree_owner_job_id ?? status.id;
+  const chainId = status.chain_id ?? chainRootJobId;
+  const chainRootBeadId = status.chain_root_bead_id ?? (chainRootJobId === status.id ? status.bead_id : undefined) ?? chainRootSnapshot?.chain_root_bead_id ?? chainRootSnapshot?.bead_id;
+  return {
+    chain_kind: "chain",
+    chain_id: chainId,
+    chain_root_job_id: chainRootJobId,
+    chain_root_bead_id: chainRootBeadId
+  };
+}
+var init_chain_identity = () => {};
 
 // src/cli/tmux-utils.ts
 import { spawnSync as spawnSync5 } from "child_process";
@@ -21437,13 +21738,25 @@ class Supervisor {
     return jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
   }
   withStatusLineageDefaults(id, status) {
-    if (!status.worktree_path)
-      return status;
-    if (status.worktree_owner_job_id)
-      return status;
+    const chainRootJobId = status.chain_root_job_id ?? status.worktree_owner_job_id;
+    const chainRootSnapshot = chainRootJobId && chainRootJobId !== id ? this.readStatus(chainRootJobId) ?? undefined : undefined;
+    const identity2 = derivePersistedChainIdentity(status, chainRootSnapshot);
+    if (identity2.chain_kind === "prep") {
+      return {
+        ...status,
+        chain_kind: "prep",
+        chain_id: undefined,
+        chain_root_job_id: undefined,
+        chain_root_bead_id: undefined
+      };
+    }
     return {
       ...status,
-      worktree_owner_job_id: id
+      worktree_owner_job_id: identity2.chain_root_job_id,
+      chain_kind: "chain",
+      chain_id: identity2.chain_id,
+      chain_root_job_id: identity2.chain_root_job_id,
+      chain_root_bead_id: identity2.chain_root_bead_id
     };
   }
   writeStatusFileOnly(id, data) {
@@ -21458,7 +21771,33 @@ class Supervisor {
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     this.writeStatusFileOnly(id, normalizedStatus);
     try {
-      this.withSqliteOperation("upsertStatus", (client) => client.upsertStatus(normalizedStatus));
+      this.withSqliteOperation("upsertStatus", (client) => {
+        client.upsertStatus(normalizedStatus);
+        const chainId = resolveChainId(normalizedStatus);
+        if (!normalizedStatus.epic_id || !chainId) {
+          return;
+        }
+        client.upsertEpicRun({
+          epic_id: normalizedStatus.epic_id,
+          status: "open",
+          updated_at_ms: Date.now(),
+          status_json: JSON.stringify({
+            epic_id: normalizedStatus.epic_id,
+            status: "open",
+            source: "supervisor",
+            chain_id: chainId,
+            chain_root_bead_id: normalizedStatus.chain_root_bead_id ?? null,
+            chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id
+          })
+        });
+        client.upsertEpicChainMembership({
+          chain_id: chainId,
+          epic_id: normalizedStatus.epic_id,
+          chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+          chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
+          updated_at_ms: Date.now()
+        });
+      });
     } catch (error2) {
       console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error2)}`);
     }
@@ -21566,6 +21905,12 @@ class Supervisor {
       ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
       ...runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {},
       ...runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {},
+      ...runOptions.worktreeOwnerJobId || runOptions.workingDirectory ? {
+        chain_kind: "chain",
+        chain_id: runOptions.worktreeOwnerJobId ?? id,
+        chain_root_job_id: runOptions.worktreeOwnerJobId ?? id
+      } : { chain_kind: "prep" },
+      ...runOptions.epicId ? { epic_id: runOptions.epicId } : {},
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() }
     };
     this.writeStatusFileOnly(id, initialStatus);
@@ -22229,6 +22574,8 @@ var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
   init_observability_sqlite();
+  init_epic_lifecycle();
+  init_chain_identity();
   init_tmux_utils();
   JOB_TTL_DAYS = Number(process.env.SPECIALISTS_JOB_TTL_DAYS ?? 7);
   STALL_DETECTION_DEFAULTS = {
@@ -23519,7 +23866,35 @@ function runBackfill(options) {
           summary.jobsSkipped += 1;
           continue;
         }
-        sqliteClient.upsertStatus(status);
+        const chainIdentity = derivePersistedChainIdentity(status);
+        const normalizedStatus = {
+          ...status,
+          chain_kind: chainIdentity.chain_kind,
+          chain_id: chainIdentity.chain_id,
+          chain_root_job_id: chainIdentity.chain_root_job_id,
+          chain_root_bead_id: chainIdentity.chain_root_bead_id
+        };
+        sqliteClient.upsertStatus(normalizedStatus);
+        if (normalizedStatus.epic_id && normalizedStatus.chain_id) {
+          sqliteClient.upsertEpicRun({
+            epic_id: normalizedStatus.epic_id,
+            status: "open",
+            updated_at_ms: Date.now(),
+            status_json: JSON.stringify({
+              epic_id: normalizedStatus.epic_id,
+              status: "open",
+              source: "db-backfill",
+              chain_id: normalizedStatus.chain_id
+            })
+          });
+          sqliteClient.upsertEpicChainMembership({
+            epic_id: normalizedStatus.epic_id,
+            chain_id: normalizedStatus.chain_id,
+            chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+            chain_root_job_id: normalizedStatus.chain_root_job_id,
+            updated_at_ms: Date.now()
+          });
+        }
         summary.jobsBackfilled += 1;
         if (options.importEvents) {
           const eventsPath = join10(jobDirectoryPath, "events.jsonl");
@@ -23583,6 +23958,7 @@ var init_db = __esm(() => {
   init_observability_db();
   init_job_root();
   init_observability_sqlite();
+  init_chain_identity();
   init_timeline_events();
 });
 
@@ -24998,6 +25374,7 @@ async function run11() {
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
   let variables;
+  let epicId;
   if (args.beadId) {
     const bead = beadReader.readBead(args.beadId);
     if (!bead) {
@@ -25011,6 +25388,7 @@ async function run11() {
     }
     const beadContext = buildBeadContext(bead, blockers);
     prompt = beadContext;
+    epicId = bead.parent;
     variables = {
       bead_context: beadContext,
       bead_id: args.beadId
@@ -25053,6 +25431,7 @@ async function run11() {
       variables,
       backendOverride: args.model,
       inputBeadId: args.beadId,
+      epicId,
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
       beadsWriteNotes,
@@ -25088,7 +25467,7 @@ async function run11() {
 ${bold10(`Running ${cyan6(args.name)}`)}
 
 `);
-  let jobId;
+  let jobId = "";
   let runError;
   try {
     jobId = await supervisor.run();
@@ -25544,6 +25923,7 @@ class NodeSupervisor {
   lastCoordinatorOutputAtMs = Date.now();
   lastCompletedActionAtMs = Date.now();
   lastMemberTransitionAtMs = Date.now();
+  coordinatorRestartCount = 0;
   constructor(opts) {
     this.opts = opts;
     this.members = new Map(opts.members.map((member) => [
@@ -25558,7 +25938,7 @@ class NodeSupervisor {
         enabled: true,
         lastSeenOutputHash: null,
         generation: 0,
-        worktreePath: member.worktreePath ?? member.worktree,
+        worktreePath: member.worktreePath ?? (typeof member.worktree === "string" ? member.worktree : undefined),
         parentMemberId: member.parentMemberId,
         replacedMemberId: member.replacedMemberId,
         phaseId: member.phaseId
@@ -25837,20 +26217,27 @@ class NodeSupervisor {
       this.persistNodeEvent("transition.node_stopped", "node_stopped", { node_id: this.opts.nodeId, reason }, now + 1);
     }
   }
-  createBaseRunOptions(specialist, prompt) {
+  createBaseRunOptions(specialist, prompt, overrides) {
     const runOptions = this.opts.runOptions;
     if (!this.opts.runner || !runOptions) {
       throw new Error("NodeSupervisor requires opts.runner and opts.runOptions to spawn jobs");
     }
+    const resolvedContextDepth = overrides?.contextDepth ?? runOptions.contextDepth ?? 2;
     return {
       ...runOptions,
       name: specialist,
       prompt,
-      contextDepth: runOptions.contextDepth,
+      contextDepth: resolvedContextDepth,
+      workingDirectory: overrides?.workingDirectory ?? runOptions.workingDirectory,
+      worktreeBoundary: overrides?.worktreeBoundary ?? runOptions.worktreeBoundary,
+      inputBeadId: overrides?.inputBeadId ?? runOptions.inputBeadId,
+      reusedFromJobId: overrides?.reusedFromJobId ?? runOptions.reusedFromJobId,
+      worktreeOwnerJobId: overrides?.worktreeOwnerJobId ?? runOptions.worktreeOwnerJobId,
       keepAlive: true,
       noKeepAlive: false,
       variables: {
         ...runOptions.variables ?? {},
+        ...overrides?.variables ?? {},
         node_id: this.opts.nodeId,
         SPECIALISTS_NODE_ID: this.opts.nodeId
       }
@@ -25867,6 +26254,53 @@ class NodeSupervisor {
       roleText
     ].join(`
 `).trim();
+  }
+  buildReplacementBootstrapPrompt(member, previousOutput, failureReason) {
+    const basePrompt = this.buildMemberIdleBootstrapPrompt(member);
+    const previousOutputExcerpt = previousOutput ? previousOutput.slice(0, 1500) : "(no prior output captured)";
+    const reasonText = failureReason ?? "previous attempt ended without an explicit failure reason";
+    return [
+      basePrompt,
+      "",
+      "replacement_context:",
+      `- previous_member_id: ${member.memberId}`,
+      `- previous_generation: ${Math.max(0, member.generation - 1)}`,
+      `- failure_reason: ${reasonText}`,
+      "- previous_member_output:",
+      previousOutputExcerpt
+    ].join(`
+`);
+  }
+  extractMemberSpawnOverrides(rawPayload) {
+    const overrides = new Map;
+    if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload))
+      return overrides;
+    const payload = rawPayload;
+    if (!Array.isArray(payload.phases))
+      return overrides;
+    for (const phase of payload.phases) {
+      if (!phase || typeof phase !== "object" || Array.isArray(phase))
+        continue;
+      const phaseId = typeof phase.phase_id === "string" ? phase.phase_id : null;
+      const members = phase.members;
+      if (!phaseId || !Array.isArray(members))
+        continue;
+      for (const member of members) {
+        if (!member || typeof member !== "object" || Array.isArray(member))
+          continue;
+        const memberKey = typeof member.member_key === "string" ? member.member_key : null;
+        if (!memberKey)
+          continue;
+        const key = `${phaseId}:${memberKey}`;
+        const contextDepthRaw = member.context_depth;
+        const contextDepth = typeof contextDepthRaw === "number" ? contextDepthRaw : undefined;
+        const worktreeFrom = typeof member.worktree_from === "string" ? member.worktree_from : undefined;
+        const worktree = typeof member.worktree === "boolean" ? member.worktree : undefined;
+        const parentMemberId = typeof member.parent_member_id === "string" ? member.parent_member_id : undefined;
+        overrides.set(key, { contextDepth, worktreeFrom, worktree, parentMemberId });
+      }
+    }
+    return overrides;
   }
   getBeadGoalSummary() {
     const beadContext = this.opts.runOptions?.variables?.bead_context;
@@ -25885,7 +26319,7 @@ class NodeSupervisor {
       generation: member.generation,
       status: member.status,
       enabled: member.enabled,
-      worktree: this.opts.members.find((candidate) => candidate.memberId === member.memberId)?.worktree ?? null
+      worktree: member.worktreePath ?? null
     }));
     return renderForFirstTurnContext({
       nodeId: this.opts.nodeId,
@@ -25904,8 +26338,27 @@ class NodeSupervisor {
   }
   async spawnMembers() {
     for (const member of this.members.values()) {
+      const staticConfig = this.opts.members.find((candidate) => candidate.memberId === member.memberId);
+      const shouldProvisionStaticWorktree = staticConfig?.worktree === true;
+      if (shouldProvisionStaticWorktree && !member.worktreePath) {
+        const provisioned = provisionWorktree({
+          beadId: this.opts.nodeId,
+          specialistName: member.memberId,
+          cwd: this.opts.runOptions?.workingDirectory ?? process.cwd()
+        });
+        member.worktreePath = provisioned.worktreePath;
+        this.persistNodeEvent("spawnMembers.worktree_provisioned", "worktree_provisioned", {
+          node_id: this.opts.nodeId,
+          member_key: member.memberId,
+          worktree_path: provisioned.worktreePath,
+          branch: provisioned.branch
+        });
+      }
       const prompt = this.buildMemberIdleBootstrapPrompt(member);
-      const runOptions = this.createBaseRunOptions(member.specialist, prompt);
+      const runOptions = this.createBaseRunOptions(member.specialist, prompt, {
+        workingDirectory: member.worktreePath,
+        worktreeBoundary: member.worktreePath
+      });
       const controller = new JobControl({
         runner: this.opts.runner,
         runOptions,
@@ -25947,6 +26400,7 @@ class NodeSupervisor {
         if (member.worktreePath) {
           this.opts.sqliteClient.appendNodeEvent(this.opts.nodeId, Date.now(), "worktree_provisioned", {
             node_id: this.opts.nodeId,
+            member_key: member.memberId,
             worktree_path: member.worktreePath,
             branch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT
           });
@@ -26600,6 +27054,7 @@ class NodeSupervisor {
         continue;
       }
       const coordinatorOutput = parseResult.data;
+      const memberSpawnOverrides = this.extractMemberSpawnOverrides(parsedJson);
       const runtimeMismatch = this.validateCoordinatorContractRuntime(coordinatorOutput);
       if (runtimeMismatch) {
         this.appendNodeEvent("coordinator_output_invalid", {
@@ -26660,7 +27115,25 @@ class NodeSupervisor {
           }
         }
         for (const memberSpawn of phase.members) {
-          await this.spawnDynamicMember(phase.phase_id, memberSpawn);
+          const overrideKey = `${phase.phase_id}:${memberSpawn.member_key}`;
+          const override = memberSpawnOverrides.get(overrideKey);
+          try {
+            await this.spawnDynamicMember(phase.phase_id, memberSpawn, override);
+          } catch (error2) {
+            this.persistNodeEvent("handleCoordinatorOutput.action_failed", "action_failed", {
+              node_id: this.opts.nodeId,
+              action_type: ACTION_TYPES.SPAWN_MEMBER,
+              member_key: memberSpawn.member_key,
+              phase_id: phase.phase_id,
+              reason: toErrorMessage(error2)
+            });
+            this.appendNodeEvent("coordinator_resume_skipped", {
+              node_id: this.opts.nodeId,
+              coordinator_job_id: this.coordinatorJobId,
+              member_update_count: 0,
+              reasons: [`spawn_member_failed:${memberSpawn.member_key}`]
+            });
+          }
         }
         this.persistNodeEvent("handleCoordinatorOutput.phase_completed", "phase_completed", {
           node_id: this.opts.nodeId,
@@ -26810,42 +27283,79 @@ class NodeSupervisor {
       });
     }
   }
-  async spawnDynamicMember(phaseId, memberSpawn) {
+  async spawnDynamicMember(phaseId, memberSpawn, overrides) {
     const availableSpecialists = new Set(this.opts.availableSpecialists ?? []);
     if (availableSpecialists.size > 0 && !availableSpecialists.has(memberSpawn.role)) {
       throw new Error(`Unknown specialist role '${memberSpawn.role}' for member_key='${memberSpawn.member_key}'.`);
     }
-    if (memberSpawn.isolated) {
-      console.warn("node supervisor isolated spawn_member requested", {
-        node_id: this.opts.nodeId,
-        member_key: memberSpawn.member_key,
-        message: "isolated flag is reserved for Wave 3 runtime; proceeding without isolation"
-      });
-      this.appendNodeEvent("action_dropped", {
-        node_id: this.opts.nodeId,
-        action_type: ACTION_TYPES.SPAWN_MEMBER,
-        member_key: memberSpawn.member_key,
-        reason: "isolated_requested_but_not_implemented_wave_2b"
-      });
+    const replacementKey = memberSpawn.retry_of ?? null;
+    const logicalMemberId = replacementKey ?? memberSpawn.member_key;
+    const existing = this.members.get(logicalMemberId);
+    const isReplacement = Boolean(replacementKey);
+    if (isReplacement && !existing) {
+      throw new Error(`Replacement requested for unknown member '${replacementKey}'.`);
     }
-    const existing = this.members.get(memberSpawn.member_key);
-    if (existing) {
+    if (existing && !isReplacement) {
       return;
     }
-    const member = {
-      memberId: memberSpawn.member_key,
+    if (existing && isReplacement && !TERMINAL_MEMBER_STATUSES.has(existing.status)) {
+      throw new Error(`Replacement rejected: member '${existing.memberId}' is not terminal (status=${existing.status}).`);
+    }
+    let inheritedWorktreePath = existing?.worktreePath;
+    const worktreeFrom = overrides?.worktreeFrom;
+    if (worktreeFrom) {
+      const sourceMember = this.members.get(worktreeFrom);
+      if (!sourceMember?.worktreePath) {
+        throw new Error(`worktree_from '${worktreeFrom}' has no worktree_path.`);
+      }
+      inheritedWorktreePath = sourceMember.worktreePath;
+    }
+    const shouldProvisionIsolated = memberSpawn.isolated || overrides?.worktree === true;
+    if (shouldProvisionIsolated && !inheritedWorktreePath) {
+      const provisioned = provisionWorktree({
+        beadId: this.opts.nodeId,
+        specialistName: logicalMemberId,
+        cwd: this.opts.runOptions?.workingDirectory ?? process.cwd()
+      });
+      inheritedWorktreePath = provisioned.worktreePath;
+      this.persistNodeEvent("spawnDynamicMember.worktree_provisioned", "worktree_provisioned", {
+        node_id: this.opts.nodeId,
+        member_key: logicalMemberId,
+        worktree_path: provisioned.worktreePath,
+        branch: provisioned.branch
+      });
+    }
+    const nextGeneration = isReplacement ? (existing?.generation ?? 0) + 1 : 1;
+    const previousJobId = existing?.jobId ?? null;
+    const member = existing ?? {
+      memberId: logicalMemberId,
       jobId: null,
       specialist: memberSpawn.role,
       role: memberSpawn.role,
       status: "created",
       enabled: true,
       lastSeenOutputHash: null,
-      generation: 0,
-      parentMemberId: memberSpawn.retry_of ?? undefined,
-      phaseId
+      generation: 0
     };
-    this.members.set(member.memberId, member);
-    const runOptions = this.createBaseRunOptions(member.specialist, this.buildMemberIdleBootstrapPrompt(member));
+    member.specialist = memberSpawn.role;
+    member.role = memberSpawn.role;
+    member.parentMemberId = overrides?.parentMemberId ?? member.parentMemberId ?? undefined;
+    member.replacedMemberId = isReplacement ? previousJobId ?? undefined : member.replacedMemberId;
+    member.phaseId = phaseId;
+    member.worktreePath = inheritedWorktreePath;
+    const previousOutput = isReplacement && previousJobId ? this.memberControllers.get(member.memberId)?.readResult(previousJobId) ?? this.opts.sqliteClient.readResult(previousJobId) : null;
+    const replacementPrompt = isReplacement ? this.buildReplacementBootstrapPrompt(member, previousOutput, existing?.status ?? null) : this.buildMemberIdleBootstrapPrompt(member);
+    const runOptions = this.createBaseRunOptions(member.specialist, replacementPrompt, {
+      contextDepth: overrides?.contextDepth,
+      workingDirectory: member.worktreePath,
+      worktreeBoundary: member.worktreePath,
+      inputBeadId: memberSpawn.bead_id,
+      reusedFromJobId: previousJobId ?? undefined,
+      variables: {
+        member_generation: String(nextGeneration),
+        member_bead_id: memberSpawn.bead_id
+      }
+    });
     const controller = new JobControl({
       runner: this.opts.runner,
       runOptions,
@@ -26854,8 +27364,10 @@ class NodeSupervisor {
     const jobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: member.memberId });
     member.jobId = jobId;
     member.status = "starting";
-    member.generation = 1;
+    member.generation = nextGeneration;
+    this.clearMemberPendingActions(member.memberId);
     this.memberControllers.set(member.memberId, controller);
+    this.members.set(member.memberId, member);
     this.opts.sqliteClient.upsertNodeMember({
       node_run_id: this.opts.nodeId,
       member_id: member.memberId,
@@ -26876,8 +27388,22 @@ class NodeSupervisor {
       specialist: member.specialist,
       bead_id: memberSpawn.bead_id,
       phase_id: phaseId,
-      parent_member_id: member.parentMemberId ?? null
+      parent_member_id: member.parentMemberId ?? null,
+      generation: member.generation,
+      worktree_path: member.worktreePath ?? null
     });
+    if (isReplacement) {
+      this.persistNodeEvent("spawnDynamicMember.member_replaced", "member_replaced", {
+        node_id: this.opts.nodeId,
+        member_key: member.memberId,
+        previous_generation: nextGeneration - 1,
+        new_generation: nextGeneration,
+        previous_job_id: previousJobId,
+        new_job_id: jobId,
+        bead_id: memberSpawn.bead_id,
+        worktree_inherited: Boolean(member.worktreePath)
+      });
+    }
   }
   runFinalQualityGates(cwd) {
     const lintPass = spawnSync12("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
@@ -27001,8 +27527,92 @@ class NodeSupervisor {
       last_completed_action_at_ms: this.lastCompletedActionAtMs,
       last_member_transition_at_ms: this.lastMemberTransitionAtMs
     });
-    this.transition("error", "no_progress_watchdog_triggered");
     return true;
+  }
+  buildCoordinatorRecoveryPrompt(reason) {
+    const memoryEntries = this.opts.sqliteClient.readNodeMemory(this.opts.nodeId, this.opts.memoryNamespace ? { namespace: this.opts.memoryNamespace } : undefined);
+    const registrySnapshot = this.getMembers().map((member) => ({
+      memberId: member.memberId,
+      specialist: member.specialist,
+      role: member.role ?? null,
+      generation: member.generation,
+      status: member.status,
+      enabled: member.enabled,
+      worktree: member.worktreePath ?? null,
+      beadId: this.opts.runOptions?.inputBeadId ?? null
+    }));
+    const recoveryDigest = {
+      reason,
+      restart_generation: this.coordinatorRestartCount + 1,
+      state_digest: this.buildStateDigest(memoryEntries),
+      memory_patch_summary: memoryEntries.slice(-MAX_MEMORY_ENTRIES_IN_RESUME),
+      action_ledger: this.buildActionLedgerSummary(),
+      member_registry: registrySnapshot
+    };
+    return renderForFirstTurnContext({
+      nodeId: this.opts.nodeId,
+      nodeName: this.opts.nodeName,
+      sourceBeadId: this.opts.sourceBeadId ?? null,
+      beadGoal: this.getBeadGoalSummary(),
+      memberRegistry: registrySnapshot,
+      availableSpecialists: this.opts.availableSpecialists ?? [],
+      qualityGates: this.opts.qualityGates ?? ["npm run lint", "npx tsc --noEmit"],
+      nodeConfigSnapshot: this.opts.nodeConfigSnapshot ?? {},
+      completionStrategy: this.opts.completionStrategy ?? "pr",
+      maxRetries: this.opts.maxRetries ?? NODE_SUPERVISOR_MAX_RETRIES_DEFAULT,
+      baseBranch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
+      coordinatorGoal: `Recovery restart required. Use this replayed state digest:
+${JSON.stringify(recoveryDigest, null, 2)}`
+    });
+  }
+  async restartCoordinator(reason) {
+    if (this.coordinatorRestartCount >= MAX_COORDINATOR_RESTARTS) {
+      this.transition("failed", `coordinator_restart_exhausted:${reason}`);
+      return false;
+    }
+    if (!this.opts.runner || !this.opts.runOptions) {
+      this.transition("failed", `coordinator_restart_unavailable:${reason}`);
+      return false;
+    }
+    try {
+      if (this.coordinatorJobId && this.coordinatorController) {
+        const status = this.coordinatorController.readStatus(this.coordinatorJobId)?.status;
+        if (status && !TERMINAL_JOB_STATUSES.has(status)) {
+          await this.coordinatorController.stopJob(this.coordinatorJobId);
+          await this.coordinatorController.waitForTerminal(this.coordinatorJobId, 5000);
+        }
+      }
+      this.coordinatorRestartCount += 1;
+      const recoveryPrompt = this.buildCoordinatorRecoveryPrompt(reason);
+      const runOptions = this.createBaseRunOptions(this.opts.coordinatorSpecialist, recoveryPrompt);
+      const controller = new JobControl({
+        runner: this.opts.runner,
+        runOptions,
+        jobsDir: this.opts.jobsDir
+      });
+      const previousJobId = this.coordinatorJobId;
+      this.coordinatorJobId = await controller.startJob({ nodeId: this.opts.nodeId, memberId: "coordinator" });
+      this.coordinatorController = controller;
+      this.lastCoordinatorOutputAtMs = Date.now();
+      this.persistNodeEvent("restartCoordinator.coordinator_restarted", "coordinator_restarted", {
+        node_id: this.opts.nodeId,
+        generation: this.coordinatorRestartCount,
+        reason,
+        previous_job_id: previousJobId,
+        new_job_id: this.coordinatorJobId,
+        recovery_context_length: recoveryPrompt.length
+      });
+      if (this.status === "error" || this.status === "failed") {
+        return true;
+      }
+      if (this.status !== "running" && this.status !== "waiting") {
+        this.transition("running", `coordinator_restarted:${reason}`);
+      }
+      return true;
+    } catch (error2) {
+      this.transition("failed", `coordinator_restart_failed:${toErrorMessage(error2)}`);
+      return false;
+    }
   }
   async cleanupJobs() {
     const cleanupErrors = [];
@@ -27174,7 +27784,10 @@ class NodeSupervisor {
         const coordinatorStatus = this.coordinatorJobId ? this.opts.sqliteClient.readStatus(this.coordinatorJobId) : null;
         const coordinatorStatusValue = coordinatorStatus?.status;
         if (coordinatorStatusValue === "error") {
-          this.transition("error", "coordinator_crash");
+          const restarted = await this.restartCoordinator("coordinator_crash");
+          if (restarted) {
+            continue;
+          }
           break;
         }
         if (coordinatorStatusValue === "stopped") {
@@ -27182,6 +27795,14 @@ class NodeSupervisor {
           break;
         }
         if (coordinatorStatusValue === "done") {
+          const doneOutput = this.coordinatorJobId ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null : null;
+          if (!doneOutput || doneOutput.trim().length === 0) {
+            const restarted = await this.restartCoordinator("coordinator_empty_output");
+            if (restarted) {
+              continue;
+            }
+            break;
+          }
           this.transition("done", "coordinator_done");
           break;
         }
@@ -27265,6 +27886,10 @@ class NodeSupervisor {
           break;
         }
         if (this.maybeTriggerNoProgressWatchdog()) {
+          const restarted = await this.restartCoordinator("watchdog_no_progress");
+          if (restarted) {
+            continue;
+          }
           break;
         }
         await sleep2(this.getNextPollIntervalMs(changes.length));
@@ -27301,10 +27926,20 @@ class NodeSupervisor {
   getMembers() {
     return [...this.members.values()].map((member) => ({ ...member }));
   }
+  getCoordinatorJobId() {
+    return this.coordinatorJobId;
+  }
+  async enqueueAction(action) {
+    return this.dispatchAction(action);
+  }
+  async gracefulStop() {
+    await this.cleanup("cli_stop");
+  }
 }
-var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, NO_PROGRESS_WATCHDOG_MS = 120000, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES;
+var BASE_POLL_INTERVAL_MS = 5000, MIN_POLL_INTERVAL_MS = 1000, MAX_POLL_INTERVAL_MS = 15000, MAX_MEMORY_ENTRIES_IN_RESUME = 5, MAX_ACTION_LEDGER_ENTRIES = 20, MAX_QUEUED_ACTIONS_PER_MEMBER = 5, MAX_IN_FLIGHT_COORDINATOR_RESUMES = 2, NO_PROGRESS_WATCHDOG_MS = 120000, MAX_COORDINATOR_RESTARTS = 1, VALID_TRANSITIONS, TERMINAL_NODE_STATUSES, TERMINAL_MEMBER_STATUSES, TERMINAL_JOB_STATUSES;
 var init_node_supervisor = __esm(() => {
   init_job_control();
+  init_worktree();
   init_node_contract();
   VALID_TRANSITIONS = VALID_STATE_TRANSITIONS;
   TERMINAL_NODE_STATUSES = new Set(["error", "done", "stopped", "failed", "awaiting_merge"]);
@@ -27317,14 +27952,15 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync15, readFileSync as readFileSync10, readdirSync as readdirSync6 } from "fs";
+import { existsSync as existsSync15, readFileSync as readFileSync10, readdirSync as readdirSync6, writeFileSync as writeFileSync7 } from "fs";
 import { randomUUID } from "crypto";
-import { spawnSync as spawnSync13 } from "child_process";
+import { execFileSync as execFileSync3, spawnSync as spawnSync13 } from "child_process";
 import { basename as basename4, join as join16, resolve as resolve6 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
-  if (command !== "run" && command !== "list" && command !== "status" && command !== "feed" && command !== "promote") {
-    throw new Error("Usage: specialists node <run|list|status|feed|promote> [options]");
+  const supportedCommands = new Set(["run", "list", "status", "feed", "promote", "members", "memory", "steer", "stop", "attach"]);
+  if (!command || !supportedCommands.has(command)) {
+    throw new Error("Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach> [options]");
   }
   let nodeConfigInput;
   let inlineJson;
@@ -27390,11 +28026,15 @@ function parseNodeArgs(argv) {
       nodeConfigInput = token;
       continue;
     }
-    if (!token.startsWith("--") && (command === "feed" || command === "promote") && !nodeId) {
+    if (!token.startsWith("--") && (command === "feed" || command === "promote" || command === "members" || command === "memory" || command === "steer" || command === "stop" || command === "attach") && !nodeId) {
       nodeId = token;
       continue;
     }
     if (!token.startsWith("--") && command === "promote" && !findingId) {
+      findingId = token;
+      continue;
+    }
+    if (!token.startsWith("--") && command === "steer" && !findingId) {
       findingId = token;
       continue;
     }
@@ -27410,6 +28050,18 @@ function parseNodeArgs(argv) {
   }
   if (command === "feed" && !nodeId) {
     throw new Error("Usage: specialists node feed <node-id> [--json]");
+  }
+  if (command === "members" && !nodeId) {
+    throw new Error("Usage: specialists node members <node-id> [--json]");
+  }
+  if (command === "memory" && !nodeId) {
+    throw new Error("Usage: specialists node memory <node-id> [--json]");
+  }
+  if (command === "steer" && (!nodeId || !findingId)) {
+    throw new Error("Usage: specialists node steer <node-id> <message> [--json]");
+  }
+  if ((command === "stop" || command === "attach") && !nodeId) {
+    throw new Error(`Usage: specialists node ${command} <node-id>${command === "stop" ? " [--json]" : ""}`);
   }
   return {
     command,
@@ -27530,10 +28182,36 @@ function readStatusReason(row) {
 function summarizeMembers(members) {
   if (members.length === 0)
     return "-";
-  return members.map((member) => `${member.member_id}:${member.status}${member.enabled === false ? " (disabled)" : ""}`).join(", ");
+  return members.map((member) => `${member.member_id}#${member.generation ?? 0}:${member.status}${member.enabled === false ? " (disabled)" : ""}`).join(", ");
+}
+function readMemberLineage(member, sqliteClient) {
+  if (!sqliteClient || !member.job_id) {
+    return { reused_from_job_id: null, worktree_owner_job_id: null };
+  }
+  const status = sqliteClient.readStatus(member.job_id);
+  if (!status) {
+    return { reused_from_job_id: null, worktree_owner_job_id: null };
+  }
+  return {
+    reused_from_job_id: status.reused_from_job_id ?? null,
+    worktree_owner_job_id: status.worktree_owner_job_id ?? null
+  };
+}
+function summarizeMemory(memoryEntries) {
+  const byType = {};
+  for (const entry of memoryEntries) {
+    const key = entry.entry_type ?? "unknown";
+    byType[key] = (byType[key] ?? 0) + 1;
+  }
+  const latestSummary = [...memoryEntries].sort((left, right) => (right.updated_at_ms ?? 0) - (left.updated_at_ms ?? 0)).find((entry) => typeof entry.summary === "string" && entry.summary.trim().length > 0)?.summary?.trim() ?? null;
+  return {
+    total: memoryEntries.length,
+    by_type: byType,
+    latest_summary: latestSummary
+  };
 }
 function printNodeRunsTable(rows) {
-  const headers = ["node_id", "node_name", "status", "reason", "started_at", "updated_at", "coordinator_job_id", "members"];
+  const headers = ["node_id", "node_name", "status", "reason", "started_at", "updated_at", "coordinator_job_id", "memory", "members"];
   const body = rows.map((row) => [
     row.id,
     row.node_name,
@@ -27542,6 +28220,7 @@ function printNodeRunsTable(rows) {
     formatTimestamp(row.started_at_ms),
     formatTimestamp(row.updated_at_ms),
     row.coordinator_job_id ?? "-",
+    String(row.memory_total),
     row.member_summary
   ]);
   const allRows = [headers, ...body];
@@ -27665,7 +28344,7 @@ async function handleNodeRun(args) {
     sqliteClient.close();
   }
 }
-function printNodeRunDetail(row, members) {
+function printNodeRunDetail(row, members, memorySummary) {
   const detail = {
     node_id: row.id,
     node_name: row.node_name,
@@ -27674,6 +28353,8 @@ function printNodeRunDetail(row, members) {
     started_at: formatTimestamp(row.started_at_ms),
     updated_at: formatTimestamp(row.updated_at_ms),
     coordinator_job_id: row.coordinator_job_id ?? "-",
+    memory_entries: memorySummary.total,
+    memory_latest: memorySummary.latest_summary ?? "-",
     member_summary: summarizeMembers(members)
   };
   for (const [key, value] of Object.entries(detail)) {
@@ -27720,6 +28401,10 @@ async function handleNodeFeed(args) {
         typeof payload.trigger === "string" ? `trigger=${payload.trigger}` : null,
         typeof payload.context_health === "string" ? `context=${payload.context_health}` : null,
         typeof payload.generation === "number" ? `generation=${payload.generation}` : null,
+        typeof payload.worktree_path === "string" ? `worktree=${payload.worktree_path}` : null,
+        typeof payload.parent_member_id === "string" ? `parent=${payload.parent_member_id}` : null,
+        typeof payload.replaced_member_id === "string" ? `replaced=${payload.replaced_member_id}` : null,
+        typeof payload.phase_id === "string" ? `phase=${payload.phase_id}` : null,
         typeof payload.action_type === "string" ? `action=${payload.action_type}` : null
       ].filter((value) => value !== null);
       console.log(`[${new Date(event.t).toISOString()}] ${event.type}${metadata.length > 0 ? ` | ${metadata.join(" ")}` : ""}`);
@@ -27760,6 +28445,7 @@ async function handleNodeStatus(args) {
         return;
       }
       const members = sqliteClient.readNodeMembers(row.id);
+      const memorySummary = summarizeMemory(sqliteClient.readNodeMemory(row.id));
       if (args.jsonMode) {
         console.log(JSON.stringify({
           node_id: row.id,
@@ -27769,27 +28455,39 @@ async function handleNodeStatus(args) {
           started_at: row.started_at_ms,
           updated_at: row.updated_at_ms,
           coordinator_job_id: row.coordinator_job_id ?? null,
-          members: members.map((member) => ({
-            member_id: member.member_id,
-            job_id: member.job_id ?? null,
-            specialist: member.specialist,
-            status: member.status,
-            enabled: member.enabled ?? true,
-            generation: member.generation ?? 0
-          })),
+          memory_summary: memorySummary,
+          members: members.map((member) => {
+            const lineage = readMemberLineage(member, sqliteClient);
+            return {
+              member_id: member.member_id,
+              job_id: member.job_id ?? null,
+              specialist: member.specialist,
+              status: member.status,
+              enabled: member.enabled ?? true,
+              generation: member.generation ?? 0,
+              worktree_path: member.worktree_path ?? null,
+              parent_member_id: member.parent_member_id ?? null,
+              replaced_member_id: member.replaced_member_id ?? null,
+              phase_id: member.phase_id ?? null,
+              reused_from_job_id: lineage.reused_from_job_id,
+              worktree_owner_job_id: lineage.worktree_owner_job_id
+            };
+          }),
           member_summary: summarizeMembers(members)
         }, null, 2));
       } else {
-        printNodeRunDetail(row, members);
+        printNodeRunDetail(row, members, memorySummary);
       }
       return;
     }
     const rows = sqliteClient.listNodeRuns();
     const rowsWithMembers = rows.map((row) => {
       const members = sqliteClient.readNodeMembers(row.id);
+      const memorySummary = summarizeMemory(sqliteClient.readNodeMemory(row.id));
       return {
         ...row,
         members,
+        memory_total: memorySummary.total,
         member_summary: summarizeMembers(members)
       };
     });
@@ -27802,6 +28500,7 @@ async function handleNodeStatus(args) {
         started_at: row.started_at_ms,
         updated_at: row.updated_at_ms,
         coordinator_job_id: row.coordinator_job_id ?? null,
+        memory_total: row.memory_total,
         member_summary: row.member_summary
       })), null, 2));
       return;
@@ -27814,6 +28513,155 @@ async function handleNodeStatus(args) {
   } finally {
     sqliteClient.close();
   }
+}
+function requireNodeRun(sqliteClient, nodeId) {
+  const row = sqliteClient.readNodeRun(nodeId);
+  if (!row) {
+    throw new Error(`Node run not found: ${nodeId}`);
+  }
+  return row;
+}
+async function handleNodeMembers(args) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const nodeId = args.nodeId;
+    requireNodeRun(sqliteClient, nodeId);
+    const members = sqliteClient.readNodeMembers(nodeId).map((member) => {
+      const lineage = readMemberLineage(member, sqliteClient);
+      return {
+        member_id: member.member_id,
+        generation: member.generation ?? 0,
+        specialist: member.specialist,
+        status: member.status,
+        enabled: member.enabled ?? true,
+        job_id: member.job_id ?? null,
+        phase_id: member.phase_id ?? null,
+        worktree_path: member.worktree_path ?? null,
+        parent_member_id: member.parent_member_id ?? null,
+        replaced_member_id: member.replaced_member_id ?? null,
+        reused_from_job_id: lineage.reused_from_job_id,
+        worktree_owner_job_id: lineage.worktree_owner_job_id
+      };
+    });
+    if (args.jsonMode) {
+      console.log(JSON.stringify({ node_id: nodeId, members }, null, 2));
+      return;
+    }
+    if (members.length === 0) {
+      console.log(`No members found for ${nodeId}.`);
+      return;
+    }
+    for (const member of members) {
+      const details = [
+        `${member.member_id}#${member.generation}`,
+        `status=${member.status}`,
+        `specialist=${member.specialist}`,
+        member.job_id ? `job=${member.job_id}` : null,
+        member.phase_id ? `phase=${member.phase_id}` : null,
+        member.worktree_path ? `worktree=${member.worktree_path}` : null,
+        member.parent_member_id ? `parent=${member.parent_member_id}` : null,
+        member.replaced_member_id ? `replaced=${member.replaced_member_id}` : null,
+        member.reused_from_job_id ? `reused_from=${member.reused_from_job_id}` : null,
+        member.worktree_owner_job_id ? `worktree_owner=${member.worktree_owner_job_id}` : null
+      ].filter((value) => value !== null);
+      console.log(details.join(" | "));
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+async function handleNodeMemory(args) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const nodeId = args.nodeId;
+    requireNodeRun(sqliteClient, nodeId);
+    const memoryEntries = sqliteClient.readNodeMemory(nodeId);
+    const summary = summarizeMemory(memoryEntries);
+    if (args.jsonMode) {
+      console.log(JSON.stringify({ node_id: nodeId, summary, entries: memoryEntries }, null, 2));
+      return;
+    }
+    console.log(`node_id: ${nodeId}`);
+    console.log(`memory_entries: ${summary.total}`);
+    console.log(`memory_by_type: ${JSON.stringify(summary.by_type)}`);
+    console.log(`memory_latest: ${summary.latest_summary ?? "-"}`);
+    for (const entry of memoryEntries) {
+      console.log(`- ${entry.entry_id ?? "n/a"} | type=${entry.entry_type ?? "unknown"} | member=${entry.source_member_id ?? "-"} | summary=${entry.summary?.trim() ?? "-"}`);
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+function resolveCoordinatorStatus(nodeId) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const nodeRun = requireNodeRun(sqliteClient, nodeId);
+    if (!nodeRun.coordinator_job_id) {
+      throw new Error(`Node ${nodeId} has no coordinator job id`);
+    }
+    const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir: resolveJobsDir() });
+    try {
+      const coordinatorStatus = supervisor.readStatus(nodeRun.coordinator_job_id);
+      if (!coordinatorStatus) {
+        throw new Error(`Coordinator job not found: ${nodeRun.coordinator_job_id}`);
+      }
+      return { nodeRun, coordinatorJobId: nodeRun.coordinator_job_id, coordinatorStatus };
+    } finally {
+      supervisor.dispose();
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+async function handleNodeSteer(args) {
+  const nodeId = args.nodeId;
+  const message = args.findingId;
+  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
+  if (!coordinatorStatus.fifo_path) {
+    throw new Error(`Coordinator job ${coordinatorJobId} has no steer pipe`);
+  }
+  writeFileSync7(coordinatorStatus.fifo_path, `${JSON.stringify({ type: "steer", message })}
+`, { flag: "a" });
+  if (args.jsonMode) {
+    console.log(JSON.stringify({ node_id: nodeId, coordinator_job_id: coordinatorJobId, steered: true }, null, 2));
+    return;
+  }
+  console.log(`Steer message sent to node ${nodeId} coordinator (${coordinatorJobId})`);
+}
+async function handleNodeStop(args) {
+  const nodeId = args.nodeId;
+  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
+  if (!coordinatorStatus.pid) {
+    throw new Error(`Coordinator job ${coordinatorJobId} has no pid`);
+  }
+  process.kill(coordinatorStatus.pid, "SIGTERM");
+  if (args.jsonMode) {
+    console.log(JSON.stringify({ node_id: nodeId, coordinator_job_id: coordinatorJobId, stopped: true, pid: coordinatorStatus.pid }, null, 2));
+    return;
+  }
+  console.log(`Sent SIGTERM to node ${nodeId} coordinator (${coordinatorJobId}, pid=${coordinatorStatus.pid})`);
+}
+async function handleNodeAttach(args) {
+  const nodeId = args.nodeId;
+  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
+  const tmuxSession = coordinatorStatus.tmux_session?.trim();
+  if (!tmuxSession) {
+    throw new Error(`Coordinator job ${coordinatorJobId} has no tmux session`);
+  }
+  const whichTmux = spawnSync13("which", ["tmux"], { stdio: "ignore" });
+  if (whichTmux.status !== 0) {
+    throw new Error("tmux is not installed. Install tmux to use `sp node attach`.");
+  }
+  execFileSync3("tmux", ["attach-session", "-t", tmuxSession], { stdio: "inherit" });
 }
 function buildFindingNotes(nodeId, findingId, finding) {
   const lines = [
@@ -27922,6 +28770,26 @@ async function handleNodeCommand(argv) {
     await handleNodePromote(parsed);
     return;
   }
+  if (parsed.command === "members") {
+    await handleNodeMembers(parsed);
+    return;
+  }
+  if (parsed.command === "memory") {
+    await handleNodeMemory(parsed);
+    return;
+  }
+  if (parsed.command === "steer") {
+    await handleNodeSteer(parsed);
+    return;
+  }
+  if (parsed.command === "stop") {
+    await handleNodeStop(parsed);
+    return;
+  }
+  if (parsed.command === "attach") {
+    await handleNodeAttach(parsed);
+    return;
+  }
   await handleNodeStatus(parsed);
 }
 var NODE_CONFIG_SUFFIX = ".node.json", NODE_DISCOVERY_DIRS;
@@ -27932,10 +28800,349 @@ var init_node = __esm(() => {
   init_hooks();
   init_observability_sqlite();
   init_beads();
+  init_supervisor();
+  init_job_root();
   NODE_DISCOVERY_DIRS = [
     { path: ".specialists/default/nodes", source: "default" },
     { path: "config/nodes", source: "project" }
   ];
+});
+
+// src/cli/epic.ts
+var exports_epic = {};
+__export(exports_epic, {
+  handleEpicCommand: () => handleEpicCommand
+});
+import { spawnSync as spawnSync14 } from "child_process";
+function parseEpicArgs(argv) {
+  const command = argv[0];
+  if (command !== "list" && command !== "status" && command !== "resolve") {
+    throw new Error("Usage: specialists epic <list|status|resolve> [options]");
+  }
+  let epicId;
+  let json = false;
+  let unresolved = false;
+  let dryRun = false;
+  for (let i = 1;i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--json") {
+      json = true;
+      continue;
+    }
+    if (token === "--unresolved") {
+      unresolved = true;
+      continue;
+    }
+    if (token === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (!token.startsWith("-") && !epicId) {
+      epicId = token;
+      continue;
+    }
+    throw new Error(`Unknown argument: ${token}`);
+  }
+  if (command === "status" && !epicId) {
+    throw new Error("Usage: specialists epic status <epic-id> [--json]");
+  }
+  if (command === "resolve" && !epicId) {
+    throw new Error("Usage: specialists epic resolve <epic-id> [--dry-run] [--json]");
+  }
+  if (command === "list") {
+    return { command, args: { json, unresolved } };
+  }
+  if (command === "status") {
+    return { command, args: { epicId, json } };
+  }
+  return { command, args: { epicId, json, dryRun } };
+}
+function formatTimestamp2(ms) {
+  if (ms === undefined)
+    return "-";
+  const value = new Date(ms);
+  return Number.isNaN(value.getTime()) ? "-" : value.toISOString();
+}
+function readBeadTitle(beadId) {
+  const result = spawnSync14("bd", ["show", beadId, "--json"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.status !== 0 || !result.stdout.trim())
+    return null;
+  try {
+    const parsed = JSON.parse(result.stdout);
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== "object")
+      return null;
+    const maybe = bead;
+    return maybe.title?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+function getChainJobStatuses(sqliteClient, chains) {
+  const results = [];
+  for (const chain of chains) {
+    const jobIds = sqliteClient.listChainJobIds(chain.chain_id);
+    let hasRunningJob = false;
+    for (const jobId of jobIds) {
+      const status = sqliteClient.readStatus(jobId);
+      if (status && ACTIVE_JOB_STATES.includes(status.status)) {
+        hasRunningJob = true;
+        break;
+      }
+    }
+    results.push({
+      chainId: chain.chain_id,
+      beadId: chain.chain_root_bead_id,
+      hasRunningJob,
+      jobCount: jobIds.length
+    });
+  }
+  return results;
+}
+function evaluateReadiness(epic, chainStatuses) {
+  return evaluateEpicMergeReadiness({
+    epicId: epic.epic_id,
+    epicStatus: epic.status,
+    chainStatuses: chainStatuses.map((chain) => ({
+      chainId: chain.chainId,
+      hasRunningJob: chain.hasRunningJob
+    }))
+  });
+}
+function handleEpicList(args) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const epics = sqliteClient.listEpicRuns();
+    let filtered = epics;
+    if (args.unresolved) {
+      filtered = epics.filter((epic) => isEpicUnresolvedState(epic.status));
+    }
+    const rows = filtered.map((epic) => {
+      const chains = sqliteClient.listEpicChains(epic.epic_id);
+      const chainStatuses = getChainJobStatuses(sqliteClient, chains);
+      const readiness = evaluateReadiness(epic, chainStatuses);
+      const beadTitle = chains.length > 0 && chains[0].chain_root_bead_id ? readBeadTitle(epic.epic_id) ?? undefined : undefined;
+      return {
+        epic_id: epic.epic_id,
+        status: epic.status,
+        chain_count: chains.length,
+        blocking_chains: readiness.blockingChains.length,
+        is_ready: readiness.isReady,
+        updated_at: formatTimestamp2(epic.updated_at_ms),
+        bead_title: beadTitle
+      };
+    });
+    if (args.json) {
+      console.log(JSON.stringify(rows, null, 2));
+      return;
+    }
+    if (rows.length === 0) {
+      console.log(args.unresolved ? "No unresolved epics found." : "No epics found.");
+      return;
+    }
+    const headers = ["epic_id", "status", "chains", "blocking", "ready", "updated_at"];
+    const body = rows.map((row) => [
+      row.epic_id,
+      row.status,
+      String(row.chain_count),
+      String(row.blocking_chains),
+      row.is_ready ? "yes" : "no",
+      row.updated_at
+    ]);
+    const allRows = [headers, ...body];
+    const widths = headers.map((_, colIndex) => Math.max(...allRows.map((r) => (r[colIndex] ?? "").length)));
+    const renderRow = (r) => r.map((cell, i) => cell.padEnd(widths[i])).join("  ");
+    console.log(renderRow(headers));
+    console.log(widths.map((w) => "-".repeat(w)).join("  "));
+    for (const row of body) {
+      console.log(renderRow(row));
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+function handleEpicStatus(args) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const epic = sqliteClient.readEpicRun(args.epicId);
+    if (!epic) {
+      if (args.json) {
+        console.log(JSON.stringify({ error: `Epic not found: ${args.epicId}` }, null, 2));
+      } else {
+        console.error(`Epic not found: ${args.epicId}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    const chains = sqliteClient.listEpicChains(args.epicId);
+    const chainStatuses = getChainJobStatuses(sqliteClient, chains);
+    const readiness = evaluateReadiness(epic, chainStatuses);
+    const chainsWithTitle = chainStatuses.map((chain) => ({
+      chain_id: chain.chainId,
+      bead_id: chain.beadId,
+      job_count: chain.jobCount,
+      has_running_job: chain.hasRunningJob,
+      bead_title: chain.beadId ? readBeadTitle(chain.beadId) ?? undefined : undefined
+    }));
+    const row = {
+      epic_id: epic.epic_id,
+      status: epic.status,
+      updated_at: formatTimestamp2(epic.updated_at_ms),
+      is_terminal: isEpicTerminalState(epic.status),
+      valid_transitions: VALID_EPIC_TRANSITIONS[epic.status],
+      readiness,
+      chains: chainsWithTitle
+    };
+    if (args.json) {
+      console.log(JSON.stringify(row, null, 2));
+      return;
+    }
+    console.log(`epic_id: ${row.epic_id}`);
+    console.log(`status: ${row.status}`);
+    console.log(`updated_at: ${row.updated_at}`);
+    console.log(`is_terminal: ${row.is_terminal}`);
+    if (row.valid_transitions.length > 0) {
+      console.log(`valid_transitions: ${row.valid_transitions.join(", ")}`);
+    } else {
+      console.log("valid_transitions: (none \u2014 terminal state)");
+    }
+    console.log("");
+    console.log("## Readiness");
+    if (row.readiness) {
+      console.log(`is_ready: ${row.readiness.isReady}`);
+      console.log(`blocking_chains: ${row.readiness.blockingChains.length > 0 ? row.readiness.blockingChains.join(", ") : "(none)"}`);
+      console.log(`summary: ${row.readiness.summary}`);
+    } else {
+      console.log("(no readiness data)");
+    }
+    console.log("");
+    console.log("## Chains");
+    if (row.chains.length === 0) {
+      console.log("(no chains registered)");
+    } else {
+      for (const chain of row.chains) {
+        const statusIcon = chain.has_running_job ? "\u25C9" : "\u25CB";
+        const titleSuffix = chain.bead_title ? ` (${chain.bead_title.slice(0, 40)}${chain.bead_title.length > 40 ? "..." : ""})` : "";
+        console.log(`  ${statusIcon} ${chain.chain_id}${titleSuffix}`);
+        console.log(`      bead_id: ${chain.bead_id ?? "-"}`);
+        console.log(`      jobs: ${chain.job_count}`);
+        console.log(`      running: ${chain.has_running_job ? "yes" : "no"}`);
+      }
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+function handleEpicResolve(args) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  try {
+    const epic = sqliteClient.readEpicRun(args.epicId);
+    if (!epic) {
+      if (args.json) {
+        console.log(JSON.stringify({ error: `Epic not found: ${args.epicId}` }, null, 2));
+      } else {
+        console.error(`Epic not found: ${args.epicId}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    const fromState = epic.status;
+    const toState = "resolving";
+    if (!canTransitionEpicState(fromState, toState)) {
+      const validTargets = VALID_EPIC_TRANSITIONS[fromState];
+      const message = fromState === "resolving" ? `Epic ${args.epicId} is already in 'resolving' state.` : `Invalid transition: ${fromState} -> ${toState}. Valid transitions from '${fromState}': ${validTargets.length > 0 ? validTargets.join(", ") : "(none)"}`;
+      if (args.json) {
+        console.log(JSON.stringify({
+          error: "invalid_transition",
+          epic_id: args.epicId,
+          from_state: fromState,
+          attempted_to: toState,
+          valid_transitions: validTargets,
+          message
+        }, null, 2));
+      } else {
+        console.error(message);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    if (args.dryRun) {
+      if (args.json) {
+        console.log(JSON.stringify({
+          epic_id: args.epicId,
+          from_state: fromState,
+          to_state: toState,
+          dry_run: true,
+          would_transition: true
+        }, null, 2));
+      } else {
+        console.log(`Would transition epic ${args.epicId}: ${fromState} -> ${toState}`);
+      }
+      return;
+    }
+    const newStatus = transitionEpicState(fromState, toState);
+    const now = Date.now();
+    sqliteClient.upsertEpicRun({
+      epic_id: args.epicId,
+      status: newStatus,
+      status_json: JSON.stringify({
+        previous_state: fromState,
+        transition_reason: "operator_resolve",
+        transitioned_at_ms: now
+      }),
+      updated_at_ms: now
+    });
+    if (args.json) {
+      console.log(JSON.stringify({
+        epic_id: args.epicId,
+        from_state: fromState,
+        to_state: newStatus,
+        transitioned_at: formatTimestamp2(now)
+      }, null, 2));
+    } else {
+      console.log(`Epic ${args.epicId}: ${fromState} -> ${newStatus}`);
+      console.log(`Use 'specialists epic status ${args.epicId}' to inspect chain readiness.`);
+    }
+  } finally {
+    sqliteClient.close();
+  }
+}
+function handleEpicCommand(argv) {
+  let parsed;
+  try {
+    parsed = parseEpicArgs(argv);
+  } catch (error2) {
+    console.error(error2 instanceof Error ? error2.message : String(error2));
+    process.exit(1);
+    return;
+  }
+  if (parsed.command === "list") {
+    handleEpicList(parsed.args);
+    return;
+  }
+  if (parsed.command === "status") {
+    handleEpicStatus(parsed.args);
+    return;
+  }
+  handleEpicResolve(parsed.args);
+}
+var ACTIVE_JOB_STATES;
+var init_epic = __esm(() => {
+  init_epic_lifecycle();
+  init_observability_sqlite();
+  ACTIVE_JOB_STATES = ["starting", "running", "waiting"];
 });
 
 // src/cli/status.ts
@@ -27943,7 +29150,7 @@ var exports_status = {};
 __export(exports_status, {
   run: () => run12
 });
-import { spawnSync as spawnSync14 } from "child_process";
+import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync16, readFileSync as readFileSync11 } from "fs";
 import { join as join17 } from "path";
 function ok2(msg) {
@@ -27964,7 +29171,7 @@ function section(label) {
 ${bold9(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync14(bin, args, {
+  const r = spawnSync15(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -27972,7 +29179,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync14("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync15("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -28122,6 +29329,8 @@ ${bold9("specialists status")}
   console.log(`  backend      ${job.backend ?? "n/a"}`);
   console.log(`  elapsed      ${formatElapsed2(job)}`);
   console.log(`  bead_id      ${job.bead_id ?? "n/a"}`);
+  console.log(`  chain_id     ${job.chain_id ?? "n/a"}`);
+  console.log(`  epic_id      ${job.epic_id ?? "n/a"}`);
   console.log(`  events       ${eventCount}`);
   if (job.status === "waiting") {
     console.log(`  action       ${magenta3(`specialists resume ${job.id} "..."`)}`);
@@ -28336,7 +29545,7 @@ var exports_ps = {};
 __export(exports_ps, {
   run: () => run13
 });
-import { spawnSync as spawnSync15 } from "child_process";
+import { spawnSync as spawnSync16 } from "child_process";
 import { existsSync as existsSync17, readdirSync as readdirSync7, readFileSync as readFileSync12 } from "fs";
 import { join as join18 } from "path";
 function parseArgs7(argv) {
@@ -28550,7 +29759,7 @@ function formatElapsed3(seconds) {
   return `${minutes}m${String(remainder).padStart(2, "0")}s`;
 }
 function getBeadTitleFromBd(beadId) {
-  const result = spawnSync15("bd", ["show", beadId, "--json"], {
+  const result = spawnSync16("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -29876,7 +31085,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run17
 });
-import { writeFileSync as writeFileSync7 } from "fs";
+import { writeFileSync as writeFileSync8 } from "fs";
 async function run17() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -29907,7 +31116,7 @@ async function run17() {
     try {
       const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-      writeFileSync7(status.fifo_path, payload, { flag: "a" });
+      writeFileSync8(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
 `);
     } catch (err) {
@@ -29930,7 +31139,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run18
 });
-import { writeFileSync as writeFileSync8 } from "fs";
+import { writeFileSync as writeFileSync9 } from "fs";
 async function run18() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -29961,7 +31170,7 @@ async function run18() {
     try {
       const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-      writeFileSync8(status.fifo_path, payload, { flag: "a" });
+      writeFileSync9(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
 `);
       process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
@@ -29995,7 +31204,7 @@ async function run19() {
 // src/specialist/worktree-gc.ts
 import { existsSync as existsSync22, readdirSync as readdirSync10, readFileSync as readFileSync17 } from "fs";
 import { join as join23 } from "path";
-import { spawnSync as spawnSync16 } from "child_process";
+import { spawnSync as spawnSync17 } from "child_process";
 function readJobStatus2(jobDir) {
   const statusPath = join23(jobDir, "status.json");
   if (!existsSync22(statusPath))
@@ -30041,7 +31250,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync16("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync17("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -30307,10 +31516,11 @@ __export(exports_merge, {
   topologicallySortChains: () => topologicallySortChains,
   run: () => run21,
   resolveMergeTargets: () => resolveMergeTargets,
+  resolveChainEpicMembership: () => resolveChainEpicMembership,
   parseChildBeadIds: () => parseChildBeadIds
 });
 import { existsSync as existsSync24, readdirSync as readdirSync12, readFileSync as readFileSync19 } from "fs";
-import { spawnSync as spawnSync17 } from "child_process";
+import { spawnSync as spawnSync18 } from "child_process";
 import { join as join25 } from "path";
 function parseOptions2(argv) {
   let target = "";
@@ -30334,7 +31544,7 @@ function parseOptions2(argv) {
   return { target, rebuild };
 }
 function runCommand(command, args, cwd = process.cwd()) {
-  return spawnSync17(command, args, {
+  return spawnSync18(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -30391,6 +31601,24 @@ function readEpicChildIds(epicId) {
     throw new Error(`No children found for epic '${epicId}'`);
   }
   return idsFromText;
+}
+function resolveChainEpicMembership(chainRootBeadId) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (sqliteClient) {
+    try {
+      const membership = sqliteClient.resolveEpicByChainRootBeadId(chainRootBeadId);
+      if (membership?.epic_id) {
+        return { epicId: membership.epic_id, source: "sqlite" };
+      }
+    } finally {
+      sqliteClient.close();
+    }
+  }
+  const bead = readBead(chainRootBeadId);
+  if (bead.parent) {
+    return { epicId: bead.parent, source: "bead-parent" };
+  }
+  return { source: "none" };
 }
 function readAllJobStatuses() {
   const jobsDir = resolveJobsDir();
@@ -30496,6 +31724,7 @@ function resolveMergeTargets(target) {
     if (!chain) {
       throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
     }
+    resolveChainEpicMembership(chain.beadId);
     ensureTerminalJobs([chain]);
     return [chain];
   }
@@ -30599,6 +31828,7 @@ async function run21() {
 var TERMINAL_STATUSES3;
 var init_merge = __esm(() => {
   init_job_root();
+  init_observability_sqlite();
   TERMINAL_STATUSES3 = new Set(["done", "error", "cancelled"]);
 });
 
@@ -30672,7 +31902,7 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run23
 });
-import { execFileSync as execFileSync3, spawnSync as spawnSync18 } from "child_process";
+import { execFileSync as execFileSync4, spawnSync as spawnSync19 } from "child_process";
 import { readFileSync as readFileSync20 } from "fs";
 import { join as join27 } from "path";
 function exitWithError(message) {
@@ -30705,12 +31935,12 @@ async function run23() {
   if (!sessionName) {
     exitWithError("Job `" + jobId + "` has no tmux session. It may have been started without tmux or tmux was not installed.");
   }
-  const whichTmux = spawnSync18("which", ["tmux"], { stdio: "ignore" });
+  const whichTmux = spawnSync19("which", ["tmux"], { stdio: "ignore" });
   if (whichTmux.status !== 0) {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
   try {
-    execFileSync3("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
+    execFileSync4("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
   } catch {
     process.exit(1);
   }
@@ -30956,8 +32186,8 @@ __export(exports_doctor, {
   cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash4 } from "crypto";
-import { spawnSync as spawnSync19 } from "child_process";
-import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync21, readlinkSync as readlinkSync2, writeFileSync as writeFileSync9 } from "fs";
+import { spawnSync as spawnSync20 } from "child_process";
+import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync21, readlinkSync as readlinkSync2, writeFileSync as writeFileSync10 } from "fs";
 import { dirname as dirname5, join as join28, relative, resolve as resolve7 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
@@ -30980,11 +32210,11 @@ function section3(label) {
 ${bold12(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync19(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync20(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync19("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync20("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path) {
   if (!existsSync25(path))
@@ -31294,7 +32524,7 @@ function setStatusError(statusPath) {
     const raw = readFileSync21(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
-    writeFileSync9(statusPath, `${JSON.stringify(status, null, 2)}
+    writeFileSync10(statusPath, `${JSON.stringify(status, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -31516,6 +32746,8 @@ async function run27() {
     '  specialists resume <job-id> "now write the fix"',
     "  specialists attach <job-id>                     # open raw tmux session output",
     '  specialists run debugger --prompt "why does auth fail"',
+    "  specialists epic list --unresolved             # show non-terminal epics",
+    "  specialists epic status unitAI-epic1           # chain/blockers/readiness",
     "  specialists merge unitAI-55d                   # merge chain or epic branches",
     "  specialists merge unitAI-3f7b --rebuild        # topological merge + rebuild",
     "  specialists report list",
@@ -31549,6 +32781,7 @@ var init_help = __esm(() => {
     ["validate", "Validate a specialist JSON config against the schema"],
     ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
     ["node", "Run and inspect NodeSupervisor nodes (run/status)"],
+    ["epic", "Epic lifecycle management: list/status/resolve wave-bound chain groups"],
     ["feed", "Tail job events; use -f to follow all jobs"],
     ["poll", "Machine-readable job status polling (for scripts/Claude Code)"],
     ["result", "Print final output of a completed job; --wait polls until done, --timeout <ms> sets a limit"],
@@ -39426,18 +40659,31 @@ async function run28() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists node <run|status|promote> [options]",
+        "Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach> [options]",
         "",
         "Commands:",
-        "  run <node-config-file> [--inline JSON] [--bead <bead-id>] [--json]   Start a NodeSupervisor run",
-        "  status [--node <node-id>] [--json]                                Show node runs from SQLite",
-        "  promote <node-id> <finding-id> --to-bead <bead-id> [--json]      Promote a finding to bead notes",
+        "  run <node-config> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]",
+        "                                                      Start a NodeSupervisor run",
+        "  list [--json]                                       List available node configs",
+        "  status [--node <node-id>] [--json]                 Show node runs from SQLite",
+        "  feed <node-id> [--json]                            Show node events for a run",
+        "  members <node-id> [--json]                         Show member state + lineage metadata",
+        "  memory <node-id> [--json]                          Show accumulated node memory summaries",
+        "  steer <node-id> <message> [--json]                 Send steer command to coordinator",
+        "  stop <node-id> [--json]                            Gracefully stop coordinator job",
+        "  attach <node-id>                                   Attach tmux to coordinator session",
+        "  promote <node-id> <finding-id> --to-bead <bead-id> [--json]",
+        "                                                      Promote a finding to bead notes",
         "",
         "Examples:",
-        "  specialists node run ./config/research.node.json",
-        '  specialists node run --inline "{"name":"research",...}" --json',
-        "  specialists node status",
+        "  specialists node run research --bead unitAI-123 --context-depth 2",
         "  specialists node status --node research-abc123",
+        "  specialists node members research-abc123 --json",
+        "  specialists node memory research-abc123",
+        "  specialists node feed research-abc123",
+        '  specialists node steer research-abc123 "hold wave 2"',
+        "  specialists node stop research-abc123",
+        "  specialists node attach research-abc123",
         "  specialists node promote research-abc123 finding-1 --to-bead unitAI-123",
         ""
       ].join(`
@@ -39446,6 +40692,43 @@ async function run28() {
     }
     const { handleNodeCommand: handleNodeCommand2 } = await Promise.resolve().then(() => (init_node(), exports_node));
     await handleNodeCommand2(process.argv.slice(3));
+    process.exit(0);
+  }
+  if (sub === "epic") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists epic <list|status|resolve> [options]",
+        "",
+        "Epic lifecycle management for wave-bound chain groups.",
+        "",
+        "Commands:",
+        "  list [--unresolved] [--json]          Enumerate epics with lifecycle state and readiness",
+        "  status <epic-id> [--json]             Show chains, blockers, and merge readiness",
+        "  resolve <epic-id> [--dry-run] [--json]  Transition epic from open -> resolving",
+        "",
+        "Options:",
+        "  --unresolved    Filter list to non-terminal (open, resolving, merge_ready) epics",
+        "  --dry-run       Preview transition without persisting",
+        "  --json          Machine-readable JSON output",
+        "",
+        "Lifecycle states:",
+        "  open -> resolving -> merge_ready -> merged",
+        "  (failed, abandoned are terminal)",
+        "",
+        "Examples:",
+        "  specialists epic list",
+        "  specialists epic list --unresolved",
+        "  specialists epic status unitAI-epic1",
+        "  specialists epic resolve unitAI-epic1",
+        "  specialists epic resolve unitAI-epic1 --dry-run",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { handleEpicCommand: handleEpicCommand2 } = await Promise.resolve().then(() => (init_epic(), exports_epic));
+    handleEpicCommand2(process.argv.slice(3));
     process.exit(0);
   }
   if (sub === "status") {

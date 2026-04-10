@@ -219,7 +219,7 @@
     },
     "skills": {
       "paths": [
-        "config/skills/using-nodes/"
+        ".xtrm/skills/active/pi/using-nodes"
       ]
     },
     "capabilities": {
