@@ -173,23 +173,6 @@ const PHASE_KIND_DOCS: Record<z.infer<typeof phaseKindSchema>, string> = {
   custom: 'Project-specific phase with explicit intent.',
 };
 
-const ACTION_DOCS = {
-  create_bead: {
-    type: 'Literal action discriminator.',
-    title: 'Bead title for created work item.',
-    description: 'Detailed bead description.',
-    bead_type: 'One of task|bug|feature|epic|chore|decision.',
-    priority: 'Integer priority 0..4.',
-    parent_bead_id: 'Optional parent bead link.',
-    depends_on: 'Optional dependency bead ids.',
-  },
-  complete_node: {
-    type: 'Literal action discriminator.',
-    gate_results: 'Quality gate statuses to attach to completion report.',
-    report_payload_ref: 'Reference to external report payload.',
-    force_draft_pr: 'Allow completion while gates fail by forcing draft PR intent.',
-  },
-} as const;
 
 function renderJsonSnippet(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -203,13 +186,13 @@ export function renderForSystemPrompt(): string {
     '- Use only these orchestration commands:',
     '- `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`',
     '- `sp node create-bead --node $SPECIALISTS_NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`',
-    '- `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> [--json]`',
     '- `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`',
     '- `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json`',
     '- `sp node status --node $SPECIALISTS_NODE_ID [--json]`',
     '- Every command should be called with `--json` when the result is used for decisions.',
     '- Wait-phase is a hard barrier: do not advance to next phase until it reports completion.',
-    '- After each wait-phase barrier, read participating member results with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or completion.',
+    '- After each wait-phase barrier, read participating member results with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or remain in waiting.',
+    '- DO NOT call sp node complete — operator closes the node via sp node stop after reviewing synthesis.',
     '- On command errors, inspect JSON error payload, adjust plan, and retry with corrected inputs.',
     '- Nested nodes are forbidden (do not spawn node-coordinator as a member).',
   ].join('\n');
@@ -236,10 +219,10 @@ export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
         `sp node spawn-member --node ${ctx.nodeId} --member-key explore-1 --specialist explorer --phase explore-1 --json`,
         `sp node wait-phase --node ${ctx.nodeId} --phase explore-1 --members explore-1 --json`,
         `sp node result --node ${ctx.nodeId} --member explore-1 --full --json`,
-        'Synthesize the explore-1 evidence, then decide whether to launch a new phase or complete the node.',
-        `sp node complete --node ${ctx.nodeId} --strategy ${ctx.completionStrategy} --json`,
+        'Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.',
+        '// After synthesis, enter waiting. Operator closes node via sp node stop.',
       ],
-      first_routing_instruction: 'Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action.',
+      first_routing_instruction: 'Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete — operator owns node closure.',
     }),
   ].join('\n');
 }
@@ -256,7 +239,7 @@ export function renderForResumePayload(update: ResumePayloadContext): string {
       unresolved_decisions: update.unresolvedDecisions,
       action_ledger_summary: update.actionLedgerSummary,
       state_digest: update.stateDigest,
-      resume_instruction: 'Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, and complete when goals are satisfied.',
+      resume_instruction: 'Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, read member results, synthesize, and remain in waiting when goals are satisfied. Operator closes the node.',
     }),
   ].join('\n');
 }
@@ -273,13 +256,13 @@ export function renderForDocs(): string {
     '### Coordinator command set',
     '- `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`',
     '- `sp node create-bead --node $SPECIALISTS_NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`',
-    '- `sp node complete --node $SPECIALISTS_NODE_ID --strategy <pr|manual> [--json]`',
     '- `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`',
     '- `sp node result --node $SPECIALISTS_NODE_ID --member <key> --full --json`',
     '- `sp node status --node $SPECIALISTS_NODE_ID [--json]`',
+    '- **`sp node complete` is OPERATOR-ONLY** — coordinator must never call this.',
     '',
     '### Phase-boundary synthesis rule',
-    '- After `wait-phase` completes, read every participating member result with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or node completion.',
+    '- After `wait-phase` completes, read every participating member result with `sp node result ... --full --json`, synthesize the evidence, then decide the next phase or remain in waiting for operator closure.',
     '',
     '### Phase kinds',
     phaseDocs,
