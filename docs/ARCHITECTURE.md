@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.6.0
+version: 3.0.0
 updated: 2026-04-10
-synced_at: b9fbc50f
+synced_at: 08993753
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -14,6 +14,11 @@ source_of_truth_for:
   - "src/specialist/supervisor.ts"
   - "src/cli/ps.ts"
   - "src/cli/merge.ts"
+  - "src/cli/epic.ts"
+  - "src/cli/end.ts"
+  - "src/specialist/epic-lifecycle.ts"
+  - "src/specialist/chain-identity.ts"
+  - "src/specialist/epic-readiness.ts"
   - "pi/rpc/"
 domain:
   - architecture
@@ -732,7 +737,176 @@ If neither key exists, the edit is blocked.
 
 ---
 
-## 10) Canonical references
+## 10) Epic lifecycle model (`epic-lifecycle.ts`)
+
+Epic lifecycle is independent from node lifecycle and provides merge-gated publication for wave-bound chain groups.
+
+### State machine
+
+```
+open → resolving → merge_ready → merged
+                 ↘ failed
+                 ↘ abandoned
+```
+
+| State | Meaning | Can merge? |
+|-------|---------|:----------:|
+| `open` | Epic created, chains not yet dispatched | — |
+| `resolving` | Chains are actively running | ✗ |
+| `merge_ready` | All chains terminal, reviewer PASS | ✓ |
+| `merged` | Publication complete | — |
+| `failed` | One or more chains failed | — |
+| `abandoned` | Cancelled without merge | — |
+
+### Transition rules
+
+```typescript
+export const VALID_EPIC_TRANSITIONS: Record<EpicState, readonly EpicState[]> = {
+  open: ['resolving', 'abandoned'],
+  resolving: ['merge_ready', 'failed', 'abandoned'],
+  merge_ready: ['merged', 'failed', 'abandoned', 'resolving'],
+  merged: [],
+  failed: [],
+  abandoned: [],
+};
+```
+
+Key invariants:
+- Terminal states (`merged`, `failed`, `abandoned`) have no outgoing transitions
+- `merge_ready` can revert to `resolving` if blockers reappear
+- `sp epic merge` is the ONLY legal publication path for wave-bound chains
+
+### SQLite persistence
+
+Epic state persisted in `epic_runs` table:
+- `epic_id` — bead epic ID
+- `status` — current lifecycle state
+- `status_json` — transition metadata (previous_status, transitioned_at_ms)
+- `updated_at_ms` — last state change timestamp
+
+### Epic guard on `sp merge`
+
+`sp merge <chain-root>` checks `resolveChainEpicMembership()` and refuses if chain belongs to unresolved epic (`open`, `resolving`, `merge_ready`). This ensures wave-bound chains publish atomically via `sp epic merge`.
+
+## 11) Chain identity model (`chain-identity.ts`)
+
+Chain identity distinguishes worktree lineages from standalone prep jobs.
+
+### Chain kinds
+
+```typescript
+export const CHAIN_KINDS = ['chain', 'prep'] as const;
+export type ChainKind = (typeof CHAIN_KINDS)[number];
+```
+
+| Kind | Definition | Has worktree? |
+|------|------------|:-------------:|
+| `chain` | Worktree lineage seeded by edit-capable specialist | Yes |
+| `prep` | Standalone job without worktree lineage | No |
+
+### Identity derivation
+
+`derivePersistedChainIdentity()` computes `chain_kind` from SupervisorStatus:
+
+```typescript
+// Deterministic fallback:
+// - missing chain markers + no worktree lineage => prep
+// - any lineage marker/worktree => chain rooted at owner/id
+const isChainJob = Boolean(
+  status.worktree_path || status.worktree_owner_job_id || status.chain_id || status.chain_root_job_id
+);
+```
+
+Chain identity fields:
+- `chain_kind` — 'chain' or 'prep'
+- `chain_id` — unique identifier (job ID for prep, owner job ID for chain)
+- `chain_root_job_id` — root job that owns the worktree
+- `chain_root_bead_id` — bead that seeded the chain
+
+### Chain membership tracking
+
+`epic_chain_membership` table links chains to epics:
+- `chain_id` — unique chain identifier
+- `epic_id` — parent epic ID
+- `chain_root_bead_id` — optional explicit bead linkage
+- `chain_root_job_id` — optional job linkage
+
+## 12) Epic readiness evaluation (`epic-readiness.ts`)
+
+Epic readiness determines merge eligibility from chain/prep job states.
+
+### Readiness states
+
+| State | Condition |
+|-------|----------|
+| `unresolved` | Open epic with active work |
+| `resolving` | Resolving epic with active work or blockers |
+| `merge_ready` | Prep terminal + all chains PASS |
+| `blocked` | Non-terminal, missing reviewer/fix-loop closure |
+| `failed` | Prep error or chain review failure |
+| `merged` / `abandoned` | Terminal passthrough |
+
+### Chain readiness per chain
+
+| State | Condition |
+|-------|----------|
+| `pending` | Active jobs (`starting|running|waiting`) |
+| `blocked` | No reviewer verdict or fix-loop incomplete |
+| `failed` | Latest reviewer verdict is PARTIAL/FAIL |
+| `pass` | Latest reviewer verdict is PASS |
+
+### Prep semantics
+
+Prep jobs (`chain_kind !== 'chain'`) affect readiness:
+- Running prep → blocks merge
+- Errored prep → fails epic
+- Done prep → satisfies prep completion
+
+### Auto-transition logic
+
+`syncEpicStateFromReadiness()` persists state transitions automatically:
+- `open → resolving` when unresolved work exists
+- `resolving → merge_ready` when all conditions met
+- `merge_ready → resolving` if blockers reappear
+- `resolving|merge_ready → failed` on fatal failure
+
+See `docs/epic-readiness.md` for full evaluator specification.
+
+## 13) `sp end` — Epic-aware session close (`end.ts`)
+
+`sp end` integrates with epic lifecycle for publication:
+
+### Synopsis
+
+```bash
+specialists end [--bead <id>|--epic <id>] [--pr] [--rebuild]
+```
+
+### Flags
+
+- `--epic <id>`: Redirect to `sp epic merge <id>` (canonical publication path)
+- `--pr`: Create pull request instead of direct merge
+- `--rebuild`: Run build after merge
+
+### Behavior
+
+1. **Epic detection**: If current chain belongs to unresolved epic, redirects to `sp epic merge`
+2. **Chain guard**: `checkEpicUnresolvedGuard()` checks epic membership
+3. **Auto-redirect**: Prints redirect message, delegates to epic merge handler
+
+Example:
+```bash
+sp end --epic unitAI-3f7b --pr
+# → redirects to: sp epic merge unitAI-3f7b --pr
+```
+
+### Workspace inference
+
+If no `--bead` or `--epic` provided, `detectCurrentBeadIdFromWorkspace()`:
+1. Queries SQLite for job with matching `worktree_path` and `chain_root_bead_id`
+2. Falls back to branch name parsing (`feature/unitAI-xxx-...`)
+
+## 14) Canonical references
 
 | Component | Path | Responsibility |
 |-----------|------|----------------|

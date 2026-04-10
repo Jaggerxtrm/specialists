@@ -2,9 +2,9 @@
 title: Worktree Isolation
 scope: worktrees
 category: reference
-version: 1.1.0
-updated: 2026-04-07
-synced_at: 2cff034c
+version: 1.2.0
+updated: 2026-04-10
+synced_at: zz22-docs
 description: Technical reference for worktree-per-executor isolation — CLI flags, job registry, GC, and chained bead patterns.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -183,6 +183,46 @@ GC runs automatically as part of `specialists clean`. Candidates must satisfy **
 4. Job status is **not** `starting`, `running`, or `waiting` (active guard runs first, unconditionally).
 
 Removal uses `git worktree remove --force` so both the directory and the git registry entry are cleaned atomically. Failures are skipped silently — missing cleanup is preferred over data loss.
+
+---
+
+## Session close: `sp end`
+
+`specialists end` closes a worktree session with epic-aware publication.
+
+### Synopsis
+
+```bash
+sp end [--bead <id>|--epic <id>] [--pr] [--rebuild]
+```
+
+### Epic-aware behavior
+
+If the current chain belongs to an unresolved epic (`open`, `resolving`, `merge_ready`):
+
+1. `sp end` detects epic membership via `checkEpicUnresolvedGuard()`
+2. Prints redirect message
+3. Delegates to `sp epic merge <epic-id>`
+
+Example:
+```
+Chain unitAI-impl belongs to unresolved epic unitAI-3f7b (status: resolving).
+Redirecting session close publication to epic merge (direct mode).
+Epic unitAI-3f7b: resolving -> merge_ready
+Epic unitAI-3f7b: merge_ready -> merged
+Publication successful.
+```
+
+### Direct chain publication
+
+For standalone chains NOT belonging to an epic:
+
+```bash
+sp end --bead unitAI-55d
+# → merges branch feature/unitAI-55d-executor
+```
+
+---
 
 ---
 

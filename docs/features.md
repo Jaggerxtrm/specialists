@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.8.0
+version: 2.0.0
 updated: 2026-04-10
-synced_at: b9fbc50f
+synced_at: zz22-docs
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -20,6 +20,10 @@ source_of_truth_for:
   - "src/cli/edit.ts"
   - "src/specialist/loader.ts"
   - "src/cli/ps.ts"
+  - "src/cli/epic.ts"
+  - "src/cli/end.ts"
+  - "src/specialist/epic-lifecycle.ts"
+  - "src/specialist/chain-identity.ts"
 ---
 
 # Feature Guides
@@ -812,22 +816,31 @@ sp run validator --job d4e5f6 --bead unitAI-55d-validate
 
 ---
 
-## 17) `sp merge`: topological chain/epic merge primitive
+## 17) `sp merge`: chain merge with epic guard
 
-`sp merge` is a narrow Phase 1 primitive for merging worktree branches in dependency order. It handles the merge step of the wave/chain/epic model (see locked design in unitAI-lzys).
+`sp merge` handles standalone chain merges. For wave-bound chains, use `sp epic merge`.
 
-### Scope (Phase 1)
+### Epic guard
+
+`sp merge <chain-root>` checks epic membership and refuses if chain belongs to unresolved epic (`open`, `resolving`, `merge_ready`).
+
+```
+Error: Chain unitAI-impl belongs to unresolved epic unitAI-3f7b (status: resolving).
+Use 'sp epic merge unitAI-3f7b' to publish all chains together.
+```
+
+This guard ensures wave-bound chains publish atomically via `sp epic merge`.
+
+### Scope
 
 **What it does**:
 - Merge a single chain-root branch (one bead → one branch)
-- Merge multiple epic children in topological order (bead dependencies drive merge sequence)
-- Run TypeScript gate after each merge
-- Optional rebuild (`--rebuild`) after all merges
+- Run TypeScript gate after merge
+- Optional rebuild (`--rebuild`) after merge
 
-**What it does NOT include (deferred)**:
-- `sp end` — full session close flow (commit, push, PR, cleanup)
-- `--pr` flag — PR creation instead of direct merge
-- Epic lifecycle management — `sp epic merge`, epic state machine
+**What it does NOT include**:
+- Epic-owned chains (blocked by guard, use `sp epic merge`)
+- PR creation (use `sp merge --pr` or `sp epic merge --pr`)
 - Worktree cleanup after merge
 - Conflict auto-resolution
 
@@ -835,49 +848,38 @@ sp run validator --job d4e5f6 --bead unitAI-55d-validate
 
 | Term | Definition |
 |------|------------|
-| **Epic** | Top merge-gated identity with state machine. Contains stages, owns merge decision. |
-| **Chain** | Worktree lineage, seeded by edit-capable specialist. One branch per chain. |
+| **Epic** | Top merge-gated identity with state machine. Use `sp epic merge` for publication. |
+| **Chain** | Worktree lineage (`chain_kind: 'chain'`), seeded by edit-capable specialist. |
+| **Prep** | Standalone job without worktree lineage (`chain_kind: 'prep'`). |
 | **Wave** | Stage/batch label — speech only, no code meaning. |
-| **Job** | Atomic execution unit. Jobs belong to chains. |
+| **Job** | Atomic execution unit. Jobs belong to chains or are prep. |
 
 ### Command
 
 ```bash
-sp merge <target-bead-id> [--rebuild]
+sp merge <chain-root-bead-id> [--rebuild]
 ```
 
-- `<target-bead-id>`: chain-root (single merge) or epic (multi-merge)
-- `--rebuild`: run `bun run build` after all merges
-
-### Topological sorting
-
-For epic merges, chains are sorted by bead dependencies:
-1. Build dependency graph from `bd show` for each child bead
-2. Compute merge order via Kahn's algorithm (indegree-based)
-3. Start with chains having zero dependencies (roots)
-4. Merge roots first, then dependents in order
-
-If a cycle is detected, merge fails with error.
+- `<chain-root-bead-id>`: A **chain-root bead**. **Must NOT belong to an unresolved epic.**
+- `--rebuild`: run `bun run build` after merge
 
 ### Safety
 
 - Non-terminal jobs block merge (`starting`, `running` statuses)
-- TypeScript gate after EACH merge (not just at end)
+- Epic guard blocks if chain belongs to unresolved epic
+- TypeScript gate after merge
 - Uses `--no-ff` to preserve branch history
 
 ### Example
 
 ```bash
-# Chain-root merge (single)
+# Standalone chain merge (epic guard must pass)
 sp merge unitAI-55d
 # → merges branch feature/unitAI-55d-executor
 
-# Epic merge (ordered by bead deps)
-sp merge unitAI-3f7b
-# → merges children in topological order:
-#   1. unitAI-hgpu.1 (no deps)
-#   2. unitAI-hgpu.2 (dep: hgpu.1)
-#   3. unitAI-hgpu.3 (dep: hgpu.2)
+# PR mode
+sp merge unitAI-55d --pr
+# → creates PR instead of direct merge
 ```
 
 ### Implementation
@@ -885,10 +887,122 @@ sp merge unitAI-3f7b
 Source: `src/cli/merge.ts`
 
 Key functions:
-- `resolveMergeTargets()` — resolve bead to sorted chains
-- `topologicallySortChains()` — dependency-aware merge order
+- `resolveMergeTargets()` — resolve bead to chain
+- `resolveChainEpicMembership()` — epic guard check
 - `mergeBranch()` — git merge with conflict detection
 - `runTypecheckGate()` — tsc validation
+
+---
+
+## 18) `sp epic merge`: canonical publication for wave-bound chains
+
+`sp epic merge` is the canonical publication path for wave-bound chain groups.
+
+### Synopsis
+
+```bash
+sp epic merge <epic-id> [--pr] [--rebuild] [--json]
+```
+
+### Behavior
+
+1. Reads epic state from observability SQLite
+2. Auto-transitions `resolving → merge_ready` if needed
+3. Verifies all chains are terminal
+4. Verifies latest reviewer verdict is PASS for each chain
+5. Topologically sorts chains by bead dependencies
+6. For each chain: `git merge <branch> --no-ff --no-edit`
+7. Runs `bunx tsc --noEmit` after each merge
+8. Creates PRs if `--pr` is set
+9. Updates epic state to `merged` on success
+
+### Epic lifecycle
+
+```
+open → resolving → merge_ready → merged
+                 ↘ failed
+                 ↘ abandoned
+```
+
+See `docs/epic-readiness.md` for full readiness evaluation.
+
+### Examples
+
+```bash
+# Check readiness first
+sp epic status unitAI-3f7b
+
+# Publish all chains
+sp epic merge unitAI-3f7b
+
+# PR mode
+sp epic merge unitAI-3f7b --pr
+
+# Rebuild after merge
+sp epic merge unitAI-3f7b --rebuild
+```
+
+---
+
+## 19) `sp end`: epic-aware session close
+
+`sp end` integrates with epic lifecycle for publication.
+
+### Synopsis
+
+```bash
+sp end [--bead <id>|--epic <id>] [--pr] [--rebuild]
+```
+
+### Behavior
+
+1. **Epic redirect**: If `--epic <id>` provided, delegates to `sp epic merge <id>`
+2. **Epic guard**: If current chain belongs to unresolved epic, auto-redirects to `sp epic merge`
+3. **Chain merge**: For standalone chains, publishes the branch
+
+### Example
+
+```bash
+# Epic publication
+sp end --epic unitAI-3f7b --pr
+# → delegates to: sp epic merge unitAI-3f7b --pr
+
+# Chain in unresolved epic (auto-detect)
+sp end
+# Chain unitAI-impl belongs to unresolved epic unitAI-3f7b (resolving).
+# Redirecting to: sp epic merge unitAI-3f7b
+```
+
+---
+
+## 20) Chain identity: chain vs prep jobs
+
+Jobs are classified as `chain` or `prep` based on worktree lineage.
+
+### Kinds
+
+| Kind | Definition | Has worktree? |
+|------|------------|:-------------:|
+| `chain` | Worktree lineage seeded by edit-capable specialist | Yes |
+| `prep` | Standalone job without worktree lineage | No |
+
+### Derivation
+
+```typescript
+// Automatic classification from status fields
+const isChainJob = Boolean(
+  status.worktree_path || status.worktree_owner_job_id || status.chain_id
+);
+```
+
+### Fields in status.json
+
+- `chain_kind` — 'chain' or 'prep'
+- `chain_id` — unique identifier
+- `chain_root_job_id` — root worktree owner
+- `chain_root_bead_id` — seeding bead
+
+---
 
 ---
 

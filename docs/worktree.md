@@ -2,9 +2,9 @@
 title: Worktree Integration
 scope: worktree
 category: guide
-version: 1.1.0
-updated: 2026-04-07
-synced_at: acd30061
+version: 1.2.0
+updated: 2026-04-10
+synced_at: zz22-docs
 description: xtrm worktree usage alongside Specialists.
 source_of_truth_for:
   - "src/cli/help.ts"
@@ -35,7 +35,7 @@ Specialists can be used alongside xtrm worktree workflows.
 | `xt claude [name]` | Start a Claude session in a sandboxed xt worktree |
 | `xt attach [slug]` | Resume an existing xt worktree session |
 | `xt worktree list` | List worktrees with runtime and activity |
-| `xt end` | Close session, push, PR, cleanup |
+| `xt end [--epic <id>] [--pr]` | Close session: push, PR/merge, cleanup. Use `--epic` for wave-bound chain publication. |
 | `xt report show\|list\|diff` | Session report surfaces (same .xtrm/reports files) |
 
 ## Recommended pattern
@@ -45,6 +45,21 @@ Specialists can be used alongside xtrm worktree workflows.
 3. use specialists with `--bead`
 4. monitor with `specialists feed -f`
 5. close the bead and end the worktree session
+
+### Epic-aware session close
+
+For wave-bound chains, use `xt end --epic <id>` or let auto-detection redirect:
+
+```bash
+# Explicit epic publication
+xt end --epic unitAI-3f7b --pr
+
+# Auto-detect epic from chain membership
+xt end
+# → redirects to sp epic merge if chain belongs to unresolved epic
+```
+
+See `docs/worktrees.md` for full `sp end` behavior.
 
 ## PR queue help
 

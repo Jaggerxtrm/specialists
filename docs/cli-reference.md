@@ -865,7 +865,7 @@ specialists ps [--json] [--all] [--follow | -f]
 
 - `--json`: Machine-readable JSON output (see [JSON output](#ps-json-output) below).
 - `--all`: Include terminal (`done`/`error`) jobs in addition to active ones. Default shows only `starting`, `running`, and `waiting` jobs.
-- `--follow` / `-f`: Live-refresh mode — clears the screen and re-renders every 1 second with a spinner animation.
+- `--follow` / `-f`: Live-refresh mode — updates in place every 1 second using cursor repositioning (no screen flash).
 
 ### Description
 
