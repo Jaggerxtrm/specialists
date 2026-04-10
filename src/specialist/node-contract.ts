@@ -198,18 +198,18 @@ function renderJsonSnippet(value: unknown): string {
 export function renderForSystemPrompt(): string {
   return [
     '## Node Coordinator Contract (SSoT: src/specialist/node-contract.ts)',
-    '- READ_ONLY model: emit declarative JSON intent only.',
-    '- Runtime side effects are executed by NodeSupervisor.',
-    '- Top-level response keys: summary, node_status, phases, memory_patch, actions, validation.',
-    `- phase_kind enum: ${Object.values(PHASE_KINDS).join(' | ')}`,
-    '- barrier enum (Wave 2A): all_members_terminal',
-    `- actions enum: ${ACTION_TYPES.CREATE_BEAD} | ${ACTION_TYPES.COMPLETE_NODE}`,
-    '- completion_strategy enum: pr | manual',
-    '- Nested nodes are forbidden (do not route work to node-coordinator or node configs).',
-    '- spawn_member is declared through phases[].members entries.',
-    '- isolated and retry_of are schema-reserved for Wave 3 and must not assume runtime isolation/replacement behavior.',
-    '- complete_node may be emitted only when gate_results pass, unless force_draft_pr=true.',
-    '- Keep output strict JSON only; no markdown, comments, or prose outside JSON.',
+    '- Coordinator is CLI-native: reason in natural language, then call sp node commands.',
+    '- Never emit contract JSON objects as final coordinator output.',
+    '- Use only these orchestration commands:',
+    '- `sp node spawn-member --node $NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`',
+    '- `sp node create-bead --node $NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`',
+    '- `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`',
+    '- `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`',
+    '- `sp node status --node $NODE_ID [--json]`',
+    '- Every command should be called with `--json` when the result is used for decisions.',
+    '- Wait-phase is a hard barrier: do not advance to next phase until it reports completion.',
+    '- On command errors, inspect JSON error payload, adjust plan, and retry with corrected inputs.',
+    '- Nested nodes are forbidden (do not spawn node-coordinator as a member).',
   ].join('\n');
 }
 
@@ -221,15 +221,6 @@ export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
       node_name: ctx.nodeName,
       source_bead_id: ctx.sourceBeadId,
       bead_goal: ctx.beadGoal,
-      action_vocabulary: {
-        [ACTION_TYPES.SPAWN_MEMBER]: 'Declare via phases[].members',
-        [ACTION_TYPES.CREATE_BEAD]: ACTION_DOCS.create_bead,
-        [ACTION_TYPES.COMPLETE_NODE]: ACTION_DOCS.complete_node,
-      },
-      state_machine: {
-        states: NODE_STATES,
-        transitions: VALID_STATE_TRANSITIONS,
-      },
       member_registry: ctx.memberRegistry,
       available_specialists: ctx.availableSpecialists,
       quality_gates: ctx.qualityGates,
@@ -238,7 +229,13 @@ export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
       base_branch: ctx.baseBranch,
       node_config_snapshot: ctx.nodeConfigSnapshot,
       coordinator_goal: ctx.coordinatorGoal,
-      first_routing_instruction: 'Construct phases and actions declaratively. Do not perform side effects directly.',
+      command_examples: [
+        `sp node status --node ${ctx.nodeId} --json`,
+        `sp node spawn-member --node ${ctx.nodeId} --member-key explore-1 --specialist explorer --phase explore-1 --json`,
+        `sp node wait-phase --node ${ctx.nodeId} --phase explore-1 --members explore-1 --json`,
+        `sp node complete --node ${ctx.nodeId} --strategy ${ctx.completionStrategy} --json`,
+      ],
+      first_routing_instruction: 'Create a phase plan, execute it via sp node commands, and gate phase progression with wait-phase.',
     }),
   ].join('\n');
 }
@@ -255,6 +252,7 @@ export function renderForResumePayload(update: ResumePayloadContext): string {
       unresolved_decisions: update.unresolvedDecisions,
       action_ledger_summary: update.actionLedgerSummary,
       state_digest: update.stateDigest,
+      resume_instruction: 'Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, and complete when goals are satisfied.',
     }),
   ].join('\n');
 }
@@ -264,24 +262,19 @@ export function renderForDocs(): string {
     .map(([name, description]) => `- \`${name}\`: ${description}`)
     .join('\n');
 
-  const actionDocs = Object.entries(ACTION_DOCS)
-    .map(([action, fields]) => {
-      const fieldLines = Object.entries(fields)
-        .map(([field, description]) => `  - \`${field}\`: ${description}`)
-        .join('\n');
-      return `- \`${action}\`\n${fieldLines}`;
-    })
-    .join('\n');
-
   return [
     '<!-- node-contract:generated:start -->',
-    '## Generated node contract reference',
+    '## Generated node coordinator reference',
+    '',
+    '### Coordinator command set',
+    '- `sp node spawn-member --node $NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`',
+    '- `sp node create-bead --node $NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`',
+    '- `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`',
+    '- `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`',
+    '- `sp node status --node $NODE_ID [--json]`',
     '',
     '### Phase kinds',
     phaseDocs,
-    '',
-    '### Actions',
-    actionDocs,
     '',
     '### Completion strategies',
     '- `pr`',

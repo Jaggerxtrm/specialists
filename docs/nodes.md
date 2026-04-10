@@ -1,4 +1,4 @@
-# Nodes: coordinator contract, runtime architecture, and operator flow
+# Nodes: CLI-native coordinator, runtime architecture, and operator flow
 
 ## Doc contract
 
@@ -12,65 +12,86 @@
 
 ---
 
-## 1) Architecture (redesigned runtime)
+## 1) Architecture
 
-Node execution follows a strict split:
+Node execution is split into three roles:
 
-- **Coordinator specialist**: READ_ONLY JSON planner.
-- **NodeSupervisor**: effect executor (spawn/control/complete/persist).
-- **Members**: worker specialists started and managed by NodeSupervisor.
+- **Coordinator specialist (LOW permission):** CLI-native orchestrator.
+- **NodeSupervisor:** effect executor and lifecycle authority.
+- **Members:** worker specialists managed by NodeSupervisor.
 
-Coordinator never performs direct side effects. It emits typed intent (`phases`, `memory_patch`, `actions`) and NodeSupervisor executes that intent.
-
-### Why this split exists
-
-- deterministic control plane,
-- explicit contract validation,
-- resumable state machine,
-- auditable event timeline in SQLite,
-- safer multi-member orchestration than free-form coordinator control.
+Coordinator decides *what to do next* and does so by calling `sp node` commands. NodeSupervisor executes, persists state, and enforces lifecycle semantics.
 
 ---
 
-## 2) Coordinator action model
+## 2) Coordinator behavior (CLI-native)
 
-Canonical schema lives in `node-contract.ts`.
+The coordinator no longer emits a JSON orchestration schema as its control output.
 
-### Top-level output
+Instead it:
+1. Calls `sp node ... --json` commands,
+2. Reads structured responses,
+3. Issues follow-up commands,
+4. Uses `wait-phase` as the phase barrier,
+5. Calls `complete` when node goals are satisfied.
 
-Coordinator must emit one JSON object containing:
-- `summary`
-- `node_status` (`in_progress | complete | blocked | aborted`)
-- `phases[]`
-- `memory_patch[]`
-- `actions[]`
-- `validation`
+### Required command set
 
-### Phase/member declarations (`spawn_member` intent)
-
-`spawn_member` is represented by `phases[].members[]` entries, not by direct side-effect commands.
-
-Each member declaration includes:
-- `member_key`
-- `role` (specialist)
-- `bead_id`
-- `scope.paths[]` + `scope.mutates`
-- `depends_on[]`
-- `failure_policy`
-- schema-reserved fields: `isolated`, `retry_of`
-
-### Action vocabulary
-
-`actions[]` supports:
-
-- `create_bead`
-- `complete_node`
-
-No direct `resume/steer/stop` action is accepted in coordinator payload; these are internal NodeSupervisor dispatch concerns.
+- `sp node spawn-member --node $NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
+- `sp node create-bead --node $NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]`
+- `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`
+- `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`
+- `sp node status --node $NODE_ID [--json]`
 
 ---
 
-## 3) Lifecycle and state machine
+## 3) CLI command reference
+
+| Command | Purpose | Typical usage |
+|---|---|---|
+| `sp node status` | Read node snapshot (state, members, readiness) | Before and after every orchestration step |
+| `sp node spawn-member` | Start a member for a phase/task | Launch explore/impl/review workers |
+| `sp node wait-phase` | Enforce phase barrier for declared members | Block transition until phase members finish |
+| `sp node create-bead` | Create tracked follow-up work | Persist discovered blockers/tasks |
+| `sp node complete` | Finalize node run with strategy | End run via `pr` or `manual` completion |
+
+---
+
+## 4) Wait-phase semantics
+
+`sp node wait-phase` is the canonical phase barrier.
+
+- Coordinator must provide the phase id and explicit member key set.
+- Progression to the next phase is blocked until wait-phase reports completion.
+- This applies equally to review/fix/re-review loops.
+
+Recommended pattern:
+1. spawn all members for phase N,
+2. call `wait-phase` for phase N,
+3. read `status --json`,
+4. decide next phase (or completion).
+
+---
+
+## 5) Error handling model
+
+Coordinator handles command errors by reading error JSON and adapting.
+
+Recovery loop:
+1. run command with `--json`,
+2. inspect error payload,
+3. correct arguments or sequencing,
+4. retry boundedly,
+5. if unrecoverable, track via `create-bead` and choose explicit completion strategy.
+
+Examples:
+- unknown member in `wait-phase` -> refresh via `status`, retry with valid members.
+- invalid spawn args -> correct `member-key` / `phase` / `specialist`, retry.
+- completion rejected by state -> satisfy unmet prerequisites, then retry `complete`.
+
+---
+
+## 6) Lifecycle and state machine
 
 Node states:
 - `created`
@@ -85,104 +106,51 @@ Node states:
 - `done`
 - `stopped`
 
-Terminal set for runtime loop handling includes:
-- `error`, `done`, `stopped`, `failed`, `awaiting_merge`
-
-`awaiting_merge` is terminal from NodeSupervisor perspective when completion strategy is PR-based and publication is pending outside the node run.
+`awaiting_merge` is terminal for the node runtime loop under PR-based completion.
 
 ---
 
-## 4) Completion behavior
+## 7) Completion behavior
 
-Completion behavior is driven by `complete_node` action + runtime completion strategy.
+`sp node complete --strategy <pr|manual>` decides publication semantics:
 
-### Strategies
+- `pr`: run ends in `awaiting_merge` when completion intent succeeds.
+- `manual`: run ends in `done` when completion checks pass.
 
-- `pr` (default):
-  - NodeSupervisor performs completion flow,
-  - can create PR metadata,
-  - transitions to `awaiting_merge` on successful completion intent.
-
-- `manual`:
-  - no PR requirement,
-  - transitions to `done` when gates pass.
-
-### Gate behavior
-
-- failing gates with `force_draft_pr=false` cause rejection/failure behavior,
-- failing gates with `force_draft_pr=true` allow draft PR completion intent,
-- quality gates are executed by NodeSupervisor, not coordinator.
+Coordinator should call `complete` only after phase barriers and status checks indicate readiness.
 
 ---
 
-## 5) Intentional behavior change: member idle-wait bootstrap
+## 8) Member bootstrap behavior
 
-Members now start with an idle bootstrap prompt:
+Members start in idle-wait bootstrap mode:
 - acknowledge readiness,
-- wait for explicit coordinator resume/steer instructions,
-- do not begin substantive work immediately.
+- wait for coordinator steering,
+- avoid eager autonomous execution before routing.
 
-This replaces earlier eager startup behavior and is intentional to prevent uncontrolled member rampage before coordinator routing.
-
----
-
-## 6) Context-depth chaining
-
-Node run context depth precedence:
-1. member-level override (`context_depth` in raw phase member payload when present),
-2. node default (`defaultContextDepth` in node config),
-3. runtime fallback (`2`).
-
-CLI `sp node run --context-depth <n>` sets run-level context depth that feeds coordinator/member options unless overridden downstream by member-level declaration.
+This is intentional and remains part of runtime safety behavior.
 
 ---
 
-## 7) Worktree inheritance and fix loops
+## 9) Observability and inspection
 
-NodeSupervisor supports worktree-aware spawning and replacement metadata.
-
-Coordinator guidance:
-- keep mutating scopes disjoint for safe parallelism,
-- use explicit phase ordering for overlapping mutating work,
-- model fix loops via `review -> fix -> re_review`,
-- use retry lineage fields (`retry_of`, parent metadata) for replacements.
-
-Worktree inheritance intent can be supplied through member metadata (`worktree_from`/`worktree` in runtime payload handling). Coordinator declares intent; NodeSupervisor resolves execution details.
-
----
-
-## 8) Observability and events
-
-Node state is persisted in SQLite tables:
+Persisted SQLite surfaces:
 - `node_runs`
 - `node_members`
 - `node_events`
 - `node_memory`
 
-### Event taxonomy
-
-Canonical dispatch event is `action_written` (legacy `action_dispatched` is removed).
-
-Key event families:
-- node lifecycle (`node_created`, `node_started`, `node_state_changed`, ...)
-- member lifecycle (`member_started`, `member_state_changed`, `member_spawned_dynamic`, `member_replaced`, ...)
-- coordinator lifecycle (`coordinator_resumed`, `coordinator_output_received`, `coordinator_output_invalid`, ...)
-- memory lifecycle (`memory_updated`, `memory_patch_rejected`, `memory_patch_deduplicated`)
-- action lifecycle (`action_queued`, `action_written`, `action_observed`, `action_completed`, `action_failed`, `action_dropped`)
-- completion lifecycle (`pr_created`, `node_completed`)
-
-### CLI inspection paths
-
+Useful CLI inspection commands:
 - `sp node status [--node <id>] [--json]`
 - `sp node feed <id> [--json]`
 - `sp node members <id> [--json]`
 - `sp node memory <id> [--json]`
 
-`members`/`status` JSON includes generation and lineage (`reused_from_job_id`, `worktree_owner_job_id`) where available.
+Canonical dispatch event remains `action_written`.
 
 ---
 
-## 9) `sp node` command surface (current)
+## 10) Current `sp node` surface
 
 - `sp node run <config-or-name> [--inline JSON] [--bead <id>] [--context-depth <n>] [--json]`
 - `sp node list [--json]`
@@ -197,26 +165,10 @@ Key event families:
 
 ---
 
-## 10) Backward compatibility and additive changes
-
-### Backward-compatible additions
-
-- expanded node schema fields (phases/member metadata, completion metadata, lineage metadata) are additive,
-- event stream expanded with new lifecycle events while keeping JSON-first payload model,
-- CLI expanded with non-breaking new `sp node` subcommands.
-
-### Intentional behavior changes
-
-- member bootstrap switched to idle-wait mode,
-- completion flow now models `awaiting_merge` and explicit completion strategy,
-- coordinator contract now centers on `create_bead` / `complete_node` + phase member declarations instead of direct control actions.
-
----
-
 ## 11) Practical coordinator heuristics
 
+- Re-check `status --json` before every phase transition.
+- Use `wait-phase` as mandatory barrier, not advisory.
 - Parallelize only disjoint mutating scopes.
-- Serialize dependent or overlapping edits.
-- Prefer short, explicit phases over implicit long-running waves.
-- Emit memory entries only when they change downstream decisions.
-- Emit `complete_node` only when completion evidence + gate intent are explicit.
+- Keep retries bounded and explicit.
+- Prefer explicit follow-up beads over silent failure when blocked.

@@ -1,9 +1,9 @@
 ---
 name: using-nodes
 description: >
-  Use this skill for node-coordinator behavior. The coordinator is a READ_ONLY
-  JSON emitter that declares phases/actions while NodeSupervisor executes side effects.
-version: 2.0
+  Use this skill for node-coordinator behavior. The coordinator is a CLI-native
+  orchestrator that drives NodeSupervisor via `sp node` commands.
+version: 3.0
 ---
 
 # Using Nodes
@@ -12,306 +12,129 @@ version: 2.0
 
 This skill is the coordinator playbook for `NodeSupervisor` runs.
 
-The coordinator is **declarative only**:
-- emit one strict JSON object matching the node contract,
-- declare intent (`phases`, `memory_patch`, `actions`),
-- never execute side effects directly.
+The coordinator is **CLI-native**:
+- reason about the node objective,
+- call `sp node` commands,
+- read JSON command responses,
+- decide next command,
+- avoid direct file edits and direct member internals.
 
-NodeSupervisor owns all side effects (spawn jobs, steer/resume, create beads, completion flow, PR/create/stop behavior).
+NodeSupervisor owns side effects and lifecycle transitions.
 
 ---
 
 ## Hard constraints
 
-1. **READ_ONLY coordinator**
-   - No tool calls.
-   - No shell, git, bd, file edits, or direct CLI orchestration.
-   - Output is JSON intent only.
+1. **Use only `sp node` command surface for orchestration**
+   - Do not emit legacy contract JSON plans as the primary control mechanism.
+   - Do not call deprecated node action channels.
 
-2. **Single JSON object only**
-   - No markdown fences.
-   - No prose before/after JSON.
+2. **No nested nodes**
+   - Do not spawn `node-coordinator` as a member.
+   - Do not route work to other node configs from inside a node run.
 
-3. **No nested nodes**
-   - Do not route work to `node-coordinator` as a member role.
-   - Do not emit node-config paths in member bead fields.
+3. **Use JSON responses for control decisions**
+   - Call commands with `--json` whenever output informs next steps.
+   - Treat command response payloads as the coordinator’s state inputs.
 
-4. **Use only supported action vocabulary**
-   - `spawn_member` is declared via `phases[].members[]` entries.
-   - `actions[]` supports `create_bead` and `complete_node`.
+4. **Respect phase barriers**
+   - A phase is not complete until `sp node wait-phase ...` reports completion.
 
 ---
 
-## Decision model
+## Command reference (coordinator)
 
-### 1) Plan phases first
-
-Always build explicit `phases[]` in execution order.
-
-Use `phase_kind` to communicate intent:
-- `explore` → gather evidence
-- `design` → evaluate options and constraints
-- `impl` → perform code edits
-- `review` → validate quality/correctness
-- `fix` → apply review corrections
-- `re_review` → verify fixes
-- `custom` → explicit custom stage
-
-Barrier is currently fixed:
-- `barrier: "all_members_terminal"`
-
-Interpretation: all members in a phase should reach terminal/idle completion before next phase intent should advance.
-
-### 2) Choose parallel vs sequential
-
-Use this heuristic:
-
-- **Parallel within phase** when scopes are disjoint and mutating paths do not overlap.
-- **Sequential via dependencies/phases** when:
-  - one member output is required by another,
-  - paths overlap,
-  - lock/contention risk is high,
-  - correctness order matters.
-
-If mutating scopes overlap, split into separate phases or separate dependent members.
-
-### 3) Declare member spawns in `phases[].members[]`
-
-Each member declaration is a spawn intent envelope:
-- stable `member_key`
-- `role` (specialist name)
-- `bead_id` target
-- `scope.paths[]` and `scope.mutates`
-- `failure_policy`
-- `depends_on[]` for per-phase sequencing
-- reserved forward-compat fields: `isolated`, `retry_of`
-
-### 4) Memory discipline
-
-Emit compact, useful `memory_patch[]` entries only when they add reusable signal:
-- `entry_type`: fact | question | decision
-- `summary`: concise and actionable
-- `source_member_id`: required provenance
-- `confidence`: 0..1
-- optional `entry_id` for idempotent/dedup updates
-
-### 5) Action discipline
-
-Use `actions[]` only for node lifecycle intent:
-
-- **`create_bead`**
-  - use when new tracked follow-up work is discovered,
-  - include title/description/type/priority,
-  - add dependency linkage when needed.
-
-- **`complete_node`**
-  - emit when node objective is complete or terminally blocked,
-  - include `gate_results` and `report_payload_ref`,
-  - if gates fail but delivery must proceed as draft, set `force_draft_pr: true`.
-
-`node_status: "complete"` must pair with a `complete_node` action.
+- `sp node spawn-member --node $NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
+- `sp node create-bead --node $NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]`
+- `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`
+- `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`
+- `sp node status --node $NODE_ID [--json]`
 
 ---
 
-## Context-depth chaining and inheritance
+## Core loop
 
-Node execution context depth resolution:
-1. member declaration override (`context_depth`) when provided,
-2. node default (`defaultContextDepth`),
-3. runtime fallback (`2`) if not otherwise set.
+1. **Read status**
+   - `sp node status --node $NODE_ID --json`
+   - identify current phase, member registry, blockers, and completion readiness.
 
-Use higher context depth when member work depends heavily on completed blockers; keep it lower for focused tasks to reduce context pressure.
+2. **Issue orchestration commands**
+   - spawn members as needed,
+   - create follow-up beads when new tracked work emerges,
+   - wait on phase barrier before advancing.
 
----
+3. **Re-check status**
+   - re-read node status after each command sequence,
+   - adjust plan from actual runtime state.
 
-## Worktree behavior and inheritance
-
-NodeSupervisor controls worktrees.
-
-Coordinator responsibilities:
-- choose clean member boundaries (`scope.paths`),
-- declare parent/repair lineage clearly,
-- avoid overlapping mutating scopes.
-
-Runtime supports inherited worktree intent for replacement/fix loops (`worktree_from` / `worktree`) where provided by schema/runtime.
-
-Do not assume direct filesystem control from coordinator output.
+4. **Complete node**
+   - once goals/gates are satisfied (or terminally blocked with operator intent),
+   - call `sp node complete --node $NODE_ID --strategy <pr|manual> --json`.
 
 ---
 
-## Fix loops and retries
+## Wait-phase semantics
 
-When review/fix cycles are required:
+`sp node wait-phase` is a blocking coordination barrier.
 
-1. model `review` → `fix` → `re_review` phase progression,
-2. keep replacement lineage explicit (`retry_of` / parent linkage when needed),
-3. keep retries bounded (`max_retries` exists at node config/runtime level),
-4. stop cycling when convergence fails; emit a terminal `complete_node` (blocked/aborted intent).
+Use it when:
+- all members in a phase have been dispatched,
+- progression depends on member terminal outcomes,
+- review/fix loops require strict stage boundaries.
 
-Prefer short corrective loops with explicit failure reasons in memory.
-
----
-
-## Member bootstrap behavior (intentional change)
-
-Members now start in **idle-wait bootstrap mode**.
-
-Expected behavior:
-- acknowledge readiness,
-- do not begin substantive investigation/work until explicit coordinator resume/steer intent arrives.
-
-This is intentional and replaces earlier eager member startup behavior.
+Pattern:
+1. spawn phase members,
+2. call `wait-phase` with exact member keys for that phase,
+3. only then move to next phase or completion decision.
 
 ---
 
-## Backward compatibility guarantees
+## Error handling
 
-- Existing coordinator payload fields remain additive-compatible where possible.
-- New behavior is introduced via additive schema/runtime fields (e.g. phase/member metadata, lifecycle extensions) rather than destructive removals.
-- Reserved fields (`isolated`, `retry_of`) are schema-level forward-compat hooks and must not be treated as guaranteed execution semantics beyond current runtime support.
+When a command fails:
+
+1. inspect the error JSON payload,
+2. classify failure (invalid args, missing member/bead, transient runtime condition),
+3. retry with corrected arguments when recoverable,
+4. if not recoverable, create a tracking bead and/or complete node with appropriate strategy.
+
+### Example recovery cases
+
+- invalid `member-key` or missing `phase`: call `spawn-member` again with corrected values.
+- `wait-phase` references unknown member: refresh via `status --json`, then retry with valid member set.
+- completion rejected by current state: refresh status, satisfy unmet prerequisites, retry complete.
 
 ---
 
-## Output template (shape)
+## Example command sequences
 
-```json
-{
-  "summary": "...",
-  "node_status": "in_progress",
-  "phases": [
-    {
-      "phase_id": "explore-1",
-      "phase_kind": "explore",
-      "barrier": "all_members_terminal",
-      "members": [
-        {
-          "member_key": "explorer-1",
-          "role": "explorer",
-          "bead_id": "unitAI-123",
-          "scope": { "paths": ["src/cli"], "mutates": false },
-          "depends_on": [],
-          "failure_policy": "blocking",
-          "isolated": false,
-          "retry_of": null
-        }
-      ]
-    }
-  ],
-  "memory_patch": [],
-  "actions": [],
-  "validation": {
-    "ok": true,
-    "issues": [],
-    "notes": ""
-  }
-}
+### Sequence A: basic explore -> impl -> complete
+
+```bash
+sp node status --node $NODE_ID --json
+sp node spawn-member --node $NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json
+sp node wait-phase --node $NODE_ID --phase explore-1 --members explore-1 --json
+sp node spawn-member --node $NODE_ID --member-key impl-1 --specialist executor --phase impl-1 --json
+sp node wait-phase --node $NODE_ID --phase impl-1 --members impl-1 --json
+sp node complete --node $NODE_ID --strategy pr --json
+```
+
+### Sequence B: discovered work + gated completion
+
+```bash
+sp node status --node $NODE_ID --json
+sp node create-bead --node $NODE_ID --title 'Follow-up: tighten node retry policy' --type task --priority 2 --json
+sp node spawn-member --node $NODE_ID --member-key review-1 --specialist reviewer --phase review-1 --json
+sp node wait-phase --node $NODE_ID --phase review-1 --members review-1 --json
+sp node complete --node $NODE_ID --strategy manual --json
 ```
 
 ---
 
-## Generated node contract reference
+## Practical heuristics
 
-<!-- node-contract:generated:start -->
-## Generated node contract reference
-
-### Phase kinds
-- `explore`: Discovery and evidence gathering.
-- `design`: Design options and decision framing.
-- `impl`: Code/config implementation and edits.
-- `review`: Structured quality or correctness review.
-- `fix`: Apply corrections for review findings.
-- `re_review`: Verification pass after fixes.
-- `custom`: Project-specific phase with explicit intent.
-
-### Actions
-- `create_bead`
-  - `type`: Literal action discriminator.
-  - `title`: Bead title for created work item.
-  - `description`: Detailed bead description.
-  - `bead_type`: One of task|bug|feature|epic|chore|decision.
-  - `priority`: Integer priority 0..4.
-  - `parent_bead_id`: Optional parent bead link.
-  - `depends_on`: Optional dependency bead ids.
-- `complete_node`
-  - `type`: Literal action discriminator.
-  - `gate_results`: Quality gate statuses to attach to completion report.
-  - `report_payload_ref`: Reference to external report payload.
-  - `force_draft_pr`: Allow completion while gates fail by forcing draft PR intent.
-
-### Completion strategies
-- `pr`
-- `manual`
-
-### State machine
-```json
-{
-  "states": [
-    "created",
-    "starting",
-    "running",
-    "waiting",
-    "degraded",
-    "awaiting_merge",
-    "fixing_after_review",
-    "failed",
-    "error",
-    "done",
-    "stopped"
-  ],
-  "transitions": {
-    "created": [
-      "starting",
-      "stopped"
-    ],
-    "starting": [
-      "running",
-      "error",
-      "stopped"
-    ],
-    "running": [
-      "waiting",
-      "degraded",
-      "awaiting_merge",
-      "done",
-      "error",
-      "stopped",
-      "failed"
-    ],
-    "waiting": [
-      "running",
-      "degraded",
-      "awaiting_merge",
-      "done",
-      "error",
-      "stopped",
-      "failed"
-    ],
-    "degraded": [
-      "running",
-      "fixing_after_review",
-      "failed",
-      "error",
-      "stopped"
-    ],
-    "awaiting_merge": [
-      "done",
-      "fixing_after_review",
-      "failed",
-      "error",
-      "stopped"
-    ],
-    "fixing_after_review": [
-      "awaiting_merge",
-      "running",
-      "failed",
-      "error",
-      "stopped"
-    ],
-    "failed": [],
-    "error": [],
-    "done": [],
-    "stopped": []
-  }
-}
-```
-<!-- node-contract:generated:end -->
+- Parallelize only when member scopes are disjoint.
+- Prefer explicit short phases over long implicit waves.
+- Re-read `status --json` before every major transition.
+- Keep retries bounded; avoid infinite command loops.
+- If progress stalls, surface the blocker via `create-bead` and choose completion strategy deliberately.
