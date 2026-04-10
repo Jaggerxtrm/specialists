@@ -176,4 +176,53 @@ describe('epic-readiness', () => {
     expect(migrationGap.readiness_state).toBe('resolving');
     expect(migrationGap.chains[0]?.blocking_reason).toContain('No persisted chain jobs');
   });
+
+  it('does not skip required intermediate lifecycle states', () => {
+    const openWithPassingChain = evaluateEpicReadinessSummary({
+      epicId: 'unitAI-open',
+      persistedState: 'open',
+      prepJobs: [],
+      chainInputs: [
+        {
+          chain_id: 'chain-a',
+          jobs: [
+            {
+              id: 'review-1',
+              specialist: 'reviewer',
+              status: 'done',
+              started_at_ms: 1,
+              result_text: '## Compliance Verdict\n- Verdict: PASS',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(openWithPassingChain.readiness_state).toBe('merge_ready');
+    expect(openWithPassingChain.next_state).toBe('resolving');
+    expect(openWithPassingChain.can_transition).toBe(true);
+
+    const mergeReadyRegressesOnNewBlocker = evaluateEpicReadinessSummary({
+      epicId: 'unitAI-regress',
+      persistedState: 'merge_ready',
+      prepJobs: [],
+      chainInputs: [
+        {
+          chain_id: 'chain-a',
+          jobs: [
+            {
+              id: 'chain-a-running',
+              specialist: 'executor',
+              status: 'running',
+              started_at_ms: 2,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(mergeReadyRegressesOnNewBlocker.readiness_state).toBe('resolving');
+    expect(mergeReadyRegressesOnNewBlocker.next_state).toBe('resolving');
+    expect(mergeReadyRegressesOnNewBlocker.blockers).toContain('chain:chain-a');
+  });
 });
