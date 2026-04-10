@@ -42,6 +42,7 @@ import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { resolveChainId } from './epic-lifecycle.js';
+import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from './epic-readiness.js';
 import { derivePersistedChainIdentity } from './chain-identity.js';
 import { isTmuxSessionAlive } from '../cli/tmux-utils.js';
 
@@ -585,6 +586,9 @@ export class Supervisor {
           chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
           updated_at_ms: Date.now(),
         });
+
+        const readiness = loadEpicReadinessSummary(client, normalizedStatus.epic_id);
+        syncEpicStateFromReadiness(client, readiness);
       });
     } catch (error: unknown) {
       console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);

@@ -6,6 +6,7 @@ import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { loadEpicReadinessSummary, syncEpicStateFromReadiness, type EpicReadinessSummary } from '../specialist/epic-readiness.js';
 
 type JobState = SupervisorStatus['status'];
 
@@ -45,6 +46,8 @@ interface WorktreeTree {
   branch?: string;
   children: JobNode[];
 }
+
+type EpicReadinessMap = Map<string, EpicReadinessSummary>;
 
 interface NodeTree {
   node_id: string;
@@ -424,7 +427,29 @@ function renderTreeNodes(
   }
 }
 
-function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean): void {
+function resolveEpicReadinessMap(jobs: readonly SupervisorStatus[]): EpicReadinessMap {
+  const epicIds = [...new Set(jobs.map((job) => job.epic_id).filter((epicId): epicId is string => Boolean(epicId)))];
+  if (epicIds.length === 0) return new Map();
+
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) return new Map();
+
+  try {
+    const readinessMap: EpicReadinessMap = new Map();
+    for (const epicId of epicIds) {
+      const summary = loadEpicReadinessSummary(sqlite, epicId);
+      syncEpicStateFromReadiness(sqlite, summary);
+      readinessMap.set(epicId, summary);
+    }
+    return readinessMap;
+  } catch {
+    return new Map();
+  } finally {
+    sqlite.close();
+  }
+}
+
+function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: WorktreeTree[], all: boolean, epicReadiness: EpicReadinessMap): void {
   const beadTitles = buildBeadTitleCache(jobs);
   const counter = { running: 0, waiting: 0 };
 
@@ -443,7 +468,11 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
     const branch = tree.branch ?? 'master';
     const beadId = tree.children[0]?.bead_id;
     const beadSuffix = beadId ? ` · ${beadId}` : '';
-    console.log(`${dim(branch)}${dim(beadSuffix)}`);
+    const epicId = tree.children.find((child) => child.epic_id)?.epic_id;
+    const readiness = epicId ? epicReadiness.get(epicId) : undefined;
+    const epicSuffix = epicId ? ` · epic:${epicId}` : '';
+    const readinessSuffix = readiness ? ` · ${readiness.readiness_state}` : '';
+    console.log(`${dim(branch)}${dim(beadSuffix)}${dim(epicSuffix)}${dim(readinessSuffix)}`);
 
     renderTreeNodes(tree.children, beadTitles, '', counter);
     console.log('');
@@ -508,7 +537,13 @@ function renderInspect(jobId: string): void {
   console.log(`\n  ${dim(inspectActions.join(' | '))}`);
 }
 
-function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, nodes: NodeTree[], trees: WorktreeTree[], _all: boolean): void {
+function renderJson(
+  jobs: Array<SupervisorStatus & { is_dead: boolean }>,
+  nodes: NodeTree[],
+  trees: WorktreeTree[],
+  _all: boolean,
+  epicReadiness: EpicReadinessMap,
+): void {
   console.log(JSON.stringify({
     generated_at_ms: Date.now(),
     include_terminal: _all,
@@ -538,6 +573,7 @@ function renderJson(jobs: Array<SupervisorStatus & { is_dead: boolean }>, nodes:
     })),
     nodes,
     trees,
+    epic_readiness: Object.fromEntries([...epicReadiness.entries()].map(([epicId, summary]) => [epicId, summary])),
   }, null, 2));
 }
 
@@ -550,13 +586,14 @@ function render(args: PsArgs): void {
   });
   const nodes = groupByNode(visibleStatuses);
   const trees = groupByTree(visibleStatuses);
+  const epicReadiness = resolveEpicReadinessMap(visibleStatuses);
 
   if (args.json) {
-    renderJson(visibleStatuses, nodes, trees, args.all);
+    renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness);
     return;
   }
 
-  renderHuman(visibleStatuses, nodes, trees, args.all);
+  renderHuman(visibleStatuses, nodes, trees, args.all, epicReadiness);
 }
 
 async function follow(args: PsArgs): Promise<void> {
