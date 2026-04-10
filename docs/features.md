@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.1.0
-updated: 2026-04-10
-synced_at: 11f5e768
+version: 2.1.1
+updated: 2026-04-11
+synced_at: 0080a53d
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -22,6 +22,7 @@ source_of_truth_for:
   - "src/cli/ps.ts"
   - "src/cli/epic.ts"
   - "src/cli/end.ts"
+  - "src/cli/merge.ts"
   - "src/specialist/epic-lifecycle.ts"
   - "src/specialist/chain-identity.ts"
 ---
@@ -891,7 +892,7 @@ sp merge <chain-root-bead-id> [--rebuild]
 
 - Non-terminal jobs block merge (`starting`, `running` statuses)
 - Epic guard blocks if chain belongs to unresolved epic
-- **Branch must have source changes under `src/`** vs master — empty branches refused
+- **Merge-preview worthiness guard** — blocks empty-delta and noise-only-delta branches (see [cli-reference.md#merge-preview-worthiness-guard](cli-reference.md#merge-preview-worthiness-guard))
 - TypeScript gate after merge
 - Uses `--no-ff` to preserve branch history
 
