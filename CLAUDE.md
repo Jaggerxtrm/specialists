@@ -152,6 +152,39 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
+## Node Coordination
+
+Nodes are multi-agent research/execution groups with a coordinator + members. The coordinator is **CLI-native** (LOW permission, bash access, no file edits) and drives members via `sp node` commands.
+
+### Coordinator model
+- Permission: LOW (bash, no edits). Config: `config/specialists/node-coordinator.specialist.json`
+- Calls `sp node` commands via bash, reads structured JSON responses
+- `$SPECIALISTS_NODE_ID` env var available in coordinator bash sessions (injected by runner)
+- Skill: `config/skills/using-nodes/SKILL.md` (v3.0, CLI-native)
+- SSoT: `src/specialist/node-contract.ts` — state machine, phase kinds, renderers
+
+### CLI surface (`sp node`)
+```bash
+sp node run <config> --bead <id>                    # start a node
+sp node status [--json]                              # node registry snapshot
+sp node spawn-member --node <id> --member-key <key> --specialist <name> [--json]
+sp node create-bead --node <id> --title "..." [--json]
+sp node complete --node <id> --strategy <pr|manual> [--json]
+sp node wait-phase --node <id> --phase <id> --members <k1,k2> [--json]
+sp node members [--json]                             # member registry
+sp node steer <node-id> "message"                    # steer coordinator
+sp node stop <node-id>                               # stop node
+```
+
+### Key files
+- `src/cli/node.ts` — CLI command routing + action handlers
+- `src/specialist/node-supervisor.ts` — node lifecycle, member spawning, action execution
+- `src/specialist/node-contract.ts` — Zod schema, state machine, renderers
+- `config/nodes/research.node.json` — research node config (explorer + overthinker + researcher)
+
+### Known gap (unitAI-8zui)
+Coordinator currently polls status and completes — doesn't read member output, steer members, synthesize findings, or manage phases. Needs `sp result`/`sp steer` access and synthesis mandate.
+
 # CLAUDE.md - AI Agent Development Guide
 
 > **Purpose**: Operational guidance for the current Specialists codebase and MCP surface.
