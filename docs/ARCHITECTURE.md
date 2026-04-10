@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 2.5.0
+version: 2.6.0
 updated: 2026-04-10
-synced_at: a1e9f935
+synced_at: b9fbc50f
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -34,6 +34,54 @@ This document defines the runtime boundary between:
 - **Timeline model** (`src/specialist/timeline-events.ts`) — persisted event vocabulary for feed v2
 - **Worktree isolation** (`src/specialist/worktree.ts`) — isolated git workspaces per executor
 - **Job registry anchor** (`src/specialist/job-root.ts`) — git-common-root-anchored job state
+
+## 0) Runner context injection at spawn
+
+`src/specialist/runner.ts` injects project memory context into the specialist's first-turn prompt before spawning the Pi session. This prevents specialists from rediscovering known gotchas on every run.
+
+### Injected sources (~3800 tokens total)
+
+| Source | Tokens | Location | Purpose |
+|--------|--------|----------|--------|
+| `.xtrm/memory.md` | ~400-800 | Project root | Curated SSOT synthesis: Do Not Repeat, How This Project Works, Active Context |
+| `bd prime` | ~3000 | Shell exec | Workflow rules + all bd memories dump |
+| GitNexus cheatsheet | ~100 | Conditional | Code intelligence hints (only when `.gitnexus/meta.json` exists) |
+
+### Injection code path
+
+```typescript
+// 1. Load .xtrm/memory.md (curated, 100-200 lines)
+const memoryMdPath = resolve(runCwd, '.xtrm/memory.md');
+if (existsSync(memoryMdPath)) {
+  agentsMd += `## Project Memory (SSOT)
+${memoryMd}
+---`;
+}
+
+// 2. Load bd prime output (workflow rules + all memories)
+const bdPrime = execSync('bd prime', { cwd: runCwd, timeout: 10000 });
+agentsMd += `## Beads Workflow Context (bd prime)
+${bdPrime}
+---`;
+
+// 3. Inject GitNexus cheatsheet if project is indexed
+const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
+if (existsSync(gitnexusMetaPath)) {
+  agentsMd += `## GitNexus (use before any edit)
+...`;
+}
+```
+
+### Non-fatal behavior
+
+All sources are optional and non-blocking:
+- Missing `.xtrm/memory.md` → skipped silently
+- `bd prime` command fails → skipped silently (may not be available in CI/testing)
+- `.gitnexus/meta.json` missing → no cheatsheet injected
+
+This ensures specialist runs work in minimal environments (e.g. fresh clones, CI pipelines) while benefiting from full context in mature project setups.
+
+---
 
 ## 1) Canonical protocol boundary: `pi/rpc/`
 
@@ -632,7 +680,59 @@ End-to-end flow:
 
 Result: **Pi provides protocol events; Session adapts transport; Supervisor persists lifecycle truth.**
 
-## 9) Canonical references
+## 9) Edit gate bead-claim KV pattern
+
+The beads edit gate hooks (`beads-edit-gate`) check two KV keys before allowing file edits.
+
+### Primary path: session-scoped claim
+
+```bash
+bd kv set "claimed:<session-id>" "<bead-id>"
+```
+
+Set by Claude Code hooks when an agent claims a bead via `bd update <id> --claim`. Session-bound, cleared on session end.
+
+### Fallback path: bead-claim
+
+```bash
+bd kv set "bead-claim:<bead-id>" "active"
+```
+
+Set by Runner **before spawning a specialist** when `--bead <id>` is provided in `src/cli/run.ts`:
+
+```typescript
+// Before specialist spawn
+if (args.beadId && workingDirectory) {
+  execSync(`bd kv set "bead-claim:${args.beadId}" "active"`, { cwd: workingDirectory });
+}
+
+// After run completes (success or error)
+if (args.beadId && workingDirectory) {
+  execSync(`bd kv clear "bead-claim:${args.beadId}"`, { cwd: workingDirectory });
+}
+```
+
+### Why this matters
+
+Worktree specialists run in subprocesses without session context. The bead-claim pattern provides an edit gate entry that:
+1. Is independent of Claude Code session IDs
+2. Is scoped to the specific bead being worked on
+3. Is automatically cleaned up when the run completes
+4. Enables MEDIUM/HIGH specialists to edit files in worktrees without blocking
+
+### Edit gate check order
+
+```bash
+# Hook checks in order:
+1. claimed:<session-id>  → session claim (Claude Code)
+2. bead-claim:<bead-id>  → bead-scoped claim (specialist runner)
+```
+
+If neither key exists, the edit is blocked.
+
+---
+
+## 10) Canonical references
 
 | Component | Path | Responsibility |
 |-----------|------|----------------|

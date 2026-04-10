@@ -481,6 +481,13 @@ The specialist reads:
 - bead notes (including output appended by previous specialists in the chain)
 - parent/ancestor bead context (controlled by `--context-depth`)
 
+**Automatic context injection**: Runner injects ~3800 tokens of project memory at spawn:
+- `.xtrm/memory.md` (SSOT: Do Not Repeat, How This Project Works, Active Context)
+- `bd prime` output (workflow rules + all bd memories dump)
+- GitNexus cheatsheet (when `.gitnexus/meta.json` exists — ~100 tokens)
+
+This prevents specialists from rediscovering known gotchas on every run.
+
 `--prompt` and `--bead` cannot be combined. When you need to give a specialist
 specific instructions beyond what's in the bead description, update the bead notes first:
 
@@ -496,6 +503,9 @@ Use **`--context-depth 2`** for all chained bead workflows. This gives each spec
 own bead + the immediate predecessor's output + one more level of context.
 
 **`--no-beads`** — skip creating an auto-tracking sub-bead, but still reads the `--bead` input.
+
+**Edit gate access**: Specialists with `--bead` automatically set `bead-claim:<id>` KV key,
+enabling write access in worktrees without session-scoped claims. Cleared on run completion.
 
 ---
 

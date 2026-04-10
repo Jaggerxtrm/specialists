@@ -174,6 +174,9 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
    - Reads bead via `bd show --json`
    - Builds prompt from bead context + optional completed blockers
    - Injects "Specialist Run Context" override (claim provided bead, don't `bd create`)
+   - **Injects project memory context**: `.xtrm/memory.md` + `bd prime` output (~3800 tokens total)
+   - **Injects GitNexus cheatsheet**: when `.gitnexus/meta.json` exists (~100 tokens)
+   - Sets bead-claim KV key for edit gate: `bead-claim:<bead-id>`
    - Threads bead linkage as `inputBeadId`
 2. Supervisor writes `status.json` immediately (including `bead_id` when available)
 3. FIFO steer pipe created for all jobs (enables mid-run `specialists steer`)
@@ -219,6 +222,9 @@ Gate output appears as hook context. Fix failures before proceeding — do not c
 - List available presets: `specialists edit --list-presets`
 - READ_ONLY specialist output auto-appends to input bead notes
 - `max_retries` in JSON controls transient error retry (default: 0)
+- **Memory injection**: Specialists receive `.xtrm/memory.md` + `bd prime` + GitNexus cheatsheet at spawn
+- **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
+- **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
 
 ## Documentation
 

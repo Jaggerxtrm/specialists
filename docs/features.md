@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 1.7.0
+version: 1.8.0
 updated: 2026-04-10
-synced_at: a1e9f935
+synced_at: b9fbc50f
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -651,7 +651,7 @@ specialists run <name> [--worktree] [--job <id>]
 
 ### Worktree guard (MEDIUM/HIGH permission specialists)
 
-Specialists with `permission_required = MEDIUM` or `HIGH` **cannot** run without an isolation option. Omitting all three flags (`--worktree`, `--job`, `--no-worktree`) triggers the guard and exits with:
+Specialists with `permission_required = MEDIUM` or `HIGH` **cannot** run without an isolation option unless `requires_worktree: false` is set in the specialist config. Omitting all three flags (`--worktree`, `--job`, `--no-worktree`) triggers the guard and exits with:
 
 ```
 Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
@@ -660,6 +660,27 @@ Edit-capable specialists must run in isolation. Use one of:
   --job <id>      reuse an existing job's worktree
   --no-worktree   bypass this guard (you accept last-writer-wins risk)
 ```
+
+### `requires_worktree` config flag
+
+Specialists can opt out of the worktree guard by setting:
+
+```json
+{
+  "specialist": {
+    "execution": {
+      "requires_worktree": false
+    }
+  }
+}
+```
+
+When `requires_worktree: false`:
+- Worktree guard is bypassed even for MEDIUM/HIGH permission
+- Specialist can write directly to the main checkout
+- Use for workflow specialists that manage shared state (e.g. memory-processor writes `.xtrm/memory.md`)
+
+**Default**: `requires_worktree: true` — all edit-capable specialists are gated.
 
 Use `--no-worktree` only for single-specialist runs with no concurrency risk. `READ_ONLY` specialists are never gated.
 
@@ -926,6 +947,103 @@ Enforcement lives in pi session layer (not specialists code):
 - Bash commands can still write outside worktree (not intercepted)
 - Relative paths with `..` traversal may bypass if not normalized
 - tmp-fs fallback is silent — specialist doesn't know write was redirected
+
+---
+
+## 19) Memory injection at specialist spawn
+
+Runner injects project memory context at specialist spawn to prevent rediscovering known gotchas on every run.
+
+### Injected content (~3800 tokens total)
+
+| Source | Size | Purpose |
+|--------|------|--------|
+| `.xtrm/memory.md` | ~400-800 tokens | Curated SSOT synthesis (Do Not Repeat, How This Project Works, Active Context) |
+| `bd prime` output | ~3000 tokens | Workflow rules + all bd memories dump |
+| GitNexus cheatsheet | ~100 tokens | Call-chain tracing, blast radius analysis hints |
+
+### Injection location
+
+Context is injected into the specialist's first-turn prompt as structured markdown blocks:
+
+```markdown
+---
+## Project Memory (SSOT)
+_Injected at spawn — use as operational context_
+...
+---
+
+## Beads Workflow Context (bd prime)
+_Injected at spawn — workflow rules + all bd memories_
+...
+---
+
+## GitNexus (use before any edit)
+_Injected because .gitnexus/ exists — project is indexed_
+...
+---
+```
+
+### GitNexus cheatsheet activation
+
+The GitNexus cheatsheet is only injected when `.gitnexus/meta.json` exists in the project root:
+
+```typescript
+const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
+if (existsSync(gitnexusMetaPath)) {
+  // inject cheatsheet (~100 tokens)
+}
+```
+
+This keeps context lean for projects without code intelligence indexing.
+
+### Non-fatal behavior
+
+All injection sources are non-fatal:
+- Missing `.xtrm/memory.md`: skipped silently
+- `bd prime` fails: skipped silently
+- `.gitnexus/meta.json` missing: no cheatsheet injected
+
+---
+
+## 20) Edit gate bead-claim KV pattern
+
+The edit gate hooks check two KV keys before allowing file edits:
+
+### Primary: session-scoped claim
+
+```bash
+bd kv set "claimed:<session-id>" "<bead-id>"
+```
+
+Set by Claude Code hooks when an agent claims a bead. Session-bound, cleared on session end.
+
+### Fallback: bead-claim
+
+```bash
+bd kv set "bead-claim:<bead-id>" "active"
+```
+
+Set by Runner **before spawning a specialist** when `--bead <id>` is provided. Enables worktree specialists to edit without requiring a session-scoped claim.
+
+### Lifecycle
+
+```typescript
+// Before specialist spawn (run.ts)
+if (args.beadId && workingDirectory) {
+  execSync(`bd kv set "bead-claim:${args.beadId}" "active"`);
+}
+
+// After specialist completes (success or error)
+if (args.beadId && workingDirectory) {
+  execSync(`bd kv clear "bead-claim:${args.beadId}"`);
+}
+```
+
+**Why this matters**: Worktree specialists run in subprocesses without session context. The bead-claim pattern provides an edit gate entry that:
+1. Is independent of session IDs
+2. Is scoped to the specific bead being worked on
+3. Is automatically cleaned up when the run completes
 
 ---
 
