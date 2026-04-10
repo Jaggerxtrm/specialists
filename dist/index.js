@@ -25990,10 +25990,10 @@ function renderForFirstTurnContext(ctx) {
         `sp node spawn-member --node ${ctx.nodeId} --member-key explore-1 --specialist explorer --phase explore-1 --json`,
         `sp node wait-phase --node ${ctx.nodeId} --phase explore-1 --members explore-1 --json`,
         `sp node result --node ${ctx.nodeId} --member explore-1 --full --json`,
-        "Synthesize the explore-1 evidence, then decide whether to launch a new phase or complete the node.",
-        `sp node complete --node ${ctx.nodeId} --strategy ${ctx.completionStrategy} --json`
+        "Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.",
+        "// After synthesis, enter waiting. Operator closes node via sp node stop."
       ],
-      first_routing_instruction: "Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action."
+      first_routing_instruction: "Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete \u2014 operator owns node closure."
     })
   ].join(`
 `);
@@ -26010,7 +26010,7 @@ function renderForResumePayload(update) {
       unresolved_decisions: update.unresolvedDecisions,
       action_ledger_summary: update.actionLedgerSummary,
       state_digest: update.stateDigest,
-      resume_instruction: "Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, and complete when goals are satisfied."
+      resume_instruction: "Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, read member results, synthesize, and remain in waiting when goals are satisfied. Operator closes the node."
     })
   ].join(`
 `);
@@ -29126,9 +29126,11 @@ __export(exports_merge, {
   resolveChainEpicMembership: () => resolveChainEpicMembership,
   readAllJobStatuses: () => readAllJobStatuses,
   printSummary: () => printSummary,
+  previewBranchMergeDelta: () => previewBranchMergeDelta,
   parseChildBeadIds: () => parseChildBeadIds,
   mergeBranch: () => mergeBranch,
   executePublicationPlan: () => executePublicationPlan,
+  evaluateMergeWorthiness: () => evaluateMergeWorthiness,
   ensureTerminalJobs: () => ensureTerminalJobs,
   checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard
 });
@@ -29408,31 +29410,82 @@ function readChangedFilesForLastMerge() {
   return diff.stdout.split(`
 `).map((line) => line.trim()).filter(Boolean);
 }
-function readBranchSourceChangesAgainstMaster(branch) {
-  const result = runCommand("git", ["diff", "--name-only", `master...${branch}`, "--", "src/"]);
-  if (result.status !== 0) {
-    throw new Error(`Unable to inspect source diff for '${branch}' against master.`);
-  }
-  return result.stdout.split(`
-`).map((line) => line.trim()).filter(Boolean);
+function parseNameStatusLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed)
+    return null;
+  const parts = trimmed.split(/\t+/);
+  if (parts.length < 2)
+    return null;
+  const status = parts[0] ?? "";
+  if (!status)
+    return null;
+  const path = parts.length >= 3 ? parts[parts.length - 1] ?? "" : parts[1] ?? "";
+  if (!path)
+    return null;
+  return { status, path };
 }
-function readBranchDiffStatAgainstMaster(branch) {
-  const result = runCommand("git", ["diff", "--stat", `master...${branch}`]);
-  if (result.status !== 0) {
-    return "(unable to compute diff stat)";
-  }
-  const stat2 = result.stdout.trim();
-  return stat2.length > 0 ? stat2 : "(no file changes relative to master)";
+function isNoisePath(path) {
+  return NOISE_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
-function assertBranchHasSourceDiff(branch) {
-  const sourceChanges = readBranchSourceChangesAgainstMaster(branch);
-  if (sourceChanges.length > 0) {
+function previewBranchMergeDelta(branch) {
+  const previewMerge = runCommand("git", ["merge", branch, "--no-ff", "--no-commit"]);
+  if (previewMerge.status !== 0) {
+    const conflicts = getConflictFiles();
+    runCommand("git", ["merge", "--abort"]);
+    const conflictContext = conflicts.length > 0 ? `
+Conflicting files:
+${conflicts.map((file) => `- ${file}`).join(`
+`)}` : "";
+    throw new Error(`Unable to preview merge for '${branch}'.${conflictContext}`);
+  }
+  try {
+    const stagedDelta = runCommand("git", ["diff", "--cached", "--name-status"]);
+    if (stagedDelta.status !== 0) {
+      throw new Error(`Unable to read staged merge delta for '${branch}'.`);
+    }
+    const files = stagedDelta.stdout.split(`
+`).map(parseNameStatusLine).filter((entry) => Boolean(entry));
+    const noiseFiles = files.filter((file) => isNoisePath(file.path));
+    const substantiveFiles = files.filter((file) => !isNoisePath(file.path));
+    return {
+      branch,
+      files,
+      noiseFiles,
+      substantiveFiles
+    };
+  } finally {
+    runCommand("git", ["merge", "--abort"]);
+  }
+}
+function evaluateMergeWorthiness(preview) {
+  if (preview.files.length === 0) {
+    return { shouldMerge: false, reason: "empty-delta" };
+  }
+  if (preview.substantiveFiles.length === 0) {
+    return { shouldMerge: false, reason: "noise-only-delta" };
+  }
+  return { shouldMerge: true, reason: "ok" };
+}
+function throwWorthinessBlockError(target, preview, decision) {
+  const summary = [
+    `beadId=${target.beadId}`,
+    `jobId=${target.jobId}`,
+    `branch=${target.branch}`,
+    `total=${preview.files.length}`,
+    `substantive=${preview.substantiveFiles.length}`,
+    `noise=${preview.noiseFiles.length}`
+  ].join(" ");
+  const reason = decision.reason === "empty-delta" ? "empty merge delta" : "noise-only merge delta";
+  throw new Error(`Refusing merge for '${target.branch}': ${reason}.
+` + `Diagnostics: ${summary}`);
+}
+function assertBranchMergeWorthiness(target) {
+  const preview = previewBranchMergeDelta(target.branch);
+  const decision = evaluateMergeWorthiness(preview);
+  if (decision.shouldMerge)
     return;
-  }
-  const diffStat = readBranchDiffStatAgainstMaster(branch);
-  throw new Error(`Refusing merge for '${branch}': no source changes detected under src/ compared to master.
-` + `Diff stat (master...${branch}):
-${diffStat}`);
+  throwWorthinessBlockError(target, preview, decision);
 }
 function getConflictFiles() {
   const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"]);
@@ -29494,7 +29547,7 @@ function printUsageAndExit(message) {
 function runMergePlan(targets, options) {
   const mergedSteps = [];
   for (const target of targets) {
-    assertBranchHasSourceDiff(target.branch);
+    assertBranchMergeWorthiness(target);
     mergeBranch(target.branch);
     runTypecheckGate();
     mergedSteps.push({
@@ -29583,12 +29636,13 @@ async function run12() {
   const mergedSteps = runMergePlan(targets, { rebuild: options.rebuild });
   printSummary(mergedSteps, options.rebuild);
 }
-var TERMINAL_STATUSES2;
+var TERMINAL_STATUSES2, NOISE_PATH_PREFIXES;
 var init_merge = __esm(() => {
   init_job_root();
   init_observability_sqlite();
   init_epic_lifecycle();
   TERMINAL_STATUSES2 = new Set(["done", "error", "cancelled"]);
+  NOISE_PATH_PREFIXES = [".xtrm/reports/", ".wolf/", ".specialists/jobs/"];
 });
 
 // src/cli/epic.ts
