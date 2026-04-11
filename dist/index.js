@@ -26084,7 +26084,7 @@ function renderForFirstTurnContext(ctx) {
         `sp ps --node $SPECIALISTS_NODE_ID --json`,
         `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json`,
         `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json`,
-        `sp result --node $SPECIALISTS_NODE_ID --member explore-1 --wait --json`,
+        `sp result $SPECIALISTS_NODE_ID:explore-1 --wait --json`,
         "Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.",
         "// After synthesis, enter waiting. Operator closes node via sp node stop."
       ],
@@ -26105,7 +26105,7 @@ function renderForResumePayload(update) {
       unresolved_decisions: update.unresolvedDecisions,
       action_ledger_summary: update.actionLedgerSummary,
       state_digest: update.stateDigest,
-      resume_instruction: "Continue with CLI orchestration only: query status via sp ps --node ..., spawn/coordinate members, enforce wait-phase barriers, read member results via sp result --node ... --member ... --wait --json, synthesize, and remain in waiting when goals are satisfied. Operator closes the node."
+      resume_instruction: "Continue with CLI orchestration only: query status via sp ps --node ..., spawn/coordinate members, enforce wait-phase barriers, read member results via sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json, synthesize, and remain in waiting when goals are satisfied. Operator closes the node."
     })
   ].join(`
 `);
