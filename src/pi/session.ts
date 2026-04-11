@@ -41,7 +41,7 @@ import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, resolve, sep, join } from 'node:path';
+import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -157,6 +157,18 @@ function mapPermissionToTools(level?: string): string | undefined {
     case 'HIGH':      return 'read,bash,edit,write,grep,find,ls';
     default:          return undefined;
   }
+}
+
+function resolveGlobalNodeModulesDir(): string | undefined {
+  const candidates = [
+    process.env.PI_NPM_GLOBAL_DIR,
+    process.env.NPM_CONFIG_PREFIX ? join(process.env.NPM_CONFIG_PREFIX, 'lib', 'node_modules') : undefined,
+    process.env.npm_config_prefix ? join(process.env.npm_config_prefix, 'lib', 'node_modules') : undefined,
+    process.env.NVM_BIN ? join(dirname(process.env.NVM_BIN), 'lib', 'node_modules') : undefined,
+    join(homedir(), '.nvm/versions/node', process.version, 'lib', 'node_modules'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return candidates.find(candidate => existsSync(candidate));
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -508,12 +520,14 @@ export class PiAgentSession {
 
     // npm package extensions (gitnexus, serena) - resolve from global node_modules
     // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
-    const npmGlobalDir = join(homedir(), '.nvm/versions/node', process.version, 'lib/node_modules');
-    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+    const npmGlobalDir = resolveGlobalNodeModulesDir();
+    if (npmGlobalDir) {
+      const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+      if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
 
-    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
-    if (existsSync(serenaPath)) args.push('-e', serenaPath);
+      const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
+      if (existsSync(serenaPath)) args.push('-e', serenaPath);
+    }
 
     if (this.options.systemPrompt) {
       args.push('--append-system-prompt', this.options.systemPrompt);
