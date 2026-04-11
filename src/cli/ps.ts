@@ -121,19 +121,33 @@ function readStatusesFromFiles(jobsDir: string): SupervisorStatus[] {
 function loadStatuses(): SupervisorStatus[] {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
+  const fileStatuses = readStatusesFromFiles(jobsDir);
 
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
-    if (sqliteStatuses.length > 0) {
+    if (sqliteStatuses.length === 0) {
+      return fileStatuses;
+    }
+
+    if (fileStatuses.length === 0) {
       return sqliteStatuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
     }
+
+    const merged = new Map<string, SupervisorStatus>();
+    for (const status of fileStatuses) merged.set(status.id, status);
+    for (const status of sqliteStatuses) {
+      const current = merged.get(status.id);
+      if (!current || status.started_at_ms >= current.started_at_ms) {
+        merged.set(status.id, status);
+      }
+    }
+
+    return [...merged.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
-    // fallback to files below
+    return fileStatuses;
   } finally {
     sqliteClient?.close();
   }
-
-  return readStatusesFromFiles(jobsDir);
 }
 
 function toJobNode(job: SupervisorStatus & { is_dead?: boolean }): JobNode {

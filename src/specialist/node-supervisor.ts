@@ -1840,8 +1840,50 @@ export class NodeSupervisor {
     return Math.max(this.lastCoordinatorOutputAtMs, this.lastCompletedActionAtMs, this.lastMemberTransitionAtMs);
   }
 
+  private isCoordinatorInBlockingWaitPhase(): boolean {
+    if (!this.coordinatorJobId) return false;
+
+    const coordinatorStatus = this.opts.sqliteClient.readStatus(this.coordinatorJobId)?.status;
+    if (coordinatorStatus !== 'running') return false;
+
+    const events = this.opts.sqliteClient.readEvents(this.coordinatorJobId);
+    const activeWaitPhaseToolCalls = new Set<string>();
+    let hasUncorrelatedWaitPhaseStart = false;
+
+    for (const event of events) {
+      if (event.type !== 'tool' || event.tool !== 'bash') continue;
+
+      const command = typeof event.args?.command === 'string' ? event.args.command : '';
+      const isWaitPhaseCommand = command.includes('node wait-phase');
+      if (!isWaitPhaseCommand) continue;
+
+      if (event.phase === 'start') {
+        if (event.tool_call_id) {
+          activeWaitPhaseToolCalls.add(event.tool_call_id);
+        } else {
+          hasUncorrelatedWaitPhaseStart = true;
+        }
+        continue;
+      }
+
+      if (event.phase === 'end') {
+        if (event.tool_call_id) {
+          activeWaitPhaseToolCalls.delete(event.tool_call_id);
+        } else {
+          hasUncorrelatedWaitPhaseStart = false;
+        }
+      }
+    }
+
+    return activeWaitPhaseToolCalls.size > 0 || hasUncorrelatedWaitPhaseStart;
+  }
+
   private maybeTriggerNoProgressWatchdog(): boolean {
     if (TERMINAL_NODE_STATUSES.has(this.status)) return false;
+
+    if (this.isCoordinatorInBlockingWaitPhase()) {
+      return false;
+    }
 
     const stalledForMs = Date.now() - this.getLastProgressAtMs();
     if (stalledForMs < NO_PROGRESS_WATCHDOG_MS) {
