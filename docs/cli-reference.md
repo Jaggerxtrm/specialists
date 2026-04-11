@@ -168,7 +168,9 @@ Top-level replacements for flattened node operations:
 - `sp feed --node <id> [--json]` for node event streams
 - `sp steer <coordinator-job-id> <message>` for coordinator steering
 - `sp attach <coordinator-job-id>` for coordinator attach
-- `sp result --node <id> --member <key>` for member results
+- `sp result <node-ref>:<member-key>` for member results
+
+Node refs accept any unique prefix (for example: `research`, `research-5eaf`, or full ID).
 
 ### Flags
 
@@ -196,7 +198,7 @@ sp ps --node research-abc12345
 sp feed --node research-abc12345 --json
 sp steer <coordinator-job-id> "focus on fix loop for failing gate"
 sp attach <coordinator-job-id>
-sp result --node research-abc12345 --member explorer-1
+sp result research-abc12345:explorer-1
 ```
 
 ### Exit codes

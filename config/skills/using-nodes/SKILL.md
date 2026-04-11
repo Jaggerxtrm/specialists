@@ -40,12 +40,15 @@ sp ps --node $SPECIALISTS_NODE_ID --json
 sp ps --node research-XXXXXXXX --json
 ```
 
+Node refs accept any unique prefix (for operators), such as `research`, `research-5eaf`, or the full node ID.
+Coordinator commands should still use `$SPECIALISTS_NODE_ID` directly.
+
 ---
 
 ## Hard constraints
 
 1. **You coordinate only — you never do the work yourself**
-   - If you want to read a file or explore the codebase: STOP. Spawn an explorer member and read its result via `sp result --node ... --member ...`.
+   - If you want to read a file or explore the codebase: STOP. Spawn an explorer member and read its result via `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json`.
    - If you want to write code: STOP. Spawn an executor member.
    - Your only tool is `bash`. Your only bash commands are `sp node` plus `sp ps`/`sp result`.
    - Do not call `read`, `ls`, `find`, `grep`, or any file inspection tool. You have none.
@@ -80,7 +83,7 @@ sp ps --node research-XXXXXXXX --json
 | `sp ps --node $SPECIALISTS_NODE_ID --json` | Coordinator | Read node state, registry, and readiness. |
 | `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]` | Coordinator | Launch a member for the current phase. |
 | `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]` | Coordinator | Block until the named phase members reach terminal state. |
-| `sp result --node $SPECIALISTS_NODE_ID --member <key> --wait --json` | Coordinator | Read the persisted output for a specific member after a phase barrier. |
+| `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json` | Coordinator | Read the persisted output for a specific member after a phase barrier. |
 | `sp node create-bead --node $SPECIALISTS_NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]` | Coordinator | Create follow-up tracked work discovered during orchestration. |
 | `sp node complete --node <node-id> --strategy <pr\|manual> [--json]` | Operator-only | Force-close node lifecycle when coordinator has reached waiting and operator decides to finalize. |
 | `sp node members <node-id> [--json]` | Operator | Inspect member registry and lineage. |
@@ -102,7 +105,7 @@ sp ps --node research-XXXXXXXX --json
    - wait on the phase barrier before advancing.
 
 3. **Read member evidence**
-   - after `wait-phase` succeeds, call `sp result --node $SPECIALISTS_NODE_ID --member <key> --wait --json` for each participating member,
+   - after `wait-phase` succeeds, call `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json` for each participating member,
    - synthesize the outputs into the next decision.
 
 4. **Re-check status**
@@ -134,7 +137,7 @@ Use this exact loop:
 
 Before declaring synthesis complete, the coordinator **MUST** read the persisted results for the members that produced the evidence.
 
-Do not rely only on status transitions. `wait-phase` tells you the members are terminal; `sp result --node ... --member ...` tells you what they actually found or changed. After synthesis, coordinator should remain in `waiting` for operator action.
+Do not rely only on status transitions. `wait-phase` tells you the members are terminal; `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json` tells you what they actually found or changed. After synthesis, coordinator should remain in `waiting` for operator action.
 
 ### Steering guidance
 
@@ -158,7 +161,7 @@ Use it when:
 Pattern:
 1. spawn phase members,
 2. call `wait-phase` with the exact member keys for that phase,
-3. read each member result with `sp result --node ... --member ... --wait --json`,
+3. read each member result with `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json`,
 4. only then move to the next phase or completion decision.
 
 ---
@@ -190,11 +193,11 @@ When a command fails:
 sp ps --node $SPECIALISTS_NODE_ID --json
 sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json
 sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json
-sp result --node $SPECIALISTS_NODE_ID --member explore-1 --wait --json
+sp result $SPECIALISTS_NODE_ID:explore-1 --wait --json
 # Synthesize the explore findings and decide whether impl is required.
 sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key impl-1 --specialist executor --phase impl-1 --json
 sp node wait-phase --node $SPECIALISTS_NODE_ID --phase impl-1 --members impl-1 --json
-sp result --node $SPECIALISTS_NODE_ID --member impl-1 --wait --json
+sp result $SPECIALISTS_NODE_ID:impl-1 --wait --json
 # Synthesize impl evidence, then stay in waiting for operator closure.
 sp ps --node $SPECIALISTS_NODE_ID --json
 ```
@@ -206,7 +209,7 @@ sp ps --node $SPECIALISTS_NODE_ID --json
 sp node create-bead --node $SPECIALISTS_NODE_ID --title 'Follow-up: tighten node retry policy' --type task --priority 2 --json
 sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key review-1 --specialist reviewer --phase review-1 --json
 sp node wait-phase --node $SPECIALISTS_NODE_ID --phase review-1 --members review-1 --json
-sp result --node $SPECIALISTS_NODE_ID --member review-1 --wait --json
+sp result $SPECIALISTS_NODE_ID:review-1 --wait --json
 # Synthesize the review evidence, then decide whether a fix phase is needed.
 # If no more phases are needed, remain waiting and let operator close/stop the node.
 sp ps --node $SPECIALISTS_NODE_ID --json
@@ -232,7 +235,7 @@ sp ps --node $SPECIALISTS_NODE_ID --json
 - `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--json]`
 - `sp node create-bead --node $SPECIALISTS_NODE_ID --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]`
 - `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase <id> --members <k1,k2,...> [--json]`
-- `sp result --node $SPECIALISTS_NODE_ID --member <key> --wait --json`
+- `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json`
 - `sp ps --node $SPECIALISTS_NODE_ID --json`
 
 ### Operator-only closure commands
@@ -240,7 +243,7 @@ sp ps --node $SPECIALISTS_NODE_ID --json
 - `sp node complete --node <node-id> --strategy <pr|manual> [--json]`
 
 ### Phase-boundary synthesis rule
-- After `wait-phase` completes, read every participating member result with `sp result --node ... --member ... --wait --json`, synthesize the evidence, then decide the next phase or stay waiting for operator closure.
+- After `wait-phase` completes, read every participating member result with `sp result $SPECIALISTS_NODE_ID:<member-key> --wait --json`, synthesize the evidence, then decide the next phase or stay waiting for operator closure.
 
 ### Phase kinds
 - `explore`: Discovery and evidence gathering.
