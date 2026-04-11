@@ -529,6 +529,207 @@ describe('run CLI', () => {
     expect(runArgs.variables).toEqual(expect.objectContaining({ reviewed_job_id: 'job-reviewed' }));
   });
 
+  it('infers bead context from --job metadata when --bead is omitted', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--job', 'job-reviewed'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(BeadsClient.prototype, 'readBead').mockImplementation((id: string) => {
+      if (id === 'unitAI-inferred') {
+        return {
+          id,
+          title: 'Review inferred bead',
+          description: 'Use metadata from reviewed job',
+        } as any;
+      }
+      return null as any;
+    });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-reviewed') {
+        return {
+          id,
+          specialist: 'executor',
+          status: 'done',
+          bead_id: 'unitAI-inferred',
+          worktree_path: '/tmp/wt-job-reviewed',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(consoleError).toHaveBeenCalledWith('[input bead auto-resolved from job job-reviewed: unitAI-inferred]');
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.inputBeadId).toBe('unitAI-inferred');
+    expect(runArgs.prompt).toContain('# Task: Review inferred bead');
+    expect(runArgs.variables).toEqual(expect.objectContaining({
+      bead_id: 'unitAI-inferred',
+      reviewed_job_id: 'job-reviewed',
+    }));
+  });
+
+  it('fails when --job has no bead metadata and no prompt is provided', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--job', 'job-reviewed'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-reviewed') {
+        return {
+          id,
+          specialist: 'executor',
+          status: 'done',
+          worktree_path: '/tmp/wt-job-reviewed',
+        } as any;
+      }
+      return null as any;
+    });
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(error).toHaveBeenCalledWith('Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.');
+  });
+
+  it('keeps explicit --bead when --job also has bead_id metadata', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--bead', 'unitAI-explicit', '--job', 'job-reviewed'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    const readBead = vi.spyOn(BeadsClient.prototype, 'readBead').mockImplementation((id: string) => {
+      if (id === 'unitAI-explicit') {
+        return {
+          id,
+          title: 'Explicit bead context',
+          description: 'Explicit bead should win',
+        } as any;
+      }
+      return null as any;
+    });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-reviewed') {
+        return {
+          id,
+          specialist: 'executor',
+          status: 'done',
+          bead_id: 'unitAI-inferred',
+          worktree_path: '/tmp/wt-job-reviewed',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'code-review',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.inputBeadId).toBe('unitAI-explicit');
+    expect(runArgs.variables).toEqual(expect.objectContaining({ bead_id: 'unitAI-explicit' }));
+    expect(readBead).toHaveBeenCalledWith('unitAI-explicit');
+    expect(readBead).not.toHaveBeenCalledWith('unitAI-inferred');
+  });
+
+  it('fails clearly when inferred bead from --job is unreadable', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--job', 'job-reviewed'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(BeadsClient.prototype, 'readBead').mockReturnValue(null as any);
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-reviewed') {
+        return {
+          id,
+          specialist: 'executor',
+          status: 'done',
+          bead_id: 'unitAI-inferred',
+          worktree_path: '/tmp/wt-job-reviewed',
+        } as any;
+      }
+      return null as any;
+    });
+
+    await expect(run()).rejects.toThrow("Unable to read inferred bead 'unitAI-inferred' from --job 'job-reviewed' via bd show --json");
+  });
+
   it('allows MEDIUM specialists to reuse done job worktrees', async () => {
     process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-done'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -896,7 +1097,7 @@ describe('run CLI', () => {
 
     await expect(run()).rejects.toThrow('exit:1');
     expect(exit).toHaveBeenCalledWith(1);
-    expect(error).toHaveBeenCalledWith('Error: provide --prompt, pipe stdin, or use --bead <id>.');
+    expect(error).toHaveBeenCalledWith('Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.');
     expect(runnerRun).not.toHaveBeenCalled();
   });
 });

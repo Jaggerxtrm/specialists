@@ -144,8 +144,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     });
   }
 
-  if (!prompt && !beadId) {
-    console.error('Error: provide --prompt, pipe stdin, or use --bead <id>.');
+  if (!prompt && !beadId && !reuseJobId) {
+    console.error('Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.');
     process.exit(1);
   }
 
@@ -163,9 +163,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
  * --worktree: provisions (or reuses) a bd-managed worktree derived from the
  *             bead id + specialist name and returns its absolute path.
  *
- * --job <id>: reads the target job's status.json to extract `worktree_path`.
- *             The caller's bead context remains authoritative — this just borrows
- *             the workspace without stealing the foreign job's bead.
+ * --job <id>: reads the target job status to extract `worktree_path` and
+ *             `bead_id`. The inferred bead is used only when --bead is omitted.
  *
  * Returns undefined when neither flag is set (run in current directory).
  */
@@ -178,6 +177,7 @@ function resolveWorkingDirectory(
   readStatus: (jobId: string) => {
     id?: string;
     status?: string;
+    bead_id?: string;
     worktree_path?: string;
     worktree_owner_job_id?: string;
   } | null,
@@ -185,6 +185,7 @@ function resolveWorkingDirectory(
   workingDirectory?: string;
   reusedFromJobId?: string;
   worktreeOwnerJobId?: string;
+  inferredBeadId?: string;
 } {
   if (args.worktree) {
     // args.beadId is guaranteed non-null here (parseArgs validates this)
@@ -257,6 +258,7 @@ function resolveWorkingDirectory(
       workingDirectory: worktreePath,
       reusedFromJobId: args.reuseJobId,
       worktreeOwnerJobId,
+      inferredBeadId: targetStatus.bead_id,
     };
   }
 
@@ -417,43 +419,7 @@ export async function run(): Promise<void> {
   let prompt = args.prompt;
   let variables: Record<string, string> | undefined;
   let epicId: string | undefined;
-
-  if (args.beadId) {
-    const bead = beadReader.readBead(args.beadId);
-    if (!bead) {
-      throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
-    }
-
-    // Fetch completed blockers at the requested depth (default 1)
-    const blockers = (args.contextDepth > 0)
-      ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth)
-      : [];
-
-    if (blockers.length > 0) {
-      process.stderr.write(dim(`\n[context: ${blockers.length} completed dep${blockers.length > 1 ? 's' : ''} injected]\n`));
-    }
-
-    const beadContext = buildBeadContext(bead, blockers);
-    prompt = beadContext;
-    // Explicit --epic overrides bead.parent; otherwise use bead's parent epic if set
-    epicId = args.epicId ?? bead.parent;
-    variables = {
-      bead_context: beadContext,
-      bead_id: args.beadId,
-    };
-  }
-
-  // For non-bead runs, use explicit --epic if provided
-  if (!args.beadId && args.epicId) {
-    epicId = args.epicId;
-  }
-
-  if (args.reuseJobId) {
-    variables = {
-      ...(variables ?? {}),
-      reviewed_job_id: args.reuseJobId,
-    };
-  }
+  let effectiveBeadId = args.beadId;
 
   const runner = new SpecialistRunner({
     loader,
@@ -481,6 +447,7 @@ export async function run(): Promise<void> {
     workingDirectory,
     reusedFromJobId,
     worktreeOwnerJobId,
+    inferredBeadId,
   } = resolveWorkingDirectory(
     {
       ...args,
@@ -492,6 +459,53 @@ export async function run(): Promise<void> {
   );
   await statusReader.dispose();
 
+  if (!effectiveBeadId && inferredBeadId) {
+    effectiveBeadId = inferredBeadId;
+    console.error(`[input bead auto-resolved from job ${args.reuseJobId}: ${inferredBeadId}]`);
+  }
+
+  if (effectiveBeadId) {
+    const bead = beadReader.readBead(effectiveBeadId);
+    if (!bead) {
+      const inferredFromJob = !args.beadId && inferredBeadId && effectiveBeadId === inferredBeadId;
+      if (inferredFromJob) {
+        throw new Error(`Unable to read inferred bead '${effectiveBeadId}' from --job '${args.reuseJobId}' via bd show --json`);
+      }
+      throw new Error(`Unable to read bead '${effectiveBeadId}' via bd show --json`);
+    }
+
+    const blockers = (args.contextDepth > 0)
+      ? beadReader.getCompletedBlockers(effectiveBeadId, args.contextDepth)
+      : [];
+
+    if (blockers.length > 0) {
+      process.stderr.write(dim(`\n[context: ${blockers.length} completed dep${blockers.length > 1 ? 's' : ''} injected]\n`));
+    }
+
+    const beadContext = buildBeadContext(bead, blockers);
+    prompt = beadContext;
+    epicId = args.epicId ?? bead.parent;
+    variables = {
+      ...(variables ?? {}),
+      bead_context: beadContext,
+      bead_id: effectiveBeadId,
+    };
+  } else if (args.epicId) {
+    epicId = args.epicId;
+  }
+
+  if (args.reuseJobId) {
+    variables = {
+      ...(variables ?? {}),
+      reviewed_job_id: args.reuseJobId,
+    };
+  }
+
+  if (!prompt && !effectiveBeadId) {
+    console.error('Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.');
+    process.exit(1);
+  }
+
   let stopTailer: (() => void) | undefined;
 
   const supervisor = new Supervisor({
@@ -501,7 +515,7 @@ export async function run(): Promise<void> {
       prompt,
       variables,
       backendOverride: args.model,
-      inputBeadId: args.beadId,
+      inputBeadId: effectiveBeadId,
       epicId,
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
@@ -523,16 +537,16 @@ export async function run(): Promise<void> {
     onJobStarted: ({ id }) => {
       process.stderr.write(dim(`[job started: ${id}]\n`));
       if (args.outputMode !== 'raw') {
-        stopTailer = startEventTailer(id, jobsDir, args.outputMode, args.name, args.beadId);
+        stopTailer = startEventTailer(id, jobsDir, args.outputMode, args.name, effectiveBeadId);
       }
     },
   });
 
   // Set bead-based claim for edit gate — allows specialists to edit without session-scoped claim.
   // This is checked by beads-edit-gate as a fallback when claimed:<sessionId> is not set.
-  if (args.beadId && workingDirectory) {
+  if (effectiveBeadId && workingDirectory) {
     try {
-      execSync(`bd kv set "bead-claim:${args.beadId}" "active"`, {
+      execSync(`bd kv set "bead-claim:${effectiveBeadId}" "active"`, {
         cwd: workingDirectory,
         stdio: 'pipe',
         timeout: 5000,
@@ -557,9 +571,9 @@ export async function run(): Promise<void> {
   stopTailer?.();
 
   // Clean up bead-claim AFTER run completes (success or error) — ensures no stale claims
-  if (args.beadId && workingDirectory) {
+  if (effectiveBeadId && workingDirectory) {
     try {
-      execSync(`bd kv clear "bead-claim:${args.beadId}"`, {
+      execSync(`bd kv clear "bead-claim:${effectiveBeadId}"`, {
         cwd: workingDirectory,
         stdio: 'pipe',
         timeout: 5000,
