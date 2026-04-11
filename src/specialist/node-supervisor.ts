@@ -2255,6 +2255,7 @@ export class NodeSupervisor {
         const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
         const shouldResumeCoordinator = changes.length > 0
           && coordinatorStatus?.status === 'waiting'
+          && !TERMINAL_NODE_STATUSES.has(this.status)
           && !this.resumePending
           && canResumeCoordinator
           && Boolean(this.coordinatorJobId)
