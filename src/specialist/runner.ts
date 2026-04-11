@@ -879,9 +879,9 @@ _Injected because .gitnexus/ exists — project is indexed_
     try {
       // Forward selected specialist variables as real shell env vars for bash tool access
       const envVars: Record<string, string> = {};
-      for (const key of ['SPECIALISTS_NODE_ID', 'SPECIALISTS_JOB_ID'] as const) {
-        if (options.variables?.[key]) envVars[key] = options.variables[key];
-      }
+      const resolvedNodeId = options.variables?.SPECIALISTS_NODE_ID ?? options.variables?.node_id;
+      if (resolvedNodeId) envVars.SPECIALISTS_NODE_ID = resolvedNodeId;
+      if (options.variables?.SPECIALISTS_JOB_ID) envVars.SPECIALISTS_JOB_ID = options.variables.SPECIALISTS_JOB_ID;
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,

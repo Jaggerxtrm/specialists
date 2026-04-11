@@ -41,6 +41,7 @@ export class JobControl {
       variables: {
         ...(this.baseRunOptions.variables ?? {}),
         node_id: opts.nodeId,
+        SPECIALISTS_NODE_ID: opts.nodeId,
         member_id: opts.memberId,
       },
     };
