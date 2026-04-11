@@ -2214,6 +2214,8 @@ export class NodeSupervisor {
           const doneOutput = this.coordinatorJobId
             ? this.coordinatorController?.readResult(this.coordinatorJobId) ?? null
             : null;
+
+          // Empty output → restart coordinator (likely model failure)
           if (!doneOutput || doneOutput.trim().length === 0) {
             const restarted = await this.restartCoordinator('coordinator_empty_output');
             if (restarted) {
@@ -2222,6 +2224,13 @@ export class NodeSupervisor {
             break;
           }
 
+          // Valid output + manual strategy → node waits for operator closure
+          if ((this.opts.completionStrategy ?? 'pr') === 'manual') {
+            this.transition('waiting', 'coordinator_done_manual_completion');
+            break;
+          }
+
+          // Valid output + non-manual strategy → node is done
           this.transition('done', 'coordinator_done');
           break;
         }

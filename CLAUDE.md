@@ -182,6 +182,12 @@ sp node stop <node-id>                               # stop node
 - `src/specialist/node-contract.ts` — Zod schema, state machine, renderers
 - `config/nodes/research.node.json` — research node config (explorer + overthinker + researcher)
 
+### Completion strategy
+Node configs declare `completion_strategy` (manual or pr):
+- **manual**: coordinator synthesis → node waits for operator closure via `sp node stop`
+- **pr** (default): coordinator synthesis → node auto-closes to `done`
+Use `manual` for research/interactive nodes, `pr` for implementation nodes.
+
 ### Known gap (unitAI-8zui)
 Coordinator currently polls status and completes — doesn't read member output, steer members, synthesize findings, or manage phases. Needs `sp result`/`sp steer` access and synthesis mandate.
 
@@ -319,7 +325,7 @@ Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (3302 symbols, 7642 relationships, 280 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (3496 symbols, 7970 relationships, 297 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

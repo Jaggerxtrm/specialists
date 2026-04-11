@@ -121,6 +121,51 @@ Coordinator should call `complete` only after phase barriers and status checks i
 
 ---
 
+## 7.5) `completion_strategy` in node configs
+
+The `completion_strategy` field in `.node.json` configs controls how NodeSupervisor handles coordinator completion:
+
+```json
+{
+  "completion_strategy": "manual"  // or "pr" (default)
+}
+```
+
+### Values
+
+| Strategy | Behavior | Use case |
+|---|---|---|
+| `pr` (default) | When coordinator job reaches `done` with valid output, node auto-closes to `done` state. | Implementation nodes — auto-publish work via PR |
+| `manual` | When coordinator job reaches `done` with valid output, node transitions to `waiting`. Operator must close via `sp node stop`. | Research/interactive nodes — operator reviews findings before closure |
+
+### Key behavior
+
+When the coordinator completes synthesis and its job status becomes `done`:
+
+1. NodeSupervisor checks `completion_strategy` from node config.
+2. If `manual`: node enters `waiting` state (coordinator_done_manual_completion transition).
+3. If `pr`: node enters `done` state directly (coordinator_done transition).
+
+This allows research nodes to persist in `waiting` after coordinator synthesis, giving the operator time to review findings, steer for more work, or close explicitly.
+
+### Example configs
+
+```json
+// config/nodes/research.node.json (interactive research)
+{
+  "completion_strategy": "manual",
+  "members": [...]
+}
+
+// Implementation nodes (auto-publish via PR)
+{
+  "completion_strategy": "pr",
+  "members": [...]
+}
+```
+
+---
+
 ## 8) Member bootstrap behavior
 
 Members start in idle-wait bootstrap mode:
