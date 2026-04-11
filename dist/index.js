@@ -17792,7 +17792,7 @@ import { createHash } from "crypto";
 import { spawn } from "child_process";
 import { existsSync as existsSync2, mkdirSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
-import { isAbsolute, resolve, sep, join as join2 } from "path";
+import { isAbsolute, resolve, sep, join as join2, dirname } from "path";
 function mapPermissionToTools(level) {
   switch (level?.toUpperCase()) {
     case "READ_ONLY":
@@ -17806,6 +17806,16 @@ function mapPermissionToTools(level) {
     default:
       return;
   }
+}
+function resolveGlobalNodeModulesDir() {
+  const candidates = [
+    process.env.PI_NPM_GLOBAL_DIR,
+    process.env.NPM_CONFIG_PREFIX ? join2(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
+    process.env.npm_config_prefix ? join2(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join2(dirname(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    join2(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
+  ].filter((candidate) => Boolean(candidate));
+  return candidates.find((candidate) => existsSync2(candidate));
 }
 function asNumber(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -18089,13 +18099,15 @@ class PiAgentSession {
     const ssPath = join2(piExtDir, "service-skills");
     if (existsSync2(ssPath))
       args.push("-e", ssPath);
-    const npmGlobalDir = join2(homedir(), ".nvm/versions/node", process.version, "lib/node_modules");
-    const gitnexusPath = join2(npmGlobalDir, "pi-gitnexus");
-    if (existsSync2(gitnexusPath))
-      args.push("-e", gitnexusPath);
-    const serenaPath = join2(npmGlobalDir, "pi-serena-tools");
-    if (existsSync2(serenaPath))
-      args.push("-e", serenaPath);
+    const npmGlobalDir = resolveGlobalNodeModulesDir();
+    if (npmGlobalDir) {
+      const gitnexusPath = join2(npmGlobalDir, "pi-gitnexus");
+      if (existsSync2(gitnexusPath))
+        args.push("-e", gitnexusPath);
+      const serenaPath = join2(npmGlobalDir, "pi-serena-tools");
+      if (existsSync2(serenaPath))
+        args.push("-e", serenaPath);
+    }
     if (this.options.systemPrompt) {
       args.push("--append-system-prompt", this.options.systemPrompt);
     }
@@ -19607,7 +19619,7 @@ var init_runner = __esm(() => {
 
 // src/specialist/hooks.ts
 import { appendFile, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { dirname as dirname2 } from "path";
 
 class HookEmitter {
   tracePath;
@@ -19615,7 +19627,7 @@ class HookEmitter {
   ready;
   constructor(options) {
     this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname(options.tracePath), { recursive: true }).then(() => {});
+    this.ready = mkdir(dirname2(options.tracePath), { recursive: true }).then(() => {});
   }
   async emit(hook, invocationId, specialistName, specialistVersion, payload) {
     await this.ready;
@@ -19669,11 +19681,11 @@ __export(exports_version, {
 });
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
-import { dirname as dirname2, join as join4 } from "path";
+import { dirname as dirname3, join as join4 } from "path";
 import { existsSync as existsSync4 } from "fs";
 async function run2() {
   const req = createRequire(import.meta.url);
-  const here = dirname2(fileURLToPath(import.meta.url));
+  const here = dirname3(fileURLToPath(import.meta.url));
   const bundlePkgPath = join4(here, "..", "package.json");
   const sourcePkgPath = join4(here, "..", "..", "package.json");
   let pkg;
@@ -19691,7 +19703,7 @@ var init_version = () => {};
 
 // src/specialist/job-root.ts
 import { spawnSync as spawnSync3 } from "child_process";
-import { dirname as dirname3, join as join5, resolve as resolve3 } from "path";
+import { dirname as dirname4, join as join5, resolve as resolve3 } from "path";
 function resolveCommonGitRoot(cwd) {
   const result = spawnSync3("git", ["rev-parse", "--git-common-dir"], {
     cwd,
@@ -19703,7 +19715,7 @@ function resolveCommonGitRoot(cwd) {
   const gitCommonDir = result.stdout?.trim();
   if (!gitCommonDir)
     return;
-  return dirname3(resolve3(cwd, gitCommonDir));
+  return dirname4(resolve3(cwd, gitCommonDir));
 }
 function resolveJobsDir(cwd = process.cwd()) {
   const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
@@ -23548,7 +23560,7 @@ __export(exports_init, {
 });
 import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync4, readdirSync as readdirSync3, readFileSync as readFileSync6, readlinkSync, renameSync as renameSync2, symlinkSync, writeFileSync as writeFileSync4 } from "fs";
 import { spawnSync as spawnSync9 } from "child_process";
-import { basename as basename3, dirname as dirname4, join as join10, relative, resolve as resolve4 } from "path";
+import { basename as basename3, dirname as dirname5, join as join10, relative, resolve as resolve4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
@@ -23724,7 +23736,7 @@ function installProjectHooks(cwd) {
         skippedLinks++;
         continue;
       }
-      const currentTarget = resolve4(dirname4(claudeHookPath), readlinkSync(claudeHookPath));
+      const currentTarget = resolve4(dirname5(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
         skippedLinks++;
         continue;
@@ -23774,10 +23786,10 @@ function ensureProjectHookWiring(cwd) {
 }
 function ensureRootSymlink(rootPath, expectedTargetPath) {
   if (!existsSync9(rootPath)) {
-    mkdirSync4(dirname4(rootPath), { recursive: true });
-    const relTarget = relative(dirname4(rootPath), expectedTargetPath);
+    mkdirSync4(dirname5(rootPath), { recursive: true });
+    const relTarget = relative(dirname5(rootPath), expectedTargetPath);
     symlinkSync(relTarget, rootPath);
-    ok(`created ${basename3(dirname4(rootPath))}/${basename3(rootPath)} \u2192 ${relTarget}`);
+    ok(`created ${basename3(dirname5(rootPath))}/${basename3(rootPath)} \u2192 ${relTarget}`);
     return;
   }
   const stats = lstatSync(rootPath);
@@ -23785,7 +23797,7 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
     throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
   }
   const linkTarget = readlinkSync(rootPath);
-  const resolvedTarget = resolve4(dirname4(rootPath), linkTarget);
+  const resolvedTarget = resolve4(dirname5(rootPath), linkTarget);
   const resolvedExpected = resolve4(expectedTargetPath);
   if (resolvedTarget !== resolvedExpected) {
     throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
@@ -23807,7 +23819,7 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   if (!stats.isSymbolicLink()) {
     throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
   }
-  const currentTarget = resolve4(dirname4(activeLinkPath), readlinkSync(activeLinkPath));
+  const currentTarget = resolve4(dirname5(activeLinkPath), readlinkSync(activeLinkPath));
   if (currentTarget !== resolve4(defaultSkillPath)) {
     throw new Error(`${activeLinkPath} points to an unexpected target.`);
   }
@@ -25408,7 +25420,6 @@ async function parseArgs6(argv) {
   let outputMode = "human";
   let contextDepth = 1;
   let worktree = false;
-  let noWorktree = false;
   let reuseJobId;
   let forceJob = false;
   let epicId;
@@ -25465,8 +25476,8 @@ async function parseArgs6(argv) {
       continue;
     }
     if (token === "--no-worktree") {
-      noWorktree = true;
-      continue;
+      console.error("Error: --no-worktree has been removed. " + "Edit-capable specialists now auto-provision worktrees. " + "Use --job <id> to reuse an existing worktree.");
+      process.exit(1);
     }
     if (token === "--job" && argv[i + 1]) {
       reuseJobId = argv[++i];
@@ -25527,7 +25538,6 @@ async function parseArgs6(argv) {
     worktree,
     reuseJobId,
     forceJob,
-    noWorktree,
     epicId
   };
 }
@@ -25661,12 +25671,11 @@ async function run11() {
   const requiresWorktree = specialist.specialist.execution.requires_worktree ?? true;
   const perm = permission === "LOW" || permission === "MEDIUM" || permission === "HIGH" ? permission : "READ_ONLY";
   const editCapable = perm === "MEDIUM" || perm === "HIGH";
-  if (editCapable && requiresWorktree && !args.worktree && !args.reuseJobId && !args.noWorktree) {
-    process.stderr.write(`Error: specialist '${args.name}' has permission_required=${perm} and can edit files.
-` + `Edit-capable specialists must run in isolation. Use one of:
-` + `  --worktree      provision an isolated worktree (recommended)
-` + `  --job <id>      reuse an existing job's worktree
-` + `  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+  const shouldAutoProvisionWorktree = editCapable && requiresWorktree && !args.reuseJobId;
+  const useWorktree = args.worktree || shouldAutoProvisionWorktree;
+  if (shouldAutoProvisionWorktree && !args.beadId) {
+    process.stderr.write(`Error: specialist '${args.name}' has permission_required=${perm} and requires worktree isolation.
+` + `Provide --bead <id> for automatic worktree provisioning, or use --job <id> to reuse an existing worktree.
 `);
     process.exit(1);
   }
@@ -25776,7 +25785,10 @@ async function run11() {
     workingDirectory,
     reusedFromJobId,
     worktreeOwnerJobId
-  } = resolveWorkingDirectory(args, jobsDir, perm, (jobId2) => statusReader.readStatus(jobId2));
+  } = resolveWorkingDirectory({
+    ...args,
+    worktree: useWorktree
+  }, jobsDir, perm, (jobId2) => statusReader.readStatus(jobId2));
   await statusReader.dispose();
   let stopTailer;
   const supervisor = new Supervisor({
@@ -27982,7 +27994,7 @@ ${JSON.stringify(recoveryDigest, null, 2)}`
           }
         }
         const canResumeCoordinator = this.coordinatorResumesInFlight < MAX_IN_FLIGHT_COORDINATOR_RESUMES;
-        const shouldResumeCoordinator = changes.length > 0 && coordinatorStatus?.status === "waiting" && !this.resumePending && canResumeCoordinator && Boolean(this.coordinatorJobId) && Boolean(this.coordinatorController);
+        const shouldResumeCoordinator = changes.length > 0 && coordinatorStatus?.status === "waiting" && !TERMINAL_NODE_STATUSES.has(this.status) && !this.resumePending && canResumeCoordinator && Boolean(this.coordinatorJobId) && Boolean(this.coordinatorController);
         if (changes.length > 0 && !shouldResumeCoordinator) {
           const skipReasons = [];
           if (coordinatorStatus?.status !== "waiting")
@@ -33300,7 +33312,7 @@ __export(exports_doctor, {
 import { createHash as createHash4 } from "crypto";
 import { spawnSync as spawnSync21 } from "child_process";
 import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync22, readlinkSync as readlinkSync2, writeFileSync as writeFileSync9 } from "fs";
-import { dirname as dirname5, join as join28, relative as relative2, resolve as resolve7 } from "path";
+import { dirname as dirname6, join as join28, relative as relative2, resolve as resolve7 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
@@ -33474,7 +33486,7 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
     return { ok: false, reason: "not-symlink" };
   try {
     const rawTarget = readlinkSync2(linkPath);
-    const resolvedTarget = resolve7(dirname5(linkPath), rawTarget);
+    const resolvedTarget = resolve7(dirname6(linkPath), rawTarget);
     const resolvedExpected = resolve7(expectedTargetPath);
     if (resolvedTarget !== resolvedExpected) {
       return { ok: false, reason: "wrong-target", target: rawTarget };
@@ -33569,7 +33581,7 @@ function checkSkillDrift() {
   for (const check2 of skillRootChecks) {
     const state = isSymlinkTo(check2.root, check2.expected);
     if (state.ok) {
-      ok3(`${relative2(CWD, check2.root)} -> ${relative2(dirname5(check2.root), check2.expected)}`);
+      ok3(`${relative2(CWD, check2.root)} -> ${relative2(dirname6(check2.root), check2.expected)}`);
       continue;
     }
     rootLinksOk = false;
@@ -41731,7 +41743,7 @@ async function run29() {
         "Primary modes:",
         "  tracked:    specialists run <name> --bead <id>",
         '  ad-hoc:     specialists run <name> --prompt "..."',
-        "  worktree:   specialists run <name> --bead <id> --worktree",
+        "  explicit wt specialists run <name> --bead <id> --worktree",
         "  reuse job:  specialists run <name> --bead <id> --job <prior-job-id>",
         "",
         "Options:",
@@ -41742,7 +41754,7 @@ async function run29() {
         "  --no-bead-notes      Do not append completion notes to an external --bead",
         "  --model <model>      Override the configured model for this run",
         "  --keep-alive         Keep session alive for follow-up prompts",
-        "  --worktree           Provision (or reuse) a bd-managed worktree derived from --bead.",
+        "  --worktree           Explicitly provision (or reuse) a bd-managed worktree derived from --bead.",
         "                       Requires --bead. Mutually exclusive with --job.",
         "  --job <id>           Reuse the workspace of a prior job (must have been started with",
         "                       --worktree). Caller bead context remains authoritative.",
@@ -41758,7 +41770,7 @@ async function run29() {
         "",
         "Rules:",
         "  Use --bead for tracked work.",
-        "  Use --worktree to isolate the run in its own git branch/directory.",
+        "  MEDIUM/HIGH specialists auto-provision a worktree when requires_worktree=true.",
         "  Use --job to reuse a prior worktree without re-provisioning.",
         "  --worktree and --job are mutually exclusive.",
         "  --worktree requires --bead to derive a deterministic branch name.",

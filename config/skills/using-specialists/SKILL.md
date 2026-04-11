@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.5
+version: 4.6
 synced_at: zz22-docs
 ---
 
@@ -40,6 +40,7 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 7. **Merge through epics, not manual git.** Use `sp epic merge <epic-id>` for wave-bound chains or `sp merge <chain-root-bead>` for standalone chains. Never use manual `git merge` for specialist work.
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
 9. **Executor does not run tests.** Executor runs lint + tsc only. Tests are the reviewer's and test-runner's responsibility in the chained pipeline.
+10. **Keep specialists alive through the review cycle.** Never `sp stop` an executor or debugger before the reviewer delivers its verdict. The specialist stays in `waiting` so you can `resume` it — to commit changes, apply fixes from reviewer feedback, or continue work. Only stop after final reviewer PASS and confirmed commit.
 
 ---
 
@@ -426,21 +427,27 @@ The review → fix loop is the mechanism for iterative quality improvement withi
 ### Standard loop
 
 ```
-1. Executor claims impl bead, provisions --worktree, implements, closes bead.
-   -> Job: exec-job
+1. Executor provisions --worktree, implements, enters waiting.
+   -> Job: exec-job (KEEP ALIVE — do not stop)
 
 2. Reviewer enters same worktree via --job exec-job.
-   -> Reads task bead from exec-job status.json automatically.
+   -> sp ps shows the chain:
+      feature/unitAI-impl-executor · unitAI-impl
+        ◐ exec-job   executor   waiting
+        └ ◐ rev-job   reviewer   starting
    -> Auto-appends verdict (PASS/PARTIAL/FAIL) to bead notes.
 
-3a. PASS: orchestrator closes parent task bead.
+3a. PASS:
+    -> Resume executor: "Reviewer PASS. Commit your changes."
+    -> Verify commit landed on branch (git log)
+    -> Stop reviewer, then stop executor
+    -> Merge via sp merge
 
 3b. PARTIAL/FAIL:
-    -> Create fix bead as child of impl bead.
-    -> Run executor --bead fix-bead --job exec-job --context-depth 2.
-    -> Fix executor sees: fix-bead + impl (with reviewer verdict) + explore.
-    -> Fix executor closes fix-bead on completion.
-    -> Return to step 2 (reviewer on same job).
+    -> Resume the SAME executor: "Reviewer PARTIAL. Fix: <specific findings>"
+    -> Executor retains full conversation context — no re-dispatch needed
+    -> Executor applies fixes, enters waiting again
+    -> Return to step 2 (new reviewer on same --job)
 
 4. Repeat until PASS.
 ```
@@ -448,33 +455,51 @@ The review → fix loop is the mechanism for iterative quality improvement withi
 ### Commands
 
 ```bash
-# Step 1 — Executor with worktree
+# Step 1 — Executor with worktree (enters waiting after first turn)
 specialists run executor --worktree --bead unitAI-impl --context-depth 2 --background
 # -> Job started: exec-job (e.g. 49adda)
+# DO NOT sp stop — executor stays alive for the entire review cycle
 
-# Step 2 — Reviewer enters same worktree (--prompt required when no --bead)
+# Step 2 — Reviewer enters same worktree
 specialists run reviewer --job 49adda --keep-alive --background --prompt "Review impl changes"
 # -> Job started: rev-job
 specialists result rev-job
-# PARTIAL → go to step 3b
 
-# Step 3b — Create fix bead + run fix executor in same worktree
-bd create --title "Fix: address reviewer findings on impl" --type bug --priority 1
-# -> unitAI-fix1
-bd dep add fix1 impl
-specialists run executor --bead fix1 --job 49adda --context-depth 2 --background
+# Step 3a — PASS: resume executor to commit, then stop both
+specialists resume 49adda "Reviewer PASS. Git add and commit your changes."
+# Wait for commit, verify with: git log feature/unitAI-impl-executor --oneline -1
+specialists stop rev-job
+specialists stop 49adda
+sp merge unitAI-impl --rebuild
 
-# Re-review
+# Step 3b — PARTIAL: resume executor with fix instructions (same session, full context)
+specialists resume 49adda "Reviewer PARTIAL. Fix: <paste specific findings here>"
+# Executor applies fixes, enters waiting again
+# Dispatch new reviewer:
 specialists run reviewer --job 49adda --keep-alive --background --prompt "Re-review after fix"
-# PASS → close parent
+# Repeat until PASS
+
+# After final PASS + commit + stop:
 bd close unitAI-task --reason "Reviewer PASS. All findings addressed."
 ```
 
+### Why resume instead of re-dispatch
+
+Resuming the original executor/debugger is **always preferred** over dispatching a new fix executor:
+
+- **Full context**: the specialist remembers what it changed and why — no re-discovery
+- **No new bead needed**: no fix bead creation, no dep wiring overhead
+- **Same worktree**: no `--job` coordination needed, it's already there
+- **Cheaper**: one resumed turn vs a full new specialist session with context injection
+
+Only dispatch a new fix executor when the original specialist is dead (crashed, stopped prematurely, or context exhausted at >80%).
+
 ### Key invariants
-- Reviewer never re-opens the impl bead — it was closed by the executor. The reviewer's verdict lives on the bead notes as appended output.
-- Each fix iteration creates a **new child bead** — never reopen or re-claim the completed impl bead.
-- The fix executor inherits the full context chain: fix-bead + impl (executor output + reviewer findings) + explore, via `--context-depth 2`.
-- Multiple reviewer → fix cycles are expected for complex changes. The worktree is stable across all cycles.
+- **Never stop the executor/debugger before reviewer verdict.** The specialist stays in `waiting` throughout the review cycle. Stopping prematurely kills the resume path and risks uncommitted changes.
+- **Executors do not auto-commit.** After reviewer PASS, you must resume the executor with explicit commit instructions. Verify the commit landed before stopping.
+- Each fix iteration uses `resume` on the same specialist — not a new child bead or new executor.
+- Multiple reviewer → resume → re-review cycles are expected. The worktree and specialist session are stable across all cycles.
+- Only stop after: (1) reviewer PASS, (2) executor committed, (3) commit verified on branch.
 
 ---
 
@@ -648,7 +673,7 @@ Run `specialists list` to see what's available. Match by task type:
 ### Specialist selection notes
 
 - **executor does not run tests** — it runs `lint + tsc` only. Tests belong to the reviewer or test-runner phase.
-- **executor enters `waiting` after first turn** — `interactive: true` is now default. If executor bails early (e.g. GitNexus CRITICAL risk warning), orchestrator can `resume` with "proceed, this is additive" instead of re-dispatching. Always `stop` executor explicitly when work is complete.
+- **executor enters `waiting` after first turn** — `interactive: true` is now default. **Never stop the executor before reviewer verdict.** Keep it alive so you can: (1) resume with fix instructions if reviewer says PARTIAL, (2) resume with "commit your changes" after reviewer PASS. Executors do not auto-commit — you must explicitly resume them to commit. Only `sp stop` after the commit is verified on the branch.
 - **explorer** is READ_ONLY — its output auto-appends to the input bead's notes. No implementation.
 - **reviewer** is best dispatched via `--job <exec-job> --prompt "..."` — it enters the same worktree to see exactly what was written. `--job` alone is not enough; `--prompt` or `--bead` is always required.
 - **debugger** over **explorer** when you need root cause analysis — GitNexus call-chain tracing, ranked hypotheses, evidence-backed remediation.
@@ -775,15 +800,19 @@ specialists steer a1b2c3 "Do NOT audit. Write the actual file to disk now."
 
 | Specialist | Enters `waiting` after | What to send via `resume` |
 |-----------|----------------------|--------------------------|
-| **executor** | First turn completion (may be partial if bailed early) | "proceed, this is additive", "address the risk warning and continue", or "done, close bead" |
+| **executor** | First turn completion (may be partial if bailed early) | "proceed, this is additive", "Reviewer PARTIAL. Fix: <findings>", or "Reviewer PASS. Git add and commit your changes." |
 | **researcher** | Delivering research findings | Follow-up question, new angle, or "done, thanks" |
 | **reviewer** | Delivering verdict (PASS/PARTIAL/FAIL) | Your response, clarification, or "accepted, close out" |
 | **overthinker** | Phase 4 conclusion | Follow-up question, counter-argument, or "done, thanks" |
-| **debugger** | Phase 3 fix attempt or Phase 4 verify result | Follow-up fix, "try different approach", or "done" |
+| **debugger** | Phase 3 fix attempt or Phase 4 verify result | Follow-up fix, "try different approach", "Reviewer PASS. Git add and commit your changes.", or "done" |
 | **sync-docs** | Audit report or targeted update result | "approve", "deny", or specific instructions |
 
 > **Warning:** A job in `waiting` looks identical to a stalled job. **Always check with `sp ps`
 > before killing a keep-alive job.**
+
+> **Critical:** Never stop an executor or debugger before the reviewer delivers its verdict.
+> Stopping prematurely: (1) kills the resume path for fix loops, (2) risks uncommitted changes
+> (executors don't auto-commit), and (3) forces dispatching a new specialist instead of resuming.
 
 ```bash
 # Check before stopping
@@ -791,7 +820,7 @@ specialists ps d4e5f6
 # -> status: waiting  ← healthy, expecting input
 
 specialists resume d4e5f6 "What about backward compatibility?"
-specialists stop d4e5f6   # only when truly done iterating
+specialists stop d4e5f6   # only when truly done iterating — after reviewer PASS + commit verified
 ```
 
 ---
