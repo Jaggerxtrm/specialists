@@ -45,7 +45,9 @@ Instead it:
 - `sp feed --node <id> [--json]` for node event stream
 - `sp steer <coordinator-job-id> "..."` for coordinator steering
 - `sp attach <coordinator-job-id>` for coordinator attach
-- `sp result --node <id> --member <key>` for member result retrieval
+- `sp result <node-ref>:<member-key>` for member result retrieval
+
+Node refs accept any unique prefix (e.g. `research`, `research-5eaf`, or full ID).
 
 ---
 
@@ -194,7 +196,7 @@ Useful CLI inspection commands:
 - `sp feed --node <id> [--json]`
 - `sp steer <coordinator-job-id> "..."`
 - `sp attach <coordinator-job-id>`
-- `sp result --node <id> --member <key>`
+- `sp result <node-ref>:<member-key>`
 - `sp node members <id> [--json]`
 - `sp node memory <id> [--json]`
 
@@ -216,7 +218,7 @@ Related top-level commands for node operations:
 - `sp feed --node <id> [--json]`
 - `sp steer <coordinator-job-id> <message>`
 - `sp attach <coordinator-job-id>`
-- `sp result --node <id> --member <key>`
+- `sp result <node-ref>:<member-key>`
 
 ---
 

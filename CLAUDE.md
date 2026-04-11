@@ -179,7 +179,7 @@ Node operations that moved to top-level CLI:
 - event stream: `sp feed` (optionally scoped with `--node <id>`)
 - steering: `sp steer <coordinator-job-id> "message"`
 - attach: `sp attach <coordinator-job-id>`
-- member output: `sp result --node <id> --member <key>`
+- member output: `sp result <node-ref>:<member-key>` (node refs accept any unique prefix: `research`, `research-5eaf`, or full ID)
 
 ### Key files
 - `src/cli/node.ts` — CLI command routing + action handlers
