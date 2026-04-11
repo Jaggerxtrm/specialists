@@ -6,6 +6,7 @@ import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { loadEpicReadinessSummary, syncEpicStateFromReadiness, type EpicReadinessSummary } from '../specialist/epic-readiness.js';
 
 type JobState = SupervisorStatus['status'];
@@ -882,13 +883,23 @@ async function follow(args: PsArgs): Promise<void> {
 
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
-  if (args.inspectId) {
-    renderInspect(args.inspectId);
-    return;
+  const sqliteClient = createObservabilitySqliteClient();
+  try {
+    const resolvedArgs: PsArgs = {
+      ...args,
+      nodeId: args.nodeId && sqliteClient ? resolveNodeRefWithClient(args.nodeId, sqliteClient) : args.nodeId,
+    };
+
+    if (resolvedArgs.inspectId) {
+      renderInspect(resolvedArgs.inspectId);
+      return;
+    }
+    if (resolvedArgs.follow) {
+      await follow(resolvedArgs);
+      return;
+    }
+    render(resolvedArgs);
+  } finally {
+    sqliteClient?.close();
   }
-  if (args.follow) {
-    await follow(args);
-    return;
-  }
-  render(args);
 }

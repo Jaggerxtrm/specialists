@@ -733,6 +733,8 @@ export interface ObservabilitySqliteClient {
   upsertNodeMemoryWithEvent(entry: NodeMemoryRow, nodeRunId: string, t: number, type: NodeEventType, eventJson: unknown): void;
   readNodeRun(nodeRunId: string): NodeRunRow | null;
   listNodeRuns(filter?: { status?: NodeRunStatus }): NodeRunRow[];
+  listNodeRunsByRef(partialRef: string, statuses: readonly NodeRunStatus[]): NodeRunRow[];
+  listNodeRunsByStatuses(statuses: readonly NodeRunStatus[]): NodeRunRow[];
   readNodeMembers(nodeRunId: string): NodeMemberRow[];
   readNodeEvents(nodeRunId: string, opts?: { type?: NodeEventType; limit?: number }): Array<{ id: number; seq: number; t: number; type: string; event_json: string }>;
   readNodeMemory(nodeRunId: string, opts?: { namespace?: string; entry_type?: 'fact' | 'question' | 'decision' }): NodeMemoryRow[];
@@ -1202,6 +1204,44 @@ class SqliteClient implements ObservabilitySqliteClient {
         status: row.status as NodeRunStatus,
       }));
     }, 'listNodeRuns');
+  }
+
+  listNodeRunsByRef(partialRef: string, statuses: readonly NodeRunStatus[]): NodeRunRow[] {
+    return withRetry(() => {
+      if (statuses.length === 0) return [];
+      const placeholders = statuses.map(() => '?').join(', ');
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+          AND (id LIKE ? OR node_name LIKE ?)
+        ORDER BY updated_at_ms DESC
+      `;
+      const prefix = `${partialRef}%`;
+      const rows = this.db.query(query).all(...statuses, prefix, prefix) as NodeRunRow[];
+      return rows.map((row) => ({
+        ...row,
+        status: row.status as NodeRunStatus,
+      }));
+    }, 'listNodeRunsByRef');
+  }
+
+  listNodeRunsByStatuses(statuses: readonly NodeRunStatus[]): NodeRunRow[] {
+    return withRetry(() => {
+      if (statuses.length === 0) return [];
+      const placeholders = statuses.map(() => '?').join(', ');
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `;
+      const rows = this.db.query(query).all(...statuses) as NodeRunRow[];
+      return rows.map((row) => ({
+        ...row,
+        status: row.status as NodeRunStatus,
+      }));
+    }, 'listNodeRunsByStatuses');
   }
 
   readNodeMembers(nodeRunId: string): NodeMemberRow[] {
