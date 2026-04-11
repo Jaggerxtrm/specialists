@@ -15,6 +15,7 @@ interface PsArgs {
   all: boolean;
   follow: boolean;
   includeMerged: boolean;
+  nodeId?: string;
   inspectId?: string;
 }
 
@@ -86,12 +87,28 @@ const STATUS_PRIORITY: Readonly<Record<JobState, number>> = {
 const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⣺', '⣹', '⣸', '⣷', '⣶'] as const;
 
 function parseArgs(argv: string[]): PsArgs {
-  const positional = argv.filter((a) => !a.startsWith('-'));
+  let nodeId: string | undefined;
+  const positional: string[] = [];
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === '--node' && argv[i + 1]) {
+      nodeId = argv[i + 1];
+      i += 1;
+      continue;
+    }
+
+    if (!token.startsWith('-')) {
+      positional.push(token);
+    }
+  }
+
   return {
     json: argv.includes('--json'),
     all: argv.includes('--all'),
     follow: argv.includes('--follow') || argv.includes('-f'),
     includeMerged: argv.includes('--include-merged'),
+    nodeId,
     inspectId: positional[0],
   };
 }
@@ -808,6 +825,7 @@ function render(args: PsArgs): void {
     const readiness = job.epic_id ? epicReadiness.get(job.epic_id) : undefined;
     const readinessState = readiness?.readiness_state;
 
+    if (args.nodeId && job.node_id !== args.nodeId) return false;
     if (readinessState === 'merged' && !args.includeMerged && !args.all) return false;
     if (args.all) return true;
     if (job.is_dead) return false;
