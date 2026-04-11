@@ -193,8 +193,6 @@ Node configs declare `completion_strategy` (manual or pr):
 - **pr** (default): coordinator synthesis → node auto-closes to `done`
 Use `manual` for research/interactive nodes, `pr` for implementation nodes.
 
-### Known gap (unitAI-8zui)
-Coordinator currently polls status and completes — doesn't read member output, steer members, synthesize findings, or manage phases. Needs `sp result`/`sp steer` access and synthesis mandate.
 
 # CLAUDE.md - AI Agent Development Guide
 

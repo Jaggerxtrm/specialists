@@ -19275,10 +19275,11 @@ ${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_
     const maxAttempts = maxRetries + 1;
     try {
       const envVars = {};
-      for (const key of ["SPECIALISTS_NODE_ID", "SPECIALISTS_JOB_ID"]) {
-        if (options.variables?.[key])
-          envVars[key] = options.variables[key];
-      }
+      const resolvedNodeId = options.variables?.SPECIALISTS_NODE_ID ?? options.variables?.node_id;
+      if (resolvedNodeId)
+        envVars.SPECIALISTS_NODE_ID = resolvedNodeId;
+      if (options.variables?.SPECIALISTS_JOB_ID)
+        envVars.SPECIALISTS_JOB_ID = options.variables.SPECIALISTS_JOB_ID;
       session = await this.sessionFactory({
         model,
         systemPrompt: agentsMd || undefined,
@@ -25867,6 +25868,7 @@ class JobControl {
       variables: {
         ...this.baseRunOptions.variables ?? {},
         node_id: opts.nodeId,
+        SPECIALISTS_NODE_ID: opts.nodeId,
         member_id: opts.memberId
       }
     };
@@ -25990,10 +25992,10 @@ function renderForFirstTurnContext(ctx) {
       node_config_snapshot: ctx.nodeConfigSnapshot,
       coordinator_goal: ctx.coordinatorGoal,
       command_examples: [
-        `sp node status --node $SPECIALISTS_NODE_ID --json`,
+        `sp ps --node $SPECIALISTS_NODE_ID --json`,
         `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json`,
         `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json`,
-        `sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json`,
+        `sp result --node $SPECIALISTS_NODE_ID --member explore-1 --wait --json`,
         "Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.",
         "// After synthesis, enter waiting. Operator closes node via sp node stop."
       ],
@@ -26014,7 +26016,7 @@ function renderForResumePayload(update) {
       unresolved_decisions: update.unresolvedDecisions,
       action_ledger_summary: update.actionLedgerSummary,
       state_digest: update.stateDigest,
-      resume_instruction: "Continue with CLI orchestration only: query status, spawn/coordinate members, enforce wait-phase barriers, read member results, synthesize, and remain in waiting when goals are satisfied. Operator closes the node."
+      resume_instruction: "Continue with CLI orchestration only: query status via sp ps --node ..., spawn/coordinate members, enforce wait-phase barriers, read member results via sp result --node ... --member ... --wait --json, synthesize, and remain in waiting when goals are satisfied. Operator closes the node."
     })
   ].join(`
 `);
@@ -27539,9 +27541,46 @@ class NodeSupervisor {
   getLastProgressAtMs() {
     return Math.max(this.lastCoordinatorOutputAtMs, this.lastCompletedActionAtMs, this.lastMemberTransitionAtMs);
   }
+  isCoordinatorInBlockingWaitPhase() {
+    if (!this.coordinatorJobId)
+      return false;
+    const coordinatorStatus = this.opts.sqliteClient.readStatus(this.coordinatorJobId)?.status;
+    if (coordinatorStatus !== "running")
+      return false;
+    const events = this.opts.sqliteClient.readEvents(this.coordinatorJobId);
+    const activeWaitPhaseToolCalls = new Set;
+    let hasUncorrelatedWaitPhaseStart = false;
+    for (const event of events) {
+      if (event.type !== "tool" || event.tool !== "bash")
+        continue;
+      const command = typeof event.args?.command === "string" ? event.args.command : "";
+      const isWaitPhaseCommand = command.includes("node wait-phase");
+      if (!isWaitPhaseCommand)
+        continue;
+      if (event.phase === "start") {
+        if (event.tool_call_id) {
+          activeWaitPhaseToolCalls.add(event.tool_call_id);
+        } else {
+          hasUncorrelatedWaitPhaseStart = true;
+        }
+        continue;
+      }
+      if (event.phase === "end") {
+        if (event.tool_call_id) {
+          activeWaitPhaseToolCalls.delete(event.tool_call_id);
+        } else {
+          hasUncorrelatedWaitPhaseStart = false;
+        }
+      }
+    }
+    return activeWaitPhaseToolCalls.size > 0 || hasUncorrelatedWaitPhaseStart;
+  }
   maybeTriggerNoProgressWatchdog() {
     if (TERMINAL_NODE_STATUSES.has(this.status))
       return false;
+    if (this.isCoordinatorInBlockingWaitPhase()) {
+      return false;
+    }
     const stalledForMs = Date.now() - this.getLastProgressAtMs();
     if (stalledForMs < NO_PROGRESS_WATCHDOG_MS) {
       return false;
@@ -27832,6 +27871,10 @@ ${JSON.stringify(recoveryDigest, null, 2)}`
             }
             break;
           }
+          if ((this.opts.completionStrategy ?? "pr") === "manual") {
+            this.transition("waiting", "coordinator_done_manual_completion");
+            break;
+          }
           this.transition("done", "coordinator_done");
           break;
         }
@@ -27988,15 +28031,15 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync15, readFileSync as readFileSync11, readdirSync as readdirSync6, writeFileSync as writeFileSync7 } from "fs";
+import { existsSync as existsSync15, readFileSync as readFileSync11, readdirSync as readdirSync6 } from "fs";
 import { randomUUID } from "crypto";
-import { execFileSync as execFileSync3, spawnSync as spawnSync13 } from "child_process";
+import { spawnSync as spawnSync13 } from "child_process";
 import { basename as basename4, join as join17, resolve as resolve6 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
-  const supportedCommands = new Set(["run", "list", "status", "feed", "result", "promote", "members", "memory", "steer", "stop", "attach", "spawn-member", "create-bead", "complete", "wait-phase"]);
+  const supportedCommands = new Set(["run", "list", "promote", "members", "memory", "stop", "spawn-member", "create-bead", "complete", "wait-phase"]);
   if (!command || !supportedCommands.has(command)) {
-    throw new Error("Usage: specialists node <run|list|status|feed|result|promote|members|memory|steer|stop|attach|spawn-member|create-bead|complete|wait-phase> [options]");
+    throw new Error("Usage: specialists node <run|list|promote|members|memory|stop|spawn-member|create-bead|complete|wait-phase> [options]");
   }
   let nodeConfigInput;
   let inlineJson;
@@ -28017,7 +28060,6 @@ function parseNodeArgs(argv) {
   let forceDraftPr = false;
   let memberKeys;
   let timeoutMs;
-  let fullResult = false;
   let jsonMode = false;
   for (let i = 1;i < argv.length; i += 1) {
     const token = argv[i];
@@ -28027,10 +28069,6 @@ function parseNodeArgs(argv) {
     }
     if (token === "--force-draft-pr") {
       forceDraftPr = true;
-      continue;
-    }
-    if (token === "--full") {
-      fullResult = true;
       continue;
     }
     const readValue = (flag) => {
@@ -28113,15 +28151,11 @@ function parseNodeArgs(argv) {
       nodeConfigInput = token;
       continue;
     }
-    if (!token.startsWith("--") && (command === "feed" || command === "promote" || command === "members" || command === "memory" || command === "steer" || command === "stop" || command === "attach") && !nodeId) {
+    if (!token.startsWith("--") && (command === "promote" || command === "members" || command === "memory" || command === "stop") && !nodeId) {
       nodeId = token;
       continue;
     }
     if (!token.startsWith("--") && command === "promote" && !findingId) {
-      findingId = token;
-      continue;
-    }
-    if (!token.startsWith("--") && command === "steer" && !findingId) {
       findingId = token;
       continue;
     }
@@ -28133,14 +28167,8 @@ function parseNodeArgs(argv) {
   if (command === "promote" && (!nodeId || !findingId || !toBead)) {
     throw new Error("Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]");
   }
-  if ((command === "feed" || command === "members" || command === "memory" || command === "stop" || command === "attach") && !nodeId) {
+  if ((command === "members" || command === "memory" || command === "stop") && !nodeId) {
     throw new Error(`Usage: specialists node ${command} <node-id> [--json]`);
-  }
-  if (command === "steer" && (!nodeId || !findingId)) {
-    throw new Error("Usage: specialists node steer <node-id> <message> [--json]");
-  }
-  if (command === "result" && (!nodeId || !memberKey)) {
-    throw new Error("Usage: specialists node result --node <id> --member <key> [--full] [--json]");
   }
   if (command === "spawn-member" || command === "create-bead" || command === "complete" || command === "wait-phase") {
     if (!nodeId) {
@@ -28180,7 +28208,6 @@ function parseNodeArgs(argv) {
     forceDraftPr,
     memberKeys,
     timeoutMs,
-    fullResult,
     jsonMode
   };
 }
@@ -28270,29 +28297,6 @@ function parseNodeConfig(raw) {
     baseBranch
   };
 }
-function formatTimestamp(ms) {
-  if (ms === undefined)
-    return "-";
-  const value = new Date(ms);
-  return Number.isNaN(value.getTime()) ? "-" : value.toISOString();
-}
-function parseStatusJson(row) {
-  try {
-    return JSON.parse(row.status_json);
-  } catch {
-    return {};
-  }
-}
-function readStatusReason(row) {
-  const statusJson = parseStatusJson(row);
-  const reason = statusJson.reason;
-  return typeof reason === "string" && reason.trim() ? reason : "-";
-}
-function summarizeMembers(members) {
-  if (members.length === 0)
-    return "-";
-  return members.map((member) => `${member.member_id}#${member.generation ?? 0}:${member.status}${member.enabled === false ? " (disabled)" : ""}`).join(", ");
-}
 function readMemberLineage(member, sqliteClient) {
   if (!sqliteClient || !member.job_id) {
     return { reused_from_job_id: null, worktree_owner_job_id: null };
@@ -28318,28 +28322,6 @@ function summarizeMemory(memoryEntries) {
     by_type: byType,
     latest_summary: latestSummary
   };
-}
-function printNodeRunsTable(rows) {
-  const headers = ["node_id", "node_name", "status", "reason", "started_at", "updated_at", "coordinator_job_id", "memory", "members"];
-  const body = rows.map((row) => [
-    row.id,
-    row.node_name,
-    row.status,
-    readStatusReason(row),
-    formatTimestamp(row.started_at_ms),
-    formatTimestamp(row.updated_at_ms),
-    row.coordinator_job_id ?? "-",
-    String(row.memory_total),
-    row.member_summary
-  ]);
-  const allRows = [headers, ...body];
-  const widths = headers.map((_, colIndex) => Math.max(...allRows.map((r) => (r[colIndex] ?? "").length)));
-  const renderRow = (r) => r.map((cell, i) => cell.padEnd(widths[i])).join("  ");
-  console.log(renderRow(headers));
-  console.log(widths.map((w) => "-".repeat(w)).join("  "));
-  for (const row of body) {
-    console.log(renderRow(row));
-  }
 }
 async function handleNodeRun(args) {
   const sqliteClient = createObservabilitySqliteClient();
@@ -28453,75 +28435,6 @@ async function handleNodeRun(args) {
     sqliteClient.close();
   }
 }
-function printNodeRunDetail(row, members, memorySummary) {
-  const detail = {
-    node_id: row.id,
-    node_name: row.node_name,
-    status: row.status,
-    reason: readStatusReason(row),
-    started_at: formatTimestamp(row.started_at_ms),
-    updated_at: formatTimestamp(row.updated_at_ms),
-    coordinator_job_id: row.coordinator_job_id ?? "-",
-    memory_entries: memorySummary.total,
-    memory_latest: memorySummary.latest_summary ?? "-",
-    member_summary: summarizeMembers(members)
-  };
-  for (const [key, value] of Object.entries(detail)) {
-    console.log(`${key}: ${value}`);
-  }
-}
-async function handleNodeFeed(args) {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
-  }
-  try {
-    const nodeId = args.nodeId;
-    const events = sqliteClient.readNodeEvents(nodeId);
-    if (args.jsonMode) {
-      for (const event of events) {
-        console.log(JSON.stringify({
-          type: "node_event",
-          node_id: nodeId,
-          id: event.id,
-          t: event.t,
-          event_type: event.type,
-          event_json: JSON.parse(event.event_json)
-        }));
-      }
-      return;
-    }
-    if (events.length === 0) {
-      console.log(`No node events found for ${nodeId}.`);
-      return;
-    }
-    for (const event of events) {
-      let payload = {};
-      try {
-        payload = JSON.parse(event.event_json);
-      } catch {
-        payload = {};
-      }
-      const metadata = [
-        typeof payload.member_id === "string" ? `member=${payload.member_id}` : null,
-        typeof payload.job_id === "string" ? `job=${payload.job_id}` : null,
-        typeof payload.status === "string" ? `status=${payload.status}` : null,
-        typeof payload.reason === "string" ? `reason=${payload.reason}` : null,
-        typeof payload.trigger === "string" ? `trigger=${payload.trigger}` : null,
-        typeof payload.context_health === "string" ? `context=${payload.context_health}` : null,
-        typeof payload.generation === "number" ? `generation=${payload.generation}` : null,
-        typeof payload.worktree_path === "string" ? `worktree=${payload.worktree_path}` : null,
-        typeof payload.parent_member_id === "string" ? `parent=${payload.parent_member_id}` : null,
-        typeof payload.replaced_member_id === "string" ? `replaced=${payload.replaced_member_id}` : null,
-        typeof payload.phase_id === "string" ? `phase=${payload.phase_id}` : null,
-        typeof payload.action_type === "string" ? `action=${payload.action_type}` : null
-      ].filter((value) => value !== null);
-      console.log(`[${new Date(event.t).toISOString()}] ${event.type}${metadata.length > 0 ? ` | ${metadata.join(" ")}` : ""}`);
-    }
-  } finally {
-    sqliteClient.close();
-  }
-}
 async function handleNodeList(args) {
   const nodes = discoverNodeConfigs(process.cwd());
   if (args.jsonMode) {
@@ -28536,177 +28449,12 @@ async function handleNodeList(args) {
     console.log(`${node.name}	${node.source}	${node.path}`);
   }
 }
-async function handleNodeStatus(args) {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
-  }
-  try {
-    if (args.nodeId) {
-      const row = sqliteClient.readNodeRun(args.nodeId);
-      if (!row) {
-        if (args.jsonMode) {
-          console.log(JSON.stringify({ error: `Node run not found: ${args.nodeId}` }, null, 2));
-        } else {
-          console.error(`Node run not found: ${args.nodeId}`);
-        }
-        process.exitCode = 1;
-        return;
-      }
-      const members = sqliteClient.readNodeMembers(row.id);
-      const memorySummary = summarizeMemory(sqliteClient.readNodeMemory(row.id));
-      if (args.jsonMode) {
-        console.log(JSON.stringify({
-          node_id: row.id,
-          node_name: row.node_name,
-          status: row.status,
-          reason: readStatusReason(row),
-          started_at: row.started_at_ms,
-          updated_at: row.updated_at_ms,
-          coordinator_job_id: row.coordinator_job_id ?? null,
-          memory_summary: memorySummary,
-          members: members.map((member) => {
-            const lineage = readMemberLineage(member, sqliteClient);
-            return {
-              member_id: member.member_id,
-              job_id: member.job_id ?? null,
-              specialist: member.specialist,
-              status: member.status,
-              enabled: member.enabled ?? true,
-              generation: member.generation ?? 0,
-              worktree_path: member.worktree_path ?? null,
-              parent_member_id: member.parent_member_id ?? null,
-              replaced_member_id: member.replaced_member_id ?? null,
-              phase_id: member.phase_id ?? null,
-              reused_from_job_id: lineage.reused_from_job_id,
-              worktree_owner_job_id: lineage.worktree_owner_job_id
-            };
-          }),
-          member_summary: summarizeMembers(members)
-        }, null, 2));
-      } else {
-        printNodeRunDetail(row, members, memorySummary);
-      }
-      return;
-    }
-    const rows = sqliteClient.listNodeRuns();
-    const rowsWithMembers = rows.map((row) => {
-      const members = sqliteClient.readNodeMembers(row.id);
-      const memorySummary = summarizeMemory(sqliteClient.readNodeMemory(row.id));
-      return {
-        ...row,
-        members,
-        memory_total: memorySummary.total,
-        member_summary: summarizeMembers(members)
-      };
-    });
-    if (args.jsonMode) {
-      console.log(JSON.stringify(rowsWithMembers.map((row) => ({
-        node_id: row.id,
-        node_name: row.node_name,
-        status: row.status,
-        reason: readStatusReason(row),
-        started_at: row.started_at_ms,
-        updated_at: row.updated_at_ms,
-        coordinator_job_id: row.coordinator_job_id ?? null,
-        memory_total: row.memory_total,
-        member_summary: row.member_summary
-      })), null, 2));
-      return;
-    }
-    if (rows.length === 0) {
-      console.log("No node runs found.");
-      return;
-    }
-    printNodeRunsTable(rowsWithMembers);
-  } finally {
-    sqliteClient.close();
-  }
-}
 function requireNodeRun(sqliteClient, nodeId) {
   const row = sqliteClient.readNodeRun(nodeId);
   if (!row) {
     throw new Error(`Node run not found: ${nodeId}`);
   }
   return row;
-}
-function requireNodeMember(sqliteClient, nodeId, memberKey) {
-  requireNodeRun(sqliteClient, nodeId);
-  const member = sqliteClient.readNodeMembers(nodeId).find((entry) => entry.member_id === memberKey);
-  if (!member) {
-    throw new Error(`Member '${memberKey}' not found in node '${nodeId}'`);
-  }
-  return member;
-}
-function readPersistedJobResult(sqliteClient, jobId) {
-  const sqliteResult = sqliteClient.readResult(jobId);
-  if (sqliteResult !== null) {
-    return sqliteResult;
-  }
-  const resultPath = join17(resolveJobsDir(), jobId, "result.txt");
-  if (!existsSync15(resultPath)) {
-    return null;
-  }
-  try {
-    return readFileSync11(resultPath, "utf-8");
-  } catch {
-    return null;
-  }
-}
-function emitResultTruncationNote(jobId, charCount) {
-  process.stderr.write(`Result for job ${jobId} truncated to ${NODE_RESULT_PREVIEW_CHAR_LIMIT} of ${charCount} chars. Re-run with --full for the complete output.
-`);
-}
-async function handleNodeResult(args) {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    emitNodeCommandError("Observability SQLite DB is unavailable. Run: specialists db setup", args.jsonMode);
-    return;
-  }
-  try {
-    const nodeId = args.nodeId;
-    const member = requireNodeMember(sqliteClient, nodeId, args.memberKey);
-    const jobId = member.job_id;
-    if (!jobId) {
-      throw new Error(`Member '${member.member_id}' in node '${nodeId}' has no job id yet`);
-    }
-    const persistedResult = readPersistedJobResult(sqliteClient, jobId);
-    if (persistedResult === null) {
-      throw new Error(`No persisted result found yet for member '${member.member_id}' in node '${nodeId}' (job ${jobId})`);
-    }
-    const charCount = persistedResult.length;
-    const truncated = !args.fullResult && charCount > NODE_RESULT_PREVIEW_CHAR_LIMIT;
-    const result = truncated ? persistedResult.slice(0, NODE_RESULT_PREVIEW_CHAR_LIMIT) : persistedResult;
-    if (truncated) {
-      emitResultTruncationNote(jobId, charCount);
-    }
-    if (args.jsonMode) {
-      console.log(JSON.stringify({
-        ok: true,
-        node_id: nodeId,
-        member_id: member.member_id,
-        generation: member.generation ?? 0,
-        phase_id: member.phase_id ?? null,
-        specialist: member.specialist,
-        job_id: jobId,
-        status: member.status,
-        char_count: charCount,
-        truncated,
-        result
-      }));
-      return;
-    }
-    process.stdout.write(result);
-    if (!result.endsWith(`
-`)) {
-      process.stdout.write(`
-`);
-    }
-  } catch (error2) {
-    emitNodeCommandError(error2, args.jsonMode);
-  } finally {
-    sqliteClient.close();
-  }
 }
 async function handleNodeMembers(args) {
   const sqliteClient = createObservabilitySqliteClient();
@@ -28785,45 +28533,6 @@ async function handleNodeMemory(args) {
     sqliteClient.close();
   }
 }
-function resolveCoordinatorStatus(nodeId) {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
-  }
-  try {
-    const nodeRun = requireNodeRun(sqliteClient, nodeId);
-    if (!nodeRun.coordinator_job_id) {
-      throw new Error(`Node ${nodeId} has no coordinator job id`);
-    }
-    const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir: resolveJobsDir() });
-    try {
-      const coordinatorStatus = supervisor.readStatus(nodeRun.coordinator_job_id);
-      if (!coordinatorStatus) {
-        throw new Error(`Coordinator job not found: ${nodeRun.coordinator_job_id}`);
-      }
-      return { nodeRun, coordinatorJobId: nodeRun.coordinator_job_id, coordinatorStatus };
-    } finally {
-      supervisor.dispose();
-    }
-  } finally {
-    sqliteClient.close();
-  }
-}
-async function handleNodeSteer(args) {
-  const nodeId = args.nodeId;
-  const message = args.findingId;
-  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
-  if (!coordinatorStatus.fifo_path) {
-    throw new Error(`Coordinator job ${coordinatorJobId} has no steer pipe`);
-  }
-  writeFileSync7(coordinatorStatus.fifo_path, `${JSON.stringify({ type: "steer", message })}
-`, { flag: "a" });
-  if (args.jsonMode) {
-    console.log(JSON.stringify({ node_id: nodeId, coordinator_job_id: coordinatorJobId, steered: true }, null, 2));
-    return;
-  }
-  console.log(`Steer message sent to node ${nodeId} coordinator (${coordinatorJobId})`);
-}
 async function handleNodeStop(args) {
   const nodeId = args.nodeId;
   const sqliteClient = createObservabilitySqliteClient();
@@ -28885,19 +28594,6 @@ async function handleNodeStop(args) {
     supervisor.dispose();
     sqliteClient.close();
   }
-}
-async function handleNodeAttach(args) {
-  const nodeId = args.nodeId;
-  const { coordinatorJobId, coordinatorStatus } = resolveCoordinatorStatus(nodeId);
-  const tmuxSession = coordinatorStatus.tmux_session?.trim();
-  if (!tmuxSession) {
-    throw new Error(`Coordinator job ${coordinatorJobId} has no tmux session`);
-  }
-  const whichTmux = spawnSync13("which", ["tmux"], { stdio: "ignore" });
-  if (whichTmux.status !== 0) {
-    throw new Error("tmux is not installed. Install tmux to use `sp node attach`.");
-  }
-  execFileSync3("tmux", ["attach-session", "-t", tmuxSession], { stdio: "inherit" });
 }
 function buildFindingNotes(nodeId, findingId, finding) {
   const lines = [
@@ -29110,14 +28806,6 @@ async function handleNodeCommand(argv) {
     await handleNodeList(parsed);
     return;
   }
-  if (parsed.command === "feed") {
-    await handleNodeFeed(parsed);
-    return;
-  }
-  if (parsed.command === "result") {
-    await handleNodeResult(parsed);
-    return;
-  }
   if (parsed.command === "promote") {
     await handleNodePromote(parsed);
     return;
@@ -29130,25 +28818,17 @@ async function handleNodeCommand(argv) {
     await handleNodeMemory(parsed);
     return;
   }
-  if (parsed.command === "steer") {
-    await handleNodeSteer(parsed);
-    return;
-  }
   if (parsed.command === "stop") {
     await handleNodeStop(parsed);
-    return;
-  }
-  if (parsed.command === "attach") {
-    await handleNodeAttach(parsed);
     return;
   }
   if (parsed.command === "spawn-member" || parsed.command === "create-bead" || parsed.command === "complete" || parsed.command === "wait-phase") {
     await handleNodeAction(parsed);
     return;
   }
-  await handleNodeStatus(parsed);
+  emitNodeCommandError(`Unsupported node command: ${parsed.command}`, parsed.jsonMode);
 }
-var NODE_RESULT_PREVIEW_CHAR_LIMIT = 4000, NODE_CONFIG_SUFFIX = ".node.json", NODE_DISCOVERY_DIRS;
+var NODE_CONFIG_SUFFIX = ".node.json", NODE_DISCOVERY_DIRS;
 var init_node = __esm(() => {
   init_loader();
   init_runner();
@@ -30716,12 +30396,25 @@ import { spawnSync as spawnSync17 } from "child_process";
 import { existsSync as existsSync18, readdirSync as readdirSync8, readFileSync as readFileSync14 } from "fs";
 import { join as join20 } from "path";
 function parseArgs7(argv) {
-  const positional = argv.filter((a) => !a.startsWith("-"));
+  let nodeId;
+  const positional = [];
+  for (let i = 0;i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--node" && argv[i + 1]) {
+      nodeId = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (!token.startsWith("-")) {
+      positional.push(token);
+    }
+  }
   return {
     json: argv.includes("--json"),
     all: argv.includes("--all"),
     follow: argv.includes("--follow") || argv.includes("-f"),
     includeMerged: argv.includes("--include-merged"),
+    nodeId,
     inspectId: positional[0]
   };
 }
@@ -30747,15 +30440,30 @@ function readStatusesFromFiles(jobsDir) {
 function loadStatuses() {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
+  const fileStatuses = readStatusesFromFiles(jobsDir);
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
-    if (sqliteStatuses.length > 0) {
+    if (sqliteStatuses.length === 0) {
+      return fileStatuses;
+    }
+    if (fileStatuses.length === 0) {
       return sqliteStatuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
     }
-  } catch {} finally {
+    const merged = new Map;
+    for (const status of fileStatuses)
+      merged.set(status.id, status);
+    for (const status of sqliteStatuses) {
+      const current = merged.get(status.id);
+      if (!current || status.started_at_ms >= current.started_at_ms) {
+        merged.set(status.id, status);
+      }
+    }
+    return [...merged.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
+  } catch {
+    return fileStatuses;
+  } finally {
     sqliteClient?.close();
   }
-  return readStatusesFromFiles(jobsDir);
 }
 function toJobNode(job) {
   const beadAwareStatus = job;
@@ -31350,6 +31058,8 @@ function render(args) {
   const visibleStatuses = statusesWithLiveness.filter((job) => {
     const readiness = job.epic_id ? epicReadiness.get(job.epic_id) : undefined;
     const readinessState = readiness?.readiness_state;
+    if (args.nodeId && job.node_id !== args.nodeId)
+      return false;
     if (readinessState === "merged" && !args.includeMerged && !args.all)
       return false;
     if (args.all)
@@ -31442,15 +31152,13 @@ __export(exports_result, {
 import { existsSync as existsSync19, readFileSync as readFileSync15 } from "fs";
 import { join as join21 } from "path";
 function parseArgs8(argv) {
-  const jobId = argv[0];
-  if (!jobId || jobId.startsWith("--")) {
-    console.error("Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]");
-    process.exit(1);
-  }
+  let jobId;
+  let nodeId;
+  let memberKey;
   let wait = false;
   let json = false;
   let timeout;
-  for (let i = 1;i < argv.length; i++) {
+  for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--wait") {
       wait = true;
@@ -31458,6 +31166,14 @@ function parseArgs8(argv) {
     }
     if (token === "--json") {
       json = true;
+      continue;
+    }
+    if (token === "--node" && argv[i + 1]) {
+      nodeId = argv[++i];
+      continue;
+    }
+    if ((token === "--member" || token === "--member-key") && argv[i + 1]) {
+      memberKey = argv[++i];
       continue;
     }
     if (token === "--timeout" && argv[i + 1]) {
@@ -31469,12 +31185,39 @@ function parseArgs8(argv) {
       timeout = parsed;
       continue;
     }
+    if (!token.startsWith("--") && !jobId) {
+      jobId = token;
+      continue;
+    }
   }
-  return { jobId, wait, json, timeout };
+  if (memberKey && !nodeId) {
+    console.error(`Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
+    process.exit(1);
+  }
+  if (!jobId && !(nodeId && memberKey)) {
+    console.error(`Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
+    process.exit(1);
+  }
+  return { jobId, nodeId, memberKey, wait, json, timeout };
+}
+function resolveJobIdFromNodeMember(sqliteClient, nodeId, memberKey) {
+  const nodeRun = sqliteClient.readNodeRun(nodeId);
+  if (!nodeRun) {
+    throw new Error(`Node run not found: ${nodeId}`);
+  }
+  const member = sqliteClient.readNodeMembers(nodeId).find((entry) => entry.member_id === memberKey);
+  if (!member) {
+    throw new Error(`Member '${memberKey}' not found in node '${nodeId}'`);
+  }
+  if (!member.job_id) {
+    throw new Error(`Member '${memberKey}' in node '${nodeId}' has no job id yet`);
+  }
+  return member.job_id;
 }
 async function run15() {
   const args = parseArgs8(process.argv.slice(3));
-  const { jobId } = args;
   const emitJson = (status, output2, error2) => {
     console.log(JSON.stringify({
       job: status ? {
@@ -31515,6 +31258,14 @@ async function run15() {
       process.stderr.write(dim10(trailingFooter));
   };
   try {
+    const jobId = (() => {
+      if (args.jobId)
+        return args.jobId;
+      if (!sqliteClient || !args.nodeId || !args.memberKey) {
+        throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+      }
+      return resolveJobIdFromNodeMember(sqliteClient, args.nodeId, args.memberKey);
+    })();
     const resultPath = join21(jobsDir, jobId, "result.txt");
     const readResultOutput = () => {
       try {
@@ -31660,6 +31411,14 @@ async function run15() {
       return;
     }
     emitHumanResult(output2, status);
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    if (args.json) {
+      emitJson(null, null, message);
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
   } finally {
     sqliteClient?.close();
     await supervisor.dispose();
@@ -31947,9 +31706,6 @@ function readStatusJson(sqliteClient, jobsDir, jobId) {
     return null;
   }
 }
-function isStandaloneJobStatus(status) {
-  return typeof status?.node_id !== "string" || status.node_id.trim() === "";
-}
 function isTerminalJobStatus(sqliteClient, jobsDir, jobId) {
   const status = readStatusJson(sqliteClient, jobsDir, jobId);
   return status?.status === "done" || status?.status === "error" || status?.status === "cancelled";
@@ -32000,6 +31756,7 @@ function makeJobMetaReader(sqliteClient, jobsDir, options = {}) {
 function parseArgs9(argv) {
   let jobId;
   let specialist;
+  let nodeId;
   let since;
   let fromRaw;
   let limit = 100;
@@ -32013,6 +31770,10 @@ function parseArgs9(argv) {
     }
     if (argv[i] === "--specialist" && argv[i + 1]) {
       specialist = argv[++i];
+      continue;
+    }
+    if (argv[i] === "--node" && argv[i + 1]) {
+      nodeId = argv[++i];
       continue;
     }
     if (argv[i] === "--since" && argv[i + 1]) {
@@ -32045,6 +31806,7 @@ function parseArgs9(argv) {
   return {
     jobId,
     specialist,
+    nodeId,
     since,
     from: fromRaw ? parseCursor(fromRaw, jobId) : undefined,
     limit,
@@ -32129,8 +31891,13 @@ function filterMergedEventsByCursor(merged, from) {
     return merged;
   return merged.filter(({ jobId, event }) => isEventAtOrAfterCursor(jobId, event, from));
 }
-function filterStandaloneMergedEvents(sqliteClient, jobsDir, merged) {
-  return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
+function filterMergedEventsByNode(sqliteClient, jobsDir, merged, nodeId) {
+  if (!nodeId)
+    return merged;
+  return merged.filter(({ jobId }) => {
+    const status = readStatusJson(sqliteClient, jobsDir, jobId);
+    return typeof status?.node_id === "string" && status.node_id === nodeId;
+  });
 }
 function listMatchingJobIds(sqliteClient, jobsDir, options) {
   if (!existsSync21(jobsDir))
@@ -32147,8 +31914,11 @@ function listMatchingJobIds(sqliteClient, jobsDir, options) {
     if (options.jobId && entry !== options.jobId)
       continue;
     const status = readStatusJson(sqliteClient, jobsDir, entry);
-    if (!isStandaloneJobStatus(status))
-      continue;
+    if (options.nodeId) {
+      const currentNodeId = typeof status?.node_id === "string" ? status.node_id : "";
+      if (currentNodeId !== options.nodeId)
+        continue;
+    }
     if (options.specialist) {
       const specialist = typeof status?.specialist === "string" ? status.specialist : undefined;
       if (specialist !== options.specialist)
@@ -32206,12 +31976,12 @@ async function followMerged(sqliteClient, jobsDir, options) {
   const trackedJobs = new Set(initialMatchingJobIds.filter((jobId) => !isTerminalJobStatus(sqliteClient, jobsDir, jobId)));
   const completedJobs = new Set;
   const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
-  const initial = filterMergedEventsByCursor(filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
+  const initial = filterMergedEventsByCursor(filterMergedEventsByNode(sqliteClient, jobsDir, queryTimeline(jobsDir, {
     jobId: options.jobId,
     specialist: options.specialist,
     since: options.since,
     limit: options.limit
-  })), options.from);
+  }), options.nodeId), options.from);
   printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
   for (const batch of filteredBatches()) {
     if (batch.events.length > 0) {
@@ -32338,12 +32108,12 @@ async function run16() {
       await followMerged(sqliteClient, jobsDir, options);
       return;
     }
-    const merged = filterMergedEventsByCursor(filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
+    const merged = filterMergedEventsByCursor(filterMergedEventsByNode(sqliteClient, jobsDir, queryTimeline(jobsDir, {
       jobId: options.jobId,
       specialist: options.specialist,
       since: options.since,
       limit: options.limit
-    })), options.from);
+    }), options.nodeId), options.from);
     printSnapshot(sqliteClient, merged, options, jobsDir);
   } finally {
     sqliteClient?.close();
@@ -32476,7 +32246,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run18
 });
-import { writeFileSync as writeFileSync8 } from "fs";
+import { writeFileSync as writeFileSync7 } from "fs";
 async function run18() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -32507,7 +32277,7 @@ async function run18() {
     try {
       const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-      writeFileSync8(status.fifo_path, payload, { flag: "a" });
+      writeFileSync7(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green10("\u2713")} Steer message sent to job ${jobId}
 `);
     } catch (err) {
@@ -32530,7 +32300,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run19
 });
-import { writeFileSync as writeFileSync9 } from "fs";
+import { writeFileSync as writeFileSync8 } from "fs";
 async function run19() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -32561,7 +32331,7 @@ async function run19() {
     try {
       const payload = JSON.stringify({ type: "resume", task }) + `
 `;
-      writeFileSync9(status.fifo_path, payload, { flag: "a" });
+      writeFileSync8(status.fifo_path, payload, { flag: "a" });
       process.stdout.write(`${green11("\u2713")} Resume sent to job ${jobId}
 `);
       process.stdout.write(`  Use 'specialists feed ${jobId} --follow' to watch the response.
@@ -33098,7 +32868,7 @@ var exports_attach = {};
 __export(exports_attach, {
   run: () => run24
 });
-import { execFileSync as execFileSync4, spawnSync as spawnSync20 } from "child_process";
+import { execFileSync as execFileSync3, spawnSync as spawnSync20 } from "child_process";
 import { readFileSync as readFileSync21 } from "fs";
 import { join as join27 } from "path";
 function exitWithError(message) {
@@ -33136,7 +32906,7 @@ async function run24() {
     exitWithError("tmux is not installed. Install tmux to use `specialists attach`.");
   }
   try {
-    execFileSync4("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
+    execFileSync3("tmux", ["attach-session", "-t", sessionName], { stdio: "inherit" });
   } catch {
     process.exit(1);
   }
@@ -33383,7 +33153,7 @@ __export(exports_doctor, {
 });
 import { createHash as createHash4 } from "crypto";
 import { spawnSync as spawnSync21 } from "child_process";
-import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync22, readlinkSync as readlinkSync2, writeFileSync as writeFileSync10 } from "fs";
+import { existsSync as existsSync25, lstatSync as lstatSync2, mkdirSync as mkdirSync6, readdirSync as readdirSync13, readFileSync as readFileSync22, readlinkSync as readlinkSync2, writeFileSync as writeFileSync9 } from "fs";
 import { dirname as dirname5, join as join28, relative as relative2, resolve as resolve7 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
@@ -33720,7 +33490,7 @@ function setStatusError(statusPath) {
     const raw = readFileSync22(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
-    writeFileSync10(statusPath, `${JSON.stringify(status, null, 2)}
+    writeFileSync9(statusPath, `${JSON.stringify(status, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -41863,34 +41633,35 @@ async function run29() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists node <run|list|status|feed|result|promote|members|memory|steer|stop|attach> [options]",
+        "Usage: specialists node <run|list|promote|members|memory|stop|spawn-member|create-bead|wait-phase|complete> [options]",
         "",
         "Commands:",
         "  run <node-config> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]",
         "                                                      Start a NodeSupervisor run",
         "  list [--json]                                       List available node configs",
-        "  status [--node <node-id>] [--json]                 Show node runs from SQLite",
-        "  feed <node-id> [--json]                            Show node events for a run",
-        "  result --node <node-id> --member <key> [--full] [--json]",
-        "                                                      Show persisted result for a member job",
+        "  spawn-member --node <id> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]",
+        "                                                      Spawn a dynamic node member",
+        '  create-bead --node <id> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]',
+        "                                                      Create follow-up bead from node context",
+        "  wait-phase --node <id> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]",
+        "                                                      Wait until listed phase members are terminal",
+        "  complete --node <id> --strategy <pr|manual> [--force-draft-pr] [--json]",
+        "                                                      Complete node run with selected strategy",
         "  members <node-id> [--json]                         Show member state + lineage metadata",
         "  memory <node-id> [--json]                          Show accumulated node memory summaries",
-        "  steer <node-id> <message> [--json]                 Send steer command to coordinator",
-        "  stop <node-id> [--json]                            Gracefully stop coordinator job",
-        "  attach <node-id>                                   Attach tmux to coordinator session",
+        "  stop <node-id> [--json]                            Gracefully stop coordinator + members",
         "  promote <node-id> <finding-id> --to-bead <bead-id> [--json]",
         "                                                      Promote a finding to bead notes",
         "",
         "Examples:",
         "  specialists node run research --bead unitAI-123 --context-depth 2",
-        "  specialists node status --node research-abc123",
         "  specialists node members research-abc123 --json",
         "  specialists node memory research-abc123",
-        "  specialists node feed research-abc123",
-        "  specialists node result --node research-abc123 --member explore-1 --full --json",
-        '  specialists node steer research-abc123 "hold wave 2"',
+        "  specialists node spawn-member --node research-abc123 --member-key explore-1 --specialist explorer --phase explore-1 --json",
+        "  specialists node wait-phase --node research-abc123 --phase explore-1 --members explore-1 --json",
+        "  specialists result --node research-abc123 --member explore-1 --wait --json",
+        "  specialists ps --node research-abc123 --json",
         "  specialists node stop research-abc123",
-        "  specialists node attach research-abc123",
         "  specialists node promote research-abc123 finding-1 --to-bead unitAI-123",
         ""
       ].join(`
@@ -42002,6 +41773,7 @@ async function run29() {
         "  specialists ps              Active jobs only (dead filtered out)",
         "  specialists ps --all        All jobs including dead and terminal",
         "  specialists ps --json       Machine-readable tree output",
+        "  specialists ps --node <id>  Filter dashboard to one node run",
         "  specialists ps --follow     Live dashboard with auto-refresh",
         ""
       ].join(`
@@ -42015,7 +41787,8 @@ async function run29() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists result <job-id>",
+        "Usage: specialists result <job-id> [--wait] [--timeout <seconds>] [--json]",
+        "       specialists result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]",
         "",
         "Print the final output of a completed job.",
         "Exits with code 1 if the job is still running or failed.",
@@ -42023,6 +41796,7 @@ async function run29() {
         "Examples:",
         "  specialists result job_a1b2c3d4",
         "  specialists result job_a1b2c3d4 > output.md",
+        "  specialists result --node research-abc123 --member explore-1 --wait --json",
         "",
         "See also:",
         "  specialists feed <job-id> --follow   (stream live events)",
@@ -42040,7 +41814,7 @@ async function run29() {
       console.log([
         "",
         "Usage: specialists feed <job-id> [options]",
-        "       specialists feed -f [--forever]",
+        "       specialists feed [--node <node-id>] -f [--forever]",
         "",
         "Read job events.",
         "",
@@ -42050,6 +41824,7 @@ async function run29() {
         "  specialists feed -f              Follow all jobs globally",
         "",
         "Options:",
+        "  --node <id>    Filter jobs by node id",
         "  --from <n>     Show only events with seq >= <n>",
         "  -f, --follow   Follow live updates",
         "  --forever      Keep following in global mode even when all jobs complete",
@@ -42059,6 +41834,7 @@ async function run29() {
         "  specialists feed 49adda --from 15",
         "  specialists feed 49adda --follow",
         "  specialists feed -f",
+        "  specialists feed --node research-abc123 -f",
         "  specialists feed -f --forever",
         ""
       ].join(`
