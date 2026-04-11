@@ -35,7 +35,7 @@ source_of_truth_for:
 | Section | Summary |
 |---|---|
 | [`specialists run`](#specialists-run) | `--epic <id>`: Explicit epic membership; `--prompt`, `--bead`, `--worktree`, `--job`, `--context-depth` |
-| [`specialists node`](#specialists-node) | NodeSupervisor control surface: run/list/status/feed/promote/members/memory/steer/stop/attach |
+| [`specialists node`](#specialists-node) | NodeSupervisor control surface: run/list/promote/members/memory/stop |
 | [`specialists epic`](#specialists-epic) | Epic lifecycle: list/status/resolve/merge (canonical publication path) |
 | [`specialists feed`](#specialists-feed) | `--job <id>`: Filter by job ID |
 | [`specialists poll`](#specialists-poll) | `--cursor <n>`: Event cursor offset (default `0`) |
@@ -148,28 +148,27 @@ Notes:
 ```bash
 specialists node run <node-config-name-or-file> [--inline <json>] [--bead <id>] [--context-depth <n>] [--json]
 specialists node list [--json]
-specialists node status [--node <id>] [--json]
-specialists node feed <node-id> [--json]
 specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]
 specialists node members <node-id> [--json]
 specialists node memory <node-id> [--json]
-specialists node steer <node-id> <message> [--json]
 specialists node stop <node-id> [--json]
-specialists node attach <node-id>
 ```
 
 ### Subcommands
 
 - `run`: Start a node run from discovered config name, config path, or inline JSON.
 - `list`: List discovered node configs from `.specialists/default/nodes` then `config/nodes` (default wins on collision).
-- `status`: Show one/all node runs with coordinator job, reason, and member/memory summaries.
-- `feed`: Print node events (human or JSON).
 - `promote`: Promote one node memory finding into bead notes.
 - `members`: Inspect member generation/status/worktree lineage.
 - `memory`: Inspect node memory entries and aggregate counts.
-- `steer`: Send a coordinator steer message.
 - `stop`: SIGTERM coordinator process.
-- `attach`: Attach to coordinator tmux session.
+
+Top-level replacements for flattened node operations:
+- `sp ps` / `sp ps --node <id>` for status/snapshots
+- `sp feed --node <id> [--json]` for node event streams
+- `sp steer <coordinator-job-id> <message>` for coordinator steering
+- `sp attach <coordinator-job-id>` for coordinator attach
+- `sp result --node <id> --member <key>` for member results
 
 ### Flags
 
@@ -181,9 +180,6 @@ Common:
 - `--bead <id>`: Build bead_context from bead + completed blockers.
 - `--context-depth <n>`: Bead blocker depth override for node run context injection.
 
-`status`:
-- `--node <id>`: Inspect one node id.
-
 `promote`:
 - `--to-bead <id>`: Target bead for promoted finding (required).
 
@@ -192,15 +188,15 @@ Common:
 ```bash
 specialists node run research --bead unitAI-3f7b.7 --context-depth 2
 specialists node run ./config/nodes/research.node.json --json
-specialists node status
-specialists node status --node research-abc12345 --json
-specialists node feed research-abc12345
 specialists node members research-abc12345 --json
 specialists node memory research-abc12345
-specialists node steer research-abc12345 "focus on fix loop for failing gate"
 specialists node stop research-abc12345
-specialists node attach research-abc12345
 specialists node promote research-abc12345 finding-001 --to-bead unitAI-999
+sp ps --node research-abc12345
+sp feed --node research-abc12345 --json
+sp steer <coordinator-job-id> "focus on fix loop for failing gate"
+sp attach <coordinator-job-id>
+sp result --node research-abc12345 --member explorer-1
 ```
 
 ### Exit codes
@@ -212,7 +208,7 @@ specialists node promote research-abc12345 finding-001 --to-bead unitAI-999
 
 - Coordinator is declarative; NodeSupervisor executes side effects.
 - `--context-depth` on `node run` controls bead dependency context injection for node bootstrap.
-- `node members` and `node status --json` expose generation/worktree lineage fields used by operator tooling.
+- `node members` and `sp ps --node <id> --json` expose generation/worktree lineage fields used by operator tooling.
 
 ---
 
