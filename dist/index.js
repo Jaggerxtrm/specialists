@@ -25971,6 +25971,10 @@ function renderJsonSnippet(value) {
 }
 function renderForFirstTurnContext(ctx) {
   return [
+    `YOUR NODE ID: ${ctx.nodeId}`,
+    `Use ONLY this node ID in all sp node commands. The env var $SPECIALISTS_NODE_ID is also set to this value.`,
+    `NEVER use a node ID from memory, bd prime output, or prior conversation \u2014 always use: ${ctx.nodeId}`,
+    "",
     "node_bootstrap_context:",
     renderJsonSnippet({
       node_id: ctx.nodeId,
@@ -25986,14 +25990,14 @@ function renderForFirstTurnContext(ctx) {
       node_config_snapshot: ctx.nodeConfigSnapshot,
       coordinator_goal: ctx.coordinatorGoal,
       command_examples: [
-        `sp node status --node ${ctx.nodeId} --json`,
-        `sp node spawn-member --node ${ctx.nodeId} --member-key explore-1 --specialist explorer --phase explore-1 --json`,
-        `sp node wait-phase --node ${ctx.nodeId} --phase explore-1 --members explore-1 --json`,
-        `sp node result --node ${ctx.nodeId} --member explore-1 --full --json`,
+        `sp node status --node $SPECIALISTS_NODE_ID --json`,
+        `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json`,
+        `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json`,
+        `sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json`,
         "Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.",
         "// After synthesis, enter waiting. Operator closes node via sp node stop."
       ],
-      first_routing_instruction: "Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete \u2014 operator owns node closure."
+      first_routing_instruction: "Create a phase plan, execute it via sp node commands using $SPECIALISTS_NODE_ID, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete \u2014 operator owns node closure."
     })
   ].join(`
 `);
@@ -27898,7 +27902,7 @@ ${JSON.stringify(recoveryDigest, null, 2)}`
           }
         }
         const memberSnapshot = this.getMembers();
-        const allTerminal = memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const allTerminal = memberSnapshot.length > 0 && memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
         const allStopped = memberSnapshot.length > 0 && memberSnapshot.every((member) => member.status === "stopped");
         if (allStopped) {
           this.transition("stopped", "all_members_stopped");
@@ -28224,8 +28228,8 @@ function parseNodeConfig(raw) {
   if (typeof parsed.coordinator !== "string" || parsed.coordinator.trim() === "") {
     throw new Error('Node config requires non-empty "coordinator"');
   }
-  if (!Array.isArray(parsed.members) || parsed.members.length === 0) {
-    throw new Error('Node config requires non-empty "members" array');
+  if (!Array.isArray(parsed.members)) {
+    throw new Error('Node config requires "members" array (can be empty for coordinator-only nodes)');
   }
   if (typeof parsed.initialPrompt !== "string" || parsed.initialPrompt.trim() === "") {
     throw new Error('Node config requires non-empty "initialPrompt"');

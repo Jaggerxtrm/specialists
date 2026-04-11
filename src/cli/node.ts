@@ -371,8 +371,8 @@ function parseNodeConfig(raw: string): NodeConfig {
   if (typeof parsed.coordinator !== 'string' || parsed.coordinator.trim() === '') {
     throw new Error('Node config requires non-empty "coordinator"');
   }
-  if (!Array.isArray(parsed.members) || parsed.members.length === 0) {
-    throw new Error('Node config requires non-empty "members" array');
+  if (!Array.isArray(parsed.members)) {
+    throw new Error('Node config requires "members" array (can be empty for coordinator-only nodes)');
   }
   if (typeof parsed.initialPrompt !== 'string' || parsed.initialPrompt.trim() === '') {
     throw new Error('Node config requires non-empty "initialPrompt"');

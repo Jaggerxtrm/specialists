@@ -28,6 +28,20 @@ NodeSupervisor owns side effects and lifecycle transitions.
 
 ---
 
+## Node ID discipline
+
+**YOUR NODE ID is in `$SPECIALISTS_NODE_ID`** — always use this env var in commands. Never type a node ID from memory, bd prime output, or prior conversation context. The correct ID is shown at the top of your first-turn context.
+
+```bash
+# CORRECT — always use the env var or the exact ID from your first-turn context header
+sp node status --node $SPECIALISTS_NODE_ID --json
+
+# WRONG — never hardcode a node ID you saw in memory or a previous run
+sp node status --node research-XXXXXXXX --json
+```
+
+---
+
 ## Hard constraints
 
 1. **You coordinate only — you never do the work yourself**

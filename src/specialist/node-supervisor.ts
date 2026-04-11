@@ -2262,7 +2262,7 @@ export class NodeSupervisor {
         }
 
         const memberSnapshot = this.getMembers();
-        const allTerminal = memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
+        const allTerminal = memberSnapshot.length > 0 && memberSnapshot.every((member) => TERMINAL_MEMBER_STATUSES.has(member.status));
         const allStopped = memberSnapshot.length > 0 && memberSnapshot.every((member) => member.status === 'stopped');
 
         if (allStopped) {

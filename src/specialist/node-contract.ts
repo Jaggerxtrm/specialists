@@ -200,6 +200,10 @@ export function renderForSystemPrompt(): string {
 
 export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
   return [
+    `YOUR NODE ID: ${ctx.nodeId}`,
+    `Use ONLY this node ID in all sp node commands. The env var $SPECIALISTS_NODE_ID is also set to this value.`,
+    `NEVER use a node ID from memory, bd prime output, or prior conversation — always use: ${ctx.nodeId}`,
+    '',
     'node_bootstrap_context:',
     renderJsonSnippet({
       node_id: ctx.nodeId,
@@ -215,14 +219,14 @@ export function renderForFirstTurnContext(ctx: FirstTurnContext): string {
       node_config_snapshot: ctx.nodeConfigSnapshot,
       coordinator_goal: ctx.coordinatorGoal,
       command_examples: [
-        `sp node status --node ${ctx.nodeId} --json`,
-        `sp node spawn-member --node ${ctx.nodeId} --member-key explore-1 --specialist explorer --phase explore-1 --json`,
-        `sp node wait-phase --node ${ctx.nodeId} --phase explore-1 --members explore-1 --json`,
-        `sp node result --node ${ctx.nodeId} --member explore-1 --full --json`,
+        `sp node status --node $SPECIALISTS_NODE_ID --json`,
+        `sp node spawn-member --node $SPECIALISTS_NODE_ID --member-key explore-1 --specialist explorer --phase explore-1 --json`,
+        `sp node wait-phase --node $SPECIALISTS_NODE_ID --phase explore-1 --members explore-1 --json`,
+        `sp node result --node $SPECIALISTS_NODE_ID --member explore-1 --full --json`,
         'Synthesize the explore-1 evidence, then decide whether to launch a new phase or remain in waiting.',
         '// After synthesis, enter waiting. Operator closes node via sp node stop.',
       ],
-      first_routing_instruction: 'Create a phase plan, execute it via sp node commands, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete — operator owns node closure.',
+      first_routing_instruction: 'Create a phase plan, execute it via sp node commands using $SPECIALISTS_NODE_ID, gate phase progression with wait-phase, then read member results before deciding the next action. Do NOT call sp node complete — operator owns node closure.',
     }),
   ].join('\n');
 }

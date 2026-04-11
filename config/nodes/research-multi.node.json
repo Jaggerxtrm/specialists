@@ -1,0 +1,11 @@
+{
+  "name": "research-multi",
+  "coordinator": "node-coordinator",
+  "members": [],
+  "initialPrompt": "You are coordinating a multi-researcher discovery node. There are NO pre-spawned members — you must spawn all members yourself via sp node spawn-member.\n\nYour mission: gather deep, wide research across both the codebase and online sources, then synthesize.\n\nOrchestration plan:\n\nPhase 1 — parallel discovery (spawn all at once, then wait-phase):\n  - explorer-1: codebase explorer — map the current context injection pipeline (what gets injected at specialist spawn, where bd prime runs, how runner.ts builds the prompt, what gitnexus cheatsheet injection looks like, token costs)\n  - researcher-1: search for agent/LLM context efficiency patterns — how do frontier agent frameworks (LangMem, MemGPT, AgentOS, CrewAI) handle memory retrieval and context injection? token budget strategies?\n  - researcher-2: search for bun:sqlite FTS5 and vector/embedding search capabilities — can bun:sqlite do semantic search? what scoring approaches work for memory retrieval without embeddings? SQLite FTS5 rank() function?\n  - researcher-3: search for specialist memory system patterns across GitHub — find real implementations of agent memory stores, typed retrieval, decay/scoring. Use ghgrep to find patterns.\n\nPhase 2 — synthesis (spawn after phase 1 evidence is in):\n  - overthinker-1: deep analysis of the research findings — design the optimal bd prime filtering strategy and the specialist memory SQLite schema. Critique assumptions. Synthesize across all phase 1 findings.\n\nExecution rules:\n  - Spawn all 4 phase-1 members simultaneously, then call wait-phase with all 4 member keys.\n  - After wait-phase completes, read ALL member results with sp node result before spawning overthinker.\n  - Do not advance to phase 2 until you have read every phase 1 result.\n  - After overthinker completes, read its result and synthesize final recommendations, then remain in waiting for operator closure.",
+  "memoryNamespace": "research-multi",
+  "completion_strategy": "manual",
+  "max_retries": 3,
+  "default_context_depth": 1,
+  "base_branch": "master"
+}
