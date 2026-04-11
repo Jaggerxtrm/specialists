@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Supervisor } from '../specialist/supervisor.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { resolveNodeRefWithClient, resolveSingleActiveNodeRef } from '../specialist/node-resolve.js';
 import { formatCostUsd, formatTokenUsageSummary } from './format-helpers.js';
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -50,13 +51,30 @@ function parseArgs(argv: string[]): ResultArgs {
     }
   }
 
-  if (memberKey && !nodeId) {
-    console.error('Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]');
+  if (!jobId && !(nodeId && memberKey) && !memberKey) {
+    console.error('Usage: specialists|sp result <node-ref>:<member> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-ref> --member <member-key> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --member <member-key> [--wait] [--timeout <seconds>] [--json]');
     process.exit(1);
   }
 
-  if (!jobId && !(nodeId && memberKey)) {
-    console.error('Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]');
+  if (jobId && jobId.includes(':') && !nodeId && !memberKey) {
+    const separatorIndex = jobId.indexOf(':');
+    nodeId = jobId.slice(0, separatorIndex);
+    memberKey = jobId.slice(separatorIndex + 1);
+    jobId = undefined;
+  }
+
+  if (nodeId !== undefined && nodeId.length === 0) {
+    console.error('Error: node ref cannot be empty');
+    process.exit(1);
+  }
+
+  if (memberKey !== undefined && memberKey.length === 0) {
+    console.error('Error: member key cannot be empty');
+    process.exit(1);
+  }
+
+  if (!jobId && !memberKey) {
+    console.error('Usage: specialists|sp result <node-ref>:<member> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-ref> --member <member-key> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --member <member-key> [--wait] [--timeout <seconds>] [--json]');
     process.exit(1);
   }
 
@@ -134,10 +152,15 @@ export async function run(): Promise<void> {
   try {
     const jobId = (() => {
       if (args.jobId) return args.jobId;
-      if (!sqliteClient || !args.nodeId || !args.memberKey) {
+      if (!sqliteClient || !args.memberKey) {
         throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
       }
-      return resolveJobIdFromNodeMember(sqliteClient, args.nodeId, args.memberKey);
+
+      const resolvedNodeId = args.nodeId
+        ? resolveNodeRefWithClient(args.nodeId, sqliteClient)
+        : resolveSingleActiveNodeRef(sqliteClient);
+
+      return resolveJobIdFromNodeMember(sqliteClient, resolvedNodeId, args.memberKey);
     })();
 
     const resultPath = join(jobsDir, jobId, 'result.txt');

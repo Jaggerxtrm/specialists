@@ -15,6 +15,7 @@ import {
 import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
+import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import {
   executeCompleteNodeAction,
   executeCreateBeadAction,
@@ -226,11 +227,11 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   }
 
   if (command === 'promote' && (!nodeId || !findingId || !toBead)) {
-    throw new Error('Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]');
+    throw new Error('Usage: specialists node promote <node-ref> <finding-id> --to-bead <bead-id> [--json]');
   }
 
   if ((command === 'members' || command === 'memory' || command === 'stop') && !nodeId) {
-    throw new Error(`Usage: specialists node ${command} <node-id> [--json]`);
+    throw new Error(`Usage: specialists node ${command} <node-ref> [--json]`);
   }
 
   if (command === 'spawn-member' || command === 'create-bead' || command === 'complete' || command === 'wait-phase') {
@@ -240,19 +241,19 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
   }
 
   if (command === 'spawn-member' && (!memberKey || !specialist)) {
-    throw new Error('Usage: specialists node spawn-member --node <id> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]');
+    throw new Error('Usage: specialists node spawn-member --node <node-ref> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]');
   }
 
   if (command === 'create-bead' && !title) {
-    throw new Error('Usage: specialists node create-bead --node <id> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]');
+    throw new Error('Usage: specialists node create-bead --node <node-ref> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]');
   }
 
   if (command === 'complete' && !strategy) {
-    throw new Error('Usage: specialists node complete --node <id> --strategy <pr|manual> [--force-draft-pr] [--json]');
+    throw new Error('Usage: specialists node complete --node <node-ref> --strategy <pr|manual> [--force-draft-pr] [--json]');
   }
 
   if (command === 'wait-phase' && (!phaseId || !memberKeys || memberKeys.length === 0)) {
-    throw new Error('Usage: specialists node wait-phase --node <id> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]');
+    throw new Error('Usage: specialists node wait-phase --node <node-ref> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]');
   }
 
   return {
@@ -993,6 +994,26 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
     return;
   }
 
+  if (parsed.command !== 'run' && parsed.command !== 'list' && parsed.nodeId) {
+    const sqliteClient = createObservabilitySqliteClient();
+    if (!sqliteClient) {
+      emitNodeCommandError('Observability SQLite DB is unavailable. Run: specialists db setup', parsed.jsonMode);
+      return;
+    }
+
+    try {
+      parsed = {
+        ...parsed,
+        nodeId: resolveNodeRefWithClient(parsed.nodeId, sqliteClient),
+      };
+    } catch (error) {
+      emitNodeCommandError(error, parsed.jsonMode);
+      return;
+    } finally {
+      sqliteClient.close();
+    }
+  }
+
   if (parsed.command === 'run') {
     await handleNodeRun(parsed);
     return;
@@ -1002,7 +1023,6 @@ export async function handleNodeCommand(argv: string[]): Promise<void> {
     await handleNodeList(parsed);
     return;
   }
-
 
   if (parsed.command === 'promote') {
     await handleNodePromote(parsed);

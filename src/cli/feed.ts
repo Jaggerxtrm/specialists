@@ -8,7 +8,7 @@
  * Options:
  *   --job <id>         Filter to a specific job
  *   --specialist <name> Filter by specialist name
- *   --node <id>        Filter by node id
+ *   --node <node-ref>  Filter by node id (unique prefix allowed)
  *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
  *   --from <job:seq>   Show only events at/after cursor tuple (job_id:seq)
  *   --limit <n>        Max recent events to show (default: 100)
@@ -32,6 +32,7 @@ import {
   parseTimelineEvent,
 } from '../specialist/timeline-events.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { queryTimeline } from '../specialist/timeline-query.js';
 import { formatSpecialistModel } from '../specialist/model-display.js';
 import {
@@ -733,10 +734,12 @@ Modes:
   specialists feed -f              Follow all jobs globally
 
 Options:
-  --node <id>    Filter jobs by node id
+  --node <node-ref> Filter jobs by node id
   --from <job:seq> Show only events at/after cursor tuple
   -f, --follow   Follow live updates
   --forever      Keep following in global mode even when all jobs complete
+
+Node refs accept any unique prefix.
 
 Examples:
   specialists feed 49adda
@@ -759,12 +762,17 @@ export async function run(): Promise<void> {
       return;
     }
 
-    if (options.from && !options.json) {
-      console.log(dim(`Showing events from cursor ${options.from.jobId}:${options.from.seq}`));
+    const resolvedOptions = {
+      ...options,
+      nodeId: options.nodeId && sqliteClient ? resolveNodeRefWithClient(options.nodeId, sqliteClient) : options.nodeId,
+    };
+
+    if (resolvedOptions.from && !resolvedOptions.json) {
+      console.log(dim(`Showing events from cursor ${resolvedOptions.from.jobId}:${resolvedOptions.from.seq}`));
     }
 
-    if (options.follow) {
-      await followMerged(sqliteClient, jobsDir, options);
+    if (resolvedOptions.follow) {
+      await followMerged(sqliteClient, jobsDir, resolvedOptions);
       return;
     }
 
@@ -774,17 +782,17 @@ export async function run(): Promise<void> {
         sqliteClient,
         jobsDir,
         queryTimeline(jobsDir, {
-          jobId: options.jobId,
-          specialist: options.specialist,
-          since: options.since,
-          limit: options.limit,
+          jobId: resolvedOptions.jobId,
+          specialist: resolvedOptions.specialist,
+          since: resolvedOptions.since,
+          limit: resolvedOptions.limit,
         }),
-        options.nodeId,
+        resolvedOptions.nodeId,
       ),
-      options.from,
+      resolvedOptions.from,
     );
 
-    printSnapshot(sqliteClient, merged, options, jobsDir);
+    printSnapshot(sqliteClient, merged, resolvedOptions, jobsDir);
   } finally {
     sqliteClient?.close();
   }
