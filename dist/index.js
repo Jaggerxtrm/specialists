@@ -21004,6 +21004,44 @@ class SqliteClient {
       }));
     }, "listNodeRuns");
   }
+  listNodeRunsByRef(partialRef, statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+          AND (id LIKE ? OR node_name LIKE ?)
+        ORDER BY updated_at_ms DESC
+      `;
+      const prefix = `${partialRef}%`;
+      const rows = this.db.query(query).all(...statuses, prefix, prefix);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByRef");
+  }
+  listNodeRunsByStatuses(statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `;
+      const rows = this.db.query(query).all(...statuses);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByStatuses");
+  }
   readNodeMembers(nodeRunId) {
     return withRetry(() => {
       const rows = this.db.query("SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC").all(nodeRunId);
@@ -25205,6 +25243,7 @@ function formatToolDetail(event) {
 function formatEventLine(event, options) {
   const ts = dim8(formatTime(event.t));
   const job = options.colorize(`[${options.jobId}]`);
+  const node = options.nodeId ? magenta3(`[\u2B22${options.nodeId}]`) : "";
   const bead = dim8(`[${options.beadId ?? "-"}]`);
   const label = options.colorize(bold9(getEventLabel(event.type).padEnd(5)));
   const hasContextPct = Number.isFinite(options.contextPct);
@@ -25286,7 +25325,7 @@ function formatEventLine(event, options) {
   if (!detail && detailParts.length > 0) {
     detail = dim8(detailParts.join(" "));
   }
-  return `${ts} ${job} ${bead} ${label} ${options.specialist}${contextBadge ? ` ${contextBadge}` : ""}${detail ? ` ${detail}` : ""}`.trimEnd();
+  return `${ts} ${job} ${node ? `${node} ` : ""}${bead} ${label} ${options.specialist}${contextBadge ? ` ${contextBadge}` : ""}${detail ? ` ${detail}` : ""}`.trimEnd();
 }
 function formatEventInline(event) {
   switch (event.type) {
@@ -25838,6 +25877,56 @@ var init_run = __esm(() => {
   init_format_helpers();
   init_tmux_utils();
   BLOCKED_JOB_REUSE_STATUSES = new Set(["starting", "running"]);
+});
+
+// src/specialist/node-resolve.ts
+function formatNodeRefMatches(matches) {
+  return matches.map((match) => `${match.id} (${match.node_name})`).join(", ");
+}
+function requireSqliteClient() {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
+  }
+  return sqliteClient;
+}
+function resolveNodeRefWithClient(partialRef, sqliteClient) {
+  const matches = sqliteClient.listNodeRunsByRef(partialRef, ACTIVE_NODE_STATUSES);
+  if (matches.length === 1)
+    return matches[0].id;
+  if (matches.length === 0) {
+    throw new Error(`No node matching ref: ${partialRef}`);
+  }
+  throw new Error(`Ambiguous node ref ${partialRef} matches: ${formatNodeRefMatches(matches)}`);
+}
+function resolveSingleActiveNodeRef(sqliteClient) {
+  const client = sqliteClient ?? requireSqliteClient();
+  try {
+    const matches = client.listNodeRunsByStatuses(ACTIVE_NODE_STATUSES);
+    if (matches.length === 1)
+      return matches[0].id;
+    if (matches.length === 0) {
+      throw new Error("No active nodes found");
+    }
+    throw new Error(`Ambiguous node ref active matches: ${formatNodeRefMatches(matches)}`);
+  } finally {
+    if (!sqliteClient) {
+      client.close();
+    }
+  }
+}
+var ACTIVE_NODE_STATUSES;
+var init_node_resolve = __esm(() => {
+  init_observability_sqlite();
+  ACTIVE_NODE_STATUSES = [
+    "created",
+    "starting",
+    "running",
+    "waiting",
+    "degraded",
+    "awaiting_merge",
+    "fixing_after_review"
+  ];
 });
 
 // src/specialist/job-control.ts
@@ -28165,10 +28254,10 @@ function parseNodeArgs(argv) {
     throw new Error("Usage: specialists node run <node-config-name-or-file> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]");
   }
   if (command === "promote" && (!nodeId || !findingId || !toBead)) {
-    throw new Error("Usage: specialists node promote <node-id> <finding-id> --to-bead <bead-id> [--json]");
+    throw new Error("Usage: specialists node promote <node-ref> <finding-id> --to-bead <bead-id> [--json]");
   }
   if ((command === "members" || command === "memory" || command === "stop") && !nodeId) {
-    throw new Error(`Usage: specialists node ${command} <node-id> [--json]`);
+    throw new Error(`Usage: specialists node ${command} <node-ref> [--json]`);
   }
   if (command === "spawn-member" || command === "create-bead" || command === "complete" || command === "wait-phase") {
     if (!nodeId) {
@@ -28176,16 +28265,16 @@ function parseNodeArgs(argv) {
     }
   }
   if (command === "spawn-member" && (!memberKey || !specialist)) {
-    throw new Error("Usage: specialists node spawn-member --node <id> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]");
+    throw new Error("Usage: specialists node spawn-member --node <node-ref> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]");
   }
   if (command === "create-bead" && !title) {
-    throw new Error('Usage: specialists node create-bead --node <id> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]');
+    throw new Error('Usage: specialists node create-bead --node <node-ref> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]');
   }
   if (command === "complete" && !strategy) {
-    throw new Error("Usage: specialists node complete --node <id> --strategy <pr|manual> [--force-draft-pr] [--json]");
+    throw new Error("Usage: specialists node complete --node <node-ref> --strategy <pr|manual> [--force-draft-pr] [--json]");
   }
   if (command === "wait-phase" && (!phaseId || !memberKeys || memberKeys.length === 0)) {
-    throw new Error("Usage: specialists node wait-phase --node <id> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]");
+    throw new Error("Usage: specialists node wait-phase --node <node-ref> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]");
   }
   return {
     command,
@@ -28798,6 +28887,24 @@ async function handleNodeCommand(argv) {
     emitNodeCommandError(error2, hasJsonFlag(argv));
     return;
   }
+  if (parsed.command !== "run" && parsed.command !== "list" && parsed.nodeId) {
+    const sqliteClient = createObservabilitySqliteClient();
+    if (!sqliteClient) {
+      emitNodeCommandError("Observability SQLite DB is unavailable. Run: specialists db setup", parsed.jsonMode);
+      return;
+    }
+    try {
+      parsed = {
+        ...parsed,
+        nodeId: resolveNodeRefWithClient(parsed.nodeId, sqliteClient)
+      };
+    } catch (error2) {
+      emitNodeCommandError(error2, parsed.jsonMode);
+      return;
+    } finally {
+      sqliteClient.close();
+    }
+  }
   if (parsed.command === "run") {
     await handleNodeRun(parsed);
     return;
@@ -28838,6 +28945,7 @@ var init_node = __esm(() => {
   init_beads();
   init_supervisor();
   init_job_root();
+  init_node_resolve();
   init_node_supervisor();
   NODE_DISCOVERY_DIRS = [
     { path: ".specialists/default/nodes", source: "default" },
@@ -31114,15 +31222,24 @@ async function follow(args) {
 }
 async function run14() {
   const args = parseArgs7(process.argv.slice(3));
-  if (args.inspectId) {
-    renderInspect(args.inspectId);
-    return;
+  const sqliteClient = createObservabilitySqliteClient();
+  try {
+    const resolvedArgs = {
+      ...args,
+      nodeId: args.nodeId && sqliteClient ? resolveNodeRefWithClient(args.nodeId, sqliteClient) : args.nodeId
+    };
+    if (resolvedArgs.inspectId) {
+      renderInspect(resolvedArgs.inspectId);
+      return;
+    }
+    if (resolvedArgs.follow) {
+      await follow(resolvedArgs);
+      return;
+    }
+    render(resolvedArgs);
+  } finally {
+    sqliteClient?.close();
   }
-  if (args.follow) {
-    await follow(args);
-    return;
-  }
-  render(args);
 }
 var ACTIVE_STATES, TERMINAL_STATES, BEAD_TITLE_CACHE, STATUS_PRIORITY;
 var init_ps = __esm(() => {
@@ -31130,6 +31247,7 @@ var init_ps = __esm(() => {
   init_supervisor();
   init_job_root();
   init_observability_sqlite();
+  init_node_resolve();
   init_epic_readiness();
   ACTIVE_STATES = ["starting", "running", "waiting"];
   TERMINAL_STATES = ["done", "error", "cancelled"];
@@ -31190,14 +31308,32 @@ function parseArgs8(argv) {
       continue;
     }
   }
-  if (memberKey && !nodeId) {
-    console.error(`Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
-       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
+  if (!jobId && !(nodeId && memberKey) && !memberKey) {
+    console.error(`Usage: specialists|sp result <node-ref>:<member> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --node <node-ref> --member <member-key> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
     process.exit(1);
   }
-  if (!jobId && !(nodeId && memberKey)) {
-    console.error(`Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
-       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
+  if (jobId && jobId.includes(":") && !nodeId && !memberKey) {
+    const separatorIndex = jobId.indexOf(":");
+    nodeId = jobId.slice(0, separatorIndex);
+    memberKey = jobId.slice(separatorIndex + 1);
+    jobId = undefined;
+  }
+  if (nodeId !== undefined && nodeId.length === 0) {
+    console.error("Error: node ref cannot be empty");
+    process.exit(1);
+  }
+  if (memberKey !== undefined && memberKey.length === 0) {
+    console.error("Error: member key cannot be empty");
+    process.exit(1);
+  }
+  if (!jobId && !memberKey) {
+    console.error(`Usage: specialists|sp result <node-ref>:<member> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --node <node-ref> --member <member-key> [--wait] [--timeout <seconds>] [--json]
+       specialists|sp result --member <member-key> [--wait] [--timeout <seconds>] [--json]`);
     process.exit(1);
   }
   return { jobId, nodeId, memberKey, wait, json, timeout };
@@ -31261,10 +31397,11 @@ async function run15() {
     const jobId = (() => {
       if (args.jobId)
         return args.jobId;
-      if (!sqliteClient || !args.nodeId || !args.memberKey) {
+      if (!sqliteClient || !args.memberKey) {
         throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
       }
-      return resolveJobIdFromNodeMember(sqliteClient, args.nodeId, args.memberKey);
+      const resolvedNodeId = args.nodeId ? resolveNodeRefWithClient(args.nodeId, sqliteClient) : resolveSingleActiveNodeRef(sqliteClient);
+      return resolveJobIdFromNodeMember(sqliteClient, resolvedNodeId, args.memberKey);
     })();
     const resultPath = join21(jobsDir, jobId, "result.txt");
     const readResultOutput = () => {
@@ -31428,6 +31565,7 @@ var dim10 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
   init_observability_sqlite();
+  init_node_resolve();
   init_format_helpers();
 });
 
@@ -31733,6 +31871,7 @@ function readJobMeta(sqliteClient, jobsDir, jobId) {
     model: typeof status.model === "string" ? status.model : undefined,
     backend: typeof status.backend === "string" ? status.backend : undefined,
     beadId: typeof status.bead_id === "string" ? status.bead_id : undefined,
+    nodeId: typeof status.node_id === "string" && status.node_id.trim() !== "" ? status.node_id : undefined,
     metrics: typeof status.metrics === "object" && status.metrics !== null ? status.metrics : undefined,
     contextPct: Number.isFinite(contextPct) ? contextPct : undefined,
     startedAtMs: typeof status.started_at_ms === "number" ? status.started_at_ms : Date.now()
@@ -31861,6 +32000,7 @@ function printSnapshot(sqliteClient, merged, options, jobsDir) {
       jobId,
       specialist: specialistDisplay,
       beadId,
+      nodeId: meta.nodeId,
       contextPct: meta.contextPct,
       colorize
     }));
@@ -32080,6 +32220,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
             jobId,
             specialist: specialistDisplay,
             beadId,
+            nodeId: meta.nodeId,
             contextPct: meta.contextPct,
             colorize
           }));
@@ -32101,20 +32242,24 @@ async function run16() {
       console.log(dim8("No jobs directory found."));
       return;
     }
-    if (options.from && !options.json) {
-      console.log(dim8(`Showing events from cursor ${options.from.jobId}:${options.from.seq}`));
+    const resolvedOptions = {
+      ...options,
+      nodeId: options.nodeId && sqliteClient ? resolveNodeRefWithClient(options.nodeId, sqliteClient) : options.nodeId
+    };
+    if (resolvedOptions.from && !resolvedOptions.json) {
+      console.log(dim8(`Showing events from cursor ${resolvedOptions.from.jobId}:${resolvedOptions.from.seq}`));
     }
-    if (options.follow) {
-      await followMerged(sqliteClient, jobsDir, options);
+    if (resolvedOptions.follow) {
+      await followMerged(sqliteClient, jobsDir, resolvedOptions);
       return;
     }
     const merged = filterMergedEventsByCursor(filterMergedEventsByNode(sqliteClient, jobsDir, queryTimeline(jobsDir, {
-      jobId: options.jobId,
-      specialist: options.specialist,
-      since: options.since,
-      limit: options.limit
-    }), options.nodeId), options.from);
-    printSnapshot(sqliteClient, merged, options, jobsDir);
+      jobId: resolvedOptions.jobId,
+      specialist: resolvedOptions.specialist,
+      since: resolvedOptions.since,
+      limit: resolvedOptions.limit
+    }), resolvedOptions.nodeId), resolvedOptions.from);
+    printSnapshot(sqliteClient, merged, resolvedOptions, jobsDir);
   } finally {
     sqliteClient?.close();
   }
@@ -32122,6 +32267,7 @@ async function run16() {
 var init_feed = __esm(() => {
   init_timeline_events();
   init_observability_sqlite();
+  init_node_resolve();
   init_timeline_query();
   init_format_helpers();
 });
@@ -41639,30 +41785,32 @@ async function run29() {
         "  run <node-config> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]",
         "                                                      Start a NodeSupervisor run",
         "  list [--json]                                       List available node configs",
-        "  spawn-member --node <id> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]",
+        "  spawn-member --node <node-ref> --member-key <key> --specialist <name> [--bead <id>] [--phase <id>] [--scope <paths>] [--json]",
         "                                                      Spawn a dynamic node member",
-        '  create-bead --node <id> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]',
+        '  create-bead --node <node-ref> --title "..." [--type task] [--priority 2] [--depends-on <id>] [--json]',
         "                                                      Create follow-up bead from node context",
-        "  wait-phase --node <id> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]",
+        "  wait-phase --node <node-ref> --phase <id> --members <k1,k2,...> [--timeout <ms>] [--json]",
         "                                                      Wait until listed phase members are terminal",
-        "  complete --node <id> --strategy <pr|manual> [--force-draft-pr] [--json]",
+        "  complete --node <node-ref> --strategy <pr|manual> [--force-draft-pr] [--json]",
         "                                                      Complete node run with selected strategy",
-        "  members <node-id> [--json]                         Show member state + lineage metadata",
-        "  memory <node-id> [--json]                          Show accumulated node memory summaries",
-        "  stop <node-id> [--json]                            Gracefully stop coordinator + members",
-        "  promote <node-id> <finding-id> --to-bead <bead-id> [--json]",
+        "  members <node-ref> [--json]                        Show member state + lineage metadata",
+        "  memory <node-ref> [--json]                         Show accumulated node memory summaries",
+        "  stop <node-ref> [--json]                           Gracefully stop coordinator + members",
+        "  promote <node-ref> <finding-id> --to-bead <bead-id> [--json]",
         "                                                      Promote a finding to bead notes",
+        "",
+        "Node refs accept any unique prefix.",
         "",
         "Examples:",
         "  specialists node run research --bead unitAI-123 --context-depth 2",
-        "  specialists node members research-abc123 --json",
-        "  specialists node memory research-abc123",
-        "  specialists node spawn-member --node research-abc123 --member-key explore-1 --specialist explorer --phase explore-1 --json",
-        "  specialists node wait-phase --node research-abc123 --phase explore-1 --members explore-1 --json",
-        "  specialists result --node research-abc123 --member explore-1 --wait --json",
-        "  specialists ps --node research-abc123 --json",
-        "  specialists node stop research-abc123",
-        "  specialists node promote research-abc123 finding-1 --to-bead unitAI-123",
+        "  specialists node members research --json",
+        "  specialists node memory research",
+        "  specialists node spawn-member --node research --member-key explore-1 --specialist explorer --phase explore-1 --json",
+        "  specialists node wait-phase --node research --phase explore-1 --members explore-1 --json",
+        "  specialists result research:explore-1 --wait --json",
+        "  specialists ps --node research --json",
+        "  specialists node stop research",
+        "  specialists node promote research finding-1 --to-bead unitAI-123",
         ""
       ].join(`
 `));
@@ -41769,11 +41917,13 @@ async function run29() {
         "  Node coordinator \u2192 member relationships are shown inline.",
         "  Standalone jobs appear ungrouped at the bottom.",
         "",
+        "Node refs accept any unique prefix.",
+        "",
         "Examples:",
         "  specialists ps              Active jobs only (dead filtered out)",
         "  specialists ps --all        All jobs including dead and terminal",
         "  specialists ps --json       Machine-readable tree output",
-        "  specialists ps --node <id>  Filter dashboard to one node run",
+        "  specialists ps --node research  Filter dashboard to one node run",
         "  specialists ps --follow     Live dashboard with auto-refresh",
         ""
       ].join(`
@@ -41787,16 +41937,21 @@ async function run29() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists result <job-id> [--wait] [--timeout <seconds>] [--json]",
-        "       specialists result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]",
+        "Usage: specialists result <node-ref>:<member> [--wait] [--timeout <seconds>] [--json]",
+        "       specialists result <job-id> [--wait] [--timeout <seconds>] [--json]",
+        "       specialists result --node <node-ref> --member <member-key> [--wait] [--timeout <seconds>] [--json]",
+        "       specialists result --member <member-key> [--wait] [--timeout <seconds>] [--json]",
         "",
         "Print the final output of a completed job.",
         "Exits with code 1 if the job is still running or failed.",
         "",
+        "Node refs accept any unique prefix.",
+        "",
         "Examples:",
-        "  specialists result job_a1b2c3d4",
+        "  specialists result research:explore-1",
+        "  specialists result --member explore-1 --wait",
         "  specialists result job_a1b2c3d4 > output.md",
-        "  specialists result --node research-abc123 --member explore-1 --wait --json",
+        "  specialists result --node research --member explore-1 --wait --json",
         "",
         "See also:",
         "  specialists feed <job-id> --follow   (stream live events)",
@@ -41814,7 +41969,7 @@ async function run29() {
       console.log([
         "",
         "Usage: specialists feed <job-id> [options]",
-        "       specialists feed [--node <node-id>] -f [--forever]",
+        "       specialists feed [--node <node-ref>] -f [--forever]",
         "",
         "Read job events.",
         "",
@@ -41824,17 +41979,19 @@ async function run29() {
         "  specialists feed -f              Follow all jobs globally",
         "",
         "Options:",
-        "  --node <id>    Filter jobs by node id",
+        "  --node <node-ref> Filter jobs by node id",
         "  --from <n>     Show only events with seq >= <n>",
         "  -f, --follow   Follow live updates",
         "  --forever      Keep following in global mode even when all jobs complete",
+        "",
+        "Node refs accept any unique prefix.",
         "",
         "Examples:",
         "  specialists feed 49adda",
         "  specialists feed 49adda --from 15",
         "  specialists feed 49adda --follow",
         "  specialists feed -f",
-        "  specialists feed --node research-abc123 -f",
+        "  specialists feed --node research -f",
         "  specialists feed -f --forever",
         ""
       ].join(`

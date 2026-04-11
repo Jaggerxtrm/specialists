@@ -271,12 +271,14 @@ export function formatEventLine(
     jobId: string;
     specialist: string;
     beadId?: string;
+    nodeId?: string;
     contextPct?: number;
     colorize: Colorizer;
   }
 ): string {
   const ts = dim(formatTime(event.t));
   const job = options.colorize(`[${options.jobId}]`);
+  const node = options.nodeId ? magenta(`[⬢${options.nodeId}]`) : '';
   const bead = dim(`[${options.beadId ?? '-'}]`);
   const label = options.colorize(bold(getEventLabel(event.type).padEnd(5)));
   const hasContextPct = Number.isFinite(options.contextPct);
@@ -367,7 +369,7 @@ export function formatEventLine(
     detail = dim(detailParts.join(' '));
   }
 
-  return `${ts} ${job} ${bead} ${label} ${options.specialist}${contextBadge ? ` ${contextBadge}` : ''}${detail ? ` ${detail}` : ''}`.trimEnd();
+  return `${ts} ${job} ${node ? `${node} ` : ''}${bead} ${label} ${options.specialist}${contextBadge ? ` ${contextBadge}` : ''}${detail ? ` ${detail}` : ''}`.trimEnd();
 }
 
 /**

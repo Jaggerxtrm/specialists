@@ -181,6 +181,7 @@ interface JobMeta {
   model?: string;
   backend?: string;
   beadId?: string;
+  nodeId?: string;
   metrics?: Record<string, unknown>;
   contextPct?: number;
   startedAtMs: number;
@@ -279,6 +280,7 @@ function readJobMeta(
     model: typeof status.model === 'string' ? status.model : undefined,
     backend: typeof status.backend === 'string' ? status.backend : undefined,
     beadId: typeof status.bead_id === 'string' ? status.bead_id : undefined,
+    nodeId: typeof status.node_id === 'string' && status.node_id.trim() !== '' ? status.node_id : undefined,
     metrics: typeof status.metrics === 'object' && status.metrics !== null
       ? status.metrics as Record<string, unknown>
       : undefined,
@@ -411,6 +413,7 @@ function printSnapshot(
       jobId,
       specialist: specialistDisplay,
       beadId,
+      nodeId: meta.nodeId,
       contextPct: meta.contextPct,
       colorize,
     }));
@@ -703,6 +706,7 @@ async function followMerged(
             jobId,
             specialist: specialistDisplay,
             beadId,
+            nodeId: meta.nodeId,
             contextPct: meta.contextPct,
             colorize,
           }));
