@@ -69,7 +69,7 @@ source_of_truth_for:
 
 ```bash
 specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] \
-  [--epic <id>] [--no-worktree] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
+  [--epic <id>] [--context-depth <n>] [--model <provider/model>] [--no-beads] \
   [--keep-alive|--no-keep-alive] [--json | --raw]
 ```
 
@@ -77,10 +77,9 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 
 - `--prompt <text>`: Ad-hoc prompt.
 - `--bead <id>`: Read prompt/context from bead.
-- `--worktree`: Provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
+- `--worktree`: Explicitly provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
 - `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`.
 - `--epic <id>`: Explicitly declare epic membership for this job. When `--bead` is used, defaults to `bead.parent`; this flag overrides that default. Useful for prep jobs or chain-root jobs that should belong to a merge-gated epic.
-- `--no-worktree`: Bypass the worktree guard for `MEDIUM`/`HIGH`-permission specialists (see [Worktree guard](#worktree-guard) below). The caller accepts last-writer-wins risk.
 - `--force-job`: Bypass the `--job` concurrency guard when the target job is still `starting`/`running` or has an unknown status. MEDIUM/HIGH specialists normally block on active jobs to prevent concurrent worktree corruption; this flag forces entry at the caller's risk.
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
 - `--model <provider/model>`: Per-run model override.
@@ -106,21 +105,14 @@ specialists run explorer --bead prep-task.1 --epic unitAI-100
 
 ### Worktree guard
 
-Specialists with `permission_required = MEDIUM` or `HIGH` can edit files. Running them in the main checkout risks concurrent write conflicts. To prevent this, `specialists run` enforces an **isolation guard**: when none of `--worktree`, `--job`, or `--no-worktree` is supplied, the command exits immediately with:
+Specialists with `permission_required = MEDIUM` or `HIGH` can edit files. For specialists with `requires_worktree=true` (default), `specialists run` now auto-provisions a worktree when `--bead` is provided and `--job` is not used.
 
 Additionally, when `--worktree` is used, the pi session enforces a **write-boundary**: edit/write/multiEdit/notebookEdit tool calls are restricted to paths within the worktree root. Read and bash tools are not intercepted. If a write tool attempts an out-of-bounds path, it falls back to a tmp-fs location (writes to a temp directory that is discarded). This prevents accidental modifications to files outside the isolated worktree.
 
 ```
-Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
-Edit-capable specialists must run in isolation. Use one of:
-  --worktree      provision an isolated worktree (recommended)
-  --job <id>      reuse an existing job's worktree
-  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and requires worktree isolation.
+Provide --bead <id> for automatic worktree provisioning, or use --job <id> to reuse an existing worktree.
 ```
-
-`--no-worktree` is the explicit escape hatch. Use it when:
-- Running a single specialist on a clean checkout with no concurrent runners.
-- CI environments where worktree provisioning is unavailable.
 
 Specialists with `permission_required = READ_ONLY` (or unset) are **not** affected — the guard only triggers on edit-capable permissions.
 
@@ -134,7 +126,7 @@ Notes:
 - `--worktree` and `--job` are mutually exclusive.
 - `--worktree` requires `--bead <id>` to derive a deterministic branch name.
 - `--epic` can be used standalone or with `--bead`. When used with `--bead`, it overrides the bead's parent epic.
-- `--no-worktree` bypasses the worktree guard — only for `MEDIUM`/`HIGH` specialists when isolation is not feasible.
+- `--no-worktree` was removed.
 - Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
 - `--background` is removed and exits with error.
