@@ -11,27 +11,29 @@ const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 
 interface ResultArgs {
-  jobId: string;
+  jobId?: string;
+  nodeId?: string;
+  memberKey?: string;
   wait: boolean;
   json: boolean;
   timeout?: number; // seconds; undefined = no timeout
 }
 
 function parseArgs(argv: string[]): ResultArgs {
-  const jobId = argv[0];
-  if (!jobId || jobId.startsWith('--')) {
-    console.error('Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]');
-    process.exit(1);
-  }
-
+  let jobId: string | undefined;
+  let nodeId: string | undefined;
+  let memberKey: string | undefined;
   let wait = false;
   let json = false;
   let timeout: number | undefined;
 
-  for (let i = 1; i < argv.length; i++) {
+  for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
+
     if (token === '--wait') { wait = true; continue; }
     if (token === '--json') { json = true; continue; }
+    if (token === '--node' && argv[i + 1]) { nodeId = argv[++i]; continue; }
+    if ((token === '--member' || token === '--member-key') && argv[i + 1]) { memberKey = argv[++i]; continue; }
     if (token === '--timeout' && argv[i + 1]) {
       const parsed = parseInt(argv[++i], 10);
       if (isNaN(parsed) || parsed <= 0) {
@@ -41,14 +43,50 @@ function parseArgs(argv: string[]): ResultArgs {
       timeout = parsed;
       continue;
     }
+
+    if (!token.startsWith('--') && !jobId) {
+      jobId = token;
+      continue;
+    }
   }
 
-  return { jobId, wait, json, timeout };
+  if (memberKey && !nodeId) {
+    console.error('Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]');
+    process.exit(1);
+  }
+
+  if (!jobId && !(nodeId && memberKey)) {
+    console.error('Usage: specialists|sp result <job-id> [--wait] [--timeout <seconds>] [--json]\n       specialists|sp result --node <node-id> --member <member-key> [--wait] [--timeout <seconds>] [--json]');
+    process.exit(1);
+  }
+
+  return { jobId, nodeId, memberKey, wait, json, timeout };
+}
+
+function resolveJobIdFromNodeMember(
+  sqliteClient: NonNullable<ReturnType<typeof createObservabilitySqliteClient>>,
+  nodeId: string,
+  memberKey: string,
+): string {
+  const nodeRun = sqliteClient.readNodeRun(nodeId);
+  if (!nodeRun) {
+    throw new Error(`Node run not found: ${nodeId}`);
+  }
+
+  const member = sqliteClient.readNodeMembers(nodeId).find((entry) => entry.member_id === memberKey);
+  if (!member) {
+    throw new Error(`Member '${memberKey}' not found in node '${nodeId}'`);
+  }
+
+  if (!member.job_id) {
+    throw new Error(`Member '${memberKey}' in node '${nodeId}' has no job id yet`);
+  }
+
+  return member.job_id;
 }
 
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
-  const { jobId } = args;
 
   const emitJson = (status: ReturnType<Supervisor['readStatus']>, output: string | null, error: string | null): void => {
     console.log(JSON.stringify({
@@ -94,6 +132,14 @@ export async function run(): Promise<void> {
   };
 
   try {
+    const jobId = (() => {
+      if (args.jobId) return args.jobId;
+      if (!sqliteClient || !args.nodeId || !args.memberKey) {
+        throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
+      }
+      return resolveJobIdFromNodeMember(sqliteClient, args.nodeId, args.memberKey);
+    })();
+
     const resultPath = join(jobsDir, jobId, 'result.txt');
 
     const readResultOutput = (): string | null => {
@@ -254,6 +300,14 @@ export async function run(): Promise<void> {
   }
 
   emitHumanResult(output, status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (args.json) {
+      emitJson(null, null, message);
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
   } finally {
     sqliteClient?.close();
     await supervisor.dispose();

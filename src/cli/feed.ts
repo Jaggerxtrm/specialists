@@ -8,6 +8,7 @@
  * Options:
  *   --job <id>         Filter to a specific job
  *   --specialist <name> Filter by specialist name
+ *   --node <id>        Filter by node id
  *   --since <timestamp> Start time (ISO 8601 or milliseconds ago like '5m', '1h')
  *   --from <job:seq>   Show only events at/after cursor tuple (job_id:seq)
  *   --limit <n>        Max recent events to show (default: 100)
@@ -52,6 +53,7 @@ interface FeedCursor {
 
 interface FeedOptions {
   jobId?: string;
+  nodeId?: string;
   specialist?: string;
   since?: number;
   from?: FeedCursor;
@@ -223,9 +225,6 @@ function readStatusJson(
   }
 }
 
-function isStandaloneJobStatus(status: Record<string, unknown> | null): boolean {
-  return typeof status?.node_id !== 'string' || status.node_id.trim() === '';
-}
 
 function isTerminalJobStatus(
   sqliteClient: ObservabilitySqliteClient,
@@ -311,6 +310,7 @@ function makeJobMetaReader(
 function parseArgs(argv: string[]): FeedOptions {
   let jobId: string | undefined;
   let specialist: string | undefined;
+  let nodeId: string | undefined;
   let since: number | undefined;
   let fromRaw: string | undefined;
   let limit = 100;
@@ -321,6 +321,7 @@ function parseArgs(argv: string[]): FeedOptions {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--job' && argv[i + 1]) { jobId = argv[++i]; continue; }
     if (argv[i] === '--specialist' && argv[i + 1]) { specialist = argv[++i]; continue; }
+    if (argv[i] === '--node' && argv[i + 1]) { nodeId = argv[++i]; continue; }
     if (argv[i] === '--since' && argv[i + 1]) { since = parseSince(argv[++i]); continue; }
     if (argv[i] === '--from' && argv[i + 1]) {
       fromRaw = argv[++i];
@@ -336,6 +337,7 @@ function parseArgs(argv: string[]): FeedOptions {
   return {
     jobId,
     specialist,
+    nodeId,
     since,
     from: fromRaw ? parseCursor(fromRaw, jobId) : undefined,
     limit,
@@ -448,12 +450,18 @@ function filterMergedEventsByCursor(
   return merged.filter(({ jobId, event }) => isEventAtOrAfterCursor(jobId, event, from));
 }
 
-function filterStandaloneMergedEvents(
+function filterMergedEventsByNode(
   sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
-  merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>
+  merged: Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }>,
+  nodeId?: string,
 ): Array<{ jobId: string; specialist: string; beadId?: string; event: TimelineEvent }> {
-  return merged.filter(({ jobId }) => isStandaloneJobStatus(readStatusJson(sqliteClient, jobsDir, jobId)));
+  if (!nodeId) return merged;
+
+  return merged.filter(({ jobId }) => {
+    const status = readStatusJson(sqliteClient, jobsDir, jobId);
+    return typeof status?.node_id === 'string' && status.node_id === nodeId;
+  });
 }
 
 function listMatchingJobIds(
@@ -476,7 +484,11 @@ function listMatchingJobIds(
     if (options.jobId && entry !== options.jobId) continue;
 
     const status = readStatusJson(sqliteClient, jobsDir, entry);
-    if (!isStandaloneJobStatus(status)) continue;
+
+    if (options.nodeId) {
+      const currentNodeId = typeof status?.node_id === 'string' ? status.node_id : '';
+      if (currentNodeId !== options.nodeId) continue;
+    }
 
     if (options.specialist) {
       const specialist = typeof status?.specialist === 'string' ? status.specialist : undefined;
@@ -559,12 +571,17 @@ async function followMerged(
 
   // Initial snapshot
   const initial = filterMergedEventsByCursor(
-    filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
-      jobId: options.jobId,
-      specialist: options.specialist,
-      since: options.since,
-      limit: options.limit,
-    })),
+    filterMergedEventsByNode(
+      sqliteClient,
+      jobsDir,
+      queryTimeline(jobsDir, {
+        jobId: options.jobId,
+        specialist: options.specialist,
+        since: options.since,
+        limit: options.limit,
+      }),
+      options.nodeId,
+    ),
     options.from,
   );
 
@@ -716,6 +733,7 @@ Modes:
   specialists feed -f              Follow all jobs globally
 
 Options:
+  --node <id>    Filter jobs by node id
   --from <job:seq> Show only events at/after cursor tuple
   -f, --follow   Follow live updates
   --forever      Keep following in global mode even when all jobs complete
@@ -752,12 +770,17 @@ export async function run(): Promise<void> {
 
     // Snapshot mode
     const merged = filterMergedEventsByCursor(
-      filterStandaloneMergedEvents(sqliteClient, jobsDir, queryTimeline(jobsDir, {
-        jobId: options.jobId,
-        specialist: options.specialist,
-        since: options.since,
-        limit: options.limit,
-      })),
+      filterMergedEventsByNode(
+        sqliteClient,
+        jobsDir,
+        queryTimeline(jobsDir, {
+          jobId: options.jobId,
+          specialist: options.specialist,
+          since: options.since,
+          limit: options.limit,
+        }),
+        options.nodeId,
+      ),
       options.from,
     );
 
