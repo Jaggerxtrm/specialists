@@ -672,22 +672,18 @@ specialists run <name> [--worktree] [--job <id>]
 
 | Flag | Semantics | Creates worktree? |
 |------|-----------|:-:|
-| `--worktree` | Provision a new isolated workspace; requires `--bead` | Yes |
+| `--worktree` | Explicitly provision a new isolated workspace; requires `--bead` | Yes |
 | `--job <id>` | Reuse the workspace of an existing job | No |
-| `--no-worktree` | Bypass the isolation guard; caller accepts last-writer-wins risk | No |
 
 `--worktree` and `--job` are **mutually exclusive**.
 
 ### Worktree guard (MEDIUM/HIGH permission specialists)
 
-Specialists with `permission_required = MEDIUM` or `HIGH` **cannot** run without an isolation option unless `requires_worktree: false` is set in the specialist config. Omitting all three flags (`--worktree`, `--job`, `--no-worktree`) triggers the guard and exits with:
+Specialists with `permission_required = MEDIUM` or `HIGH` and `requires_worktree: true` auto-provision an isolated worktree when `--bead` is provided and `--job` is not used. If no bead is supplied, the command exits with:
 
 ```
-Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and can edit files.
-Edit-capable specialists must run in isolation. Use one of:
-  --worktree      provision an isolated worktree (recommended)
-  --job <id>      reuse an existing job's worktree
-  --no-worktree   bypass this guard (you accept last-writer-wins risk)
+Error: specialist '<name>' has permission_required=<MEDIUM|HIGH> and requires worktree isolation.
+Provide --bead <id> for automatic worktree provisioning, or use --job <id> to reuse an existing worktree.
 ```
 
 ### `requires_worktree` config flag
@@ -711,7 +707,7 @@ When `requires_worktree: false`:
 
 **Default**: `requires_worktree: true` — all edit-capable specialists are gated.
 
-Use `--no-worktree` only for single-specialist runs with no concurrency risk. `READ_ONLY` specialists are never gated.
+`READ_ONLY` specialists are never gated.
 
 ### `--worktree` (new isolated workspace)
 

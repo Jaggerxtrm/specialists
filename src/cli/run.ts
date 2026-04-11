@@ -49,8 +49,6 @@ interface RunArgs {
   reuseJobId?: string;
   /** Bypass reuse guard for active/unknown target job statuses. */
   forceJob: boolean;
-  /** Explicitly bypass the worktree requirement for edit-capable specialists. */
-  noWorktree: boolean;
   /** Owning epic for wave-bound chains. If --bead is set, defaults to bead.parent. */
   epicId?: string;
 }
@@ -77,7 +75,6 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let outputMode: OutputMode = 'human';
   let contextDepth = 1;
   let worktree = false;
-  let noWorktree = false;
   let reuseJobId: string | undefined;
   let forceJob = false;
   let epicId: string | undefined;
@@ -96,7 +93,14 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--json')          { outputMode   = 'json'; continue; }
     if (token === '--raw')           { outputMode   = 'raw';  continue; }
     if (token === '--worktree')      { worktree     = true; continue; }
-    if (token === '--no-worktree')   { noWorktree   = true; continue; }
+    if (token === '--no-worktree')   {
+      console.error(
+        'Error: --no-worktree has been removed. ' +
+        'Edit-capable specialists now auto-provision worktrees. ' +
+        'Use --job <id> to reuse an existing worktree.',
+      );
+      process.exit(1);
+    }
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
     if (token === '--force-job')     { forceJob     = true; continue; }
     if (token === '--epic'           && argv[i + 1]) { epicId       = argv[++i]; continue; }
@@ -147,7 +151,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, noWorktree, epicId,
+    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, epicId,
   };
 }
 
@@ -337,7 +341,7 @@ export async function run(): Promise<void> {
     process.exit(1);
   });
 
-  // ── Worktree guard for edit-capable specialists ────────────────────────────
+  // ── Worktree policy for edit-capable specialists ───────────────────────────
   const permission = specialist.specialist.execution.permission_required;
   const requiresWorktree = specialist.specialist.execution.requires_worktree ?? true;
   const perm: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH' =
@@ -345,14 +349,13 @@ export async function run(): Promise<void> {
       ? permission
       : 'READ_ONLY';
   const editCapable = perm === 'MEDIUM' || perm === 'HIGH';
-  // Skip worktree requirement if specialist explicitly opts out (e.g., memory-processor writes shared state)
-  if (editCapable && requiresWorktree && !args.worktree && !args.reuseJobId && !args.noWorktree) {
+  const shouldAutoProvisionWorktree = editCapable && requiresWorktree && !args.reuseJobId;
+  const useWorktree = args.worktree || shouldAutoProvisionWorktree;
+
+  if (shouldAutoProvisionWorktree && !args.beadId) {
     process.stderr.write(
-      `Error: specialist '${args.name}' has permission_required=${perm} and can edit files.\n` +
-      `Edit-capable specialists must run in isolation. Use one of:\n` +
-      `  --worktree      provision an isolated worktree (recommended)\n` +
-      `  --job <id>      reuse an existing job's worktree\n` +
-      `  --no-worktree   bypass this guard (you accept last-writer-wins risk)\n`,
+      `Error: specialist '${args.name}' has permission_required=${perm} and requires worktree isolation.\n` +
+      `Provide --bead <id> for automatic worktree provisioning, or use --job <id> to reuse an existing worktree.\n`,
     );
     process.exit(1);
   }
@@ -479,7 +482,10 @@ export async function run(): Promise<void> {
     reusedFromJobId,
     worktreeOwnerJobId,
   } = resolveWorkingDirectory(
-    args,
+    {
+      ...args,
+      worktree: useWorktree,
+    },
     jobsDir,
     perm,
     (jobId) => statusReader.readStatus(jobId),

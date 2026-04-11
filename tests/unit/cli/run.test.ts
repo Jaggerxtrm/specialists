@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
 import * as childProcess from 'node:child_process';
 import * as tmuxUtils from '../../../src/cli/tmux-utils.js';
+import * as worktree from '../../../src/specialist/worktree.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -18,6 +19,10 @@ vi.mock('node:child_process', async (importOriginal) => {
 });
 vi.mock('../../../src/cli/tmux-utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/cli/tmux-utils.js')>();
+  return { ...actual };
+});
+vi.mock('../../../src/specialist/worktree.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/specialist/worktree.js')>();
   return { ...actual };
 });
 import { BeadsClient } from '../../../src/specialist/beads.js';
@@ -228,6 +233,73 @@ describe('run CLI', () => {
 
     expect(plainText).toContain('anthropic/claude-haiku-4-5');
     expect(plainText).not.toContain('anthropic/anthropic/claude-haiku-4-5');
+  });
+
+  it('auto-provisions worktree for edit-capable specialists when bead is provided', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--bead', 'unitAI-55d'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(BeadsClient.prototype, 'readBead').mockReturnValue({
+      id: 'unitAI-55d',
+      title: 'Refactor auth',
+      description: 'Extract JWT validation',
+    });
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'MEDIUM' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+    const provisionSpy = vi.spyOn(worktree, 'provisionWorktree').mockReturnValue({
+      worktreePath: '/tmp/unitAI-55d-code-review',
+      branch: 'feature/unitAI-55d-code-review',
+      reused: false,
+    });
+
+    vi.spyOn(Supervisor.prototype, 'run').mockResolvedValue('job-123');
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockReturnValue({
+      id: 'job-123',
+      specialist: 'code-review',
+      status: 'done',
+      started_at_ms: 0,
+      last_event_at_ms: 1000,
+      backend: 'anthropic',
+      model: 'anthropic/claude-haiku-4-5',
+    });
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(provisionSpy).toHaveBeenCalledWith({
+      beadId: 'unitAI-55d',
+      specialistName: 'code-review',
+    });
+  });
+
+  it('fails when --no-worktree is provided', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--no-worktree'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+
+    const allText = [
+      ...consoleError.mock.calls.map(args => args.join(' ')),
+      ...stderrWrite.mock.calls.map(([chunk]) => String(chunk)),
+    ].join('\n');
+    expect(allText).toContain('--no-worktree has been removed');
   });
 
   it('uses tmux background mode when tmux is available', async () => {
