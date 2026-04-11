@@ -83,7 +83,7 @@ describe('integration: specialists run', () => {
     const result = runCli(['run', 'code-review'], tempDir);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('Error: provide --prompt, pipe stdin, or use --bead <id>.');
+    expect(result.stderr).toContain('Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.');
   });
 
   it('fails early when bead lookup cannot be resolved before any pi session starts', async () => {
