@@ -41,7 +41,11 @@ Instead it:
 - `sp node create-bead --node $NODE_ID --title '...' [--type task] [--priority 2] [--depends-on <id>] [--json]`
 - `sp node complete --node $NODE_ID --strategy <pr|manual> [--json]`
 - `sp node wait-phase --node $NODE_ID --phase <id> --members <k1,k2,...> [--json]`
-- `sp node status --node $NODE_ID [--json]`
+- `sp ps` (or `sp ps --node <id>` when available) for node snapshot/status
+- `sp feed --node <id> [--json]` for node event stream
+- `sp steer <coordinator-job-id> "..."` for coordinator steering
+- `sp attach <coordinator-job-id>` for coordinator attach
+- `sp result --node <id> --member <key>` for member result retrieval
 
 ---
 
@@ -49,7 +53,7 @@ Instead it:
 
 | Command | Purpose | Typical usage |
 |---|---|---|
-| `sp node status` | Read node snapshot (state, members, readiness) | Before and after every orchestration step |
+| `sp ps` | Read node snapshot and job health | Before and after every orchestration step |
 | `sp node spawn-member` | Start a member for a phase/task | Launch explore/impl/review workers |
 | `sp node wait-phase` | Enforce phase barrier for declared members | Block transition until phase members finish |
 | `sp node create-bead` | Create tracked follow-up work | Persist discovered blockers/tasks |
@@ -68,7 +72,7 @@ Instead it:
 Recommended pattern:
 1. spawn all members for phase N,
 2. call `wait-phase` for phase N,
-3. read `status --json`,
+3. read `sp ps --node <id> --json`,
 4. decide next phase (or completion).
 
 ---
@@ -186,8 +190,11 @@ Persisted SQLite surfaces:
 - `node_memory`
 
 Useful CLI inspection commands:
-- `sp node status [--node <id>] [--json]`
-- `sp node feed <id> [--json]`
+- `sp ps` (or `sp ps --node <id>` when available)
+- `sp feed --node <id> [--json]`
+- `sp steer <coordinator-job-id> "..."`
+- `sp attach <coordinator-job-id>`
+- `sp result --node <id> --member <key>`
 - `sp node members <id> [--json]`
 - `sp node memory <id> [--json]`
 
@@ -199,20 +206,23 @@ Canonical dispatch event remains `action_written`.
 
 - `sp node run <config-or-name> [--inline JSON] [--bead <id>] [--context-depth <n>] [--json]`
 - `sp node list [--json]`
-- `sp node status [--node <id>] [--json]`
-- `sp node feed <node-id> [--json]`
 - `sp node members <node-id> [--json]`
 - `sp node memory <node-id> [--json]`
-- `sp node steer <node-id> <message> [--json]`
 - `sp node stop <node-id> [--json]`
-- `sp node attach <node-id>`
 - `sp node promote <node-id> <finding-id> --to-bead <bead-id> [--json]`
+
+Related top-level commands for node operations:
+- `sp ps` / `sp ps --node <id>`
+- `sp feed --node <id> [--json]`
+- `sp steer <coordinator-job-id> <message>`
+- `sp attach <coordinator-job-id>`
+- `sp result --node <id> --member <key>`
 
 ---
 
 ## 11) Practical coordinator heuristics
 
-- Re-check `status --json` before every phase transition.
+- Re-check `sp ps --node <id> --json` before every phase transition.
 - Use `wait-phase` as mandatory barrier, not advisory.
 - Parallelize only disjoint mutating scopes.
 - Keep retries bounded and explicit.

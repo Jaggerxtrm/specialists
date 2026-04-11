@@ -166,15 +166,20 @@ Nodes are multi-agent research/execution groups with a coordinator + members. Th
 ### CLI surface (`sp node`)
 ```bash
 sp node run <config> --bead <id>                    # start a node
-sp node status [--json]                              # node registry snapshot
 sp node spawn-member --node <id> --member-key <key> --specialist <name> [--json]
 sp node create-bead --node <id> --title "..." [--json]
 sp node complete --node <id> --strategy <pr|manual> [--json]
 sp node wait-phase --node <id> --phase <id> --members <k1,k2> [--json]
 sp node members [--json]                             # member registry
-sp node steer <node-id> "message"                    # steer coordinator
 sp node stop <node-id>                               # stop node
 ```
+
+Node operations that moved to top-level CLI:
+- status/snapshot: `sp ps` (optionally scoped to node jobs)
+- event stream: `sp feed` (optionally scoped with `--node <id>`)
+- steering: `sp steer <coordinator-job-id> "message"`
+- attach: `sp attach <coordinator-job-id>`
+- member output: `sp result --node <id> --member <key>`
 
 ### Key files
 - `src/cli/node.ts` — CLI command routing + action handlers
