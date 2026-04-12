@@ -21248,6 +21248,26 @@ class SqliteClient {
       return events;
     }, "readEvents");
   }
+  readLatestToolEvent(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND type = 'tool'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1;
+      `).get(jobId);
+      if (!row?.event_json)
+        return null;
+      try {
+        const parsed = JSON.parse(row.event_json);
+        if (parsed.type !== "tool")
+          return null;
+        return typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq };
+      } catch {
+        return null;
+      }
+    }, "readLatestToolEvent");
+  }
   readResult(jobId) {
     return withRetry(() => {
       const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
@@ -22580,8 +22600,14 @@ class Supervisor {
         });
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
-          if (eventType === "tool_execution_end" && toolCallId) {
-            activeToolCalls.delete(toolCallId);
+          if (eventType === "tool_execution_end") {
+            if (toolCallId) {
+              activeToolCalls.delete(toolCallId);
+            } else {
+              latestUncorrelatedToolState = undefined;
+            }
+            const nextActiveTool = activeToolCalls.values().next().value?.tool;
+            setStatus({ current_tool: nextActiveTool });
           }
         } else if (eventType === "text" && !textLogged) {
           textLogged = true;
@@ -22734,6 +22760,7 @@ class Supervisor {
             }
           }
         }
+        setStatus({ current_tool: undefined });
       });
       latestOutput = result.output;
       mkdirSync3(this.jobDir(id), { recursive: true });
@@ -30582,6 +30609,49 @@ function readStatusesFromFiles(jobsDir) {
   }
   return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
 }
+function readLastToolEventFromFile(jobsDir, jobId) {
+  const eventsPath = join20(jobsDir, jobId, "events.jsonl");
+  if (!existsSync18(eventsPath))
+    return;
+  try {
+    const lines = readFileSync14(eventsPath, "utf-8").split(`
+`);
+    for (let index = lines.length - 1;index >= 0; index -= 1) {
+      const line = lines[index]?.trim();
+      if (!line)
+        continue;
+      const parsed = parseTimelineEvent(line);
+      if (!parsed || parsed.type !== "tool")
+        continue;
+      return parsed;
+    }
+  } catch {
+    return;
+  }
+  return;
+}
+function resolveDerivedCurrentTool(status, jobsDir, sqliteClient) {
+  let lastToolEvent;
+  try {
+    lastToolEvent = sqliteClient?.readLatestToolEvent(status.id) ?? undefined;
+  } catch {
+    lastToolEvent = undefined;
+  }
+  if (!lastToolEvent) {
+    lastToolEvent = readLastToolEventFromFile(jobsDir, status.id);
+  }
+  if (!lastToolEvent)
+    return status.current_tool;
+  if (lastToolEvent.phase === "start")
+    return lastToolEvent.tool;
+  return;
+}
+function enrichStatusesWithDerivedCurrentTool(statuses, jobsDir, sqliteClient) {
+  return statuses.map((status) => ({
+    ...status,
+    current_tool: resolveDerivedCurrentTool(status, jobsDir, sqliteClient)
+  }));
+}
 function loadStatuses() {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
@@ -30589,10 +30659,7 @@ function loadStatuses() {
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
     if (sqliteStatuses.length === 0) {
-      return fileStatuses;
-    }
-    if (fileStatuses.length === 0) {
-      return sqliteStatuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
     }
     const merged = new Map;
     for (const status of fileStatuses)
@@ -30603,9 +30670,9 @@ function loadStatuses() {
         merged.set(status.id, status);
       }
     }
-    return [...merged.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
+    return enrichStatusesWithDerivedCurrentTool([...merged.values()], jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
-    return fileStatuses;
+    return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } finally {
     sqliteClient?.close();
   }
@@ -31284,6 +31351,7 @@ var init_ps = __esm(() => {
   init_supervisor();
   init_job_root();
   init_observability_sqlite();
+  init_timeline_events();
   init_node_resolve();
   init_epic_readiness();
   ACTIVE_STATES = ["starting", "running", "waiting"];
