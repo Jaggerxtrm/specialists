@@ -20,7 +20,7 @@ function loadBunDatabase(): (new (path: string) => BunDb) | null {
 }
 import { resolveObservabilityDbLocation } from './observability-db.js';
 import { resolveJobsDir } from './job-root.js';
-import type { TimelineEvent } from './timeline-events.js';
+import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
 import type { PersistedChainIdentity } from './chain-identity.js';
@@ -750,6 +750,7 @@ export interface ObservabilitySqliteClient {
   listChainJobIds(chainId: string): string[];
   resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null;
   readEvents(jobId: string): TimelineEvent[];
+  readLatestToolEvent(jobId: string): TimelineEventTool | null;
   readResult(jobId: string): string | null;
   close(): void;
 }
@@ -1463,6 +1464,27 @@ class SqliteClient implements ObservabilitySqliteClient {
       }
       return events;
     }, 'readEvents');
+  }
+
+  readLatestToolEvent(jobId: string): TimelineEventTool | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND type = 'tool'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1;
+      `).get(jobId) as { seq?: number; event_json?: string } | undefined;
+
+      if (!row?.event_json) return null;
+
+      try {
+        const parsed = JSON.parse(row.event_json) as TimelineEvent;
+        if (parsed.type !== 'tool') return null;
+        return typeof parsed.seq === 'number' ? parsed : { ...parsed, seq: row.seq };
+      } catch {
+        return null;
+      }
+    }, 'readLatestToolEvent');
   }
 
   readResult(jobId: string): string | null {

@@ -6,6 +6,8 @@ import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import type { TimelineEventTool } from '../specialist/timeline-events.js';
+import { parseTimelineEvent } from '../specialist/timeline-events.js';
 import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
 import { loadEpicReadinessSummary, syncEpicStateFromReadiness, type EpicReadinessSummary } from '../specialist/epic-readiness.js';
 
@@ -136,6 +138,59 @@ function readStatusesFromFiles(jobsDir: string): SupervisorStatus[] {
   return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
 }
 
+function readLastToolEventFromFile(jobsDir: string, jobId: string): TimelineEventTool | undefined {
+  const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+  if (!existsSync(eventsPath)) return undefined;
+
+  try {
+    const lines = readFileSync(eventsPath, 'utf-8').split('\n');
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index]?.trim();
+      if (!line) continue;
+      const parsed = parseTimelineEvent(line);
+      if (!parsed || parsed.type !== 'tool') continue;
+      return parsed;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function resolveDerivedCurrentTool(
+  status: SupervisorStatus,
+  jobsDir: string,
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+): string | undefined {
+  let lastToolEvent: TimelineEventTool | undefined;
+
+  try {
+    lastToolEvent = sqliteClient?.readLatestToolEvent(status.id) ?? undefined;
+  } catch {
+    lastToolEvent = undefined;
+  }
+
+  if (!lastToolEvent) {
+    lastToolEvent = readLastToolEventFromFile(jobsDir, status.id);
+  }
+
+  if (!lastToolEvent) return status.current_tool;
+  if (lastToolEvent.phase === 'start') return lastToolEvent.tool;
+  return undefined;
+}
+
+function enrichStatusesWithDerivedCurrentTool(
+  statuses: SupervisorStatus[],
+  jobsDir: string,
+  sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
+): SupervisorStatus[] {
+  return statuses.map((status) => ({
+    ...status,
+    current_tool: resolveDerivedCurrentTool(status, jobsDir, sqliteClient),
+  }));
+}
+
 function loadStatuses(): SupervisorStatus[] {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
@@ -144,11 +199,8 @@ function loadStatuses(): SupervisorStatus[] {
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
     if (sqliteStatuses.length === 0) {
-      return fileStatuses;
-    }
-
-    if (fileStatuses.length === 0) {
-      return sqliteStatuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
+        .sort((a, b) => b.started_at_ms - a.started_at_ms);
     }
 
     const merged = new Map<string, SupervisorStatus>();
@@ -160,9 +212,11 @@ function loadStatuses(): SupervisorStatus[] {
       }
     }
 
-    return [...merged.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
+    return enrichStatusesWithDerivedCurrentTool([...merged.values()], jobsDir, sqliteClient)
+      .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
-    return fileStatuses;
+    return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
+      .sort((a, b) => b.started_at_ms - a.started_at_ms);
   } finally {
     sqliteClient?.close();
   }
