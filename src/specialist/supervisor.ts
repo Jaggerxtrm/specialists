@@ -1120,8 +1120,15 @@ export class Supervisor {
 
           if (timelineEvent) {
             appendTimelineEvent(timelineEvent);
-            if (eventType === 'tool_execution_end' && toolCallId) {
-              activeToolCalls.delete(toolCallId);
+            if (eventType === 'tool_execution_end') {
+              if (toolCallId) {
+                activeToolCalls.delete(toolCallId);
+              } else {
+                latestUncorrelatedToolState = undefined;
+              }
+
+              const nextActiveTool = activeToolCalls.values().next().value?.tool;
+              setStatus({ current_tool: nextActiveTool });
             }
           } else if (eventType === 'text' && !textLogged) {
             // Text presence event (not streaming deltas)
