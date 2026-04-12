@@ -17,7 +17,7 @@ description: "Final architectural decisions for the specialists/xtrm-tools split
 | [HOOK CLEANUP DETAIL](#hook-cleanup-detail) | | Hook | Action | Reason | |
 | [TECHNICAL REFERENCE](#technical-reference) | | Key / File | Set by | Read by | Value | |
 | [MATURITY SNAPSHOT](#maturity-snapshot) | | Project | Verdict | Key gaps | |
-| [xtrm-tools FUTURE WORK](#xtrm-tools-future-work) | These items live in `/home/dawid/projects/xtrm-tools`, NOT in specialists |
+| [xtrm-tools FUTURE WORK](#xtrm-tools-future-work) | These items live in `/home/dawid/dev/xtrm-tools`, NOT in specialists |
 | [OPEN QUESTIONS](#open-questions) | 1 |
 <!-- END INDEX -->
 
@@ -275,7 +275,7 @@ xtrm install
 
 ## xtrm-tools FUTURE WORK
 
-These items live in `/home/dawid/projects/xtrm-tools`, NOT in specialists.
+These items live in `/home/dawid/dev/xtrm-tools`, NOT in specialists.
 
 ### 1. `xt sp` command namespace — NOT YET IMPLEMENTED
 Planned CLI surface for specialists inside xtrm:

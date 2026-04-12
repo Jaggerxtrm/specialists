@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
 # [jaggers] skill-staleness
-if command -v python3 &>/dev/null && [ -f "/home/dawid/projects/specialists/.claude/git-hooks/skill_staleness.py" ]; then
-    python3 "/home/dawid/projects/specialists/.claude/git-hooks/skill_staleness.py" || true
+if command -v python3 &>/dev/null && [ -f "/home/dawid/dev/specialists/.claude/git-hooks/skill_staleness.py" ]; then
+    python3 "/home/dawid/dev/specialists/.claude/git-hooks/skill_staleness.py" || true
 fi
