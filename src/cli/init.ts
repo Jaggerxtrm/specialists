@@ -324,18 +324,30 @@ function ensureProjectHookWiring(cwd: string): void {
     mkdirSync(settingsDir, { recursive: true });
   }
 
-  const settings = loadJson(settingsPath, {});
+  const settings = loadJson(settingsPath, {}) as Record<string, unknown>;
+  if (!settings.hooks || typeof settings.hooks !== 'object') {
+    settings.hooks = {};
+  }
+  const hooksObj = settings.hooks as Record<string, any[]>;
   let changed = false;
 
-  // Helper to add hook with correct settings.json format (events at top level)
+  // Clean up stale top-level hook keys from previous buggy versions
+  for (const event of ['UserPromptSubmit', 'PostToolUse', 'SessionStart']) {
+    if (Array.isArray((settings as any)[event])) {
+      delete (settings as any)[event];
+      changed = true;
+    }
+  }
+
+  // Helper to add hook inside settings.hooks (Claude Code's expected format)
   function addHook(event: string, command: string): void {
-    const eventList = (settings as Record<string, any[]>)[event] ?? [];
-    (settings as Record<string, any[]>)[event] = eventList;
-    
+    const eventList = hooksObj[event] ?? [];
+    hooksObj[event] = eventList;
+
     const alreadyWired = eventList.some((entry: any) =>
       entry?.hooks?.some?.((h: any) => h?.command === command)
     );
-    
+
     if (!alreadyWired) {
       eventList.push({ matcher: '', hooks: [{ type: 'command', command }] });
       changed = true;

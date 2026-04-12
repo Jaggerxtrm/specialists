@@ -134,8 +134,10 @@ function checkHooks(): boolean {
     return false;
   }
 
-  const userPromptSubmit = (settings.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
-  const sessionStart = (settings.SessionStart as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
+  // Read from settings.hooks (correct location) and fall back to top-level (legacy buggy location)
+  const hooksObj = (settings.hooks ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+  const userPromptSubmit = hooksObj.UserPromptSubmit ?? (settings.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
+  const sessionStart = hooksObj.SessionStart ?? (settings.SessionStart as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
   const wiredCommands = new Set(
     [...userPromptSubmit, ...sessionStart]
       .flatMap(entry => (entry.hooks ?? []).map(hook => hook.command ?? '')),

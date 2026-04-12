@@ -23764,10 +23764,20 @@ function ensureProjectHookWiring(cwd) {
     mkdirSync4(settingsDir, { recursive: true });
   }
   const settings = loadJson(settingsPath, {});
+  if (!settings.hooks || typeof settings.hooks !== "object") {
+    settings.hooks = {};
+  }
+  const hooksObj = settings.hooks;
   let changed = false;
+  for (const event of ["UserPromptSubmit", "PostToolUse", "SessionStart"]) {
+    if (Array.isArray(settings[event])) {
+      delete settings[event];
+      changed = true;
+    }
+  }
   function addHook(event, command) {
-    const eventList = settings[event] ?? [];
-    settings[event] = eventList;
+    const eventList = hooksObj[event] ?? [];
+    hooksObj[event] = eventList;
     const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
     if (!alreadyWired) {
       eventList.push({ matcher: "", hooks: [{ type: "command", command }] });
@@ -25519,8 +25529,8 @@ async function parseArgs6(argv) {
       process.stdin.on("end", () => resolve6(buf.trim()));
     });
   }
-  if (!prompt && !beadId) {
-    console.error("Error: provide --prompt, pipe stdin, or use --bead <id>.");
+  if (!prompt && !beadId && !reuseJobId) {
+    console.error("Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.");
     process.exit(1);
   }
   return {
@@ -25588,7 +25598,8 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
     return {
       workingDirectory: worktreePath,
       reusedFromJobId: args.reuseJobId,
-      worktreeOwnerJobId
+      worktreeOwnerJobId,
+      inferredBeadId: targetStatus.bead_id
     };
   }
   return {};
@@ -25737,34 +25748,7 @@ async function run11() {
   let prompt = args.prompt;
   let variables;
   let epicId;
-  if (args.beadId) {
-    const bead = beadReader.readBead(args.beadId);
-    if (!bead) {
-      throw new Error(`Unable to read bead '${args.beadId}' via bd show --json`);
-    }
-    const blockers = args.contextDepth > 0 ? beadReader.getCompletedBlockers(args.beadId, args.contextDepth) : [];
-    if (blockers.length > 0) {
-      process.stderr.write(dim9(`
-[context: ${blockers.length} completed dep${blockers.length > 1 ? "s" : ""} injected]
-`));
-    }
-    const beadContext = buildBeadContext(bead, blockers);
-    prompt = beadContext;
-    epicId = args.epicId ?? bead.parent;
-    variables = {
-      bead_context: beadContext,
-      bead_id: args.beadId
-    };
-  }
-  if (!args.beadId && args.epicId) {
-    epicId = args.epicId;
-  }
-  if (args.reuseJobId) {
-    variables = {
-      ...variables ?? {},
-      reviewed_job_id: args.reuseJobId
-    };
-  }
+  let effectiveBeadId = args.beadId;
   const runner = new SpecialistRunner({
     loader,
     hooks,
@@ -25784,12 +25768,53 @@ async function run11() {
   const {
     workingDirectory,
     reusedFromJobId,
-    worktreeOwnerJobId
+    worktreeOwnerJobId,
+    inferredBeadId
   } = resolveWorkingDirectory({
     ...args,
     worktree: useWorktree
   }, jobsDir, perm, (jobId2) => statusReader.readStatus(jobId2));
   await statusReader.dispose();
+  if (!effectiveBeadId && inferredBeadId) {
+    effectiveBeadId = inferredBeadId;
+    console.error(`[input bead auto-resolved from job ${args.reuseJobId}: ${inferredBeadId}]`);
+  }
+  if (effectiveBeadId) {
+    const bead = beadReader.readBead(effectiveBeadId);
+    if (!bead) {
+      const inferredFromJob = !args.beadId && inferredBeadId && effectiveBeadId === inferredBeadId;
+      if (inferredFromJob) {
+        throw new Error(`Unable to read inferred bead '${effectiveBeadId}' from --job '${args.reuseJobId}' via bd show --json`);
+      }
+      throw new Error(`Unable to read bead '${effectiveBeadId}' via bd show --json`);
+    }
+    const blockers = args.contextDepth > 0 ? beadReader.getCompletedBlockers(effectiveBeadId, args.contextDepth) : [];
+    if (blockers.length > 0) {
+      process.stderr.write(dim9(`
+[context: ${blockers.length} completed dep${blockers.length > 1 ? "s" : ""} injected]
+`));
+    }
+    const beadContext = buildBeadContext(bead, blockers);
+    prompt = beadContext;
+    epicId = args.epicId ?? bead.parent;
+    variables = {
+      ...variables ?? {},
+      bead_context: beadContext,
+      bead_id: effectiveBeadId
+    };
+  } else if (args.epicId) {
+    epicId = args.epicId;
+  }
+  if (args.reuseJobId) {
+    variables = {
+      ...variables ?? {},
+      reviewed_job_id: args.reuseJobId
+    };
+  }
+  if (!prompt && !effectiveBeadId) {
+    console.error("Error: provide --prompt, pipe stdin, use --bead <id>, or provide --job <id> for bead inference.");
+    process.exit(1);
+  }
   let stopTailer;
   const supervisor = new Supervisor({
     runner,
@@ -25798,7 +25823,7 @@ async function run11() {
       prompt,
       variables,
       backendOverride: args.model,
-      inputBeadId: args.beadId,
+      inputBeadId: effectiveBeadId,
       epicId,
       keepAlive: args.keepAlive,
       noKeepAlive: args.noKeepAlive,
@@ -25818,13 +25843,13 @@ async function run11() {
       process.stderr.write(dim9(`[job started: ${id}]
 `));
       if (args.outputMode !== "raw") {
-        stopTailer = startEventTailer(id, jobsDir, args.outputMode, args.name, args.beadId);
+        stopTailer = startEventTailer(id, jobsDir, args.outputMode, args.name, effectiveBeadId);
       }
     }
   });
-  if (args.beadId && workingDirectory) {
+  if (effectiveBeadId && workingDirectory) {
     try {
-      execSync2(`bd kv set "bead-claim:${args.beadId}" "active"`, {
+      execSync2(`bd kv set "bead-claim:${effectiveBeadId}" "active"`, {
         cwd: workingDirectory,
         stdio: "pipe",
         timeout: 5000
@@ -25844,9 +25869,9 @@ ${bold10(`Running ${cyan6(args.name)}`)}
     stopTailer?.();
   }
   stopTailer?.();
-  if (args.beadId && workingDirectory) {
+  if (effectiveBeadId && workingDirectory) {
     try {
-      execSync2(`bd kv clear "bead-claim:${args.beadId}"`, {
+      execSync2(`bd kv clear "bead-claim:${effectiveBeadId}"`, {
         cwd: workingDirectory,
         stdio: "pipe",
         timeout: 5000
@@ -33422,8 +33447,9 @@ function checkHooks() {
     fix("specialists install");
     return false;
   }
-  const userPromptSubmit = settings.UserPromptSubmit ?? [];
-  const sessionStart = settings.SessionStart ?? [];
+  const hooksObj = settings.hooks ?? {};
+  const userPromptSubmit = hooksObj.UserPromptSubmit ?? settings.UserPromptSubmit ?? [];
+  const sessionStart = hooksObj.SessionStart ?? settings.SessionStart ?? [];
   const wiredCommands = new Set([...userPromptSubmit, ...sessionStart].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
   for (const name of HOOK_NAMES) {
     const expectedRelative = `node .specialists/default/hooks/${name}`;
