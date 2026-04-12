@@ -118,7 +118,7 @@ The specialists orchestration model uses three levels:
 | Term | Definition | Persisted? | Merge scope |
 |------|------------|:----------:|:-----------:|
 | **Job** | One specialist run (atomic execution unit) | Yes (SQLite + files) | — |
-| **Chain** | Worktree lineage: executor → reviewer → fix → re-review (seeded by edit-capable specialist) | Yes (`worktree_owner_job_id`) | `sp merge <chain-root>` |
+| **Chain** | Worktree lineage: all specialists sharing one workspace from first dispatch to merge (explorer → executor → reviewer → fix) | Yes (`worktree_owner_job_id`) | `sp merge <chain-root>` |
 | **Epic** | Top merge-gated identity that owns chains across stages | Yes (`epic_runs` table) | `sp epic merge <epic>` |
 | **Wave** | Human shorthand for dispatch batches ("Wave 1", "Wave 2b") — **speech only, NOT persisted** | No | — |
 
@@ -500,6 +500,47 @@ Only dispatch a new fix executor when the original specialist is dead (crashed, 
 - Each fix iteration uses `resume` on the same specialist — not a new child bead or new executor.
 - Multiple reviewer → resume → re-review cycles are expected. The worktree and specialist session are stable across all cycles.
 - Only stop after: (1) reviewer PASS, (2) executor committed, (3) commit verified on branch.
+
+---
+
+## Chain Lifecycle — Members Are Alive Until Merge
+
+A chain is not just a worktree — it is a **living group of specialists** sharing one workspace. All members of a chain are alive (running or waiting) until the chain is merged or abandoned. Treat chain members as a unit.
+
+### Rules
+
+1. **Never kill individual chain members prematurely.** A chain may include explorer, overthinker, executor, reviewer — all sharing one worktree via `--job`. Do not `sp stop` any member while the chain is active, unless the member has crashed or is context-exhausted (>80%).
+2. **The chain is alive until merge.** From first dispatch (even if it's a READ_ONLY explorer) through reviewer PASS and executor commit — the chain is one living unit. Members stay in `waiting` between turns.
+3. **Resume, don't re-dispatch.** When a chain member needs to act again (executor fixing reviewer findings, overthinker answering follow-ups), use `sp resume` on the existing member. Only dispatch a replacement if the original is dead.
+4. **Merge kills the chain.** When `sp merge` or `sp epic merge` publishes a chain's branch, all chain members become obsolete. *(Future: `sp merge` will auto-stop all chain members on successful merge — no manual cleanup needed.)*
+5. **Stop order matters (until auto-cleanup).** When manually stopping chain members after merge: stop dependents first (reviewer), then the chain owner (executor/explorer). This prevents race conditions with resume paths.
+
+### Chain member states
+
+| Member state | Meaning | Action |
+|-------------|---------|--------|
+| `running` | Actively working | Wait or steer |
+| `waiting` | Idle, retains full context | Resume when needed |
+| `done` | Finished its turn, output appended | Leave alone — chain may still need it |
+| `error` | Crashed or failed | May need replacement dispatch |
+
+### What "don't kill" means in practice
+
+```bash
+# BAD — killing executor before review cycle completes
+sp stop exec-job          # ✗ kills resume path, risks uncommitted work
+
+# BAD — killing overthinker before executor uses its output
+sp stop overthinker-job   # ✗ loses context if follow-up questions arise
+
+# GOOD — chain completes naturally
+sp resume exec-job "Reviewer PASS. Commit your changes."
+# verify commit...
+sp merge unitAI-impl      # publishes branch
+# THEN stop members (future: auto-stopped by merge)
+sp stop rev-job
+sp stop exec-job
+```
 
 ---
 
