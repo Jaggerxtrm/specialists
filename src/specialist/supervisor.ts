@@ -1326,6 +1326,8 @@ export class Supervisor {
               }
             }
           }
+
+          setStatus({ current_tool: undefined });
         },
       );
 
