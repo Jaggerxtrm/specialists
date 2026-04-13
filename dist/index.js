@@ -29070,6 +29070,27 @@ function runCommand(command, args, cwd = process.cwd()) {
     stdio: ["ignore", "pipe", "pipe"]
   });
 }
+function resolveMainWorktreeRoot(cwd = process.cwd()) {
+  const worktreeList = runCommand("git", ["worktree", "list", "--porcelain"], cwd);
+  if (worktreeList.status === 0) {
+    const firstWorktreeLine = worktreeList.stdout.split(`
+`).map((line) => line.trim()).find((line) => line.startsWith("worktree "));
+    if (firstWorktreeLine) {
+      const worktreePath = firstWorktreeLine.slice("worktree ".length).trim();
+      if (worktreePath)
+        return worktreePath;
+    }
+  }
+  const topLevel = runCommand("git", ["rev-parse", "--show-toplevel"], cwd);
+  if (topLevel.status !== 0) {
+    throw new Error("Unable to resolve main worktree root.");
+  }
+  const rootPath = topLevel.stdout.trim();
+  if (!rootPath) {
+    throw new Error("Unable to resolve main worktree root.");
+  }
+  return rootPath;
+}
 function readJson(text) {
   try {
     return JSON.parse(text);
@@ -29308,8 +29329,8 @@ function resolveMergeTargets(target) {
   }
   return chains;
 }
-function readChangedFilesForLastMerge() {
-  const diff = runCommand("git", ["diff", "--name-only", "HEAD^1", "HEAD"]);
+function readChangedFilesForLastMerge(cwd = process.cwd()) {
+  const diff = runCommand("git", ["diff", "--name-only", "HEAD^1", "HEAD"], cwd);
   if (diff.status !== 0)
     return [];
   return diff.stdout.split(`
@@ -29333,35 +29354,29 @@ function parseNameStatusLine(line) {
 function isNoisePath(path) {
   return NOISE_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
-function previewBranchMergeDelta(branch) {
-  const previewMerge = runCommand("git", ["merge", branch, "--no-ff", "--no-commit"]);
-  if (previewMerge.status !== 0) {
-    const conflicts = getConflictFiles();
-    runCommand("git", ["merge", "--abort"]);
-    const conflictContext = conflicts.length > 0 ? `
-Conflicting files:
-${conflicts.map((file) => `- ${file}`).join(`
-`)}` : "";
-    throw new Error(`Unable to preview merge for '${branch}'.${conflictContext}`);
+function previewBranchMergeDelta(branch, cwd = process.cwd()) {
+  const mergeBase = runCommand("git", ["merge-base", "main", branch], cwd);
+  if (mergeBase.status !== 0) {
+    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
   }
-  try {
-    const stagedDelta = runCommand("git", ["diff", "--cached", "--name-status"]);
-    if (stagedDelta.status !== 0) {
-      throw new Error(`Unable to read staged merge delta for '${branch}'.`);
-    }
-    const files = stagedDelta.stdout.split(`
+  const mergeBaseSha = mergeBase.stdout.trim();
+  if (!mergeBaseSha) {
+    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
+  }
+  const stagedDelta = runCommand("git", ["diff", `${mergeBaseSha}..${branch}`, "--name-status"], cwd);
+  if (stagedDelta.status !== 0) {
+    throw new Error(`Unable to read merge delta for '${branch}'.`);
+  }
+  const files = stagedDelta.stdout.split(`
 `).map(parseNameStatusLine).filter((entry) => Boolean(entry));
-    const noiseFiles = files.filter((file) => isNoisePath(file.path));
-    const substantiveFiles = files.filter((file) => !isNoisePath(file.path));
-    return {
-      branch,
-      files,
-      noiseFiles,
-      substantiveFiles
-    };
-  } finally {
-    runCommand("git", ["merge", "--abort"]);
-  }
+  const noiseFiles = files.filter((file) => isNoisePath(file.path));
+  const substantiveFiles = files.filter((file) => !isNoisePath(file.path));
+  return {
+    branch,
+    files,
+    noiseFiles,
+    substantiveFiles
+  };
 }
 function evaluateMergeWorthiness(preview) {
   if (preview.files.length === 0) {
@@ -29385,33 +29400,33 @@ function throwWorthinessBlockError(target, preview, decision) {
   throw new Error(`Refusing merge for '${target.branch}': ${reason}.
 ` + `Diagnostics: ${summary}`);
 }
-function assertBranchMergeWorthiness(target) {
-  const preview = previewBranchMergeDelta(target.branch);
+function assertBranchMergeWorthiness(target, cwd = process.cwd()) {
+  const preview = previewBranchMergeDelta(target.branch, cwd);
   const decision = evaluateMergeWorthiness(preview);
   if (decision.shouldMerge)
     return;
   throwWorthinessBlockError(target, preview, decision);
 }
-function getConflictFiles() {
-  const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"]);
+function getConflictFiles(cwd = process.cwd()) {
+  const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"], cwd);
   if (result.status !== 0)
     return [];
   return result.stdout.split(`
 `).map((line) => line.trim()).filter(Boolean);
 }
-function mergeBranch(branch) {
-  const result = runCommand("git", ["merge", branch, "--no-ff", "--no-edit"]);
+function mergeBranch(branch, cwd = process.cwd()) {
+  const result = runCommand("git", ["merge", branch, "--no-ff", "--no-edit"], cwd);
   if (result.status === 0)
     return;
-  const conflicts = getConflictFiles();
+  const conflicts = getConflictFiles(cwd);
   const context = conflicts.length > 0 ? `
 Conflicting files:
 ${conflicts.map((file) => `- ${file}`).join(`
 `)}` : "";
   throw new Error(`Merge conflict while merging '${branch}'.${context}`);
 }
-function runTypecheckGate() {
-  const tsc = runCommand("bunx", ["tsc", "--noEmit"]);
+function runTypecheckGate(cwd = process.cwd()) {
+  const tsc = runCommand("bunx", ["tsc", "--noEmit"], cwd);
   if (tsc.status === 0)
     return;
   const stderr = tsc.stderr.trim();
@@ -29419,8 +29434,8 @@ function runTypecheckGate() {
   throw new Error(`TypeScript gate failed after merge.
 ${stderr || stdout || "Unknown tsc error"}`);
 }
-function runRebuild() {
-  const build = runCommand("bun", ["run", "build"]);
+function runRebuild(cwd = process.cwd()) {
+  const build = runCommand("bun", ["run", "build"], cwd);
   if (build.status === 0)
     return;
   const stderr = build.stderr.trim();
@@ -29450,19 +29465,20 @@ function printUsageAndExit(message) {
   process.exit(1);
 }
 function runMergePlan(targets, options) {
+  const mainRepoRoot = resolveMainWorktreeRoot();
   const mergedSteps = [];
   for (const target of targets) {
-    assertBranchMergeWorthiness(target);
-    mergeBranch(target.branch);
-    runTypecheckGate();
+    assertBranchMergeWorthiness(target, mainRepoRoot);
+    mergeBranch(target.branch, mainRepoRoot);
+    runTypecheckGate(mainRepoRoot);
     mergedSteps.push({
       beadId: target.beadId,
       branch: target.branch,
-      changedFiles: readChangedFilesForLastMerge()
+      changedFiles: readChangedFilesForLastMerge(mainRepoRoot)
     });
   }
   if (options.rebuild) {
-    runRebuild();
+    runRebuild(mainRepoRoot);
   }
   return mergedSteps;
 }
