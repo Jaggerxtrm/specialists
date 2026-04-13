@@ -94,6 +94,33 @@ function runCommand(command: string, args: readonly string[], cwd = process.cwd(
   });
 }
 
+function resolveMainWorktreeRoot(cwd = process.cwd()): string {
+  const worktreeList = runCommand('git', ['worktree', 'list', '--porcelain'], cwd);
+  if (worktreeList.status === 0) {
+    const firstWorktreeLine = worktreeList.stdout
+      .split('\n')
+      .map(line => line.trim())
+      .find(line => line.startsWith('worktree '));
+
+    if (firstWorktreeLine) {
+      const worktreePath = firstWorktreeLine.slice('worktree '.length).trim();
+      if (worktreePath) return worktreePath;
+    }
+  }
+
+  const topLevel = runCommand('git', ['rev-parse', '--show-toplevel'], cwd);
+  if (topLevel.status !== 0) {
+    throw new Error('Unable to resolve main worktree root.');
+  }
+
+  const rootPath = topLevel.stdout.trim();
+  if (!rootPath) {
+    throw new Error('Unable to resolve main worktree root.');
+  }
+
+  return rootPath;
+}
+
 function readJson<T>(text: string): T | null {
   try {
     return JSON.parse(text) as T;
@@ -400,8 +427,8 @@ export function resolveMergeTargets(target: string): ChainMergeTarget[] {
   return chains;
 }
 
-function readChangedFilesForLastMerge(): string[] {
-  const diff = runCommand('git', ['diff', '--name-only', 'HEAD^1', 'HEAD']);
+function readChangedFilesForLastMerge(cwd = process.cwd()): string[] {
+  const diff = runCommand('git', ['diff', '--name-only', 'HEAD^1', 'HEAD'], cwd);
   if (diff.status !== 0) return [];
   return diff.stdout
     .split('\n')
@@ -448,40 +475,36 @@ function isNoisePath(path: string): boolean {
   return NOISE_PATH_PREFIXES.some(prefix => path.startsWith(prefix));
 }
 
-export function previewBranchMergeDelta(branch: string): MergePreviewDelta {
-  const previewMerge = runCommand('git', ['merge', branch, '--no-ff', '--no-commit']);
-  if (previewMerge.status !== 0) {
-    const conflicts = getConflictFiles();
-    runCommand('git', ['merge', '--abort']);
-    const conflictContext = conflicts.length > 0
-      ? `\nConflicting files:\n${conflicts.map(file => `- ${file}`).join('\n')}`
-      : '';
-    throw new Error(`Unable to preview merge for '${branch}'.${conflictContext}`);
+export function previewBranchMergeDelta(branch: string, cwd = process.cwd()): MergePreviewDelta {
+  const mergeBase = runCommand('git', ['merge-base', 'main', branch], cwd);
+  if (mergeBase.status !== 0) {
+    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
   }
 
-  try {
-    const stagedDelta = runCommand('git', ['diff', '--cached', '--name-status']);
-    if (stagedDelta.status !== 0) {
-      throw new Error(`Unable to read staged merge delta for '${branch}'.`);
-    }
-
-    const files = stagedDelta.stdout
-      .split('\n')
-      .map(parseNameStatusLine)
-      .filter((entry): entry is MergePreviewFileDelta => Boolean(entry));
-
-    const noiseFiles = files.filter(file => isNoisePath(file.path));
-    const substantiveFiles = files.filter(file => !isNoisePath(file.path));
-
-    return {
-      branch,
-      files,
-      noiseFiles,
-      substantiveFiles,
-    };
-  } finally {
-    runCommand('git', ['merge', '--abort']);
+  const mergeBaseSha = mergeBase.stdout.trim();
+  if (!mergeBaseSha) {
+    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
   }
+
+  const stagedDelta = runCommand('git', ['diff', `${mergeBaseSha}..${branch}`, '--name-status'], cwd);
+  if (stagedDelta.status !== 0) {
+    throw new Error(`Unable to read merge delta for '${branch}'.`);
+  }
+
+  const files = stagedDelta.stdout
+    .split('\n')
+    .map(parseNameStatusLine)
+    .filter((entry): entry is MergePreviewFileDelta => Boolean(entry));
+
+  const noiseFiles = files.filter(file => isNoisePath(file.path));
+  const substantiveFiles = files.filter(file => !isNoisePath(file.path));
+
+  return {
+    branch,
+    files,
+    noiseFiles,
+    substantiveFiles,
+  };
 }
 
 export function evaluateMergeWorthiness(preview: MergePreviewDelta): MergeWorthinessDecision {
@@ -516,15 +539,15 @@ function throwWorthinessBlockError(target: ChainMergeTarget, preview: MergePrevi
   );
 }
 
-function assertBranchMergeWorthiness(target: ChainMergeTarget): void {
-  const preview = previewBranchMergeDelta(target.branch);
+function assertBranchMergeWorthiness(target: ChainMergeTarget, cwd = process.cwd()): void {
+  const preview = previewBranchMergeDelta(target.branch, cwd);
   const decision = evaluateMergeWorthiness(preview);
   if (decision.shouldMerge) return;
   throwWorthinessBlockError(target, preview, decision);
 }
 
-function getConflictFiles(): string[] {
-  const result = runCommand('git', ['diff', '--name-only', '--diff-filter=U']);
+function getConflictFiles(cwd = process.cwd()): string[] {
+  const result = runCommand('git', ['diff', '--name-only', '--diff-filter=U'], cwd);
   if (result.status !== 0) return [];
   return result.stdout
     .split('\n')
@@ -532,11 +555,11 @@ function getConflictFiles(): string[] {
     .filter(Boolean);
 }
 
-export function mergeBranch(branch: string): void {
-  const result = runCommand('git', ['merge', branch, '--no-ff', '--no-edit']);
+export function mergeBranch(branch: string, cwd = process.cwd()): void {
+  const result = runCommand('git', ['merge', branch, '--no-ff', '--no-edit'], cwd);
   if (result.status === 0) return;
 
-  const conflicts = getConflictFiles();
+  const conflicts = getConflictFiles(cwd);
   const context = conflicts.length > 0
     ? `\nConflicting files:\n${conflicts.map(file => `- ${file}`).join('\n')}`
     : '';
@@ -544,8 +567,8 @@ export function mergeBranch(branch: string): void {
   throw new Error(`Merge conflict while merging '${branch}'.${context}`);
 }
 
-export function runTypecheckGate(): void {
-  const tsc = runCommand('bunx', ['tsc', '--noEmit']);
+export function runTypecheckGate(cwd = process.cwd()): void {
+  const tsc = runCommand('bunx', ['tsc', '--noEmit'], cwd);
   if (tsc.status === 0) return;
 
   const stderr = tsc.stderr.trim();
@@ -553,8 +576,8 @@ export function runTypecheckGate(): void {
   throw new Error(`TypeScript gate failed after merge.\n${stderr || stdout || 'Unknown tsc error'}`);
 }
 
-export function runRebuild(): void {
-  const build = runCommand('bun', ['run', 'build']);
+export function runRebuild(cwd = process.cwd()): void {
+  const build = runCommand('bun', ['run', 'build'], cwd);
   if (build.status === 0) return;
 
   const stderr = build.stderr.trim();
@@ -590,21 +613,22 @@ export function runMergePlan(
   targets: readonly ChainMergeTarget[],
   options: MergeExecutionOptions,
 ): MergeStepResult[] {
+  const mainRepoRoot = resolveMainWorktreeRoot();
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
-    assertBranchMergeWorthiness(target);
-    mergeBranch(target.branch);
-    runTypecheckGate();
+    assertBranchMergeWorthiness(target, mainRepoRoot);
+    mergeBranch(target.branch, mainRepoRoot);
+    runTypecheckGate(mainRepoRoot);
     mergedSteps.push({
       beadId: target.beadId,
       branch: target.branch,
-      changedFiles: readChangedFilesForLastMerge(),
+      changedFiles: readChangedFilesForLastMerge(mainRepoRoot),
     });
   }
 
   if (options.rebuild) {
-    runRebuild();
+    runRebuild(mainRepoRoot);
   }
 
   return mergedSteps;
