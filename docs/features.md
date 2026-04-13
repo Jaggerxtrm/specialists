@@ -5,6 +5,9 @@ category: guide
 version: 2.2.0
 updated: 2026-04-13
 synced_at: 0080a53d
+version: 2.1.2
+updated: 2026-04-13
+synced_at: 6d965a89
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -142,6 +145,20 @@ sp result <job-id> --wait --timeout 120
 - **SQLite-backed**: reads from `specialist_jobs.last_output` column when available
 
 Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
+
+### Current tool staleness fix (April 2026)
+
+`sp ps` and `sp poll` expose `current_tool` to show which tool a job is executing. Prior to April 2026, this field was stale because:
+
+1. `current_tool` was set on `tool_execution_start` but never cleared on `tool_execution_end`
+2. `sp ps` read from `status.json` snapshot, not the live event stream
+
+**Fix (unitAI-66xn, unitAI-yke7):**
+
+- **Read side**: `sp ps` now derives `current_tool` from `specialist_events` table, querying the latest tool event (start/update/end) instead of trusting `status.json`
+- **Write side**: Supervisor clears `current_tool: undefined` in `onToolEndCallback` on every `tool_execution_end`
+
+This prevents false-positive "hung job" diagnoses where `sp ps` showed a stale tool (e.g., `gitnexus_context`) while the model was actively streaming text.
 
 ---
 

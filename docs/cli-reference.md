@@ -3,6 +3,7 @@ title: CLI Reference
 scope: cli
 category: reference
 version: 2.5.0
+version: 2.4.2
 updated: 2026-04-13
 synced_at: 6d965a89
 description: Complete command reference for the Specialists CLI, generated from current source.
@@ -78,7 +79,7 @@ specialists run <name> [--prompt "..."] [--bead <id>] [--worktree] [--job <id>] 
 - `--prompt <text>`: Ad-hoc prompt.
 - `--bead <id>`: Read prompt/context from bead.
 - `--worktree`: Explicitly provision (or reuse) an isolated bd-managed worktree for this run. Requires `--bead`.
-- `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`.
+- `--job <id>`: Reuse the workspace from a prior job. Mutually exclusive with `--worktree`. When used without `--bead`, bead_id is automatically inferred from the target job's status.json if available.
 - `--epic <id>`: Explicitly declare epic membership for this job. When `--bead` is used, defaults to `bead.parent`; this flag overrides that default. Useful for prep jobs or chain-root jobs that should belong to a merge-gated epic.
 - `--force-stale-base`: Bypass the stale-base guard when provisioning a worktree. The guard blocks dispatch when epic sibling chains have unmerged substantive commits. Use this flag to force provisioning at the caller's risk (may cause merge conflicts later).
 - `--context-depth <n>`: Completed blocker depth for bead context (default `1`).
@@ -148,6 +149,7 @@ Notes:
 - Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
 - Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
 - `--background` is removed and exits with error.
+- **Auto-bead resolution**: When `--job <id>` is used without `--bead`, bead_id is inferred from the target job's `status.json.bead_id`. Precedence: explicit `--bead` > inferred bead from job > none. A stderr notice indicates when inference occurs.
 
 ---
 

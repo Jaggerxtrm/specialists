@@ -5,6 +5,9 @@ category: reference
 version: 3.1.0
 updated: 2026-04-13
 synced_at: 08993753
+version: 3.0.1
+updated: 2026-04-13
+synced_at: 6d965a89
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -344,6 +347,36 @@ setStatus({
 ```
 
 This avoids event-log scanning for any consumer that only needs the latest value (e.g. `sp ps` reads `status.json` and displays a `ctx%` column without touching `events.jsonl`).
+
+### Current tool staleness fix (April 2026)
+
+Prior to April 2026, `current_tool` in `status.json` was stale because it was set on `tool_execution_start` but never cleared on `tool_execution_end`. `sp ps` read from `status_json` snapshot and showed stale values.
+
+**Fix (unitAI-66xn, unitAI-yke7):**
+
+1. **Supervisor clears on tool end**: `onToolEndCallback` sets `current_tool: undefined` via `setStatus()` on every `tool_execution_end` event.
+
+```typescript
+onToolEndCallback: (toolCallId, toolName, result, resultRaw, isError) => {
+  setStatus({ current_tool: undefined });  // Clear stale tool
+  // ... rest of callback
+}
+```
+
+2. **ps.ts derives from event stream**: Instead of reading `status_json.current_tool`, `sp ps` queries `specialist_events` for the latest tool phase:
+
+```typescript
+// readLatestToolEvent() in observability-sqlite.ts
+const latestTool = db.query(`
+  SELECT json_extract(event_json, '$.phase') as phase
+  FROM specialist_events
+  WHERE job_id = ? AND type = 'tool'
+  ORDER BY t DESC, id DESC LIMIT 1
+`).get(jobId);
+// If phase === 'end', current_tool is null; if 'start'/'update', it's active
+```
+
+This prevents false-positive "hung job" diagnoses where `sp ps` showed a stale tool (e.g., `gitnexus_context`) while the model was actively streaming text.
 
 ### Context window tracking
 

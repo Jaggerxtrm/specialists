@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Merge-time rebase** — before merging each chain, branch is rebased onto master inside worktree (4c3eeb36)
 - **Conflict handling** — automatic abort on failure with conflicting files list (4c3eeb36)
 - **SQLite query** — `listEpicChainsWithLatestJob()` for sibling chain state (4c3eeb36)
+**April 2026 session fixes**
+- **`--no-worktree` flag eliminated** — removed deprecated flag; MEDIUM/HIGH specialists with `--bead` now auto-provision worktrees (unitAI-aq1k, commit 06dc0c)
+- **Auto-worktree provisioning** — when `--bead` is provided for edit-capable specialists, worktree is automatically provisioned without explicit `--worktree` flag (unitAI-aq1k)
+- **`--job` auto-bead resolution** — when `--job <id>` is used without `--bead`, bead_id is inferred from target job's status.json with precedence: explicit `--bead` > target job's bead_id (unitAI-bt1f, commit 3f795a)
+- **GitNexus MCP tool registration fix** — explorer sessions now correctly resolve gitnexus/serena extensions from global node_modules via `resolveGlobalNodeModulesDir()` (unitAI-6ws7, commit 44e81c)
+- **NodeSupervisor coordinator resume guard** — coordinator no longer resumed after node reaches terminal state; `TERMINAL_NODE_STATUSES` check in `shouldResumeCoordinator` (unitAI-gicf, commit 1679f9)
+- **`sp ps` current_tool staleness fix** — ps now derives current_tool from event stream (not stale status_json snapshot); supervisor clears current_tool on tool_end (unitAI-66xn, unitAI-yke7, merged as 3.6.3)
+- **Chain lifecycle documentation** — using-specialists skill v4.6 adds chain lifecycle section: members stay alive until merge, resume-first fix loops (April 11 session)
 
 **Job lifecycle fixes**
 - **`cancelled` status** — new terminal status for jobs stopped without `run_complete` evidence (260e7246)
