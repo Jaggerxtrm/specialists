@@ -23,6 +23,7 @@
       "output_type": "codegen",
       "permission_required": "HIGH",
       "thinking_level": "low",
+      "auto_commit": "checkpoint_on_waiting",
       "interactive": true,
       "max_retries": 0,
       "mode": "auto"
