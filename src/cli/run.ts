@@ -12,7 +12,9 @@ import { BeadsClient, buildBeadContext } from '../specialist/beads.js';
 import { Supervisor } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { provisionWorktree } from '../specialist/worktree.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
+import { evaluateMergeWorthiness, previewBranchMergeDelta } from './merge.js';
 import { formatEventInlineDebounced, type InlineIndicatorPhase } from './format-helpers.js';
 import { isTmuxAvailable, buildSessionName, createTmuxSession } from './tmux-utils.js';
 
@@ -51,6 +53,8 @@ interface RunArgs {
   forceJob: boolean;
   /** Owning epic for wave-bound chains. If --bead is set, defaults to bead.parent. */
   epicId?: string;
+  /** Allow provisioning from a potentially stale base branch. */
+  forceStaleBase: boolean;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
@@ -58,7 +62,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   if (!name || name.startsWith('--')) {
     console.error(
       'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
-      '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--context-depth <n>] [--model <model>] ' +
+      '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--force-stale-base] [--context-depth <n>] [--model <model>] ' +
       '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
     );
     process.exit(1);
@@ -78,6 +82,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let reuseJobId: string | undefined;
   let forceJob = false;
   let epicId: string | undefined;
+  let forceStaleBase = false;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -104,6 +109,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
     if (token === '--force-job')     { forceJob     = true; continue; }
     if (token === '--epic'           && argv[i + 1]) { epicId       = argv[++i]; continue; }
+    if (token === '--force-stale-base') { forceStaleBase = true; continue; }
   }
 
   // ── Mutual exclusion ─────────────────────────────────────────────────────────
@@ -151,7 +157,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, epicId,
+    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, epicId, forceStaleBase,
   };
 }
 
@@ -169,6 +175,94 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
  * Returns undefined when neither flag is set (run in current directory).
  */
 const BLOCKED_JOB_REUSE_STATUSES = new Set(['starting', 'running']);
+
+interface BdBeadSummary {
+  id?: string;
+  parent?: string;
+  issue_type?: string;
+}
+
+function readBeadSummary(beadId: string): BdBeadSummary | null {
+  try {
+    const raw = execSync(`bd show ${beadId} --json`, {
+      stdio: 'pipe',
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    const parsed = JSON.parse(raw) as unknown;
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== 'object') return null;
+    return bead as BdBeadSummary;
+  } catch {
+    return null;
+  }
+}
+
+function resolveEpicIdForBead(sqliteClient: NonNullable<ReturnType<typeof createObservabilitySqliteClient>>, beadId: string): string | undefined {
+  const membership = sqliteClient.resolveEpicByChainRootBeadId(beadId);
+  if (membership?.epic_id) return membership.epic_id;
+
+  const bead = readBeadSummary(beadId);
+  if (!bead?.parent) return undefined;
+
+  const parent = readBeadSummary(bead.parent);
+  if (parent?.issue_type !== 'epic') return undefined;
+  return bead.parent;
+}
+
+function assertNoStaleBaseSiblings(beadId: string, forceStaleBase: boolean): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) return;
+
+  try {
+    const epicId = resolveEpicIdForBead(sqliteClient, beadId);
+    if (!epicId) return;
+
+    const siblingChains = sqliteClient
+      .listEpicChainsWithLatestJob(epicId)
+      .filter((chain) => chain.chain_root_bead_id !== beadId && Boolean(chain.branch));
+
+    const staleSiblings: Array<{ beadId: string; branch: string; chainId: string }> = [];
+
+    for (const sibling of siblingChains) {
+      const branch = sibling.branch;
+      if (!branch) continue;
+
+      try {
+        const preview = previewBranchMergeDelta(branch);
+        const decision = evaluateMergeWorthiness(preview);
+        if (!decision.shouldMerge) continue;
+
+        staleSiblings.push({
+          beadId: sibling.chain_root_bead_id ?? '(unknown-bead)',
+          branch,
+          chainId: sibling.chain_id,
+        });
+      } catch {
+        // Branch may already be deleted or unavailable locally.
+      }
+    }
+
+    if (staleSiblings.length === 0) return;
+    if (forceStaleBase) {
+      process.stderr.write(dim(`[stale-base guard bypassed: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]\n`));
+      return;
+    }
+
+    const lines = staleSiblings
+      .map((sibling) => `- bead=${sibling.beadId} chain=${sibling.chainId} branch=${sibling.branch}`)
+      .join('\n');
+
+    throw new Error(
+      `Refusing worktree dispatch for bead '${beadId}': epic '${epicId}' has unmerged sibling chains with substantive commits.\n` +
+      `${lines}\n` +
+      `Publish the epic first: sp epic merge ${epicId}\n` +
+      `If intentional, rerun with --force-stale-base.`,
+    );
+  } finally {
+    sqliteClient.close();
+  }
+}
 
 function resolveWorkingDirectory(
   args: RunArgs,
@@ -189,6 +283,8 @@ function resolveWorkingDirectory(
 } {
   if (args.worktree) {
     // args.beadId is guaranteed non-null here (parseArgs validates this)
+    assertNoStaleBaseSiblings(args.beadId!, args.forceStaleBase);
+
     const info = provisionWorktree({
       beadId: args.beadId!,
       specialistName: args.name,

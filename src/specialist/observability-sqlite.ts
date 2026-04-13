@@ -715,6 +715,17 @@ export interface ChainEpicLinkRecord {
   chain_root_bead_id?: string;
 }
 
+export interface EpicChainLatestJobRecord {
+  chain_id: string;
+  epic_id: string;
+  chain_root_bead_id?: string;
+  chain_root_job_id?: string;
+  job_id: string;
+  status?: string;
+  branch?: string;
+  updated_at_ms: number;
+}
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   upsertEpicRun(epic: EpicRunRecord): void;
@@ -746,6 +757,7 @@ export interface ObservabilitySqliteClient {
   resolveEpicByChainId(chainId: string): EpicChainRecord | null;
   resolveEpicByChainRootBeadId(chainRootBeadId: string): EpicChainRecord | null;
   listEpicChains(epicId: string): EpicChainRecord[];
+  listEpicChainsWithLatestJob(epicId: string): EpicChainLatestJobRecord[];
   readChainIdentity(jobId: string): PersistedChainIdentity | null;
   listChainJobIds(chainId: string): string[];
   resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null;
@@ -1388,6 +1400,64 @@ class SqliteClient implements ObservabilitySqliteClient {
     return withRetry(() => {
       return this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC').all(epicId) as EpicChainRecord[];
     }, 'listEpicChains');
+  }
+
+  listEpicChainsWithLatestJob(epicId: string): EpicChainLatestJobRecord[] {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked_jobs AS (
+          SELECT
+            jobs.chain_id AS chain_id,
+            membership.epic_id AS epic_id,
+            membership.chain_root_bead_id AS chain_root_bead_id,
+            membership.chain_root_job_id AS chain_root_job_id,
+            jobs.job_id AS job_id,
+            jobs.status AS status,
+            json_extract(jobs.status_json, '$.branch') AS branch,
+            jobs.updated_at_ms AS updated_at_ms,
+            ROW_NUMBER() OVER (
+              PARTITION BY jobs.chain_id
+              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
+            ) AS row_rank
+          FROM epic_chain_membership membership
+          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+          WHERE membership.epic_id = ?
+            AND jobs.chain_kind = 'chain'
+        )
+        SELECT
+          chain_id,
+          epic_id,
+          chain_root_bead_id,
+          chain_root_job_id,
+          job_id,
+          status,
+          branch,
+          updated_at_ms
+        FROM ranked_jobs
+        WHERE row_rank = 1
+        ORDER BY updated_at_ms DESC, job_id DESC
+      `).all(epicId) as Array<{
+        chain_id: string;
+        epic_id: string;
+        chain_root_bead_id?: string | null;
+        chain_root_job_id?: string | null;
+        job_id: string;
+        status?: string | null;
+        branch?: string | null;
+        updated_at_ms: number;
+      }>;
+
+      return rows.map((row) => ({
+        chain_id: row.chain_id,
+        epic_id: row.epic_id,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        job_id: row.job_id,
+        status: row.status ?? undefined,
+        branch: row.branch ?? undefined,
+        updated_at_ms: row.updated_at_ms,
+      }));
+    }, 'listEpicChainsWithLatestJob');
   }
 
   readChainIdentity(jobId: string): PersistedChainIdentity | null {

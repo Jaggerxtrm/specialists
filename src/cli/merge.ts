@@ -30,6 +30,7 @@ interface JobStatusRecord {
 export interface ChainMergeTarget {
   beadId: string;
   branch: string;
+  worktreePath: string;
   jobId: string;
   jobStatus: string;
   startedAtMs: number;
@@ -309,11 +310,12 @@ export function selectNewestChainRootJob(beadId: string, statuses: readonly JobS
     .sort((left, right) => (right.started_at_ms ?? 0) - (left.started_at_ms ?? 0));
 
   const selected = candidates[0];
-  if (!selected || !selected.branch || !selected.status || !selected.id) return null;
+  if (!selected || !selected.branch || !selected.status || !selected.id || !selected.worktree_path) return null;
 
   return {
     beadId,
     branch: selected.branch,
+    worktreePath: selected.worktree_path,
     jobId: selected.id,
     jobStatus: selected.status,
     startedAtMs: selected.started_at_ms ?? 0,
@@ -577,6 +579,53 @@ function getConflictFiles(cwd = process.cwd()): string[] {
     .filter(Boolean);
 }
 
+function getCurrentHeadBranch(cwd = process.cwd()): string {
+  const result = runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+  if (result.status !== 0) {
+    throw new Error('Unable to resolve current git branch before rebase.');
+  }
+
+  const branch = result.stdout.trim();
+  if (!branch || branch === 'HEAD') {
+    throw new Error('Detached HEAD is not supported during merge-time rebase.');
+  }
+
+  return branch;
+}
+
+function tryAbortRebase(cwd = process.cwd()): void {
+  runCommand('git', ['rebase', '--abort'], cwd);
+}
+
+export function rebaseBranchOntoMaster(branch: string, worktreePath: string): void {
+  const baseBranch = resolveDefaultBranchName(worktreePath);
+  const checkedOutBranch = getCurrentHeadBranch(worktreePath);
+  if (checkedOutBranch !== branch) {
+    throw new Error(`Expected branch '${branch}' in worktree '${worktreePath}', found '${checkedOutBranch}'.`);
+  }
+
+  const rebase = runCommand('git', ['rebase', baseBranch], worktreePath);
+  if (rebase.status === 0) {
+    return;
+  }
+
+  const conflicts = getConflictFiles(worktreePath);
+  tryAbortRebase(worktreePath);
+
+  const stderr = rebase.stderr.trim();
+  const stdout = rebase.stdout.trim();
+  const detail = stderr || stdout || 'Unknown git rebase error';
+  const conflictLines = conflicts.length > 0
+    ? `\nConflicting files:\n${conflicts.map(file => `- ${file}`).join('\n')}`
+    : '';
+
+  throw new Error(
+    `Rebase failed for '${branch}' onto '${baseBranch}' in worktree '${worktreePath}'.${conflictLines}\n` +
+    `Resolve conflicts manually in that worktree, then re-run merge.\n` +
+    `Details: ${detail}`,
+  );
+}
+
 export function mergeBranch(branch: string, cwd = process.cwd()): void {
   const result = runCommand('git', ['merge', branch, '--no-ff', '--no-edit'], cwd);
   if (result.status === 0) return;
@@ -639,6 +688,7 @@ export function runMergePlan(
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
+    rebaseBranchOntoMaster(target.branch, target.worktreePath);
     assertBranchMergeWorthiness(target, mainRepoRoot);
     mergeBranch(target.branch, mainRepoRoot);
     runTypecheckGate(mainRepoRoot);
