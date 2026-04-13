@@ -2,8 +2,8 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 3.0.0
-updated: 2026-04-10
+version: 3.1.0
+updated: 2026-04-13
 synced_at: 08993753
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
@@ -492,6 +492,61 @@ interface SupervisorStatus {
 }
 ```
 
+### Stale-base guard (dispatch-time + merge-time)
+
+Commit: `4c3eeb36`
+
+Two-layer protection against parallel-chain divergence:
+
+**Layer 1: Dispatch-time guard** (run.ts)
+
+When `--worktree` provisions a new worktree for a bead belonging to an epic, the stale-base guard checks for sibling chains with unmerged substantive commits:
+
+```typescript
+function assertNoStaleBaseSiblings(beadId: string, forceStaleBase: boolean): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) return;
+
+  const epicId = resolveEpicIdForBead(sqliteClient, beadId);
+  if (!epicId) return;
+
+  const siblingChains = sqliteClient
+    .listEpicChainsWithLatestJob(epicId)
+    .filter((chain) => chain.chain_root_bead_id !== beadId && Boolean(chain.branch));
+
+  // Check each sibling branch for substantive commits vs master
+  const staleSiblings = detectSubstantiveCommits(siblingChains, baseBranch);
+
+  if (staleSiblings.length > 0 && !forceStaleBase) {
+    console.error(`Error: Epic '${epicId}' has sibling chains with unmerged changes.`);
+    process.exit(1);
+  }
+}
+```
+
+Bypass with `--force-stale-base`.
+
+**Layer 2: Merge-time rebase** (merge.ts)
+
+Before merging each chain (via `sp merge` or `sp epic merge`), the branch is rebased onto master:
+
+```typescript
+export function rebaseBranchOntoMaster(branch: string, worktreePath: string): void {
+  const baseBranch = resolveDefaultBranchName(worktreePath);
+  const rebase = runCommand('git', ['rebase', baseBranch], worktreePath);
+  if (rebase.status === 0) return;
+
+  // On failure: abort rebase and report conflicting files
+  tryAbortRebase(worktreePath);
+  const conflicts = getConflictFiles(worktreePath);
+  throw new Error(`Rebase failed for '${branch}' onto '${baseBranch}'...`);
+}
+```
+
+Called in `runMergePlan()` before `mergeBranch()` for each chain.
+
+**Why this matters**: Parallel chains branched from the same base diverge. Wave A's merge would appear as reversions in Wave B's diff. Rebase incorporates earlier waves' changes before publication.
+
 ### Bead ownership and lifecycle semantics
 
 Ownership comes from Runner + Supervisor behavior:
@@ -502,12 +557,68 @@ Ownership comes from Runner + Supervisor behavior:
 Supervisor post-run policy:
 
 - always persists bead ID in status when available
-- appends notes to owned bead, or (READ_ONLY + input bead) appends result back to input bead
+- **Auto-append**: on every `run_complete` event, full specialist output is appended to the **input bead** (all specialists, not just READ_ONLY)
+- **Auto-commit**: if `auto_commit` policy is set, substantive worktree changes are checkpointed at waiting/terminal transitions
 - closes bead **only when runner owns it** (`!runOptions.inputBeadId`)
 - never closes orchestrator-provided input beads
 
 This prevents sub-bead/lifecycle conflicts and keeps orchestrator ownership explicit.
 
+### Auto-append bead notes
+
+Commit: `428cd7f7`
+
+`appendResultToInputBead()` is called on every `run_complete` event (per-turn for keep-alive, once for one-shot):
+
+```typescript
+const notes = formatBeadNotes({
+  output: params.output,
+  promptHash: params.promptHash,
+  durationMs: params.durationMs,
+  model: params.model,
+  backend: params.backend,
+  specialist: runOptions.name,
+  jobId: id,
+  status: params.status,  // 'waiting' | 'done' | 'error'
+  timestamp: new Date().toISOString(),
+});
+```
+
+Status-aware headers:
+- `[WAITING — more output may follow]` — keep-alive awaiting resume
+- `[DONE]` — terminal completion
+
+`BeadsClient.updateBeadNotes()` now returns `{ ok: boolean; error?: string }` for error handling.
+
+### Auto-commit checkpoint policy
+
+Commit: `11e9b016`
+
+Specialists with `execution.auto_commit` policy automatically checkpoint worktree changes:
+
+| Policy | Trigger |
+|--------|---------|
+| `checkpoint_on_waiting` | Every turn entering `waiting` |
+| `checkpoint_on_terminal` | Terminal completion (`done`/`error`) |
+
+Implementation:
+
+```typescript
+function runAutoCommitCheckpoint(options: {
+  autoCommitPolicy: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal';
+  target: 'waiting' | 'terminal';
+  worktreePath: string | undefined;
+  specialist: string;
+  beadId: string | undefined;
+  turnNumber: number;
+}): { status: 'skipped' | 'success' | 'failed'; ... }
+```
+
+Noise filtering: `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` are ignored.
+
+Timeline events: `auto_commit_success`, `auto_commit_skipped`, `auto_commit_failed`.
+
+Status fields: `auto_commit_count`, `last_auto_commit_sha`, `last_auto_commit_at_ms`.n
 ## 6) Timeline event model (`timeline-events.ts`)
 
 `src/specialist/timeline-events.ts` defines the canonical feed v2 event vocabulary.

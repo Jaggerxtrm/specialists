@@ -2,8 +2,8 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.1.1
-updated: 2026-04-11
+version: 2.2.0
+updated: 2026-04-13
 synced_at: 0080a53d
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
@@ -1220,6 +1220,178 @@ if (args.beadId && workingDirectory) {
 1. Is independent of session IDs
 2. Is scoped to the specific bead being worked on
 3. Is automatically cleaned up when the run completes
+
+---
+
+## 27) Auto-append bead notes for ALL specialists
+
+Supervisor now auto-appends full specialist output to the **input bead** on every `run_complete` event. This applies to **all specialists**, not just READ_ONLY.
+
+### Behavior
+
+For specialists with `--bead <id>`:
+- **First turn**: output appended with `[WAITING]` header if keep-alive and non-terminal
+- **Subsequent turns**: output appended after each resume turn completes
+- **Terminal completion**: output appended with `[DONE]` header
+
+### Format
+
+```markdown
+### Specialist Output — executor (job 49adda) [WAITING]
+
+<full assistant output>
+
+---
+timestamp=2026-04-13T10:30:00Z
+status=waiting
+prompt_hash=abc123
+git_sha=def456
+elapsed_ms=45678
+model=gpt-5.3-codex
+backend=openai-codex
+```
+
+Status labels:
+- `WAITING — more output may follow` — keep-alive session awaiting resume
+- `DONE` — terminal completion
+- `ERROR` — failed completion
+
+### Implementation
+
+Commit: `428cd7f7`
+- `formatBeadNotes()` — enriched with specialist name, job ID, status label, timestamp
+- `appendResultToInputBead()` — called on every `run_complete` (not just terminal)
+- `BeadsClient.updateBeadNotes()` — returns `{ ok, error }` instead of void
+
+---
+
+## 28) Auto-commit worktree changes (checkpoint policy)
+
+Specialists with `auto_commit: checkpoint_on_waiting` or `checkpoint_on_terminal` automatically commit substantive worktree changes at designated lifecycle points.
+
+### Policy options
+
+| Policy | Trigger | Use case |
+|--------|---------|----------|
+| `never` | Never | Default — no auto-commit |
+| `checkpoint_on_waiting` | Each keep-alive turn entering `waiting` | Executors, debuggers — preserve partial work before review |
+| `checkpoint_on_terminal` | Terminal completion (`done`/`error`) | One-shot specialists — commit only at end |
+
+### Configuration
+
+```json
+{
+  "specialist": {
+    "execution": {
+      "auto_commit": "checkpoint_on_waiting"
+    }
+  }
+}
+```
+
+Built-in defaults:
+- **executor**: `checkpoint_on_waiting`
+- **debugger**: `checkpoint_on_waiting`
+
+### Noise filtering
+
+Auto-commit ignores paths matching:
+- `.xtrm/`
+- `.wolf/`
+- `.specialists/jobs/`
+- `.beads/`
+
+Only **substantive files** (source, config, docs) are committed.
+
+### Commit message format
+
+```
+checkpoint(executor): unitAI-55d turn 1
+```
+
+### Timeline events
+
+```json
+{"type": "auto_commit_success", "commit_sha": "abc123", "committed_files": ["src/cli/run.ts"]}
+{"type": "auto_commit_skipped", "reason": "no_substantive_changes"}
+{"type": "auto_commit_failed", "reason": "git commit failed"}
+```
+
+### Status fields
+
+```typescript
+interface SupervisorStatus {
+  auto_commit_count?: number;        // cumulative checkpoints this run
+  last_auto_commit_sha?: string;    // SHA of most recent checkpoint
+  last_auto_commit_at_ms?: number;  // timestamp of most recent checkpoint
+}
+```
+
+### Implementation
+
+Commit: `11e9b016`
+- `runAutoCommitCheckpoint()` — substantive file detection, git add + commit, SHA capture
+- `applyAutoCommitCheckpoint()` — called after `run_complete` on waiting/terminal transitions
+- Timeline: `auto_commit_success/skipped/failed` events
+- Schema: `execution.auto_commit` field
+
+---
+
+## 29) Stale-base guard — rebase at merge + block at dispatch
+
+Two-layer protection against parallel-chain divergence:
+
+### Layer 1: Dispatch-time guard
+
+When `--worktree` provisions a new worktree, the stale-base guard checks for sibling chains with unmerged substantive commits:
+
+```
+Error: Epic 'unitAI-3f7b' has sibling chains with unmerged changes.
+  - impl-a: 2 substantive commits on 'feature/unitAI-impl-a-executor'
+  - impl-b: 3 substantive commits on 'feature/unitAI-impl-b-executor'
+Merge sibling chains first via 'sp epic merge unitAI-3f7b', or use --force-stale-base to bypass.
+```
+
+**Bypass**: `--force-stale-base` flag forces provisioning at caller's risk.
+
+### Layer 2: Merge-time rebase
+
+Before merging each chain (via `sp merge` or `sp epic merge`), the branch is rebased onto master inside the worktree:
+
+```bash
+git rebase master  # runs in worktree cwd
+```
+
+If rebase fails with conflicts:
+
+```
+Error: Rebase failed for 'feature/unitAI-impl-a-executor' onto 'master'.
+Conflicting files:
+  - src/cli/run.ts
+  - src/specialist/supervisor.ts
+Resolve conflicts manually in that worktree, then re-run merge.
+```
+
+Abort is automatic (`git rebase --abort`) — no partial rebase state remains.
+
+### Why this matters
+
+Parallel chains branched from the same base diverge:
+
+1. Wave A branches from master at commit X
+2. Wave B branches from master at commit X (same base)
+3. Wave A merges → master now has Wave A changes
+4. Wave B merges → its diff shows **reversions** of Wave A (branched before merge)
+
+Rebase at merge-time resolves this by incorporating earlier waves' changes before publication.
+
+### Implementation
+
+Commit: `4c3eeb36`
+- `assertNoStaleBaseSiblings()` — dispatch-time guard in run.ts
+- `rebaseBranchOntoMaster()` — merge-time rebase in merge.ts
+- `listEpicChainsWithLatestJob()` — SQLite query for sibling chain state
+- Schema: `ChainMergeTarget.worktreePath` field
 
 ---
 
