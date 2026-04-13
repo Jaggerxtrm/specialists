@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**Auto-append bead notes for all specialists**
+- **Per-turn output append** — on every `run_complete` event, full specialist output is appended to the **input bead** (all specialists, not just READ_ONLY) (428cd7f7)
+- **Status-aware headers** — `[WAITING — more output may follow]` for keep-alive awaiting resume, `[DONE]` for terminal (428cd7f7)
+- **Enriched metadata** — format now includes specialist name, job ID, status, timestamp (428cd7f7)
+
+**Auto-commit worktree changes (checkpoint policy)**
+- **`execution.auto_commit` schema field** — `never` | `checkpoint_on_waiting` | `checkpoint_on_terminal` (11e9b016)
+- **Built-in defaults** — executor and debugger default to `checkpoint_on_waiting` (11e9b016)
+- **Noise filtering** — `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` ignored; only substantive files committed (11e9b016)
+- **Timeline events** — `auto_commit_success/skipped/failed` on each checkpoint (11e9b016)
+- **Status fields** — `auto_commit_count`, `last_auto_commit_sha`, `last_auto_commit_at_ms` (11e9b016)
+
+**Stale-base guard — rebase at merge + block at dispatch**
+- **Dispatch-time guard** — blocks `--worktree` provisioning when epic sibling chains have unmerged substantive commits (4c3eeb36)
+- **`--force-stale-base` flag** — bypasses guard at caller's risk (4c3eeb36)
+- **Merge-time rebase** — before merging each chain, branch is rebased onto master inside worktree (4c3eeb36)
+- **Conflict handling** — automatic abort on failure with conflicting files list (4c3eeb36)
+- **SQLite query** — `listEpicChainsWithLatestJob()` for sibling chain state (4c3eeb36)
+
 **Job lifecycle fixes**
 - **`cancelled` status** — new terminal status for jobs stopped without `run_complete` evidence (260e7246)
 - **`sp stop` terminal write** — writes terminal status (`done`/`cancelled`) to `status.json` BEFORE SIGTERM, preventing zombie waiting jobs (260e7246)
