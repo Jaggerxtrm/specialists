@@ -119,15 +119,20 @@ function getCurrentGitSha(): string | undefined {
   return sha || undefined;
 }
 
-function formatBeadNotes(result: { output: string; promptHash: string; durationMs: number; model: string; backend: string }): string {
+function formatBeadNotes(result: { output: string; promptHash?: string; durationMs?: number; model: string; backend: string; specialist: string; jobId: string; status: SupervisorJobStatus; timestamp: string }): string {
+  const statusLabel = result.status === 'waiting'
+    ? 'WAITING — more output may follow'
+    : result.status.toUpperCase();
   const metadata = [
-    `prompt_hash=${result.promptHash}`,
+    `timestamp=${result.timestamp}`,
+    `status=${result.status}`,
+    `prompt_hash=${result.promptHash ?? 'unknown'}`,
     `git_sha=${getCurrentGitSha() ?? 'unknown'}`,
-    `elapsed_ms=${Math.round(result.durationMs)}`,
+    `elapsed_ms=${result.durationMs !== undefined ? Math.round(result.durationMs) : 'unknown'}`,
     `model=${result.model}`,
     `backend=${result.backend}`,
   ].join('\n');
-  return `${result.output}\n\n---\n${metadata}`;
+  return `### Specialist Output — ${result.specialist} (job ${result.jobId}) [${statusLabel}]\n\n${result.output}\n\n---\n${metadata}`;
 }
 
 const GITNEXUS_RISK_ORDER: Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number> = {
@@ -913,6 +918,47 @@ export class Supervisor {
       isReadOnlySpecialist && TERMINAL_COMPLIANCE_VERDICT_REGEX.test(output)
     );
 
+    const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+    const appendResultToInputBead = (params: {
+      output: string;
+      model: string;
+      backend: string;
+      status: SupervisorJobStatus;
+      promptHash?: string;
+      durationMs?: number;
+    }): void => {
+      const inputBeadId = runOptions.inputBeadId;
+      const shouldAppendResultToInputBead = Boolean(
+        shouldWriteExternalBeadNotes
+        && inputBeadId
+        && this.opts.beadsClient,
+      );
+      if (!shouldAppendResultToInputBead || !inputBeadId || !this.opts.beadsClient) return;
+
+      const notes = formatBeadNotes({
+        output: params.output,
+        promptHash: params.promptHash,
+        durationMs: params.durationMs,
+        model: params.model,
+        backend: params.backend,
+        specialist: runOptions.name,
+        jobId: id,
+        status: params.status,
+        timestamp: new Date().toISOString(),
+      });
+      const appendResult = this.opts.beadsClient.updateBeadNotes(inputBeadId, notes);
+      if (appendResult.ok) return;
+
+      const appendError = `[bead-append-failed] ${appendResult.error ?? 'Unknown error'}`;
+      appendTimelineEvent(createMetaEvent('bead_append_failed', appendError));
+      setStatus({ current_event: 'bead_append_failed', last_event_at_ms: Date.now() });
+      try {
+        appendFileSync(this.resultPath(id), `\n\n${appendError}\n`, 'utf-8');
+      } catch {
+        // ignore secondary artifact write failures
+      }
+    };
+
     const handleResumeTurn = async (task: string): Promise<void> => {
       if (!resumeFn) return;
       const now = Date.now();
@@ -938,7 +984,15 @@ export class Supervisor {
           output,
         });
 
-        if (shouldAutoCloseReadOnlyKeepAlive(output)) {
+        const isWaitingTurn = !shouldAutoCloseReadOnlyKeepAlive(output);
+        appendResultToInputBead({
+          output,
+          model: statusSnapshot.model ?? 'unknown',
+          backend: statusSnapshot.backend ?? 'unknown',
+          status: isWaitingTurn ? 'waiting' : 'done',
+        });
+
+        if (!isWaitingTurn) {
           void closeKeepAliveSession();
           return;
         }
@@ -1382,21 +1436,43 @@ export class Supervisor {
 
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
-      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
-      const shouldAppendReadOnlyResultToInputBead = Boolean(
-        inputBeadId
-        && finalResult.permissionRequired === 'READ_ONLY'
-        && this.opts.beadsClient,
-      );
+
+      const appendedStatus: SupervisorJobStatus = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output)
+        ? 'waiting'
+        : 'done';
+      appendResultToInputBead({
+        output: finalResult.output,
+        model: finalResult.model,
+        backend: finalResult.backend,
+        status: appendedStatus,
+        promptHash: finalResult.promptHash,
+        durationMs: finalResult.durationMs,
+      });
 
       if (ownsBead && finalResult.beadId) {
-        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-      } else if (shouldWriteExternalBeadNotes) {
-        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
-          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
-        } else if (finalResult.beadId) {
-          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-        }
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes({
+          output: finalResult.output,
+          promptHash: finalResult.promptHash,
+          durationMs: finalResult.durationMs,
+          model: finalResult.model,
+          backend: finalResult.backend,
+          specialist: runOptions.name,
+          jobId: id,
+          status: 'done',
+          timestamp: new Date().toISOString(),
+        }));
+      } else if (shouldWriteExternalBeadNotes && !inputBeadId && finalResult.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes({
+          output: finalResult.output,
+          promptHash: finalResult.promptHash,
+          durationMs: finalResult.durationMs,
+          model: finalResult.model,
+          backend: finalResult.backend,
+          specialist: runOptions.name,
+          jobId: id,
+          status: 'done',
+          timestamp: new Date().toISOString(),
+        }));
       }
 
       if (finalResult.beadId) {
@@ -1510,6 +1586,13 @@ export class Supervisor {
       } catch (error: unknown) {
         console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error)}`);
       }
+
+      appendResultToInputBead({
+        output: latestOutput || errorMsg,
+        model: statusSnapshot.model ?? 'unknown',
+        backend: statusSnapshot.backend ?? 'unknown',
+        status: 'error',
+      });
 
       // Touch ready marker so hooks can surface failure banners.
       this.writeReadyMarker(id);

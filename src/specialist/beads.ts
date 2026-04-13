@@ -159,10 +159,21 @@ export class BeadsClient {
     spawnSync('bd', ['close', id, '-r', reason], { stdio: 'ignore' });
   }
 
-  /** Update bead notes with specialist output or metadata. */
-  updateBeadNotes(id: string, notes: string): void {
-    if (!this.available || !id || !notes) return;
-    spawnSync('bd', ['update', id, '--notes', notes], { stdio: 'ignore' });
+  /** Append bead notes with specialist output or metadata. */
+  updateBeadNotes(id: string, notes: string): { ok: boolean; error?: string } {
+    if (!this.available || !id || !notes) return { ok: false, error: 'beads unavailable or empty payload' };
+    const result = spawnSync('bd', ['update', id, '--append-notes', notes], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (result.error) {
+      return { ok: false, error: result.error.message };
+    }
+    if (result.status !== 0) {
+      const stderr = result.stderr?.trim();
+      return { ok: false, error: stderr || `bd update failed with exit code ${result.status}` };
+    }
+    return { ok: true };
   }
 
   /** Record a bd audit entry linking the bead to the specialist invocation. */
