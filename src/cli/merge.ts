@@ -94,6 +94,27 @@ function runCommand(command: string, args: readonly string[], cwd = process.cwd(
   });
 }
 
+function resolveDefaultBranchName(cwd = process.cwd()): string {
+  const symbolicRef = runCommand('git', ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd);
+  if (symbolicRef.status === 0) {
+    const remoteHeadRef = symbolicRef.stdout.trim();
+    if (remoteHeadRef.startsWith('origin/')) {
+      const branchName = remoteHeadRef.slice('origin/'.length).trim();
+      if (branchName) return branchName;
+    }
+  }
+
+  const localHead = runCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+  if (localHead.status === 0) {
+    const branchName = localHead.stdout.trim();
+    if (branchName && branchName !== 'HEAD') {
+      return branchName;
+    }
+  }
+
+  throw new Error('Unable to resolve repository default branch (origin/HEAD).');
+}
+
 function resolveMainWorktreeRoot(cwd = process.cwd()): string {
   const worktreeList = runCommand('git', ['worktree', 'list', '--porcelain'], cwd);
   if (worktreeList.status === 0) {
@@ -476,14 +497,15 @@ function isNoisePath(path: string): boolean {
 }
 
 export function previewBranchMergeDelta(branch: string, cwd = process.cwd()): MergePreviewDelta {
-  const mergeBase = runCommand('git', ['merge-base', 'main', branch], cwd);
+  const baseBranch = resolveDefaultBranchName(cwd);
+  const mergeBase = runCommand('git', ['merge-base', baseBranch, branch], cwd);
   if (mergeBase.status !== 0) {
-    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
+    throw new Error(`Unable to compute merge base for '${baseBranch}' and '${branch}'.`);
   }
 
   const mergeBaseSha = mergeBase.stdout.trim();
   if (!mergeBaseSha) {
-    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
+    throw new Error(`Unable to compute merge base for '${baseBranch}' and '${branch}'.`);
   }
 
   const stagedDelta = runCommand('git', ['diff', `${mergeBaseSha}..${branch}`, '--name-status'], cwd);
