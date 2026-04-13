@@ -20,6 +20,7 @@ const dim    = (s: string) => `\x1b[2m${s}\x1b[0m`;
 
 function ok(msg: string)   { console.log(`  ${green('✓')} ${msg}`); }
 function skip(msg: string) { console.log(`  ${yellow('○')} ${msg}`); }
+function warn(msg: string) { console.warn(`  ${yellow('!')} ${msg}`); }
 
 function isInstalled(bin: string): boolean {
   return spawnSync('which', [bin], { encoding: 'utf8', timeout: 2000 }).status === 0;
@@ -33,6 +34,22 @@ function assertXtrmPrerequisites(cwd: string): void {
 
   console.error('specialists requires xtrm. Run: npm install -g xtrm-tools && xt install');
   process.exit(1);
+}
+
+function warnMissingOptionalPrerequisites(): void {
+  const optionalTools: ReadonlyArray<{ name: string; install: string }> = [
+    { name: 'pi', install: 'npm install -g @mariozechner/pi-coding-agent' },
+    { name: 'bd', install: 'npm install -g @jaggerxtrm/beads' },
+    { name: 'sp', install: 'npm install -g @jaggerxtrm/specialists' },
+  ];
+
+  const missingTools = optionalTools.filter(tool => !isInstalled(tool.name));
+  if (missingTools.length === 0) return;
+
+  warn('Optional CLI prerequisites are missing. Init will continue, but workflow commands may fail:');
+  for (const tool of missingTools) {
+    warn(`${tool.name}: install via ${tool.install}`);
+  }
 }
 
 const AGENTS_BLOCK = `
@@ -617,6 +634,135 @@ function ensureAgentsMd(cwd: string): void {
   }
 }
 
+function readJsonObject(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function hasHookCommand(settings: Record<string, unknown>, eventName: string, command: string): boolean {
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== 'object') return false;
+  const eventEntries = (hooks as Record<string, unknown>)[eventName];
+  if (!Array.isArray(eventEntries)) return false;
+
+  return eventEntries.some(entry => {
+    if (!entry || typeof entry !== 'object') return false;
+    const hookItems = (entry as Record<string, unknown>).hooks;
+    if (!Array.isArray(hookItems)) return false;
+
+    return hookItems.some(hook => {
+      if (!hook || typeof hook !== 'object') return false;
+      return (hook as Record<string, unknown>).command === command;
+    });
+  });
+}
+
+function validateInitPostconditions(cwd: string): ReadonlyArray<string> {
+  const warnings: string[] = [];
+
+  const xtrmHooksDir = join(cwd, '.xtrm', 'hooks', 'specialists');
+  const xtrmHookFiles = existsSync(xtrmHooksDir)
+    ? readdirSync(xtrmHooksDir).filter(file => file.endsWith('.mjs'))
+    : [];
+  if (xtrmHookFiles.length === 0) {
+    warnings.push('.xtrm/hooks/specialists/ is missing or has no .mjs hooks');
+  }
+
+  const claudeHooksDir = join(cwd, '.claude', 'hooks');
+  for (const hookFile of xtrmHookFiles) {
+    const claudeHookPath = join(claudeHooksDir, hookFile);
+    if (!existsSync(claudeHookPath)) {
+      warnings.push(`.claude/hooks/${hookFile} is missing`);
+      continue;
+    }
+
+    const stats = lstatSync(claudeHookPath);
+    if (!stats.isSymbolicLink()) {
+      warnings.push(`.claude/hooks/${hookFile} is not a symlink`);
+      continue;
+    }
+
+    const expectedTarget = resolve(xtrmHooksDir, hookFile);
+    const resolvedTarget = resolve(dirname(claudeHookPath), readlinkSync(claudeHookPath));
+    if (resolvedTarget !== expectedTarget) {
+      warnings.push(`.claude/hooks/${hookFile} points to unexpected target`);
+    }
+  }
+
+  const settings = readJsonObject(join(cwd, '.claude', 'settings.json'));
+  const requiredHookWiring: ReadonlyArray<{ event: string; command: string }> = [
+    { event: 'UserPromptSubmit', command: 'node .claude/hooks/specialists-complete.mjs' },
+    { event: 'PostToolUse', command: 'node .claude/hooks/specialists-complete.mjs' },
+    { event: 'SessionStart', command: 'node .claude/hooks/specialists-session-start.mjs' },
+  ];
+
+  for (const hook of requiredHookWiring) {
+    if (!hasHookCommand(settings, hook.event, hook.command)) {
+      warnings.push(`.claude/settings.json missing hook wiring: ${hook.event} -> ${hook.command}`);
+    }
+  }
+
+  const mcp = readJsonObject(join(cwd, '.mcp.json'));
+  const mcpServers = mcp.mcpServers;
+  const specialistsServer =
+    mcpServers && typeof mcpServers === 'object'
+      ? (mcpServers as Record<string, unknown>).specialists
+      : undefined;
+  if (!specialistsServer || typeof specialistsServer !== 'object') {
+    warnings.push('.mcp.json missing mcpServers.specialists registration');
+  }
+
+  const runtimeDirs = [join(cwd, '.specialists', 'jobs'), join(cwd, '.specialists', 'ready')];
+  for (const runtimeDir of runtimeDirs) {
+    if (!existsSync(runtimeDir)) {
+      warnings.push(`${relative(cwd, runtimeDir)} is missing`);
+    }
+  }
+
+  const defaultSkillsRoot = join(cwd, '.xtrm', 'skills', 'default');
+  const defaultSkills = existsSync(defaultSkillsRoot)
+    ? readdirSync(defaultSkillsRoot, { withFileTypes: true }).filter(entry => entry.isDirectory())
+    : [];
+  if (defaultSkills.length === 0) {
+    warnings.push('.xtrm/skills/default/ is missing or has no skill directories');
+  }
+
+  const rootSymlinks: ReadonlyArray<{ linkPath: string; expectedTarget: string }> = [
+    {
+      linkPath: join(cwd, '.claude', 'skills'),
+      expectedTarget: join(cwd, '.xtrm', 'skills', 'active', 'claude'),
+    },
+    {
+      linkPath: join(cwd, '.pi', 'skills'),
+      expectedTarget: join(cwd, '.xtrm', 'skills', 'active', 'pi'),
+    },
+  ];
+
+  for (const symlink of rootSymlinks) {
+    if (!existsSync(symlink.linkPath)) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} is missing`);
+      continue;
+    }
+
+    const stats = lstatSync(symlink.linkPath);
+    if (!stats.isSymbolicLink()) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} is not a symlink`);
+      continue;
+    }
+
+    const resolvedTarget = resolve(dirname(symlink.linkPath), readlinkSync(symlink.linkPath));
+    if (resolvedTarget !== resolve(symlink.expectedTarget)) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} points to an unexpected target`);
+    }
+  }
+
+  return warnings;
+}
+
 export interface InitOptions {
   /** When true, copy canonical specialists to .specialists/default/ and migrate legacy layouts. */
   syncDefaults?: boolean;
@@ -652,12 +798,7 @@ export async function run(opts: InitOptions = {}): Promise<void> {
     assertXtrmPrerequisites(cwd);
   }
 
-  if (syncSkills) {
-    installProjectSkills(cwd, true);
-    console.log(`\n${bold('Done!')}\n`);
-    console.log(`  ${dim('Skills re-synced via .xtrm symlink pattern only.')}\n`);
-    return;
-  }
+  warnMissingOptionalPrerequisites();
 
   // ── 1. Create .specialists/ structure ─────────────────────────────────────
   if (syncDefaults) {
@@ -686,10 +827,18 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   ensureProjectHookWiring(cwd);
 
   // ── 6. Install skills via .xtrm default + active symlink roots ────────────
-  installProjectSkills(cwd, false);
+  installProjectSkills(cwd, syncSkills);
 
   // ── 7. Initialize observability database (never overwrites existing) ──────
   ensureObservabilityDb(cwd);
+
+  const postconditionWarnings = validateInitPostconditions(cwd);
+  if (postconditionWarnings.length > 0) {
+    warn('Init completed with postcondition warnings:');
+    for (const warningMessage of postconditionWarnings) {
+      warn(warningMessage);
+    }
+  }
 
   // ── Done ──────────────────────────────────────────────────────────────────
   console.log(`\n${bold('Done!')}\n`);
