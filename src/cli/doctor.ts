@@ -41,7 +41,8 @@ const ACTIVE_CLAUDE_SKILLS_DIR = join(XTRM_ACTIVE_SKILLS_DIR, 'claude');
 const ACTIVE_PI_SKILLS_DIR = join(XTRM_ACTIVE_SKILLS_DIR, 'pi');
 const CONFIG_SKILLS_DIR = join(CWD, 'config', 'skills');
 const SPECIALISTS_DIR = join(CWD, '.specialists');
-const HOOKS_DIR = join(SPECIALISTS_DIR, 'default', 'hooks');
+const HOOKS_DIR = join(CWD, '.xtrm', 'hooks', 'specialists');
+const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
 const MCP_FILE = join(CWD, '.mcp.json');
 const HOOK_NAMES = [
@@ -116,38 +117,61 @@ function checkXt(): boolean {
 function checkHooks(): boolean {
   section('Claude Code hooks  (2 expected)');
   let allPresent = true;
+
   for (const name of HOOK_NAMES) {
-    const dest = join(HOOKS_DIR, name);
-    if (!existsSync(dest)) {
-      fail(`${name}  ${red('missing')}`);
-      fix('specialists install');
+    const canonicalPath = join(HOOKS_DIR, name);
+    if (!existsSync(canonicalPath)) {
+      fail(`${relative(CWD, canonicalPath)}  ${red('missing')}`);
+      fix('specialists init');
       allPresent = false;
     } else {
-      ok(name);
+      ok(relative(CWD, canonicalPath));
     }
+
+    const claudeHookPath = join(CLAUDE_HOOKS_DIR, name);
+    const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
+    if (symlinkState.ok) {
+      ok(`${relative(CWD, claudeHookPath)} -> ${relative(dirname(claudeHookPath), canonicalPath)}`);
+      continue;
+    }
+
+    allPresent = false;
+    const relHookPath = relative(CWD, claudeHookPath);
+    if (symlinkState.reason === 'missing') {
+      fail(`${relHookPath} missing`);
+    } else if (symlinkState.reason === 'not-symlink') {
+      fail(`${relHookPath} is not a symlink`);
+    } else if (symlinkState.reason === 'wrong-target') {
+      fail(`${relHookPath} points to ${symlinkState.target ?? 'unknown target'}`);
+    } else {
+      fail(`${relHookPath} is broken`);
+    }
+    fix('specialists init');
   }
 
   const settings = loadJson(SETTINGS_FILE);
   if (!settings) {
     warn(`Could not read ${SETTINGS_FILE}`);
-    fix('specialists install');
+    fix('specialists init');
     return false;
   }
 
   // Read from settings.hooks (correct location) and fall back to top-level (legacy buggy location)
   const hooksObj = (settings.hooks ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-  const userPromptSubmit = hooksObj.UserPromptSubmit ?? (settings.UserPromptSubmit as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
-  const sessionStart = hooksObj.SessionStart ?? (settings.SessionStart as Array<{ hooks?: Array<{ command?: string }> }> | undefined) ?? [];
+  const hookEntries = Object.values(hooksObj).flat();
+  const legacyEntries = Object.entries(settings)
+    .filter(([key, value]) => key !== 'hooks' && Array.isArray(value))
+    .flatMap(([, value]) => value as Array<{ hooks?: Array<{ command?: string }> }>);
   const wiredCommands = new Set(
-    [...userPromptSubmit, ...sessionStart]
+    [...hookEntries, ...legacyEntries]
       .flatMap(entry => (entry.hooks ?? []).map(hook => hook.command ?? '')),
   );
 
   for (const name of HOOK_NAMES) {
-    const expectedRelative = `node .specialists/default/hooks/${name}`;
+    const expectedRelative = `node .claude/hooks/${name}`;
     if (!wiredCommands.has(expectedRelative)) {
       warn(`${name} not wired in settings.json`);
-      fix('specialists install');
+      fix('specialists init');
       allPresent = false;
     }
   }
@@ -162,7 +186,7 @@ function checkMCP(): boolean {
   const spec = (mcp?.mcpServers as { specialists?: { command?: string } } | undefined)?.specialists;
   if (!spec || spec.command !== 'specialists') {
     fail(`MCP server 'specialists' not registered in .mcp.json`);
-    fix('specialists install');
+    fix('specialists init');
     return false;
   }
   ok(`MCP server 'specialists' registered in ${MCP_FILE}`);
@@ -498,7 +522,7 @@ export async function run(): Promise<void> {
     console.log(`  ${green('✓')} ${bold('All checks passed')}  — specialists is healthy`);
   } else {
     console.log(`  ${yellow('○')} ${bold('Some checks failed')}  — follow the fix hints above`);
-    console.log(`  ${dim('specialists install fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.')}`);
+    console.log(`  ${dim('specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.')}`);
   }
   console.log('');
 }
