@@ -59,6 +59,7 @@ export interface RunResult {
   beadId?: string;
   metrics?: SessionRunMetrics;
   permissionRequired?: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
+  autoCommit?: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal';
 }
 
 type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>
@@ -1027,6 +1028,7 @@ _Injected because .gitnexus/ exists — project is indexed_
       beadId,
       metrics: runMetrics,
       permissionRequired: execution.permission_required,
+      autoCommit: execution.auto_commit,
     };
   }
 

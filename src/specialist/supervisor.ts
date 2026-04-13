@@ -36,6 +36,7 @@ import {
   createTurnSummaryEvent,
   createCompactionEvent,
   createRetryEvent,
+  createAutoCommitEvent,
   mapCallbackEventToTimelineEvent,
 } from './timeline-events.js';
 import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
@@ -87,6 +88,9 @@ export interface SupervisorStatus {
   context_pct?: number;
   context_health?: ContextHealth;
   error?: string;
+  auto_commit_count?: number;
+  last_auto_commit_sha?: string;
+  last_auto_commit_at_ms?: number;
 }
 
 export type SupervisorStatusView = SupervisorStatus & { is_dead: boolean };
@@ -242,6 +246,106 @@ function extractGitnexusRisk(resultRaw?: Record<string, unknown>): 'LOW' | 'MEDI
 
 function isGitnexusAnalyzeRequired(permissionRequired: string | undefined): boolean {
   return permissionRequired === 'MEDIUM' || permissionRequired === 'HIGH';
+}
+
+const AUTO_COMMIT_NOISE_PREFIXES = ['.xtrm/', '.wolf/', '.specialists/jobs/', '.beads/'] as const;
+
+function isAutoCommitNoisePath(path: string): boolean {
+  return AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function listSubstantiveWorktreeFiles(worktreePath: string): string[] {
+  const status = spawnSync('git', ['status', '--porcelain'], {
+    cwd: worktreePath,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (status.status !== 0) {
+    throw new Error((status.stderr ?? status.stdout ?? 'git status failed').trim());
+  }
+
+  return (status.stdout ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const payload = line.length > 3 ? line.slice(3).trim() : '';
+      if (!payload) return '';
+      const renamed = payload.includes(' -> ') ? payload.split(' -> ').at(-1) ?? '' : payload;
+      return renamed.trim().replace(/^"|"$/g, '');
+    })
+    .filter((path) => path.length > 0)
+    .filter((path) => !isAutoCommitNoisePath(path));
+}
+
+function buildAutoCommitMessage(specialist: string, beadId: string | undefined, turnNumber: number): string {
+  const beadLabel = beadId ?? 'no-bead';
+  return `checkpoint(${specialist}): ${beadLabel} turn ${turnNumber}`;
+}
+
+function runAutoCommitCheckpoint(options: {
+  autoCommitPolicy: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal' | undefined;
+  target: 'waiting' | 'terminal';
+  worktreePath: string | undefined;
+  specialist: string;
+  beadId: string | undefined;
+  turnNumber: number;
+}):
+  | { status: 'skipped'; reason: string }
+  | { status: 'success'; sha: string; files: string[]; committedAtMs: number }
+  | { status: 'failed'; reason: string } {
+  const { autoCommitPolicy, target, worktreePath, specialist, beadId, turnNumber } = options;
+  if (!worktreePath) return { status: 'skipped', reason: 'no_worktree' };
+  if (!autoCommitPolicy || autoCommitPolicy === 'never') return { status: 'skipped', reason: 'policy_never' };
+  if (autoCommitPolicy === 'checkpoint_on_waiting' && target !== 'waiting') {
+    return { status: 'skipped', reason: 'policy_waiting_only' };
+  }
+  if (autoCommitPolicy === 'checkpoint_on_terminal' && target !== 'terminal') {
+    return { status: 'skipped', reason: 'policy_terminal_only' };
+  }
+
+  try {
+    const substantiveFiles = listSubstantiveWorktreeFiles(worktreePath);
+    if (substantiveFiles.length === 0) {
+      return { status: 'skipped', reason: 'no_substantive_changes' };
+    }
+
+    const addResult = spawnSync('git', ['add', '--', ...substantiveFiles], {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (addResult.status !== 0) {
+      return { status: 'failed', reason: (addResult.stderr ?? addResult.stdout ?? 'git add failed').trim() };
+    }
+
+    const commitResult = spawnSync('git', ['commit', '-m', buildAutoCommitMessage(specialist, beadId, turnNumber)], {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (commitResult.status !== 0) {
+      return { status: 'failed', reason: (commitResult.stderr ?? commitResult.stdout ?? 'git commit failed').trim() };
+    }
+
+    const shaResult = spawnSync('git', ['rev-parse', 'HEAD'], {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (shaResult.status !== 0) {
+      return { status: 'failed', reason: (shaResult.stderr ?? shaResult.stdout ?? 'git rev-parse failed').trim() };
+    }
+
+    return {
+      status: 'success',
+      sha: (shaResult.stdout ?? '').trim(),
+      files: substantiveFiles,
+      committedAtMs: Date.now(),
+    };
+  } catch (error: unknown) {
+    return { status: 'failed', reason: String(error) };
+  }
 }
 
 function startDetachedGitnexusAnalyze(cwd: string): void {
@@ -872,6 +976,7 @@ export class Supervisor {
     let fifoFd: number | undefined;
     let keepAliveSession = false;
     let latestOutput = '';
+    let autoCommitPolicy: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal' | undefined = 'never';
     let keepAliveExitResolved = false;
     let isReadOnlySpecialist = false;
     let resolveKeepAliveExit: ((exit: { kind: 'closed' } | { kind: 'fatal'; error: Error }) => void) | undefined;
@@ -959,6 +1064,39 @@ export class Supervisor {
       }
     };
 
+    const applyAutoCommitCheckpoint = (target: 'waiting' | 'terminal', autoCommitPolicy: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal' | undefined): void => {
+      const autoCommitResult = runAutoCommitCheckpoint({
+        autoCommitPolicy,
+        target,
+        worktreePath: statusSnapshot.worktree_path,
+        specialist: runOptions.name,
+        beadId: statusSnapshot.bead_id,
+        turnNumber: Math.max(1, runMetrics.turns ?? 1),
+      });
+
+      if (autoCommitResult.status === 'skipped') {
+        appendTimelineEvent(createAutoCommitEvent('skipped', { reason: autoCommitResult.reason }));
+        return;
+      }
+
+      if (autoCommitResult.status === 'failed') {
+        appendTimelineEvent(createAutoCommitEvent('failed', { reason: autoCommitResult.reason }));
+        console.warn(`[supervisor] Auto-commit failed for job ${id}: ${autoCommitResult.reason}`);
+        return;
+      }
+
+      const nextAutoCommitCount = (statusSnapshot.auto_commit_count ?? 0) + 1;
+      setStatus({
+        auto_commit_count: nextAutoCommitCount,
+        last_auto_commit_sha: autoCommitResult.sha,
+        last_auto_commit_at_ms: autoCommitResult.committedAtMs,
+      });
+      appendTimelineEvent(createAutoCommitEvent('success', {
+        commit_sha: autoCommitResult.sha,
+        committed_files: autoCommitResult.files,
+      }));
+    };
+
     const handleResumeTurn = async (task: string): Promise<void> => {
       if (!resumeFn) return;
       const now = Date.now();
@@ -985,6 +1123,7 @@ export class Supervisor {
         });
 
         const isWaitingTurn = !shouldAutoCloseReadOnlyKeepAlive(output);
+        applyAutoCommitCheckpoint(isWaitingTurn ? 'waiting' : 'terminal', autoCommitPolicy);
         appendResultToInputBead({
           output,
           model: statusSnapshot.model ?? 'unknown',
@@ -1409,6 +1548,7 @@ export class Supervisor {
         exit_reason: 'agent_end',
       });
       isReadOnlySpecialist = finalResult.permissionRequired === 'READ_ONLY';
+      autoCommitPolicy = finalResult.autoCommit;
 
       emitRunCompleteForTurn({
         model: finalResult.model,
@@ -1416,6 +1556,9 @@ export class Supervisor {
         beadId: finalResult.beadId,
         output: finalResult.output,
       });
+
+      const runCompletesAsWaiting = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output);
+      applyAutoCommitCheckpoint(runCompletesAsWaiting ? 'waiting' : 'terminal', autoCommitPolicy);
 
       if (keepAliveSession) {
         if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {

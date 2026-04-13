@@ -37,6 +37,7 @@ const ExecutionSchema = z.object({
   requires_worktree: z.boolean().default(true),
   /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
   thinking_level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+  auto_commit: z.enum(['never', 'checkpoint_on_waiting', 'checkpoint_on_terminal']).default('never'),
   // Agent Forge compat — accepted but ignored by specialists
   preferred_profile: z.string().optional(),
   approval_mode: z.string().optional(),

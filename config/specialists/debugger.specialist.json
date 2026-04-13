@@ -29,6 +29,7 @@
       "output_type": "analysis",
       "permission_required": "HIGH",
       "thinking_level": "low",
+      "auto_commit": "checkpoint_on_waiting",
       "max_retries": 0
     },
     "prompt": {

@@ -308,6 +308,13 @@ export interface TimelineEventExtensionError extends TimelineEventBase {
   error_message?: string;
 }
 
+export interface TimelineEventAutoCommit extends TimelineEventBase {
+  type: 'auto_commit_success' | 'auto_commit_skipped' | 'auto_commit_failed';
+  reason?: string;
+  commit_sha?: string;
+  committed_files?: string[];
+}
+
 /**
  * Legacy completion events that still exist in older jobs.
  * These are accepted for backward compatibility while feed v2 migrates history.
@@ -339,6 +346,7 @@ export type TimelineEvent =
   | TimelineEventRetry
   | TimelineEventModelChange
   | TimelineEventExtensionError
+  | TimelineEventAutoCommit
   | TimelineEventLegacyComplete;
 
 // ============================================================================
@@ -363,6 +371,9 @@ export const TIMELINE_EVENT_TYPES = {
   RETRY: 'retry',
   MODEL_CHANGE: 'model_change',
   EXTENSION_ERROR: 'extension_error',
+  AUTO_COMMIT_SUCCESS: 'auto_commit_success',
+  AUTO_COMMIT_SKIPPED: 'auto_commit_skipped',
+  AUTO_COMMIT_FAILED: 'auto_commit_failed',
   DONE: 'done',
   AGENT_END: 'agent_end',
 } as const;
@@ -748,6 +759,25 @@ export function createRunCompleteEvent(
     status,
     elapsed_s,
     ...options,
+  };
+}
+
+export function createAutoCommitEvent(
+  status: 'success' | 'skipped' | 'failed',
+  options?: { reason?: string; commit_sha?: string; committed_files?: string[] },
+): TimelineEventAutoCommit {
+  const type = status === 'success'
+    ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SUCCESS
+    : status === 'skipped'
+      ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SKIPPED
+      : TIMELINE_EVENT_TYPES.AUTO_COMMIT_FAILED;
+
+  return {
+    t: Date.now(),
+    type,
+    ...(options?.reason ? { reason: options.reason } : {}),
+    ...(options?.commit_sha ? { commit_sha: options.commit_sha } : {}),
+    ...(options?.committed_files ? { committed_files: options.committed_files } : {}),
   };
 }
 
