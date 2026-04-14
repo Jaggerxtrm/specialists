@@ -97,6 +97,12 @@ export interface TimelineEventMeta extends TimelineEventBase {
   model: string;
   /** Backend provider (e.g., 'anthropic') */
   backend: string;
+  memory_injection?: {
+    static_tokens: number;
+    memory_tokens: number;
+    gitnexus_tokens: number;
+    total_tokens: number;
+  };
 }
 
 /**
@@ -439,6 +445,12 @@ export function mapCallbackEventToTimelineEvent(
       extension?: string;
       errorMessage?: string;
     };
+    memoryInjection?: {
+      static_tokens: number;
+      memory_tokens: number;
+      gitnexus_tokens: number;
+      total_tokens: number;
+    };
   }
 ): TimelineEvent | null {
   const t = Date.now();
@@ -568,6 +580,15 @@ export function mapCallbackEventToTimelineEvent(
         type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
         ...(context.extensionError?.extension ? { extension: context.extensionError.extension } : {}),
         ...(context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}),
+      };
+
+    case 'memory_injection':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: 'memory_injection',
+        backend: 'injected',
+        ...(context.memoryInjection ? { memory_injection: context.memoryInjection } : {}),
       };
 
     case 'text':
