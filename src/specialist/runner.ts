@@ -825,17 +825,8 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       // Non-fatal — GitNexus not indexed, skip injection
     }
 
-    // 2. Inject project memory context — curated synthesis + full bd memories dump
-    // This prevents specialists from rediscovering known gotchas on every run.
-    try {
-      const memoryMdPath = resolve(runCwd, '.xtrm/memory.md');
-      if (existsSync(memoryMdPath)) {
-        const memoryMd = readFileSync(memoryMdPath, 'utf-8');
-        agentsMd += `\n\n---\n## Project Memory (SSOT)\n_Injected at spawn — use as operational context_\n${memoryMd}\n---\n`;
-      }
-    } catch {
-      // Non-fatal — memory.md is optional
-    }
+    // 2. .xtrm/memory.md is injected by xtrm-loader Pi extension (before_agent_start).
+    // Do NOT duplicate here — saves ~800 tokens per specialist spawn.
 
     // 3. Inject compact beads rules + keyword-filtered memories (replaces full bd prime dump)
     let staticTokens = 0;

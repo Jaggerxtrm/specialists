@@ -6,7 +6,7 @@ const DEFAULT_STOP_WORDS = new Set([
   'implement', 'task', 'run', 'add', 'new', 'use', 'using', 'into', 'when', 'what', 'not', 'only',
 ]);
 
-const MAX_KEYWORDS = 12;
+const MAX_KEYWORDS = 6;
 const MAX_MEMORIES = 10;
 const MAX_MEMORY_TOKENS = 600;
 
@@ -109,6 +109,7 @@ export function buildFilteredMemoryInjection(args: {
 
   const deduped = new Map<string, MemoryRecord>();
   for (const keyword of keywords) {
+    if (deduped.size >= MAX_MEMORIES * 2) break;
     try {
       const memories = runMemoriesQuery(keyword, args.cwd);
       for (const memory of memories) {

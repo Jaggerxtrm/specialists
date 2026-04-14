@@ -18884,6 +18884,8 @@ function buildFilteredMemoryInjection(args) {
   keywords.forEach((keyword, index) => keywordOrder.set(keyword, index));
   const deduped = new Map;
   for (const keyword of keywords) {
+    if (deduped.size >= MAX_MEMORIES * 2)
+      break;
     try {
       const memories = runMemoriesQuery(keyword, args.cwd);
       for (const memory of memories) {
@@ -18922,7 +18924,7 @@ function buildFilteredMemoryInjection(args) {
 function estimateInjectedTokens(text) {
   return estimateTokens(text);
 }
-var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 12, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, STATIC_WORKFLOW_RULES_BLOCK;
+var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 6, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, STATIC_WORKFLOW_RULES_BLOCK;
 var init_memory_retrieval = __esm(() => {
   DEFAULT_STOP_WORDS = new Set([
     "a",
@@ -19384,20 +19386,6 @@ _This project is indexed by GitNexus. You MUST use these tools \u2014 do NOT fal
 4. \`gitnexus_detect_changes()\` \u2014 verify your changes only affect expected scope
 
 **These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
----
-`;
-      }
-    } catch {}
-    try {
-      const memoryMdPath = resolve2(runCwd, ".xtrm/memory.md");
-      if (existsSync3(memoryMdPath)) {
-        const memoryMd = readFileSync(memoryMdPath, "utf-8");
-        agentsMd += `
-
----
-## Project Memory (SSOT)
-_Injected at spawn \u2014 use as operational context_
-${memoryMd}
 ---
 `;
       }
