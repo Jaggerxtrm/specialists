@@ -784,9 +784,33 @@ export class SpecialistRunner {
       agentsMd += `...beadInstructions}\n---\n`;
     }
 
-    // Inject project memory context — curated synthesis + full bd memories dump
+    // 1. Inject GitNexus workflow mandate FIRST — high-priority, must not be buried (~200 tokens)
+    try {
+      const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
+      if (existsSync(gitnexusMetaPath)) {
+        agentsMd += `\n\n---\n## MANDATORY: GitNexus Code Intelligence
+_This project is indexed by GitNexus. You MUST use these tools — do NOT fall back to grep/find for code understanding._
+
+### Before reading or editing ANY code:
+1. \`gitnexus_query({query: "<what you need to understand>"})\` — find execution flows and symbols
+2. \`gitnexus_context({name: "<symbol>"})\` — callers, callees, process participation
+
+### Before editing ANY function/class/method:
+3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` — blast radius check
+   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
+
+### Before completing your task:
+4. \`gitnexus_detect_changes()\` — verify your changes only affect expected scope
+
+**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
+---\n`;
+      }
+    } catch {
+      // Non-fatal — GitNexus not indexed, skip injection
+    }
+
+    // 2. Inject project memory context — curated synthesis + full bd memories dump
     // This prevents specialists from rediscovering known gotchas on every run.
-    // 1. Load .xtrm/memory.md (curated, 100-200 lines, ~400-800 tokens)
     try {
       const memoryMdPath = resolve(runCwd, '.xtrm/memory.md');
       if (existsSync(memoryMdPath)) {
@@ -797,31 +821,12 @@ export class SpecialistRunner {
       // Non-fatal — memory.md is optional
     }
 
-    // 2. Load bd prime output (full context, ~800 lines, ~3000 tokens)
+    // 3. Load bd prime output (full context, ~800 lines, ~3000 tokens)
     try {
       const bdPrime = execSync('bd prime', { encoding: 'utf8', cwd: runCwd, timeout: 10000 });
       agentsMd += `\n\n---\n## Beads Workflow Context (bd prime)\n_Injected at spawn — workflow rules + all bd memories_\n${bdPrime}\n---\n`;
     } catch {
       // Non-fatal — bd prime may be unavailable in some contexts
-    }
-
-    // 3. Inject GitNexus cheatsheet if project is indexed (~100 tokens)
-    try {
-      const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
-      if (existsSync(gitnexusMetaPath)) {
-        agentsMd += `\n\n---\n## GitNexus (use before any edit)
-_Injected because .gitnexus/ exists — project is indexed_
-
-- **gitnexus_impact**({target: "symbolName", direction: "upstream"}) — blast radius before editing
-- **gitnexus_context**({name: "symbolName"}) — callers, callees, execution flows
-- **gitnexus_query**({query: "concept"}) — find relevant execution flows
-- **gitnexus_detect_changes**() — verify scope before completing
-
-**Rule**: Run gitnexus_impact before modifying any function/class/method.
----\n`;
-      }
-    } catch {
-      // Non-fatal — GitNexus not indexed, skip injection
     }
 
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;

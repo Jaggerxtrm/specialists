@@ -17539,6 +17539,7 @@ var init_schema = __esm(() => {
     permission_required: enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]).default("READ_ONLY"),
     requires_worktree: booleanType().default(true),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).optional(),
+    auto_commit: enumType(["never", "checkpoint_on_waiting", "checkpoint_on_terminal"]).default("never"),
     preferred_profile: stringType().optional(),
     approval_mode: stringType().optional()
   });
@@ -18783,8 +18784,19 @@ class BeadsClient {
   }
   updateBeadNotes(id, notes) {
     if (!this.available || !id || !notes)
-      return;
-    spawnSync("bd", ["update", id, "--notes", notes], { stdio: "ignore" });
+      return { ok: false, error: "beads unavailable or empty payload" };
+    const result = spawnSync("bd", ["update", id, "--append-notes", notes], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (result.error) {
+      return { ok: false, error: result.error.message };
+    }
+    if (result.status !== 0) {
+      const stderr = result.stderr?.trim();
+      return { ok: false, error: stderr || `bd update failed with exit code ${result.status}` };
+    }
+    return { ok: true };
   }
   auditBead(id, toolName, model, exitCode) {
     if (!this.available || !id)
@@ -19185,6 +19197,31 @@ class SpecialistRunner {
 `;
     }
     try {
+      const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
+      if (existsSync3(gitnexusMetaPath)) {
+        agentsMd += `
+
+---
+## MANDATORY: GitNexus Code Intelligence
+_This project is indexed by GitNexus. You MUST use these tools \u2014 do NOT fall back to grep/find for code understanding._
+
+### Before reading or editing ANY code:
+1. \`gitnexus_query({query: "<what you need to understand>"})\` \u2014 find execution flows and symbols
+2. \`gitnexus_context({name: "<symbol>"})\` \u2014 callers, callees, process participation
+
+### Before editing ANY function/class/method:
+3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` \u2014 blast radius check
+   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
+
+### Before completing your task:
+4. \`gitnexus_detect_changes()\` \u2014 verify your changes only affect expected scope
+
+**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
+---
+`;
+      }
+    } catch {}
+    try {
       const memoryMdPath = resolve2(runCwd, ".xtrm/memory.md");
       if (existsSync3(memoryMdPath)) {
         const memoryMd = readFileSync(memoryMdPath, "utf-8");
@@ -19208,25 +19245,6 @@ _Injected at spawn \u2014 workflow rules + all bd memories_
 ${bdPrime}
 ---
 `;
-    } catch {}
-    try {
-      const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
-      if (existsSync3(gitnexusMetaPath)) {
-        agentsMd += `
-
----
-## GitNexus (use before any edit)
-_Injected because .gitnexus/ exists \u2014 project is indexed_
-
-- **gitnexus_impact**({target: "symbolName", direction: "upstream"}) \u2014 blast radius before editing
-- **gitnexus_context**({name: "symbolName"}) \u2014 callers, callees, execution flows
-- **gitnexus_query**({query: "concept"}) \u2014 find relevant execution flows
-- **gitnexus_detect_changes**() \u2014 verify scope before completing
-
-**Rule**: Run gitnexus_impact before modifying any function/class/method.
----
-`;
-      }
     } catch {}
     const responseFormat = execution.response_format ?? "text";
     const outputType = execution.output_type ?? "custom";
@@ -19419,7 +19437,8 @@ ${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
       promptHash,
       beadId,
       metrics: runMetrics,
-      permissionRequired: execution.permission_required
+      permissionRequired: execution.permission_required,
+      autoCommit: execution.auto_commit
     };
   }
   async startAsync(options, registry2) {
@@ -19963,6 +19982,16 @@ function createRunCompleteEvent(status, elapsed_s, options) {
     ...options
   };
 }
+function createAutoCommitEvent(status, options) {
+  const type = status === "success" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SUCCESS : status === "skipped" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SKIPPED : TIMELINE_EVENT_TYPES.AUTO_COMMIT_FAILED;
+  return {
+    t: Date.now(),
+    type,
+    ...options?.reason ? { reason: options.reason } : {},
+    ...options?.commit_sha ? { commit_sha: options.commit_sha } : {},
+    ...options?.committed_files ? { committed_files: options.committed_files } : {}
+  };
+}
 function parseTimelineEvent(line) {
   try {
     const parsed = JSON.parse(line);
@@ -20023,6 +20052,9 @@ var init_timeline_events = __esm(() => {
     RETRY: "retry",
     MODEL_CHANGE: "model_change",
     EXTENSION_ERROR: "extension_error",
+    AUTO_COMMIT_SUCCESS: "auto_commit_success",
+    AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
+    AUTO_COMMIT_FAILED: "auto_commit_failed",
     DONE: "done",
     AGENT_END: "agent_end"
   };
@@ -21182,6 +21214,53 @@ class SqliteClient {
       return this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC").all(epicId);
     }, "listEpicChains");
   }
+  listEpicChainsWithLatestJob(epicId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked_jobs AS (
+          SELECT
+            jobs.chain_id AS chain_id,
+            membership.epic_id AS epic_id,
+            membership.chain_root_bead_id AS chain_root_bead_id,
+            membership.chain_root_job_id AS chain_root_job_id,
+            jobs.job_id AS job_id,
+            jobs.status AS status,
+            json_extract(jobs.status_json, '$.branch') AS branch,
+            jobs.updated_at_ms AS updated_at_ms,
+            ROW_NUMBER() OVER (
+              PARTITION BY jobs.chain_id
+              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
+            ) AS row_rank
+          FROM epic_chain_membership membership
+          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+          WHERE membership.epic_id = ?
+            AND jobs.chain_kind = 'chain'
+        )
+        SELECT
+          chain_id,
+          epic_id,
+          chain_root_bead_id,
+          chain_root_job_id,
+          job_id,
+          status,
+          branch,
+          updated_at_ms
+        FROM ranked_jobs
+        WHERE row_rank = 1
+        ORDER BY updated_at_ms DESC, job_id DESC
+      `).all(epicId);
+      return rows.map((row) => ({
+        chain_id: row.chain_id,
+        epic_id: row.epic_id,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        job_id: row.job_id,
+        status: row.status ?? undefined,
+        branch: row.branch ?? undefined,
+        updated_at_ms: row.updated_at_ms
+      }));
+    }, "listEpicChainsWithLatestJob");
+  }
   readChainIdentity(jobId) {
     return withRetry(() => {
       const row = this.db.query(`
@@ -21737,15 +21816,20 @@ function getCurrentGitSha() {
   return sha || undefined;
 }
 function formatBeadNotes(result) {
+  const statusLabel = result.status === "waiting" ? "WAITING \u2014 more output may follow" : result.status.toUpperCase();
   const metadata = [
-    `prompt_hash=${result.promptHash}`,
+    `timestamp=${result.timestamp}`,
+    `status=${result.status}`,
+    `prompt_hash=${result.promptHash ?? "unknown"}`,
     `git_sha=${getCurrentGitSha() ?? "unknown"}`,
-    `elapsed_ms=${Math.round(result.durationMs)}`,
+    `elapsed_ms=${result.durationMs !== undefined ? Math.round(result.durationMs) : "unknown"}`,
     `model=${result.model}`,
     `backend=${result.backend}`
   ].join(`
 `);
-  return `${result.output}
+  return `### Specialist Output \u2014 ${result.specialist} (job ${result.jobId}) [${statusLabel}]
+
+${result.output}
 
 ---
 ${metadata}`;
@@ -21829,6 +21913,82 @@ function extractGitnexusRisk(resultRaw) {
 }
 function isGitnexusAnalyzeRequired(permissionRequired) {
   return permissionRequired === "MEDIUM" || permissionRequired === "HIGH";
+}
+function isAutoCommitNoisePath(path) {
+  return AUTO_COMMIT_NOISE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+function listSubstantiveWorktreeFiles(worktreePath) {
+  const status = spawnSync6("git", ["status", "--porcelain"], {
+    cwd: worktreePath,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (status.status !== 0) {
+    throw new Error((status.stderr ?? status.stdout ?? "git status failed").trim());
+  }
+  return (status.stdout ?? "").split(`
+`).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const payload = line.length > 3 ? line.slice(3).trim() : "";
+    if (!payload)
+      return "";
+    const renamed = payload.includes(" -> ") ? payload.split(" -> ").at(-1) ?? "" : payload;
+    return renamed.trim().replace(/^"|"$/g, "");
+  }).filter((path) => path.length > 0).filter((path) => !isAutoCommitNoisePath(path));
+}
+function buildAutoCommitMessage(specialist, beadId, turnNumber) {
+  const beadLabel = beadId ?? "no-bead";
+  return `checkpoint(${specialist}): ${beadLabel} turn ${turnNumber}`;
+}
+function runAutoCommitCheckpoint(options) {
+  const { autoCommitPolicy, target, worktreePath, specialist, beadId, turnNumber } = options;
+  if (!worktreePath)
+    return { status: "skipped", reason: "no_worktree" };
+  if (!autoCommitPolicy || autoCommitPolicy === "never")
+    return { status: "skipped", reason: "policy_never" };
+  if (autoCommitPolicy === "checkpoint_on_waiting" && target !== "waiting") {
+    return { status: "skipped", reason: "policy_waiting_only" };
+  }
+  if (autoCommitPolicy === "checkpoint_on_terminal" && target !== "terminal") {
+    return { status: "skipped", reason: "policy_terminal_only" };
+  }
+  try {
+    const substantiveFiles = listSubstantiveWorktreeFiles(worktreePath);
+    if (substantiveFiles.length === 0) {
+      return { status: "skipped", reason: "no_substantive_changes" };
+    }
+    const addResult = spawnSync6("git", ["add", "--", ...substantiveFiles], {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (addResult.status !== 0) {
+      return { status: "failed", reason: (addResult.stderr ?? addResult.stdout ?? "git add failed").trim() };
+    }
+    const commitResult = spawnSync6("git", ["commit", "-m", buildAutoCommitMessage(specialist, beadId, turnNumber)], {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (commitResult.status !== 0) {
+      return { status: "failed", reason: (commitResult.stderr ?? commitResult.stdout ?? "git commit failed").trim() };
+    }
+    const shaResult = spawnSync6("git", ["rev-parse", "HEAD"], {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    if (shaResult.status !== 0) {
+      return { status: "failed", reason: (shaResult.stderr ?? shaResult.stdout ?? "git rev-parse failed").trim() };
+    }
+    return {
+      status: "success",
+      sha: (shaResult.stdout ?? "").trim(),
+      files: substantiveFiles,
+      committedAtMs: Date.now()
+    };
+  } catch (error2) {
+    return { status: "failed", reason: String(error2) };
+  }
 }
 function startDetachedGitnexusAnalyze(cwd) {
   const child = spawn2("npx", ["gitnexus", "analyze"], {
@@ -22390,6 +22550,7 @@ class Supervisor {
     let fifoFd;
     let keepAliveSession = false;
     let latestOutput = "";
+    let autoCommitPolicy = "never";
     let keepAliveExitResolved = false;
     let isReadOnlySpecialist = false;
     let resolveKeepAliveExit;
@@ -22423,6 +22584,65 @@ class Supervisor {
       }));
     };
     const shouldAutoCloseReadOnlyKeepAlive = (output) => isReadOnlySpecialist && TERMINAL_COMPLIANCE_VERDICT_REGEX.test(output);
+    const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+    const appendResultToInputBead = (params) => {
+      const inputBeadId = runOptions.inputBeadId;
+      const shouldAppendResultToInputBead = Boolean(shouldWriteExternalBeadNotes && inputBeadId && this.opts.beadsClient);
+      if (!shouldAppendResultToInputBead || !inputBeadId || !this.opts.beadsClient)
+        return;
+      const notes = formatBeadNotes({
+        output: params.output,
+        promptHash: params.promptHash,
+        durationMs: params.durationMs,
+        model: params.model,
+        backend: params.backend,
+        specialist: runOptions.name,
+        jobId: id,
+        status: params.status,
+        timestamp: new Date().toISOString()
+      });
+      const appendResult = this.opts.beadsClient.updateBeadNotes(inputBeadId, notes);
+      if (appendResult.ok)
+        return;
+      const appendError = `[bead-append-failed] ${appendResult.error ?? "Unknown error"}`;
+      appendTimelineEvent(createMetaEvent("bead_append_failed", appendError));
+      setStatus({ current_event: "bead_append_failed", last_event_at_ms: Date.now() });
+      try {
+        appendFileSync(this.resultPath(id), `
+
+${appendError}
+`, "utf-8");
+      } catch {}
+    };
+    const applyAutoCommitCheckpoint = (target, autoCommitPolicy2) => {
+      const autoCommitResult = runAutoCommitCheckpoint({
+        autoCommitPolicy: autoCommitPolicy2,
+        target,
+        worktreePath: statusSnapshot.worktree_path,
+        specialist: runOptions.name,
+        beadId: statusSnapshot.bead_id,
+        turnNumber: Math.max(1, runMetrics.turns ?? 1)
+      });
+      if (autoCommitResult.status === "skipped") {
+        appendTimelineEvent(createAutoCommitEvent("skipped", { reason: autoCommitResult.reason }));
+        return;
+      }
+      if (autoCommitResult.status === "failed") {
+        appendTimelineEvent(createAutoCommitEvent("failed", { reason: autoCommitResult.reason }));
+        console.warn(`[supervisor] Auto-commit failed for job ${id}: ${autoCommitResult.reason}`);
+        return;
+      }
+      const nextAutoCommitCount = (statusSnapshot.auto_commit_count ?? 0) + 1;
+      setStatus({
+        auto_commit_count: nextAutoCommitCount,
+        last_auto_commit_sha: autoCommitResult.sha,
+        last_auto_commit_at_ms: autoCommitResult.committedAtMs
+      });
+      appendTimelineEvent(createAutoCommitEvent("success", {
+        commit_sha: autoCommitResult.sha,
+        committed_files: autoCommitResult.files
+      }));
+    };
     const handleResumeTurn = async (task) => {
       if (!resumeFn)
         return;
@@ -22446,7 +22666,15 @@ class Supervisor {
           beadId: statusSnapshot.bead_id,
           output
         });
-        if (shouldAutoCloseReadOnlyKeepAlive(output)) {
+        const isWaitingTurn = !shouldAutoCloseReadOnlyKeepAlive(output);
+        applyAutoCommitCheckpoint(isWaitingTurn ? "waiting" : "terminal", autoCommitPolicy);
+        appendResultToInputBead({
+          output,
+          model: statusSnapshot.model ?? "unknown",
+          backend: statusSnapshot.backend ?? "unknown",
+          status: isWaitingTurn ? "waiting" : "done"
+        });
+        if (!isWaitingTurn) {
           closeKeepAliveSession();
           return;
         }
@@ -22777,12 +23005,15 @@ class Supervisor {
         exit_reason: "agent_end"
       });
       isReadOnlySpecialist = finalResult.permissionRequired === "READ_ONLY";
+      autoCommitPolicy = finalResult.autoCommit;
       emitRunCompleteForTurn({
         model: finalResult.model,
         backend: finalResult.backend,
         beadId: finalResult.beadId,
         output: finalResult.output
       });
+      const runCompletesAsWaiting = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output);
+      applyAutoCommitCheckpoint(runCompletesAsWaiting ? "waiting" : "terminal", autoCommitPolicy);
       if (keepAliveSession) {
         if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
           await closeKeepAliveSession();
@@ -22800,16 +23031,39 @@ class Supervisor {
       }
       const inputBeadId = runOptions.inputBeadId;
       const ownsBead = Boolean(finalResult.beadId && !inputBeadId);
-      const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
-      const shouldAppendReadOnlyResultToInputBead = Boolean(inputBeadId && finalResult.permissionRequired === "READ_ONLY" && this.opts.beadsClient);
+      const appendedStatus = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output) ? "waiting" : "done";
+      appendResultToInputBead({
+        output: finalResult.output,
+        model: finalResult.model,
+        backend: finalResult.backend,
+        status: appendedStatus,
+        promptHash: finalResult.promptHash,
+        durationMs: finalResult.durationMs
+      });
       if (ownsBead && finalResult.beadId) {
-        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-      } else if (shouldWriteExternalBeadNotes) {
-        if (shouldAppendReadOnlyResultToInputBead && inputBeadId) {
-          this.opts.beadsClient?.updateBeadNotes(inputBeadId, formatBeadNotes(finalResult));
-        } else if (finalResult.beadId) {
-          this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes(finalResult));
-        }
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes({
+          output: finalResult.output,
+          promptHash: finalResult.promptHash,
+          durationMs: finalResult.durationMs,
+          model: finalResult.model,
+          backend: finalResult.backend,
+          specialist: runOptions.name,
+          jobId: id,
+          status: "done",
+          timestamp: new Date().toISOString()
+        }));
+      } else if (shouldWriteExternalBeadNotes && !inputBeadId && finalResult.beadId) {
+        this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes({
+          output: finalResult.output,
+          promptHash: finalResult.promptHash,
+          durationMs: finalResult.durationMs,
+          model: finalResult.model,
+          backend: finalResult.backend,
+          specialist: runOptions.name,
+          jobId: id,
+          status: "done",
+          timestamp: new Date().toISOString()
+        }));
       }
       if (finalResult.beadId) {
         if (!inputBeadId) {
@@ -22907,6 +23161,12 @@ class Supervisor {
       } catch (error2) {
         console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error2)}`);
       }
+      appendResultToInputBead({
+        output: latestOutput || errorMsg,
+        model: statusSnapshot.model ?? "unknown",
+        backend: statusSnapshot.backend ?? "unknown",
+        status: "error"
+      });
       this.writeReadyMarker(id);
       throw err;
     } finally {
@@ -22945,7 +23205,7 @@ class Supervisor {
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, STATUS_WATCHDOG_INTERVAL_MS = 5000;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000;
 var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
@@ -22973,6 +23233,7 @@ var init_supervisor = __esm(() => {
     { matcher: (model) => model.includes("claude"), windowTokens: 200000 }
   ];
   TERMINAL_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict: (PASS|PARTIAL|FAIL)/i;
+  AUTO_COMMIT_NOISE_PREFIXES = [".xtrm/", ".wolf/", ".specialists/jobs/", ".beads/"];
 });
 
 // src/cli/list.ts
@@ -23595,6 +23856,9 @@ function ok(msg) {
 function skip(msg) {
   console.log(`  ${yellow5("\u25CB")} ${msg}`);
 }
+function warn(msg) {
+  console.warn(`  ${yellow5("!")} ${msg}`);
+}
 function isInstalled(bin) {
   return spawnSync9("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
@@ -23605,6 +23869,20 @@ function assertXtrmPrerequisites(cwd) {
     return;
   console.error("specialists requires xtrm. Run: npm install -g xtrm-tools && xt install");
   process.exit(1);
+}
+function warnMissingOptionalPrerequisites() {
+  const optionalTools = [
+    { name: "pi", install: "npm install -g @mariozechner/pi-coding-agent" },
+    { name: "bd", install: "npm install -g @jaggerxtrm/beads" },
+    { name: "sp", install: "npm install -g @jaggerxtrm/specialists" }
+  ];
+  const missingTools = optionalTools.filter((tool) => !isInstalled(tool.name));
+  if (missingTools.length === 0)
+    return;
+  warn("Optional CLI prerequisites are missing. Init will continue, but workflow commands may fail:");
+  for (const tool of missingTools) {
+    warn(`${tool.name}: install via ${tool.install}`);
+  }
 }
 function loadJson(path, fallback) {
   if (!existsSync9(path))
@@ -24013,6 +24291,115 @@ function ensureAgentsMd(cwd) {
     ok("created AGENTS.md with Specialists section");
   }
 }
+function readJsonObject(path) {
+  if (!existsSync9(path))
+    return {};
+  try {
+    return JSON.parse(readFileSync6(path, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+function hasHookCommand(settings, eventName, command) {
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== "object")
+    return false;
+  const eventEntries = hooks[eventName];
+  if (!Array.isArray(eventEntries))
+    return false;
+  return eventEntries.some((entry) => {
+    if (!entry || typeof entry !== "object")
+      return false;
+    const hookItems = entry.hooks;
+    if (!Array.isArray(hookItems))
+      return false;
+    return hookItems.some((hook) => {
+      if (!hook || typeof hook !== "object")
+        return false;
+      return hook.command === command;
+    });
+  });
+}
+function validateInitPostconditions(cwd) {
+  const warnings = [];
+  const xtrmHooksDir = join10(cwd, ".xtrm", "hooks", "specialists");
+  const xtrmHookFiles = existsSync9(xtrmHooksDir) ? readdirSync3(xtrmHooksDir).filter((file) => file.endsWith(".mjs")) : [];
+  if (xtrmHookFiles.length === 0) {
+    warnings.push(".xtrm/hooks/specialists/ is missing or has no .mjs hooks");
+  }
+  const claudeHooksDir = join10(cwd, ".claude", "hooks");
+  for (const hookFile of xtrmHookFiles) {
+    const claudeHookPath = join10(claudeHooksDir, hookFile);
+    if (!existsSync9(claudeHookPath)) {
+      warnings.push(`.claude/hooks/${hookFile} is missing`);
+      continue;
+    }
+    const stats = lstatSync(claudeHookPath);
+    if (!stats.isSymbolicLink()) {
+      warnings.push(`.claude/hooks/${hookFile} is not a symlink`);
+      continue;
+    }
+    const expectedTarget = resolve4(xtrmHooksDir, hookFile);
+    const resolvedTarget = resolve4(dirname5(claudeHookPath), readlinkSync(claudeHookPath));
+    if (resolvedTarget !== expectedTarget) {
+      warnings.push(`.claude/hooks/${hookFile} points to unexpected target`);
+    }
+  }
+  const settings = readJsonObject(join10(cwd, ".claude", "settings.json"));
+  const requiredHookWiring = [
+    { event: "UserPromptSubmit", command: "node .claude/hooks/specialists-complete.mjs" },
+    { event: "PostToolUse", command: "node .claude/hooks/specialists-complete.mjs" },
+    { event: "SessionStart", command: "node .claude/hooks/specialists-session-start.mjs" }
+  ];
+  for (const hook of requiredHookWiring) {
+    if (!hasHookCommand(settings, hook.event, hook.command)) {
+      warnings.push(`.claude/settings.json missing hook wiring: ${hook.event} -> ${hook.command}`);
+    }
+  }
+  const mcp = readJsonObject(join10(cwd, ".mcp.json"));
+  const mcpServers = mcp.mcpServers;
+  const specialistsServer = mcpServers && typeof mcpServers === "object" ? mcpServers.specialists : undefined;
+  if (!specialistsServer || typeof specialistsServer !== "object") {
+    warnings.push(".mcp.json missing mcpServers.specialists registration");
+  }
+  const runtimeDirs = [join10(cwd, ".specialists", "jobs"), join10(cwd, ".specialists", "ready")];
+  for (const runtimeDir of runtimeDirs) {
+    if (!existsSync9(runtimeDir)) {
+      warnings.push(`${relative(cwd, runtimeDir)} is missing`);
+    }
+  }
+  const defaultSkillsRoot = join10(cwd, ".xtrm", "skills", "default");
+  const defaultSkills = existsSync9(defaultSkillsRoot) ? readdirSync3(defaultSkillsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()) : [];
+  if (defaultSkills.length === 0) {
+    warnings.push(".xtrm/skills/default/ is missing or has no skill directories");
+  }
+  const rootSymlinks = [
+    {
+      linkPath: join10(cwd, ".claude", "skills"),
+      expectedTarget: join10(cwd, ".xtrm", "skills", "active", "claude")
+    },
+    {
+      linkPath: join10(cwd, ".pi", "skills"),
+      expectedTarget: join10(cwd, ".xtrm", "skills", "active", "pi")
+    }
+  ];
+  for (const symlink of rootSymlinks) {
+    if (!existsSync9(symlink.linkPath)) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} is missing`);
+      continue;
+    }
+    const stats = lstatSync(symlink.linkPath);
+    if (!stats.isSymbolicLink()) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} is not a symlink`);
+      continue;
+    }
+    const resolvedTarget = resolve4(dirname5(symlink.linkPath), readlinkSync(symlink.linkPath));
+    if (resolvedTarget !== resolve4(symlink.expectedTarget)) {
+      warnings.push(`${relative(cwd, symlink.linkPath)} points to an unexpected target`);
+    }
+  }
+  return warnings;
+}
 async function run6(opts = {}) {
   const cwd = process.cwd();
   const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
@@ -24028,15 +24415,7 @@ ${bold5("specialists init")}
   if (!noXtrmCheck) {
     assertXtrmPrerequisites(cwd);
   }
-  if (syncSkills) {
-    installProjectSkills(cwd, true);
-    console.log(`
-${bold5("Done!")}
-`);
-    console.log(`  ${dim5("Skills re-synced via .xtrm symlink pattern only.")}
-`);
-    return;
-  }
+  warnMissingOptionalPrerequisites();
   if (syncDefaults) {
     migrateLegacySpecialists(cwd, "default");
     copyCanonicalSpecialists(cwd);
@@ -24052,8 +24431,15 @@ ${bold5("Done!")}
   ensureProjectMcp(cwd);
   installProjectHooks(cwd);
   ensureProjectHookWiring(cwd);
-  installProjectSkills(cwd, false);
+  installProjectSkills(cwd, syncSkills);
   ensureObservabilityDb(cwd);
+  const postconditionWarnings = validateInitPostconditions(cwd);
+  if (postconditionWarnings.length > 0) {
+    warn("Init completed with postcondition warnings:");
+    for (const warningMessage of postconditionWarnings) {
+      warn(warningMessage);
+    }
+  }
   console.log(`
 ${bold5("Done!")}
 `);
@@ -25210,6 +25596,615 @@ var init_worktree = __esm(() => {
   init_job_root();
 });
 
+// src/cli/merge.ts
+var exports_merge = {};
+__export(exports_merge, {
+  topologicallySortChains: () => topologicallySortChains,
+  selectNewestChainRootJob: () => selectNewestChainRootJob,
+  runTypecheckGate: () => runTypecheckGate,
+  runRebuild: () => runRebuild,
+  runMergePlan: () => runMergePlan,
+  run: () => run11,
+  resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
+  resolveMergeTargets: () => resolveMergeTargets,
+  resolveChainEpicMembership: () => resolveChainEpicMembership,
+  rebaseBranchOntoMaster: () => rebaseBranchOntoMaster,
+  readAllJobStatuses: () => readAllJobStatuses,
+  printSummary: () => printSummary,
+  previewBranchMergeDelta: () => previewBranchMergeDelta,
+  parseChildBeadIds: () => parseChildBeadIds,
+  mergeBranch: () => mergeBranch,
+  executePublicationPlan: () => executePublicationPlan,
+  evaluateMergeWorthiness: () => evaluateMergeWorthiness,
+  ensureTerminalJobs: () => ensureTerminalJobs,
+  checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard
+});
+import { existsSync as existsSync14, readdirSync as readdirSync6, readFileSync as readFileSync9 } from "fs";
+import { spawnSync as spawnSync12 } from "child_process";
+import { join as join15 } from "path";
+function parseOptions(argv) {
+  let target = "";
+  let rebuild = false;
+  for (const argument of argv) {
+    if (argument === "--rebuild") {
+      rebuild = true;
+      continue;
+    }
+    if (argument.startsWith("-")) {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+    if (target) {
+      throw new Error("Only one merge target is supported");
+    }
+    target = argument;
+  }
+  if (!target) {
+    throw new Error("Missing merge target");
+  }
+  return { target, rebuild };
+}
+function runCommand(command, args, cwd = process.cwd()) {
+  return spawnSync12(command, args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+}
+function resolveDefaultBranchName(cwd = process.cwd()) {
+  const symbolicRef = runCommand("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd);
+  if (symbolicRef.status === 0) {
+    const remoteHeadRef = symbolicRef.stdout.trim();
+    if (remoteHeadRef.startsWith("origin/")) {
+      const branchName = remoteHeadRef.slice("origin/".length).trim();
+      if (branchName)
+        return branchName;
+    }
+  }
+  const localHead = runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+  if (localHead.status === 0) {
+    const branchName = localHead.stdout.trim();
+    if (branchName && branchName !== "HEAD") {
+      return branchName;
+    }
+  }
+  throw new Error("Unable to resolve repository default branch (origin/HEAD).");
+}
+function resolveMainWorktreeRoot(cwd = process.cwd()) {
+  const worktreeList = runCommand("git", ["worktree", "list", "--porcelain"], cwd);
+  if (worktreeList.status === 0) {
+    const firstWorktreeLine = worktreeList.stdout.split(`
+`).map((line) => line.trim()).find((line) => line.startsWith("worktree "));
+    if (firstWorktreeLine) {
+      const worktreePath = firstWorktreeLine.slice("worktree ".length).trim();
+      if (worktreePath)
+        return worktreePath;
+    }
+  }
+  const topLevel = runCommand("git", ["rev-parse", "--show-toplevel"], cwd);
+  if (topLevel.status !== 0) {
+    throw new Error("Unable to resolve main worktree root.");
+  }
+  const rootPath = topLevel.stdout.trim();
+  if (!rootPath) {
+    throw new Error("Unable to resolve main worktree root.");
+  }
+  return rootPath;
+}
+function readJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+function readBead(id) {
+  const result = runCommand("bd", ["show", id, "--json"]);
+  if (result.status !== 0 || !result.stdout.trim()) {
+    throw new Error(`Unable to read bead '${id}'`);
+  }
+  const parsed = readJson(result.stdout);
+  const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (!bead || typeof bead !== "object") {
+    throw new Error(`Unexpected bd show payload for '${id}'`);
+  }
+  const maybe = bead;
+  if (!maybe.id || !maybe.title) {
+    throw new Error(`Invalid bead record for '${id}'`);
+  }
+  return maybe;
+}
+function parseChildBeadIds(childrenOutput) {
+  const ids = childrenOutput.split(`
+`).map((line) => line.match(/(unitAI-[a-z0-9]+)/i)?.[1] ?? "").filter(Boolean);
+  return [...new Set(ids)];
+}
+function readEpicChildIds(epicId) {
+  let result = runCommand("bd", ["children", epicId, "--json"]);
+  if (result.status === 0) {
+    const parsed = readJson(result.stdout);
+    if (Array.isArray(parsed)) {
+      const ids = parsed.map((row) => row.id).filter((id) => Boolean(id));
+      return [...new Set(ids)];
+    }
+    const idsFromText2 = parseChildBeadIds(result.stdout);
+    if (idsFromText2.length === 0) {
+      throw new Error(`No children found for epic '${epicId}'`);
+    }
+    return idsFromText2;
+  }
+  result = runCommand("bd", ["children", epicId]);
+  if (result.status !== 0) {
+    throw new Error(`Unable to load children for epic '${epicId}'`);
+  }
+  const idsFromText = parseChildBeadIds(result.stdout);
+  if (idsFromText.length === 0) {
+    throw new Error(`No children found for epic '${epicId}'`);
+  }
+  return idsFromText;
+}
+function resolveChainEpicMembership(chainRootBeadId) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (sqliteClient) {
+    try {
+      const membership = sqliteClient.resolveEpicByChainRootBeadId(chainRootBeadId);
+      if (membership?.epic_id) {
+        return { epicId: membership.epic_id, source: "sqlite" };
+      }
+    } finally {
+      sqliteClient.close();
+    }
+  }
+  const bead = readBead(chainRootBeadId);
+  if (bead.parent) {
+    return { epicId: bead.parent, source: "bead-parent" };
+  }
+  return { source: "none" };
+}
+function checkEpicUnresolvedGuard(chainRootBeadId) {
+  const membership = resolveChainEpicMembership(chainRootBeadId);
+  if (!membership.epicId) {
+    return { blocked: false };
+  }
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    return {
+      blocked: false,
+      epicId: membership.epicId,
+      message: `Warning: unable to verify epic ${membership.epicId} status (observability DB unavailable). Proceeding with chain merge.`
+    };
+  }
+  try {
+    const epicRun = sqliteClient.readEpicRun(membership.epicId);
+    if (!epicRun) {
+      return {
+        blocked: false,
+        epicId: membership.epicId,
+        message: `Warning: epic ${membership.epicId} has no run record. Proceeding with chain merge.`
+      };
+    }
+    const status = epicRun.status;
+    if (!isEpicUnresolvedState(status)) {
+      return { blocked: false, epicId: membership.epicId, epicStatus: status };
+    }
+    return {
+      blocked: true,
+      epicId: membership.epicId,
+      epicStatus: status,
+      message: `Chain ${chainRootBeadId} belongs to unresolved epic ${membership.epicId} (status: ${status}).
+Use 'sp epic merge ${membership.epicId}' to publish all chains together, or 'sp epic status ${membership.epicId}' to inspect the epic state.`
+    };
+  } finally {
+    sqliteClient.close();
+  }
+}
+function readAllJobStatuses() {
+  const jobsDir = resolveJobsDir();
+  if (!existsSync14(jobsDir))
+    return [];
+  const entries = readdirSync6(jobsDir, { withFileTypes: true });
+  const statuses = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory())
+      continue;
+    const statusPath = join15(jobsDir, entry.name, "status.json");
+    if (!existsSync14(statusPath))
+      continue;
+    const parsed = readJson(readFileSync9(statusPath, "utf-8"));
+    if (!parsed || typeof parsed !== "object")
+      continue;
+    statuses.push(parsed);
+  }
+  return statuses;
+}
+function selectNewestChainRootJob(beadId, statuses) {
+  const candidates = statuses.filter((status) => status.bead_id === beadId && status.branch && status.worktree_path).sort((left, right) => (right.started_at_ms ?? 0) - (left.started_at_ms ?? 0));
+  const selected = candidates[0];
+  if (!selected || !selected.branch || !selected.status || !selected.id || !selected.worktree_path)
+    return null;
+  return {
+    beadId,
+    branch: selected.branch,
+    worktreePath: selected.worktree_path,
+    jobId: selected.id,
+    jobStatus: selected.status,
+    startedAtMs: selected.started_at_ms ?? 0
+  };
+}
+function ensureTerminalJobs(chains) {
+  const running = chains.filter((chain) => !TERMINAL_STATUSES.has(chain.jobStatus));
+  if (running.length === 0)
+    return;
+  const lines = running.map((chain) => `- ${chain.beadId} (${chain.jobId}): ${chain.jobStatus}`);
+  throw new Error(`Refusing merge: non-terminal chain jobs
+${lines.join(`
+`)}`);
+}
+function topologicallySortChains(chains, dependenciesByBeadId) {
+  const byId = new Map(chains.map((chain) => [chain.beadId, chain]));
+  const indegree = new Map;
+  const adjacency = new Map;
+  for (const chain of chains) {
+    indegree.set(chain.beadId, 0);
+    adjacency.set(chain.beadId, []);
+  }
+  for (const chain of chains) {
+    const dependencies = dependenciesByBeadId.get(chain.beadId) ?? [];
+    for (const dependencyId of dependencies) {
+      if (!byId.has(dependencyId))
+        continue;
+      adjacency.get(dependencyId)?.push(chain.beadId);
+      indegree.set(chain.beadId, (indegree.get(chain.beadId) ?? 0) + 1);
+    }
+  }
+  const queue = [...chains].filter((chain) => (indegree.get(chain.beadId) ?? 0) === 0).sort((left, right) => left.startedAtMs - right.startedAtMs).map((chain) => chain.beadId);
+  const ordered = [];
+  while (queue.length > 0) {
+    const beadId = queue.shift();
+    if (!beadId)
+      continue;
+    const chain = byId.get(beadId);
+    if (chain) {
+      ordered.push(chain);
+    }
+    const dependents = adjacency.get(beadId) ?? [];
+    for (const dependentId of dependents) {
+      const nextIndegree = (indegree.get(dependentId) ?? 0) - 1;
+      indegree.set(dependentId, nextIndegree);
+      if (nextIndegree === 0) {
+        queue.push(dependentId);
+      }
+    }
+  }
+  if (ordered.length !== chains.length) {
+    throw new Error("Unable to compute merge order: dependency cycle detected");
+  }
+  return ordered;
+}
+function loadDependenciesFor(beadIds) {
+  const selected = new Set(beadIds);
+  const dependenciesByBeadId = new Map;
+  for (const beadId of beadIds) {
+    const bead = readBead(beadId);
+    const dependencyIds = (bead.dependencies ?? []).map((dep) => dep.id).filter((id) => {
+      if (!id)
+        return false;
+      return selected.has(id);
+    });
+    dependenciesByBeadId.set(beadId, dependencyIds);
+  }
+  return dependenciesByBeadId;
+}
+function resolveMergeTargetsForBeadIds(beadIds) {
+  const statuses = readAllJobStatuses();
+  const chains = beadIds.map((beadId) => selectNewestChainRootJob(beadId, statuses)).filter((chain) => Boolean(chain));
+  if (chains.length === 0) {
+    throw new Error("No mergeable chain branches found for provided bead IDs");
+  }
+  ensureTerminalJobs(chains);
+  const dependenciesByBeadId = loadDependenciesFor(chains.map((chain) => chain.beadId));
+  return topologicallySortChains(chains, dependenciesByBeadId);
+}
+function resolveMergeTargets(target) {
+  const bead = readBead(target);
+  if (bead.issue_type !== "epic") {
+    const statuses = readAllJobStatuses();
+    const chain = selectNewestChainRootJob(target, statuses);
+    if (!chain) {
+      throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
+    }
+    const guardResult = checkEpicUnresolvedGuard(chain.beadId);
+    if (guardResult.message && !guardResult.blocked) {
+      console.warn(guardResult.message);
+    }
+    if (guardResult.blocked) {
+      throw new Error(guardResult.message);
+    }
+    ensureTerminalJobs([chain]);
+    return [chain];
+  }
+  const childIds = readEpicChildIds(target);
+  const chains = resolveMergeTargetsForBeadIds(childIds);
+  if (chains.length === 0) {
+    throw new Error(`No mergeable chain branches found under epic '${target}'`);
+  }
+  return chains;
+}
+function readChangedFilesForLastMerge(cwd = process.cwd()) {
+  const diff = runCommand("git", ["diff", "--name-only", "HEAD^1", "HEAD"], cwd);
+  if (diff.status !== 0)
+    return [];
+  return diff.stdout.split(`
+`).map((line) => line.trim()).filter(Boolean);
+}
+function parseNameStatusLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed)
+    return null;
+  const parts = trimmed.split(/\t+/);
+  if (parts.length < 2)
+    return null;
+  const status = parts[0] ?? "";
+  if (!status)
+    return null;
+  const path = parts.length >= 3 ? parts[parts.length - 1] ?? "" : parts[1] ?? "";
+  if (!path)
+    return null;
+  return { status, path };
+}
+function isNoisePath(path) {
+  return NOISE_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+function previewBranchMergeDelta(branch, cwd = process.cwd()) {
+  const baseBranch = resolveDefaultBranchName(cwd);
+  const mergeBase = runCommand("git", ["merge-base", baseBranch, branch], cwd);
+  if (mergeBase.status !== 0) {
+    throw new Error(`Unable to compute merge base for '${baseBranch}' and '${branch}'.`);
+  }
+  const mergeBaseSha = mergeBase.stdout.trim();
+  if (!mergeBaseSha) {
+    throw new Error(`Unable to compute merge base for '${baseBranch}' and '${branch}'.`);
+  }
+  const stagedDelta = runCommand("git", ["diff", `${mergeBaseSha}..${branch}`, "--name-status"], cwd);
+  if (stagedDelta.status !== 0) {
+    throw new Error(`Unable to read merge delta for '${branch}'.`);
+  }
+  const files = stagedDelta.stdout.split(`
+`).map(parseNameStatusLine).filter((entry) => Boolean(entry));
+  const noiseFiles = files.filter((file) => isNoisePath(file.path));
+  const substantiveFiles = files.filter((file) => !isNoisePath(file.path));
+  return {
+    branch,
+    files,
+    noiseFiles,
+    substantiveFiles
+  };
+}
+function evaluateMergeWorthiness(preview) {
+  if (preview.files.length === 0) {
+    return { shouldMerge: false, reason: "empty-delta" };
+  }
+  if (preview.substantiveFiles.length === 0) {
+    return { shouldMerge: false, reason: "noise-only-delta" };
+  }
+  return { shouldMerge: true, reason: "ok" };
+}
+function throwWorthinessBlockError(target, preview, decision) {
+  const summary = [
+    `beadId=${target.beadId}`,
+    `jobId=${target.jobId}`,
+    `branch=${target.branch}`,
+    `total=${preview.files.length}`,
+    `substantive=${preview.substantiveFiles.length}`,
+    `noise=${preview.noiseFiles.length}`
+  ].join(" ");
+  const reason = decision.reason === "empty-delta" ? "empty merge delta" : "noise-only merge delta";
+  throw new Error(`Refusing merge for '${target.branch}': ${reason}.
+` + `Diagnostics: ${summary}`);
+}
+function assertBranchMergeWorthiness(target, cwd = process.cwd()) {
+  const preview = previewBranchMergeDelta(target.branch, cwd);
+  const decision = evaluateMergeWorthiness(preview);
+  if (decision.shouldMerge)
+    return;
+  throwWorthinessBlockError(target, preview, decision);
+}
+function getConflictFiles(cwd = process.cwd()) {
+  const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"], cwd);
+  if (result.status !== 0)
+    return [];
+  return result.stdout.split(`
+`).map((line) => line.trim()).filter(Boolean);
+}
+function getCurrentHeadBranch(cwd = process.cwd()) {
+  const result = runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+  if (result.status !== 0) {
+    throw new Error("Unable to resolve current git branch before rebase.");
+  }
+  const branch = result.stdout.trim();
+  if (!branch || branch === "HEAD") {
+    throw new Error("Detached HEAD is not supported during merge-time rebase.");
+  }
+  return branch;
+}
+function tryAbortRebase(cwd = process.cwd()) {
+  runCommand("git", ["rebase", "--abort"], cwd);
+}
+function rebaseBranchOntoMaster(branch, worktreePath) {
+  const baseBranch = resolveDefaultBranchName(worktreePath);
+  const checkedOutBranch = getCurrentHeadBranch(worktreePath);
+  if (checkedOutBranch !== branch) {
+    throw new Error(`Expected branch '${branch}' in worktree '${worktreePath}', found '${checkedOutBranch}'.`);
+  }
+  const rebase = runCommand("git", ["rebase", baseBranch], worktreePath);
+  if (rebase.status === 0) {
+    return;
+  }
+  const conflicts = getConflictFiles(worktreePath);
+  tryAbortRebase(worktreePath);
+  const stderr = rebase.stderr.trim();
+  const stdout = rebase.stdout.trim();
+  const detail = stderr || stdout || "Unknown git rebase error";
+  const conflictLines = conflicts.length > 0 ? `
+Conflicting files:
+${conflicts.map((file) => `- ${file}`).join(`
+`)}` : "";
+  throw new Error(`Rebase failed for '${branch}' onto '${baseBranch}' in worktree '${worktreePath}'.${conflictLines}
+` + `Resolve conflicts manually in that worktree, then re-run merge.
+` + `Details: ${detail}`);
+}
+function mergeBranch(branch, cwd = process.cwd()) {
+  const result = runCommand("git", ["merge", branch, "--no-ff", "--no-edit"], cwd);
+  if (result.status === 0)
+    return;
+  const conflicts = getConflictFiles(cwd);
+  const context = conflicts.length > 0 ? `
+Conflicting files:
+${conflicts.map((file) => `- ${file}`).join(`
+`)}` : "";
+  throw new Error(`Merge conflict while merging '${branch}'.${context}`);
+}
+function runTypecheckGate(cwd = process.cwd()) {
+  const tsc = runCommand("bunx", ["tsc", "--noEmit"], cwd);
+  if (tsc.status === 0)
+    return;
+  const stderr = tsc.stderr.trim();
+  const stdout = tsc.stdout.trim();
+  throw new Error(`TypeScript gate failed after merge.
+${stderr || stdout || "Unknown tsc error"}`);
+}
+function runRebuild(cwd = process.cwd()) {
+  const build = runCommand("bun", ["run", "build"], cwd);
+  if (build.status === 0)
+    return;
+  const stderr = build.stderr.trim();
+  const stdout = build.stdout.trim();
+  throw new Error(`Rebuild failed.
+${stderr || stdout || "Unknown build error"}`);
+}
+function printSummary(steps, rebuild) {
+  console.log("Merge complete.");
+  console.log("Merged branches (in order):");
+  for (const step of steps) {
+    console.log(`- ${step.branch} (${step.beadId})`);
+    if (step.changedFiles.length === 0) {
+      console.log("  files: (none)");
+      continue;
+    }
+    console.log(`  files: ${step.changedFiles.join(", ")}`);
+  }
+  console.log("TypeScript gate: passed after each merge");
+  if (rebuild) {
+    console.log("Rebuild: bun run build (passed)");
+  }
+}
+function printUsageAndExit(message) {
+  console.error(message);
+  console.error("Usage: specialists|sp merge <target-bead-id> [--rebuild]");
+  process.exit(1);
+}
+function runMergePlan(targets, options) {
+  const mainRepoRoot = resolveMainWorktreeRoot();
+  const mergedSteps = [];
+  for (const target of targets) {
+    rebaseBranchOntoMaster(target.branch, target.worktreePath);
+    assertBranchMergeWorthiness(target, mainRepoRoot);
+    mergeBranch(target.branch, mainRepoRoot);
+    runTypecheckGate(mainRepoRoot);
+    mergedSteps.push({
+      beadId: target.beadId,
+      branch: target.branch,
+      changedFiles: readChangedFilesForLastMerge(mainRepoRoot)
+    });
+  }
+  if (options.rebuild) {
+    runRebuild(mainRepoRoot);
+  }
+  return mergedSteps;
+}
+function getCurrentBranchName() {
+  const result = runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (result.status !== 0) {
+    throw new Error("Unable to resolve current git branch.");
+  }
+  const branchName = result.stdout.trim();
+  if (!branchName || branchName === "HEAD") {
+    throw new Error("Detached HEAD is not supported for PR publication.");
+  }
+  return branchName;
+}
+function checkoutNewBranch(branchName) {
+  const checkout = runCommand("git", ["checkout", "-b", branchName]);
+  if (checkout.status === 0)
+    return;
+  throw new Error(`Failed to create publish branch '${branchName}': ${checkout.stderr.trim() || checkout.stdout.trim() || "unknown git error"}`);
+}
+function checkoutBranch(branchName) {
+  const checkout = runCommand("git", ["checkout", branchName]);
+  if (checkout.status === 0)
+    return;
+  throw new Error(`Failed to checkout branch '${branchName}': ${checkout.stderr.trim() || checkout.stdout.trim() || "unknown git error"}`);
+}
+function createPullRequest(baseBranch, publishBranch, publicationLabel) {
+  const title = `[sp] Publish ${publicationLabel}`;
+  const body = [
+    `Automated publication for ${publicationLabel}.`,
+    "",
+    "Generated by `sp merge --pr` / `sp epic merge --pr` / `sp end --pr`."
+  ].join(`
+`);
+  const command = runCommand("gh", ["pr", "create", "--base", baseBranch, "--head", publishBranch, "--title", title, "--body", body]);
+  if (command.status !== 0) {
+    throw new Error(`Failed to create PR via gh CLI: ${command.stderr.trim() || command.stdout.trim() || "unknown gh error"}`);
+  }
+  const pullRequestUrl = command.stdout.split(`
+`).map((line) => line.trim()).find((line) => line.startsWith("http"));
+  if (!pullRequestUrl) {
+    throw new Error("gh pr create succeeded but did not return a PR URL.");
+  }
+  return pullRequestUrl;
+}
+function executePublicationPlan(targets, options) {
+  if (options.mode === "direct") {
+    return {
+      steps: runMergePlan(targets, options)
+    };
+  }
+  const baseBranch = getCurrentBranchName();
+  const publishBranch = `sp/publish-${options.publicationLabel.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${Date.now()}`;
+  checkoutNewBranch(publishBranch);
+  try {
+    const steps = runMergePlan(targets, options);
+    const pullRequestUrl = createPullRequest(baseBranch, publishBranch, options.publicationLabel);
+    checkoutBranch(baseBranch);
+    return { steps, pullRequestUrl };
+  } catch (error2) {
+    try {
+      checkoutBranch(baseBranch);
+    } catch {}
+    throw error2;
+  }
+}
+async function run11() {
+  let options;
+  try {
+    options = parseOptions(process.argv.slice(3));
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    printUsageAndExit(message);
+  }
+  const targets = resolveMergeTargets(options.target);
+  const mergedSteps = runMergePlan(targets, { rebuild: options.rebuild });
+  printSummary(mergedSteps, options.rebuild);
+}
+var TERMINAL_STATUSES, NOISE_PATH_PREFIXES;
+var init_merge = __esm(() => {
+  init_job_root();
+  init_observability_sqlite();
+  init_epic_lifecycle();
+  TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
+  NOISE_PATH_PREFIXES = [".xtrm/reports/", ".wolf/", ".specialists/jobs/"];
+});
+
 // src/cli/format-helpers.ts
 function formatTime(t) {
   return new Date(t).toISOString().slice(11, 19);
@@ -25434,16 +26429,16 @@ var init_format_helpers = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run11
+  run: () => run12
 });
-import { join as join15 } from "path";
-import { readFileSync as readFileSync9 } from "fs";
+import { join as join16 } from "path";
+import { readFileSync as readFileSync10 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync2 } from "child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--force-stale-base] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
     process.exit(1);
   }
   let prompt = "";
@@ -25460,6 +26455,7 @@ async function parseArgs6(argv) {
   let reuseJobId;
   let forceJob = false;
   let epicId;
+  let forceStaleBase = false;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
@@ -25528,6 +26524,10 @@ async function parseArgs6(argv) {
       epicId = argv[++i];
       continue;
     }
+    if (token === "--force-stale-base") {
+      forceStaleBase = true;
+      continue;
+    }
   }
   if (worktree && reuseJobId !== undefined) {
     console.error("Error: --worktree and --job are mutually exclusive. Use one or the other.");
@@ -25575,11 +26575,84 @@ async function parseArgs6(argv) {
     worktree,
     reuseJobId,
     forceJob,
-    epicId
+    epicId,
+    forceStaleBase
   };
+}
+function readBeadSummary(beadId) {
+  try {
+    const raw = execSync2(`bd show ${beadId} --json`, {
+      stdio: "pipe",
+      encoding: "utf-8",
+      timeout: 5000
+    });
+    const parsed = JSON.parse(raw);
+    const bead = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!bead || typeof bead !== "object")
+      return null;
+    return bead;
+  } catch {
+    return null;
+  }
+}
+function resolveEpicIdForBead(sqliteClient, beadId) {
+  const membership = sqliteClient.resolveEpicByChainRootBeadId(beadId);
+  if (membership?.epic_id)
+    return membership.epic_id;
+  const bead = readBeadSummary(beadId);
+  if (!bead?.parent)
+    return;
+  const parent = readBeadSummary(bead.parent);
+  if (parent?.issue_type !== "epic")
+    return;
+  return bead.parent;
+}
+function assertNoStaleBaseSiblings(beadId, forceStaleBase) {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient)
+    return;
+  try {
+    const epicId = resolveEpicIdForBead(sqliteClient, beadId);
+    if (!epicId)
+      return;
+    const siblingChains = sqliteClient.listEpicChainsWithLatestJob(epicId).filter((chain) => chain.chain_root_bead_id !== beadId && Boolean(chain.branch));
+    const staleSiblings = [];
+    for (const sibling of siblingChains) {
+      const branch = sibling.branch;
+      if (!branch)
+        continue;
+      try {
+        const preview = previewBranchMergeDelta(branch);
+        const decision = evaluateMergeWorthiness(preview);
+        if (!decision.shouldMerge)
+          continue;
+        staleSiblings.push({
+          beadId: sibling.chain_root_bead_id ?? "(unknown-bead)",
+          branch,
+          chainId: sibling.chain_id
+        });
+      } catch {}
+    }
+    if (staleSiblings.length === 0)
+      return;
+    if (forceStaleBase) {
+      process.stderr.write(dim9(`[stale-base guard bypassed: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]
+`));
+      return;
+    }
+    const lines = staleSiblings.map((sibling) => `- bead=${sibling.beadId} chain=${sibling.chainId} branch=${sibling.branch}`).join(`
+`);
+    throw new Error(`Refusing worktree dispatch for bead '${beadId}': epic '${epicId}' has unmerged sibling chains with substantive commits.
+` + `${lines}
+` + `Publish the epic first: sp epic merge ${epicId}
+` + `If intentional, rerun with --force-stale-base.`);
+  } finally {
+    sqliteClient.close();
+  }
 }
 function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) {
   if (args.worktree) {
+    assertNoStaleBaseSiblings(args.beadId, args.forceStaleBase);
     const info = provisionWorktree({
       beadId: args.beadId,
       specialistName: args.name
@@ -25632,13 +26705,13 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
   return {};
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
-  const eventsPath = join15(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join16(jobsDir, jobId, "events.jsonl");
   let linesRead = 0;
   let activeInlinePhase = null;
   const drain = () => {
     let content;
     try {
-      content = readFileSync9(eventsPath, "utf-8");
+      content = readFileSync10(eventsPath, "utf-8");
     } catch {
       return;
     }
@@ -25697,7 +26770,7 @@ function formatFooterModel(backend, model) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
-async function run11() {
+async function run12() {
   const args = await parseArgs6(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const specialist = await loader.get(args.name).catch((err) => {
@@ -25719,10 +26792,10 @@ async function run11() {
   }
   if (args.background) {
     const jobsDir2 = resolveJobsDir();
-    const latestPath = join15(jobsDir2, "latest");
+    const latestPath = join16(jobsDir2, "latest");
     const oldLatest = (() => {
       try {
-        return readFileSync9(latestPath, "utf-8").trim();
+        return readFileSync10(latestPath, "utf-8").trim();
       } catch {
         return "";
       }
@@ -25750,7 +26823,7 @@ async function run11() {
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 100));
       try {
-        const current = readFileSync9(latestPath, "utf-8").trim();
+        const current = readFileSync10(latestPath, "utf-8").trim();
         if (current && current !== oldLatest) {
           jobId2 = current;
           break;
@@ -25769,7 +26842,7 @@ async function run11() {
     process.exit(0);
   }
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join15(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join16(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -25938,6 +27011,8 @@ var init_run = __esm(() => {
   init_supervisor();
   init_job_root();
   init_worktree();
+  init_observability_sqlite();
+  init_merge();
   init_format_helpers();
   init_tmux_utils();
   BLOCKED_JOB_REUSE_STATUSES = new Set(["starting", "running"]);
@@ -25994,8 +27069,8 @@ var init_node_resolve = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync14, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "fs";
-import { join as join16 } from "path";
+import { existsSync as existsSync15, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "fs";
+import { join as join17 } from "path";
 
 class JobControl {
   supervisor;
@@ -26052,7 +27127,7 @@ class JobControl {
     if (!status) {
       throw new Error(`No job found: ${jobId}`);
     }
-    if (TERMINAL_STATUSES.has(status.status)) {
+    if (TERMINAL_STATUSES2.has(status.status)) {
       return;
     }
     if (!status.fifo_path) {
@@ -26070,10 +27145,10 @@ class JobControl {
         return sqliteResult;
     } catch {}
     const resultPath = this.resultPath(jobId);
-    if (!existsSync14(resultPath))
+    if (!existsSync15(resultPath))
       return null;
     try {
-      return readFileSync10(resultPath, "utf-8");
+      return readFileSync11(resultPath, "utf-8");
     } catch {
       return null;
     }
@@ -26086,7 +27161,7 @@ class JobControl {
       if (!status) {
         throw new Error(`No job found: ${jobId}`);
       }
-      if (TERMINAL_STATUSES.has(status.status)) {
+      if (TERMINAL_STATUSES2.has(status.status)) {
         return status;
       }
       if (deadline !== undefined && Date.now() >= deadline) {
@@ -26109,15 +27184,15 @@ class JobControl {
     writeFileSync6(status.fifo_path, jsonLine, { flag: "a" });
   }
   resultPath(jobId) {
-    return join16(this.jobsDir, jobId, "result.txt");
+    return join17(this.jobsDir, jobId, "result.txt");
   }
 }
-var TERMINAL_STATUSES, INITIAL_BACKOFF_MS = 100, MAX_BACKOFF_MS = 2000;
+var TERMINAL_STATUSES2, INITIAL_BACKOFF_MS = 100, MAX_BACKOFF_MS = 2000;
 var init_job_control = __esm(() => {
   init_job_root();
   init_observability_sqlite();
   init_supervisor();
-  TERMINAL_STATUSES = new Set(["done", "error", "stopped"]);
+  TERMINAL_STATUSES2 = new Set(["done", "error", "stopped"]);
 });
 
 // src/specialist/node-contract.ts
@@ -26263,7 +27338,7 @@ __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
 import { createHash as createHash3 } from "crypto";
-import { spawnSync as spawnSync12 } from "child_process";
+import { spawnSync as spawnSync13 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -26308,7 +27383,7 @@ function parseCreatedBeadId(stdout) {
   return match[1];
 }
 function runCommandOrThrow(command, args, cwd = process.cwd()) {
-  const result = spawnSync12(command, args, {
+  const result = spawnSync13(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -27377,7 +28452,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options);
-    const result = spawnSync12("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync13("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -27390,7 +28465,7 @@ class NodeSupervisor {
     }
   }
   runCommand(command, args, cwd) {
-    const result = spawnSync12(command, args, {
+    const result = spawnSync13(command, args, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -27590,8 +28665,8 @@ class NodeSupervisor {
     }
   }
   runFinalQualityGates(cwd) {
-    const lintPass = spawnSync12("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
-    const tscPass = spawnSync12("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const lintPass = spawnSync13("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const tscPass = spawnSync13("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
     return {
       lint: lintPass ? "pass" : "fail",
       tsc: tscPass ? "pass" : "fail"
@@ -28184,10 +29259,10 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync15, readFileSync as readFileSync11, readdirSync as readdirSync6 } from "fs";
+import { existsSync as existsSync16, readFileSync as readFileSync12, readdirSync as readdirSync7 } from "fs";
 import { randomUUID } from "crypto";
-import { spawnSync as spawnSync13 } from "child_process";
-import { basename as basename4, join as join17, resolve as resolve6 } from "path";
+import { spawnSync as spawnSync14 } from "child_process";
+import { basename as basename4, join as join18, resolve as resolve6 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
   const supportedCommands = new Set(["run", "list", "promote", "members", "memory", "stop", "spawn-member", "create-bead", "complete", "wait-phase"]);
@@ -28372,11 +29447,11 @@ function discoverNodeConfigs(cwd) {
   const discoveredByName = new Map;
   for (const directory of NODE_DISCOVERY_DIRS) {
     const absoluteDir = resolve6(cwd, directory.path);
-    if (!existsSync15(absoluteDir))
+    if (!existsSync16(absoluteDir))
       continue;
-    const files = readdirSync6(absoluteDir).filter((fileName) => fileName.endsWith(NODE_CONFIG_SUFFIX));
+    const files = readdirSync7(absoluteDir).filter((fileName) => fileName.endsWith(NODE_CONFIG_SUFFIX));
     for (const fileName of files) {
-      const path = join17(absoluteDir, fileName);
+      const path = join18(absoluteDir, fileName);
       const name = toNodeName(fileName);
       if (discoveredByName.has(name))
         continue;
@@ -28387,7 +29462,7 @@ function discoverNodeConfigs(cwd) {
 }
 function resolveNodeConfigPath(cwd, input2) {
   const explicitPath = resolve6(cwd, input2);
-  if (existsSync15(explicitPath)) {
+  if (existsSync16(explicitPath)) {
     return explicitPath;
   }
   const normalizedName = input2.endsWith(NODE_CONFIG_SUFFIX) ? input2.slice(0, -NODE_CONFIG_SUFFIX.length) : input2;
@@ -28482,12 +29557,12 @@ async function handleNodeRun(args) {
     throw new Error("Observability SQLite DB is unavailable. Run: specialists db setup");
   }
   try {
-    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync11(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput), "utf-8");
+    const rawConfig = args.inlineJson ? args.inlineJson : readFileSync12(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput), "utf-8");
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
     const runner = new SpecialistRunner({
       loader,
-      hooks: new HookEmitter({ tracePath: join17(process.cwd(), ".specialists", "trace.jsonl") }),
+      hooks: new HookEmitter({ tracePath: join18(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
     const nodeId = `${config2.name}-${randomUUID().slice(0, 8)}`;
@@ -28784,7 +29859,7 @@ function buildFindingNotes(nodeId, findingId, finding) {
 `);
 }
 function promoteFindingToBead(beadId, notes) {
-  const result = spawnSync13("bd", ["update", beadId, "--notes", notes], {
+  const result = spawnSync14("bd", ["update", beadId, "--notes", notes], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -28853,7 +29928,7 @@ async function createNodeActionRunnerDependencies() {
   const loader = new SpecialistLoader;
   const runner = new SpecialistRunner({
     loader,
-    hooks: new HookEmitter({ tracePath: join17(process.cwd(), ".specialists", "trace.jsonl") }),
+    hooks: new HookEmitter({ tracePath: join18(process.cwd(), ".specialists", "trace.jsonl") }),
     circuitBreaker: new CircuitBreaker
   });
   return { loader, runner };
@@ -29015,555 +30090,6 @@ var init_node = __esm(() => {
     { path: ".specialists/default/nodes", source: "default" },
     { path: "config/nodes", source: "project" }
   ];
-});
-
-// src/cli/merge.ts
-var exports_merge = {};
-__export(exports_merge, {
-  topologicallySortChains: () => topologicallySortChains,
-  selectNewestChainRootJob: () => selectNewestChainRootJob,
-  runTypecheckGate: () => runTypecheckGate,
-  runRebuild: () => runRebuild,
-  runMergePlan: () => runMergePlan,
-  run: () => run12,
-  resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
-  resolveMergeTargets: () => resolveMergeTargets,
-  resolveChainEpicMembership: () => resolveChainEpicMembership,
-  readAllJobStatuses: () => readAllJobStatuses,
-  printSummary: () => printSummary,
-  previewBranchMergeDelta: () => previewBranchMergeDelta,
-  parseChildBeadIds: () => parseChildBeadIds,
-  mergeBranch: () => mergeBranch,
-  executePublicationPlan: () => executePublicationPlan,
-  evaluateMergeWorthiness: () => evaluateMergeWorthiness,
-  ensureTerminalJobs: () => ensureTerminalJobs,
-  checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard
-});
-import { existsSync as existsSync16, readdirSync as readdirSync7, readFileSync as readFileSync12 } from "fs";
-import { spawnSync as spawnSync14 } from "child_process";
-import { join as join18 } from "path";
-function parseOptions(argv) {
-  let target = "";
-  let rebuild = false;
-  for (const argument of argv) {
-    if (argument === "--rebuild") {
-      rebuild = true;
-      continue;
-    }
-    if (argument.startsWith("-")) {
-      throw new Error(`Unknown option: ${argument}`);
-    }
-    if (target) {
-      throw new Error("Only one merge target is supported");
-    }
-    target = argument;
-  }
-  if (!target) {
-    throw new Error("Missing merge target");
-  }
-  return { target, rebuild };
-}
-function runCommand(command, args, cwd = process.cwd()) {
-  return spawnSync14(command, args, {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-}
-function resolveMainWorktreeRoot(cwd = process.cwd()) {
-  const worktreeList = runCommand("git", ["worktree", "list", "--porcelain"], cwd);
-  if (worktreeList.status === 0) {
-    const firstWorktreeLine = worktreeList.stdout.split(`
-`).map((line) => line.trim()).find((line) => line.startsWith("worktree "));
-    if (firstWorktreeLine) {
-      const worktreePath = firstWorktreeLine.slice("worktree ".length).trim();
-      if (worktreePath)
-        return worktreePath;
-    }
-  }
-  const topLevel = runCommand("git", ["rev-parse", "--show-toplevel"], cwd);
-  if (topLevel.status !== 0) {
-    throw new Error("Unable to resolve main worktree root.");
-  }
-  const rootPath = topLevel.stdout.trim();
-  if (!rootPath) {
-    throw new Error("Unable to resolve main worktree root.");
-  }
-  return rootPath;
-}
-function readJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-function readBead(id) {
-  const result = runCommand("bd", ["show", id, "--json"]);
-  if (result.status !== 0 || !result.stdout.trim()) {
-    throw new Error(`Unable to read bead '${id}'`);
-  }
-  const parsed = readJson(result.stdout);
-  const bead = Array.isArray(parsed) ? parsed[0] : parsed;
-  if (!bead || typeof bead !== "object") {
-    throw new Error(`Unexpected bd show payload for '${id}'`);
-  }
-  const maybe = bead;
-  if (!maybe.id || !maybe.title) {
-    throw new Error(`Invalid bead record for '${id}'`);
-  }
-  return maybe;
-}
-function parseChildBeadIds(childrenOutput) {
-  const ids = childrenOutput.split(`
-`).map((line) => line.match(/(unitAI-[a-z0-9]+)/i)?.[1] ?? "").filter(Boolean);
-  return [...new Set(ids)];
-}
-function readEpicChildIds(epicId) {
-  let result = runCommand("bd", ["children", epicId, "--json"]);
-  if (result.status === 0) {
-    const parsed = readJson(result.stdout);
-    if (Array.isArray(parsed)) {
-      const ids = parsed.map((row) => row.id).filter((id) => Boolean(id));
-      return [...new Set(ids)];
-    }
-    const idsFromText2 = parseChildBeadIds(result.stdout);
-    if (idsFromText2.length === 0) {
-      throw new Error(`No children found for epic '${epicId}'`);
-    }
-    return idsFromText2;
-  }
-  result = runCommand("bd", ["children", epicId]);
-  if (result.status !== 0) {
-    throw new Error(`Unable to load children for epic '${epicId}'`);
-  }
-  const idsFromText = parseChildBeadIds(result.stdout);
-  if (idsFromText.length === 0) {
-    throw new Error(`No children found for epic '${epicId}'`);
-  }
-  return idsFromText;
-}
-function resolveChainEpicMembership(chainRootBeadId) {
-  const sqliteClient = createObservabilitySqliteClient();
-  if (sqliteClient) {
-    try {
-      const membership = sqliteClient.resolveEpicByChainRootBeadId(chainRootBeadId);
-      if (membership?.epic_id) {
-        return { epicId: membership.epic_id, source: "sqlite" };
-      }
-    } finally {
-      sqliteClient.close();
-    }
-  }
-  const bead = readBead(chainRootBeadId);
-  if (bead.parent) {
-    return { epicId: bead.parent, source: "bead-parent" };
-  }
-  return { source: "none" };
-}
-function checkEpicUnresolvedGuard(chainRootBeadId) {
-  const membership = resolveChainEpicMembership(chainRootBeadId);
-  if (!membership.epicId) {
-    return { blocked: false };
-  }
-  const sqliteClient = createObservabilitySqliteClient();
-  if (!sqliteClient) {
-    return {
-      blocked: false,
-      epicId: membership.epicId,
-      message: `Warning: unable to verify epic ${membership.epicId} status (observability DB unavailable). Proceeding with chain merge.`
-    };
-  }
-  try {
-    const epicRun = sqliteClient.readEpicRun(membership.epicId);
-    if (!epicRun) {
-      return {
-        blocked: false,
-        epicId: membership.epicId,
-        message: `Warning: epic ${membership.epicId} has no run record. Proceeding with chain merge.`
-      };
-    }
-    const status = epicRun.status;
-    if (!isEpicUnresolvedState(status)) {
-      return { blocked: false, epicId: membership.epicId, epicStatus: status };
-    }
-    return {
-      blocked: true,
-      epicId: membership.epicId,
-      epicStatus: status,
-      message: `Chain ${chainRootBeadId} belongs to unresolved epic ${membership.epicId} (status: ${status}).
-Use 'sp epic merge ${membership.epicId}' to publish all chains together, or 'sp epic status ${membership.epicId}' to inspect the epic state.`
-    };
-  } finally {
-    sqliteClient.close();
-  }
-}
-function readAllJobStatuses() {
-  const jobsDir = resolveJobsDir();
-  if (!existsSync16(jobsDir))
-    return [];
-  const entries = readdirSync7(jobsDir, { withFileTypes: true });
-  const statuses = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory())
-      continue;
-    const statusPath = join18(jobsDir, entry.name, "status.json");
-    if (!existsSync16(statusPath))
-      continue;
-    const parsed = readJson(readFileSync12(statusPath, "utf-8"));
-    if (!parsed || typeof parsed !== "object")
-      continue;
-    statuses.push(parsed);
-  }
-  return statuses;
-}
-function selectNewestChainRootJob(beadId, statuses) {
-  const candidates = statuses.filter((status) => status.bead_id === beadId && status.branch && status.worktree_path).sort((left, right) => (right.started_at_ms ?? 0) - (left.started_at_ms ?? 0));
-  const selected = candidates[0];
-  if (!selected || !selected.branch || !selected.status || !selected.id)
-    return null;
-  return {
-    beadId,
-    branch: selected.branch,
-    jobId: selected.id,
-    jobStatus: selected.status,
-    startedAtMs: selected.started_at_ms ?? 0
-  };
-}
-function ensureTerminalJobs(chains) {
-  const running = chains.filter((chain) => !TERMINAL_STATUSES2.has(chain.jobStatus));
-  if (running.length === 0)
-    return;
-  const lines = running.map((chain) => `- ${chain.beadId} (${chain.jobId}): ${chain.jobStatus}`);
-  throw new Error(`Refusing merge: non-terminal chain jobs
-${lines.join(`
-`)}`);
-}
-function topologicallySortChains(chains, dependenciesByBeadId) {
-  const byId = new Map(chains.map((chain) => [chain.beadId, chain]));
-  const indegree = new Map;
-  const adjacency = new Map;
-  for (const chain of chains) {
-    indegree.set(chain.beadId, 0);
-    adjacency.set(chain.beadId, []);
-  }
-  for (const chain of chains) {
-    const dependencies = dependenciesByBeadId.get(chain.beadId) ?? [];
-    for (const dependencyId of dependencies) {
-      if (!byId.has(dependencyId))
-        continue;
-      adjacency.get(dependencyId)?.push(chain.beadId);
-      indegree.set(chain.beadId, (indegree.get(chain.beadId) ?? 0) + 1);
-    }
-  }
-  const queue = [...chains].filter((chain) => (indegree.get(chain.beadId) ?? 0) === 0).sort((left, right) => left.startedAtMs - right.startedAtMs).map((chain) => chain.beadId);
-  const ordered = [];
-  while (queue.length > 0) {
-    const beadId = queue.shift();
-    if (!beadId)
-      continue;
-    const chain = byId.get(beadId);
-    if (chain) {
-      ordered.push(chain);
-    }
-    const dependents = adjacency.get(beadId) ?? [];
-    for (const dependentId of dependents) {
-      const nextIndegree = (indegree.get(dependentId) ?? 0) - 1;
-      indegree.set(dependentId, nextIndegree);
-      if (nextIndegree === 0) {
-        queue.push(dependentId);
-      }
-    }
-  }
-  if (ordered.length !== chains.length) {
-    throw new Error("Unable to compute merge order: dependency cycle detected");
-  }
-  return ordered;
-}
-function loadDependenciesFor(beadIds) {
-  const selected = new Set(beadIds);
-  const dependenciesByBeadId = new Map;
-  for (const beadId of beadIds) {
-    const bead = readBead(beadId);
-    const dependencyIds = (bead.dependencies ?? []).map((dep) => dep.id).filter((id) => {
-      if (!id)
-        return false;
-      return selected.has(id);
-    });
-    dependenciesByBeadId.set(beadId, dependencyIds);
-  }
-  return dependenciesByBeadId;
-}
-function resolveMergeTargetsForBeadIds(beadIds) {
-  const statuses = readAllJobStatuses();
-  const chains = beadIds.map((beadId) => selectNewestChainRootJob(beadId, statuses)).filter((chain) => Boolean(chain));
-  if (chains.length === 0) {
-    throw new Error("No mergeable chain branches found for provided bead IDs");
-  }
-  ensureTerminalJobs(chains);
-  const dependenciesByBeadId = loadDependenciesFor(chains.map((chain) => chain.beadId));
-  return topologicallySortChains(chains, dependenciesByBeadId);
-}
-function resolveMergeTargets(target) {
-  const bead = readBead(target);
-  if (bead.issue_type !== "epic") {
-    const statuses = readAllJobStatuses();
-    const chain = selectNewestChainRootJob(target, statuses);
-    if (!chain) {
-      throw new Error(`No chain-root job with worktree metadata found for bead '${target}'`);
-    }
-    const guardResult = checkEpicUnresolvedGuard(chain.beadId);
-    if (guardResult.message && !guardResult.blocked) {
-      console.warn(guardResult.message);
-    }
-    if (guardResult.blocked) {
-      throw new Error(guardResult.message);
-    }
-    ensureTerminalJobs([chain]);
-    return [chain];
-  }
-  const childIds = readEpicChildIds(target);
-  const chains = resolveMergeTargetsForBeadIds(childIds);
-  if (chains.length === 0) {
-    throw new Error(`No mergeable chain branches found under epic '${target}'`);
-  }
-  return chains;
-}
-function readChangedFilesForLastMerge(cwd = process.cwd()) {
-  const diff = runCommand("git", ["diff", "--name-only", "HEAD^1", "HEAD"], cwd);
-  if (diff.status !== 0)
-    return [];
-  return diff.stdout.split(`
-`).map((line) => line.trim()).filter(Boolean);
-}
-function parseNameStatusLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed)
-    return null;
-  const parts = trimmed.split(/\t+/);
-  if (parts.length < 2)
-    return null;
-  const status = parts[0] ?? "";
-  if (!status)
-    return null;
-  const path = parts.length >= 3 ? parts[parts.length - 1] ?? "" : parts[1] ?? "";
-  if (!path)
-    return null;
-  return { status, path };
-}
-function isNoisePath(path) {
-  return NOISE_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
-}
-function previewBranchMergeDelta(branch, cwd = process.cwd()) {
-  const mergeBase = runCommand("git", ["merge-base", "main", branch], cwd);
-  if (mergeBase.status !== 0) {
-    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
-  }
-  const mergeBaseSha = mergeBase.stdout.trim();
-  if (!mergeBaseSha) {
-    throw new Error(`Unable to compute merge base for 'main' and '${branch}'.`);
-  }
-  const stagedDelta = runCommand("git", ["diff", `${mergeBaseSha}..${branch}`, "--name-status"], cwd);
-  if (stagedDelta.status !== 0) {
-    throw new Error(`Unable to read merge delta for '${branch}'.`);
-  }
-  const files = stagedDelta.stdout.split(`
-`).map(parseNameStatusLine).filter((entry) => Boolean(entry));
-  const noiseFiles = files.filter((file) => isNoisePath(file.path));
-  const substantiveFiles = files.filter((file) => !isNoisePath(file.path));
-  return {
-    branch,
-    files,
-    noiseFiles,
-    substantiveFiles
-  };
-}
-function evaluateMergeWorthiness(preview) {
-  if (preview.files.length === 0) {
-    return { shouldMerge: false, reason: "empty-delta" };
-  }
-  if (preview.substantiveFiles.length === 0) {
-    return { shouldMerge: false, reason: "noise-only-delta" };
-  }
-  return { shouldMerge: true, reason: "ok" };
-}
-function throwWorthinessBlockError(target, preview, decision) {
-  const summary = [
-    `beadId=${target.beadId}`,
-    `jobId=${target.jobId}`,
-    `branch=${target.branch}`,
-    `total=${preview.files.length}`,
-    `substantive=${preview.substantiveFiles.length}`,
-    `noise=${preview.noiseFiles.length}`
-  ].join(" ");
-  const reason = decision.reason === "empty-delta" ? "empty merge delta" : "noise-only merge delta";
-  throw new Error(`Refusing merge for '${target.branch}': ${reason}.
-` + `Diagnostics: ${summary}`);
-}
-function assertBranchMergeWorthiness(target, cwd = process.cwd()) {
-  const preview = previewBranchMergeDelta(target.branch, cwd);
-  const decision = evaluateMergeWorthiness(preview);
-  if (decision.shouldMerge)
-    return;
-  throwWorthinessBlockError(target, preview, decision);
-}
-function getConflictFiles(cwd = process.cwd()) {
-  const result = runCommand("git", ["diff", "--name-only", "--diff-filter=U"], cwd);
-  if (result.status !== 0)
-    return [];
-  return result.stdout.split(`
-`).map((line) => line.trim()).filter(Boolean);
-}
-function mergeBranch(branch, cwd = process.cwd()) {
-  const result = runCommand("git", ["merge", branch, "--no-ff", "--no-edit"], cwd);
-  if (result.status === 0)
-    return;
-  const conflicts = getConflictFiles(cwd);
-  const context = conflicts.length > 0 ? `
-Conflicting files:
-${conflicts.map((file) => `- ${file}`).join(`
-`)}` : "";
-  throw new Error(`Merge conflict while merging '${branch}'.${context}`);
-}
-function runTypecheckGate(cwd = process.cwd()) {
-  const tsc = runCommand("bunx", ["tsc", "--noEmit"], cwd);
-  if (tsc.status === 0)
-    return;
-  const stderr = tsc.stderr.trim();
-  const stdout = tsc.stdout.trim();
-  throw new Error(`TypeScript gate failed after merge.
-${stderr || stdout || "Unknown tsc error"}`);
-}
-function runRebuild(cwd = process.cwd()) {
-  const build = runCommand("bun", ["run", "build"], cwd);
-  if (build.status === 0)
-    return;
-  const stderr = build.stderr.trim();
-  const stdout = build.stdout.trim();
-  throw new Error(`Rebuild failed.
-${stderr || stdout || "Unknown build error"}`);
-}
-function printSummary(steps, rebuild) {
-  console.log("Merge complete.");
-  console.log("Merged branches (in order):");
-  for (const step of steps) {
-    console.log(`- ${step.branch} (${step.beadId})`);
-    if (step.changedFiles.length === 0) {
-      console.log("  files: (none)");
-      continue;
-    }
-    console.log(`  files: ${step.changedFiles.join(", ")}`);
-  }
-  console.log("TypeScript gate: passed after each merge");
-  if (rebuild) {
-    console.log("Rebuild: bun run build (passed)");
-  }
-}
-function printUsageAndExit(message) {
-  console.error(message);
-  console.error("Usage: specialists|sp merge <target-bead-id> [--rebuild]");
-  process.exit(1);
-}
-function runMergePlan(targets, options) {
-  const mainRepoRoot = resolveMainWorktreeRoot();
-  const mergedSteps = [];
-  for (const target of targets) {
-    assertBranchMergeWorthiness(target, mainRepoRoot);
-    mergeBranch(target.branch, mainRepoRoot);
-    runTypecheckGate(mainRepoRoot);
-    mergedSteps.push({
-      beadId: target.beadId,
-      branch: target.branch,
-      changedFiles: readChangedFilesForLastMerge(mainRepoRoot)
-    });
-  }
-  if (options.rebuild) {
-    runRebuild(mainRepoRoot);
-  }
-  return mergedSteps;
-}
-function getCurrentBranchName() {
-  const result = runCommand("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (result.status !== 0) {
-    throw new Error("Unable to resolve current git branch.");
-  }
-  const branchName = result.stdout.trim();
-  if (!branchName || branchName === "HEAD") {
-    throw new Error("Detached HEAD is not supported for PR publication.");
-  }
-  return branchName;
-}
-function checkoutNewBranch(branchName) {
-  const checkout = runCommand("git", ["checkout", "-b", branchName]);
-  if (checkout.status === 0)
-    return;
-  throw new Error(`Failed to create publish branch '${branchName}': ${checkout.stderr.trim() || checkout.stdout.trim() || "unknown git error"}`);
-}
-function checkoutBranch(branchName) {
-  const checkout = runCommand("git", ["checkout", branchName]);
-  if (checkout.status === 0)
-    return;
-  throw new Error(`Failed to checkout branch '${branchName}': ${checkout.stderr.trim() || checkout.stdout.trim() || "unknown git error"}`);
-}
-function createPullRequest(baseBranch, publishBranch, publicationLabel) {
-  const title = `[sp] Publish ${publicationLabel}`;
-  const body = [
-    `Automated publication for ${publicationLabel}.`,
-    "",
-    "Generated by `sp merge --pr` / `sp epic merge --pr` / `sp end --pr`."
-  ].join(`
-`);
-  const command = runCommand("gh", ["pr", "create", "--base", baseBranch, "--head", publishBranch, "--title", title, "--body", body]);
-  if (command.status !== 0) {
-    throw new Error(`Failed to create PR via gh CLI: ${command.stderr.trim() || command.stdout.trim() || "unknown gh error"}`);
-  }
-  const pullRequestUrl = command.stdout.split(`
-`).map((line) => line.trim()).find((line) => line.startsWith("http"));
-  if (!pullRequestUrl) {
-    throw new Error("gh pr create succeeded but did not return a PR URL.");
-  }
-  return pullRequestUrl;
-}
-function executePublicationPlan(targets, options) {
-  if (options.mode === "direct") {
-    return {
-      steps: runMergePlan(targets, options)
-    };
-  }
-  const baseBranch = getCurrentBranchName();
-  const publishBranch = `sp/publish-${options.publicationLabel.replace(/[^a-zA-Z0-9._-]+/g, "-")}-${Date.now()}`;
-  checkoutNewBranch(publishBranch);
-  try {
-    const steps = runMergePlan(targets, options);
-    const pullRequestUrl = createPullRequest(baseBranch, publishBranch, options.publicationLabel);
-    checkoutBranch(baseBranch);
-    return { steps, pullRequestUrl };
-  } catch (error2) {
-    try {
-      checkoutBranch(baseBranch);
-    } catch {}
-    throw error2;
-  }
-}
-async function run12() {
-  let options;
-  try {
-    options = parseOptions(process.argv.slice(3));
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    printUsageAndExit(message);
-  }
-  const targets = resolveMergeTargets(options.target);
-  const mergedSteps = runMergePlan(targets, { rebuild: options.rebuild });
-  printSummary(mergedSteps, options.rebuild);
-}
-var TERMINAL_STATUSES2, NOISE_PATH_PREFIXES;
-var init_merge = __esm(() => {
-  init_job_root();
-  init_observability_sqlite();
-  init_epic_lifecycle();
-  TERMINAL_STATUSES2 = new Set(["done", "error", "cancelled"]);
-  NOISE_PATH_PREFIXES = [".xtrm/reports/", ".wolf/", ".specialists/jobs/"];
 });
 
 // src/cli/epic.ts
@@ -30191,7 +30717,7 @@ import { join as join19 } from "path";
 function ok2(msg) {
   console.log(`  ${green8("\u2713")} ${msg}`);
 }
-function warn(msg) {
+function warn2(msg) {
   console.log(`  ${yellow10("\u25CB")} ${msg}`);
 }
 function fail3(msg) {
@@ -30506,7 +31032,7 @@ ${bold9("specialists status")}
 `);
     section("Specialists");
     if (allSpecialists.length === 0) {
-      warn(`no specialists found \u2014 run ${yellow10("specialists init")} to scaffold`);
+      warn2(`no specialists found \u2014 run ${yellow10("specialists init")} to scaffold`);
     } else {
       const byScope = allSpecialists.reduce((acc, s) => {
         acc[s.scope] = (acc[s.scope] ?? 0) + 1;
@@ -30517,9 +31043,9 @@ ${bold9("specialists status")}
       for (const s of allSpecialists) {
         const staleness = stalenessMap[s.name];
         if (staleness === "AGED") {
-          warn(`${s.name}  ${red2("AGED")}  ${dim8(s.scope)}`);
+          warn2(`${s.name}  ${red2("AGED")}  ${dim8(s.scope)}`);
         } else if (staleness === "STALE") {
-          warn(`${s.name}  ${yellow10("STALE")}  ${dim8(s.scope)}`);
+          warn2(`${s.name}  ${yellow10("STALE")}  ${dim8(s.scope)}`);
         }
       }
     }
@@ -30539,7 +31065,7 @@ ${bold9("specialists status")}
       if (beadsPresent) {
         ok2(".beads/ present in project");
       } else {
-        warn(`.beads/ not found \u2014 run ${yellow10("bd init")} to enable issue tracking`);
+        warn2(`.beads/ not found \u2014 run ${yellow10("bd init")} to enable issue tracking`);
       }
     }
     section("MCP");
@@ -31027,8 +31553,8 @@ function formatCtxWithIndicator(contextPct, contextHealth) {
   if (contextPct === undefined || !Number.isFinite(contextPct))
     return "  --";
   const pct = `${Math.round(contextPct)}%`;
-  const warn2 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "\u25B2" : "";
-  return `${pct}${warn2}`.padStart(4);
+  const warn3 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "\u25B2" : "";
+  return `${pct}${warn3}`.padStart(4);
 }
 function renderJobLine(job, beadTitles, prefix, connector) {
   const icon = getStatusIcon(job);
@@ -33425,7 +33951,7 @@ import { dirname as dirname6, join as join28, relative as relative2, resolve as 
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
-function warn2(msg) {
+function warn3(msg) {
   console.log(`  ${yellow12("\u25CB")} ${msg}`);
 }
 function fail4(msg) {
@@ -33471,7 +33997,7 @@ function checkPi() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
   const vStr = version2.ok ? `v${version2.stdout}` : "unknown version";
   if (providers.size === 0) {
-    warn2(`pi ${vStr} installed but no active providers`);
+    warn3(`pi ${vStr} installed but no active providers`);
     fix("pi config   (add at least one API key)");
     return false;
   }
@@ -33499,7 +34025,7 @@ function checkBd() {
   if (existsSync25(join28(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
-    warn2(".beads/ not found in project");
+    warn3(".beads/ not found in project");
   return true;
 }
 function checkXt() {
@@ -33516,30 +34042,48 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const dest = join28(HOOKS_DIR, name);
-    if (!existsSync25(dest)) {
-      fail4(`${name}  ${red7("missing")}`);
-      fix("specialists install");
+    const canonicalPath = join28(HOOKS_DIR, name);
+    if (!existsSync25(canonicalPath)) {
+      fail4(`${relative2(CWD, canonicalPath)}  ${red7("missing")}`);
+      fix("specialists init");
       allPresent = false;
     } else {
-      ok3(name);
+      ok3(relative2(CWD, canonicalPath));
     }
+    const claudeHookPath = join28(CLAUDE_HOOKS_DIR, name);
+    const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
+    if (symlinkState.ok) {
+      ok3(`${relative2(CWD, claudeHookPath)} -> ${relative2(dirname6(claudeHookPath), canonicalPath)}`);
+      continue;
+    }
+    allPresent = false;
+    const relHookPath = relative2(CWD, claudeHookPath);
+    if (symlinkState.reason === "missing") {
+      fail4(`${relHookPath} missing`);
+    } else if (symlinkState.reason === "not-symlink") {
+      fail4(`${relHookPath} is not a symlink`);
+    } else if (symlinkState.reason === "wrong-target") {
+      fail4(`${relHookPath} points to ${symlinkState.target ?? "unknown target"}`);
+    } else {
+      fail4(`${relHookPath} is broken`);
+    }
+    fix("specialists init");
   }
   const settings = loadJson2(SETTINGS_FILE);
   if (!settings) {
-    warn2(`Could not read ${SETTINGS_FILE}`);
-    fix("specialists install");
+    warn3(`Could not read ${SETTINGS_FILE}`);
+    fix("specialists init");
     return false;
   }
   const hooksObj = settings.hooks ?? {};
-  const userPromptSubmit = hooksObj.UserPromptSubmit ?? settings.UserPromptSubmit ?? [];
-  const sessionStart = hooksObj.SessionStart ?? settings.SessionStart ?? [];
-  const wiredCommands = new Set([...userPromptSubmit, ...sessionStart].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
+  const hookEntries = Object.values(hooksObj).flat();
+  const legacyEntries = Object.entries(settings).filter(([key, value]) => key !== "hooks" && Array.isArray(value)).flatMap(([, value]) => value);
+  const wiredCommands = new Set([...hookEntries, ...legacyEntries].flatMap((entry) => (entry.hooks ?? []).map((hook) => hook.command ?? "")));
   for (const name of HOOK_NAMES) {
-    const expectedRelative = `node .specialists/default/hooks/${name}`;
+    const expectedRelative = `node .claude/hooks/${name}`;
     if (!wiredCommands.has(expectedRelative)) {
-      warn2(`${name} not wired in settings.json`);
-      fix("specialists install");
+      warn3(`${name} not wired in settings.json`);
+      fix("specialists init");
       allPresent = false;
     }
   }
@@ -33553,7 +34097,7 @@ function checkMCP() {
   const spec = mcp?.mcpServers?.specialists;
   if (!spec || spec.command !== "specialists") {
     fail4(`MCP server 'specialists' not registered in .mcp.json`);
-    fix("specialists install");
+    fix("specialists init");
     return false;
   }
   ok3(`MCP server 'specialists' registered in ${MCP_FILE2}`);
@@ -33648,7 +34192,7 @@ function checkSkillDrift() {
       hint(`example: ${missingInDefault.slice(0, 3).join(", ")}${missingInDefault.length > 3 ? ", ..." : ""}`);
     }
     if (extraInDefault.length > 0) {
-      warn2(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? "" : "s"} found only in .xtrm/skills/default`);
+      warn3(`${extraInDefault.length} extra file${extraInDefault.length === 1 ? "" : "s"} found only in .xtrm/skills/default`);
       hint(`example: ${extraInDefault.slice(0, 3).join(", ")}${extraInDefault.length > 3 ? ", ..." : ""}`);
     }
     fix("specialists init --sync-skills");
@@ -33716,14 +34260,14 @@ function checkRuntimeDirs() {
   const readyDir = join28(rootDir, "ready");
   let allOk = true;
   if (!existsSync25(rootDir)) {
-    warn2(".specialists/ not found in current project");
+    warn3(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
       if (!existsSync25(subDir)) {
-        warn2(`.specialists/${label}/ missing \u2014 auto-creating`);
+        warn3(`.specialists/${label}/ missing \u2014 auto-creating`);
         mkdirSync6(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
@@ -33825,7 +34369,7 @@ function checkZombieJobs() {
     return true;
   }
   for (const jobId of result.zombieJobIds) {
-    warn2(`${jobId}  ${yellow12("ZOMBIE")}  ${dim13("pid not found for running job")}`);
+    warn3(`${jobId}  ${yellow12("ZOMBIE")}  ${dim13("pid not found for running job")}`);
     fix(`Edit .specialists/jobs/${jobId}/status.json  \u2192  set "status": "error"`);
   }
   if (result.zombies === 0) {
@@ -33852,11 +34396,11 @@ ${bold12("specialists doctor")}
     console.log(`  ${green14("\u2713")} ${bold12("All checks passed")}  \u2014 specialists is healthy`);
   } else {
     console.log(`  ${yellow12("\u25CB")} ${bold12("Some checks failed")}  \u2014 follow the fix hints above`);
-    console.log(`  ${dim13("specialists install fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.")}`);
+    console.log(`  ${dim13("specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.")}`);
   }
   console.log("");
 }
-var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join28(CWD, ".claude");
@@ -33868,7 +34412,8 @@ var init_doctor = __esm(() => {
   ACTIVE_PI_SKILLS_DIR = join28(XTRM_ACTIVE_SKILLS_DIR, "pi");
   CONFIG_SKILLS_DIR = join28(CWD, "config", "skills");
   SPECIALISTS_DIR = join28(CWD, ".specialists");
-  HOOKS_DIR = join28(SPECIALISTS_DIR, "default", "hooks");
+  HOOKS_DIR = join28(CWD, ".xtrm", "hooks", "specialists");
+  CLAUDE_HOOKS_DIR = join28(CLAUDE_DIR, "hooks");
   SETTINGS_FILE = join28(CLAUDE_DIR, "settings.json");
   MCP_FILE2 = join28(CWD, ".mcp.json");
   HOOK_NAMES = [
@@ -41869,12 +42414,20 @@ async function run29() {
         "  --job <id>           Reuse the workspace of a prior job (must have been started with",
         "                       --worktree). Caller bead context remains authoritative.",
         "                       Mutually exclusive with --worktree.",
+        "  --epic <id>          Explicit epic membership for this job. Defaults to bead.parent.",
+        "                       Useful for prep jobs belonging to a merge-gated epic.",
+        "  --force-job          Bypass concurrency guard for active worktrees (MEDIUM/HIGH).",
+        "  --force-stale-base   Bypass stale-base guard when epic sibling chains have unmerged",
+        "                       substantive commits. Use at risk of later merge conflicts.",
         "",
         "Examples:",
         "  specialists run debugger --bead unitAI-55d",
         "  specialists run debugger --bead unitAI-55d --context-depth 2",
         "  specialists run executor --bead hgpu.3 --worktree",
+        "  specialists run executor --bead impl-2 --worktree --force-stale-base",
         "  specialists run reviewer --bead hgpu.3 --job <prior-job-id>",
+        "  specialists run reviewer --job <exec-id> --force-job --bead fix-123",
+        "  specialists run explorer --bead prep.1 --epic unitAI-100",
         '  specialists run code-review --prompt "Audit src/api.ts"',
         "  cat brief.md | specialists run report-generator",
         "",
