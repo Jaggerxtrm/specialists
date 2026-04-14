@@ -18826,10 +18826,165 @@ function shouldCreateBead(beadsIntegration, permissionRequired) {
 }
 var init_beads = () => {};
 
+// src/specialist/memory-retrieval.ts
+import { execSync } from "child_process";
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+function normalizeToken(raw) {
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
+}
+function extractTokens(input) {
+  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
+}
+function extractMemoryKeywords(title, description) {
+  const tokens = [
+    ...extractTokens(title),
+    ...extractTokens(description ?? "")
+  ];
+  const unique = [];
+  const seen = new Set;
+  for (const token of tokens) {
+    if (seen.has(token))
+      continue;
+    seen.add(token);
+    unique.push(token);
+    if (unique.length >= MAX_KEYWORDS)
+      break;
+  }
+  return unique;
+}
+function parseMemoriesPayload(jsonText, keyword) {
+  const parsed = JSON.parse(jsonText);
+  return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value, keyword }));
+}
+function runMemoriesQuery(keyword, cwd) {
+  const stdout = execSync(`bd memories ${JSON.stringify(keyword)} --json`, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 5000
+  });
+  if (!stdout.trim())
+    return [];
+  return parseMemoriesPayload(stdout, keyword);
+}
+function scoreMemory(memory, keywordOrder) {
+  const keywordWeight = MAX_KEYWORDS - (keywordOrder.get(memory.keyword) ?? MAX_KEYWORDS);
+  const text = `${memory.key} ${memory.value}`.toLowerCase();
+  const exactMatch = text.includes(memory.keyword.toLowerCase()) ? 5 : 0;
+  return keywordWeight * 10 + exactMatch;
+}
+function buildFilteredMemoryInjection(args) {
+  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
+  if (keywords.length === 0) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  const keywordOrder = new Map;
+  keywords.forEach((keyword, index) => keywordOrder.set(keyword, index));
+  const deduped = new Map;
+  for (const keyword of keywords) {
+    try {
+      const memories = runMemoriesQuery(keyword, args.cwd);
+      for (const memory of memories) {
+        if (!deduped.has(memory.key))
+          deduped.set(memory.key, memory);
+      }
+    } catch {}
+  }
+  const ranked = [...deduped.values()].sort((left, right) => scoreMemory(right, keywordOrder) - scoreMemory(left, keywordOrder)).slice(0, MAX_MEMORIES);
+  if (ranked.length === 0) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  const selected = [];
+  let tokenBudget = 0;
+  for (const memory of ranked) {
+    const line = `- ${memory.key}: ${memory.value}`;
+    const lineTokens = estimateTokens(line);
+    if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
+      break;
+    selected.push(memory);
+    tokenBudget += lineTokens;
+  }
+  const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
+  const block = [
+    "## Filtered Beads Memories",
+    `_Keyword matched from bead context: ${keywords.join(", ")}_`,
+    ...lines
+  ].join(`
+`);
+  return {
+    block,
+    memories: selected,
+    estimatedTokens: estimateTokens(block)
+  };
+}
+function estimateInjectedTokens(text) {
+  return estimateTokens(text);
+}
+var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 12, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, STATIC_WORKFLOW_RULES_BLOCK;
+var init_memory_retrieval = __esm(() => {
+  DEFAULT_STOP_WORDS = new Set([
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "i",
+    "if",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "we",
+    "with",
+    "you",
+    "your",
+    "replace",
+    "implement",
+    "task",
+    "run",
+    "add",
+    "new",
+    "use",
+    "using",
+    "into",
+    "when",
+    "what",
+    "not",
+    "only"
+  ]);
+  STATIC_WORKFLOW_RULES_BLOCK = `
+## Beads Workflow Quick Rules
+- Claim work: \`bd update <id> --claim\`
+- Append progress notes: \`bd update <id> --notes "..."\`
+- Store reusable insight: \`bd remember "insight"\`
+- Close completed issue: \`bd close <id> --reason "done"\`
+
+## Session close checklist
+1. \`git add <files>\`
+2. \`git commit -m "..."\`
+3. \`git push\`
+`.trim();
+});
+
 // src/specialist/runner.ts
 import { createHash as createHash2 } from "crypto";
 import { writeFile } from "fs/promises";
-import { execSync, spawnSync as spawnSync2 } from "child_process";
+import { execSync as execSync2, spawnSync as spawnSync2 } from "child_process";
 import { existsSync as existsSync3, readFileSync } from "fs";
 import { basename as basename2, resolve as resolve2 } from "path";
 import { homedir as homedir2 } from "os";
@@ -18840,7 +18995,7 @@ function runScript(command, cwd) {
   }
   const scriptName = basename2(run.split(" ")[0]);
   try {
-    const output = execSync(run, { encoding: "utf8", timeout: 30000, cwd });
+    const output = execSync2(run, { encoding: "utf8", timeout: 30000, cwd });
     return { name: scriptName, output, exitCode: 0 };
   } catch (e) {
     return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
@@ -19247,17 +19402,87 @@ ${memoryMd}
 `;
       }
     } catch {}
-    try {
-      const bdPrime = execSync("bd prime", { encoding: "utf8", cwd: runCwd, timeout: 1e4 });
-      agentsMd += `
+    let staticTokens = 0;
+    let memoryTokens = 0;
+    let gitnexusTokens = 0;
+    const staticRulesBlock = `
 
 ---
-## Beads Workflow Context (bd prime)
-_Injected at spawn \u2014 workflow rules + all bd memories_
-${bdPrime}
+${STATIC_WORKFLOW_RULES_BLOCK}
 ---
 `;
-    } catch {}
+    agentsMd += staticRulesBlock;
+    staticTokens = estimateInjectedTokens(staticRulesBlock);
+    if (options.inputBeadId) {
+      const beadForMemory = (beadsClient ?? new BeadsClient).readBead(options.inputBeadId);
+      if (beadForMemory?.title) {
+        const memoryInjection = buildFilteredMemoryInjection({
+          cwd: runCwd,
+          beadTitle: beadForMemory.title,
+          beadDescription: beadForMemory.description
+        });
+        if (memoryInjection.block) {
+          const memoryBlock = `
+
+---
+${memoryInjection.block}
+---
+`;
+          agentsMd += memoryBlock;
+          memoryTokens = memoryInjection.estimatedTokens;
+        }
+        try {
+          const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
+          if (existsSync3(gitnexusMetaPath)) {
+            const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
+            const summaries = [];
+            for (const symbol of symbolCandidates) {
+              try {
+                const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+                  cwd: runCwd,
+                  encoding: "utf8",
+                  timeout: 5000,
+                  stdio: ["ignore", "pipe", "pipe"]
+                });
+                const parsed = JSON.parse(raw);
+                if (parsed.status !== "found" || !parsed.symbol?.name)
+                  continue;
+                const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+                const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+                const processes = (parsed.processes ?? []).slice(0, 2).map((proc) => proc.name).filter(Boolean);
+                summaries.push(`- ${parsed.symbol.name} (${parsed.symbol.filePath ?? "unknown file"})
+` + `  callers: ${callers.length > 0 ? callers.join(", ") : "none"}
+` + `  callees: ${callees.length > 0 ? callees.join(", ") : "none"}
+` + `  processes: ${processes.length > 0 ? processes.join(", ") : "none"}`);
+              } catch {}
+            }
+            if (summaries.length > 0) {
+              const gitnexusBlock = `
+
+---
+## GitNexus Pre-query Snapshot
+${summaries.join(`
+`)}
+---
+`;
+              agentsMd += gitnexusBlock;
+              gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
+            }
+          }
+        } catch {}
+      }
+    }
+    const totalMemoryInjectionTokens = staticTokens + memoryTokens + gitnexusTokens;
+    onEvent?.("memory_injection", {
+      summary: JSON.stringify({
+        memory_injection: {
+          static_tokens: staticTokens,
+          memory_tokens: memoryTokens,
+          gitnexus_tokens: gitnexusTokens,
+          total_tokens: totalMemoryInjectionTokens
+        }
+      })
+    });
     const responseFormat = execution.response_format ?? "text";
     const outputType = execution.output_type ?? "custom";
     const specialistOutputSchema = prompt.output_schema;
@@ -19474,6 +19699,7 @@ var init_runner = __esm(() => {
   init_session();
   init_circuitBreaker();
   init_beads();
+  init_memory_retrieval();
   PERMISSION_GATED_TOOLS = {
     bash: ["LOW", "MEDIUM", "HIGH"],
     edit: ["MEDIUM", "HIGH"],
@@ -19887,6 +20113,14 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
         ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
         ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
+      };
+    case "memory_injection":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: "memory_injection",
+        backend: "injected",
+        ...context.memoryInjection ? { memory_injection: context.memoryInjection } : {}
       };
     case "text":
       return {
@@ -22809,6 +23043,24 @@ ${appendError}
         }
         const toolCallId = details?.toolCallId;
         const toolState = toolCallId ? activeToolCalls.get(toolCallId) : latestUncorrelatedToolState;
+        const memoryInjection = (() => {
+          if (eventType !== "memory_injection" || !details?.summary)
+            return;
+          try {
+            const parsed = JSON.parse(details.summary);
+            const injection = parsed.memory_injection;
+            if (!injection)
+              return;
+            return {
+              static_tokens: injection.static_tokens ?? 0,
+              memory_tokens: injection.memory_tokens ?? 0,
+              gitnexus_tokens: injection.gitnexus_tokens ?? 0,
+              total_tokens: injection.total_tokens ?? 0
+            };
+          } catch {
+            return;
+          }
+        })();
         const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
           tool: toolState?.tool,
           toolCallId,
@@ -22836,7 +23088,8 @@ ${appendError}
           extensionError: {
             extension: details?.extension,
             errorMessage: details?.errorMessage
-          }
+          },
+          memoryInjection
         });
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
@@ -26446,7 +26699,7 @@ __export(exports_run, {
 import { join as join16 } from "path";
 import { readFileSync as readFileSync10 } from "fs";
 import { randomBytes } from "crypto";
-import { spawn as cpSpawn, execSync as execSync2 } from "child_process";
+import { spawn as cpSpawn, execSync as execSync3 } from "child_process";
 async function parseArgs6(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
@@ -26593,7 +26846,7 @@ async function parseArgs6(argv) {
 }
 function readBeadSummary(beadId) {
   try {
-    const raw = execSync2(`bd show ${beadId} --json`, {
+    const raw = execSync3(`bd show ${beadId} --json`, {
       stdio: "pipe",
       encoding: "utf-8",
       timeout: 5000
@@ -26961,7 +27214,7 @@ async function run12() {
   });
   if (effectiveBeadId && workingDirectory) {
     try {
-      execSync2(`bd kv set "bead-claim:${effectiveBeadId}" "active"`, {
+      execSync3(`bd kv set "bead-claim:${effectiveBeadId}" "active"`, {
         cwd: workingDirectory,
         stdio: "pipe",
         timeout: 5000
@@ -26983,7 +27236,7 @@ ${bold10(`Running ${cyan6(args.name)}`)}
   stopTailer?.();
   if (effectiveBeadId && workingDirectory) {
     try {
-      execSync2(`bd kv clear "bead-claim:${effectiveBeadId}"`, {
+      execSync3(`bd kv clear "bead-claim:${effectiveBeadId}"`, {
         cwd: workingDirectory,
         stdio: "pipe",
         timeout: 5000

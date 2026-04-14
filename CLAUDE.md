@@ -233,7 +233,7 @@ starting → running → waiting → (resume) → running → ... → done/error
    - Reads bead via `bd show --json`
    - Builds prompt from bead context + optional completed blockers
    - Injects "Specialist Run Context" override (claim provided bead, don't `bd create`)
-   - **Injects project memory context**: `.xtrm/memory.md` + `bd prime` output (~3800 tokens total)
+   - **Injects project memory context**: `.xtrm/memory.md` + static workflow rules + keyword-filtered bd memories (~1500 tokens total)
    - **Injects GitNexus cheatsheet**: when `.gitnexus/meta.json` exists (~100 tokens)
    - Sets bead-claim KV key for edit gate: `bead-claim:<bead-id>`
    - Threads bead linkage as `inputBeadId`
@@ -289,7 +289,7 @@ starting → running → waiting → (resume) → running → ... → done/error
 - List presets: `specialists edit --list-presets`
 - READ_ONLY specialist output auto-appends to input bead notes
 - `max_retries` in JSON controls transient error retry (default: 0)
-- **Memory injection**: Specialists receive `.xtrm/memory.md` + `bd prime` + GitNexus cheatsheet at spawn
+- **Memory injection**: Specialists receive `.xtrm/memory.md` + static workflow rules + keyword-filtered bd memories + GitNexus cheatsheet at spawn (~1500 tokens, down from ~3800)
 - **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
 - **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
 
@@ -328,36 +328,36 @@ Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-Project indexed by GitNexus as **specialists** (3567 symbols, 8108 relationships, 300 execution flows). Use GitNexus MCP tools to understand code, assess impact, navigate safely.
+This project is indexed by GitNexus as **specialists** (3580 symbols, 8141 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-> If any GitNexus tool warns index stale, run `npx gitnexus analyze` in terminal first.
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report blast radius (direct callers, affected processes, risk level) to user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify changes only affect expected symbols and execution flows.
-- **MUST warn user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. Returns process-grouped results ranked by relevance.
-- When need full context on specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
 ## When Debugging
 
-1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to issue
-2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, process participation
-3. `READ gitnexus://repo/specialists/process/{processName}` — trace full execution flow step by step
-4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what branch changed
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/specialists/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
 
 ## When Refactoring
 
-- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review preview — graph edits safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
 - **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
 - After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
 
 ## Never Do
 
-- NEVER edit function, class, or method without first running `gitnexus_impact` on it.
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands call graph.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
 - NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
 ## Tools Quick Reference
@@ -391,28 +391,28 @@ Project indexed by GitNexus as **specialists** (3567 symbols, 8108 relationships
 ## Self-Check Before Finishing
 
 Before completing any code modification task, verify:
-1. `gitnexus_impact` ran for all modified symbols
-2. No HIGH/CRITICAL risk warnings ignored
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
 3. `gitnexus_detect_changes()` confirms changes match expected scope
-4. All d=1 (WILL BREAK) dependents updated
+4. All d=1 (WILL BREAK) dependents were updated
 
 ## Keeping the Index Fresh
 
-After committing code changes, GitNexus index becomes stale. Re-run analyze to update:
+After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
 
 ```bash
 npx gitnexus analyze
 ```
 
-If index previously included embeddings, preserve by adding `--embeddings`:
+If the index previously included embeddings, preserve them by adding `--embeddings`:
 
 ```bash
 npx gitnexus analyze --embeddings
 ```
 
-To check whether embeddings exist, inspect `.gitnexus/meta.json` — `stats.embeddings` field shows count (0 = no embeddings). **Running analyze without `--embeddings` deletes any previously generated embeddings.**
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
 
-> Claude Code users: PostToolUse hook handles this automatically after `git commit` and `git merge`.
+> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
 
 ## CLI
 
