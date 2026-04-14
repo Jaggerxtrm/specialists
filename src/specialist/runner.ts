@@ -784,7 +784,18 @@ export class SpecialistRunner {
       agentsMd += `...beadInstructions}\n---\n`;
     }
 
-    // 1. Inject GitNexus workflow mandate FIRST — high-priority, must not be buried (~200 tokens)
+    // 0. Inject caveman-micro output directive — all specialist output is agent-to-agent,
+    // terse output improves accuracy (+26pp per study) and cuts tokens ~65%.
+    agentsMd += `\n\n---\n## Output Style (mandatory)
+Respond like smart caveman. Cut all filler, keep technical substance.
+- Drop articles (a, an, the), filler (just, really, basically, actually).
+- Drop pleasantries (sure, certainly, happy to).
+- No hedging. Fragments fine. Short synonyms.
+- Technical terms stay exact. Code blocks unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+---\n`;
+
+    // 1. Inject GitNexus workflow mandate — high-priority, must not be buried (~200 tokens)
     try {
       const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
       if (existsSync(gitnexusMetaPath)) {

@@ -2,7 +2,7 @@
 
 @.wolf/OPENWOLF.md
 
-This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+Project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
 
 
 <!-- xtrm:start -->
@@ -15,23 +15,23 @@ This project uses OpenWolf for context management. Read and follow .wolf/OPENWOL
 
 1. `bd prime` — load workflow context and active claims
 2. `bd memories <keyword>` — retrieve memories relevant to today's task
-3. `bd recall <key>` — retrieve a specific memory by key if needed
+3. `bd recall <key>` — retrieve specific memory by key if needed
 4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
 5. `bd update <id> --claim` — claim before any file edit
 
 ## Execution Interaction Policy
 
-- Proceed by default on standard implementation tasks once scope is clear.
-- Do **not** ask repetitive “Proceed? Yes/No” confirmations.
-- Ask for confirmation only when actions are destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
-- Prefer concise clarifying questions only when requirements are genuinely ambiguous.
+- Proceed by default on standard implementation tasks once scope clear.
+- Do **not** ask repetitive "Proceed? Yes/No" confirmations.
+- Ask confirmation only when actions destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
+- Prefer concise clarifying questions only when requirements genuinely ambiguous.
 
-## Active Gates (hooks enforce these — not optional)
+## Active Gates (hooks enforce — not optional)
 
 | Gate | Trigger | Required action |
 |------|---------|-----------------|
 | **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
-| **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
+| **Commit** | `git commit` while claim open | `bd close <id>` first, then commit |
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
 | **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` (Stop hook remains fallback reminder) |
 
@@ -93,13 +93,13 @@ bd close <id> --reason="..."                 # closes issue
 xt end                                       # push, PR, merge, worktree cleanup
 ```
 
-**Never** continue new work on a previously used branch.
+**Never** continue new work on previously used branch.
 
 ## bv — Graph-Aware Triage
 
-bv is a graph-aware triage engine for the beads issue board. Use it instead of `bd ready` when you need ranked picks, dependency-aware scheduling, or project health signals.
+bv = graph-aware triage engine for beads issue board. Use instead of `bd ready` when need ranked picks, dependency-aware scheduling, or project health signals.
 
-> **CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
+> **CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches interactive TUI that blocks session.**
 
 ```bash
 bv --robot-triage             # THE entry point — ranked picks, quick wins, blockers, health
@@ -128,7 +128,7 @@ bv --robot-insights | jq '.Cycles'    # Circular deps — must fix
 
 Use **Serena** (`using-serena-lsp` skill) for all code reads and edits:
 - `find_symbol` → `get_symbols_overview` → `replace_symbol_body`
-- Never grep-read-sed when symbolic tools are available
+- Never grep-read-sed when symbolic tools available
 
 Use **GitNexus** MCP tools before touching any symbol:
 - `gitnexus_impact({target: "symbolName", direction: "upstream"})` — blast radius
@@ -136,7 +136,7 @@ Use **GitNexus** MCP tools before touching any symbol:
 - `gitnexus_detect_changes()` — verify scope before every commit
 - `gitnexus_query({query: "concept"})` — explore unfamiliar areas
 
-Stop and warn the user if impact returns HIGH or CRITICAL risk.
+Stop and warn user if impact returns HIGH or CRITICAL risk.
 
 ## Quality Gates (automatic)
 
@@ -144,17 +144,17 @@ Run on every file edit via PostToolUse hooks:
 - **TypeScript/JS**: ESLint + tsc
 - **Python**: ruff + mypy
 
-Gate output appears as hook context. Fix failures before proceeding — do not commit with lint errors.
+Gate output appears as hook context. Fix failures before proceeding — no commit with lint errors.
 
 ## Worktree Sessions
 
-- `xt claude` — launch Claude Code in a sandboxed worktree
+- `xt claude` — launch Claude Code in sandboxed worktree
 - `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
 ## Node Coordination
 
-Nodes are multi-agent research/execution groups with a coordinator + members. The coordinator is **CLI-native** (LOW permission, bash access, no file edits) and drives members via `sp node` commands.
+Nodes = multi-agent research/execution groups with coordinator + members. Coordinator **CLI-native** (LOW permission, bash access, no file edits), drives members via `sp node` commands.
 
 ### Coordinator model
 - Permission: LOW (bash, no edits). Config: `config/specialists/node-coordinator.specialist.json`
@@ -174,7 +174,7 @@ sp node members [--json]                             # member registry
 sp node stop <node-id>                               # stop node
 ```
 
-Node operations that moved to top-level CLI:
+Node operations moved to top-level CLI:
 - status/snapshot: `sp ps` (optionally scoped to node jobs)
 - event stream: `sp feed` (optionally scoped with `--node <id>`)
 - steering: `sp steer <coordinator-job-id> "message"`
@@ -196,11 +196,11 @@ Use `manual` for research/interactive nodes, `pr` for implementation nodes.
 
 # CLAUDE.md - AI Agent Development Guide
 
-> **Purpose**: Operational guidance for the current Specialists codebase and MCP surface.
+> **Purpose**: Operational guidance for current Specialists codebase and MCP surface.
 
 ## Project Overview
 
-**Specialists** is a project-scoped MCP server that discovers `.specialist.json` files and executes them through `pi` RPC sessions. The runtime is bead-first: when a run is bead-linked, the bead is the task source and run metadata keeps bead linkage throughout execution and feed output.
+**Specialists** = project-scoped MCP server discovering `.specialist.json` files, executing through `pi` RPC sessions. Runtime bead-first: when run bead-linked, bead = task source, run metadata keeps bead linkage throughout execution and feed output.
 
 ## Architecture (current)
 
@@ -240,19 +240,19 @@ starting → running → waiting → (resume) → running → ... → done/error
 2. Supervisor writes `status.json` immediately (including `bead_id` when available)
 3. FIFO steer pipe created for all jobs (enables mid-run `specialists steer`)
 4. Timeline emits structured events (`run_start`, `meta`, `tool`, `text`, `thinking`, `run_complete`)
-5. Feed/observers expose the same run with event envelope metadata
+5. Feed/observers expose same run with event envelope metadata
 6. On completion: READ_ONLY specialists auto-append output to input bead notes
 7. Retry on transient errors: exponential backoff + jitter, controlled by `execution.max_retries`
 
 ### Key behavioral notes
 
-- `--background` is the preferred async path — `specialists run <name> --prompt "..." --background`
+- `--background` = preferred async path — `specialists run <name> --prompt "..." --background`
 - `steer` works for **all running jobs** (not just keep-alive) — sends message via FIFO pipe
-- `resume` is for **waiting keep-alive jobs** only — sends next-turn prompt
-- `response_format` + `output_schema` are injected into system prompt by runner
-- `required_tools` is validated against `permission_required` before run start
-- MCP is intentionally minimal: `use_specialist` only
-- `start_specialist` is legacy/deprecated: if encountered, output includes a deprecation warning and points to CLI `--background`; remove from MCP tool surface in the next major
+- `resume` for **waiting keep-alive jobs** only — sends next-turn prompt
+- `response_format` + `output_schema` injected into system prompt by runner
+- `required_tools` validated against `permission_required` before run start
+- MCP intentionally minimal: `use_specialist` only
+- `start_specialist` legacy/deprecated: if encountered, output includes deprecation warning pointing to CLI `--background`; remove from MCP tool surface in next major
 
 ## Key Files Reference (current)
 
@@ -285,8 +285,8 @@ starting → running → waiting → (resume) → running → ... → done/error
 - Stop jobs with terminal status resolution: `specialists stop <job-id>`
 - Use `specialists result <job-id>` for final output text
 - Edit specialist configs with dot-path syntax: `specialists edit <name> specialist.execution.model anthropic/claude-sonnet-4-6`
-- Apply presets for common configurations: `specialists edit <name> --preset cheap|medium|power`
-- List available presets: `specialists edit --list-presets`
+- Apply presets: `specialists edit <name> --preset cheap|medium|power`
+- List presets: `specialists edit --list-presets`
 - READ_ONLY specialist output auto-appends to input bead notes
 - `max_retries` in JSON controls transient error retry (default: 0)
 - **Memory injection**: Specialists receive `.xtrm/memory.md` + `bd prime` + GitNexus cheatsheet at spawn
@@ -328,36 +328,36 @@ Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (3567 symbols, 8108 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+Project indexed by GitNexus as **specialists** (3567 symbols, 8108 relationships, 300 execution flows). Use GitNexus MCP tools to understand code, assess impact, navigate safely.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+> If any GitNexus tool warns index stale, run `npx gitnexus analyze` in terminal first.
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+- **MUST run impact analysis before editing any symbol.** Before modifying function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report blast radius (direct callers, affected processes, risk level) to user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify changes only affect expected symbols and execution flows.
+- **MUST warn user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. Returns process-grouped results ranked by relevance.
+- When need full context on specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
 ## When Debugging
 
-1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
-2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
-3. `READ gitnexus://repo/specialists/process/{processName}` — trace the full execution flow step by step
-4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, process participation
+3. `READ gitnexus://repo/specialists/process/{processName}` — trace full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what branch changed
 
 ## When Refactoring
 
-- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review preview — graph edits safe, text_search edits need manual review. Then run with `dry_run: false`.
 - **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
 - After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER edit function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands call graph.
 - NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
 ## Tools Quick Reference
@@ -391,28 +391,28 @@ This project is indexed by GitNexus as **specialists** (3567 symbols, 8108 relat
 ## Self-Check Before Finishing
 
 Before completing any code modification task, verify:
-1. `gitnexus_impact` was run for all modified symbols
-2. No HIGH/CRITICAL risk warnings were ignored
+1. `gitnexus_impact` ran for all modified symbols
+2. No HIGH/CRITICAL risk warnings ignored
 3. `gitnexus_detect_changes()` confirms changes match expected scope
-4. All d=1 (WILL BREAK) dependents were updated
+4. All d=1 (WILL BREAK) dependents updated
 
 ## Keeping the Index Fresh
 
-After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
+After committing code changes, GitNexus index becomes stale. Re-run analyze to update:
 
 ```bash
 npx gitnexus analyze
 ```
 
-If the index previously included embeddings, preserve them by adding `--embeddings`:
+If index previously included embeddings, preserve by adding `--embeddings`:
 
 ```bash
 npx gitnexus analyze --embeddings
 ```
 
-To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — `stats.embeddings` field shows count (0 = no embeddings). **Running analyze without `--embeddings` deletes any previously generated embeddings.**
 
-> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
+> Claude Code users: PostToolUse hook handles this automatically after `git commit` and `git merge`.
 
 ## CLI
 
