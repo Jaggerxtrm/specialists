@@ -518,6 +518,10 @@ export class PiAgentSession {
     const ssPath = join(piExtDir, 'service-skills');
     if (existsSync(ssPath)) args.push('-e', ssPath);
 
+    // Caveman extension — terse output for agent-to-agent communication
+    const cavemanPath = join(piExtDir, 'caveman');
+    if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
+
     // npm package extensions (gitnexus, serena) - resolve from global node_modules
     // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
     const npmGlobalDir = resolveGlobalNodeModulesDir();
@@ -543,7 +547,7 @@ export class PiAgentSession {
 
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
-    const baseEnv = { ...process.env, ...(this.options.env ?? {}) };
+    const baseEnv = { ...process.env, ...(this.options.env ?? {}), CAVEMAN_LEVEL: 'full' };
     this.proc = spawn('pi', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: sessionCwd,

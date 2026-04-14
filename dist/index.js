@@ -18100,6 +18100,9 @@ class PiAgentSession {
     const ssPath = join2(piExtDir, "service-skills");
     if (existsSync2(ssPath))
       args.push("-e", ssPath);
+    const cavemanPath = join2(piExtDir, "caveman");
+    if (existsSync2(cavemanPath))
+      args.push("-e", cavemanPath);
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     if (npmGlobalDir) {
       const gitnexusPath = join2(npmGlobalDir, "pi-gitnexus");
@@ -18120,7 +18123,7 @@ class PiAgentSession {
       }
     }
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
-    const baseEnv = { ...process.env, ...this.options.env ?? {} };
+    const baseEnv = { ...process.env, ...this.options.env ?? {}, CAVEMAN_LEVEL: "full" };
     this.proc = spawn("pi", args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: sessionCwd,
