@@ -68,6 +68,11 @@ type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'ge
 export type SessionFactory = (opts: PiSessionOptions) => Promise<SessionLike>;
 
 import { BeadsClient, type BeadsClient as BeadsClientType, buildBeadContext, shouldCreateBead } from './beads.js';
+import {
+  STATIC_WORKFLOW_RULES_BLOCK,
+  buildFilteredMemoryInjection,
+  estimateInjectedTokens,
+} from './memory-retrieval.js';
 
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -832,13 +837,92 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       // Non-fatal — memory.md is optional
     }
 
-    // 3. Load bd prime output (full context, ~800 lines, ~3000 tokens)
-    try {
-      const bdPrime = execSync('bd prime', { encoding: 'utf8', cwd: runCwd, timeout: 10000 });
-      agentsMd += `\n\n---\n## Beads Workflow Context (bd prime)\n_Injected at spawn — workflow rules + all bd memories_\n${bdPrime}\n---\n`;
-    } catch {
-      // Non-fatal — bd prime may be unavailable in some contexts
+    // 3. Inject compact beads rules + keyword-filtered memories (replaces full bd prime dump)
+    let staticTokens = 0;
+    let memoryTokens = 0;
+    let gitnexusTokens = 0;
+
+    const staticRulesBlock = `\n\n---\n${STATIC_WORKFLOW_RULES_BLOCK}\n---\n`;
+    agentsMd += staticRulesBlock;
+    staticTokens = estimateInjectedTokens(staticRulesBlock);
+
+    if (options.inputBeadId) {
+      const beadForMemory = (beadsClient ?? new BeadsClient()).readBead(options.inputBeadId);
+      if (beadForMemory?.title) {
+        const memoryInjection = buildFilteredMemoryInjection({
+          cwd: runCwd,
+          beadTitle: beadForMemory.title,
+          beadDescription: beadForMemory.description,
+        });
+
+        if (memoryInjection.block) {
+          const memoryBlock = `\n\n---\n${memoryInjection.block}\n---\n`;
+          agentsMd += memoryBlock;
+          memoryTokens = memoryInjection.estimatedTokens;
+        }
+
+        // Optional: pre-query GitNexus context for symbol-like tokens from bead title.
+        // Non-fatal and intentionally best-effort only.
+        try {
+          const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
+          if (existsSync(gitnexusMetaPath)) {
+            const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? [])
+              .slice(0, 2);
+
+            const summaries: string[] = [];
+            for (const symbol of symbolCandidates) {
+              try {
+                const raw = execSync(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+                  cwd: runCwd,
+                  encoding: 'utf8',
+                  timeout: 5000,
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                });
+                const parsed = JSON.parse(raw) as {
+                  status?: string;
+                  symbol?: { name?: string; filePath?: string };
+                  incoming?: { calls?: Array<{ name?: string; filePath?: string }> };
+                  outgoing?: { calls?: Array<{ name?: string; filePath?: string }> };
+                  processes?: Array<{ name?: string }>;
+                };
+                if (parsed.status !== 'found' || !parsed.symbol?.name) continue;
+                const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map(call => call.name).filter(Boolean);
+                const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map(call => call.name).filter(Boolean);
+                const processes = (parsed.processes ?? []).slice(0, 2).map(proc => proc.name).filter(Boolean);
+                summaries.push(
+                  `- ${parsed.symbol.name} (${parsed.symbol.filePath ?? 'unknown file'})\n`
+                  + `  callers: ${callers.length > 0 ? callers.join(', ') : 'none'}\n`
+                  + `  callees: ${callees.length > 0 ? callees.join(', ') : 'none'}\n`
+                  + `  processes: ${processes.length > 0 ? processes.join(', ') : 'none'}`,
+                );
+              } catch {
+                // Non-fatal: GitNexus may be unavailable or symbol not indexed.
+              }
+            }
+
+            if (summaries.length > 0) {
+              const gitnexusBlock = `\n\n---\n## GitNexus Pre-query Snapshot\n${summaries.join('\n')}\n---\n`;
+              agentsMd += gitnexusBlock;
+              gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
+            }
+          }
+        } catch {
+          // Non-fatal — optional GitNexus pre-query.
+        }
+      }
     }
+
+    const totalMemoryInjectionTokens = staticTokens + memoryTokens + gitnexusTokens;
+    onEvent?.('memory_injection', {
+      summary: JSON.stringify({
+        memory_injection: {
+          static_tokens: staticTokens,
+          memory_tokens: memoryTokens,
+          gitnexus_tokens: gitnexusTokens,
+          total_tokens: totalMemoryInjectionTokens,
+        },
+      }),
+    });
 
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
     const outputType = (execution.output_type ?? 'custom') as OutputType;

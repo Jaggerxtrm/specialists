@@ -1277,6 +1277,30 @@ export class Supervisor {
             ? activeToolCalls.get(toolCallId)
             : latestUncorrelatedToolState;
 
+          const memoryInjection = (() => {
+            if (eventType !== 'memory_injection' || !details?.summary) return undefined;
+            try {
+              const parsed = JSON.parse(details.summary) as {
+                memory_injection?: {
+                  static_tokens?: number;
+                  memory_tokens?: number;
+                  gitnexus_tokens?: number;
+                  total_tokens?: number;
+                };
+              };
+              const injection = parsed.memory_injection;
+              if (!injection) return undefined;
+              return {
+                static_tokens: injection.static_tokens ?? 0,
+                memory_tokens: injection.memory_tokens ?? 0,
+                gitnexus_tokens: injection.gitnexus_tokens ?? 0,
+                total_tokens: injection.total_tokens ?? 0,
+              };
+            } catch {
+              return undefined;
+            }
+          })();
+
           const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
             tool: toolState?.tool,
             toolCallId,
@@ -1309,6 +1333,7 @@ export class Supervisor {
               extension: details?.extension,
               errorMessage: details?.errorMessage,
             },
+            memoryInjection,
           });
 
           if (timelineEvent) {
