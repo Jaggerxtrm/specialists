@@ -33,8 +33,10 @@ try {
 } catch { /* key not set → not done */ }
 
 if (memoryGateDone) {
-  // Clean up all session markers
-  for (const key of [`memory-gate-done:${sessionId}`, `claimed:${sessionId}`, `closed-this-session:${sessionId}`]) {
+  // Clean up session markers EXCEPT memory-gate-done (must persist as sentinel
+  // to prevent re-triggering — claimed:<sessionId> or branch inference can
+  // re-discover the issue ID after cleanup, causing an infinite loop).
+  for (const key of [`claimed:${sessionId}`, `closed-this-session:${sessionId}`]) {
     try { execSync(`bd kv clear "${key}"`, { cwd, stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }); } catch { /* ignore */ }
   }
   clearSessionClaim(sessionId, cwd);
