@@ -105,6 +105,8 @@ export interface PiSessionOptions {
   cwd?: string;
   /** Extra environment variables injected into the pi process */
   env?: Record<string, string>;
+  /** npm extension package names to skip when assembling pi -e args */
+  excludeExtensions?: string[];
   /** Called with each text token as it arrives */
   onToken?: (delta: string) => void;
   /** Called with each thinking token */
@@ -525,12 +527,19 @@ export class PiAgentSession {
     // npm package extensions (gitnexus, serena) - resolve from global node_modules
     // These are installed via npm, not as directory extensions in ~/.pi/agent/extensions/
     const npmGlobalDir = resolveGlobalNodeModulesDir();
+    const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {
-      const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
-      if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+      const gitnexusPackageName = 'pi-gitnexus';
+      if (!excludedExtensions.has(gitnexusPackageName)) {
+        const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
+        if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+      }
 
-      const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
-      if (existsSync(serenaPath)) args.push('-e', serenaPath);
+      const serenaPackageName = 'pi-serena-tools';
+      if (!excludedExtensions.has(serenaPackageName)) {
+        const serenaPath = join(npmGlobalDir, serenaPackageName);
+        if (existsSync(serenaPath)) args.push('-e', serenaPath);
+      }
     }
 
     if (this.options.systemPrompt) {

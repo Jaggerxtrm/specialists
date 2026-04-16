@@ -727,6 +727,10 @@ export class SpecialistRunner {
     const effectiveKeepAlive = options.noKeepAlive
       ? false
       : (options.keepAlive ?? execution.interactive ?? false);
+    const excludeExtensions = [
+      execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
+      execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+    ].filter((value): value is string => Boolean(value));
 
     // Pre-run validation: check scripts exist, commands/tools are available, shebang typos
     validateBeforeRun(spec, permissionLevel);
@@ -983,6 +987,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         stallTimeoutMs: execution.stall_timeout_ms,
         cwd: runCwd,
         worktreeBoundary: options.worktreeBoundary,
+        ...(excludeExtensions.length > 0 ? { excludeExtensions } : {}),
         ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
         onToken:     (delta) => onProgress?.(delta),
         onThinking:  (delta) => onProgress?.(`💭 ${delta}`),

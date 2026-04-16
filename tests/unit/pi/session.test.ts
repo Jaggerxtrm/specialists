@@ -1,6 +1,8 @@
 // tests/unit/pi/session.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 // ── Mock node:child_process before importing session ──────────────────────────
@@ -171,7 +173,7 @@ describe('_handleEvent — RPC protocol parsing', () => {
       assistantMessageEvent: { type: 'thinking_start' },
     });
 
-    expect(onEvent).toHaveBeenCalledWith('thinking');
+    expect(onEvent).toHaveBeenCalledWith('thinking', { charCount: 0 });
   });
 
   it('toolcall_start nested in message_update calls onToolStart and onEvent("toolcall")', async () => {
@@ -255,7 +257,7 @@ describe('_handleEvent — RPC protocol parsing', () => {
     });
 
     expect(onToken).toHaveBeenCalledWith('hello');
-    expect(onEvent).toHaveBeenCalledWith('text');
+    expect(onEvent).toHaveBeenCalledWith('text', { charCount: 5 });
   });
 
   it('tool_execution_end passes undefined resultRaw when result is not an object', async () => {
@@ -491,6 +493,51 @@ describe('PiAgentSession', () => {
     expect(toolsIdx).toBeGreaterThan(-1);
     expect(args[toolsIdx + 1]).toBe('read,bash,edit,write,grep,find,ls');
   });
+
+  it('injects npm extensions by default when installed', async () => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
+    const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
+    try {
+      mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
+      mkdirSync(join(npmGlobalDir, 'pi-serena-tools'), { recursive: true });
+      process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
+
+      const session = await PiAgentSession.create({ model: 'gemini' });
+      await session.start();
+
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(args).toContain(join(npmGlobalDir, 'pi-gitnexus'));
+      expect(args).toContain(join(npmGlobalDir, 'pi-serena-tools'));
+    } finally {
+      if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
+      else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
+      rmSync(npmGlobalDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips excluded npm extensions', async () => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
+    const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
+    try {
+      mkdirSync(join(npmGlobalDir, 'pi-gitnexus'), { recursive: true });
+      mkdirSync(join(npmGlobalDir, 'pi-serena-tools'), { recursive: true });
+      process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
+
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
+      });
+      await session.start();
+
+      const args: string[] = mockSpawn.mock.calls[0][1];
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-gitnexus'));
+      expect(args).not.toContain(join(npmGlobalDir, 'pi-serena-tools'));
+    } finally {
+      if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
+      else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
+      rmSync(npmGlobalDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ── ID-mapped concurrent RPC dispatch tests ───────────────────────────────────
@@ -551,6 +598,7 @@ describe('sendCommand — concurrent dispatch', () => {
 
       const p = session.prompt('task').catch((e) => e);
       await vi.advanceTimersByTimeAsync(11_000);
+      await vi.runOnlyPendingTimersAsync();
       const err = await p;
       expect(err.message).toMatch(/RPC timeout/);
     } finally {
@@ -645,7 +693,8 @@ describe('sendCommand — concurrent dispatch', () => {
     emitLine(fake, { type: 'auto_compaction_end' });
 
     const calls = onEvent.mock.calls.map((c: any[]) => c[0]);
-    expect(calls.filter((t: string) => t === 'auto_compaction')).toHaveLength(2);
+    expect(calls.filter((t: string) => t === 'auto_compaction_start')).toHaveLength(1);
+    expect(calls.filter((t: string) => t === 'auto_compaction_end')).toHaveLength(1);
   });
 
   it('auto_retry_start and auto_retry_end both fire onEvent("auto_retry")', async () => {
@@ -657,7 +706,8 @@ describe('sendCommand — concurrent dispatch', () => {
     emitLine(fake, { type: 'auto_retry_end' });
 
     const calls = onEvent.mock.calls.map((c: any[]) => c[0]);
-    expect(calls.filter((t: string) => t === 'auto_retry')).toHaveLength(2);
+    expect(calls.filter((t: string) => t === 'auto_retry_start')).toHaveLength(1);
+    expect(calls.filter((t: string) => t === 'auto_retry_end')).toHaveLength(1);
   });
 });
 
@@ -706,6 +756,7 @@ describe('sendCommand — ID dispatch edge cases', () => {
 
       // Advance past the 10s default timeout — only p1 should have timed out
       await vi.advanceTimersByTimeAsync(11_000);
+      await vi.runOnlyPendingTimersAsync();
       const err1 = await p1;
       expect(err1.message).toMatch(/RPC timeout/);
     } finally {
@@ -721,6 +772,7 @@ describe('sendCommand — ID dispatch edge cases', () => {
 
       const p = session.prompt('task').catch((e) => e);
       await vi.advanceTimersByTimeAsync(11_000);
+      await vi.runOnlyPendingTimersAsync();
       await p; // request has already rejected
 
       // Emit a response for the now-deleted entry — must not crash or double-resolve

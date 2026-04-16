@@ -116,6 +116,22 @@ describe('SpecialistRunner', () => {
     }));
   });
 
+  it('passes execution.extensions opt-out to PiAgentSession', async () => {
+    const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ extensions: { serena: false, gitnexus: false } }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await runner.run({ name: 'test-spec', prompt: 'do thing' });
+
+    expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
+      excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
+    }));
+  });
+
   it('injects markdown output contract when response_format=markdown', async () => {
     const sessionFactory = vi.fn().mockResolvedValue(mockSession);
     const runner = new SpecialistRunner({
@@ -461,6 +477,7 @@ describe('SpecialistRunner', () => {
         hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
         circuitBreaker: new CircuitBreaker(),
         sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient: makeBeadsClient({ readBead: vi.fn().mockReturnValue(null) }),
       });
       await runner.run({
         name: 'test-spec',
@@ -485,6 +502,7 @@ describe('SpecialistRunner', () => {
         hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
         circuitBreaker: new CircuitBreaker(),
         sessionFactory,
+        beadsClient: makeBeadsClient({ readBead: vi.fn().mockReturnValue(null) }),
       });
 
       await runner.run({

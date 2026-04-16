@@ -38,6 +38,11 @@ const ExecutionSchema = z.object({
   /** Pass --thinking <level> to pi. Models that don't support thinking ignore this. */
   thinking_level: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
   auto_commit: z.enum(['never', 'checkpoint_on_waiting', 'checkpoint_on_terminal']).default('never'),
+  /** Optional per-session extension toggles. `false` disables injection of extension. */
+  extensions: z.object({
+    serena: z.boolean().optional(),
+    gitnexus: z.boolean().optional(),
+  }).optional(),
   // Agent Forge compat — accepted but ignored by specialists
   preferred_profile: z.string().optional(),
   approval_mode: z.string().optional(),

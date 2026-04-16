@@ -79,6 +79,17 @@ describe('parseSpecialist', () => {
     expect(result.specialist.execution.output_type).toBe('analysis');
   });
 
+  it('accepts execution.extensions flags', async () => {
+    const spec = createValidSpec();
+    (spec.specialist.execution as Record<string, unknown>).extensions = {
+      serena: false,
+      gitnexus: false,
+    };
+    const result = await parseSpecialist(toJson(spec));
+    expect(result.specialist.execution.extensions?.serena).toBe(false);
+    expect(result.specialist.execution.extensions?.gitnexus).toBe(false);
+  });
+
   it('rejects invalid execution.output_type', async () => {
     const spec = createValidSpec();
     (spec.specialist.execution as Record<string, unknown>).output_type = 'invalid-kind';
