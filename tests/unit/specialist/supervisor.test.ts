@@ -640,6 +640,33 @@ describe('Supervisor', () => {
     expect(recovered.error).toBe('Process crashed or was killed');
   });
 
+  it('crash recovery: node job with dead PID is marked error (not waiting/recovery_pending)', async () => {
+    const crashedId = 'crashn1';
+    const crashedDir = join(jobsDir, crashedId);
+    mkdirSync(crashedDir, { recursive: true });
+
+    const crashStatus: SupervisorStatus = {
+      id: crashedId,
+      specialist: 'test',
+      status: 'running',
+      started_at_ms: Date.now() - 10_000,
+      pid: 999_999_999, // Impossibly large PID — always dead
+      node_id: 'node-1',
+      current_event: 'running',
+    };
+    writeFileSync(join(crashedDir, 'status.json'), JSON.stringify(crashStatus));
+
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    await sup.run();
+
+    const recovered: SupervisorStatus = JSON.parse(
+      readFileSync(join(crashedDir, 'status.json'), 'utf-8'),
+    );
+    expect(recovered.status).toBe('error');
+    expect(recovered.error).toBe('Process crashed or was killed');
+    expect(recovered.current_event).not.toBe('recovery_pending');
+  });
+
   it('crash recovery: waiting job idle beyond waiting_stale_ms gets stale_warning event', async () => {
     const waitingId = 'wait01';
     const waitingDir = join(jobsDir, waitingId);

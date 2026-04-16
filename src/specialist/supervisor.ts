@@ -412,20 +412,12 @@ const run = () => {
   }
 
   const now = Date.now();
-  const updated = status.node_id
-    ? {
-        ...status,
-        status: 'waiting',
-        current_event: 'recovery_pending',
-        last_event_at_ms: now,
-        error: undefined,
-      }
-    : {
-        ...status,
-        status: 'error',
-        error: 'Supervisor process exited unexpectedly',
-        last_event_at_ms: now,
-      };
+  const updated = {
+    ...status,
+    status: 'error',
+    error: 'Supervisor process exited unexpectedly',
+    last_event_at_ms: now,
+  };
 
   const tmpPath = statusPath + '.tmp';
   try {
@@ -759,15 +751,12 @@ export class Supervisor {
           }
           if (!pidAlive) {
             const tmp = statusPath + '.tmp';
-            const updated: SupervisorStatus = s.node_id
-              ? {
-                  ...s,
-                  status: 'waiting',
-                  current_event: 'recovery_pending',
-                  last_event_at_ms: now,
-                  error: undefined,
-                }
-              : { ...s, status: 'error', error: 'Process crashed or was killed' };
+            const updated: SupervisorStatus = {
+              ...s,
+              status: 'error',
+              error: 'Process crashed or was killed',
+              last_event_at_ms: now,
+            };
             writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
             renameSync(tmp, statusPath);
           } else if (s.status === 'running') {
