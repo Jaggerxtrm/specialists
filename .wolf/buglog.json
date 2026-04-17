@@ -6,7 +6,7 @@
       "timestamp": "2026-03-31T23:34:40.339Z",
       "error_message": "Missing error handling in unknown",
       "file": ".claude/skills/using-specialists/SKILL.md",
-      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "root_cause": "Code path had no error handling \u2014 exceptions would propagate uncaught",
       "fix": "Added try/catch block",
       "tags": [
         "auto-detected",
@@ -39,7 +39,7 @@
       "error_message": "Significant refactor of ",
       "file": ".claude/skills/using-specialists/SKILL.md",
       "root_cause": "5 lines replaced/restructured",
-      "fix": "Rewrote 20→49 lines (5 removed)",
+      "fix": "Rewrote 20\u219249 lines (5 removed)",
       "tags": [
         "auto-detected",
         "refactor",
@@ -64,6 +64,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-01T01:48:12.008Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-04-16T21:36:35.680758Z",
+      "error_message": "Node jobs with dead PID entered waiting/recovery_pending causing wait-phase stalls",
+      "file": "src/specialist/supervisor.ts",
+      "root_cause": "Dead-PID handlers branched on node_id and mapped node jobs to waiting/recovery_pending instead of terminal error",
+      "fix": "Unified dead-PID handling in detached watchdog and crashRecovery to always set status=error with message and last_event_at_ms; added node_id regression test",
+      "tags": [
+        "bugfix",
+        "node-supervisor",
+        "crash-recovery",
+        "watchdog"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-16T21:36:35.680758Z"
     }
   ]
 }

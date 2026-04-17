@@ -29,7 +29,7 @@ var __export = (target, all) => {
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 var __require = import.meta.require;
 
-// ../../../node_modules/zod/v3/helpers/util.js
+// node_modules/zod/v3/helpers/util.js
 var util, objectUtil, ZodParsedType, getParsedType = (data) => {
   const t = typeof data;
   switch (t) {
@@ -160,7 +160,7 @@ var init_util = __esm(() => {
   ]);
 });
 
-// ../../../node_modules/zod/v3/ZodError.js
+// node_modules/zod/v3/ZodError.js
 var ZodIssueCode, quotelessJson = (obj) => {
   const json = JSON.stringify(obj, null, 2);
   return json.replace(/"([^"]+)":/g, "$1:");
@@ -281,7 +281,7 @@ var init_ZodError = __esm(() => {
   };
 });
 
-// ../../../node_modules/zod/v3/locales/en.js
+// node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -388,7 +388,7 @@ var init_en = __esm(() => {
   en_default = errorMap;
 });
 
-// ../../../node_modules/zod/v3/errors.js
+// node_modules/zod/v3/errors.js
 function setErrorMap(map) {
   overrideErrorMap = map;
 }
@@ -401,7 +401,7 @@ var init_errors = __esm(() => {
   overrideErrorMap = en_default;
 });
 
-// ../../../node_modules/zod/v3/helpers/parseUtil.js
+// node_modules/zod/v3/helpers/parseUtil.js
 function addIssueToContext(ctx, issueData) {
   const overrideMap = getErrorMap();
   const issue = makeIssue({
@@ -506,10 +506,10 @@ var init_parseUtil = __esm(() => {
   });
 });
 
-// ../../../node_modules/zod/v3/helpers/typeAliases.js
+// node_modules/zod/v3/helpers/typeAliases.js
 var init_typeAliases = () => {};
 
-// ../../../node_modules/zod/v3/helpers/errorUtil.js
+// node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 var init_errorUtil = __esm(() => {
   (function(errorUtil2) {
@@ -518,7 +518,7 @@ var init_errorUtil = __esm(() => {
   })(errorUtil || (errorUtil = {}));
 });
 
-// ../../../node_modules/zod/v3/types.js
+// node_modules/zod/v3/types.js
 class ParseInputLazyPath {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -3869,7 +3869,7 @@ var init_types = __esm(() => {
   NEVER = INVALID;
 });
 
-// ../../../node_modules/zod/v3/external.js
+// node_modules/zod/v3/external.js
 var exports_external = {};
 __export(exports_external, {
   void: () => voidType,
@@ -3989,7 +3989,7 @@ var init_external = __esm(() => {
   init_ZodError();
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/code.js
+// node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.regexpCode = exports.getEsmExportName = exports.getProperty = exports.safeStringify = exports.stringify = exports.strConcat = exports.addCodeArg = exports.str = exports._ = exports.nil = exports._Code = exports.Name = exports.IDENTIFIER = exports._CodeOrName = undefined;
@@ -4143,7 +4143,7 @@ var require_code = __commonJS((exports) => {
   exports.regexpCode = regexpCode;
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/scope.js
+// node_modules/ajv/dist/compile/codegen/scope.js
 var require_scope = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.ValueScope = exports.ValueScopeName = exports.Scope = exports.varKinds = exports.UsedValueState = undefined;
@@ -4289,7 +4289,7 @@ var require_scope = __commonJS((exports) => {
   exports.ValueScope = ValueScope;
 });
 
-// ../../../node_modules/ajv/dist/compile/codegen/index.js
+// node_modules/ajv/dist/compile/codegen/index.js
 var require_codegen = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.or = exports.and = exports.not = exports.CodeGen = exports.operators = exports.varKinds = exports.ValueScopeName = exports.ValueScope = exports.Scope = exports.Name = exports.regexpCode = exports.stringify = exports.getProperty = exports.nil = exports.strConcat = exports.str = exports._ = undefined;
@@ -4999,7 +4999,7 @@ var require_codegen = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/util.js
+// node_modules/ajv/dist/compile/util.js
 var require_util = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.checkStrictMode = exports.getErrorPath = exports.Type = exports.useFunc = exports.setEvaluated = exports.evaluatedPropsToName = exports.mergeEvaluated = exports.eachItem = exports.unescapeJsonPointer = exports.escapeJsonPointer = exports.escapeFragment = exports.unescapeFragment = exports.schemaRefOrVal = exports.schemaHasRulesButRef = exports.schemaHasRules = exports.checkUnknownRules = exports.alwaysValidSchema = exports.toHash = undefined;
@@ -5163,7 +5163,7 @@ var require_util = __commonJS((exports) => {
   exports.checkStrictMode = checkStrictMode;
 });
 
-// ../../../node_modules/ajv/dist/compile/names.js
+// node_modules/ajv/dist/compile/names.js
 var require_names = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -5188,7 +5188,7 @@ var require_names = __commonJS((exports) => {
   exports.default = names;
 });
 
-// ../../../node_modules/ajv/dist/compile/errors.js
+// node_modules/ajv/dist/compile/errors.js
 var require_errors = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.extendErrors = exports.resetErrorsCount = exports.reportExtraError = exports.reportError = exports.keyword$DataError = exports.keywordError = undefined;
@@ -5306,7 +5306,7 @@ var require_errors = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/boolSchema.js
+// node_modules/ajv/dist/compile/validate/boolSchema.js
 var require_boolSchema = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.boolOrEmptySchema = exports.topBoolOrEmptySchema = undefined;
@@ -5354,7 +5354,7 @@ var require_boolSchema = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/rules.js
+// node_modules/ajv/dist/compile/rules.js
 var require_rules = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getRules = exports.isJSONType = undefined;
@@ -5382,7 +5382,7 @@ var require_rules = __commonJS((exports) => {
   exports.getRules = getRules;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/applicability.js
+// node_modules/ajv/dist/compile/validate/applicability.js
 var require_applicability = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.shouldUseRule = exports.shouldUseGroup = exports.schemaHasRulesForType = undefined;
@@ -5402,7 +5402,7 @@ var require_applicability = __commonJS((exports) => {
   exports.shouldUseRule = shouldUseRule;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/dataType.js
+// node_modules/ajv/dist/compile/validate/dataType.js
 var require_dataType = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.reportTypeError = exports.checkDataTypes = exports.checkDataType = exports.coerceAndCheckDataType = exports.getJSONTypes = exports.getSchemaTypes = exports.DataType = undefined;
@@ -5583,7 +5583,7 @@ var require_dataType = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/defaults.js
+// node_modules/ajv/dist/compile/validate/defaults.js
 var require_defaults = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.assignDefaults = undefined;
@@ -5617,7 +5617,7 @@ var require_defaults = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/code.js
+// node_modules/ajv/dist/vocabularies/code.js
 var require_code2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateUnion = exports.validateArray = exports.usePattern = exports.callValidateCode = exports.schemaProperties = exports.allSchemaProperties = exports.noPropertyInData = exports.propertyInData = exports.isOwnProperty = exports.hasPropFunc = exports.reportMissingProp = exports.checkMissingProp = exports.checkReportMissingProp = undefined;
@@ -5746,7 +5746,7 @@ var require_code2 = __commonJS((exports) => {
   exports.validateUnion = validateUnion;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/keyword.js
+// node_modules/ajv/dist/compile/validate/keyword.js
 var require_keyword = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateKeywordUsage = exports.validSchemaType = exports.funcKeywordCode = exports.macroKeywordCode = undefined;
@@ -5861,7 +5861,7 @@ var require_keyword = __commonJS((exports) => {
   exports.validateKeywordUsage = validateKeywordUsage;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/subschema.js
+// node_modules/ajv/dist/compile/validate/subschema.js
 var require_subschema = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = undefined;
@@ -5941,7 +5941,7 @@ var require_subschema = __commonJS((exports) => {
   exports.extendSubschemaMode = extendSubschemaMode;
 });
 
-// ../../../node_modules/fast-deep-equal/index.js
+// node_modules/fast-deep-equal/index.js
 var require_fast_deep_equal = __commonJS((exports, module) => {
   module.exports = function equal(a, b) {
     if (a === b)
@@ -5983,7 +5983,7 @@ var require_fast_deep_equal = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/json-schema-traverse/index.js
+// node_modules/json-schema-traverse/index.js
 var require_json_schema_traverse = __commonJS((exports, module) => {
   var traverse = module.exports = function(schema, opts, cb) {
     if (typeof opts == "function") {
@@ -6066,7 +6066,7 @@ var require_json_schema_traverse = __commonJS((exports, module) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/compile/resolve.js
+// node_modules/ajv/dist/compile/resolve.js
 var require_resolve = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getSchemaRefs = exports.resolveUrl = exports.normalizeId = exports._getFullPath = exports.getFullPath = exports.inlineRef = undefined;
@@ -6219,7 +6219,7 @@ var require_resolve = __commonJS((exports) => {
   exports.getSchemaRefs = getSchemaRefs;
 });
 
-// ../../../node_modules/ajv/dist/compile/validate/index.js
+// node_modules/ajv/dist/compile/validate/index.js
 var require_validate = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.getData = exports.KeywordCxt = exports.validateFunctionCode = undefined;
@@ -6724,7 +6724,7 @@ var require_validate = __commonJS((exports) => {
   exports.getData = getData;
 });
 
-// ../../../node_modules/ajv/dist/runtime/validation_error.js
+// node_modules/ajv/dist/runtime/validation_error.js
 var require_validation_error = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
 
@@ -6738,7 +6738,7 @@ var require_validation_error = __commonJS((exports) => {
   exports.default = ValidationError;
 });
 
-// ../../../node_modules/ajv/dist/compile/ref_error.js
+// node_modules/ajv/dist/compile/ref_error.js
 var require_ref_error = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var resolve_1 = require_resolve();
@@ -6753,7 +6753,7 @@ var require_ref_error = __commonJS((exports) => {
   exports.default = MissingRefError;
 });
 
-// ../../../node_modules/ajv/dist/compile/index.js
+// node_modules/ajv/dist/compile/index.js
 var require_compile = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.resolveSchema = exports.getCompilingSchema = exports.resolveRef = exports.compileSchema = exports.SchemaEnv = undefined;
@@ -6974,7 +6974,7 @@ var require_compile = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/refs/data.json
+// node_modules/ajv/dist/refs/data.json
 var require_data = __commonJS((exports, module) => {
   module.exports = {
     $id: "https://raw.githubusercontent.com/ajv-validator/ajv/master/lib/refs/data.json#",
@@ -6991,7 +6991,7 @@ var require_data = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/lib/utils.js
+// node_modules/fast-uri/lib/utils.js
 var require_utils = __commonJS((exports, module) => {
   var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
   var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
@@ -7246,7 +7246,7 @@ var require_utils = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/lib/schemes.js
+// node_modules/fast-uri/lib/schemes.js
 var require_schemes = __commonJS((exports, module) => {
   var { isUUID } = require_utils();
   var URN_REG = /([\da-z][\d\-a-z]{0,31}):((?:[\w!$'()*+,\-.:;=@]|%[\da-f]{2})+)/iu;
@@ -7420,7 +7420,7 @@ var require_schemes = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/fast-uri/index.js
+// node_modules/fast-uri/index.js
 var require_fast_uri = __commonJS((exports, module) => {
   var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizeComponentEncoding, isIPv4, nonSimpleDomain } = require_utils();
   var { SCHEMES, getSchemeHandler } = require_schemes();
@@ -7671,7 +7671,7 @@ var require_fast_uri = __commonJS((exports, module) => {
   module.exports.fastUri = fastUri;
 });
 
-// ../../../node_modules/ajv/dist/runtime/uri.js
+// node_modules/ajv/dist/runtime/uri.js
 var require_uri = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var uri = require_fast_uri();
@@ -7679,7 +7679,7 @@ var require_uri = __commonJS((exports) => {
   exports.default = uri;
 });
 
-// ../../../node_modules/ajv/dist/core.js
+// node_modules/ajv/dist/core.js
 var require_core = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = undefined;
@@ -8272,7 +8272,7 @@ var require_core = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/id.js
+// node_modules/ajv/dist/vocabularies/core/id.js
 var require_id = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var def = {
@@ -8284,7 +8284,7 @@ var require_id = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/ref.js
+// node_modules/ajv/dist/vocabularies/core/ref.js
 var require_ref = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.callRef = exports.getValidate = undefined;
@@ -8403,7 +8403,7 @@ var require_ref = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/core/index.js
+// node_modules/ajv/dist/vocabularies/core/index.js
 var require_core2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var id_1 = require_id();
@@ -8421,7 +8421,7 @@ var require_core2 = __commonJS((exports) => {
   exports.default = core2;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitNumber.js
+// node_modules/ajv/dist/vocabularies/validation/limitNumber.js
 var require_limitNumber = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8450,7 +8450,7 @@ var require_limitNumber = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/multipleOf.js
+// node_modules/ajv/dist/vocabularies/validation/multipleOf.js
 var require_multipleOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8475,7 +8475,7 @@ var require_multipleOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/runtime/ucs2length.js
+// node_modules/ajv/dist/runtime/ucs2length.js
 var require_ucs2length = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   function ucs2length(str) {
@@ -8498,7 +8498,7 @@ var require_ucs2length = __commonJS((exports) => {
   ucs2length.code = 'require("ajv/dist/runtime/ucs2length").default';
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitLength.js
+// node_modules/ajv/dist/vocabularies/validation/limitLength.js
 var require_limitLength = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8527,7 +8527,7 @@ var require_limitLength = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/pattern.js
+// node_modules/ajv/dist/vocabularies/validation/pattern.js
 var require_pattern = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -8561,7 +8561,7 @@ var require_pattern = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitProperties.js
+// node_modules/ajv/dist/vocabularies/validation/limitProperties.js
 var require_limitProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8587,7 +8587,7 @@ var require_limitProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/required.js
+// node_modules/ajv/dist/vocabularies/validation/required.js
 var require_required = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -8666,7 +8666,7 @@ var require_required = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/limitItems.js
+// node_modules/ajv/dist/vocabularies/validation/limitItems.js
 var require_limitItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8692,7 +8692,7 @@ var require_limitItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/runtime/equal.js
+// node_modules/ajv/dist/runtime/equal.js
 var require_equal = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var equal = require_fast_deep_equal();
@@ -8700,7 +8700,7 @@ var require_equal = __commonJS((exports) => {
   exports.default = equal;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
+// node_modules/ajv/dist/vocabularies/validation/uniqueItems.js
 var require_uniqueItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var dataType_1 = require_dataType();
@@ -8764,7 +8764,7 @@ var require_uniqueItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/const.js
+// node_modules/ajv/dist/vocabularies/validation/const.js
 var require_const = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8790,7 +8790,7 @@ var require_const = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/enum.js
+// node_modules/ajv/dist/vocabularies/validation/enum.js
 var require_enum = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -8836,7 +8836,7 @@ var require_enum = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/validation/index.js
+// node_modules/ajv/dist/vocabularies/validation/index.js
 var require_validation = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var limitNumber_1 = require_limitNumber();
@@ -8866,7 +8866,7 @@ var require_validation = __commonJS((exports) => {
   exports.default = validation;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
+// node_modules/ajv/dist/vocabularies/applicator/additionalItems.js
 var require_additionalItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateAdditionalItems = undefined;
@@ -8916,7 +8916,7 @@ var require_additionalItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/items.js
+// node_modules/ajv/dist/vocabularies/applicator/items.js
 var require_items = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateTuple = undefined;
@@ -8970,7 +8970,7 @@ var require_items = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
+// node_modules/ajv/dist/vocabularies/applicator/prefixItems.js
 var require_prefixItems = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var items_1 = require_items();
@@ -8984,7 +8984,7 @@ var require_prefixItems = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/items2020.js
+// node_modules/ajv/dist/vocabularies/applicator/items2020.js
 var require_items2020 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9016,7 +9016,7 @@ var require_items2020 = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/contains.js
+// node_modules/ajv/dist/vocabularies/applicator/contains.js
 var require_contains = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9107,7 +9107,7 @@ var require_contains = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/dependencies.js
+// node_modules/ajv/dist/vocabularies/applicator/dependencies.js
 var require_dependencies = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.validateSchemaDeps = exports.validatePropertyDeps = exports.error = undefined;
@@ -9192,7 +9192,7 @@ var require_dependencies = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
+// node_modules/ajv/dist/vocabularies/applicator/propertyNames.js
 var require_propertyNames = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9232,7 +9232,7 @@ var require_propertyNames = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
+// node_modules/ajv/dist/vocabularies/applicator/additionalProperties.js
 var require_additionalProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9335,7 +9335,7 @@ var require_additionalProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/properties.js
+// node_modules/ajv/dist/vocabularies/applicator/properties.js
 var require_properties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var validate_1 = require_validate();
@@ -9390,7 +9390,7 @@ var require_properties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
+// node_modules/ajv/dist/vocabularies/applicator/patternProperties.js
 var require_patternProperties = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9461,7 +9461,7 @@ var require_patternProperties = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/not.js
+// node_modules/ajv/dist/vocabularies/applicator/not.js
 var require_not = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9489,7 +9489,7 @@ var require_not = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/anyOf.js
+// node_modules/ajv/dist/vocabularies/applicator/anyOf.js
 var require_anyOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var code_1 = require_code2();
@@ -9503,7 +9503,7 @@ var require_anyOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/oneOf.js
+// node_modules/ajv/dist/vocabularies/applicator/oneOf.js
 var require_oneOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9558,7 +9558,7 @@ var require_oneOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/allOf.js
+// node_modules/ajv/dist/vocabularies/applicator/allOf.js
 var require_allOf = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9582,7 +9582,7 @@ var require_allOf = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/if.js
+// node_modules/ajv/dist/vocabularies/applicator/if.js
 var require_if = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9648,7 +9648,7 @@ var require_if = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/thenElse.js
+// node_modules/ajv/dist/vocabularies/applicator/thenElse.js
 var require_thenElse = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var util_1 = require_util();
@@ -9663,7 +9663,7 @@ var require_thenElse = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/applicator/index.js
+// node_modules/ajv/dist/vocabularies/applicator/index.js
 var require_applicator = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var additionalItems_1 = require_additionalItems();
@@ -9706,7 +9706,7 @@ var require_applicator = __commonJS((exports) => {
   exports.default = getApplicator;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/format/format.js
+// node_modules/ajv/dist/vocabularies/format/format.js
 var require_format = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9793,7 +9793,7 @@ var require_format = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/format/index.js
+// node_modules/ajv/dist/vocabularies/format/index.js
 var require_format2 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var format_1 = require_format();
@@ -9801,7 +9801,7 @@ var require_format2 = __commonJS((exports) => {
   exports.default = format;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/metadata.js
+// node_modules/ajv/dist/vocabularies/metadata.js
 var require_metadata = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.contentVocabulary = exports.metadataVocabulary = undefined;
@@ -9821,7 +9821,7 @@ var require_metadata = __commonJS((exports) => {
   ];
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/draft7.js
+// node_modules/ajv/dist/vocabularies/draft7.js
 var require_draft7 = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var core_1 = require_core2();
@@ -9840,7 +9840,7 @@ var require_draft7 = __commonJS((exports) => {
   exports.default = draft7Vocabularies;
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/discriminator/types.js
+// node_modules/ajv/dist/vocabularies/discriminator/types.js
 var require_types = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.DiscrError = undefined;
@@ -9851,7 +9851,7 @@ var require_types = __commonJS((exports) => {
   })(DiscrError || (exports.DiscrError = DiscrError = {}));
 });
 
-// ../../../node_modules/ajv/dist/vocabularies/discriminator/index.js
+// node_modules/ajv/dist/vocabularies/discriminator/index.js
 var require_discriminator = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var codegen_1 = require_codegen();
@@ -9953,7 +9953,7 @@ var require_discriminator = __commonJS((exports) => {
   exports.default = def;
 });
 
-// ../../../node_modules/ajv/dist/refs/json-schema-draft-07.json
+// node_modules/ajv/dist/refs/json-schema-draft-07.json
 var require_json_schema_draft_07 = __commonJS((exports, module) => {
   module.exports = {
     $schema: "http://json-schema.org/draft-07/schema#",
@@ -10108,7 +10108,7 @@ var require_json_schema_draft_07 = __commonJS((exports, module) => {
   };
 });
 
-// ../../../node_modules/ajv/dist/ajv.js
+// node_modules/ajv/dist/ajv.js
 var require_ajv = __commonJS((exports, module) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.MissingRefError = exports.ValidationError = exports.CodeGen = exports.Name = exports.nil = exports.stringify = exports.str = exports._ = exports.KeywordCxt = exports.Ajv = undefined;
@@ -10176,7 +10176,7 @@ var require_ajv = __commonJS((exports, module) => {
   } });
 });
 
-// ../../../node_modules/ajv-formats/dist/formats.js
+// node_modules/ajv-formats/dist/formats.js
 var require_formats = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.formatNames = exports.fastFormats = exports.fullFormats = undefined;
@@ -10353,7 +10353,7 @@ var require_formats = __commonJS((exports) => {
   }
 });
 
-// ../../../node_modules/ajv-formats/dist/limit.js
+// node_modules/ajv-formats/dist/limit.js
 var require_limit = __commonJS((exports) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   exports.formatLimitDefinition = undefined;
@@ -10422,7 +10422,7 @@ var require_limit = __commonJS((exports) => {
   exports.default = formatLimitPlugin;
 });
 
-// ../../../node_modules/ajv-formats/dist/index.js
+// node_modules/ajv-formats/dist/index.js
 var require_dist = __commonJS((exports, module) => {
   Object.defineProperty(exports, "__esModule", { value: true });
   var formats_1 = require_formats();
@@ -10461,7 +10461,7 @@ var require_dist = __commonJS((exports, module) => {
   exports.default = formatsPlugin;
 });
 
-// ../../../node_modules/yaml/dist/nodes/identity.js
+// node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS((exports) => {
   var ALIAS = Symbol.for("yaml.alias");
   var DOC = Symbol.for("yaml.document");
@@ -10515,7 +10515,7 @@ var require_identity = __commonJS((exports) => {
   exports.isSeq = isSeq;
 });
 
-// ../../../node_modules/yaml/dist/visit.js
+// node_modules/yaml/dist/visit.js
 var require_visit = __commonJS((exports) => {
   var identity = require_identity();
   var BREAK = Symbol("break visit");
@@ -10670,7 +10670,7 @@ var require_visit = __commonJS((exports) => {
   exports.visitAsync = visitAsync;
 });
 
-// ../../../node_modules/yaml/dist/doc/directives.js
+// node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -10822,7 +10822,7 @@ var require_directives = __commonJS((exports) => {
   exports.Directives = Directives;
 });
 
-// ../../../node_modules/yaml/dist/doc/anchors.js
+// node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -10884,7 +10884,7 @@ var require_anchors = __commonJS((exports) => {
   exports.findNewAnchor = findNewAnchor;
 });
 
-// ../../../node_modules/yaml/dist/doc/applyReviver.js
+// node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS((exports) => {
   function applyReviver(reviver, obj, key, val) {
     if (val && typeof val === "object") {
@@ -10931,7 +10931,7 @@ var require_applyReviver = __commonJS((exports) => {
   exports.applyReviver = applyReviver;
 });
 
-// ../../../node_modules/yaml/dist/nodes/toJS.js
+// node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS((exports) => {
   var identity = require_identity();
   function toJS(value, arg, ctx) {
@@ -10958,7 +10958,7 @@ var require_toJS = __commonJS((exports) => {
   exports.toJS = toJS;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Node.js
+// node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS((exports) => {
   var applyReviver = require_applyReviver();
   var identity = require_identity();
@@ -10995,7 +10995,7 @@ var require_Node = __commonJS((exports) => {
   exports.NodeBase = NodeBase;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Alias.js
+// node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS((exports) => {
   var anchors = require_anchors();
   var visit = require_visit();
@@ -11103,7 +11103,7 @@ var require_Alias = __commonJS((exports) => {
   exports.Alias = Alias;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Scalar.js
+// node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Node = require_Node();
@@ -11131,7 +11131,7 @@ var require_Scalar = __commonJS((exports) => {
   exports.isScalarValue = isScalarValue;
 });
 
-// ../../../node_modules/yaml/dist/doc/createNode.js
+// node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -11203,7 +11203,7 @@ var require_createNode = __commonJS((exports) => {
   exports.createNode = createNode;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Collection.js
+// node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS((exports) => {
   var createNode = require_createNode();
   var identity = require_identity();
@@ -11318,7 +11318,7 @@ var require_Collection = __commonJS((exports) => {
   exports.isEmptyPath = isEmptyPath;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyComment.js
+// node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS((exports) => {
   var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
   function indentComment(comment, indent) {
@@ -11335,7 +11335,7 @@ var require_stringifyComment = __commonJS((exports) => {
   exports.stringifyComment = stringifyComment;
 });
 
-// ../../../node_modules/yaml/dist/stringify/foldFlowLines.js
+// node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS((exports) => {
   var FOLD_FLOW = "flow";
   var FOLD_BLOCK = "block";
@@ -11472,7 +11472,7 @@ ${indent}${text.slice(fold + 1, end2)}`;
   exports.foldFlowLines = foldFlowLines;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyString.js
+// node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var foldFlowLines = require_foldFlowLines();
@@ -11770,7 +11770,7 @@ ${indent}`);
   exports.stringifyString = stringifyString;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringify.js
+// node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS((exports) => {
   var anchors = require_anchors();
   var identity = require_identity();
@@ -11890,7 +11890,7 @@ ${ctx.indent}${str}`;
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyPair.js
+// node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -12026,7 +12026,7 @@ ${ctx.indent}`;
   exports.stringifyPair = stringifyPair;
 });
 
-// ../../../node_modules/yaml/dist/log.js
+// node_modules/yaml/dist/log.js
 var require_log = __commonJS((exports) => {
   var node_process = __require("process");
   function debug(logLevel, ...messages) {
@@ -12045,7 +12045,7 @@ var require_log = __commonJS((exports) => {
   exports.warn = warn;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -12099,7 +12099,7 @@ var require_merge = __commonJS((exports) => {
   exports.merge = merge2;
 });
 
-// ../../../node_modules/yaml/dist/nodes/addPairToJSMap.js
+// node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS((exports) => {
   var log = require_log();
   var merge2 = require_merge();
@@ -12160,7 +12160,7 @@ var require_addPairToJSMap = __commonJS((exports) => {
   exports.addPairToJSMap = addPairToJSMap;
 });
 
-// ../../../node_modules/yaml/dist/nodes/Pair.js
+// node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyPair = require_stringifyPair();
@@ -12198,7 +12198,7 @@ var require_Pair = __commonJS((exports) => {
   exports.createPair = createPair;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyCollection.js
+// node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -12343,7 +12343,7 @@ ${indent}${end}`;
   exports.stringifyCollection = stringifyCollection;
 });
 
-// ../../../node_modules/yaml/dist/nodes/YAMLMap.js
+// node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS((exports) => {
   var stringifyCollection = require_stringifyCollection();
   var addPairToJSMap = require_addPairToJSMap();
@@ -12470,7 +12470,7 @@ var require_YAMLMap = __commonJS((exports) => {
   exports.findPair = findPair;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/map.js
+// node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLMap = require_YAMLMap();
@@ -12489,7 +12489,7 @@ var require_map = __commonJS((exports) => {
   exports.map = map2;
 });
 
-// ../../../node_modules/yaml/dist/nodes/YAMLSeq.js
+// node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyCollection = require_stringifyCollection();
@@ -12582,7 +12582,7 @@ var require_YAMLSeq = __commonJS((exports) => {
   exports.YAMLSeq = YAMLSeq;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/seq.js
+// node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLSeq = require_YAMLSeq();
@@ -12601,7 +12601,7 @@ var require_seq = __commonJS((exports) => {
   exports.seq = seq;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/string.js
+// node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS((exports) => {
   var stringifyString = require_stringifyString();
   var string4 = {
@@ -12617,7 +12617,7 @@ var require_string = __commonJS((exports) => {
   exports.string = string4;
 });
 
-// ../../../node_modules/yaml/dist/schema/common/null.js
+// node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var nullTag = {
@@ -12632,7 +12632,7 @@ var require_null = __commonJS((exports) => {
   exports.nullTag = nullTag;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/bool.js
+// node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var boolTag = {
@@ -12653,7 +12653,7 @@ var require_bool = __commonJS((exports) => {
   exports.boolTag = boolTag;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyNumber.js
+// node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS((exports) => {
   function stringifyNumber({ format, minFractionDigits, tag, value }) {
     if (typeof value === "bigint")
@@ -12677,7 +12677,7 @@ var require_stringifyNumber = __commonJS((exports) => {
   exports.stringifyNumber = stringifyNumber;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/float.js
+// node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -12720,7 +12720,7 @@ var require_float = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/int.js
+// node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -12762,7 +12762,7 @@ var require_int = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../../node_modules/yaml/dist/schema/core/schema.js
+// node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -12787,7 +12787,7 @@ var require_schema = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/json/schema.js
+// node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var map2 = require_map();
@@ -12851,7 +12851,7 @@ var require_schema2 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS((exports) => {
   var node_buffer = __require("buffer");
   var Scalar = require_Scalar();
@@ -12906,7 +12906,7 @@ var require_binary = __commonJS((exports) => {
   exports.binary = binary;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -12981,7 +12981,7 @@ ${cn.comment}` : item.comment;
   exports.resolvePairs = resolvePairs;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS((exports) => {
   var identity = require_identity();
   var toJS = require_toJS();
@@ -13053,7 +13053,7 @@ var require_omap = __commonJS((exports) => {
   exports.omap = omap;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function boolStringify({ value, source }, ctx) {
@@ -13082,7 +13082,7 @@ var require_bool2 = __commonJS((exports) => {
   exports.trueTag = trueTag;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/float.js
+// node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -13128,7 +13128,7 @@ var require_float2 = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/int.js
+// node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -13204,7 +13204,7 @@ var require_int2 = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/set.js
+// node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -13287,7 +13287,7 @@ var require_set = __commonJS((exports) => {
   exports.set = set2;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   function parseSexagesimal(str, asBigInt) {
@@ -13369,7 +13369,7 @@ var require_timestamp = __commonJS((exports) => {
   exports.timestamp = timestamp;
 });
 
-// ../../../node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -13410,7 +13410,7 @@ var require_schema3 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../../node_modules/yaml/dist/schema/tags.js
+// node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS((exports) => {
   var map2 = require_map();
   var _null4 = require_null();
@@ -13501,7 +13501,7 @@ var require_tags = __commonJS((exports) => {
   exports.getTags = getTags;
 });
 
-// ../../../node_modules/yaml/dist/schema/Schema.js
+// node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS((exports) => {
   var identity = require_identity();
   var map2 = require_map();
@@ -13531,7 +13531,7 @@ var require_Schema = __commonJS((exports) => {
   exports.Schema = Schema;
 });
 
-// ../../../node_modules/yaml/dist/stringify/stringifyDocument.js
+// node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -13611,7 +13611,7 @@ var require_stringifyDocument = __commonJS((exports) => {
   exports.stringifyDocument = stringifyDocument;
 });
 
-// ../../../node_modules/yaml/dist/doc/Document.js
+// node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS((exports) => {
   var Alias = require_Alias();
   var Collection = require_Collection();
@@ -13846,7 +13846,7 @@ var require_Document = __commonJS((exports) => {
   exports.Document = Document;
 });
 
-// ../../../node_modules/yaml/dist/errors.js
+// node_modules/yaml/dist/errors.js
 var require_errors2 = __commonJS((exports) => {
   class YAMLError extends Error {
     constructor(name, pos, code, message) {
@@ -13911,7 +13911,7 @@ ${pointer}
   exports.prettifyError = prettifyError;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-props.js
+// node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS((exports) => {
   function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
     let spaceBefore = false;
@@ -14041,7 +14041,7 @@ var require_resolve_props = __commonJS((exports) => {
   exports.resolveProps = resolveProps;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-contains-newline.js
+// node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS((exports) => {
   function containsNewline(key) {
     if (!key)
@@ -14081,7 +14081,7 @@ var require_util_contains_newline = __commonJS((exports) => {
   exports.containsNewline = containsNewline;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-flow-indent-check.js
+// node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS((exports) => {
   var utilContainsNewline = require_util_contains_newline();
   function flowIndentCheck(indent, fc, onError) {
@@ -14096,7 +14096,7 @@ var require_util_flow_indent_check = __commonJS((exports) => {
   exports.flowIndentCheck = flowIndentCheck;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-map-includes.js
+// node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS((exports) => {
   var identity = require_identity();
   function mapIncludes(ctx, items, search) {
@@ -14109,7 +14109,7 @@ var require_util_map_includes = __commonJS((exports) => {
   exports.mapIncludes = mapIncludes;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-map.js
+// node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS((exports) => {
   var Pair = require_Pair();
   var YAMLMap = require_YAMLMap();
@@ -14216,7 +14216,7 @@ var require_resolve_block_map = __commonJS((exports) => {
   exports.resolveBlockMap = resolveBlockMap;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-seq.js
+// node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS((exports) => {
   var YAMLSeq = require_YAMLSeq();
   var resolveProps = require_resolve_props();
@@ -14264,7 +14264,7 @@ var require_resolve_block_seq = __commonJS((exports) => {
   exports.resolveBlockSeq = resolveBlockSeq;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-end.js
+// node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS((exports) => {
   function resolveEnd(end, offset, reqSpace, onError) {
     let comment = "";
@@ -14304,7 +14304,7 @@ var require_resolve_end = __commonJS((exports) => {
   exports.resolveEnd = resolveEnd;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-flow-collection.js
+// node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -14495,7 +14495,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
   exports.resolveFlowCollection = resolveFlowCollection;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-collection.js
+// node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -14557,7 +14557,7 @@ var require_compose_collection = __commonJS((exports) => {
   exports.composeCollection = composeCollection;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-block-scalar.js
+// node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function resolveBlockScalar(ctx, scalar, onError) {
@@ -14750,7 +14750,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
   exports.resolveBlockScalar = resolveBlockScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var resolveEnd = require_resolve_end();
@@ -14966,7 +14966,7 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
   exports.resolveFlowScalar = resolveFlowScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-scalar.js
+// node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -15044,7 +15044,7 @@ var require_compose_scalar = __commonJS((exports) => {
   exports.composeScalar = composeScalar;
 });
 
-// ../../../node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS((exports) => {
   function emptyScalarPosition(offset, before, pos) {
     if (before) {
@@ -15071,7 +15071,7 @@ var require_util_empty_scalar_position = __commonJS((exports) => {
   exports.emptyScalarPosition = emptyScalarPosition;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-node.js
+// node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -15169,7 +15169,7 @@ var require_compose_node = __commonJS((exports) => {
   exports.composeNode = composeNode;
 });
 
-// ../../../node_modules/yaml/dist/compose/compose-doc.js
+// node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS((exports) => {
   var Document = require_Document();
   var composeNode = require_compose_node();
@@ -15209,7 +15209,7 @@ var require_compose_doc = __commonJS((exports) => {
   exports.composeDoc = composeDoc;
 });
 
-// ../../../node_modules/yaml/dist/compose/composer.js
+// node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS((exports) => {
   var node_process = __require("process");
   var directives = require_directives();
@@ -15398,7 +15398,7 @@ ${end.comment}` : end.comment;
   exports.Composer = Composer;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-scalar.js
+// node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS((exports) => {
   var resolveBlockScalar = require_resolve_block_scalar();
   var resolveFlowScalar = require_resolve_flow_scalar();
@@ -15588,7 +15588,7 @@ var require_cst_scalar = __commonJS((exports) => {
   exports.setScalarValue = setScalarValue;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-stringify.js
+// node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS((exports) => {
   var stringify = (cst) => ("type" in cst) ? stringifyToken(cst) : stringifyItem(cst);
   function stringifyToken(token) {
@@ -15646,7 +15646,7 @@ var require_cst_stringify = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst-visit.js
+// node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS((exports) => {
   var BREAK = Symbol("break visit");
   var SKIP = Symbol("skip children");
@@ -15705,7 +15705,7 @@ var require_cst_visit = __commonJS((exports) => {
   exports.visit = visit;
 });
 
-// ../../../node_modules/yaml/dist/parse/cst.js
+// node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS((exports) => {
   var cstScalar = require_cst_scalar();
   var cstStringify = require_cst_stringify();
@@ -15806,7 +15806,7 @@ var require_cst = __commonJS((exports) => {
   exports.tokenType = tokenType;
 });
 
-// ../../../node_modules/yaml/dist/parse/lexer.js
+// node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS((exports) => {
   var cst = require_cst();
   function isEmpty(ch) {
@@ -16392,7 +16392,7 @@ var require_lexer = __commonJS((exports) => {
   exports.Lexer = Lexer;
 });
 
-// ../../../node_modules/yaml/dist/parse/line-counter.js
+// node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS((exports) => {
   class LineCounter {
     constructor() {
@@ -16420,7 +16420,7 @@ var require_line_counter = __commonJS((exports) => {
   exports.LineCounter = LineCounter;
 });
 
-// ../../../node_modules/yaml/dist/parse/parser.js
+// node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS((exports) => {
   var node_process = __require("process");
   var cst = require_cst();
@@ -17269,7 +17269,7 @@ var require_parser = __commonJS((exports) => {
   exports.Parser = Parser;
 });
 
-// ../../../node_modules/yaml/dist/public-api.js
+// node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS((exports) => {
   var composer = require_composer();
   var Document = require_Document();
@@ -17363,7 +17363,7 @@ var require_public_api = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// ../../../node_modules/yaml/dist/index.js
+// node_modules/yaml/dist/index.js
 var composer, Document, Schema, errors4, Alias, identity, Pair, Scalar, YAMLMap, YAMLSeq, cst, lexer, lineCounter, parser, publicApi, visit, $Composer, $Document, $Schema, $YAMLError, $YAMLParseError, $YAMLWarning, $Alias, $isAlias, $isCollection, $isDocument, $isMap, $isNode, $isPair, $isScalar, $isSeq, $Pair, $Scalar, $YAMLMap, $YAMLSeq, $Lexer, $LineCounter, $Parser, $parse, $parseAllDocuments, $parseDocument, $stringify, $visit, $visitAsync;
 var init_dist = __esm(() => {
   composer = require_composer();
@@ -17412,7 +17412,7 @@ var init_dist = __esm(() => {
   $visitAsync = visit.visitAsync;
 });
 
-// ../../../node_modules/zod/index.js
+// node_modules/zod/index.js
 var init_zod = __esm(() => {
   init_external();
   init_external();
@@ -18840,1485 +18840,12 @@ function shouldCreateBead(beadsIntegration, permissionRequired) {
 }
 var init_beads = () => {};
 
-// src/specialist/memory-retrieval.ts
-import { execSync } from "child_process";
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4);
-}
-function normalizeToken(raw) {
-  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
-}
-function extractTokens(input) {
-  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
-}
-function extractMemoryKeywords(title, description) {
-  const tokens = [
-    ...extractTokens(title),
-    ...extractTokens(description ?? "")
-  ];
-  const unique = [];
-  const seen = new Set;
-  for (const token of tokens) {
-    if (seen.has(token))
-      continue;
-    seen.add(token);
-    unique.push(token);
-    if (unique.length >= MAX_KEYWORDS)
-      break;
-  }
-  return unique;
-}
-function parseMemoriesPayload(jsonText, keyword) {
-  const parsed = JSON.parse(jsonText);
-  return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value, keyword }));
-}
-function runMemoriesQuery(keyword, cwd) {
-  const stdout = execSync(`bd memories ${JSON.stringify(keyword)} --json`, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 5000
-  });
-  if (!stdout.trim())
-    return [];
-  return parseMemoriesPayload(stdout, keyword);
-}
-function scoreMemory(memory, keywordOrder) {
-  const keywordWeight = MAX_KEYWORDS - (keywordOrder.get(memory.keyword) ?? MAX_KEYWORDS);
-  const text = `${memory.key} ${memory.value}`.toLowerCase();
-  const exactMatch = text.includes(memory.keyword.toLowerCase()) ? 5 : 0;
-  return keywordWeight * 10 + exactMatch;
-}
-function buildFilteredMemoryInjection(args) {
-  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
-  if (keywords.length === 0) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  const keywordOrder = new Map;
-  keywords.forEach((keyword, index) => keywordOrder.set(keyword, index));
-  const deduped = new Map;
-  for (const keyword of keywords) {
-    if (deduped.size >= MAX_MEMORIES * 2)
-      break;
-    try {
-      const memories = runMemoriesQuery(keyword, args.cwd);
-      for (const memory of memories) {
-        if (!deduped.has(memory.key))
-          deduped.set(memory.key, memory);
-      }
-    } catch {}
-  }
-  const ranked = [...deduped.values()].sort((left, right) => scoreMemory(right, keywordOrder) - scoreMemory(left, keywordOrder)).slice(0, MAX_MEMORIES);
-  if (ranked.length === 0) {
-    return { block: "", memories: [], estimatedTokens: 0 };
-  }
-  const selected = [];
-  let tokenBudget = 0;
-  for (const memory of ranked) {
-    const line = `- ${memory.key}: ${memory.value}`;
-    const lineTokens = estimateTokens(line);
-    if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
-      break;
-    selected.push(memory);
-    tokenBudget += lineTokens;
-  }
-  const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
-  const block = [
-    "## Filtered Beads Memories",
-    `_Keyword matched from bead context: ${keywords.join(", ")}_`,
-    ...lines
-  ].join(`
-`);
-  return {
-    block,
-    memories: selected,
-    estimatedTokens: estimateTokens(block)
-  };
-}
-function estimateInjectedTokens(text) {
-  return estimateTokens(text);
-}
-var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 6, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, STATIC_WORKFLOW_RULES_BLOCK;
-var init_memory_retrieval = __esm(() => {
-  DEFAULT_STOP_WORDS = new Set([
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "i",
-    "if",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "this",
-    "to",
-    "was",
-    "we",
-    "with",
-    "you",
-    "your",
-    "replace",
-    "implement",
-    "task",
-    "run",
-    "add",
-    "new",
-    "use",
-    "using",
-    "into",
-    "when",
-    "what",
-    "not",
-    "only"
-  ]);
-  STATIC_WORKFLOW_RULES_BLOCK = `
-## Beads Workflow Quick Rules
-- Claim work: \`bd update <id> --claim\`
-- Append progress notes: \`bd update <id> --notes "..."\`
-- Store reusable insight: \`bd remember "insight"\`
-- Close completed issue: \`bd close <id> --reason "done"\`
-
-## Session close checklist
-1. \`git add <files>\`
-2. \`git commit -m "..."\`
-3. \`git push\`
-`.trim();
-});
-
-// src/specialist/runner.ts
-import { createHash as createHash2 } from "crypto";
-import { writeFile } from "fs/promises";
-import { execSync as execSync2, spawnSync as spawnSync2 } from "child_process";
-import { existsSync as existsSync3, readFileSync } from "fs";
-import { basename as basename2, resolve as resolve2 } from "path";
-import { homedir as homedir2 } from "os";
-function runScript(command, cwd) {
-  const run = (command ?? "").trim();
-  if (!run) {
-    return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
-  }
-  const scriptName = basename2(run.split(" ")[0]);
-  try {
-    const output = execSync2(run, { encoding: "utf8", timeout: 30000, cwd });
-    return { name: scriptName, output, exitCode: 0 };
-  } catch (e) {
-    return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
-  }
-}
-function formatScriptOutput(results) {
-  const withOutput = results.filter((r) => r.output.trim());
-  if (withOutput.length === 0)
-    return "";
-  const blocks = withOutput.map((r) => {
-    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
-    return `<script name="${r.name}"${status}>
-${r.output.trim()}
-</script>`;
-  }).join(`
-`);
-  return `<pre_flight_context>
-${blocks}
-</pre_flight_context>`;
-}
-function resolvePath(p) {
-  return p.startsWith("~/") ? resolve2(homedir2(), p.slice(2)) : resolve2(p);
-}
-function commandExists(cmd) {
-  const result = spawnSync2("which", [cmd], { stdio: "ignore" });
-  return result.status === 0;
-}
-function validateShebang(filePath, errors5) {
-  try {
-    const head = readFileSync(filePath, "utf-8").slice(0, 120);
-    if (!head.startsWith("#!"))
-      return;
-    const shebang = head.split(`
-`)[0].toLowerCase();
-    const typos = [
-      [/pytho[^n]|pyton|pyhon/, "python"],
-      [/nod[^e]b/, "node"],
-      [/bsh$|bas$/, "bash"],
-      [/rub[^y]/, "ruby"]
-    ];
-    for (const [pattern, correct] of typos) {
-      if (pattern.test(shebang)) {
-        errors5.push(`  \u2717 ${filePath}: shebang looks wrong \u2014 did you mean '${correct}'? (got: ${shebang})`);
-      }
-    }
-  } catch {}
-}
-function isToolAvailable(tool, permissionLevel) {
-  const normalized = permissionLevel.toUpperCase();
-  const gatedLevels = PERMISSION_GATED_TOOLS[tool.toLowerCase()];
-  if (!gatedLevels)
-    return true;
-  return gatedLevels.includes(normalized);
-}
-function validateBeforeRun(spec, permissionLevel) {
-  const errors5 = [];
-  const warnings = [];
-  for (const p of spec.specialist.skills?.paths ?? []) {
-    const abs = resolvePath(p);
-    if (!existsSync3(abs))
-      warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
-  }
-  for (const script of spec.specialist.skills?.scripts ?? []) {
-    const run = script.run ?? script.path;
-    if (!run)
-      continue;
-    const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
-    if (isFilePath) {
-      const abs = resolvePath(run);
-      if (!existsSync3(abs)) {
-        errors5.push(`  \u2717 skills.scripts: script not found: ${run}`);
-      } else {
-        validateShebang(abs, errors5);
-      }
-    } else {
-      const binary = run.split(" ")[0];
-      if (!commandExists(binary)) {
-        errors5.push(`  \u2717 skills.scripts: command not found on PATH: ${binary}`);
-      }
-    }
-  }
-  for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
-    if (!commandExists(cmd)) {
-      errors5.push(`  \u2717 capabilities.external_commands: not found on PATH: ${cmd}`);
-    }
-  }
-  for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
-    if (!isToolAvailable(tool, permissionLevel)) {
-      errors5.push(`  \u2717 capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
-    }
-  }
-  if (warnings.length > 0) {
-    process.stderr.write(`[specialists] pre-run warnings:
-${warnings.join(`
-`)}
-`);
-  }
-  if (errors5.length > 0) {
-    throw new Error(`Specialist pre-run validation failed:
-${errors5.join(`
-`)}`);
-  }
-}
-function sleep(ms) {
-  return new Promise((resolve3) => setTimeout(resolve3, ms));
-}
-function getRetryDelayMs(attemptNumber) {
-  const baseDelay = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
-  const jitterMultiplier = 1 + (Math.random() * 2 - 1) * RETRY_MAX_JITTER;
-  return Math.max(0, Math.round(baseDelay * jitterMultiplier));
-}
-function sanitizeBeadIdForPrompt(beadId) {
-  const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, "");
-  const withoutBackticks = withoutControlChars.replace(/`/g, "");
-  return withoutBackticks.replace(/[^A-Za-z0-9-]/g, "");
-}
-function deepMergeSchemas(base, override) {
-  const merged = { ...base };
-  for (const [key, overrideValue] of Object.entries(override)) {
-    const baseValue = merged[key];
-    if (isRecord(baseValue) && isRecord(overrideValue)) {
-      merged[key] = deepMergeSchemas(baseValue, overrideValue);
-      continue;
-    }
-    merged[key] = overrideValue;
-  }
-  return merged;
-}
-function resolveOutputContractSchema(responseFormat, outputType, outputSchema) {
-  if (responseFormat === "text")
-    return;
-  if (responseFormat === "markdown" && !outputSchema)
-    return;
-  let mergedSchema = { ...BASE_OUTPUT_SCHEMA };
-  if (outputType !== "custom") {
-    mergedSchema = deepMergeSchemas(mergedSchema, OUTPUT_TYPE_SCHEMA_EXTENSIONS[outputType]);
-  }
-  if (outputSchema) {
-    mergedSchema = deepMergeSchemas(mergedSchema, outputSchema);
-  }
-  return mergedSchema;
-}
-function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
-  if (responseFormat === "text")
-    return "";
-  const lines = ["## Output Contract"];
-  if (responseFormat === "markdown") {
-    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits \u2014 prioritize completeness and clarity.");
-  } else {
-    lines.push("Respond with a single valid JSON object only.", "Do not wrap JSON in markdown fences, headers, or prose.");
-  }
-  if (outputType !== "custom") {
-    lines.push(`Output archetype: \`${outputType}\``);
-    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
-  }
-  if (outputSchema) {
-    lines.push("Structure your output to match this schema:", "```json", JSON.stringify(outputSchema, null, 2), "```");
-    if (responseFormat === "markdown") {
-      lines.push("MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.", "The machine-readable JSON block is canonical and must match the schema.");
-    }
-  }
-  return `
-
-${lines.join(`
-`)}`;
-}
-function tryParseJson(input) {
-  try {
-    return { value: JSON.parse(input) };
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    return { error: message };
-  }
-}
-function extractJsonFromMachineReadableBlock(output) {
-  const blockRegex = /##\s*Machine-readable block[\s\S]*?```json\s*([\s\S]*?)```/i;
-  const match = output.match(blockRegex);
-  if (!match || !match[1]) {
-    return { error: "missing `## Machine-readable block` JSON fenced block" };
-  }
-  return tryParseJson(match[1].trim());
-}
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function validateValueAgainstSchema(value, schema, path) {
-  const errors5 = [];
-  const schemaType = schema.type;
-  const schemaEnum = schema.enum;
-  if (Array.isArray(schemaEnum) && schemaEnum.length > 0 && !schemaEnum.some((candidate) => Object.is(candidate, value))) {
-    errors5.push(`${path}: expected one of [${schemaEnum.map((item) => JSON.stringify(item)).join(", ")}], got ${JSON.stringify(value)}`);
-  }
-  const effectiveType = typeof schemaType === "string" ? schemaType : isRecord(schema.properties) || Array.isArray(schema.required) ? "object" : Array.isArray(schema.items) ? "array" : undefined;
-  if (!effectiveType)
-    return errors5;
-  switch (effectiveType) {
-    case "object": {
-      if (!isRecord(value)) {
-        errors5.push(`${path}: expected object, got ${Array.isArray(value) ? "array" : typeof value}`);
-        return errors5;
-      }
-      const properties = isRecord(schema.properties) ? schema.properties : {};
-      const required2 = Array.isArray(schema.required) ? schema.required.filter((item) => typeof item === "string") : [];
-      for (const key of required2) {
-        if (!(key in value)) {
-          errors5.push(`${path}.${key}: missing required property`);
-        }
-      }
-      for (const [key, propertySchemaRaw] of Object.entries(properties)) {
-        if (!(key in value))
-          continue;
-        if (!isRecord(propertySchemaRaw))
-          continue;
-        errors5.push(...validateValueAgainstSchema(value[key], propertySchemaRaw, `${path}.${key}`));
-      }
-      return errors5;
-    }
-    case "array": {
-      if (!Array.isArray(value)) {
-        errors5.push(`${path}: expected array, got ${typeof value}`);
-        return errors5;
-      }
-      const itemSchema = isRecord(schema.items) ? schema.items : undefined;
-      if (!itemSchema)
-        return errors5;
-      for (let i = 0;i < value.length; i += 1) {
-        errors5.push(...validateValueAgainstSchema(value[i], itemSchema, `${path}[${i}]`));
-      }
-      return errors5;
-    }
-    case "string":
-      if (typeof value !== "string")
-        errors5.push(`${path}: expected string, got ${typeof value}`);
-      return errors5;
-    case "number":
-      if (typeof value !== "number" || Number.isNaN(value))
-        errors5.push(`${path}: expected number, got ${typeof value}`);
-      return errors5;
-    case "integer":
-      if (typeof value !== "number" || !Number.isInteger(value))
-        errors5.push(`${path}: expected integer, got ${JSON.stringify(value)}`);
-      return errors5;
-    case "boolean":
-      if (typeof value !== "boolean")
-        errors5.push(`${path}: expected boolean, got ${typeof value}`);
-      return errors5;
-    default:
-      return errors5;
-  }
-}
-function validateOutputContract(output, responseFormat, outputSchema) {
-  const warnings = [];
-  if (responseFormat === "text")
-    return warnings;
-  if (!outputSchema)
-    return warnings;
-  let structuredPayload;
-  if (responseFormat === "json") {
-    const parsed = tryParseJson(output.trim());
-    if (parsed.error) {
-      warnings.push(`Strong warning: response_format=json but output is not valid JSON (${parsed.error}).`);
-      return warnings;
-    }
-    structuredPayload = parsed.value;
-  }
-  if (responseFormat === "markdown") {
-    const parsed = extractJsonFromMachineReadableBlock(output);
-    if (parsed.error) {
-      warnings.push(`Output contract warning: ${parsed.error}.`);
-      return warnings;
-    }
-    structuredPayload = parsed.value;
-  }
-  const schemaErrors = validateValueAgainstSchema(structuredPayload, outputSchema, "$");
-  if (schemaErrors.length > 0) {
-    warnings.push(`Output contract warning: schema mismatch (${schemaErrors.length} issue${schemaErrors.length === 1 ? "" : "s"}).`, ...schemaErrors.map((issue2) => `  - ${issue2}`));
-  }
-  return warnings;
-}
-
-class SpecialistRunner {
-  deps;
-  sessionFactory;
-  constructor(deps) {
-    this.deps = deps;
-    this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
-  }
-  resolvePromptWithBeadContext(options, beadsClient) {
-    if (!options.inputBeadId) {
-      return options.prompt;
-    }
-    const beadReader = beadsClient ?? new BeadsClient;
-    const bead = beadReader.readBead(options.inputBeadId);
-    if (!bead) {
-      return options.prompt;
-    }
-    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
-    const blockers = contextDepth > 0 ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth) : [];
-    return buildBeadContext(bead, blockers);
-  }
-  async run(options, onProgress, onEvent, onMetric, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
-    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
-    const invocationId = crypto.randomUUID();
-    const start = Date.now();
-    const spec = await loader.get(options.name);
-    const { metadata, execution, prompt, output_file } = spec.specialist;
-    const primaryModel = options.backendOverride ?? execution.model;
-    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
-    const fallbackUsed = model !== primaryModel;
-    await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
-      variables_keys: Object.keys(options.variables ?? {}),
-      backend_resolved: model,
-      fallback_used: fallbackUsed,
-      circuit_breaker_state: circuitBreaker.getState(model),
-      scope: "project"
-    });
-    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
-    const effectiveKeepAlive = options.noKeepAlive ? false : options.keepAlive ?? execution.interactive ?? false;
-    const excludeExtensions = [
-      execution.extensions?.serena === false ? "pi-serena-tools" : undefined,
-      execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
-    ].filter((value) => Boolean(value));
-    validateBeforeRun(spec, permissionLevel);
-    const runCwd = resolve2(options.workingDirectory ?? process.cwd());
-    const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
-    const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
-    const preScriptOutput = formatScriptOutput(preResults);
-    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
-    const beadVariables = options.inputBeadId ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId } : {};
-    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: resolvedPrompt } : {};
-    const variables = {
-      prompt: resolvedPrompt,
-      cwd: runCwd,
-      pre_script_output: preScriptOutput,
-      ...options.variables ?? {},
-      ...beadVariables
-    };
-    const taskTemplate = options.inputBeadId ? renderTemplate(prompt.task_template, beadTemplateVariables) : prompt.task_template;
-    const renderedTask = renderTemplate(taskTemplate, variables);
-    const promptHash = createHash2("sha256").update(renderedTask).digest("hex").slice(0, 16);
-    await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
-      prompt_hash: promptHash,
-      prompt_length_chars: renderedTask.length,
-      estimated_tokens: Math.ceil(renderedTask.length / 4),
-      system_prompt_present: !!prompt.system
-    });
-    let agentsMd = options.inputBeadId ? renderTemplate(prompt.system ?? "", beadTemplateVariables) : prompt.system ?? "";
-    {
-      const sanitizedBeadId = options.inputBeadId ? sanitizeBeadIdForPrompt(options.inputBeadId) : "";
-      const beadInstructions = sanitizedBeadId ? `
-- Your task bead is: ${sanitizedBeadId}
-- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal \u2014 orchestrator may already own it)
-- Do NOT create new beads or sub-issues \u2014 this bead IS your task.
-- Do NOT run \`bd create\` \u2014 the orchestrator manages issue tracking.
-- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
-      agentsMd += `...beadInstructions}
----
-`;
-    }
-    agentsMd += `
-
----
-## Output Style (mandatory)
-Respond like smart caveman. Cut all filler, keep technical substance.
-- Drop articles (a, an, the), filler (just, really, basically, actually).
-- Drop pleasantries (sure, certainly, happy to).
-- No hedging. Fragments fine. Short synonyms.
-- Technical terms stay exact. Code blocks unchanged.
-- Pattern: [thing] [action] [reason]. [next step].
----
-`;
-    try {
-      const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
-      if (existsSync3(gitnexusMetaPath)) {
-        agentsMd += `
-
----
-## MANDATORY: GitNexus Code Intelligence
-_This project is indexed by GitNexus. You MUST use these tools \u2014 do NOT fall back to grep/find for code understanding._
-
-### Before reading or editing ANY code:
-1. \`gitnexus_query({query: "<what you need to understand>"})\` \u2014 find execution flows and symbols
-2. \`gitnexus_context({name: "<symbol>"})\` \u2014 callers, callees, process participation
-
-### Before editing ANY function/class/method:
-3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` \u2014 blast radius check
-   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
-
-### Before completing your task:
-4. \`gitnexus_detect_changes()\` \u2014 verify your changes only affect expected scope
-
-**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
----
-`;
-      }
-    } catch {}
-    let staticTokens = 0;
-    let memoryTokens = 0;
-    let gitnexusTokens = 0;
-    const staticRulesBlock = `
-
----
-${STATIC_WORKFLOW_RULES_BLOCK}
----
-`;
-    agentsMd += staticRulesBlock;
-    staticTokens = estimateInjectedTokens(staticRulesBlock);
-    if (options.inputBeadId) {
-      const beadForMemory = (beadsClient ?? new BeadsClient).readBead(options.inputBeadId);
-      if (beadForMemory?.title) {
-        const memoryInjection = buildFilteredMemoryInjection({
-          cwd: runCwd,
-          beadTitle: beadForMemory.title,
-          beadDescription: beadForMemory.description
-        });
-        if (memoryInjection.block) {
-          const memoryBlock = `
-
----
-${memoryInjection.block}
----
-`;
-          agentsMd += memoryBlock;
-          memoryTokens = memoryInjection.estimatedTokens;
-        }
-        try {
-          const gitnexusMetaPath = resolve2(runCwd, ".gitnexus/meta.json");
-          if (existsSync3(gitnexusMetaPath)) {
-            const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
-            const summaries = [];
-            for (const symbol of symbolCandidates) {
-              try {
-                const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
-                  cwd: runCwd,
-                  encoding: "utf8",
-                  timeout: 5000,
-                  stdio: ["ignore", "pipe", "pipe"]
-                });
-                const parsed = JSON.parse(raw);
-                if (parsed.status !== "found" || !parsed.symbol?.name)
-                  continue;
-                const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
-                const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
-                const processes = (parsed.processes ?? []).slice(0, 2).map((proc) => proc.name).filter(Boolean);
-                summaries.push(`- ${parsed.symbol.name} (${parsed.symbol.filePath ?? "unknown file"})
-` + `  callers: ${callers.length > 0 ? callers.join(", ") : "none"}
-` + `  callees: ${callees.length > 0 ? callees.join(", ") : "none"}
-` + `  processes: ${processes.length > 0 ? processes.join(", ") : "none"}`);
-              } catch {}
-            }
-            if (summaries.length > 0) {
-              const gitnexusBlock = `
-
----
-## GitNexus Pre-query Snapshot
-${summaries.join(`
-`)}
----
-`;
-              agentsMd += gitnexusBlock;
-              gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
-            }
-          }
-        } catch {}
-      }
-    }
-    const totalMemoryInjectionTokens = staticTokens + memoryTokens + gitnexusTokens;
-    onEvent?.("memory_injection", {
-      summary: JSON.stringify({
-        memory_injection: {
-          static_tokens: staticTokens,
-          memory_tokens: memoryTokens,
-          gitnexus_tokens: gitnexusTokens,
-          total_tokens: totalMemoryInjectionTokens
-        }
-      })
-    });
-    const responseFormat = execution.response_format ?? "text";
-    const outputType = execution.output_type ?? "custom";
-    const specialistOutputSchema = prompt.output_schema;
-    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
-    agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
-    const skillPaths = [];
-    if (prompt.skill_inherit)
-      skillPaths.push(prompt.skill_inherit);
-    skillPaths.push(...spec.specialist.skills?.paths ?? []);
-    if (skillPaths.length > 0 || preScripts.length > 0) {
-      const line = "\u2501".repeat(56);
-      onProgress?.(`
-${line}
-\u25C6 AUTO INJECTED
-`);
-      if (skillPaths.length > 0) {
-        onProgress?.(`  skills (--skill):
-${skillPaths.map((p) => `    \u2022 ${p}`).join(`
-`)}
-`);
-      }
-      if (preScripts.length > 0) {
-        onProgress?.(`  pre scripts/commands:
-${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_output ? " \u2192 $pre_script_output" : ""}`).join(`
-`)}
-`);
-      }
-      onProgress?.(`${line}
-
-`);
-    }
-    const beadsIntegration = spec.specialist.beads_integration ?? "auto";
-    let beadId;
-    let ownsBead = false;
-    if (options.inputBeadId) {
-      beadId = options.inputBeadId;
-    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
-      beadId = beadsClient.createBead(metadata.name) ?? undefined;
-      if (beadId) {
-        ownsBead = true;
-        onBeadCreated?.(beadId);
-      }
-    }
-    await hooks.emit("pre_execute", invocationId, metadata.name, metadata.version, {
-      backend: model,
-      model,
-      timeout_ms: execution.timeout_ms,
-      permission_level: permissionLevel
-    });
-    let output;
-    let sessionBackend = model;
-    let runMetrics;
-    let session;
-    let keepAliveActive = false;
-    let sessionClosed = false;
-    const maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? execution.max_retries ?? 0));
-    const maxAttempts = maxRetries + 1;
-    try {
-      const envVars = {};
-      const resolvedNodeId = options.variables?.SPECIALISTS_NODE_ID ?? options.variables?.node_id;
-      if (resolvedNodeId)
-        envVars.SPECIALISTS_NODE_ID = resolvedNodeId;
-      if (options.variables?.SPECIALISTS_JOB_ID)
-        envVars.SPECIALISTS_JOB_ID = options.variables.SPECIALISTS_JOB_ID;
-      session = await this.sessionFactory({
-        model,
-        systemPrompt: agentsMd || undefined,
-        skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
-        thinkingLevel: execution.thinking_level,
-        permissionLevel,
-        stallTimeoutMs: execution.stall_timeout_ms,
-        cwd: runCwd,
-        worktreeBoundary: options.worktreeBoundary,
-        ...excludeExtensions.length > 0 ? { excludeExtensions } : {},
-        ...Object.keys(envVars).length > 0 ? { env: envVars } : {},
-        onToken: (delta) => onProgress?.(delta),
-        onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
-        onToolStart: (tool, args, toolCallId) => {
-          onProgress?.(`
-\u2699 ${tool}\u2026`);
-          onToolStartCallback?.(tool, args, toolCallId);
-        },
-        onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => {
-          onProgress?.(`\u2713
-`);
-          onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw);
-        },
-        onEvent: (type, details) => onEvent?.(type, details),
-        onMetric: (event) => onMetric?.(event),
-        onMeta: (meta) => onMeta?.(meta)
-      });
-      await session.start();
-      onKillRegistered?.(session.kill.bind(session));
-      onSteerRegistered?.((msg) => session.steer(msg));
-      for (let attempt = 1;attempt <= maxAttempts; attempt++) {
-        try {
-          await session.prompt(renderedTask);
-          await session.waitForDone(execution.timeout_ms);
-          output = await session.getLastOutput();
-          runMetrics = session.getMetrics?.();
-          sessionBackend = session.meta.backend;
-          break;
-        } catch (err) {
-          const shouldRetry = attempt < maxAttempts && !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
-          if (!shouldRetry) {
-            throw err;
-          }
-          const delayMs = getRetryDelayMs(attempt);
-          onEvent?.("auto_retry");
-          onProgress?.(`
-\u21BB transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms
-`);
-          await sleep(delayMs);
-        }
-      }
-      if (output === undefined) {
-        throw new Error("Specialist run finished without output");
-      }
-      if (responseFormat === "json") {
-        output = stripJsonFences(output);
-      }
-      if (effectiveKeepAlive && onResumeReady) {
-        keepAliveActive = true;
-        const resumeFn = async (msg) => {
-          await session.resume(msg, execution.timeout_ms);
-          return session.getLastOutput();
-        };
-        const closeFn = async () => {
-          keepAliveActive = false;
-          await session.close();
-        };
-        onResumeReady(resumeFn, closeFn);
-      } else {
-        await session.close();
-        sessionClosed = true;
-      }
-      const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
-      for (const script of postScripts)
-        runScript(script.run ?? script.path, runCwd);
-      circuitBreaker.recordSuccess(model);
-    } catch (err) {
-      const isCancelled = err instanceof SessionKilledError;
-      const authError = isAuthError(err);
-      if (!isCancelled && !authError) {
-        circuitBreaker.recordFailure(model);
-      }
-      const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
-      if (beadId) {
-        if (ownsBead)
-          beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(beadId, metadata.name, model, 1);
-      }
-      await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
-        status: isCancelled ? "CANCELLED" : "ERROR",
-        duration_ms: Date.now() - start,
-        output_valid: false,
-        error: { type: isCancelled ? "cancelled" : "backend_error", message: err.message }
-      });
-      throw err;
-    } finally {
-      if (!keepAliveActive && !sessionClosed) {
-        session?.kill();
-      }
-    }
-    const durationMs = Date.now() - start;
-    const outputContractWarnings = validateOutputContract(output, responseFormat, outputContractSchema);
-    if (outputContractWarnings.length > 0) {
-      process.stderr.write(`[specialists] output contract warnings:
-${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
-`)}
-`);
-    }
-    if (output_file) {
-      await writeFile(output_file, output, "utf-8").catch(() => {});
-    }
-    await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
-      status: "COMPLETE",
-      duration_ms: durationMs,
-      output_valid: true
-    });
-    if (beadId) {
-      beadsClient?.auditBead(beadId, metadata.name, model, 0);
-    }
-    return {
-      output,
-      backend: sessionBackend,
-      model,
-      durationMs,
-      specialistVersion: metadata.version,
-      promptHash,
-      beadId,
-      metrics: runMetrics,
-      permissionRequired: execution.permission_required,
-      autoCommit: execution.auto_commit
-    };
-  }
-  async startAsync(options, registry2) {
-    const jobId = crypto.randomUUID();
-    let specialistVersion = "?";
-    try {
-      const spec = await this.deps.loader.get(options.name);
-      specialistVersion = spec.specialist.metadata.version;
-    } catch {}
-    registry2.register(jobId, {
-      backend: options.backendOverride ?? "starting",
-      model: "?",
-      specialistVersion
-    });
-    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), undefined, (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn), (resumeFn, closeFn) => registry2.setResumeFn(jobId, resumeFn, closeFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
-    return jobId;
-  }
-}
-var PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, IMPACT_REPORT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
-var init_runner = __esm(() => {
-  init_session();
-  init_circuitBreaker();
-  init_beads();
-  init_memory_retrieval();
-  PERMISSION_GATED_TOOLS = {
-    bash: ["LOW", "MEDIUM", "HIGH"],
-    edit: ["MEDIUM", "HIGH"],
-    write: ["HIGH"]
-  };
-  BASE_OUTPUT_SCHEMA = {
-    type: "object",
-    properties: {
-      summary: { type: "string" },
-      status: { enum: ["success", "partial", "failed", "waiting"] },
-      issues_closed: { type: "array", items: { type: "string" } },
-      issues_created: { type: "array", items: { type: "string" } },
-      follow_ups: { type: "array", items: { type: "string" } },
-      risks: { type: "array", items: { type: "string" } },
-      verification: { type: "array", items: { type: "string" } }
-    },
-    required: ["summary", "status", "issues_closed", "issues_created", "follow_ups", "risks", "verification"]
-  };
-  IMPACT_REPORT_SCHEMA = {
-    type: "object",
-    properties: {
-      files_touched: { type: "array", items: { type: "string" } },
-      symbols_analyzed: { type: "array", items: { type: "string" } },
-      highest_risk: { enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
-      tool_invocations: { type: "number" }
-    }
-  };
-  OUTPUT_TYPE_SCHEMA_EXTENSIONS = {
-    codegen: {
-      type: "object",
-      properties: {
-        files_changed: { type: "array", items: { type: "string" } },
-        symbols_modified: { type: "array", items: { type: "string" } },
-        lint_pass: { type: "boolean" },
-        tests_pass: { type: "boolean" },
-        impact_report: IMPACT_REPORT_SCHEMA
-      }
-    },
-    analysis: {
-      type: "object",
-      properties: {
-        key_files: { type: "array", items: { type: "string" } },
-        architecture_notes: { type: "string" },
-        recommendations: { type: "array", items: { type: "string" } },
-        impact_report: IMPACT_REPORT_SCHEMA
-      }
-    },
-    review: {
-      type: "object",
-      properties: {
-        verdict: { enum: ["pass", "partial", "fail"] },
-        findings: { type: "array", items: { type: "string" } },
-        recommendation: { type: "string" }
-      }
-    },
-    synthesis: {
-      type: "object",
-      properties: {
-        decisions: { type: "array", items: { type: "string" } },
-        rationale: { type: "string" },
-        next_steps: { type: "array", items: { type: "string" } }
-      }
-    },
-    orchestration: {
-      type: "object",
-      properties: {
-        actions: {
-          type: "array",
-          items: {
-            oneOf: [
-              {
-                type: "object",
-                properties: {
-                  type: { enum: ["resume"] },
-                  memberId: { type: "string" },
-                  task: { type: "string" }
-                },
-                required: ["type", "memberId", "task"]
-              },
-              {
-                type: "object",
-                properties: {
-                  type: { enum: ["steer"] },
-                  memberId: { type: "string" },
-                  message: { type: "string" }
-                },
-                required: ["type", "memberId", "message"]
-              },
-              {
-                type: "object",
-                properties: {
-                  type: { enum: ["stop"] },
-                  memberId: { type: "string" }
-                },
-                required: ["type", "memberId"]
-              }
-            ]
-          }
-        },
-        blocking_on: {
-          type: "object",
-          properties: {
-            kind: { enum: ["human_input", "member_output", "external_dependency"] },
-            target: { type: "string" },
-            details: { type: "string" }
-          },
-          required: ["kind"]
-        },
-        memory_patch: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              entry_type: { enum: ["fact", "question", "decision"] },
-              entry_id: { type: "string" },
-              summary: { type: "string" },
-              source_member_id: { type: "string" },
-              confidence: { type: "number" },
-              provenance: { type: "object" }
-            },
-            required: ["entry_type", "summary"]
-          }
-        },
-        coordination_state: {
-          type: "object",
-          properties: {
-            current_goal: { type: "string" },
-            active_members: { type: "array", items: { type: "string" } },
-            waiting_on_members: { type: "array", items: { type: "string" } },
-            pending_decisions: { type: "array", items: { type: "string" } },
-            blockers: { type: "array", items: { type: "string" } }
-          }
-        },
-        routing_rationale: { type: "string" },
-        next_trigger: {
-          type: "object",
-          properties: {
-            event: { enum: ["on_member_update", "on_human_input", "on_external_update", "on_timeout", "manual_resume"] },
-            target: { type: "string" },
-            details: { type: "string" }
-          },
-          required: ["event"]
-        }
-      }
-    },
-    workflow: {
-      type: "object",
-      properties: {
-        steps_completed: { type: "array", items: { type: "string" } },
-        first_task: { type: "string" },
-        children: { type: "array", items: { type: "string" } },
-        test_issues: { type: "array", items: { type: "string" } }
-      }
-    },
-    research: {
-      type: "object",
-      properties: {
-        sources_checked: { type: "array", items: { type: "string" } },
-        confidence: { enum: ["low", "medium", "high"] },
-        recommendations: { type: "array", items: { type: "string" } }
-      }
-    }
-  };
-  OUTPUT_TYPE_GUIDANCE = {
-    codegen: "- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.",
-    analysis: "- Analysis focus: include architecture understanding and evidence-backed findings.",
-    review: "- Review focus: include severity-ranked findings with clear merge/readiness recommendation.",
-    synthesis: "- Synthesis focus: consolidate findings into decisions and clear next steps.",
-    orchestration: "- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.",
-    workflow: "- Workflow focus: include procedural state transitions and operational checkpoints.",
-    research: "- Research focus: include sources checked, confidence, and final recommendations."
-  };
-});
-
-// src/specialist/hooks.ts
-import { appendFile, mkdir } from "fs/promises";
-import { dirname as dirname2 } from "path";
-
-class HookEmitter {
-  tracePath;
-  customHandlers = new Map;
-  ready;
-  constructor(options) {
-    this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname2(options.tracePath), { recursive: true }).then(() => {});
-  }
-  async emit(hook, invocationId, specialistName, specialistVersion, payload) {
-    await this.ready;
-    const event = {
-      invocation_id: invocationId,
-      hook,
-      timestamp: new Date().toISOString(),
-      specialist_name: specialistName,
-      specialist_version: specialistVersion,
-      ...payload
-    };
-    await appendFile(this.tracePath, JSON.stringify(event) + `
-`, "utf-8");
-    for (const handler of this.customHandlers.get(hook) ?? []) {
-      Promise.resolve().then(() => handler(event)).catch(() => {});
-    }
-  }
-  onHook(hook, handler) {
-    if (!this.customHandlers.has(hook))
-      this.customHandlers.set(hook, []);
-    this.customHandlers.get(hook).push(handler);
-  }
-}
-var init_hooks = () => {};
-
-// src/cli/install.ts
-var exports_install = {};
-__export(exports_install, {
-  run: () => run
-});
-async function run() {
-  console.log("");
-  console.log(yellow("\u26A0 DEPRECATED: `specialists install` is deprecated"));
-  console.log("");
-  console.log(`  Use ${bold("specialists init")} instead.`);
-  console.log("");
-  console.log("  The init command:");
-  console.log("    \u2022 creates specialists/ and .specialists/ directories");
-  console.log("    \u2022 registers the MCP server in .mcp.json");
-  console.log("    \u2022 injects workflow context into AGENTS.md/CLAUDE.md");
-  console.log("");
-  console.log(`  ${dim("Run: specialists init --help for full details")}`);
-  console.log("");
-}
-var bold = (s) => `\x1B[1m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, dim = (s) => `\x1B[2m${s}\x1B[0m`;
-
-// src/cli/version.ts
-var exports_version = {};
-__export(exports_version, {
-  run: () => run2
-});
-import { createRequire } from "module";
-import { fileURLToPath } from "url";
-import { dirname as dirname3, join as join4 } from "path";
-import { existsSync as existsSync4 } from "fs";
-async function run2() {
-  const req = createRequire(import.meta.url);
-  const here = dirname3(fileURLToPath(import.meta.url));
-  const bundlePkgPath = join4(here, "..", "package.json");
-  const sourcePkgPath = join4(here, "..", "..", "package.json");
-  let pkg;
-  if (existsSync4(bundlePkgPath)) {
-    pkg = req("../package.json");
-  } else if (existsSync4(sourcePkgPath)) {
-    pkg = req("../../package.json");
-  } else {
-    console.error("Cannot find package.json");
-    process.exit(1);
-  }
-  console.log(`${pkg.name} v${pkg.version}`);
-}
-var init_version = () => {};
-
-// src/specialist/job-root.ts
-import { spawnSync as spawnSync3 } from "child_process";
-import { dirname as dirname4, join as join5, resolve as resolve3 } from "path";
-function resolveCommonGitRoot(cwd) {
-  const result = spawnSync3("git", ["rev-parse", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const gitCommonDir = result.stdout?.trim();
-  if (!gitCommonDir)
-    return;
-  return dirname4(resolve3(cwd, gitCommonDir));
-}
-function resolveJobsDir(cwd = process.cwd()) {
-  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
-  return join5(commonRoot, ".specialists", "jobs");
-}
-function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync3("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const branch = result.stdout?.trim();
-  return branch && branch !== "HEAD" ? branch : undefined;
-}
-var init_job_root = () => {};
-
-// src/specialist/timeline-events.ts
-function summarizeToolResult(resultContent) {
-  if (!resultContent)
-    return;
-  const compact = resultContent.trim();
-  if (!compact)
-    return;
-  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
-    return compact;
-  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}\u2026`;
-}
-function mapCallbackEventToTimelineEvent(callbackEvent, context) {
-  const t = Date.now();
-  switch (callbackEvent) {
-    case "thinking":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.THINKING,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
-    case "tool_execution_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "start",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true },
-        args: context.args,
-        started_at: new Date(t).toISOString()
-      };
-    case "tool_execution_update":
-    case "tool_execution":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "update",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true }
-      };
-    case "tool_execution_end": {
-      const resultSummary = summarizeToolResult(context.resultContent);
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TOOL,
-        tool: context.tool ?? "unknown",
-        phase: "end",
-        tool_call_id: context.toolCallId,
-        ...context.toolCallId ? {} : { uncorrelated: true },
-        is_error: context.isError,
-        ...resultSummary ? { result_summary: resultSummary } : {},
-        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
-      };
-    }
-    case "message_start_assistant":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
-    case "message_end_assistant":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "assistant" };
-    case "message_start_tool_result":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "toolResult" };
-    case "message_end_tool_result":
-      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "toolResult" };
-    case "turn_start":
-      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
-    case "turn_end":
-      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
-    case "auto_compaction_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.COMPACTION,
-        phase: "start",
-        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
-        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
-        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
-      };
-    case "auto_compaction_end":
-    case "auto_compaction":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.COMPACTION,
-        phase: "end",
-        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
-        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
-        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
-      };
-    case "auto_retry_start":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.RETRY,
-        phase: "start",
-        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
-        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
-        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
-        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
-      };
-    case "auto_retry_end":
-    case "auto_retry":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.RETRY,
-        phase: "end",
-        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
-        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
-        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
-        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
-      };
-    case "set_model":
-    case "cycle_model":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
-        action: callbackEvent,
-        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
-        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
-      };
-    case "extension_error":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
-        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
-        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
-      };
-    case "memory_injection":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.META,
-        model: "memory_injection",
-        backend: "injected",
-        ...context.memoryInjection ? { memory_injection: context.memoryInjection } : {}
-      };
-    case "text":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TEXT,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
-    case "agent_end":
-    case "message_done":
-    case "done":
-      return null;
-    default:
-      return null;
-  }
-}
-function createRunStartEvent(specialist, beadId) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RUN_START,
-    specialist,
-    bead_id: beadId
-  };
-}
-function createMetaEvent(model, backend) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.META,
-    model,
-    backend
-  };
-}
-function createStatusChangeEvent(status, previousStatus) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
-    status,
-    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
-  };
-}
-function createStaleWarningEvent(reason, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.STALE_WARNING,
-    reason,
-    silence_ms: options.silence_ms,
-    threshold_ms: options.threshold_ms,
-    ...options.tool !== undefined ? { tool: options.tool } : {}
-  };
-}
-function createTokenUsageEvent(token_usage, source) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
-    token_usage,
-    source
-  };
-}
-function createFinishReasonEvent(finish_reason, source) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
-    finish_reason,
-    source
-  };
-}
-function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent, contextPct, contextHealth) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
-    turn_index,
-    ...token_usage ? { token_usage } : {},
-    ...finish_reason ? { finish_reason } : {},
-    ...textContent ? { text_content: textContent } : {},
-    ...contextPct !== undefined ? { context_pct: contextPct } : {},
-    ...contextHealth ? { context_health: contextHealth } : {}
-  };
-}
-function createCompactionEvent(phase, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.COMPACTION,
-    phase,
-    ...options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {},
-    ...options?.summary ? { summary: options.summary } : {},
-    ...options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}
-  };
-}
-function createRetryEvent(phase, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RETRY,
-    phase,
-    ...options?.attempt !== undefined ? { attempt: options.attempt } : {},
-    ...options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {},
-    ...options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {},
-    ...options?.errorMessage ? { error_message: options.errorMessage } : {}
-  };
-}
-function createRunCompleteEvent(status, elapsed_s, options) {
-  return {
-    t: Date.now(),
-    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
-    status,
-    elapsed_s,
-    ...options
-  };
-}
-function createAutoCommitEvent(status, options) {
-  const type = status === "success" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SUCCESS : status === "skipped" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SKIPPED : TIMELINE_EVENT_TYPES.AUTO_COMMIT_FAILED;
-  return {
-    t: Date.now(),
-    type,
-    ...options?.reason ? { reason: options.reason } : {},
-    ...options?.commit_sha ? { commit_sha: options.commit_sha } : {},
-    ...options?.committed_files ? { committed_files: options.committed_files } : {}
-  };
-}
-function parseTimelineEvent(line) {
-  try {
-    const parsed = JSON.parse(line);
-    if (!parsed || typeof parsed !== "object")
-      return null;
-    if (typeof parsed.t !== "number")
-      return null;
-    if (typeof parsed.type !== "string")
-      return null;
-    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
-      return {
-        t: parsed.t,
-        type: TIMELINE_EVENT_TYPES.DONE,
-        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
-      };
-    }
-    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
-      return {
-        t: parsed.t,
-        type: TIMELINE_EVENT_TYPES.AGENT_END,
-        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
-      };
-    }
-    const knownTypes = Object.values(TIMELINE_EVENT_TYPES).filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
-    if (!knownTypes.includes(parsed.type))
-      return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-function isRunCompleteEvent(event) {
-  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
-}
-function compareTimelineEvents(a, b) {
-  const timeDiff = a.t - b.t;
-  if (timeDiff !== 0)
-    return timeDiff;
-  return (a.seq ?? 0) - (b.seq ?? 0);
-}
-var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
-var init_timeline_events = __esm(() => {
-  TIMELINE_EVENT_TYPES = {
-    RUN_START: "run_start",
-    META: "meta",
-    THINKING: "thinking",
-    TOOL: "tool",
-    TEXT: "text",
-    MESSAGE: "message",
-    TURN: "turn",
-    STATUS_CHANGE: "status_change",
-    RUN_COMPLETE: "run_complete",
-    STALE_WARNING: "stale_warning",
-    TOKEN_USAGE: "token_usage",
-    FINISH_REASON: "finish_reason",
-    TURN_SUMMARY: "turn_summary",
-    COMPACTION: "compaction",
-    RETRY: "retry",
-    MODEL_CHANGE: "model_change",
-    EXTENSION_ERROR: "extension_error",
-    AUTO_COMMIT_SUCCESS: "auto_commit_success",
-    AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
-    AUTO_COMMIT_FAILED: "auto_commit_failed",
-    DONE: "done",
-    AGENT_END: "agent_end"
-  };
-});
-
 // src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
-import { spawnSync as spawnSync4 } from "child_process";
-import { join as join6, sep as sep2 } from "path";
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync, writeFileSync as writeFileSync2 } from "fs";
+import { spawnSync as spawnSync2 } from "child_process";
+import { join as join3, sep as sep2 } from "path";
 function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync4("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+  const commonDirResult = spawnSync2("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20329,7 +18856,7 @@ function resolveGitRootFrom(cwd) {
       return commonDir.slice(0, -4);
     }
   }
-  const fallbackResult = spawnSync4("git", ["rev-parse", "--show-toplevel"], {
+  const fallbackResult = spawnSync2("git", ["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -20342,17 +18869,17 @@ function resolveGitRootFrom(cwd) {
 function resolveDbDirectory(gitRoot) {
   const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
   if (xdgDataHome) {
-    return { directory: join6(xdgDataHome, "specialists"), source: "xdg-data-home" };
+    return { directory: join3(xdgDataHome, "specialists"), source: "xdg-data-home" };
   }
   return {
-    directory: join6(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    directory: join3(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
     source: "git-root"
   };
 }
 function resolveObservabilityDbLocation(cwd = process.cwd()) {
   const gitRoot = resolveGitRootFrom(cwd);
   const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join6(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  const dbPath = join3(resolved.directory, OBSERVABILITY_DB_FILENAME);
   return {
     gitRoot,
     dbDirectory: resolved.directory,
@@ -20364,7 +18891,7 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
 }
 function ensureObservabilityDbFile(location) {
   mkdirSync2(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync5(location.dbPath);
+  const alreadyExists = existsSync3(location.dbPath);
   if (!alreadyExists) {
     writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
   }
@@ -20372,13 +18899,13 @@ function ensureObservabilityDbFile(location) {
   return { created: !alreadyExists };
 }
 function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
-  const gitignorePath = join6(gitRoot, ".gitignore");
+  const gitignorePath = join3(gitRoot, ".gitignore");
   const requiredEntries = [
     ".specialists/db/*.db",
     ".specialists/db/*.db-wal",
     ".specialists/db/*.db-shm"
   ];
-  const existing = existsSync5(gitignorePath) ? readFileSync2(gitignorePath, "utf-8") : "";
+  const existing = existsSync3(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
   const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
   const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
   if (missingEntries.length === 0) {
@@ -20397,7 +18924,7 @@ function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
   return { changed: true };
 }
 function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
-  const jobsDirPrefix = `${join6(gitRoot, ".specialists", "jobs")}${sep2}`;
+  const jobsDirPrefix = `${join3(gitRoot, ".specialists", "jobs")}${sep2}`;
   return pathToCheck.startsWith(jobsDirPrefix);
 }
 var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
@@ -20405,9 +18932,42 @@ var init_observability_db = __esm(() => {
   DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
 });
 
+// src/specialist/job-root.ts
+import { spawnSync as spawnSync3 } from "child_process";
+import { dirname as dirname2, join as join4, resolve as resolve2 } from "path";
+function resolveCommonGitRoot(cwd) {
+  const result = spawnSync3("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const gitCommonDir = result.stdout?.trim();
+  if (!gitCommonDir)
+    return;
+  return dirname2(resolve2(cwd, gitCommonDir));
+}
+function resolveJobsDir(cwd = process.cwd()) {
+  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
+  return join4(commonRoot, ".specialists", "jobs");
+}
+function resolveCurrentBranch(cwd = process.cwd()) {
+  const result = spawnSync3("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const branch = result.stdout?.trim();
+  return branch && branch !== "HEAD" ? branch : undefined;
+}
+var init_job_root = () => {};
+
 // src/specialist/observability-sqlite.ts
-import { existsSync as existsSync6, readFileSync as readFileSync3 } from "fs";
-import { join as join7 } from "path";
+import { existsSync as existsSync4, readFileSync as readFileSync2 } from "fs";
+import { join as join5 } from "path";
 function loadBunDatabase() {
   if (_probed)
     return _BunDatabase;
@@ -20656,6 +19216,26 @@ function initSchema(db) {
       output        TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
   `);
   const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
   const missingSpecialistJobsColumns = [
@@ -20721,6 +19301,7 @@ function initSchema(db) {
   migrateToV7(db);
   migrateToV8(db);
   migrateToV9(db);
+  migrateToV10(db);
   verifyWalMode(db);
 }
 function migrateToV5(db) {
@@ -20889,6 +19470,39 @@ function migrateToV9(db) {
   db.run(`
     INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
       VALUES (9, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV10(db) {
+  const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+  if (hasV10) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (10, strftime('%s', 'now') * 1000);
   `);
 }
 
@@ -21606,6 +20220,117 @@ class SqliteClient {
       return row?.output ?? null;
     }, "readResult");
   }
+  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        const upsertMemory = this.db.query(`
+          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
+          VALUES (?, ?, ?)
+          ON CONFLICT(memory_key) DO UPDATE SET
+            memory_value = excluded.memory_value,
+            updated_at_ms = excluded.updated_at_ms
+        `);
+        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
+        const seen = new Set;
+        for (const memory of memories) {
+          if (!memory.key || seen.has(memory.key))
+            continue;
+          seen.add(memory.key);
+          upsertMemory.run(memory.key, memory.value, syncedAtMs);
+          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
+        }
+        if (seen.size > 0) {
+          const placeholders = [...seen].map(() => "?").join(", ");
+          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
+        } else {
+          this.db.run("DELETE FROM memories_cache");
+        }
+        this.db.query(`
+          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
+          VALUES (1, ?, ?)
+          ON CONFLICT(singleton_key) DO UPDATE SET
+            last_sync_at_ms = excluded.last_sync_at_ms,
+            memory_count = excluded.memory_count
+        `).run(syncedAtMs, seen.size);
+      });
+      transaction();
+    }, "syncMemoriesCache");
+  }
+  getMemoriesCacheState() {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT last_sync_at_ms, memory_count
+        FROM memories_cache_meta
+        WHERE singleton_key = 1
+        LIMIT 1
+      `).get();
+      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
+        return null;
+      }
+      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
+    }, "getMemoriesCacheState");
+  }
+  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
+    return withRetry(() => {
+      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
+      if (cleanedKeywords.length === 0)
+        return [];
+      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
+      const rows = this.db.query(`
+        SELECT
+          cache.memory_key,
+          cache.memory_value,
+          bm25(memories_fts) AS bm25_score,
+          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
+          cache.access_count
+        FROM memories_fts
+        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
+        WHERE memories_fts MATCH ?
+        ORDER BY bm25_score ASC
+        LIMIT ?
+      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
+      const ranked = rows.map((row) => {
+        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
+        const bm25Norm = 1 / (1 + Math.max(0, bm25));
+        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
+        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
+        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
+        return {
+          key: row.memory_key,
+          value: row.memory_value,
+          bm25,
+          recency,
+          accessFrequency,
+          score
+        };
+      });
+      ranked.sort((left, right) => right.score - left.score);
+      const selected = ranked.slice(0, Math.max(1, limit));
+      if (selected.length === 0)
+        return [];
+      const accessStmt = this.db.query(`
+        UPDATE memories_cache
+        SET access_count = access_count + 1,
+            last_accessed_at_ms = ?
+        WHERE memory_key = ?
+      `);
+      for (const memory of selected) {
+        accessStmt.run(nowMs, memory.key);
+      }
+      return selected;
+    }, "queryRelevantMemories");
+  }
+  invalidateMemoriesCache() {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        this.db.run("DELETE FROM memories_cache");
+        this.db.run("DELETE FROM memories_cache_meta");
+      });
+      transaction();
+    }, "invalidateMemoriesCache");
+  }
   close() {
     this.db.close();
   }
@@ -21620,11 +20345,11 @@ function hasRunCompleteEvent(jobId, cwd = process.cwd()) {
   } finally {
     sqliteClient?.close();
   }
-  const eventsPath = join7(resolveJobsDir(cwd), jobId, "events.jsonl");
-  if (!existsSync6(eventsPath))
+  const eventsPath = join5(resolveJobsDir(cwd), jobId, "events.jsonl");
+  if (!existsSync4(eventsPath))
     return false;
   try {
-    const lines = readFileSync3(eventsPath, "utf-8").split(`
+    const lines = readFileSync2(eventsPath, "utf-8").split(`
 `).map((line) => line.trim()).filter((line) => line.length > 0);
     for (const line of lines) {
       const event = JSON.parse(line);
@@ -21640,7 +20365,7 @@ function createObservabilitySqliteClient(cwd = process.cwd()) {
   if (!loadBunDatabase())
     return null;
   const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync6(location.dbPath))
+  if (!existsSync4(location.dbPath))
     return null;
   try {
     const Ctor = loadBunDatabase();
@@ -21657,6 +20382,1505 @@ var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTE
 var init_observability_sqlite = __esm(() => {
   init_observability_db();
   init_job_root();
+});
+
+// src/specialist/memory-retrieval.ts
+import { execSync } from "child_process";
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+function normalizeToken(raw) {
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").trim();
+}
+function extractTokens(input) {
+  return input.split(/\s+/g).map(normalizeToken).filter((token) => token.length >= 3 && !DEFAULT_STOP_WORDS.has(token));
+}
+function extractMemoryKeywords(title, description) {
+  const tokens = [
+    ...extractTokens(title),
+    ...extractTokens(description ?? "")
+  ];
+  const unique = [];
+  const seen = new Set;
+  for (const token of tokens) {
+    if (seen.has(token))
+      continue;
+    seen.add(token);
+    unique.push(token);
+    if (unique.length >= MAX_KEYWORDS)
+      break;
+  }
+  return unique;
+}
+function parseMemoriesPayload(jsonText) {
+  if (!jsonText.trim())
+    return [];
+  const parsed = JSON.parse(jsonText);
+  if (Array.isArray(parsed)) {
+    return parsed.map((entry) => {
+      if (!entry || typeof entry !== "object")
+        return null;
+      const maybeRecord = entry;
+      const key = typeof maybeRecord.key === "string" ? maybeRecord.key : null;
+      const value = typeof maybeRecord.value === "string" ? maybeRecord.value : null;
+      if (!key || value === null)
+        return null;
+      return { key, value };
+    }).filter((entry) => Boolean(entry));
+  }
+  if (parsed && typeof parsed === "object") {
+    return Object.entries(parsed).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string").map(([key, value]) => ({ key, value }));
+  }
+  return [];
+}
+function readBdMemories(cwd) {
+  const stdout = execSync("bd memories --json", {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 5000
+  });
+  return parseMemoriesPayload(stdout);
+}
+function shouldRefreshCache(args) {
+  if (args.cacheCount === null || args.cacheLastSyncAtMs === null)
+    return true;
+  if (args.cacheCount !== args.sourceCount)
+    return true;
+  return args.nowMs - args.cacheLastSyncAtMs > CACHE_MAX_AGE_MS;
+}
+function toMemoryRecord(memory) {
+  return { key: memory.key, value: memory.value };
+}
+function syncMemoriesCacheFromBd(cwd, nowMs = Date.now(), forceFullSync = false) {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  if (!sqliteClient) {
+    return { synced: false, memoryCount: 0 };
+  }
+  try {
+    const sourceMemories = readBdMemories(cwd);
+    const cacheState = sqliteClient.getMemoriesCacheState();
+    const needsRefresh = forceFullSync || shouldRefreshCache({
+      nowMs,
+      cacheCount: cacheState?.memoryCount ?? null,
+      cacheLastSyncAtMs: cacheState?.lastSyncAtMs ?? null,
+      sourceCount: sourceMemories.length
+    });
+    if (!needsRefresh) {
+      return { synced: false, memoryCount: sourceMemories.length };
+    }
+    sqliteClient.syncMemoriesCache(sourceMemories, nowMs);
+    return { synced: true, memoryCount: sourceMemories.length };
+  } finally {
+    sqliteClient.close();
+  }
+}
+function invalidateAndRefreshMemoriesCache(cwd, nowMs = Date.now()) {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  if (!sqliteClient) {
+    return { synced: false, memoryCount: 0 };
+  }
+  try {
+    sqliteClient.invalidateMemoriesCache();
+  } finally {
+    sqliteClient.close();
+  }
+  return syncMemoriesCacheFromBd(cwd, nowMs, true);
+}
+function buildFilteredMemoryInjection(args) {
+  const keywords = extractMemoryKeywords(args.beadTitle, args.beadDescription);
+  if (keywords.length === 0) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  const nowMs = Date.now();
+  try {
+    syncMemoriesCacheFromBd(args.cwd, nowMs, false);
+  } catch {}
+  const sqliteClient = createObservabilitySqliteClient(args.cwd);
+  if (!sqliteClient) {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  }
+  try {
+    const ranked = sqliteClient.queryRelevantMemories(keywords, MAX_MEMORIES, nowMs);
+    if (ranked.length === 0) {
+      return { block: "", memories: [], estimatedTokens: 0 };
+    }
+    const selected = [];
+    let tokenBudget = 0;
+    for (const memory of ranked) {
+      const line = `- ${memory.key}: ${memory.value}`;
+      const lineTokens = estimateTokens(line);
+      if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS)
+        break;
+      selected.push(toMemoryRecord(memory));
+      tokenBudget += lineTokens;
+    }
+    if (selected.length === 0) {
+      return { block: "", memories: [], estimatedTokens: 0 };
+    }
+    const lines = selected.map((memory) => `- ${memory.key}: ${memory.value}`);
+    const block = [
+      "## Filtered Beads Memories",
+      `_Keyword matched from bead context: ${keywords.join(", ")}_`,
+      ...lines
+    ].join(`
+`);
+    return {
+      block,
+      memories: selected,
+      estimatedTokens: estimateTokens(block)
+    };
+  } catch {
+    return { block: "", memories: [], estimatedTokens: 0 };
+  } finally {
+    sqliteClient.close();
+  }
+}
+function estimateInjectedTokens(text) {
+  return estimateTokens(text);
+}
+var DEFAULT_STOP_WORDS, MAX_KEYWORDS = 6, MAX_MEMORIES = 10, MAX_MEMORY_TOKENS = 600, CACHE_MAX_AGE_MS, STATIC_WORKFLOW_RULES_BLOCK;
+var init_memory_retrieval = __esm(() => {
+  init_observability_sqlite();
+  DEFAULT_STOP_WORDS = new Set([
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "i",
+    "if",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "we",
+    "with",
+    "you",
+    "your",
+    "replace",
+    "implement",
+    "task",
+    "run",
+    "add",
+    "new",
+    "use",
+    "using",
+    "into",
+    "when",
+    "what",
+    "not",
+    "only"
+  ]);
+  CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+  STATIC_WORKFLOW_RULES_BLOCK = `
+## Beads Workflow Quick Rules
+- Claim work: \`bd update <id> --claim\`
+- Append progress notes: \`bd update <id> --notes "..."\`
+- Store reusable insight: \`bd remember "insight"\`
+- Close completed issue: \`bd close <id> --reason "done"\`
+
+## Session close checklist
+1. \`git add <files>\`
+2. \`git commit -m "..."\`
+3. \`git push\`
+`.trim();
+});
+
+// src/specialist/runner.ts
+import { createHash as createHash2 } from "crypto";
+import { writeFile } from "fs/promises";
+import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
+import { existsSync as existsSync5, readFileSync as readFileSync3 } from "fs";
+import { basename as basename2, resolve as resolve3 } from "path";
+import { homedir as homedir2 } from "os";
+function runScript(command, cwd) {
+  const run = (command ?? "").trim();
+  if (!run) {
+    return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
+  }
+  const scriptName = basename2(run.split(" ")[0]);
+  try {
+    const output = execSync2(run, { encoding: "utf8", timeout: 30000, cwd });
+    return { name: scriptName, output, exitCode: 0 };
+  } catch (e) {
+    return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
+  }
+}
+function formatScriptOutput(results) {
+  const withOutput = results.filter((r) => r.output.trim());
+  if (withOutput.length === 0)
+    return "";
+  const blocks = withOutput.map((r) => {
+    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
+    return `<script name="${r.name}"${status}>
+${r.output.trim()}
+</script>`;
+  }).join(`
+`);
+  return `<pre_flight_context>
+${blocks}
+</pre_flight_context>`;
+}
+function resolvePath(p) {
+  return p.startsWith("~/") ? resolve3(homedir2(), p.slice(2)) : resolve3(p);
+}
+function commandExists(cmd) {
+  const result = spawnSync4("which", [cmd], { stdio: "ignore" });
+  return result.status === 0;
+}
+function validateShebang(filePath, errors5) {
+  try {
+    const head = readFileSync3(filePath, "utf-8").slice(0, 120);
+    if (!head.startsWith("#!"))
+      return;
+    const shebang = head.split(`
+`)[0].toLowerCase();
+    const typos = [
+      [/pytho[^n]|pyton|pyhon/, "python"],
+      [/nod[^e]b/, "node"],
+      [/bsh$|bas$/, "bash"],
+      [/rub[^y]/, "ruby"]
+    ];
+    for (const [pattern, correct] of typos) {
+      if (pattern.test(shebang)) {
+        errors5.push(`  \u2717 ${filePath}: shebang looks wrong \u2014 did you mean '${correct}'? (got: ${shebang})`);
+      }
+    }
+  } catch {}
+}
+function isToolAvailable(tool, permissionLevel) {
+  const normalized = permissionLevel.toUpperCase();
+  const gatedLevels = PERMISSION_GATED_TOOLS[tool.toLowerCase()];
+  if (!gatedLevels)
+    return true;
+  return gatedLevels.includes(normalized);
+}
+function validateBeforeRun(spec, permissionLevel) {
+  const errors5 = [];
+  const warnings = [];
+  for (const p of spec.specialist.skills?.paths ?? []) {
+    const abs = resolvePath(p);
+    if (!existsSync5(abs))
+      warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
+  }
+  for (const script of spec.specialist.skills?.scripts ?? []) {
+    const run = script.run ?? script.path;
+    if (!run)
+      continue;
+    const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
+    if (isFilePath) {
+      const abs = resolvePath(run);
+      if (!existsSync5(abs)) {
+        errors5.push(`  \u2717 skills.scripts: script not found: ${run}`);
+      } else {
+        validateShebang(abs, errors5);
+      }
+    } else {
+      const binary = run.split(" ")[0];
+      if (!commandExists(binary)) {
+        errors5.push(`  \u2717 skills.scripts: command not found on PATH: ${binary}`);
+      }
+    }
+  }
+  for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
+    if (!commandExists(cmd)) {
+      errors5.push(`  \u2717 capabilities.external_commands: not found on PATH: ${cmd}`);
+    }
+  }
+  for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
+    if (!isToolAvailable(tool, permissionLevel)) {
+      errors5.push(`  \u2717 capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
+    }
+  }
+  if (warnings.length > 0) {
+    process.stderr.write(`[specialists] pre-run warnings:
+${warnings.join(`
+`)}
+`);
+  }
+  if (errors5.length > 0) {
+    throw new Error(`Specialist pre-run validation failed:
+${errors5.join(`
+`)}`);
+  }
+}
+function sleep(ms) {
+  return new Promise((resolve4) => setTimeout(resolve4, ms));
+}
+function getRetryDelayMs(attemptNumber) {
+  const baseDelay = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptNumber - 1);
+  const jitterMultiplier = 1 + (Math.random() * 2 - 1) * RETRY_MAX_JITTER;
+  return Math.max(0, Math.round(baseDelay * jitterMultiplier));
+}
+function sanitizeBeadIdForPrompt(beadId) {
+  const withoutControlChars = beadId.replace(/[\x00-\x1F\x7F]/g, "");
+  const withoutBackticks = withoutControlChars.replace(/`/g, "");
+  return withoutBackticks.replace(/[^A-Za-z0-9-]/g, "");
+}
+function deepMergeSchemas(base, override) {
+  const merged = { ...base };
+  for (const [key, overrideValue] of Object.entries(override)) {
+    const baseValue = merged[key];
+    if (isRecord(baseValue) && isRecord(overrideValue)) {
+      merged[key] = deepMergeSchemas(baseValue, overrideValue);
+      continue;
+    }
+    merged[key] = overrideValue;
+  }
+  return merged;
+}
+function resolveOutputContractSchema(responseFormat, outputType, outputSchema) {
+  if (responseFormat === "text")
+    return;
+  if (responseFormat === "markdown" && !outputSchema)
+    return;
+  let mergedSchema = { ...BASE_OUTPUT_SCHEMA };
+  if (outputType !== "custom") {
+    mergedSchema = deepMergeSchemas(mergedSchema, OUTPUT_TYPE_SCHEMA_EXTENSIONS[outputType]);
+  }
+  if (outputSchema) {
+    mergedSchema = deepMergeSchemas(mergedSchema, outputSchema);
+  }
+  return mergedSchema;
+}
+function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
+  if (responseFormat === "text")
+    return "";
+  const lines = ["## Output Contract"];
+  if (responseFormat === "markdown") {
+    lines.push("Respond using markdown with canonical sections (include when applicable):", "- `## Summary`", "- `## Status`", "- `## Changes`", "- `## Verification`", "- `## Risks`", "- `## Follow-ups`", "- `## Beads`", "Optional sections when relevant:", "- `## Architecture`", "- `## Acceptance Criteria`", "- `## Machine-readable block`", "Do not impose artificial bullet limits \u2014 prioritize completeness and clarity.");
+  } else {
+    lines.push("Respond with a single valid JSON object only.", "Do not wrap JSON in markdown fences, headers, or prose.");
+  }
+  if (outputType !== "custom") {
+    lines.push(`Output archetype: \`${outputType}\``);
+    lines.push(OUTPUT_TYPE_GUIDANCE[outputType]);
+  }
+  if (outputSchema) {
+    lines.push("Structure your output to match this schema:", "```json", JSON.stringify(outputSchema, null, 2), "```");
+    if (responseFormat === "markdown") {
+      lines.push("MANDATORY: include `## Machine-readable block` with exactly one JSON object in a single ```json fenced block.", "The machine-readable JSON block is canonical and must match the schema.");
+    }
+  }
+  return `
+
+${lines.join(`
+`)}`;
+}
+function tryParseJson(input) {
+  try {
+    return { value: JSON.parse(input) };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return { error: message };
+  }
+}
+function extractJsonFromMachineReadableBlock(output) {
+  const blockRegex = /##\s*Machine-readable block[\s\S]*?```json\s*([\s\S]*?)```/i;
+  const match = output.match(blockRegex);
+  if (!match || !match[1]) {
+    return { error: "missing `## Machine-readable block` JSON fenced block" };
+  }
+  return tryParseJson(match[1].trim());
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function validateValueAgainstSchema(value, schema, path) {
+  const errors5 = [];
+  const schemaType = schema.type;
+  const schemaEnum = schema.enum;
+  if (Array.isArray(schemaEnum) && schemaEnum.length > 0 && !schemaEnum.some((candidate) => Object.is(candidate, value))) {
+    errors5.push(`${path}: expected one of [${schemaEnum.map((item) => JSON.stringify(item)).join(", ")}], got ${JSON.stringify(value)}`);
+  }
+  const effectiveType = typeof schemaType === "string" ? schemaType : isRecord(schema.properties) || Array.isArray(schema.required) ? "object" : Array.isArray(schema.items) ? "array" : undefined;
+  if (!effectiveType)
+    return errors5;
+  switch (effectiveType) {
+    case "object": {
+      if (!isRecord(value)) {
+        errors5.push(`${path}: expected object, got ${Array.isArray(value) ? "array" : typeof value}`);
+        return errors5;
+      }
+      const properties = isRecord(schema.properties) ? schema.properties : {};
+      const required2 = Array.isArray(schema.required) ? schema.required.filter((item) => typeof item === "string") : [];
+      for (const key of required2) {
+        if (!(key in value)) {
+          errors5.push(`${path}.${key}: missing required property`);
+        }
+      }
+      for (const [key, propertySchemaRaw] of Object.entries(properties)) {
+        if (!(key in value))
+          continue;
+        if (!isRecord(propertySchemaRaw))
+          continue;
+        errors5.push(...validateValueAgainstSchema(value[key], propertySchemaRaw, `${path}.${key}`));
+      }
+      return errors5;
+    }
+    case "array": {
+      if (!Array.isArray(value)) {
+        errors5.push(`${path}: expected array, got ${typeof value}`);
+        return errors5;
+      }
+      const itemSchema = isRecord(schema.items) ? schema.items : undefined;
+      if (!itemSchema)
+        return errors5;
+      for (let i = 0;i < value.length; i += 1) {
+        errors5.push(...validateValueAgainstSchema(value[i], itemSchema, `${path}[${i}]`));
+      }
+      return errors5;
+    }
+    case "string":
+      if (typeof value !== "string")
+        errors5.push(`${path}: expected string, got ${typeof value}`);
+      return errors5;
+    case "number":
+      if (typeof value !== "number" || Number.isNaN(value))
+        errors5.push(`${path}: expected number, got ${typeof value}`);
+      return errors5;
+    case "integer":
+      if (typeof value !== "number" || !Number.isInteger(value))
+        errors5.push(`${path}: expected integer, got ${JSON.stringify(value)}`);
+      return errors5;
+    case "boolean":
+      if (typeof value !== "boolean")
+        errors5.push(`${path}: expected boolean, got ${typeof value}`);
+      return errors5;
+    default:
+      return errors5;
+  }
+}
+function validateOutputContract(output, responseFormat, outputSchema) {
+  const warnings = [];
+  if (responseFormat === "text")
+    return warnings;
+  if (!outputSchema)
+    return warnings;
+  let structuredPayload;
+  if (responseFormat === "json") {
+    const parsed = tryParseJson(output.trim());
+    if (parsed.error) {
+      warnings.push(`Strong warning: response_format=json but output is not valid JSON (${parsed.error}).`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+  if (responseFormat === "markdown") {
+    const parsed = extractJsonFromMachineReadableBlock(output);
+    if (parsed.error) {
+      warnings.push(`Output contract warning: ${parsed.error}.`);
+      return warnings;
+    }
+    structuredPayload = parsed.value;
+  }
+  const schemaErrors = validateValueAgainstSchema(structuredPayload, outputSchema, "$");
+  if (schemaErrors.length > 0) {
+    warnings.push(`Output contract warning: schema mismatch (${schemaErrors.length} issue${schemaErrors.length === 1 ? "" : "s"}).`, ...schemaErrors.map((issue2) => `  - ${issue2}`));
+  }
+  return warnings;
+}
+
+class SpecialistRunner {
+  deps;
+  sessionFactory;
+  constructor(deps) {
+    this.deps = deps;
+    this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
+  }
+  resolvePromptWithBeadContext(options, beadsClient) {
+    if (!options.inputBeadId) {
+      return options.prompt;
+    }
+    const beadReader = beadsClient ?? new BeadsClient;
+    const bead = beadReader.readBead(options.inputBeadId);
+    if (!bead) {
+      return options.prompt;
+    }
+    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
+    const blockers = contextDepth > 0 ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth) : [];
+    return buildBeadContext(bead, blockers);
+  }
+  async run(options, onProgress, onEvent, onMetric, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
+    const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
+    const invocationId = crypto.randomUUID();
+    const start = Date.now();
+    const spec = await loader.get(options.name);
+    const { metadata, execution, prompt, output_file } = spec.specialist;
+    const primaryModel = options.backendOverride ?? execution.model;
+    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
+    const fallbackUsed = model !== primaryModel;
+    await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
+      variables_keys: Object.keys(options.variables ?? {}),
+      backend_resolved: model,
+      fallback_used: fallbackUsed,
+      circuit_breaker_state: circuitBreaker.getState(model),
+      scope: "project"
+    });
+    const permissionLevel = options.autonomyLevel ?? execution.permission_required;
+    const effectiveKeepAlive = options.noKeepAlive ? false : options.keepAlive ?? execution.interactive ?? false;
+    const excludeExtensions = [
+      execution.extensions?.serena === false ? "pi-serena-tools" : undefined,
+      execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined
+    ].filter((value) => Boolean(value));
+    validateBeforeRun(spec, permissionLevel);
+    const runCwd = resolve3(options.workingDirectory ?? process.cwd());
+    const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
+    const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
+    const preScriptOutput = formatScriptOutput(preResults);
+    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
+    const beadVariables = options.inputBeadId ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId } : {};
+    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: resolvedPrompt } : {};
+    const variables = {
+      prompt: resolvedPrompt,
+      cwd: runCwd,
+      pre_script_output: preScriptOutput,
+      ...options.variables ?? {},
+      ...beadVariables
+    };
+    const taskTemplate = options.inputBeadId ? renderTemplate(prompt.task_template, beadTemplateVariables) : prompt.task_template;
+    const renderedTask = renderTemplate(taskTemplate, variables);
+    const promptHash = createHash2("sha256").update(renderedTask).digest("hex").slice(0, 16);
+    await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
+      prompt_hash: promptHash,
+      prompt_length_chars: renderedTask.length,
+      estimated_tokens: Math.ceil(renderedTask.length / 4),
+      system_prompt_present: !!prompt.system
+    });
+    let agentsMd = options.inputBeadId ? renderTemplate(prompt.system ?? "", beadTemplateVariables) : prompt.system ?? "";
+    {
+      const sanitizedBeadId = options.inputBeadId ? sanitizeBeadIdForPrompt(options.inputBeadId) : "";
+      const beadInstructions = sanitizedBeadId ? `
+- Your task bead is: ${sanitizedBeadId}
+- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal \u2014 orchestrator may already own it)
+- Do NOT create new beads or sub-issues \u2014 this bead IS your task.
+- Do NOT run \`bd create\` \u2014 the orchestrator manages issue tracking.
+- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
+      agentsMd += `...beadInstructions}
+---
+`;
+    }
+    agentsMd += `
+
+---
+## Output Style (mandatory)
+Respond like smart caveman. Cut all filler, keep technical substance.
+- Drop articles (a, an, the), filler (just, really, basically, actually).
+- Drop pleasantries (sure, certainly, happy to).
+- No hedging. Fragments fine. Short synonyms.
+- Technical terms stay exact. Code blocks unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+---
+`;
+    try {
+      const gitnexusMetaPath = resolve3(runCwd, ".gitnexus/meta.json");
+      if (existsSync5(gitnexusMetaPath)) {
+        agentsMd += `
+
+---
+## MANDATORY: GitNexus Code Intelligence
+_This project is indexed by GitNexus. You MUST use these tools \u2014 do NOT fall back to grep/find for code understanding._
+
+### Before reading or editing ANY code:
+1. \`gitnexus_query({query: "<what you need to understand>"})\` \u2014 find execution flows and symbols
+2. \`gitnexus_context({name: "<symbol>"})\` \u2014 callers, callees, process participation
+
+### Before editing ANY function/class/method:
+3. \`gitnexus_impact({target: "<symbolName>", direction: "upstream"})\` \u2014 blast radius check
+   - If result is HIGH or CRITICAL risk: STOP and report to the user before proceeding
+
+### Before completing your task:
+4. \`gitnexus_detect_changes()\` \u2014 verify your changes only affect expected scope
+
+**These are not optional.** Use GitNexus as your PRIMARY code navigation tool. Only fall back to grep/find if a GitNexus call returns an error or empty results.
+---
+`;
+      }
+    } catch {}
+    let staticTokens = 0;
+    let memoryTokens = 0;
+    let gitnexusTokens = 0;
+    const staticRulesBlock = `
+
+---
+${STATIC_WORKFLOW_RULES_BLOCK}
+---
+`;
+    agentsMd += staticRulesBlock;
+    staticTokens = estimateInjectedTokens(staticRulesBlock);
+    if (options.inputBeadId) {
+      const beadForMemory = (beadsClient ?? new BeadsClient).readBead(options.inputBeadId);
+      if (beadForMemory?.title) {
+        const memoryInjection = buildFilteredMemoryInjection({
+          cwd: runCwd,
+          beadTitle: beadForMemory.title,
+          beadDescription: beadForMemory.description
+        });
+        if (memoryInjection.block) {
+          const memoryBlock = `
+
+---
+${memoryInjection.block}
+---
+`;
+          agentsMd += memoryBlock;
+          memoryTokens = memoryInjection.estimatedTokens;
+        }
+        try {
+          const gitnexusMetaPath = resolve3(runCwd, ".gitnexus/meta.json");
+          if (existsSync5(gitnexusMetaPath)) {
+            const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
+            const summaries = [];
+            for (const symbol of symbolCandidates) {
+              try {
+                const raw = execSync2(`gitnexus context --repo specialists ${JSON.stringify(symbol)}`, {
+                  cwd: runCwd,
+                  encoding: "utf8",
+                  timeout: 5000,
+                  stdio: ["ignore", "pipe", "pipe"]
+                });
+                const parsed = JSON.parse(raw);
+                if (parsed.status !== "found" || !parsed.symbol?.name)
+                  continue;
+                const callers = (parsed.incoming?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+                const callees = (parsed.outgoing?.calls ?? []).slice(0, 3).map((call) => call.name).filter(Boolean);
+                const processes = (parsed.processes ?? []).slice(0, 2).map((proc) => proc.name).filter(Boolean);
+                summaries.push(`- ${parsed.symbol.name} (${parsed.symbol.filePath ?? "unknown file"})
+` + `  callers: ${callers.length > 0 ? callers.join(", ") : "none"}
+` + `  callees: ${callees.length > 0 ? callees.join(", ") : "none"}
+` + `  processes: ${processes.length > 0 ? processes.join(", ") : "none"}`);
+              } catch {}
+            }
+            if (summaries.length > 0) {
+              const gitnexusBlock = `
+
+---
+## GitNexus Pre-query Snapshot
+${summaries.join(`
+`)}
+---
+`;
+              agentsMd += gitnexusBlock;
+              gitnexusTokens = estimateInjectedTokens(gitnexusBlock);
+            }
+          }
+        } catch {}
+      }
+    }
+    const totalMemoryInjectionTokens = staticTokens + memoryTokens + gitnexusTokens;
+    onEvent?.("memory_injection", {
+      summary: JSON.stringify({
+        memory_injection: {
+          static_tokens: staticTokens,
+          memory_tokens: memoryTokens,
+          gitnexus_tokens: gitnexusTokens,
+          total_tokens: totalMemoryInjectionTokens
+        }
+      })
+    });
+    const responseFormat = execution.response_format ?? "text";
+    const outputType = execution.output_type ?? "custom";
+    const specialistOutputSchema = prompt.output_schema;
+    const outputContractSchema = resolveOutputContractSchema(responseFormat, outputType, specialistOutputSchema);
+    agentsMd += buildOutputContractInstruction(responseFormat, outputType, outputContractSchema);
+    const skillPaths = [];
+    if (prompt.skill_inherit)
+      skillPaths.push(prompt.skill_inherit);
+    skillPaths.push(...spec.specialist.skills?.paths ?? []);
+    if (skillPaths.length > 0 || preScripts.length > 0) {
+      const line = "\u2501".repeat(56);
+      onProgress?.(`
+${line}
+\u25C6 AUTO INJECTED
+`);
+      if (skillPaths.length > 0) {
+        onProgress?.(`  skills (--skill):
+${skillPaths.map((p) => `    \u2022 ${p}`).join(`
+`)}
+`);
+      }
+      if (preScripts.length > 0) {
+        onProgress?.(`  pre scripts/commands:
+${preScripts.map((s) => `    \u2022 ${s.run ?? s.path ?? "<missing>"}${s.inject_output ? " \u2192 $pre_script_output" : ""}`).join(`
+`)}
+`);
+      }
+      onProgress?.(`${line}
+
+`);
+    }
+    const beadsIntegration = spec.specialist.beads_integration ?? "auto";
+    let beadId;
+    let ownsBead = false;
+    if (options.inputBeadId) {
+      beadId = options.inputBeadId;
+    } else if (beadsClient && shouldCreateBead(beadsIntegration, execution.permission_required)) {
+      beadId = beadsClient.createBead(metadata.name) ?? undefined;
+      if (beadId) {
+        ownsBead = true;
+        onBeadCreated?.(beadId);
+      }
+    }
+    await hooks.emit("pre_execute", invocationId, metadata.name, metadata.version, {
+      backend: model,
+      model,
+      timeout_ms: execution.timeout_ms,
+      permission_level: permissionLevel
+    });
+    let output;
+    let sessionBackend = model;
+    let runMetrics;
+    let session;
+    let keepAliveActive = false;
+    let sessionClosed = false;
+    const maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? execution.max_retries ?? 0));
+    const maxAttempts = maxRetries + 1;
+    try {
+      const envVars = {};
+      const resolvedNodeId = options.variables?.SPECIALISTS_NODE_ID ?? options.variables?.node_id;
+      if (resolvedNodeId)
+        envVars.SPECIALISTS_NODE_ID = resolvedNodeId;
+      if (options.variables?.SPECIALISTS_JOB_ID)
+        envVars.SPECIALISTS_JOB_ID = options.variables.SPECIALISTS_JOB_ID;
+      session = await this.sessionFactory({
+        model,
+        systemPrompt: agentsMd || undefined,
+        skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
+        thinkingLevel: execution.thinking_level,
+        permissionLevel,
+        stallTimeoutMs: execution.stall_timeout_ms,
+        cwd: runCwd,
+        worktreeBoundary: options.worktreeBoundary,
+        ...excludeExtensions.length > 0 ? { excludeExtensions } : {},
+        ...Object.keys(envVars).length > 0 ? { env: envVars } : {},
+        onToken: (delta) => onProgress?.(delta),
+        onThinking: (delta) => onProgress?.(`\uD83D\uDCAD ${delta}`),
+        onToolStart: (tool, args, toolCallId) => {
+          onProgress?.(`
+\u2699 ${tool}\u2026`);
+          onToolStartCallback?.(tool, args, toolCallId);
+        },
+        onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => {
+          onProgress?.(`\u2713
+`);
+          onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw);
+        },
+        onEvent: (type, details) => onEvent?.(type, details),
+        onMetric: (event) => onMetric?.(event),
+        onMeta: (meta) => onMeta?.(meta)
+      });
+      await session.start();
+      onKillRegistered?.(session.kill.bind(session));
+      onSteerRegistered?.((msg) => session.steer(msg));
+      for (let attempt = 1;attempt <= maxAttempts; attempt++) {
+        try {
+          await session.prompt(renderedTask);
+          await session.waitForDone(execution.timeout_ms);
+          output = await session.getLastOutput();
+          runMetrics = session.getMetrics?.();
+          sessionBackend = session.meta.backend;
+          break;
+        } catch (err) {
+          const shouldRetry = attempt < maxAttempts && !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
+          if (!shouldRetry) {
+            throw err;
+          }
+          const delayMs = getRetryDelayMs(attempt);
+          onEvent?.("auto_retry");
+          onProgress?.(`
+\u21BB transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms
+`);
+          await sleep(delayMs);
+        }
+      }
+      if (output === undefined) {
+        throw new Error("Specialist run finished without output");
+      }
+      if (responseFormat === "json") {
+        output = stripJsonFences(output);
+      }
+      if (effectiveKeepAlive && onResumeReady) {
+        keepAliveActive = true;
+        const resumeFn = async (msg) => {
+          await session.resume(msg, execution.timeout_ms);
+          return session.getLastOutput();
+        };
+        const closeFn = async () => {
+          keepAliveActive = false;
+          await session.close();
+        };
+        onResumeReady(resumeFn, closeFn);
+      } else {
+        await session.close();
+        sessionClosed = true;
+      }
+      const postScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "post") ?? [];
+      for (const script of postScripts)
+        runScript(script.run ?? script.path, runCwd);
+      circuitBreaker.recordSuccess(model);
+    } catch (err) {
+      const isCancelled = err instanceof SessionKilledError;
+      const authError = isAuthError(err);
+      if (!isCancelled && !authError) {
+        circuitBreaker.recordFailure(model);
+      }
+      const beadStatus = isCancelled ? "CANCELLED" : "ERROR";
+      if (beadId) {
+        if (ownsBead)
+          beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
+        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+      }
+      await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
+        status: isCancelled ? "CANCELLED" : "ERROR",
+        duration_ms: Date.now() - start,
+        output_valid: false,
+        error: { type: isCancelled ? "cancelled" : "backend_error", message: err.message }
+      });
+      throw err;
+    } finally {
+      if (!keepAliveActive && !sessionClosed) {
+        session?.kill();
+      }
+    }
+    const durationMs = Date.now() - start;
+    const outputContractWarnings = validateOutputContract(output, responseFormat, outputContractSchema);
+    if (outputContractWarnings.length > 0) {
+      process.stderr.write(`[specialists] output contract warnings:
+${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
+`)}
+`);
+    }
+    if (output_file) {
+      await writeFile(output_file, output, "utf-8").catch(() => {});
+    }
+    await hooks.emit("post_execute", invocationId, metadata.name, metadata.version, {
+      status: "COMPLETE",
+      duration_ms: durationMs,
+      output_valid: true
+    });
+    if (beadId) {
+      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+    }
+    return {
+      output,
+      backend: sessionBackend,
+      model,
+      durationMs,
+      specialistVersion: metadata.version,
+      promptHash,
+      beadId,
+      metrics: runMetrics,
+      permissionRequired: execution.permission_required,
+      autoCommit: execution.auto_commit
+    };
+  }
+  async startAsync(options, registry2) {
+    const jobId = crypto.randomUUID();
+    let specialistVersion = "?";
+    try {
+      const spec = await this.deps.loader.get(options.name);
+      specialistVersion = spec.specialist.metadata.version;
+    } catch {}
+    registry2.register(jobId, {
+      backend: options.backendOverride ?? "starting",
+      model: "?",
+      specialistVersion
+    });
+    this.run(options, (text) => registry2.appendOutput(jobId, text), (eventType) => registry2.setCurrentEvent(jobId, eventType), undefined, (meta) => registry2.setMeta(jobId, meta), (killFn) => registry2.setKillFn(jobId, killFn), (beadId) => registry2.setBeadId(jobId, beadId), (steerFn) => registry2.setSteerFn(jobId, steerFn), (resumeFn, closeFn) => registry2.setResumeFn(jobId, resumeFn, closeFn)).then((result) => registry2.complete(jobId, result)).catch((err) => registry2.fail(jobId, err));
+    return jobId;
+  }
+}
+var PERMISSION_GATED_TOOLS, RETRY_BASE_DELAY_MS = 1000, RETRY_MAX_JITTER = 0.2, BASE_OUTPUT_SCHEMA, IMPACT_REPORT_SCHEMA, OUTPUT_TYPE_SCHEMA_EXTENSIONS, OUTPUT_TYPE_GUIDANCE;
+var init_runner = __esm(() => {
+  init_session();
+  init_circuitBreaker();
+  init_beads();
+  init_memory_retrieval();
+  PERMISSION_GATED_TOOLS = {
+    bash: ["LOW", "MEDIUM", "HIGH"],
+    edit: ["MEDIUM", "HIGH"],
+    write: ["HIGH"]
+  };
+  BASE_OUTPUT_SCHEMA = {
+    type: "object",
+    properties: {
+      summary: { type: "string" },
+      status: { enum: ["success", "partial", "failed", "waiting"] },
+      issues_closed: { type: "array", items: { type: "string" } },
+      issues_created: { type: "array", items: { type: "string" } },
+      follow_ups: { type: "array", items: { type: "string" } },
+      risks: { type: "array", items: { type: "string" } },
+      verification: { type: "array", items: { type: "string" } }
+    },
+    required: ["summary", "status", "issues_closed", "issues_created", "follow_ups", "risks", "verification"]
+  };
+  IMPACT_REPORT_SCHEMA = {
+    type: "object",
+    properties: {
+      files_touched: { type: "array", items: { type: "string" } },
+      symbols_analyzed: { type: "array", items: { type: "string" } },
+      highest_risk: { enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+      tool_invocations: { type: "number" }
+    }
+  };
+  OUTPUT_TYPE_SCHEMA_EXTENSIONS = {
+    codegen: {
+      type: "object",
+      properties: {
+        files_changed: { type: "array", items: { type: "string" } },
+        symbols_modified: { type: "array", items: { type: "string" } },
+        lint_pass: { type: "boolean" },
+        tests_pass: { type: "boolean" },
+        impact_report: IMPACT_REPORT_SCHEMA
+      }
+    },
+    analysis: {
+      type: "object",
+      properties: {
+        key_files: { type: "array", items: { type: "string" } },
+        architecture_notes: { type: "string" },
+        recommendations: { type: "array", items: { type: "string" } },
+        impact_report: IMPACT_REPORT_SCHEMA
+      }
+    },
+    review: {
+      type: "object",
+      properties: {
+        verdict: { enum: ["pass", "partial", "fail"] },
+        findings: { type: "array", items: { type: "string" } },
+        recommendation: { type: "string" }
+      }
+    },
+    synthesis: {
+      type: "object",
+      properties: {
+        decisions: { type: "array", items: { type: "string" } },
+        rationale: { type: "string" },
+        next_steps: { type: "array", items: { type: "string" } }
+      }
+    },
+    orchestration: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            oneOf: [
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["resume"] },
+                  memberId: { type: "string" },
+                  task: { type: "string" }
+                },
+                required: ["type", "memberId", "task"]
+              },
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["steer"] },
+                  memberId: { type: "string" },
+                  message: { type: "string" }
+                },
+                required: ["type", "memberId", "message"]
+              },
+              {
+                type: "object",
+                properties: {
+                  type: { enum: ["stop"] },
+                  memberId: { type: "string" }
+                },
+                required: ["type", "memberId"]
+              }
+            ]
+          }
+        },
+        blocking_on: {
+          type: "object",
+          properties: {
+            kind: { enum: ["human_input", "member_output", "external_dependency"] },
+            target: { type: "string" },
+            details: { type: "string" }
+          },
+          required: ["kind"]
+        },
+        memory_patch: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              entry_type: { enum: ["fact", "question", "decision"] },
+              entry_id: { type: "string" },
+              summary: { type: "string" },
+              source_member_id: { type: "string" },
+              confidence: { type: "number" },
+              provenance: { type: "object" }
+            },
+            required: ["entry_type", "summary"]
+          }
+        },
+        coordination_state: {
+          type: "object",
+          properties: {
+            current_goal: { type: "string" },
+            active_members: { type: "array", items: { type: "string" } },
+            waiting_on_members: { type: "array", items: { type: "string" } },
+            pending_decisions: { type: "array", items: { type: "string" } },
+            blockers: { type: "array", items: { type: "string" } }
+          }
+        },
+        routing_rationale: { type: "string" },
+        next_trigger: {
+          type: "object",
+          properties: {
+            event: { enum: ["on_member_update", "on_human_input", "on_external_update", "on_timeout", "manual_resume"] },
+            target: { type: "string" },
+            details: { type: "string" }
+          },
+          required: ["event"]
+        }
+      }
+    },
+    workflow: {
+      type: "object",
+      properties: {
+        steps_completed: { type: "array", items: { type: "string" } },
+        first_task: { type: "string" },
+        children: { type: "array", items: { type: "string" } },
+        test_issues: { type: "array", items: { type: "string" } }
+      }
+    },
+    research: {
+      type: "object",
+      properties: {
+        sources_checked: { type: "array", items: { type: "string" } },
+        confidence: { enum: ["low", "medium", "high"] },
+        recommendations: { type: "array", items: { type: "string" } }
+      }
+    }
+  };
+  OUTPUT_TYPE_GUIDANCE = {
+    codegen: "- Codegen focus: include exact file paths, symbols touched, and implementation outcomes.",
+    analysis: "- Analysis focus: include architecture understanding and evidence-backed findings.",
+    review: "- Review focus: include severity-ranked findings with clear merge/readiness recommendation.",
+    synthesis: "- Synthesis focus: consolidate findings into decisions and clear next steps.",
+    orchestration: "- Orchestration focus: include actions, blockers, routing rationale, and rehydration state.",
+    workflow: "- Workflow focus: include procedural state transitions and operational checkpoints.",
+    research: "- Research focus: include sources checked, confidence, and final recommendations."
+  };
+});
+
+// src/specialist/hooks.ts
+import { appendFile, mkdir } from "fs/promises";
+import { dirname as dirname3 } from "path";
+
+class HookEmitter {
+  tracePath;
+  customHandlers = new Map;
+  ready;
+  constructor(options) {
+    this.tracePath = options.tracePath;
+    this.ready = mkdir(dirname3(options.tracePath), { recursive: true }).then(() => {});
+  }
+  async emit(hook, invocationId, specialistName, specialistVersion, payload) {
+    await this.ready;
+    const event = {
+      invocation_id: invocationId,
+      hook,
+      timestamp: new Date().toISOString(),
+      specialist_name: specialistName,
+      specialist_version: specialistVersion,
+      ...payload
+    };
+    await appendFile(this.tracePath, JSON.stringify(event) + `
+`, "utf-8");
+    for (const handler of this.customHandlers.get(hook) ?? []) {
+      Promise.resolve().then(() => handler(event)).catch(() => {});
+    }
+  }
+  onHook(hook, handler) {
+    if (!this.customHandlers.has(hook))
+      this.customHandlers.set(hook, []);
+    this.customHandlers.get(hook).push(handler);
+  }
+}
+var init_hooks = () => {};
+
+// src/cli/install.ts
+var exports_install = {};
+__export(exports_install, {
+  run: () => run
+});
+async function run() {
+  console.log("");
+  console.log(yellow("\u26A0 DEPRECATED: `specialists install` is deprecated"));
+  console.log("");
+  console.log(`  Use ${bold("specialists init")} instead.`);
+  console.log("");
+  console.log("  The init command:");
+  console.log("    \u2022 creates specialists/ and .specialists/ directories");
+  console.log("    \u2022 registers the MCP server in .mcp.json");
+  console.log("    \u2022 injects workflow context into AGENTS.md/CLAUDE.md");
+  console.log("");
+  console.log(`  ${dim("Run: specialists init --help for full details")}`);
+  console.log("");
+}
+var bold = (s) => `\x1B[1m${s}\x1B[0m`, yellow = (s) => `\x1B[33m${s}\x1B[0m`, dim = (s) => `\x1B[2m${s}\x1B[0m`;
+
+// src/cli/version.ts
+var exports_version = {};
+__export(exports_version, {
+  run: () => run2
+});
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import { dirname as dirname4, join as join7 } from "path";
+import { existsSync as existsSync6 } from "fs";
+async function run2() {
+  const req = createRequire(import.meta.url);
+  const here = dirname4(fileURLToPath(import.meta.url));
+  const bundlePkgPath = join7(here, "..", "package.json");
+  const sourcePkgPath = join7(here, "..", "..", "package.json");
+  let pkg;
+  if (existsSync6(bundlePkgPath)) {
+    pkg = req("../package.json");
+  } else if (existsSync6(sourcePkgPath)) {
+    pkg = req("../../package.json");
+  } else {
+    console.error("Cannot find package.json");
+    process.exit(1);
+  }
+  console.log(`${pkg.name} v${pkg.version}`);
+}
+var init_version = () => {};
+
+// src/specialist/timeline-events.ts
+function summarizeToolResult(resultContent) {
+  if (!resultContent)
+    return;
+  const compact = resultContent.trim();
+  if (!compact)
+    return;
+  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
+    return compact;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}\u2026`;
+}
+function mapCallbackEventToTimelineEvent(callbackEvent, context) {
+  const t = Date.now();
+  switch (callbackEvent) {
+    case "thinking":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.THINKING,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "tool_execution_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "start",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        args: context.args,
+        started_at: new Date(t).toISOString()
+      };
+    case "tool_execution_update":
+    case "tool_execution":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "update",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true }
+      };
+    case "tool_execution_end": {
+      const resultSummary = summarizeToolResult(context.resultContent);
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "end",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        is_error: context.isError,
+        ...resultSummary ? { result_summary: resultSummary } : {},
+        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
+      };
+    }
+    case "message_start_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
+    case "message_end_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "assistant" };
+    case "message_start_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "toolResult" };
+    case "message_end_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "toolResult" };
+    case "turn_start":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
+    case "turn_end":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
+    case "auto_compaction_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "start",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_compaction_end":
+    case "auto_compaction":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "end",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_retry_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "start",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "auto_retry_end":
+    case "auto_retry":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "end",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "set_model":
+    case "cycle_model":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
+        action: callbackEvent,
+        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
+        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
+      };
+    case "extension_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
+        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
+        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
+      };
+    case "memory_injection":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: "memory_injection",
+        backend: "injected",
+        ...context.memoryInjection ? { memory_injection: context.memoryInjection } : {}
+      };
+    case "text":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TEXT,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "agent_end":
+    case "message_done":
+    case "done":
+      return null;
+    default:
+      return null;
+  }
+}
+function createRunStartEvent(specialist, beadId) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_START,
+    specialist,
+    bead_id: beadId
+  };
+}
+function createMetaEvent(model, backend) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.META,
+    model,
+    backend
+  };
+}
+function createStatusChangeEvent(status, previousStatus) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STATUS_CHANGE,
+    status,
+    ...previousStatus !== undefined ? { previous_status: previousStatus } : {}
+  };
+}
+function createStaleWarningEvent(reason, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.STALE_WARNING,
+    reason,
+    silence_ms: options.silence_ms,
+    threshold_ms: options.threshold_ms,
+    ...options.tool !== undefined ? { tool: options.tool } : {}
+  };
+}
+function createTokenUsageEvent(token_usage, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
+    token_usage,
+    source
+  };
+}
+function createFinishReasonEvent(finish_reason, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
+    finish_reason,
+    source
+  };
+}
+function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent, contextPct, contextHealth) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
+    turn_index,
+    ...token_usage ? { token_usage } : {},
+    ...finish_reason ? { finish_reason } : {},
+    ...textContent ? { text_content: textContent } : {},
+    ...contextPct !== undefined ? { context_pct: contextPct } : {},
+    ...contextHealth ? { context_health: contextHealth } : {}
+  };
+}
+function createCompactionEvent(phase, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.COMPACTION,
+    phase,
+    ...options?.tokensBefore !== undefined ? { tokens_before: options.tokensBefore } : {},
+    ...options?.summary ? { summary: options.summary } : {},
+    ...options?.firstKeptEntryId ? { first_kept_entry_id: options.firstKeptEntryId } : {}
+  };
+}
+function createRetryEvent(phase, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RETRY,
+    phase,
+    ...options?.attempt !== undefined ? { attempt: options.attempt } : {},
+    ...options?.maxAttempts !== undefined ? { max_attempts: options.maxAttempts } : {},
+    ...options?.delayMs !== undefined ? { delay_ms: options.delayMs } : {},
+    ...options?.errorMessage ? { error_message: options.errorMessage } : {}
+  };
+}
+function createRunCompleteEvent(status, elapsed_s, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
+    status,
+    elapsed_s,
+    ...options
+  };
+}
+function createAutoCommitEvent(status, options) {
+  const type = status === "success" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SUCCESS : status === "skipped" ? TIMELINE_EVENT_TYPES.AUTO_COMMIT_SKIPPED : TIMELINE_EVENT_TYPES.AUTO_COMMIT_FAILED;
+  return {
+    t: Date.now(),
+    type,
+    ...options?.reason ? { reason: options.reason } : {},
+    ...options?.commit_sha ? { commit_sha: options.commit_sha } : {},
+    ...options?.committed_files ? { committed_files: options.committed_files } : {}
+  };
+}
+function parseTimelineEvent(line) {
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed || typeof parsed !== "object")
+      return null;
+    if (typeof parsed.t !== "number")
+      return null;
+    if (typeof parsed.type !== "string")
+      return null;
+    if (parsed.type === TIMELINE_EVENT_TYPES.DONE) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.DONE,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    if (parsed.type === TIMELINE_EVENT_TYPES.AGENT_END) {
+      return {
+        t: parsed.t,
+        type: TIMELINE_EVENT_TYPES.AGENT_END,
+        elapsed_s: typeof parsed.elapsed_s === "number" ? parsed.elapsed_s : undefined
+      };
+    }
+    const knownTypes = Object.values(TIMELINE_EVENT_TYPES).filter((type) => type !== TIMELINE_EVENT_TYPES.DONE && type !== TIMELINE_EVENT_TYPES.AGENT_END);
+    if (!knownTypes.includes(parsed.type))
+      return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function isRunCompleteEvent(event) {
+  return event.type === TIMELINE_EVENT_TYPES.RUN_COMPLETE;
+}
+function compareTimelineEvents(a, b) {
+  const timeDiff = a.t - b.t;
+  if (timeDiff !== 0)
+    return timeDiff;
+  return (a.seq ?? 0) - (b.seq ?? 0);
+}
+var TIMELINE_EVENT_TYPES, TOOL_RESULT_SUMMARY_LIMIT = 500;
+var init_timeline_events = __esm(() => {
+  TIMELINE_EVENT_TYPES = {
+    RUN_START: "run_start",
+    META: "meta",
+    THINKING: "thinking",
+    TOOL: "tool",
+    TEXT: "text",
+    MESSAGE: "message",
+    TURN: "turn",
+    STATUS_CHANGE: "status_change",
+    RUN_COMPLETE: "run_complete",
+    STALE_WARNING: "stale_warning",
+    TOKEN_USAGE: "token_usage",
+    FINISH_REASON: "finish_reason",
+    TURN_SUMMARY: "turn_summary",
+    COMPACTION: "compaction",
+    RETRY: "retry",
+    MODEL_CHANGE: "model_change",
+    EXTENSION_ERROR: "extension_error",
+    AUTO_COMMIT_SUCCESS: "auto_commit_success",
+    AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
+    AUTO_COMMIT_FAILED: "auto_commit_failed",
+    DONE: "done",
+    AGENT_END: "agent_end"
+  };
 });
 
 // src/specialist/epic-lifecycle.ts
@@ -24354,6 +24578,7 @@ function ensureProjectHookWiring(cwd) {
   }
   addHook("UserPromptSubmit", "node .claude/hooks/specialists-complete.mjs");
   addHook("PostToolUse", "node .claude/hooks/specialists-complete.mjs");
+  addHook("PostToolUse", "node .claude/hooks/specialists-memory-cache-sync.mjs");
   addHook("SessionStart", "node .claude/hooks/specialists-session-start.mjs");
   if (changed) {
     saveJson(settingsPath, settings);
@@ -24612,6 +24837,7 @@ function validateInitPostconditions(cwd) {
   const requiredHookWiring = [
     { event: "UserPromptSubmit", command: "node .claude/hooks/specialists-complete.mjs" },
     { event: "PostToolUse", command: "node .claude/hooks/specialists-complete.mjs" },
+    { event: "PostToolUse", command: "node .claude/hooks/specialists-memory-cache-sync.mjs" },
     { event: "SessionStart", command: "node .claude/hooks/specialists-session-start.mjs" }
   ];
   for (const hook of requiredHookWiring) {
@@ -24696,6 +24922,16 @@ ${bold5("specialists init")}
   ensureProjectHookWiring(cwd);
   installProjectSkills(cwd, syncSkills);
   ensureObservabilityDb(cwd);
+  try {
+    const syncResult = syncMemoriesCacheFromBd(cwd, Date.now(), true);
+    if (syncResult.synced) {
+      ok(`synced memories FTS cache (${syncResult.memoryCount} records)`);
+    } else {
+      skip("memories FTS cache sync skipped (not available)");
+    }
+  } catch {
+    warn("memories FTS cache sync failed during init (non-fatal)");
+  }
   const postconditionWarnings = validateInitPostconditions(cwd);
   if (postconditionWarnings.length > 0) {
     warn("Init completed with postcondition warnings:");
@@ -24733,6 +24969,7 @@ var bold5 = (s) => `\x1B[1m${s}\x1B[0m`, green4 = (s) => `\x1B[32m${s}\x1B[0m`, 
 var init_init = __esm(() => {
   init_observability_db();
   init_observability_sqlite();
+  init_memory_retrieval();
   AGENTS_BLOCK = `
 ## Specialists
 
@@ -24770,10 +25007,54 @@ Add custom specialists to \`.specialists/user/\` to extend defaults.
   MCP_SERVER_CONFIG = { command: "specialists", args: [] };
 });
 
+// src/cli/memory.ts
+var exports_memory = {};
+__export(exports_memory, {
+  run: () => run7
+});
+function printUsage() {
+  console.log([
+    "",
+    "Usage: specialists memory <sync|refresh> [--force] [--json]",
+    "",
+    "Commands:",
+    "  sync     Sync bd memories into local FTS cache",
+    "  refresh  Invalidate cache and rebuild from bd memories",
+    ""
+  ].join(`
+`));
+}
+async function run7(args = []) {
+  const command = args[0] ?? "sync";
+  const force = args.includes("--force");
+  const asJson = args.includes("--json");
+  const cwd = process.cwd();
+  if (command !== "sync" && command !== "refresh") {
+    printUsage();
+    process.exitCode = 1;
+    return;
+  }
+  const result = command === "refresh" ? invalidateAndRefreshMemoriesCache(cwd) : syncMemoriesCacheFromBd(cwd, Date.now(), force);
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ command, ...result })}
+`);
+    return;
+  }
+  console.log(`
+${bold6("specialists memory")}`);
+  console.log(`  command: ${command}`);
+  console.log(`  synced: ${result.synced ? "yes" : "no"}`);
+  console.log(`  memory_count: ${result.memoryCount}`);
+}
+var bold6 = (s) => `\x1B[1m${s}\x1B[0m`;
+var init_memory = __esm(() => {
+  init_memory_retrieval();
+});
+
 // src/cli/db.ts
 var exports_db = {};
 __export(exports_db, {
-  run: () => run7
+  run: () => run8
 });
 import { existsSync as existsSync10, readdirSync as readdirSync4, readFileSync as readFileSync7 } from "fs";
 import { join as join11 } from "path";
@@ -24818,7 +25099,7 @@ function assertHumanInteractiveTerminal(commandName) {
 }
 function printSetupResult(created, gitignoreUpdated, location) {
   console.log(`
-${bold6("specialists db setup")}
+${bold7("specialists db setup")}
 `);
   console.log(`  ${green5("\u2713")} database path: ${location.dbPath}`);
   console.log(`  ${green5("\u2713")} mode: chmod 644`);
@@ -24948,7 +25229,7 @@ function runBackfill(options) {
     sqliteClient.close();
   }
   console.log(`
-${bold6("specialists db backfill")}
+${bold7("specialists db backfill")}
 `);
   console.log(`  ${green5("\u2713")} jobs backfilled: ${summary.jobsBackfilled}`);
   console.log(`  ${yellow6("\u25CB")} jobs skipped (already in DB): ${summary.jobsSkipped}`);
@@ -24972,7 +25253,7 @@ function runSetup() {
   const gitignoreResult = ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
   printSetupResult(setupResult.created, gitignoreResult.changed, location);
 }
-async function run7(argv = process.argv.slice(3)) {
+async function run8(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     printDbHelp();
@@ -24993,7 +25274,7 @@ async function run7(argv = process.argv.slice(3)) {
   printDbHelp();
   process.exit(1);
 }
-var bold6 = (s) => `\x1B[1m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`;
+var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, green5 = (s) => `\x1B[32m${s}\x1B[0m`, yellow6 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_db = __esm(() => {
   init_observability_db();
   init_job_root();
@@ -25005,7 +25286,7 @@ var init_db = __esm(() => {
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
-  run: () => run8,
+  run: () => run9,
   parseArgs: () => parseArgs4,
   ArgParseError: () => ArgParseError3
 });
@@ -25042,7 +25323,7 @@ function findSpecialistFile(name) {
   }
   return;
 }
-async function run8() {
+async function run9() {
   let args;
   try {
     args = parseArgs4(process.argv.slice(3));
@@ -25086,7 +25367,7 @@ async function run8() {
     process.exit(result.valid ? 0 : 1);
   }
   console.log(`
-${bold7("Validating")} ${cyan4(name)} ${dim6(`(${filePath})`)}
+${bold8("Validating")} ${cyan4(name)} ${dim6(`(${filePath})`)}
 `);
   if (result.valid) {
     console.log(`${green6("\u2713")} Schema validation passed
@@ -25112,7 +25393,7 @@ ${bold7("Validating")} ${cyan4(name)} ${dim6(`(${filePath})`)}
   }
   process.exit(result.valid ? 0 : 1);
 }
-var bold7 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
+var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
 var init_validate = __esm(() => {
   init_schema();
   ArgParseError3 = class ArgParseError3 extends Error {
@@ -25126,7 +25407,7 @@ var init_validate = __esm(() => {
 // src/cli/edit.ts
 var exports_edit = {};
 __export(exports_edit, {
-  run: () => run9
+  run: () => run10
 });
 import { spawnSync as spawnSync10 } from "child_process";
 import { existsSync as existsSync12, readdirSync as readdirSync5, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "fs";
@@ -25540,7 +25821,7 @@ function applyMutation(jsonDoc, args, resolvedPath) {
 }
 function printDryRun(filePath, before, after) {
   console.log(`
-${bold8(`[dry-run] ${filePath}`)}
+${bold9(`[dry-run] ${filePath}`)}
 `);
   console.log(dim7("--- current"));
   console.log(dim7("+++ updated"));
@@ -25572,7 +25853,7 @@ async function resolveTargets(args) {
   }
   return [match];
 }
-async function run9() {
+async function run10() {
   const args = parseArgs5(process.argv.slice(3));
   if (args.action === "open-all") {
     openAllConfigSpecialistsInEditor();
@@ -25586,7 +25867,7 @@ async function run9() {
       return;
     }
     for (const [name, preset] of entries) {
-      console.log(`${bold8(name)}  ${dim7(preset.description ?? "")}`);
+      console.log(`${bold9(name)}  ${dim7(preset.description ?? "")}`);
       for (const [field, val] of Object.entries(preset.fields)) {
         console.log(`  ${yellow8(field)} = ${formatOutputValue(val)}`);
       }
@@ -25618,7 +25899,7 @@ async function run9() {
       }
       writeFileSync5(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow8(f)).join(", ");
-      console.log(`${green7("\u2713")} ${bold8(target.name)}: applied preset ${bold8(args.preset)} (${fieldList})`);
+      console.log(`${green7("\u2713")} ${bold9(target.name)}: applied preset ${bold9(args.preset)} (${fieldList})`);
     }
     return;
   }
@@ -25653,10 +25934,10 @@ async function run9() {
       continue;
     }
     writeFileSync5(target.filePath, updated, "utf-8");
-    console.log(`${green7("\u2713")} ${bold8(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
+    console.log(`${green7("\u2713")} ${bold9(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
   }
 }
-var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, LEGACY_FIELD_ALIASES, ENUM_PATHS, MULTILINE_FILE_PATHS;
+var bold9 = (s) => `\x1B[1m${s}\x1B[0m`, green7 = (s) => `\x1B[32m${s}\x1B[0m`, yellow8 = (s) => `\x1B[33m${s}\x1B[0m`, dim7 = (s) => `\x1B[2m${s}\x1B[0m`, LEGACY_FIELD_ALIASES, ENUM_PATHS, MULTILINE_FILE_PATHS;
 var init_edit = __esm(() => {
   init_zod();
   init_loader();
@@ -25686,7 +25967,7 @@ var init_edit = __esm(() => {
 // src/cli/config.ts
 var exports_config = {};
 __export(exports_config, {
-  run: () => run10
+  run: () => run11
 });
 function usage2() {
   return [
@@ -25758,12 +26039,12 @@ ${usage2()}`);
   }
   return translated;
 }
-async function run10() {
+async function run11() {
   const originalArgs = process.argv.slice(3);
   const editArgs = buildEditArgv(originalArgs);
   console.error(`${yellow9("\u26A0 DEPRECATED")} specialists config is deprecated. Use ${yellow9("specialists edit")} instead.`);
   process.argv = [process.argv[0] ?? "node", process.argv[1] ?? "specialists", "edit", ...editArgs];
-  await run9();
+  await run10();
 }
 var yellow9 = (s) => `\x1B[33m${s}\x1B[0m`;
 var init_config = __esm(() => {
@@ -25867,7 +26148,7 @@ __export(exports_merge, {
   runTypecheckGate: () => runTypecheckGate,
   runRebuild: () => runRebuild,
   runMergePlan: () => runMergePlan,
-  run: () => run11,
+  run: () => run12,
   resolveMergeTargetsForBeadIds: () => resolveMergeTargetsForBeadIds,
   resolveMergeTargets: () => resolveMergeTargets,
   resolveChainEpicMembership: () => resolveChainEpicMembership,
@@ -26447,7 +26728,7 @@ function executePublicationPlan(targets, options) {
     throw error2;
   }
 }
-async function run11() {
+async function run12() {
   let options;
   try {
     options = parseOptions(process.argv.slice(3));
@@ -26552,7 +26833,7 @@ function formatEventLine(event, options) {
   const job = options.colorize(`[${options.jobId}]`);
   const node = options.nodeId ? magenta3(`[\u2B22${options.nodeId}]`) : "";
   const bead = dim8(`[${options.beadId ?? "-"}]`);
-  const label = options.colorize(bold9(getEventLabel(event.type).padEnd(5)));
+  const label = options.colorize(bold10(getEventLabel(event.type).padEnd(5)));
   const hasContextPct = Number.isFinite(options.contextPct);
   const contextPct = hasContextPct ? Math.min(100, Math.max(0, Math.round(options.contextPct))) : null;
   const contextBadge = contextPct === null ? "" : dim8(`[${contextPct}%]`);
@@ -26668,7 +26949,7 @@ function formatEventInlineDebounced(event, activePhase) {
     nextPhase: null
   };
 }
-var dim8 = (s) => `\x1B[2m${s}\x1B[0m`, bold9 = (s) => `\x1B[1m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta3 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim8 = (s) => `\x1B[2m${s}\x1B[0m`, bold10 = (s) => `\x1B[1m${s}\x1B[0m`, cyan5 = (s) => `\x1B[36m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green8 = (s) => `\x1B[32m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta3 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
 var init_format_helpers = __esm(() => {
   JOB_COLORS = [cyan5, yellow10, magenta3, green8, blue, red2];
   EVENT_LABELS = {
@@ -26692,7 +26973,7 @@ var init_format_helpers = __esm(() => {
 // src/cli/run.ts
 var exports_run = {};
 __export(exports_run, {
-  run: () => run12
+  run: () => run13
 });
 import { join as join16 } from "path";
 import { readFileSync as readFileSync10 } from "fs";
@@ -27033,7 +27314,7 @@ function formatFooterModel(backend, model) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
-async function run12() {
+async function run13() {
   const args = await parseArgs6(process.argv.slice(3));
   const loader = new SpecialistLoader;
   const specialist = await loader.get(args.name).catch((err) => {
@@ -27220,7 +27501,7 @@ async function run12() {
     } catch {}
   }
   process.stderr.write(`
-${bold10(`Running ${cyan6(args.name)}`)}
+${bold11(`Running ${cyan6(args.name)}`)}
 
 `);
   let jobId = "";
@@ -27264,7 +27545,7 @@ ${green9("\u2713")} ${footer}
 `));
   process.exit(0);
 }
-var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, BLOCKED_JOB_REUSE_STATUSES;
+var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim9 = (s) => `\x1B[2m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, BLOCKED_JOB_REUSE_STATUSES;
 var init_run = __esm(() => {
   init_loader();
   init_runner();
@@ -30502,15 +30783,15 @@ function evaluateReadiness(epicId, state, chainRecords, sqlite) {
 }
 function gatherEpicList(sqlite, unresolvedOnly) {
   const epicRuns = sqlite.listEpicRuns();
-  return epicRuns.filter((run13) => !unresolvedOnly || isEpicUnresolvedState(run13.status)).map((run13) => {
-    const chainRecords = sqlite.listEpicChains(run13.epic_id);
-    const readiness = evaluateReadiness(run13.epic_id, run13.status, chainRecords, sqlite);
+  return epicRuns.filter((run14) => !unresolvedOnly || isEpicUnresolvedState(run14.status)).map((run14) => {
+    const chainRecords = sqlite.listEpicChains(run14.epic_id);
+    const readiness = evaluateReadiness(run14.epic_id, run14.status, chainRecords, sqlite);
     return {
-      epic_id: run13.epic_id,
-      state: run13.status,
+      epic_id: run14.epic_id,
+      state: run14.status,
       chain_count: chainRecords.length,
       readiness,
-      updated_at_ms: run13.updated_at_ms
+      updated_at_ms: run14.updated_at_ms
     };
   });
 }
@@ -30972,7 +31253,7 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run13
+  run: () => run14
 });
 import { spawnSync as spawnSync16 } from "child_process";
 import { existsSync as existsSync17, readFileSync as readFileSync13 } from "fs";
@@ -30992,7 +31273,7 @@ function info(msg) {
 function section(label) {
   const line = "\u2500".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold9(`\u2500\u2500 ${label} ${line}`)}`);
+${bold10(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
   const r = spawnSync16(bin, args, {
@@ -31144,7 +31425,7 @@ function formatMetricsInline(metrics) {
 }
 function renderJobDetail(job, eventCount, contextSnapshot) {
   console.log(`
-${bold9("specialists status")}
+${bold10("specialists status")}
 `);
   section(`Job ${job.id}`);
   console.log(`  specialist   ${job.specialist}`);
@@ -31187,7 +31468,7 @@ ${bold9("specialists status")}
     console.log(`  error        ${red2(job.error)}`);
   console.log();
 }
-async function run13() {
+async function run14() {
   const argv = process.argv.slice(3);
   let parsedArgs;
   try {
@@ -31291,7 +31572,7 @@ async function run13() {
       return;
     }
     console.log(`
-${bold9("specialists status")}
+${bold10("specialists status")}
 `);
     section("Specialists");
     if (allSpecialists.length === 0) {
@@ -31367,7 +31648,7 @@ var init_status = __esm(() => {
 // src/cli/ps.ts
 var exports_ps = {};
 __export(exports_ps, {
-  run: () => run14
+  run: () => run15
 });
 import { spawnSync as spawnSync17 } from "child_process";
 import { existsSync as existsSync18, readdirSync as readdirSync8, readFileSync as readFileSync14 } from "fs";
@@ -31696,16 +31977,16 @@ function groupByNode(jobs) {
 }
 function statusLabel(status) {
   if (status === "running")
-    return bold9(green8(status));
+    return bold10(green8(status));
   if (status === "waiting")
-    return bold9(magenta3(status));
+    return bold10(magenta3(status));
   if (status === "done")
     return dim8(status);
   if (status === "error")
-    return bold9(red2(status));
+    return bold10(red2(status));
   if (status === "cancelled")
     return dim8(status);
-  return bold9(yellow10(status));
+  return bold10(yellow10(status));
 }
 function epicStateLabel(state) {
   if (state === "merge_ready")
@@ -31891,10 +32172,10 @@ function renderHuman(jobs, nodes, trees, all, epicReadiness) {
     const persistedState = readiness?.persisted_state ?? "open";
     const prepSummary = readiness?.prep ? `prep ${readiness.prep.done}/${readiness.prep.total} done${readiness.prep.running > 0 ? ` ${readiness.prep.running} running` : ""}${readiness.prep.failed > 0 ? ` ${readiness.prep.failed} failed` : ""}` : `prep ${prepCount}`;
     const chainSummary = readiness?.chains ? `chains ${readiness.chains.filter((chain) => chain.state === "pass").length}/${readiness.chains.length} pass` : `chains ${chainCount}`;
-    const epicBanner = bold9(cyan5(`\u250F\u2501 EPIC ${epic.epic_id} \u2501 ${String(readinessState).toUpperCase()} \u2501 ${prepSummary} \u2501 ${chainSummary}`));
+    const epicBanner = bold10(cyan5(`\u250F\u2501 EPIC ${epic.epic_id} \u2501 ${String(readinessState).toUpperCase()} \u2501 ${prepSummary} \u2501 ${chainSummary}`));
     console.log(epicBanner);
     console.log(`  ${dim8(`state:${persistedState}`)} \xB7 ${epicStateLabel(readiness?.readiness_state)}`);
-    console.log(`  ${bold9("Prep")}`);
+    console.log(`  ${bold10("Prep")}`);
     if (epic.prep_jobs.length === 0) {
       console.log(dim8("    (none)"));
     } else {
@@ -31905,7 +32186,7 @@ function renderHuman(jobs, nodes, trees, all, epicReadiness) {
         }
       }
     }
-    console.log(`  ${bold9("Chains")}`);
+    console.log(`  ${bold10("Chains")}`);
     if (epic.chains.length === 0) {
       console.log(dim8("    (none)"));
     } else {
@@ -31913,7 +32194,7 @@ function renderHuman(jobs, nodes, trees, all, epicReadiness) {
         const chainReadiness = readiness?.chains.find((entry) => entry.chain_id === chain.chain_id);
         const readinessLabel = chainReadiness ? ` \xB7 ${chainReadiness.state}` : "";
         const rootBeadSuffix = chain.chain_root_bead_id ? ` \xB7 root:${chain.chain_root_bead_id}` : "";
-        console.log(`    ${bold9(chain.chain_id)}${dim8(rootBeadSuffix)}${dim8(readinessLabel)}`);
+        console.log(`    ${bold10(chain.chain_id)}${dim8(rootBeadSuffix)}${dim8(readinessLabel)}`);
         for (const tree of chain.trees) {
           const branch = tree.branch ?? "master";
           console.log(`      ${dim8(branch)}`);
@@ -31966,7 +32247,7 @@ function renderInspect(jobId) {
   const ctx = job.context_pct !== undefined ? `${Math.round(job.context_pct)}% ${job.context_health ?? ""}` : "--";
   const deadLabel = job.is_dead ? ` ${red2("dead")}` : "";
   const chainJobs = job.worktree_owner_job_id ? statuses.filter((s) => s.worktree_owner_job_id === job.worktree_owner_job_id).sort((a, b) => a.started_at_ms - b.started_at_ms) : [job];
-  const chainStr = chainJobs.map((j) => j.id === job.id ? bold9(j.id) : dim8(j.id)).join(" \u2192 ");
+  const chainStr = chainJobs.map((j) => j.id === job.id ? bold10(j.id) : dim8(j.id)).join(" \u2192 ");
   console.log(`
 ${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
   if (job.epic_id) {
@@ -32129,7 +32410,7 @@ async function follow(args) {
     }, 1000);
   });
 }
-async function run14() {
+async function run15() {
   const args = parseArgs7(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -32175,7 +32456,7 @@ var init_ps = __esm(() => {
 // src/cli/result.ts
 var exports_result = {};
 __export(exports_result, {
-  run: () => run15
+  run: () => run16
 });
 import { existsSync as existsSync19, readFileSync as readFileSync15 } from "fs";
 import { join as join21 } from "path";
@@ -32262,7 +32543,7 @@ function resolveJobIdFromNodeMember(sqliteClient, nodeId, memberKey) {
   }
   return member.job_id;
 }
-async function run15() {
+async function run16() {
   const args = parseArgs8(process.argv.slice(3));
   const emitJson = (status, output2, error2) => {
     console.log(JSON.stringify({
@@ -32622,7 +32903,7 @@ function formatSpecialistModel(specialist, model) {
 // src/cli/feed.ts
 var exports_feed = {};
 __export(exports_feed, {
-  run: () => run16
+  run: () => run17
 });
 import {
   closeSync as closeSync2,
@@ -32697,7 +32978,7 @@ function isWaitingStatusChangeEvent(event) {
   return event.type === "status_change" && event.status === "waiting";
 }
 function formatWaitingBanner(jobId, specialist) {
-  const prefix = magenta3(bold9("WAIT"));
+  const prefix = magenta3(bold10("WAIT"));
   return `${prefix} ${specialist} (${jobId}) is waiting for input. Use: specialists resume ${jobId} "..."`;
 }
 function parseSince(value) {
@@ -33143,7 +33424,7 @@ async function followMerged(sqliteClient, jobsDir, options) {
     }, 500);
   });
 }
-async function run16() {
+async function run17() {
   const options = parseArgs9(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
@@ -33185,7 +33466,7 @@ var init_feed = __esm(() => {
 // src/cli/poll.ts
 var exports_poll = {};
 __export(exports_poll, {
-  run: () => run17
+  run: () => run18
 });
 import { existsSync as existsSync22, readFileSync as readFileSync18 } from "fs";
 import { join as join24 } from "path";
@@ -33267,7 +33548,7 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
     error: status?.error
   };
 }
-async function run17() {
+async function run18() {
   const { jobId, cursor, outputCursor } = parseArgs10(process.argv.slice(3));
   const jobsDir = join24(process.cwd(), ".specialists", "jobs");
   const jobDir = join24(jobsDir, jobId);
@@ -33300,10 +33581,10 @@ var init_poll = __esm(() => {
 // src/cli/steer.ts
 var exports_steer = {};
 __export(exports_steer, {
-  run: () => run18
+  run: () => run19
 });
 import { writeFileSync as writeFileSync7 } from "fs";
-async function run18() {
+async function run19() {
   const jobId = process.argv[3];
   const message = process.argv[4];
   if (!jobId || !message) {
@@ -33354,10 +33635,10 @@ var init_steer = __esm(() => {
 // src/cli/resume.ts
 var exports_resume = {};
 __export(exports_resume, {
-  run: () => run19
+  run: () => run20
 });
 import { writeFileSync as writeFileSync8 } from "fs";
-async function run19() {
+async function run20() {
   const jobId = process.argv[3];
   const task = process.argv[4];
   if (!jobId || !task) {
@@ -33410,9 +33691,9 @@ var init_resume = __esm(() => {
 // src/cli/follow-up.ts
 var exports_follow_up = {};
 __export(exports_follow_up, {
-  run: () => run20
+  run: () => run21
 });
-async function run20() {
+async function run21() {
   process.stderr.write("\x1B[33m\u26A0 DEPRECATED:\x1B[0m `specialists follow-up` is deprecated. Use `specialists resume` instead.\n\n");
   const { run: resumeRun } = await Promise.resolve().then(() => (init_resume(), exports_resume));
   return resumeRun();
@@ -33498,7 +33779,7 @@ var init_worktree_gc = __esm(() => {
 // src/cli/clean.ts
 var exports_clean = {};
 __export(exports_clean, {
-  run: () => run21
+  run: () => run22
 });
 import {
   existsSync as existsSync24,
@@ -33687,7 +33968,7 @@ function printUsageAndExit2(message) {
   console.error("Usage: specialists|sp clean [--all] [--keep <n>] [--dry-run]");
   process.exit(1);
 }
-async function run21() {
+async function run22() {
   let options;
   try {
     options = parseOptions2(process.argv.slice(3));
@@ -33730,7 +34011,7 @@ var init_clean = __esm(() => {
 // src/cli/end.ts
 var exports_end = {};
 __export(exports_end, {
-  run: () => run22
+  run: () => run23
 });
 import { spawnSync as spawnSync19 } from "child_process";
 function parseOptions3(argv) {
@@ -33814,7 +34095,7 @@ async function publishChain(beadId, options) {
     console.log("Publication mode: direct merge");
   }
 }
-async function run22() {
+async function run23() {
   let options;
   try {
     options = parseOptions3(process.argv.slice(3));
@@ -33851,12 +34132,12 @@ var init_end = __esm(() => {
 // src/cli/stop.ts
 var exports_stop = {};
 __export(exports_stop, {
-  run: () => run23
+  run: () => run24
 });
 function resolveTerminalStatus(jobId) {
   return hasRunCompleteEvent(jobId) ? "done" : "cancelled";
 }
-async function run23() {
+async function run24() {
   const jobId = process.argv[3];
   if (!jobId) {
     console.error("Usage: specialists|sp stop <job-id>");
@@ -33922,7 +34203,7 @@ var init_stop = __esm(() => {
 // src/cli/attach.ts
 var exports_attach = {};
 __export(exports_attach, {
-  run: () => run24
+  run: () => run25
 });
 import { execFileSync as execFileSync3, spawnSync as spawnSync20 } from "child_process";
 import { readFileSync as readFileSync21 } from "fs";
@@ -33942,7 +34223,7 @@ function readStatus(statusPath, jobId) {
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
   }
 }
-async function run24() {
+async function run25() {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
@@ -33972,12 +34253,12 @@ var init_attach = () => {};
 // src/cli/quickstart.ts
 var exports_quickstart = {};
 __export(exports_quickstart, {
-  run: () => run25
+  run: () => run26
 });
 function section2(title) {
   const bar = "\u2500".repeat(60);
   return `
-${bold11(cyan7(title))}
+${bold12(cyan7(title))}
 ${dim12(bar)}`;
 }
 function cmd2(s) {
@@ -33986,10 +34267,10 @@ function cmd2(s) {
 function flag(s) {
   return green13(s);
 }
-async function run25() {
+async function run26() {
   const lines = [
     "",
-    bold11("specialists  \xB7  Quick Start Guide"),
+    bold12("specialists  \xB7  Quick Start Guide"),
     dim12("One MCP server. Multiple AI backends. Intelligent orchestration."),
     dim12("Tip: sp is a shorter alias \u2014 sp run, sp list, sp feed etc. work identically."),
     ""
@@ -34028,10 +34309,10 @@ async function run25() {
   lines.push("");
   lines.push(section2("4. Running a Specialist"));
   lines.push("");
-  lines.push(`  ${bold11("Foreground")} (streams output to stdout):`);
+  lines.push(`  ${bold12("Foreground")} (streams output to stdout):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--prompt")} ${dim12('"Review src/api.ts for security issues"')}`);
   lines.push("");
-  lines.push(`  ${bold11("Tracked run")} (linked to a beads issue for workflow integration):`);
+  lines.push(`  ${bold12("Tracked run")} (linked to a beads issue for workflow integration):`);
   lines.push(`  ${cmd2("specialists run code-review")} ${flag("--bead")} ${dim12("unitAI-abc")}`);
   lines.push(`  ${dim12("  # uses bead description as prompt, tracks result in issue")}`);
   lines.push("");
@@ -34046,32 +34327,32 @@ async function run25() {
   lines.push("");
   lines.push(section2("5. Async Job Lifecycle"));
   lines.push("");
-  lines.push(`  ${bold11("MCP pattern")}: ${cmd2("use_specialist")} (foreground, returns result directly)`);
-  lines.push(`  ${bold11("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim12("[job started: <id>]")} to stderr`);
-  lines.push(`  ${bold11("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
+  lines.push(`  ${bold12("MCP pattern")}: ${cmd2("use_specialist")} (foreground, returns result directly)`);
+  lines.push(`  ${bold12("CLI pattern")}: ${cmd2('specialists run <name> --prompt "..."')} prints ${dim12("[job started: <id>]")} to stderr`);
+  lines.push(`  ${bold12("Shell pattern")}: ${cmd2('specialists run <name> --prompt "..." &')} for native backgrounding`);
   lines.push("");
-  lines.push(`  ${bold11("Watch progress")} \u2014 stream events as they arrive:`);
+  lines.push(`  ${bold12("Watch progress")} \u2014 stream events as they arrive:`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")}            # print events so far`);
   lines.push(`  ${cmd2("specialists feed job_a1b2c3d4")} ${flag("--follow")}      # tail and stream live updates`);
   lines.push("");
-  lines.push(`  ${bold11("Read results")} \u2014 print the final output:`);
+  lines.push(`  ${bold12("Read results")} \u2014 print the final output:`);
   lines.push(`  ${cmd2("specialists result job_a1b2c3d4")}          # exits 1 if still running`);
   lines.push("");
-  lines.push(`  ${bold11("Steer a running job")} \u2014 redirect the agent mid-run without cancelling:`);
+  lines.push(`  ${bold12("Steer a running job")} \u2014 redirect the agent mid-run without cancelling:`);
   lines.push(`  ${cmd2("specialists steer job_a1b2c3d4")} ${flag('"focus only on supervisor.ts"')}`);
   lines.push(`  ${dim12("  # delivered after current tool calls finish, before the next LLM call")}`);
   lines.push("");
-  lines.push(`  ${bold11("Keep-alive multi-turn")} \u2014 start with ${flag("--keep-alive")}, then follow up:`);
+  lines.push(`  ${bold12("Keep-alive multi-turn")} \u2014 start with ${flag("--keep-alive")}, then follow up:`);
   lines.push(`  ${cmd2("specialists run debugger")} ${flag("--bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${dim12("  # \u2192 status: waiting after first turn")}`);
   lines.push(`  ${cmd2("specialists result a1b2c3")}                   # read first turn`);
   lines.push(`  ${cmd2("specialists follow-up a1b2c3")} ${flag('"now write the fix"')}    # next turn, same Pi context`);
   lines.push(`  ${cmd2("specialists feed a1b2c3")} ${flag("--follow")}               # watch response`);
   lines.push("");
-  lines.push(`  ${bold11("Cancel a job")}:`);
+  lines.push(`  ${bold12("Cancel a job")}:`);
   lines.push(`  ${cmd2("specialists stop job_a1b2c3d4")}            # sends SIGTERM to the agent process`);
   lines.push("");
-  lines.push(`  ${bold11("Job files")} in ${dim12(".specialists/jobs/<job-id>/")}:`);
+  lines.push(`  ${bold12("Job files")} in ${dim12(".specialists/jobs/<job-id>/")}:`);
   lines.push(`  ${dim12("status.json")}   \u2014 id, specialist, status, pid, started_at, elapsed_s, current_tool`);
   lines.push(`  ${dim12("events.jsonl")} \u2014 one JSON event per line (tool_use, text, agent_end, error \u2026)`);
   lines.push(`  ${dim12("result.txt")}    \u2014 final output (written when status=done)`);
@@ -34141,7 +34422,7 @@ async function run25() {
   lines.push("");
   lines.push(`  Specialists emits lifecycle events to ${dim12(".specialists/trace.jsonl")}:`);
   lines.push("");
-  lines.push(`  ${bold11("Hook point")}              ${bold11("When fired")}`);
+  lines.push(`  ${bold12("Hook point")}              ${bold12("When fired")}`);
   lines.push(`  ${yellow11("specialist:start")}       before the agent session begins`);
   lines.push(`  ${yellow11("specialist:token")}       on each streamed token (delta)`);
   lines.push(`  ${yellow11("specialist:done")}        after successful completion`);
@@ -34157,35 +34438,35 @@ async function run25() {
   lines.push("");
   lines.push(`  After ${cmd2("specialists init")}, these MCP tools are available to Claude:`);
   lines.push("");
-  lines.push(`  ${bold11("specialist_init")}    \u2014 bootstrap: bd init + list specialists`);
-  lines.push(`  ${bold11("list_specialists")}   \u2014 discover specialists (project/user/system)`);
-  lines.push(`  ${bold11("use_specialist")}     \u2014 full lifecycle: load \u2192 agents.md \u2192 run \u2192 output`);
-  lines.push(`  ${bold11("feed_specialist")}    \u2014 stream events/output by job ID`);
-  lines.push(`  ${bold11("steer_specialist")}      \u2014 send a mid-run message to a running job`);
-  lines.push(`  ${bold11("resume_specialist")}    \u2014 resume a waiting keep-alive session with a next-turn prompt`);
-  lines.push(`  ${bold11("stop_specialist")}      \u2014 cancel a running job by ID`);
-  lines.push(`  ${bold11("specialist_status")}  \u2014 circuit breaker health + staleness`);
+  lines.push(`  ${bold12("specialist_init")}    \u2014 bootstrap: bd init + list specialists`);
+  lines.push(`  ${bold12("list_specialists")}   \u2014 discover specialists (project/user/system)`);
+  lines.push(`  ${bold12("use_specialist")}     \u2014 full lifecycle: load \u2192 agents.md \u2192 run \u2192 output`);
+  lines.push(`  ${bold12("feed_specialist")}    \u2014 stream events/output by job ID`);
+  lines.push(`  ${bold12("steer_specialist")}      \u2014 send a mid-run message to a running job`);
+  lines.push(`  ${bold12("resume_specialist")}    \u2014 resume a waiting keep-alive session with a next-turn prompt`);
+  lines.push(`  ${bold12("stop_specialist")}      \u2014 cancel a running job by ID`);
+  lines.push(`  ${bold12("specialist_status")}  \u2014 circuit breaker health + staleness`);
   lines.push("");
   lines.push(section2("10. Common Workflows"));
   lines.push("");
-  lines.push(`  ${bold11("Foreground review, save to file:")}`);
+  lines.push(`  ${bold12("Foreground review, save to file:")}`);
   lines.push(`  ${cmd2('specialists run code-review --prompt "Audit src/" > review.md')}`);
   lines.push("");
-  lines.push(`  ${bold11("Tracked run with beads integration:")}`);
+  lines.push(`  ${bold12("Tracked run with beads integration:")}`);
   lines.push(`  ${cmd2("specialists run deep-analysis --bead unitAI-abc")}`);
   lines.push(`  ${dim12("  # prompt from bead, result tracked in bead")}`);
   lines.push("");
-  lines.push(`  ${bold11("Steer a job mid-run:")}`);
+  lines.push(`  ${bold12("Steer a job mid-run:")}`);
   lines.push(`  ${cmd2('specialists steer <job-id> "focus only on the auth module"')}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push("");
-  lines.push(`  ${bold11("Multi-turn keep-alive (iterative work):")}`);
+  lines.push(`  ${bold12("Multi-turn keep-alive (iterative work):")}`);
   lines.push(`  ${cmd2("specialists run debugger --bead unitAI-abc --keep-alive")}`);
   lines.push(`  ${cmd2("specialists result <job-id>")}`);
   lines.push(`  ${cmd2('specialists follow-up <job-id> "now write the fix for the root cause"')}`);
   lines.push(`  ${cmd2("specialists feed <job-id> --follow")}`);
   lines.push("");
-  lines.push(`  ${bold11("Override model for a single run:")}`);
+  lines.push(`  ${bold12("Override model for a single run:")}`);
   lines.push(`  ${cmd2('specialists run code-review --model anthropic/claude-opus-4-6 --prompt "..."')}`);
   lines.push("");
   lines.push(dim12("\u2500".repeat(62)));
@@ -34195,13 +34476,13 @@ async function run25() {
   console.log(lines.join(`
 `));
 }
-var bold11 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
+var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim12 = (s) => `\x1B[2m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue2 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
 
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
   setStatusError: () => setStatusError,
-  run: () => run26,
+  run: () => run27,
   renderProcessSummary: () => renderProcessSummary,
   parseVersionTuple: () => parseVersionTuple,
   compareVersions: () => compareVersions,
@@ -34229,7 +34510,7 @@ function hint(msg) {
 function section3(label) {
   const line = "\u2500".repeat(Math.max(0, 38 - label.length));
   console.log(`
-${bold12(`\u2500\u2500 ${label} ${line}`)}`);
+${bold13(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
   const r = spawnSync21(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
@@ -34640,9 +34921,9 @@ function checkZombieJobs() {
   }
   return result.zombies === 0;
 }
-async function run26() {
+async function run27() {
   console.log(`
-${bold12("specialists doctor")}
+${bold13("specialists doctor")}
 `);
   const piOk = checkPi();
   const spOk = checkSpAlias();
@@ -34656,14 +34937,14 @@ ${bold12("specialists doctor")}
   const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
-    console.log(`  ${green14("\u2713")} ${bold12("All checks passed")}  \u2014 specialists is healthy`);
+    console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
   } else {
-    console.log(`  ${yellow12("\u25CB")} ${bold12("Some checks failed")}  \u2014 follow the fix hints above`);
+    console.log(`  ${yellow12("\u25CB")} ${bold13("Some checks failed")}  \u2014 follow the fix hints above`);
     console.log(`  ${dim13("specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.")}`);
   }
   console.log("");
 }
-var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   CWD = process.cwd();
   CLAUDE_DIR = join28(CWD, ".claude");
@@ -34688,13 +34969,13 @@ var init_doctor = __esm(() => {
 // src/cli/setup.ts
 var exports_setup = {};
 __export(exports_setup, {
-  run: () => run27
+  run: () => run28
 });
-async function run27() {
+async function run28() {
   console.log("");
   console.log(yellow13("\u26A0 DEPRECATED: `specialists setup` is deprecated"));
   console.log("");
-  console.log(`  Use ${bold13("specialists init")} instead.`);
+  console.log(`  Use ${bold14("specialists init")} instead.`);
   console.log("");
   console.log("  The init command handles all setup tasks:");
   console.log("    \u2022 creates specialists/ and .specialists/ directories");
@@ -34708,29 +34989,29 @@ async function run27() {
   console.log(`  ${dim14("Run: specialists init --help for full details")}`);
   console.log("");
 }
-var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`;
+var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`;
 
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run28
+  run: () => run29
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run28() {
+async function run29() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
     "",
-    bold14("Usage:"),
+    bold15("Usage:"),
     "  specialists|sp [command]",
     "  specialists|sp [command] --help",
     "",
     dim15("  sp is a shorter alias \u2014 sp run, sp list, sp feed etc. all work identically."),
     "",
-    bold14("Common flows:"),
+    bold15("Common flows:"),
     "",
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
@@ -34767,16 +35048,16 @@ async function run28() {
     "    specialists epic merge <epic-id> [--pr]                 # \u2192 publish epic-owned chains",
     "    specialists end [--pr]                                   # \u2192 session-close publish helper",
     "",
-    bold14("Core commands:"),
+    bold15("Core commands:"),
     ...formatCommands(CORE_COMMANDS),
     "",
-    bold14("Extended commands:"),
+    bold15("Extended commands:"),
     ...formatCommands(EXTENDED_COMMANDS),
     "",
-    bold14("xtrm worktree commands:"),
+    bold15("xtrm worktree commands:"),
     ...formatCommands(WORKTREE_COMMANDS),
     "",
-    bold14("Examples:"),
+    bold15("Examples:"),
     "  specialists init",
     "  specialists list",
     "  specialists view explorer --section prompt",
@@ -34799,7 +35080,7 @@ async function run28() {
     "  specialists report show --specialists",
     "  specialists result <job-id> --wait",
     "",
-    bold14("More help:"),
+    bold15("More help:"),
     "  specialists quickstart         Full guide and workflow reference",
     "  specialists view --help        View specialist configs",
     "  specialists edit --help        Edit specialist fields (dot-path, presets)",
@@ -34816,7 +35097,7 @@ async function run28() {
   console.log(lines.join(`
 `));
 }
-var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, dim15 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
+var bold15 = (s) => `\x1B[1m${s}\x1B[0m`, dim15 = (s) => `\x1B[2m${s}\x1B[0m`, CORE_COMMANDS, EXTENDED_COMMANDS, WORKTREE_COMMANDS;
 var init_help = __esm(() => {
   CORE_COMMANDS = [
     ["init", "Bootstrap a project: dirs, workflow injection, project MCP registration"],
@@ -34867,7 +35148,7 @@ var init_help = __esm(() => {
   ];
 });
 
-// ../../../node_modules/zod/v4/core/core.js
+// node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
   status: "aborted"
 });
@@ -34927,7 +35208,7 @@ function config(newConfig) {
     Object.assign(globalConfig, newConfig);
   return globalConfig;
 }
-// ../../../node_modules/zod/v4/core/util.js
+// node_modules/zod/v4/core/util.js
 var exports_util = {};
 __export(exports_util, {
   unwrapMessage: () => unwrapMessage,
@@ -35441,7 +35722,7 @@ class Class {
   constructor(..._args) {}
 }
 
-// ../../../node_modules/zod/v4/core/errors.js
+// node_modules/zod/v4/core/errors.js
 var initializer = (inst, def) => {
   inst.name = "$ZodError";
   Object.defineProperty(inst, "_zod", {
@@ -35515,7 +35796,7 @@ function formatError(error, _mapper) {
   return fieldErrors;
 }
 
-// ../../../node_modules/zod/v4/core/parse.js
+// node_modules/zod/v4/core/parse.js
 var _parse = (_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
   const result = schema._zod.run({ value, issues: [] }, ctx);
@@ -35564,7 +35845,7 @@ var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
   } : { success: true, data: result.value };
 };
 var safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
-// ../../../node_modules/zod/v4/core/regexes.js
+// node_modules/zod/v4/core/regexes.js
 var cuid = /^[cC][^\s-]{8,}$/;
 var cuid2 = /^[0-9a-z]+$/;
 var ulid = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/;
@@ -35622,7 +35903,7 @@ var _null = /null/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
 
-// ../../../node_modules/zod/v4/core/checks.js
+// node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a;
   inst._zod ?? (inst._zod = {});
@@ -36006,7 +36287,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../../../node_modules/zod/v4/core/doc.js
+// node_modules/zod/v4/core/doc.js
 class Doc {
   constructor(args = []) {
     this.content = [];
@@ -36044,14 +36325,14 @@ class Doc {
   }
 }
 
-// ../../../node_modules/zod/v4/core/versions.js
+// node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 0,
   patch: 0
 };
 
-// ../../../node_modules/zod/v4/core/schemas.js
+// node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a;
   inst ?? (inst = {});
@@ -37282,7 +37563,7 @@ function handleRefineResult(result, payload, input, inst) {
     payload.issues.push(issue(_iss));
   }
 }
-// ../../../node_modules/zod/v4/locales/en.js
+// node_modules/zod/v4/locales/en.js
 var parsedType = (data) => {
   const t = typeof data;
   switch (t) {
@@ -37399,7 +37680,7 @@ function en_default2() {
     localeError: error()
   };
 }
-// ../../../node_modules/zod/v4/core/registries.js
+// node_modules/zod/v4/core/registries.js
 var $output = Symbol("ZodOutput");
 var $input = Symbol("ZodInput");
 
@@ -37449,7 +37730,7 @@ function registry() {
   return new $ZodRegistry;
 }
 var globalRegistry = /* @__PURE__ */ registry();
-// ../../../node_modules/zod/v4/core/api.js
+// node_modules/zod/v4/core/api.js
 function _string(Class2, params) {
   return new Class2({
     type: "string",
@@ -37884,7 +38165,7 @@ function _refine(Class2, fn, _params) {
   });
   return schema;
 }
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
@@ -37946,7 +38227,7 @@ function getLiteralValue(schema) {
     return directValue;
   return;
 }
-// ../../../node_modules/zod/v4/classic/iso.js
+// node_modules/zod/v4/classic/iso.js
 var exports_iso = {};
 __export(exports_iso, {
   time: () => time2,
@@ -37987,7 +38268,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../../../node_modules/zod/v4/classic/errors.js
+// node_modules/zod/v4/classic/errors.js
 var initializer2 = (inst, issues) => {
   $ZodError.init(inst, issues);
   inst.name = "ZodError";
@@ -38016,13 +38297,13 @@ var ZodRealError = $constructor("ZodError", initializer2, {
   Parent: Error
 });
 
-// ../../../node_modules/zod/v4/classic/parse.js
+// node_modules/zod/v4/classic/parse.js
 var parse3 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse3 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
 
-// ../../../node_modules/zod/v4/classic/schemas.js
+// node_modules/zod/v4/classic/schemas.js
 var ZodType2 = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   $ZodType.init(inst, def);
   inst.def = def;
@@ -38627,10 +38908,10 @@ function superRefine(fn) {
 function preprocess(fn, schema) {
   return pipe(transform(fn), schema);
 }
-// ../../../node_modules/zod/v4/classic/external.js
+// node_modules/zod/v4/classic/external.js
 config(en_default2());
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 var LATEST_PROTOCOL_VERSION = "2025-11-25";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
@@ -39462,12 +39743,12 @@ class UrlElicitationRequiredError extends McpError {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/Options.js
+// node_modules/zod-to-json-schema/dist/esm/Options.js
 var ignoreOverride = Symbol("Let zodToJsonSchema decide on which parser to use");
 var defaultOptions = {
   name: undefined,
@@ -39500,7 +39781,7 @@ var getDefaultOptions = (options) => typeof options === "string" ? {
   ...defaultOptions,
   ...options
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/Refs.js
+// node_modules/zod-to-json-schema/dist/esm/Refs.js
 var getRefs = (options) => {
   const _options = getDefaultOptions(options);
   const currentPath = _options.name !== undefined ? [..._options.basePath, _options.definitionPath, _options.name] : _options.basePath;
@@ -39519,7 +39800,7 @@ var getRefs = (options) => {
     ]))
   };
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/errorMessages.js
+// node_modules/zod-to-json-schema/dist/esm/errorMessages.js
 function addErrorMessage(res, key, errorMessage, refs) {
   if (!refs?.errorMessages)
     return;
@@ -39534,7 +39815,7 @@ function setResponseValueAndErrors(res, key, value, errorMessage, refs) {
   res[key] = value;
   addErrorMessage(res, key, errorMessage, refs);
 }
-// ../../../node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
+// node_modules/zod-to-json-schema/dist/esm/getRelativePath.js
 var getRelativePath = (pathA, pathB) => {
   let i = 0;
   for (;i < pathA.length && i < pathB.length; i++) {
@@ -39543,7 +39824,7 @@ var getRelativePath = (pathA, pathB) => {
   }
   return [(pathA.length - i).toString(), ...pathB.slice(i)].join("/");
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/any.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/any.js
 function parseAnyDef(refs) {
   if (refs.target !== "openAi") {
     return {};
@@ -39559,7 +39840,7 @@ function parseAnyDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/array.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/array.js
 function parseArrayDef(def, refs) {
   const res = {
     type: "array"
@@ -39583,7 +39864,7 @@ function parseArrayDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/bigint.js
 function parseBigintDef(def, refs) {
   const res = {
     type: "integer",
@@ -39629,24 +39910,24 @@ function parseBigintDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/boolean.js
 function parseBooleanDef() {
   return {
     type: "boolean"
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/branded.js
 function parseBrandedDef(_def, refs) {
   return parseDef(_def.type._def, refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/catch.js
 var parseCatchDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/date.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/date.js
 function parseDateDef(def, refs, overrideDateStrategy) {
   const strategy = overrideDateStrategy ?? refs.dateStrategy;
   if (Array.isArray(strategy)) {
@@ -39691,7 +39972,7 @@ var integerDateParser = (def, refs) => {
   return res;
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/default.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/default.js
 function parseDefaultDef(_def, refs) {
   return {
     ...parseDef(_def.innerType._def, refs),
@@ -39699,12 +39980,12 @@ function parseDefaultDef(_def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/effects.js
 function parseEffectsDef(_def, refs) {
   return refs.effectStrategy === "input" ? parseDef(_def.schema._def, refs) : parseAnyDef(refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/enum.js
 function parseEnumDef(def) {
   return {
     type: "string",
@@ -39712,7 +39993,7 @@ function parseEnumDef(def) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/intersection.js
 var isJsonSchema7AllOfType = (type) => {
   if ("type" in type && type.type === "string")
     return false;
@@ -39754,7 +40035,7 @@ function parseIntersectionDef(def, refs) {
   } : undefined;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/literal.js
 function parseLiteralDef(def, refs) {
   const parsedType2 = typeof def.value;
   if (parsedType2 !== "bigint" && parsedType2 !== "number" && parsedType2 !== "boolean" && parsedType2 !== "string") {
@@ -39774,7 +40055,7 @@ function parseLiteralDef(def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/string.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/string.js
 var emojiRegex2 = undefined;
 var zodPatterns = {
   cuid: /^[cC][^\s-]{8,}$/,
@@ -40071,7 +40352,7 @@ function stringifyRegExpWithFlags(regex, refs) {
   return pattern;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/record.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/record.js
 function parseRecordDef(def, refs) {
   if (refs.target === "openAi") {
     console.warn("Warning: OpenAI may not support records in schemas! Try an array of key-value pairs instead.");
@@ -40123,7 +40404,7 @@ function parseRecordDef(def, refs) {
   return schema;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/map.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/map.js
 function parseMapDef(def, refs) {
   if (refs.mapStrategy === "record") {
     return parseRecordDef(def, refs);
@@ -40148,7 +40429,7 @@ function parseMapDef(def, refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/nativeEnum.js
 function parseNativeEnumDef(def) {
   const object3 = def.values;
   const actualKeys = Object.keys(def.values).filter((key) => {
@@ -40162,7 +40443,7 @@ function parseNativeEnumDef(def) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/never.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/never.js
 function parseNeverDef(refs) {
   return refs.target === "openAi" ? undefined : {
     not: parseAnyDef({
@@ -40172,7 +40453,7 @@ function parseNeverDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/null.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/null.js
 function parseNullDef(refs) {
   return refs.target === "openApi3" ? {
     enum: ["null"],
@@ -40182,7 +40463,7 @@ function parseNullDef(refs) {
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/union.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/union.js
 var primitiveMappings = {
   ZodString: "string",
   ZodNumber: "number",
@@ -40250,7 +40531,7 @@ var asAnyOf = (def, refs) => {
   return anyOf.length ? { anyOf } : undefined;
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/nullable.js
 function parseNullableDef(def, refs) {
   if (["ZodString", "ZodNumber", "ZodBigInt", "ZodBoolean", "ZodNull"].includes(def.innerType._def.typeName) && (!def.innerType._def.checks || !def.innerType._def.checks.length)) {
     if (refs.target === "openApi3") {
@@ -40282,7 +40563,7 @@ function parseNullableDef(def, refs) {
   return base && { anyOf: [base, { type: "null" }] };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/number.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/number.js
 function parseNumberDef(def, refs) {
   const res = {
     type: "number"
@@ -40331,7 +40612,7 @@ function parseNumberDef(def, refs) {
   return res;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/object.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/object.js
 function parseObjectDef(def, refs) {
   const forceOptionalIntoNullable = refs.target === "openAi";
   const result = {
@@ -40401,7 +40682,7 @@ function safeIsOptional(schema) {
   }
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/optional.js
 var parseOptionalDef = (def, refs) => {
   if (refs.currentPath.toString() === refs.propertyPath?.toString()) {
     return parseDef(def.innerType._def, refs);
@@ -40420,7 +40701,7 @@ var parseOptionalDef = (def, refs) => {
   } : parseAnyDef(refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/pipeline.js
 var parsePipelineDef = (def, refs) => {
   if (refs.pipeStrategy === "input") {
     return parseDef(def.in._def, refs);
@@ -40440,12 +40721,12 @@ var parsePipelineDef = (def, refs) => {
   };
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/promise.js
 function parsePromiseDef(def, refs) {
   return parseDef(def.type._def, refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/set.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/set.js
 function parseSetDef(def, refs) {
   const items = parseDef(def.valueType._def, {
     ...refs,
@@ -40465,7 +40746,7 @@ function parseSetDef(def, refs) {
   return schema;
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/tuple.js
 function parseTupleDef(def, refs) {
   if (def.rest) {
     return {
@@ -40493,24 +40774,24 @@ function parseTupleDef(def, refs) {
   }
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/undefined.js
 function parseUndefinedDef(refs) {
   return {
     not: parseAnyDef(refs)
   };
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/unknown.js
 function parseUnknownDef(refs) {
   return parseAnyDef(refs);
 }
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
+// node_modules/zod-to-json-schema/dist/esm/parsers/readonly.js
 var parseReadonlyDef = (def, refs) => {
   return parseDef(def.innerType._def, refs);
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/selectParser.js
+// node_modules/zod-to-json-schema/dist/esm/selectParser.js
 var selectParser = (def, typeName, refs) => {
   switch (typeName) {
     case ZodFirstPartyTypeKind.ZodString:
@@ -40588,7 +40869,7 @@ var selectParser = (def, typeName, refs) => {
   }
 };
 
-// ../../../node_modules/zod-to-json-schema/dist/esm/parseDef.js
+// node_modules/zod-to-json-schema/dist/esm/parseDef.js
 function parseDef(def, refs, forceResolution = false) {
   const seenItem = refs.seen.get(def);
   if (refs.override) {
@@ -40643,7 +40924,7 @@ var addMeta = (def, refs, jsonSchema) => {
   }
   return jsonSchema;
 };
-// ../../../node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
+// node_modules/zod-to-json-schema/dist/esm/zodToJsonSchema.js
 var zodToJsonSchema = (schema, options) => {
   const refs = getRefs(options);
   let definitions = typeof options === "object" && options.definitions ? Object.entries(options.definitions).reduce((acc, [name2, schema2]) => ({
@@ -40703,7 +40984,7 @@ var zodToJsonSchema = (schema, options) => {
   }
   return combined;
 };
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
 function getMethodLiteral(schema) {
   const shape = getObjectShape(schema);
   const methodSchema = shape?.method;
@@ -40724,7 +41005,7 @@ function parseWithCompat(schema, data) {
   return result.data;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
 var DEFAULT_REQUEST_TIMEOUT_MSEC = 60000;
 
 class Protocol {
@@ -41559,7 +41840,7 @@ function mergeCapabilities(base, additional) {
   return result;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
 var import_ajv = __toESM(require_ajv(), 1);
 var import_ajv_formats = __toESM(require_dist(), 1);
 function createDefaultAjvInstance() {
@@ -41599,7 +41880,7 @@ class AjvJsonSchemaValidator {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
 class ExperimentalServerTasks {
   constructor(_server) {
     this._server = _server;
@@ -41677,7 +41958,7 @@ class ExperimentalServerTasks {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
 function assertToolsCallTaskCapability(requests, method, entityName) {
   if (!requests) {
     throw new Error(`${entityName} does not support task creation (required for ${method})`);
@@ -41712,7 +41993,7 @@ function assertClientRequestTaskCapability(requests, method, entityName) {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
 class Server extends Protocol {
   constructor(_serverInfo, options) {
     super(options);
@@ -42045,10 +42326,10 @@ class Server extends Protocol {
   }
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "process";
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
 class ReadBuffer {
   append(chunk) {
     this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
@@ -42078,7 +42359,7 @@ function serializeMessage(message) {
 `;
 }
 
-// ../../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 class StdioServerTransport {
   constructor(_stdin = process2.stdin, _stdout = process2.stdout) {
     this._stdin = _stdin;
@@ -42137,7 +42418,7 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join3 } from "path";
+import { join as join6 } from "path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -42269,7 +42550,7 @@ class SpecialistsServer {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
     const hooks = new HookEmitter({
-      tracePath: join3(process.cwd(), ".specialists", "trace.jsonl")
+      tracePath: join6(process.cwd(), ".specialists", "trace.jsonl")
     });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
@@ -42358,7 +42639,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run29() {
+async function run30() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -42513,6 +42794,25 @@ async function run29() {
     const noXtrmCheck = process.argv.includes("--no-xtrm-check");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
     return handler({ syncDefaults, syncSkills, noXtrmCheck });
+  }
+  if (sub === "memory") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists memory <sync|refresh> [--force] [--json]",
+        "",
+        "Sync bd memories into local SQLite FTS cache used for specialist context injection.",
+        "",
+        "Commands:",
+        "  sync       Sync cache when stale or mismatched (use --force to always rebuild)",
+        "  refresh    Invalidate cache then full rebuild from bd memories",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_memory(), exports_memory));
+    return handler(process.argv.slice(3));
   }
   if (sub === "db") {
     if (wantsHelp()) {
@@ -43263,7 +43563,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run29().catch((error2) => {
+run30().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

@@ -78,3 +78,5 @@
 | 06:58 | Session end: 3 writes across 1 files (list.ts) | 1 reads | ~700 tok |
 | 07:07 | Session end: 3 writes across 1 files (list.ts) | 2 reads | ~726 tok |
 | 13:56 | fixed ps --follow flicker: replaced \x1Bc terminal reset with buffered render + cursor home (\x1B[H) + clear-to-end (\x1B[J) | src/cli/ps.ts | fixed m749 | ~300 |
+
+| 21:40 | Fixed dead node PID recovery path: now marks error (not waiting/recovery_pending); added regression test | src/specialist/supervisor.ts, tests/unit/specialist/supervisor.test.ts | resolves GH#70 | ~250 |
