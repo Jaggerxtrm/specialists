@@ -2,9 +2,9 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.7.0
-updated: 2026-04-07
-synced_at: acd30061
+version: 1.8.0
+updated: 2026-04-17
+synced_at: 50850982
 description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
   - ".xtrm/skills/active/pi/specialists-creator/SKILL.md"

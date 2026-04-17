@@ -2,9 +2,9 @@
 title: Bead-First Workflow
 scope: workflow
 category: guide
-version: 1.1.0
-updated: 2026-03-30
-synced_at: 0972c0b0
+version: 1.2.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Canonical tracked and ad-hoc workflow for Specialists.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -84,9 +84,9 @@ Use `--no-keep-alive` when you want one-shot behavior for an otherwise interacti
 
 `resume` is not valid for non-waiting jobs.
 
-## READ_ONLY bead-note behavior
+## Auto-append bead notes (all specialists)
 
-For READ_ONLY specialists invoked with `--bead`, Supervisor appends output notes back to the input bead automatically.
+For **all specialists** invoked with `--bead`, Supervisor appends output notes back to the input bead automatically. This includes READ_ONLY, LOW, MEDIUM, and HIGH specialists.
 
 ## See also
 

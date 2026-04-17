@@ -2,12 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 3.1.0
-updated: 2026-04-13
-synced_at: 08993753
-version: 3.0.1
-updated: 2026-04-13
-synced_at: 6d965a89
+version: 3.2.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -45,49 +42,87 @@ This document defines the runtime boundary between:
 
 ## 0) Runner context injection at spawn
 
-`src/specialist/runner.ts` injects project memory context into the specialist's first-turn prompt before spawning the Pi session. This prevents specialists from rediscovering known gotchas on every run.
+`src/specialist/runner.ts` injects context into the specialist's first-turn prompt before spawning the Pi session. The injection pipeline uses keyword-filtered memory retrieval from a local FTS cache, replacing the previous full `bd prime` dump.
 
-### Injected sources (~3800 tokens total)
+### Injection pipeline (in order)
 
-| Source | Tokens | Location | Purpose |
-|--------|--------|----------|--------|
-| `.xtrm/memory.md` | ~400-800 | Project root | Curated SSOT synthesis: Do Not Repeat, How This Project Works, Active Context |
-| `bd prime` | ~3000 | Shell exec | Workflow rules + all bd memories dump |
-| GitNexus cheatsheet | ~100 | Conditional | Code intelligence hints (only when `.gitnexus/meta.json` exists) |
+| # | Source | Tokens | Condition | Purpose |
+|---|--------|--------|-----------|--------|
+| 0 | Caveman-micro output directive | ~80 | Always | Terse agent-to-agent output style (+26pp accuracy, ~65% token reduction) |
+| 1 | GitNexus workflow mandate | ~200 | `.gitnexus/meta.json` exists | Mandatory code intelligence usage rules |
+| — | `.xtrm/memory.md` | — | **Not injected by runner** | Injected by xtrm-loader Pi extension (`before_agent_start`) — saves ~800 tokens |
+| 2 | Static workflow rules block | ~60 | Always | `STATIC_WORKFLOW_RULES_BLOCK` from `memory-retrieval.ts` (bead claim/close/remember commands) |
+| 3 | Keyword-filtered memories | ~0-600 | `--bead <id>` provided | `buildFilteredMemoryInjection()` from `memory-retrieval.ts` — FTS query using bead title/description keywords |
+| 4 | GitNexus pre-query snapshot | ~0-200 | `.gitnexus/meta.json` exists + symbol-like tokens in bead title | Pre-resolved caller/callee/process summaries for top 2 CamelCase symbols |
 
-### Injection code path
+### Keyword-filtered memory retrieval (`memory-retrieval.ts`)
+
+Replaced the previous full `bd prime` dump (~3000 tokens) with targeted retrieval:
 
 ```typescript
-// 1. Load .xtrm/memory.md (curated, 100-200 lines)
-const memoryMdPath = resolve(runCwd, '.xtrm/memory.md');
-if (existsSync(memoryMdPath)) {
-  agentsMd += `## Project Memory (SSOT)
-${memoryMd}
----`;
-}
+import { buildFilteredMemoryInjection, STATIC_WORKFLOW_RULES_BLOCK } from './memory-retrieval.js';
 
-// 2. Load bd prime output (workflow rules + all memories)
-const bdPrime = execSync('bd prime', { cwd: runCwd, timeout: 10000 });
-agentsMd += `## Beads Workflow Context (bd prime)
-${bdPrime}
----`;
+const memoryInjection = buildFilteredMemoryInjection({
+  cwd: runCwd,
+  beadTitle: beadForMemory.title,
+  beadDescription: beadForMemory.description,
+});
+// Returns: { block: string, memories: MemoryRecord[], estimatedTokens: number }
+```
 
-// 3. Inject GitNexus cheatsheet if project is indexed
-const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
-if (existsSync(gitnexusMetaPath)) {
-  agentsMd += `## GitNexus (use before any edit)
-...`;
+Key parameters:
+- `MAX_KEYWORDS = 6` — max search tokens extracted from bead context
+- `MAX_MEMORIES = 10` — max matching memories returned
+- `MAX_MEMORY_TOKENS = 600` — token budget ceiling
+- `CACHE_MAX_AGE_MS = 3600000` (1h) — FTS cache staleness threshold
+
+The FTS cache is a SQLite table (`specialist_memories_cache`) populated from `bd memories` output. Cache sync triggers:
+- `specialists init` — full bootstrap sync
+- PostToolUse hook (`specialists-memory-cache-sync.mjs`) — incremental sync after memory mutations
+- `sp memory sync` / `sp memory refresh` — manual CLI
+
+### Extension opt-out
+
+Specialists can opt out of specific npm extensions via `execution.extensions`:
+
+```typescript
+const excludeExtensions = [
+  execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
+  execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+].filter(Boolean);
+```
+
+Excluded extensions are passed to `PiAgentSession` via `excludeExtensions` option and skipped during `-e` assembly.
+
+### `memory_injection` timeline event
+
+Supervisor records token accounting for each specialist spawn:
+
+```json
+{
+  "type": "meta",
+  "model": "memory_injection",
+  "backend": "injected",
+  "memory_injection": {
+    "static_tokens": 60,
+    "memory_tokens": 400,
+    "gitnexus_tokens": 150,
+    "total_tokens": 610
+  }
 }
 ```
 
+This enables post-hoc analysis of context budget allocation across runs.
+
 ### Non-fatal behavior
 
-All sources are optional and non-blocking:
-- Missing `.xtrm/memory.md` → skipped silently
-- `bd prime` command fails → skipped silently (may not be available in CI/testing)
-- `.gitnexus/meta.json` missing → no cheatsheet injected
+All injection sources are optional and non-blocking:
+- Missing FTS cache → no keyword-filtered memories (static rules still inject)
+- `.gitnexus/meta.json` missing → no GitNexus mandate or pre-query
+- GitNexus CLI unavailable → pre-query skipped silently
+- Extension opt-out → extension simply not loaded (no error)
 
-This ensures specialist runs work in minimal environments (e.g. fresh clones, CI pipelines) while benefiting from full context in mature project setups.
+This ensures specialist runs work in minimal environments (fresh clones, CI) while benefiting from full context in mature setups.
 
 ---
 
@@ -115,6 +150,9 @@ Specialists does **not** redefine protocol semantics. It consumes Pi events and 
 - Enforces liveness timeout (`stallTimeoutMs`) at session level
 - Pins absolute cwd at spawn time to prevent TMUX path drift in worktrees
 - Resolves npm package extensions (gitnexus, serena) from global node_modules
+- Supports per-specialist extension opt-out via `excludeExtensions` option
+- Injects caveman extension for terse agent-to-agent output
+- Sets `CAVEMAN_LEVEL=full` environment variable
 
 ### ID-mapped dispatch + ack checks
 
@@ -130,6 +168,10 @@ Specialists does **not** redefine protocol semantics. It consumes Pi events and 
 npm package extensions (gitnexus, serena) are resolved from global node_modules:
 - gitnexus: `~/.nvm/versions/node/<version>/lib/node_modules/pi-gitnexus`
 - serena: `~/.nvm/versions/node/<version>/lib/node_modules/pi-serena-tools`
+
+Extension opt-out: `excludeExtensions` string array filters packages before `-e` assembly.
+
+Caveman extension: loaded from `~/.pi/agent/extensions/caveman` if present. Sets `CAVEMAN_LEVEL=full` env.
 
 This is the key adapter contract: **transport-level correctness and command acknowledgement**, not durable job semantics.
 
@@ -687,7 +729,7 @@ Status fields: `auto_commit_count`, `last_auto_commit_sha`, `last_auto_commit_at
 | Event | When emitted | Key fields |
 |-------|-------------|------------|
 | `run_start` | Job begins | `specialist`, `bead_id` |
-| `meta` | Model/backend known | `model`, `backend` |
+| `meta` | Model/backend known | `model`, `backend`, `memory_injection` |
 | `thinking` | Reasoning detected | `char_count` |
 | `tool` (start/update/end) | Tool execution | `tool`, `phase`, `tool_call_id`, `args`, `result_summary`, `result_raw`, `is_error` |
 | `text` | Text output detected | `char_count` |
@@ -749,6 +791,7 @@ This keeps tests/tooling portable while enabling SQLite acceleration in Bun envi
 | `auto_compaction_start` | `compaction` (start) | — |
 | `auto_compaction_end` | `compaction` (end) | — |
 | `auto_retry` | `retry` (end) | — |
+| `memory_injection` | `meta` (model=`memory_injection`) | Token accounting for context budget analysis |
 | `agent_end`, `done`, `message_done` | **IGNORED** | Supervisor emits `run_complete` instead |
 
 ## 7) Pi session extensions for tool interception

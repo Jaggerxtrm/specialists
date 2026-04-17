@@ -2,9 +2,9 @@
 title: Worktree Isolation
 scope: worktrees
 category: reference
-version: 1.2.0
-updated: 2026-04-10
-synced_at: zz22-docs
+version: 1.3.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Technical reference for worktree-per-executor isolation — CLI flags, job registry, GC, and chained bead patterns.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -97,7 +97,7 @@ Hard fail conditions (both exit 1):
 - `status.json` missing or unreadable for the given job id.
 - `worktree_path` absent — the target job was not started with `--worktree`.
 
-**Concurrency guard (design intent from abb9):** READ_ONLY specialists may run against an active worktree; MEDIUM/HIGH specialists are rejected until the owning job reaches a terminal state.
+**Concurrency guard:** READ_ONLY and LOW specialists may run against an active worktree; MEDIUM/HIGH specialists are blocked until the owning job reaches a terminal state. Use `--force-job` to bypass.
 
 ---
 

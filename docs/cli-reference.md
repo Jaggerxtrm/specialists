@@ -2,10 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.5.0
-version: 2.4.2
-updated: 2026-04-13
-synced_at: 6d965a89
+version: 2.6.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -54,6 +53,7 @@ source_of_truth_for:
 | [`specialists init`](#specialists-init) | | Flag | Description | |
 | [`specialists doctor`](#specialists-doctor) | No flags |
 | [`specialists validate`](#specialists-validate) | `--json`: JSON validation output |
+| [`specialists memory`](#specialists-memory) | `sync\|refresh`, `--force`, `--json`: FTS memory cache management |
 | [`specialists ps`](#specialists-ps) | `--json`: Machine-readable output; `--all`: include terminal jobs; `--follow`/`-f`: live refresh; epic grouping |
 | [`specialists merge`](#specialists-merge) | Standalone chain merge (blocked for epic-owned chains) |
 <!-- END INDEX -->
@@ -1007,6 +1007,48 @@ specialists validate code-review --json
 
 - `0`: Validation passed.
 - `1`: Not found, read error, YAML/schema validation failure, or invalid args.
+
+---
+
+## `specialists memory`
+
+### Synopsis
+
+```bash
+specialists memory <sync|refresh> [--force] [--json]
+```
+
+### Subcommands
+
+| Command | Purpose |
+|---------|--------|
+| `sync` | Sync `bd memories` into local SQLite FTS cache when stale or mismatched |
+| `refresh` | Invalidate cache then full rebuild from `bd memories` |
+
+### Flags
+
+- `--force`: Force full rebuild even if cache appears fresh.
+- `--json`: JSON output.
+
+### Examples
+
+```bash
+specialists memory sync
+specialists memory sync --force
+specialists memory refresh
+specialists memory sync --json
+```
+
+### Exit codes
+
+- `0`: Success.
+- `1`: Invalid args or sync failure.
+
+### Notes
+
+- The FTS cache (`specialist_memories_cache` SQLite table) is used by `buildFilteredMemoryInjection()` for keyword-filtered memory retrieval at specialist spawn.
+- Cache auto-syncs on `specialists init` and via PostToolUse hook (`specialists-memory-cache-sync.mjs`).
+- Cache max age: 1 hour (`CACHE_MAX_AGE_MS = 3600000`).
 
 ---
 

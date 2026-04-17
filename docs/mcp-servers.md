@@ -2,9 +2,9 @@
 title: MCP Servers Configuration
 scope: mcp-servers
 category: reference
-version: 1.1.0
-updated: 2026-03-23
-synced_at: 047a28c3
+version: 1.2.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Project-scoped MCP registration for Specialists.
 source_of_truth_for:
   - ".mcp.json"
