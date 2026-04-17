@@ -42,6 +42,11 @@
         "timeout": 5000
       },
       {
+        "matcher": "Bash|execute_shell_command|bash",
+        "script": "specialists/specialists-memory-cache-sync.mjs",
+        "timeout": 12000
+      },
+      {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__serena__rename_symbol|mcp__serena__replace_symbol_body|mcp__serena__insert_after_symbol|mcp__serena__insert_before_symbol",
         "script": "quality-check.cjs",
         "timeout": 30000

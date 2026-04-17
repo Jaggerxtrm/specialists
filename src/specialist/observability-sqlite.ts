@@ -305,6 +305,26 @@ export function initSchema(db: BunDb): void {
       output        TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
   `);
 
   const specialistJobsColumns = new Set(
@@ -382,6 +402,7 @@ export function initSchema(db: BunDb): void {
   migrateToV7(db);
   migrateToV8(db);
   migrateToV9(db);
+  migrateToV10(db);
   verifyWalMode(db);
 }
 
@@ -613,6 +634,45 @@ function migrateToV9(db: BunDb): void {
   `);
 }
 
+function migrateToV10(db: BunDb): void {
+  const hasV10 = db.query('SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1').get() as { 1?: number } | undefined;
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+  `);
+
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+
+  if (hasV10) {
+    return;
+  }
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (10, strftime('%s', 'now') * 1000);
+  `);
+}
+
 export type NodeRunStatus = 'created' | 'starting' | 'running' | 'waiting' | 'degraded' | 'awaiting_merge' | 'fixing_after_review' | 'failed' | 'error' | 'done' | 'stopped';
 
 export type NodeEventType =
@@ -715,6 +775,25 @@ export interface ChainEpicLinkRecord {
   chain_root_bead_id?: string;
 }
 
+export interface MemoryCacheState {
+  lastSyncAtMs: number;
+  memoryCount: number;
+}
+
+export interface MemoryCacheInputRecord {
+  key: string;
+  value: string;
+}
+
+export interface RelevantMemoryRecord {
+  key: string;
+  value: string;
+  bm25: number;
+  recency: number;
+  accessFrequency: number;
+  score: number;
+}
+
 export interface EpicChainLatestJobRecord {
   chain_id: string;
   epic_id: string;
@@ -764,6 +843,10 @@ export interface ObservabilitySqliteClient {
   readEvents(jobId: string): TimelineEvent[];
   readLatestToolEvent(jobId: string): TimelineEventTool | null;
   readResult(jobId: string): string | null;
+  syncMemoriesCache(memories: readonly MemoryCacheInputRecord[], syncedAtMs?: number): void;
+  getMemoriesCacheState(): MemoryCacheState | null;
+  queryRelevantMemories(keywords: readonly string[], limit?: number, nowMs?: number): RelevantMemoryRecord[];
+  invalidateMemoriesCache(): void;
   close(): void;
 }
 
@@ -1562,6 +1645,138 @@ class SqliteClient implements ObservabilitySqliteClient {
       const row = this.db.query('SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1').get(jobId) as { output?: string } | undefined;
       return row?.output ?? null;
     }, 'readResult');
+  }
+
+  syncMemoriesCache(memories: readonly MemoryCacheInputRecord[], syncedAtMs: number = Date.now()): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run('DELETE FROM memories_fts');
+
+        const upsertMemory = this.db.query(`
+          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
+          VALUES (?, ?, ?)
+          ON CONFLICT(memory_key) DO UPDATE SET
+            memory_value = excluded.memory_value,
+            updated_at_ms = excluded.updated_at_ms
+        `);
+
+        const insertFts = this.db.query('INSERT INTO memories_fts (key, content) VALUES (?, ?)');
+        const seen = new Set<string>();
+
+        for (const memory of memories) {
+          if (!memory.key || seen.has(memory.key)) continue;
+          seen.add(memory.key);
+          upsertMemory.run(memory.key, memory.value, syncedAtMs);
+          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
+        }
+
+        if (seen.size > 0) {
+          const placeholders = [...seen].map(() => '?').join(', ');
+          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
+        } else {
+          this.db.run('DELETE FROM memories_cache');
+        }
+
+        this.db.query(`
+          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
+          VALUES (1, ?, ?)
+          ON CONFLICT(singleton_key) DO UPDATE SET
+            last_sync_at_ms = excluded.last_sync_at_ms,
+            memory_count = excluded.memory_count
+        `).run(syncedAtMs, seen.size);
+      });
+      transaction();
+    }, 'syncMemoriesCache');
+  }
+
+  getMemoriesCacheState(): MemoryCacheState | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT last_sync_at_ms, memory_count
+        FROM memories_cache_meta
+        WHERE singleton_key = 1
+        LIMIT 1
+      `).get() as { last_sync_at_ms?: number; memory_count?: number } | undefined;
+
+      if (!row || typeof row.last_sync_at_ms !== 'number' || typeof row.memory_count !== 'number') {
+        return null;
+      }
+
+      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
+    }, 'getMemoriesCacheState');
+  }
+
+  queryRelevantMemories(keywords: readonly string[], limit: number = 10, nowMs: number = Date.now()): RelevantMemoryRecord[] {
+    return withRetry(() => {
+      const cleanedKeywords = [...new Set(keywords.map(keyword => keyword.trim()).filter(keyword => keyword.length > 0))];
+      if (cleanedKeywords.length === 0) return [];
+
+      const matchQuery = cleanedKeywords.map(keyword => `"${keyword.replace(/"/g, '""')}"`).join(' OR ');
+
+      const rows = this.db.query(`
+        SELECT
+          cache.memory_key,
+          cache.memory_value,
+          bm25(memories_fts) AS bm25_score,
+          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
+          cache.access_count
+        FROM memories_fts
+        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
+        WHERE memories_fts MATCH ?
+        ORDER BY bm25_score ASC
+        LIMIT ?
+      `).all(nowMs, matchQuery, Math.max(1, limit * 3)) as Array<{
+        memory_key: string;
+        memory_value: string;
+        bm25_score: number;
+        age_hours: number;
+        access_count: number;
+      }>;
+
+      const ranked = rows.map((row) => {
+        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
+        const bm25Norm = 1 / (1 + Math.max(0, bm25));
+        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
+        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
+        const score = (0.5 * bm25Norm) + (0.3 * recency) + (0.2 * accessFrequency);
+
+        return {
+          key: row.memory_key,
+          value: row.memory_value,
+          bm25,
+          recency,
+          accessFrequency,
+          score,
+        };
+      });
+
+      ranked.sort((left, right) => right.score - left.score);
+      const selected = ranked.slice(0, Math.max(1, limit));
+      if (selected.length === 0) return [];
+
+      const accessStmt = this.db.query(`
+        UPDATE memories_cache
+        SET access_count = access_count + 1,
+            last_accessed_at_ms = ?
+        WHERE memory_key = ?
+      `);
+      for (const memory of selected) {
+        accessStmt.run(nowMs, memory.key);
+      }
+
+      return selected;
+    }, 'queryRelevantMemories');
+  }
+
+  invalidateMemoriesCache(): void {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run('DELETE FROM memories_fts');
+        this.db.run('DELETE FROM memories_cache');
+        this.db.run('DELETE FROM memories_cache_meta');
+      });
+      transaction();
+    }, 'invalidateMemoriesCache');
   }
 
   close(): void {

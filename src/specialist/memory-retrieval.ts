@@ -1,4 +1,9 @@
 import { execSync } from 'node:child_process';
+import {
+  createObservabilitySqliteClient,
+  type MemoryCacheInputRecord,
+  type RelevantMemoryRecord,
+} from './observability-sqlite.js';
 
 const DEFAULT_STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'how', 'i', 'if', 'in', 'is', 'it',
@@ -9,6 +14,7 @@ const DEFAULT_STOP_WORDS = new Set([
 const MAX_KEYWORDS = 6;
 const MAX_MEMORIES = 10;
 const MAX_MEMORY_TOKENS = 600;
+const CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 
 export const STATIC_WORKFLOW_RULES_BLOCK = `
 ## Beads Workflow Quick Rules
@@ -26,7 +32,6 @@ export const STATIC_WORKFLOW_RULES_BLOCK = `
 export interface MemoryRecord {
   key: string;
   value: string;
-  keyword: string;
 }
 
 export interface MemoryInjectionResult {
@@ -68,30 +73,98 @@ export function extractMemoryKeywords(title: string, description?: string): stri
   return unique;
 }
 
-function parseMemoriesPayload(jsonText: string, keyword: string): MemoryRecord[] {
-  const parsed = JSON.parse(jsonText) as Record<string, string>;
-  return Object.entries(parsed)
-    .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
-    .map(([key, value]) => ({ key, value, keyword }));
+export function parseMemoriesPayload(jsonText: string): MemoryCacheInputRecord[] {
+  if (!jsonText.trim()) return [];
+
+  const parsed = JSON.parse(jsonText) as unknown;
+
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const maybeRecord = entry as Record<string, unknown>;
+        const key = typeof maybeRecord.key === 'string' ? maybeRecord.key : null;
+        const value = typeof maybeRecord.value === 'string' ? maybeRecord.value : null;
+        if (!key || value === null) return null;
+        return { key, value };
+      })
+      .filter((entry): entry is MemoryCacheInputRecord => Boolean(entry));
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    return Object.entries(parsed as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string')
+      .map(([key, value]) => ({ key, value }));
+  }
+
+  return [];
 }
 
-function runMemoriesQuery(keyword: string, cwd: string): MemoryRecord[] {
-  const stdout = execSync(`bd memories ${JSON.stringify(keyword)} --json`, {
+function readBdMemories(cwd: string): MemoryCacheInputRecord[] {
+  const stdout = execSync('bd memories --json', {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 5000,
   });
-
-  if (!stdout.trim()) return [];
-  return parseMemoriesPayload(stdout, keyword);
+  return parseMemoriesPayload(stdout);
 }
 
-function scoreMemory(memory: MemoryRecord, keywordOrder: Map<string, number>): number {
-  const keywordWeight = MAX_KEYWORDS - (keywordOrder.get(memory.keyword) ?? MAX_KEYWORDS);
-  const text = `${memory.key} ${memory.value}`.toLowerCase();
-  const exactMatch = text.includes(memory.keyword.toLowerCase()) ? 5 : 0;
-  return keywordWeight * 10 + exactMatch;
+export function shouldRefreshCache(args: {
+  nowMs: number;
+  cacheCount: number | null;
+  cacheLastSyncAtMs: number | null;
+  sourceCount: number;
+}): boolean {
+  if (args.cacheCount === null || args.cacheLastSyncAtMs === null) return true;
+  if (args.cacheCount !== args.sourceCount) return true;
+  return args.nowMs - args.cacheLastSyncAtMs > CACHE_MAX_AGE_MS;
+}
+
+function toMemoryRecord(memory: RelevantMemoryRecord): MemoryRecord {
+  return { key: memory.key, value: memory.value };
+}
+
+export function syncMemoriesCacheFromBd(cwd: string, nowMs: number = Date.now(), forceFullSync: boolean = false): { synced: boolean; memoryCount: number } {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  if (!sqliteClient) {
+    return { synced: false, memoryCount: 0 };
+  }
+
+  try {
+    const sourceMemories = readBdMemories(cwd);
+    const cacheState = sqliteClient.getMemoriesCacheState();
+    const needsRefresh = forceFullSync || shouldRefreshCache({
+      nowMs,
+      cacheCount: cacheState?.memoryCount ?? null,
+      cacheLastSyncAtMs: cacheState?.lastSyncAtMs ?? null,
+      sourceCount: sourceMemories.length,
+    });
+
+    if (!needsRefresh) {
+      return { synced: false, memoryCount: sourceMemories.length };
+    }
+
+    sqliteClient.syncMemoriesCache(sourceMemories, nowMs);
+    return { synced: true, memoryCount: sourceMemories.length };
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+export function invalidateAndRefreshMemoriesCache(cwd: string, nowMs: number = Date.now()): { synced: boolean; memoryCount: number } {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  if (!sqliteClient) {
+    return { synced: false, memoryCount: 0 };
+  }
+
+  try {
+    sqliteClient.invalidateMemoriesCache();
+  } finally {
+    sqliteClient.close();
+  }
+
+  return syncMemoriesCacheFromBd(cwd, nowMs, true);
 }
 
 export function buildFilteredMemoryInjection(args: {
@@ -104,52 +177,56 @@ export function buildFilteredMemoryInjection(args: {
     return { block: '', memories: [], estimatedTokens: 0 };
   }
 
-  const keywordOrder = new Map<string, number>();
-  keywords.forEach((keyword, index) => keywordOrder.set(keyword, index));
-
-  const deduped = new Map<string, MemoryRecord>();
-  for (const keyword of keywords) {
-    if (deduped.size >= MAX_MEMORIES * 2) break;
-    try {
-      const memories = runMemoriesQuery(keyword, args.cwd);
-      for (const memory of memories) {
-        if (!deduped.has(memory.key)) deduped.set(memory.key, memory);
-      }
-    } catch {
-      // Non-fatal: one failed query should not block specialist run.
-    }
+  const nowMs = Date.now();
+  try {
+    syncMemoriesCacheFromBd(args.cwd, nowMs, false);
+  } catch {
+    // Non-fatal cache refresh failure.
   }
 
-  const ranked = [...deduped.values()]
-    .sort((left, right) => scoreMemory(right, keywordOrder) - scoreMemory(left, keywordOrder))
-    .slice(0, MAX_MEMORIES);
-
-  if (ranked.length === 0) {
+  const sqliteClient = createObservabilitySqliteClient(args.cwd);
+  if (!sqliteClient) {
     return { block: '', memories: [], estimatedTokens: 0 };
   }
 
-  const selected: MemoryRecord[] = [];
-  let tokenBudget = 0;
-  for (const memory of ranked) {
-    const line = `- ${memory.key}: ${memory.value}`;
-    const lineTokens = estimateTokens(line);
-    if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS) break;
-    selected.push(memory);
-    tokenBudget += lineTokens;
+  try {
+    const ranked = sqliteClient.queryRelevantMemories(keywords, MAX_MEMORIES, nowMs);
+    if (ranked.length === 0) {
+      return { block: '', memories: [], estimatedTokens: 0 };
+    }
+
+    const selected: MemoryRecord[] = [];
+    let tokenBudget = 0;
+
+    for (const memory of ranked) {
+      const line = `- ${memory.key}: ${memory.value}`;
+      const lineTokens = estimateTokens(line);
+      if (selected.length > 0 && tokenBudget + lineTokens > MAX_MEMORY_TOKENS) break;
+      selected.push(toMemoryRecord(memory));
+      tokenBudget += lineTokens;
+    }
+
+    if (selected.length === 0) {
+      return { block: '', memories: [], estimatedTokens: 0 };
+    }
+
+    const lines = selected.map(memory => `- ${memory.key}: ${memory.value}`);
+    const block = [
+      '## Filtered Beads Memories',
+      `_Keyword matched from bead context: ${keywords.join(', ')}_`,
+      ...lines,
+    ].join('\n');
+
+    return {
+      block,
+      memories: selected,
+      estimatedTokens: estimateTokens(block),
+    };
+  } catch {
+    return { block: '', memories: [], estimatedTokens: 0 };
+  } finally {
+    sqliteClient.close();
   }
-
-  const lines = selected.map(memory => `- ${memory.key}: ${memory.value}`);
-  const block = [
-    '## Filtered Beads Memories',
-    `_Keyword matched from bead context: ${keywords.join(', ')}_`,
-    ...lines,
-  ].join('\n');
-
-  return {
-    block,
-    memories: selected,
-    estimatedTokens: estimateTokens(block),
-  };
 }
 
 export function estimateInjectedTokens(text: string): number {

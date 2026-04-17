@@ -11,6 +11,7 @@ import {
   resolveObservabilityDbLocation,
 } from '../specialist/observability-db.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { syncMemoriesCacheFromBd } from '../specialist/memory-retrieval.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -374,6 +375,7 @@ function ensureProjectHookWiring(cwd: string): void {
   // Wire hooks with symlinked .claude/hooks/ paths
   addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
   addHook('PostToolUse',      'node .claude/hooks/specialists-complete.mjs');
+  addHook('PostToolUse',      'node .claude/hooks/specialists-memory-cache-sync.mjs');
   addHook('SessionStart',     'node .claude/hooks/specialists-session-start.mjs');
 
   if (changed) {
@@ -697,6 +699,7 @@ function validateInitPostconditions(cwd: string): ReadonlyArray<string> {
   const requiredHookWiring: ReadonlyArray<{ event: string; command: string }> = [
     { event: 'UserPromptSubmit', command: 'node .claude/hooks/specialists-complete.mjs' },
     { event: 'PostToolUse', command: 'node .claude/hooks/specialists-complete.mjs' },
+    { event: 'PostToolUse', command: 'node .claude/hooks/specialists-memory-cache-sync.mjs' },
     { event: 'SessionStart', command: 'node .claude/hooks/specialists-session-start.mjs' },
   ];
 
@@ -831,6 +834,18 @@ export async function run(opts: InitOptions = {}): Promise<void> {
 
   // ── 7. Initialize observability database (never overwrites existing) ──────
   ensureObservabilityDb(cwd);
+
+  // ── 8. Full memory cache sync (FTS bootstrap) ──────────────────────────────
+  try {
+    const syncResult = syncMemoriesCacheFromBd(cwd, Date.now(), true);
+    if (syncResult.synced) {
+      ok(`synced memories FTS cache (${syncResult.memoryCount} records)`);
+    } else {
+      skip('memories FTS cache sync skipped (not available)');
+    }
+  } catch {
+    warn('memories FTS cache sync failed during init (non-fatal)');
+  }
 
   const postconditionWarnings = validateInitPostconditions(cwd);
   if (postconditionWarnings.length > 0) {

@@ -93,10 +93,10 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(9);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(10);
 
-      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 9 LIMIT 1').get() as { version?: number };
-      expect(schemaVersionRow.version).toBe(9);
+      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
+      expect(schemaVersionRow.version).toBe(10);
 
       const indexRows = db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_node_runs_status', 'idx_node_members_run', 'idx_node_members_job', 'idx_node_members_run_member', 'idx_node_events_run_t', 'idx_node_events_type', 'idx_node_memory_run', 'idx_node_memory_entry_id') ORDER BY name").all() as Array<{ name: string }>;
       expect(indexRows.map((row) => row.name)).toEqual([
@@ -116,8 +116,8 @@ describe('observability-sqlite', () => {
       expect(() => initSchema(db!)).not.toThrow();
       expect(() => initSchema(db!)).not.toThrow();
 
-      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 9 LIMIT 1').get() as { version?: number };
-      expect(schemaVersionRow.version).toBe(9);
+      const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
+      expect(schemaVersionRow.version).toBe(10);
     });
   });
 
@@ -683,6 +683,50 @@ describe('observability-sqlite', () => {
       expect(summary.chains).toEqual([]);
       expect(summary.prep.total).toBe(1);
       expect(summary.readiness_state).toBe('merge_ready');
+    });
+  });
+
+  describe('memories cache ranking', () => {
+    it('ranks memory with high access frequency over stale low-access memory', () => {
+      const client = createClient();
+      const now = Date.now();
+      client.syncMemoriesCache([
+        { key: 'fts ranking one', value: 'alpha retrieval' },
+        { key: 'fts ranking two', value: 'alpha retrieval' },
+      ], now - (10 * 24 * 60 * 60 * 1000));
+
+      for (let i = 0; i < 25; i += 1) {
+        client.queryRelevantMemories(['alpha'], 1, now - 1_000 + i);
+      }
+
+      // Refresh with same keys to keep access stats, then age one row heavily.
+      client.syncMemoriesCache([
+        { key: 'fts ranking one', value: 'alpha retrieval' },
+        { key: 'fts ranking two', value: 'alpha retrieval' },
+      ], now);
+
+      const location = resolveObservabilityDbLocation(tempRoot);
+      const directDb = new Database(location.dbPath);
+      directDb.run('UPDATE memories_cache SET updated_at_ms = ? WHERE memory_key = ?', [now - (45 * 24 * 60 * 60 * 1000), 'fts ranking two']);
+      directDb.run('UPDATE memories_cache SET access_count = 0 WHERE memory_key = ?', ['fts ranking two']);
+      directDb.close();
+
+      const ranked = client.queryRelevantMemories(['alpha'], 2, now);
+      expect(ranked).toHaveLength(2);
+      expect(ranked[0]?.key).toBe('fts ranking one');
+      expect(ranked[0]?.score).toBeGreaterThan(ranked[1]?.score ?? 0);
+    });
+
+    it('returns at most requested limit (top-10 behavior)', () => {
+      const client = createClient();
+      const records = Array.from({ length: 30 }, (_, index) => ({
+        key: `memory-key-${index}`,
+        value: 'rank alpha beta',
+      }));
+      client.syncMemoriesCache(records, Date.now());
+
+      const ranked = client.queryRelevantMemories(['rank'], 10, Date.now());
+      expect(ranked.length).toBeLessThanOrEqual(10);
     });
   });
 
