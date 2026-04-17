@@ -18,20 +18,27 @@ function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.en
 
 async function writeSpecialist(tempDir: string, name: string, model = 'invalid/model') {
   await mkdir(join(tempDir, 'specialists'), { recursive: true });
-  await writeFile(join(tempDir, 'specialists', `${name}.specialist.json`), [
-    'specialist:',
-    '  metadata:',
-    `    name: ${name}`,
-    '    version: 1.0.0',
-    '    description: test specialist',
-    '    category: test',
-    '  execution:',
-    `    model: ${model}`,
-    '    timeout_ms: 1000',
-    '    permission_required: READ_ONLY',
-    '  prompt:',
-    '    task_template: "Do $prompt"',
-  ].join('\n'));
+  await writeFile(
+    join(tempDir, 'specialists', `${name}.specialist.json`),
+    JSON.stringify({
+      specialist: {
+        metadata: {
+          name,
+          version: '1.0.0',
+          description: 'test specialist',
+          category: 'test',
+        },
+        execution: {
+          model,
+          timeout_ms: 1000,
+          permission_required: 'READ_ONLY',
+        },
+        prompt: {
+          task_template: 'Do $prompt',
+        },
+      },
+    }),
+  );
 }
 
 async function readStatus(cwd: string, jobId: string): Promise<SupervisorStatus> {
@@ -90,20 +97,27 @@ describe('integration: specialists run', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-run-'));
     await mkdir(join(tempDir, '.specialists'), { recursive: true });
     await mkdir(join(tempDir, 'specialists'), { recursive: true });
-    await writeFile(join(tempDir, 'specialists', 'code-review.specialist.json'), [
-      'specialist:',
-      '  metadata:',
-      '    name: code-review',
-      '    version: 1.0.0',
-      '    description: test specialist',
-      '    category: test',
-      '  execution:',
-      '    model: gemini',
-      '    timeout_ms: 1000',
-      '    permission_required: READ_ONLY',
-      '  prompt:',
-      '    task_template: "Do $prompt"',
-    ].join('\n'));
+    await writeFile(
+      join(tempDir, 'specialists', 'code-review.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: {
+            name: 'code-review',
+            version: '1.0.0',
+            description: 'test specialist',
+            category: 'test',
+          },
+          execution: {
+            model: 'gemini',
+            timeout_ms: 1000,
+            permission_required: 'READ_ONLY',
+          },
+          prompt: {
+            task_template: 'Do $prompt',
+          },
+        },
+      }),
+    );
 
     const result = runCli(['run', 'code-review', '--bead', 'unitAI-missing'], tempDir);
 
@@ -163,7 +177,7 @@ describe('integration: specialists run', () => {
     const result = runCli(
       ['run', 'fallback-no-tmux', '--prompt', 'hello', '--background', '--no-beads', '--no-bead-notes'],
       tempDir,
-      { ...process.env, PATH: bunDir },
+      { ...process.env, PATH: bunDir, SPECIALISTS_TMUX_SESSION: '' },
     );
 
     expect(result.status).toBe(0);
@@ -197,12 +211,11 @@ describe('z0mq.8: poll_specialist removal', () => {
     expect(result.stdout).toBe('');
   });
 
-  it('start_specialist tool description mentions feed_specialist not poll_specialist', async () => {
+  it('use_specialist tool source does not reference poll_specialist', async () => {
     const toolSrc = await readFile(
-      resolve(repoSrc, 'tools/specialist/start_specialist.tool.ts'),
+      resolve(repoSrc, 'tools/specialist/use_specialist.tool.ts'),
       'utf-8',
     );
-    expect(toolSrc).toContain('feed_specialist');
     expect(toolSrc).not.toContain('poll_specialist');
   });
 });
