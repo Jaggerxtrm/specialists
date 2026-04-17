@@ -211,6 +211,7 @@ describe('init CLI — run()', () => {
     const xtrmHooks = await readdir(xtrmHooksDir).catch(() => []);
     expect(xtrmHooks).toContain('specialists-complete.mjs');
     expect(xtrmHooks).toContain('specialists-session-start.mjs');
+    expect(xtrmHooks).toContain('specialists-memory-cache-sync.mjs');
 
     const claudeHookPath = join(tempDir, '.claude', 'hooks', 'specialists-complete.mjs');
     expect(lstatSync(claudeHookPath).isSymbolicLink()).toBe(true);
@@ -223,19 +224,18 @@ describe('init CLI — run()', () => {
     await runInit(tempDir);
     const settingsPath = join(tempDir, '.claude', 'settings.json');
     const settings = JSON.parse(await readFile(settingsPath, 'utf-8'));
-    
-    // Check correct format: events at top level (not nested in 'hooks')
-    expect(settings.UserPromptSubmit).toBeDefined();
-    expect(settings.PostToolUse).toBeDefined();
-    expect(settings.SessionStart).toBeDefined();
-    
-    // Check paths point to .claude/hooks/
-    const submitCommand = settings.UserPromptSubmit[0].hooks[0].command;
-    const postToolUseCommand = settings.PostToolUse[0].hooks[0].command;
-    expect(submitCommand).toContain('.claude/hooks/specialists-complete.mjs');
-    expect(postToolUseCommand).toContain('.claude/hooks/specialists-complete.mjs');
-    expect(submitCommand).not.toContain('/home/');
-    expect(submitCommand).not.toContain('/Users/');
+
+    expect(settings.hooks).toBeDefined();
+    expect(settings.hooks.UserPromptSubmit).toBeDefined();
+    expect(settings.hooks.PostToolUse).toBeDefined();
+    expect(settings.hooks.SessionStart).toBeDefined();
+
+    const submitCommands = settings.hooks.UserPromptSubmit.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
+    const postToolUseCommands = settings.hooks.PostToolUse.flatMap((entry: any) => entry.hooks.map((hook: any) => hook.command));
+
+    expect(submitCommands).toContain('node .claude/hooks/specialists-complete.mjs');
+    expect(postToolUseCommands).toContain('node .claude/hooks/specialists-complete.mjs');
+    expect(postToolUseCommands).toContain('node .claude/hooks/specialists-memory-cache-sync.mjs');
   });
 
   it('installs skills to .claude/skills/ (project-local for Claude)', async () => {
