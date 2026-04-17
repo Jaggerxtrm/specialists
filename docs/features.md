@@ -2,12 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.2.0
-updated: 2026-04-13
-synced_at: 0080a53d
-version: 2.1.2
-updated: 2026-04-13
-synced_at: 6d965a89
+version: 2.3.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -1145,57 +1142,78 @@ Enforcement lives in pi session layer (not specialists code):
 
 ## 25) Memory injection at specialist spawn
 
-Runner injects project memory context at specialist spawn to prevent rediscovering known gotchas on every run.
+Runner injects project context at specialist spawn using keyword-filtered memory retrieval from a local SQLite FTS cache. This replaced the previous full `bd prime` dump (~3000 tokens) with targeted retrieval (~600 tokens max).
 
-### Injected content (~3800 tokens total)
+### Injection pipeline
 
-| Source | Size | Purpose |
-|--------|------|--------|
-| `.xtrm/memory.md` | ~400-800 tokens | Curated SSOT synthesis (Do Not Repeat, How This Project Works, Active Context) |
-| `bd prime` output | ~3000 tokens | Workflow rules + all bd memories dump |
-| GitNexus cheatsheet | ~100 tokens | Call-chain tracing, blast radius analysis hints |
+| # | Source | Tokens | Condition | Purpose |
+|---|--------|--------|-----------|--------|
+| 0 | Caveman-micro output directive | ~80 | Always | Terse output style (+26pp accuracy, ~65% token savings) |
+| 1 | GitNexus workflow mandate | ~200 | `.gitnexus/meta.json` exists | Code intelligence usage rules |
+| — | `.xtrm/memory.md` | — | Injected by xtrm Pi extension, not runner | Saves ~800 tokens per spawn |
+| 2 | Static workflow rules | ~60 | Always | `STATIC_WORKFLOW_RULES_BLOCK` from `memory-retrieval.ts` |
+| 3 | Keyword-filtered memories | ~0-600 | `--bead <id>` provided | FTS query on bead title/description keywords |
+| 4 | GitNexus pre-query snapshot | ~0-200 | `.gitnexus/` exists + CamelCase tokens in bead title | Caller/callee summaries |
 
-### Injection location
+### Keyword-filtered memory retrieval
 
-Context is injected into the specialist's first-turn prompt as structured markdown blocks:
+`src/specialist/memory-retrieval.ts` provides `buildFilteredMemoryInjection()`:
 
-```markdown
----
-## Project Memory (SSOT)
-_Injected at spawn — use as operational context_
-...
----
+1. Extract keywords from bead title + description (max 6, stop-word filtered)
+2. Query FTS cache (`specialist_memories_cache` SQLite table) for matching `bd memories`
+3. Return top matches within 600-token budget
 
-## Beads Workflow Context (bd prime)
-_Injected at spawn — workflow rules + all bd memories_
-...
----
+Key parameters:
+- `MAX_KEYWORDS = 6`
+- `MAX_MEMORIES = 10`
+- `MAX_MEMORY_TOKENS = 600`
+- `CACHE_MAX_AGE_MS = 3600000` (1 hour)
 
-## GitNexus (use before any edit)
-_Injected because .gitnexus/ exists — project is indexed_
-...
----
-```
+### FTS cache sync triggers
 
-### GitNexus cheatsheet activation
+| Trigger | Type |
+|---------|------|
+| `specialists init` | Full bootstrap sync |
+| `PostToolUse` hook (`specialists-memory-cache-sync.mjs`) | Incremental after memory mutations |
+| `sp memory sync [--force]` | Manual CLI sync |
+| `sp memory refresh` | Invalidate + full rebuild |
 
-The GitNexus cheatsheet is only injected when `.gitnexus/meta.json` exists in the project root:
+### Extension opt-out
 
-```typescript
-const gitnexusMetaPath = resolve(runCwd, '.gitnexus/meta.json');
-if (existsSync(gitnexusMetaPath)) {
-  // inject cheatsheet (~100 tokens)
+Specialists can disable specific npm extensions:
+
+```json
+{
+  "execution": {
+    "extensions": {
+      "serena": false,
+      "gitnexus": false
+    }
+  }
 }
 ```
 
-This keeps context lean for projects without code intelligence indexing.
+### `memory_injection` timeline event
+
+Every spawn emits a `meta` event with `model: "memory_injection"` recording token accounting:
+
+```json
+{
+  "memory_injection": {
+    "static_tokens": 60,
+    "memory_tokens": 400,
+    "gitnexus_tokens": 150,
+    "total_tokens": 610
+  }
+}
+```
 
 ### Non-fatal behavior
 
 All injection sources are non-fatal:
-- Missing `.xtrm/memory.md`: skipped silently
-- `bd prime` fails: skipped silently
-- `.gitnexus/meta.json` missing: no cheatsheet injected
+- Missing FTS cache → no keyword-filtered memories (static rules still inject)
+- `.gitnexus/meta.json` missing → no GitNexus mandate or pre-query
+- GitNexus CLI unavailable → pre-query skipped silently
 
 ---
 

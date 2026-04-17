@@ -2,9 +2,9 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.4.0
-updated: 2026-03-30
-synced_at: 0972c0b0
+version: 1.5.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Supervisor-backed job model, keep-alive semantics, and monitoring commands.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -29,7 +29,7 @@ specialists run sync-docs --bead unitAI-26s
 # stderr: [job started: 49adda]
 ```
 
-`specialists run --background` starts a detached job.
+`specialists run --background` was removed. Use foreground runs or shell backgrounding (`&`).
 
 When `tmux` is installed:
 - a named tmux session is created as `sp-<specialist>-<id>`

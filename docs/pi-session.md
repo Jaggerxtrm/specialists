@@ -2,9 +2,9 @@
 title: Pi Subprocess Isolation
 scope: pi-session
 category: reference
-version: 1.0.0
-updated: 2026-03-25
-synced_at: 047a28c3
+version: 1.1.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Why specialists spawns Pi with --no-extensions and which extensions are selectively re-enabled.
 source_of_truth_for:
   - "src/pi/session.ts"
@@ -48,6 +48,9 @@ After disabling all extensions, `src/pi/session.ts` re-enables a small allowlist
 | `session-flow` | ❌ Never | — | Stop gate and xt-end reminder are irrelevant in subprocess |
 | `quality-gates` | ✅ If installed | `permission_required` ≠ `READ_ONLY` | Lint/typecheck enforcement on specialist edits |
 | `service-skills` | ✅ If installed | Always (if installed) | Territory-aware routing is useful in any session |
+| `caveman` | ✅ If installed | Always (if installed) | Terse output for agent-to-agent communication |
+| `pi-gitnexus` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Code intelligence tools |
+| `pi-serena-tools` (npm) | ✅ If installed, unless opted out | Not in `excludeExtensions` | Serena integration tools |
 | All other extensions | ❌ Never | — | UI/UX only; not relevant headlessly |
 
 ## How it maps from specialist YAML
@@ -64,27 +67,70 @@ execution:
 
 `service-skills` loads regardless of permission level if the extension is installed.
 
+## Extension opt-out
+
+Specialists can opt out of specific npm extensions via `execution.extensions` in their config:
+
+```json
+{
+  "execution": {
+    "extensions": {
+      "serena": false,
+      "gitnexus": false
+    }
+  }
+}
+```
+
+When `false`, the extension is excluded from the `-e` args passed to Pi spawn. This is useful for specialists where Serena or GitNexus tools add overhead without value.
+
+## Caveman extension
+
+The caveman extension (`~/.pi/agent/extensions/caveman`) is loaded automatically when present. It enforces terse output style for agent-to-agent communication. The runner also sets `CAVEMAN_LEVEL=full` in the Pi process environment.
+
 ## Code location
 
-`src/pi/session.ts` — `start()` method, around line 118–138:
+`src/pi/session.ts` — `start()` method, extension resolution section:
 
 ```typescript
 const args = [
   '--mode', 'rpc',
-  '--no-extensions',   // disable ALL auto-discovered xtrm Pi extensions
+  '--no-extensions',
   ...providerArgs,
   '--no-session',
 ];
 
-// Selectively re-enable useful Pi extensions if installed
+// Selectively re-enable extensions
 const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
+const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
+
+// Quality-gates (edit-capable only)
 const permLevel = (this.options.permissionLevel ?? '').toUpperCase();
 if (permLevel !== 'READ_ONLY') {
   const qgPath = join(piExtDir, 'quality-gates');
   if (existsSync(qgPath)) args.push('-e', qgPath);
 }
+
+// Service-skills (always)
 const ssPath = join(piExtDir, 'service-skills');
 if (existsSync(ssPath)) args.push('-e', ssPath);
+
+// Caveman (always)
+const cavemanPath = join(piExtDir, 'caveman');
+if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
+
+// npm package extensions (with opt-out)
+const npmGlobalDir = resolveGlobalNodeModulesDir();
+if (npmGlobalDir) {
+  if (!excludedExtensions.has('pi-gitnexus')) {
+    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+  }
+  if (!excludedExtensions.has('pi-serena-tools')) {
+    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
+    if (existsSync(serenaPath)) args.push('-e', serenaPath);
+  }
+}
 ```
 
 ## Installing the selectively-loaded extensions

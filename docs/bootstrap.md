@@ -2,9 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.3.0
-updated: 2026-04-07
-synced_at: acd30061
+version: 1.4.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -61,8 +61,12 @@ What it does (always safe, idempotent):
    - `.specialists/db/*.db` / `*.db-wal` / `*.db-shm`
 4. injects the Specialists section into `AGENTS.md`
 5. registers Specialists in `.mcp.json`
-6. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`
+6. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`:
+   - `specialists-complete.mjs` on `UserPromptSubmit` and `PostToolUse`
+   - `specialists-memory-cache-sync.mjs` on `PostToolUse` (FTS cache incremental sync)
+   - `specialists-session-start.mjs` on `SessionStart`
 7. installs skills to `.claude/skills/` (Claude Code) and `.pi/skills/` (pi)
+8. runs full FTS memory cache sync from `bd memories` (non-fatal if unavailable)
 
 ## Sync canonical specialists (human-only)
 

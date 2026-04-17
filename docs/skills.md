@@ -2,9 +2,9 @@
 title: Skills Catalog
 scope: skills
 category: overview
-version: 1.4.0
-updated: 2026-04-07
-synced_at: 0b4fe461
+version: 1.5.0
+updated: 2026-04-17
+synced_at: 50850982
 description: Skills shipped in this repo and what they are for.
 source_of_truth_for:
   - "config/skills/**/*.md"
