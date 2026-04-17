@@ -81,6 +81,8 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `output_type` | enum | `"custom"` | semantic archetype: `"codegen"`, `"analysis"`, `"review"`, `"synthesis"`, `"orchestration"`, `"workflow"`, `"research"`, `"custom"` |
 | `permission_required` | `"READ_ONLY" \| "LOW" \| "MEDIUM" \| "HIGH"` | `"READ_ONLY"` | tool-access tier |
 | `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | forwarded to thinking-capable models |
+| `extensions.serena` | boolean | `true` | `false` disables Serena extension injection for this specialist |
+| `extensions.gitnexus` | boolean | `true` | `false` disables GitNexus extension injection for this specialist |
 
 ### Permission tiers
 
@@ -100,6 +102,11 @@ Effective keep-alive order is:
 2. explicit enable (`--keep-alive` / `keep_alive`)
 3. JSON `execution.interactive`
 4. default one-shot (`false`)
+
+### Extension opt-out
+
+Use `execution.extensions` only when specialist must skip default extension injection.
+`false` disables injection for that specialist only.
 
 ## `specialist.prompt` (required)
 

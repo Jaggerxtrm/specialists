@@ -91,11 +91,12 @@ Key areas covered:
   1. `node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json`
   2. `sp edit my-specialist --preset standard` (optional — applies model/thinking defaults)
   3. `sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6` (dot.path for fields)
-  4. `sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt` (multiline via `--file`)
-  5. `sp view my-specialist` to verify; `specialists validate` to confirm schema
+  4. `sp edit my-specialist specialist.execution.extensions.serena false` / `specialist.execution.extensions.gitnexus false` when extension opt-out needed (`false` disables injection for that specialist)
+  5. `sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt` (multiline via `--file`)
+  6. `sp view my-specialist` to verify; `specialists validate` to confirm schema
 - model rebalancing with `specialists models` (view all assignments) and `sp edit <name> --model <v> --fallback-model <v>`
 - model tier classification (Heavy / Standard / Light) with provider-diversity rules
-- schema sections: `metadata`, `execution` (incl. `interactive`, `thinking_level`, `stall_timeout_ms`), `prompt` (incl. `output_schema`), `skills`, `capabilities`, `communication`, `validation`, `stall_detection`, `beads_integration`
+- schema sections: `metadata`, `execution` (incl. `interactive`, `thinking_level`, `stall_timeout_ms`, `extensions.serena`, `extensions.gitnexus`), `prompt` (incl. `output_schema`), `skills`, `capabilities`, `communication`, `validation`, `stall_detection`, `beads_integration`
 - `output_schema` standard patterns by specialist type (executor, explorer, planner)
 - common error patterns and fixes (JSON syntax, `READ_WRITE` invalid, missing `task_template`)
 
