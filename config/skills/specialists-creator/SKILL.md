@@ -177,6 +177,8 @@ sp edit my-specialist specialist.metadata.version 1.0.0
 sp edit my-specialist specialist.execution.model anthropic/claude-sonnet-4-6
 sp edit my-specialist specialist.execution.fallback_model google-gemini-cli/gemini-3.1-pro-preview
 sp edit my-specialist specialist.execution.permission_required READ_ONLY
+sp edit my-specialist specialist.execution.extensions.serena false
+sp edit my-specialist specialist.execution.extensions.gitnexus false
 
 # 4. Use --file only for multiline prompt fields
 sp edit my-specialist specialist.prompt.system --file .tmp/system.prompt.txt
@@ -220,6 +222,8 @@ bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/m
 | `output_type` | enum | `custom` | `codegen` \| `analysis` \| `review` \| `synthesis` \| `orchestration` \| `workflow` \| `research` \| `custom` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
 | `thinking_level` | enum | — | `off` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` |
+| `extensions.serena` | boolean | `true` | set `false` to opt out of Serena extension injection for this specialist |
+| `extensions.gitnexus` | boolean | `true` | set `false` to opt out of GitNexus extension injection for this specialist |
 
 **When to use `execution.interactive`**
 
@@ -240,6 +244,29 @@ bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/m
 | `HIGH` | `+write` | Full access — can create new files |
 
 **Common pitfall:** `READ_WRITE` is **not** a valid value — use `LOW` or higher.
+
+**Per-specialist extension opt-out**
+
+Use `execution.extensions` only when this specialist must suppress default extension injection.
+Both flags default to `true`, so omit this block unless opt-out is required.
+
+```json
+{
+  "specialist": {
+    "execution": {
+      "extensions": {
+        "serena": false,
+        "gitnexus": false
+      }
+    }
+  }
+}
+```
+
+Typical use cases:
+- `serena: false` for specialists that must avoid Serena tool/LSP injection
+- `gitnexus: false` for specialists that should not receive GitNexus graph tooling
+- set both `false` for constrained runs that need clean extension surface
 
 ### `specialist.prompt` (required)
 
