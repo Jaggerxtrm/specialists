@@ -517,6 +517,65 @@ describe('SpecialistRunner', () => {
       expect(sessionOptions.systemPrompt).not.toContain('$prompt');
     });
 
+    it('injects reused lineage variables into task template context', async () => {
+      const runner = new SpecialistRunner({
+        loader: makeLoader(
+          { permission_required: 'READ_ONLY' },
+          'never',
+          {
+            task_template: 'reuse=$reused_from_job_id\nowner=$worktree_owner_job_id',
+            system: 'You are helpful.',
+          },
+        ),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient: makeBeadsClient({ readBead: vi.fn().mockReturnValue(null) }),
+      });
+
+      await runner.run({
+        name: 'test-spec',
+        prompt: 'do thing',
+        reusedFromJobId: 'job-reused-123',
+        worktreeOwnerJobId: 'job-owner-999',
+      });
+
+      const renderedTask = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(renderedTask).toContain('reuse=job-reused-123');
+      expect(renderedTask).toContain('owner=job-owner-999');
+      expect(renderedTask).not.toContain('$reused_from_job_id');
+      expect(renderedTask).not.toContain('$worktree_owner_job_id');
+    });
+
+    it('injects reused lineage variables into system prompt template context', async () => {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+      const runner = new SpecialistRunner({
+        loader: makeLoader(
+          { permission_required: 'READ_ONLY' },
+          'never',
+          {
+            system: 'lineage reuse=$reused_from_job_id owner=$worktree_owner_job_id prompt=$prompt',
+          },
+        ),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+        beadsClient: makeBeadsClient({ readBead: vi.fn().mockReturnValue(null) }),
+      });
+
+      await runner.run({
+        name: 'test-spec',
+        prompt: 'review this run',
+        reusedFromJobId: 'job-reused-abc',
+        worktreeOwnerJobId: 'job-owner-def',
+      });
+
+      const sessionOptions = sessionFactory.mock.calls[0][0];
+      expect(sessionOptions.systemPrompt).toContain('lineage reuse=job-reused-abc owner=job-owner-def prompt=review this run');
+      expect(sessionOptions.systemPrompt).not.toContain('$reused_from_job_id');
+      expect(sessionOptions.systemPrompt).not.toContain('$worktree_owner_job_id');
+    });
+
     it('renders reviewed_job_id into reviewer lineage block so normal --job flow does not request manual id', async () => {
       const loader = {
         get: vi.fn().mockResolvedValue({
