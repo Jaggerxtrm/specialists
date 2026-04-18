@@ -430,6 +430,12 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function extractReviewedJobIdOverride(prompt: string): string | undefined {
+  const match = prompt.match(/(?:^|\n)\s*reviewed_job_id\s*:\s*([^\n]+)/i);
+  const candidate = match?.[1]?.trim();
+  return candidate ? candidate : undefined;
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -591,9 +597,10 @@ export async function run(): Promise<void> {
   }
 
   if (args.reuseJobId) {
+    const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
     variables = {
       ...(variables ?? {}),
-      reviewed_job_id: args.reuseJobId,
+      reviewed_job_id: reviewedJobId,
     };
   }
 
