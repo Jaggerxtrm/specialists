@@ -517,6 +517,46 @@ describe('SpecialistRunner', () => {
       expect(sessionOptions.systemPrompt).not.toContain('$prompt');
     });
 
+    it('renders reviewed_job_id into reviewer lineage block so normal --job flow does not request manual id', async () => {
+      const loader = {
+        get: vi.fn().mockResolvedValue({
+          specialist: {
+            metadata: { name: 'reviewer', version: '1.0.0' },
+            execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+            prompt: {
+              task_template: [
+                'Audit run',
+                'Resolved lineage input:',
+                '- reviewed_job_id: $reviewed_job_id',
+              ].join('\n'),
+              system: 'You are reviewer.',
+            },
+            communication: undefined,
+            capabilities: undefined,
+            beads_integration: 'never',
+          },
+        }),
+      } as any;
+      const runner = new SpecialistRunner({
+        loader,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        beadsClient: makeBeadsClient({ readBead: vi.fn().mockReturnValue(null) }),
+      });
+
+      await runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        variables: { reviewed_job_id: 'job-reviewed' },
+      });
+
+      const renderedTask = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(renderedTask).toContain('- reviewed_job_id: job-reviewed');
+      expect(renderedTask).not.toContain('$reviewed_job_id');
+      expect(renderedTask).not.toContain('Need reviewed_job_id');
+    });
+
     it('does not crash when createBead returns null', async () => {
       const beadsClient = makeBeadsClient({ createBead: vi.fn().mockReturnValue(null) });
       const runner = new SpecialistRunner({

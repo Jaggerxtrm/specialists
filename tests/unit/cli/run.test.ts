@@ -529,6 +529,59 @@ describe('run CLI', () => {
     expect(runArgs.variables).toEqual(expect.objectContaining({ reviewed_job_id: 'job-reviewed' }));
   });
 
+  it('prefers explicit reviewed_job_id override from prompt over --job lineage', async () => {
+    process.argv = ['node', 'specialists', 'run', 'reviewer', '--prompt', 'reviewed_job_id: job-override', '--job', 'job-reviewed'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'reviewer', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+
+    vi.spyOn(Supervisor.prototype, 'readStatus').mockImplementation((id: string) => {
+      if (id === 'job-reviewed') {
+        return {
+          id,
+          specialist: 'executor',
+          status: 'done',
+          started_at_ms: Date.now(),
+          worktree_path: '/tmp/wt-job-reviewed',
+        } as any;
+      }
+      return {
+        id,
+        specialist: 'reviewer',
+        status: 'done',
+        started_at_ms: 0,
+        last_event_at_ms: 10,
+      } as any;
+    });
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.variables).toEqual(expect.objectContaining({ reviewed_job_id: 'job-override' }));
+  });
+
   it('infers bead context from --job metadata when --bead is omitted', async () => {
     process.argv = ['node', 'specialists', 'run', 'code-review', '--job', 'job-reviewed'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
