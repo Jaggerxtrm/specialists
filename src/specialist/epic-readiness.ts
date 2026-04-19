@@ -2,6 +2,7 @@ import type { EpicRunRecord, EpicState } from './epic-lifecycle.js';
 import { transitionEpicState } from './epic-lifecycle.js';
 import type { ObservabilitySqliteClient } from './observability-sqlite.js';
 import type { SupervisorStatus } from './supervisor.js';
+import { isProcessAlive } from './process-liveness.js';
 
 const ACTIVE_JOB_STATUSES = new Set<SupervisorStatus['status']>(['starting', 'running', 'waiting']);
 const TERMINAL_JOB_STATUSES = new Set<SupervisorStatus['status']>(['done', 'error']);
@@ -15,6 +16,7 @@ interface EvaluatorJob {
   id: string;
   specialist: string;
   status: SupervisorStatus['status'];
+  pid?: number;
   started_at_ms: number;
   result_text?: string;
 }
@@ -75,7 +77,20 @@ function evaluateChainReadiness(chainId: string, jobs: readonly EvaluatorJob[], 
 
   const orderedJobs = [...jobs].sort((a, b) => a.started_at_ms - b.started_at_ms);
   const activeJobs = orderedJobs.filter((job) => ACTIVE_JOB_STATUSES.has(job.status));
+  const deadActiveJobs = activeJobs.filter((job) => job.pid !== undefined && !isProcessAlive(job.pid, job.started_at_ms));
   const hasActiveJobs = activeJobs.length > 0;
+
+  if (deadActiveJobs.length > 0) {
+    return {
+      chain_id: chainId,
+      chain_root_bead_id: chainRootBeadId,
+      state: 'failed',
+      reviewer_verdict: 'missing',
+      blocking_reason: `Active chain jobs appear dead: ${deadActiveJobs.map((job) => job.id).join(', ')}`,
+      has_active_jobs: false,
+      job_ids: orderedJobs.map((job) => job.id),
+    };
+  }
 
   if (hasActiveJobs) {
     return {
@@ -278,6 +293,7 @@ export function loadEpicReadinessSummary(sqlite: ObservabilitySqliteClient, epic
         id: status.id,
         specialist: status.specialist,
         status: status.status,
+        pid: status.pid,
         started_at_ms: status.started_at_ms,
         result_text: sqlite.readResult(status.id) ?? undefined,
       }));
