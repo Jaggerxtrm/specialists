@@ -517,6 +517,38 @@ describe('SpecialistRunner', () => {
       expect(sessionOptions.systemPrompt).not.toContain('$prompt');
     });
 
+    it('renders bead_id placeholder as empty string for non-bead system prompts', async () => {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', { system: 'bead=[$bead_id] prompt=$prompt' }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await runner.run({ name: 'test-spec', prompt: 'review docs' });
+
+      const sessionOptions = sessionFactory.mock.calls[0][0];
+      expect(sessionOptions.systemPrompt).toContain('bead=[] prompt=review docs');
+      expect(sessionOptions.systemPrompt).not.toContain('$bead_id');
+    });
+
+    it('renders bead_id placeholder as empty string for non-bead task templates', async () => {
+      const runner = new SpecialistRunner({
+        loader: makeLoader({}, 'never', { task_template: 'bead=[$bead_id]\nprompt=$prompt' }),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await runner.run({ name: 'test-spec', prompt: 'sync docs' });
+
+      const renderedTask = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(renderedTask).toContain('bead=[]');
+      expect(renderedTask).toContain('prompt=sync docs');
+      expect(renderedTask).not.toContain('$bead_id');
+    });
+
     it('injects reused lineage variables into task template context', async () => {
       const runner = new SpecialistRunner({
         loader: makeLoader(

@@ -756,13 +756,14 @@ export class SpecialistRunner {
     };
     const beadTemplateVariables: Record<string, string> = {
       prompt: resolvedPrompt,
+      bead_id: options.inputBeadId ?? '',
       ...lineageVariables,
-      ...(options.inputBeadId ? { bead_id: options.inputBeadId } : {}),
     };
     const variables: Record<string, string> = {
       prompt: resolvedPrompt,
       cwd: runCwd,
       pre_script_output: preScriptOutput,
+      bead_id: options.inputBeadId ?? '',
       ...lineageVariables,
       ...(options.variables ?? {}),
       ...beadVariables,
