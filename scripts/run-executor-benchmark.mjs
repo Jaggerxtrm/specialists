@@ -190,7 +190,8 @@ function waitForNonRunning(jobId, maxWaitMs = 20 * 60 * 1000) {
     if (r.code === 0) {
       try {
         const data = JSON.parse(r.stdout);
-        if (!RUNNING.has(data.status)) return data.status;
+        const status = data.job?.status ?? data.status;
+        if (status && !RUNNING.has(status)) return status;
       } catch { /* ignore parse error, keep polling */ }
     }
     spawnSync('sleep', ['3']);
