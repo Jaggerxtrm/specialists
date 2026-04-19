@@ -205,7 +205,7 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists db <setup|backfill>',
+        'Usage: specialists db <setup|backfill|vacuum|prune>',
         '',
         'Provision the shared observability SQLite database (human-only).',
         '',
@@ -214,6 +214,9 @@ async function run() {
         '  init       Alias for setup',
         '  backfill   Backfill specialist_jobs from .specialists/jobs/*/status.json',
         '             Use --events to also replay events.jsonl',
+        '  vacuum     Run SQLite VACUUM (refuses when active jobs running/starting)',
+        '  prune      Prune old rows: requires --before <iso|duration>, dry-run by default',
+        '             Use --apply to execute; --include-epics to also prune epic_runs',
         '',
         'Notes:',
         '  - TTY required (blocked in agent/non-interactive sessions)',
@@ -224,6 +227,9 @@ async function run() {
         '  specialists db setup',
         '  specialists db backfill',
         '  specialists db backfill --events',
+        '  specialists db vacuum',
+        '  specialists db prune --before 30d --dry-run',
+        '  specialists db prune --before 2026-01-01T00:00:00Z --apply --include-epics',
         '  sp db setup',
         '  sp db backfill',
         '',
@@ -896,7 +902,7 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists doctor',
+        'Usage: specialists doctor [orphans]',
         '',
         'Diagnose bootstrap and runtime problems.',
         '',
@@ -913,14 +919,18 @@ async function run() {
         '  - prints fix hints for failing checks',
         '  - auto-creates missing runtime directories when possible',
         '',
+        'Subcommands:',
+        '  orphans   Read-only orphan scan: membership/jobs/epics/worktree pointers',
+        '',
         'Examples:',
         '  specialists doctor',
+        '  specialists doctor orphans',
         '',
       ].join('\n'));
       return;
     }
     const { run: handler } = await import('./cli/doctor.js');
-    return handler();
+    return handler(process.argv.slice(3));
   }
 
   if (sub === 'setup') {
