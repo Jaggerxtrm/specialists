@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.3.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 2.4.0
+updated: 2026-04-19
+synced_at: d2ab473a
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -111,6 +111,7 @@ sp feed --json --since 5m --limit 200
 - **Waiting state**: when a keep-alive job enters `waiting` status, feed displays a magenta `WAIT` banner with resume instructions
 - **Text preview**: `TURN+` lines show 80-char preview of accumulated text content
 - **Context warnings**: feed displays context utilization warnings at WARN/CRITICAL thresholds
+- **Startup context lines**: on `run_start` events with `startup_snapshot`, emits dimmed `↳ startup` summary (job, specialist, bead, worktree, branch, vars, skills); on `meta` events with `memory_injection`, emits `↳ memory` token accounting line (static, dynamic, gitnexus, total)
 
 ### `poll` (machine snapshot + cursors)
 
@@ -140,6 +141,7 @@ sp result <job-id> --wait --timeout 120
 - `--timeout` applies only with `--wait`
 - **Waiting state**: when status is `waiting`, result prints a footer with resume instructions
 - **SQLite-backed**: reads from `specialist_jobs.last_output` column when available
+- **Startup context block**: derives startup snapshot from `status.json.startup_context` merged with `run_start` event + `meta` memory_injection. Prepends `--- startup context ---` block in human mode; adds `startup_context` field in `--json` mode
 
 Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
 
