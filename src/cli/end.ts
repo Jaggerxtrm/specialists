@@ -136,6 +136,12 @@ export async function run(): Promise<void> {
   const guard = checkEpicUnresolvedGuard(beadId);
   if (guard.blocked && guard.epicId && guard.epicStatus && isEpicUnresolvedState(guard.epicStatus)) {
     console.log(`Chain ${beadId} belongs to unresolved epic ${guard.epicId} (${guard.epicStatus}).`);
+
+    if (guard.epicStatus === 'open') {
+      console.log(`Epic ${guard.epicId} still open. Run: sp epic resolve ${guard.epicId}`);
+      process.exit(1);
+    }
+
     console.log(`Redirecting session close publication to epic merge (${options.pr ? 'PR mode' : 'direct mode'}).`);
     const args = ['merge', guard.epicId, ...(options.rebuild ? ['--rebuild'] : []), ...(options.pr ? ['--pr'] : [])];
     await handleEpicMergeCommand(args);
