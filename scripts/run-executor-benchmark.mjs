@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function runCommand(command, args, options = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', ...options });
+  const result = spawnSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options });
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
   const combined = `${stdout}\n${stderr}`;
@@ -92,11 +92,10 @@ function createSamplePlan(config) {
 }
 
 function parseJobId(text) {
-  const match = text.match(/\[job started:\s*([a-z0-9-]+)\]/i);
-  if (!match?.[1]) {
-    throw new Error(`Could not parse job id from output: ${text}`);
-  }
-  return match[1];
+  // background run prints raw job ID to stdout (e.g. "79a186\n")
+  const trimmed = text.trim();
+  if (/^[a-z0-9]{6,}$/.test(trimmed)) return trimmed;
+  throw new Error(`Could not parse job id from output: ${text}`);
 }
 
 function parseVerdict(output) {
@@ -184,8 +183,8 @@ function createBenchmarkBead(seedIssue, sample, runId) {
 }
 
 function runSpecialist(name, args) {
-  const runResult = runCommand('specialists', ['run', name, ...args]);
-  const jobId = parseJobId(runResult.combined);
+  const runResult = runCommand('specialists', ['run', name, '--background', ...args]);
+  const jobId = parseJobId(runResult.stdout);
   const result = runJson('specialists', ['result', jobId, '--wait', '--json'], `specialists result ${jobId}`);
   return { jobId, runResult, result };
 }
