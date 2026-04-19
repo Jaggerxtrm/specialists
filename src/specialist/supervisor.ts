@@ -84,6 +84,32 @@ export interface SupervisorStatus {
   chain_root_bead_id?: string;
   epic_id?: string;
   branch?: string;
+  startup_context?: {
+    job_id?: string;
+    specialist_name?: string;
+    bead_id?: string;
+    reused_from_job_id?: string;
+    worktree_owner_job_id?: string;
+    chain_id?: string;
+    chain_root_job_id?: string;
+    chain_root_bead_id?: string;
+    worktree_path?: string;
+    branch?: string;
+    variables_keys?: string[];
+    reviewed_job_id_present?: boolean;
+    reused_worktree_awareness_present?: boolean;
+    bead_context_present?: boolean;
+    memory_injection?: {
+      static_tokens: number;
+      memory_tokens: number;
+      gitnexus_tokens: number;
+      total_tokens: number;
+    };
+    skills?: {
+      count: number;
+      activated: string[];
+    };
+  };
   metrics?: SessionRunMetrics;
   context_pct?: number;
   context_health?: ContextHealth;
@@ -809,6 +835,42 @@ export class Supervisor {
     mkdirSync(this.readyDir(), { recursive: true });
 
     const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
+    const variablesKeys = Object.keys(runOptions.variables ?? {});
+    const activatedSkills = (runOptions.variables?.activated_skills ?? runOptions.variables?.skills_activated ?? '')
+      .split(',')
+      .map((skill) => skill.trim())
+      .filter((skill) => skill.length > 0);
+    const startupContext: NonNullable<SupervisorStatus['startup_context']> = {
+      job_id: id,
+      specialist_name: runOptions.name,
+      ...(runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {}),
+      ...(runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {}),
+      ...(runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {}),
+      ...((runOptions.worktreeOwnerJobId || runOptions.workingDirectory)
+        ? {
+            chain_id: runOptions.worktreeOwnerJobId ?? id,
+            chain_root_job_id: runOptions.worktreeOwnerJobId ?? id,
+          }
+        : {}),
+      ...(runOptions.variables?.chain_root_bead_id ? { chain_root_bead_id: runOptions.variables.chain_root_bead_id } : {}),
+      ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
+      ...(runOptions.workingDirectory
+        ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
+        : { branch: resolveCurrentBranch() }),
+      variables_keys: variablesKeys,
+      reviewed_job_id_present: variablesKeys.includes('reviewed_job_id'),
+      reused_worktree_awareness_present: variablesKeys.includes('reused_worktree_awareness'),
+      bead_context_present: variablesKeys.includes('bead_context'),
+      ...(activatedSkills.length > 0
+        ? {
+            skills: {
+              count: activatedSkills.length,
+              activated: activatedSkills,
+            },
+          }
+        : {}),
+    };
+
     const initialStatus: SupervisorStatus = {
       id,
       specialist: runOptions.name,
@@ -832,6 +894,7 @@ export class Supervisor {
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),
+      startup_context: startupContext,
     };
     this.writeStatusFileOnly(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
@@ -910,7 +973,11 @@ export class Supervisor {
     };
 
     // Emit run_start event
-    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
+    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(
+      runOptions.name,
+      runOptions.inputBeadId,
+      statusSnapshot.startup_context,
+    ));
     try {
       this.withSqliteOperation('upsertStatusWithEvent:run_start', (client) => client.upsertStatusWithEvent(statusSnapshot, runStartEvent));
     } catch (error: unknown) {
@@ -1289,6 +1356,15 @@ export class Supervisor {
               return undefined;
             }
           })();
+
+          if (eventType === 'memory_injection' && memoryInjection) {
+            setStatus({
+              startup_context: {
+                ...(statusSnapshot.startup_context ?? {}),
+                memory_injection: memoryInjection,
+              },
+            });
+          }
 
           const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
             tool: toolState?.tool,

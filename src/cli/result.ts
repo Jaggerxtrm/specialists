@@ -5,11 +5,39 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Supervisor } from '../specialist/supervisor.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { parseTimelineEvent, type TimelineEvent } from '../specialist/timeline-events.js';
 import { resolveNodeRefWithClient, resolveSingleActiveNodeRef } from '../specialist/node-resolve.js';
 import { formatCostUsd, formatTokenUsageSummary } from './format-helpers.js';
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
+
+interface StartupSnapshot {
+  job_id?: string;
+  specialist_name?: string;
+  bead_id?: string;
+  reused_from_job_id?: string;
+  worktree_owner_job_id?: string;
+  chain_id?: string;
+  chain_root_job_id?: string;
+  chain_root_bead_id?: string;
+  worktree_path?: string;
+  branch?: string;
+  variables_keys?: string[];
+  reviewed_job_id_present?: boolean;
+  reused_worktree_awareness_present?: boolean;
+  bead_context_present?: boolean;
+  memory_injection?: {
+    static_tokens: number;
+    memory_tokens: number;
+    gitnexus_tokens: number;
+    total_tokens: number;
+  };
+  skills?: {
+    count: number;
+    activated: string[];
+  };
+}
 
 interface ResultArgs {
   jobId?: string;
@@ -103,10 +131,106 @@ function resolveJobIdFromNodeMember(
   return member.job_id;
 }
 
+function readTimelineEventsForResult(
+  sqliteClient: NonNullable<ReturnType<typeof createObservabilitySqliteClient>> | null,
+  jobsDir: string,
+  jobId: string,
+): TimelineEvent[] {
+  if (sqliteClient) {
+    try {
+      return sqliteClient.readEvents(jobId);
+    } catch {
+      // fallback to file
+    }
+  }
+
+  const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+  if (!existsSync(eventsPath)) return [];
+  return readFileSync(eventsPath, 'utf-8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => parseTimelineEvent(line))
+    .filter((event): event is TimelineEvent => event !== null);
+}
+
+function deriveStartupSnapshot(
+  status: NonNullable<ReturnType<Supervisor['readStatus']>>,
+  events: TimelineEvent[],
+): StartupSnapshot | null {
+  const runStartEvent = events.find((event) => event.type === 'run_start');
+  const startupFromEvent = runStartEvent?.type === 'run_start' ? (runStartEvent.startup_snapshot ?? null) : null;
+  const memoryMeta = events.find((event) => event.type === 'meta' && !!event.memory_injection);
+  const memoryInjection = memoryMeta?.type === 'meta' ? memoryMeta.memory_injection : undefined;
+
+  const merged: StartupSnapshot = {
+    ...(startupFromEvent ?? {}),
+    ...(status.startup_context ?? {}),
+    ...(memoryInjection ? { memory_injection: memoryInjection } : {}),
+  };
+
+  if (!merged.job_id) merged.job_id = status.id;
+  if (!merged.specialist_name) merged.specialist_name = status.specialist;
+  if (!merged.bead_id && status.bead_id) merged.bead_id = status.bead_id;
+  if (!merged.reused_from_job_id && status.reused_from_job_id) merged.reused_from_job_id = status.reused_from_job_id;
+  if (!merged.worktree_owner_job_id && status.worktree_owner_job_id) merged.worktree_owner_job_id = status.worktree_owner_job_id;
+  if (!merged.chain_id && status.chain_id) merged.chain_id = status.chain_id;
+  if (!merged.chain_root_job_id && status.chain_root_job_id) merged.chain_root_job_id = status.chain_root_job_id;
+  if (!merged.chain_root_bead_id && status.chain_root_bead_id) merged.chain_root_bead_id = status.chain_root_bead_id;
+  if (!merged.worktree_path && status.worktree_path) merged.worktree_path = status.worktree_path;
+  if (!merged.branch && status.branch) merged.branch = status.branch;
+
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function formatStartupSnapshot(snapshot: StartupSnapshot | null): string | null {
+  if (!snapshot) return null;
+  const lines: string[] = ['\n--- startup context ---'];
+  const push = (key: string, value: unknown): void => {
+    if (value === undefined || value === null) return;
+    lines.push(`${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`);
+  };
+
+  push('job_id', snapshot.job_id);
+  push('specialist_name', snapshot.specialist_name);
+  push('bead_id', snapshot.bead_id);
+  push('reused_from_job_id', snapshot.reused_from_job_id);
+  push('worktree_owner_job_id', snapshot.worktree_owner_job_id);
+  push('chain_id', snapshot.chain_id);
+  push('chain_root_job_id', snapshot.chain_root_job_id);
+  push('chain_root_bead_id', snapshot.chain_root_bead_id);
+  push('worktree_path', snapshot.worktree_path);
+  push('branch', snapshot.branch);
+  push('variables_keys', snapshot.variables_keys);
+  push('reviewed_job_id_present', snapshot.reviewed_job_id_present);
+  push('reused_worktree_awareness_present', snapshot.reused_worktree_awareness_present);
+  push('bead_context_present', snapshot.bead_context_present);
+
+  if (snapshot.memory_injection) {
+    push('memory.static_tokens', snapshot.memory_injection.static_tokens);
+    push('memory.memory_tokens', snapshot.memory_injection.memory_tokens);
+    push('memory.gitnexus_tokens', snapshot.memory_injection.gitnexus_tokens);
+    push('memory.total_tokens', snapshot.memory_injection.total_tokens);
+  }
+
+  if (snapshot.skills) {
+    push('skills.count', snapshot.skills.count);
+    push('skills.activated', snapshot.skills.activated);
+  }
+
+  lines.push('---');
+  return `${lines.join('\n')}\n`;
+}
+
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
 
-  const emitJson = (status: ReturnType<Supervisor['readStatus']>, output: string | null, error: string | null): void => {
+  const emitJson = (
+    status: ReturnType<Supervisor['readStatus']>,
+    output: string | null,
+    error: string | null,
+    startupContext: StartupSnapshot | null = null,
+  ): void => {
     console.log(JSON.stringify({
       job: status ? {
         id: status.id,
@@ -116,9 +240,11 @@ export async function run(): Promise<void> {
         backend: status.backend ?? null,
         bead_id: status.bead_id ?? null,
         metrics: status.metrics ?? null,
+        startup_context: startupContext,
         error: status.error ?? null,
       } : null,
       output,
+      startup_context: startupContext,
       error,
     }, null, 2));
   };
@@ -130,9 +256,11 @@ export async function run(): Promise<void> {
   const emitHumanResult = (
     output: string,
     status: NonNullable<ReturnType<Supervisor['readStatus']>>,
+    startupContext: StartupSnapshot | null,
     trailingFooter?: string,
   ): void => {
-    process.stdout.write(output);
+    const startupBlock = formatStartupSnapshot(startupContext);
+    process.stdout.write(startupBlock ? `${startupBlock}${output}` : output);
 
     const tokenSummaryParts = formatTokenUsageSummary(status.metrics?.token_usage).filter((part) => !part.startsWith('cost='));
     const formattedCost = formatCostUsd(status.metrics?.token_usage?.cost_usd);
@@ -196,6 +324,7 @@ export async function run(): Promise<void> {
       }
 
       if (status.status === 'done') {
+        const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
         const output = readResultOutput();
         if (!output) {
           if (args.json) {
@@ -207,17 +336,18 @@ export async function run(): Promise<void> {
         }
 
         if (args.json) {
-          emitJson(status, output, null);
+          emitJson(status, output, null, startupContext);
         } else {
-          emitHumanResult(output, status);
+          emitHumanResult(output, status, startupContext);
         }
         return;
       }
 
       if (status.status === 'error') {
+        const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
         const message = `Job ${jobId} failed: ${status.error ?? 'unknown error'}`;
         if (args.json) {
-          emitJson(status, null, message);
+          emitJson(status, null, message, startupContext);
         } else {
           process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? 'unknown error'}\n`);
         }
@@ -230,7 +360,8 @@ export async function run(): Promise<void> {
         if (elapsedSecs >= args.timeout) {
           const timeoutMessage = `Timeout: job ${jobId} did not complete within ${args.timeout}s`;
           if (args.json) {
-            emitJson(status, null, timeoutMessage);
+            const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+            emitJson(status, null, timeoutMessage, startupContext);
           } else {
             process.stderr.write(`${timeoutMessage}\n`);
           }
@@ -256,11 +387,12 @@ export async function run(): Promise<void> {
   }
 
   if (status.status === 'running' || status.status === 'starting') {
+    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
     const output = readResultOutput();
     if (!output) {
       const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
       if (args.json) {
-        emitJson(status, null, message);
+        emitJson(status, null, message, startupContext);
       } else {
         process.stderr.write(`${dim(message)}\n`);
       }
@@ -268,20 +400,21 @@ export async function run(): Promise<void> {
     }
 
     if (args.json) {
-      emitJson(status, output, null);
+      emitJson(status, output, null, startupContext);
     } else {
       process.stderr.write(`${dim(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}\n`);
-      emitHumanResult(output, status);
+      emitHumanResult(output, status, startupContext);
     }
     return;
   }
 
   if (status.status === 'waiting') {
+    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
     const output = readResultOutput();
     if (!output) {
       const message = `Job ${jobId} is waiting for input. Use: specialists resume ${jobId} "..."`;
       if (args.json) {
-        emitJson(status, null, message);
+        emitJson(status, null, message, startupContext);
       } else {
         process.stderr.write(`${dim(message)}\n`);
       }
@@ -291,17 +424,18 @@ export async function run(): Promise<void> {
     const waitingFooter = `\n--- Session is waiting for your input. Use: specialists resume ${jobId} "..." ---\n`;
 
     if (args.json) {
-      emitJson(status, `${output}${waitingFooter}`, null);
+      emitJson(status, `${output}${waitingFooter}`, null, startupContext);
     } else {
-      emitHumanResult(output, status, waitingFooter);
+      emitHumanResult(output, status, startupContext, waitingFooter);
     }
     return;
   }
 
   if (status.status === 'error') {
+    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
     const message = `Job ${jobId} failed: ${status.error ?? 'unknown error'}`;
     if (args.json) {
-      emitJson(status, null, message);
+      emitJson(status, null, message, startupContext);
     } else {
       process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? 'unknown error'}\n`);
     }
@@ -317,12 +451,13 @@ export async function run(): Promise<void> {
     process.exit(1);
   }
 
+  const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
   if (args.json) {
-    emitJson(status, output, null);
+    emitJson(status, output, null, startupContext);
     return;
   }
 
-  emitHumanResult(output, status);
+  emitHumanResult(output, status, startupContext);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (args.json) {

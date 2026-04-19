@@ -85,6 +85,32 @@ export interface TimelineEventRunStart extends TimelineEventBase {
   specialist: string;
   /** Bead ID if tracking is enabled */
   bead_id?: string;
+  startup_snapshot?: {
+    job_id?: string;
+    specialist_name?: string;
+    bead_id?: string;
+    reused_from_job_id?: string;
+    worktree_owner_job_id?: string;
+    chain_id?: string;
+    chain_root_job_id?: string;
+    chain_root_bead_id?: string;
+    worktree_path?: string;
+    branch?: string;
+    variables_keys?: string[];
+    reviewed_job_id_present?: boolean;
+    reused_worktree_awareness_present?: boolean;
+    bead_context_present?: boolean;
+    memory_injection?: {
+      static_tokens: number;
+      memory_tokens: number;
+      gitnexus_tokens: number;
+      total_tokens: number;
+    };
+    skills?: {
+      count: number;
+      activated: string[];
+    };
+  };
 }
 
 /**
@@ -620,13 +646,15 @@ export function mapCallbackEventToTimelineEvent(
  */
 export function createRunStartEvent(
   specialist: string,
-  beadId?: string
+  beadId?: string,
+  startupSnapshot?: TimelineEventRunStart['startup_snapshot'],
 ): TimelineEventRunStart {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.RUN_START,
     specialist,
     bead_id: beadId,
+    ...(startupSnapshot ? { startup_snapshot: startupSnapshot } : {}),
   };
 }
 
