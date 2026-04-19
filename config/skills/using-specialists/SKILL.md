@@ -9,7 +9,7 @@ description: >
   workflow, --context-depth, background jobs, MCP tool (`use_specialist`),
   or specialists doctor. Don't wait for the user to say
   "use a specialist" — proactively evaluate whether delegation makes sense.
-version: 4.7
+version: 4.8
 synced_at: a58a4dda
 ---
 
@@ -87,7 +87,9 @@ specialists status --job <job-id>             # single-job detail view (legacy �
 # Epic lifecycle (canonical publication path)
 specialists epic list [--unresolved]          # list epics with lifecycle state
 specialists epic status <epic-id>             # show chains, blockers, readiness
+specialists epic sync <epic-id> [--apply]     # reconcile DB vs live state (dry-run default)
 specialists epic resolve <epic-id>            # transition open -> resolving
+specialists epic abandon <epic-id> --reason <text> [--force]  # terminal transition for stuck epics
 specialists epic merge <epic-id> [--pr]       # publish all epic-owned chains
 
 # Merge (for standalone chains only)
@@ -100,11 +102,15 @@ specialists end [--pr]                        # close session, publish via merge
 specialists steer <job-id> "new direction"    # redirect ANY running job mid-run
 specialists resume <job-id> "next task"       # resume a waiting keep-alive job
 specialists stop <job-id>                     # cancel a job
+specialists stop <job-id> --force             # 5s SIGTERM timeout, then pgroup kill + error status
 
 # Management
 specialists edit <name>                       # edit specialist config (dot-path, --preset)
 specialists clean                             # purge old job dirs + worktree GC
 specialists clean --processes                 # kill all running/starting specialist jobs
+specialists db vacuum                         # compact SQLite storage (refuses if jobs running)
+specialists db prune --before <iso|duration> --dry-run|--apply  # prune old events/results/terminal jobs
+specialists doctor orphans                    # integrity scan: orphan, stale-pointer, integrity-violation
 specialists init --sync-skills                # re-sync skills only (no full init)
 specialists init --no-xtrm-check              # skip xtrm prerequisite check (CI/testing)
 ```
@@ -1044,9 +1050,59 @@ MCP is intentionally minimal. Use CLI for orchestration, monitoring, steering, r
 
 ```bash
 specialists doctor      # health check: hooks, MCP, zombie jobs, skill drift detection
+specialists doctor orphans  # integrity scan for orphan/stale-pointer/integrity-violation
 specialists edit <name> # edit specialist config (dot-path, --preset)
 specialists clean --processes  # kill stale/zombie specialist processes
 ```
+
+## Stuck-State Recovery
+
+Use this flow when epic/job state disagrees with live runtime or close path loops.
+
+### 1) Reconcile epic state first (safe default)
+
+```bash
+sp epic status <epic-id>
+sp epic sync <epic-id>            # dry-run default, inspect planned fixes
+sp epic sync <epic-id> --apply    # apply reconciliation after review
+```
+
+`sp epic sync` is primary recovery command. It reconciles DB state against live job/worktree state.
+
+### 2) Terminally abandon unrecoverable epic
+
+```bash
+sp epic abandon <epic-id> --reason "stuck chain with unrecoverable state"
+# If guard blocks due to active pointers you intentionally want cleared:
+sp epic abandon <epic-id> --reason "manual recovery" --force
+```
+
+Use only when epic cannot be restored to valid resolving/merge path.
+
+### 3) Restore DB hygiene after recovery
+
+```bash
+sp doctor orphans
+sp db vacuum
+sp db prune --before 30d --dry-run
+sp db prune --before 30d --apply
+```
+
+- `sp db vacuum` compacts SQLite file, refuses while jobs running.
+- `sp db prune` removes old rows from events/results/terminal jobs; dry-run first.
+
+### 4) Hard-stop wedged jobs when normal stop fails
+
+```bash
+sp stop <job-id>
+sp stop <job-id> --force
+```
+
+`--force` waits 5s for SIGTERM, then kills process group and records explicit error status.
+
+### 5) `sp end` open-state loop fix
+
+If `sp end` detects open-state mismatch, tool now suggests `sp epic resolve <epic-id>` as next command (no redirect loop).
 
 - **RPC timeout on worktree job start** (30s, `command id=1`) → pi runs `npm install` in fresh
   worktrees if `.pi/settings.json` lists local packages. Root cause: worktree gets a stale copy
