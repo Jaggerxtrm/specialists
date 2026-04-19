@@ -20944,11 +20944,21 @@ class SpecialistRunner {
     const preScriptOutput = formatScriptOutput(preResults);
     const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
     const beadVariables = options.inputBeadId ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId } : {};
-    const beadTemplateVariables = options.inputBeadId ? { bead_id: options.inputBeadId, prompt: resolvedPrompt } : {};
+    const lineageVariables = {
+      ...options.reusedFromJobId ? { reused_from_job_id: options.reusedFromJobId } : {},
+      ...options.worktreeOwnerJobId ? { worktree_owner_job_id: options.worktreeOwnerJobId } : {}
+    };
+    const beadTemplateVariables = {
+      prompt: resolvedPrompt,
+      bead_id: options.inputBeadId ?? "",
+      ...lineageVariables
+    };
     const variables = {
       prompt: resolvedPrompt,
       cwd: runCwd,
       pre_script_output: preScriptOutput,
+      bead_id: options.inputBeadId ?? "",
+      ...lineageVariables,
       ...options.variables ?? {},
       ...beadVariables
     };
@@ -20961,7 +20971,7 @@ class SpecialistRunner {
       estimated_tokens: Math.ceil(renderedTask.length / 4),
       system_prompt_present: !!prompt.system
     });
-    let agentsMd = options.inputBeadId ? renderTemplate(prompt.system ?? "", beadTemplateVariables) : prompt.system ?? "";
+    let agentsMd = renderTemplate(prompt.system ?? "", beadTemplateVariables);
     {
       const sanitizedBeadId = options.inputBeadId ? sanitizeBeadIdForPrompt(options.inputBeadId) : "";
       const beadInstructions = sanitizedBeadId ? `
@@ -21713,12 +21723,13 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       return null;
   }
 }
-function createRunStartEvent(specialist, beadId) {
+function createRunStartEvent(specialist, beadId, startupSnapshot) {
   return {
     t: Date.now(),
     type: TIMELINE_EVENT_TYPES.RUN_START,
     specialist,
-    bead_id: beadId
+    bead_id: beadId,
+    ...startupSnapshot ? { startup_snapshot: startupSnapshot } : {}
   };
 }
 function createMetaEvent(model, backend) {
@@ -22890,6 +22901,32 @@ class Supervisor {
     mkdirSync3(dir, { recursive: true });
     mkdirSync3(this.readyDir(), { recursive: true });
     const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
+    const variablesKeys = Object.keys(runOptions.variables ?? {});
+    const activatedSkills = (runOptions.variables?.activated_skills ?? runOptions.variables?.skills_activated ?? "").split(",").map((skill) => skill.trim()).filter((skill) => skill.length > 0);
+    const startupContext = {
+      job_id: id,
+      specialist_name: runOptions.name,
+      ...runOptions.inputBeadId ? { bead_id: runOptions.inputBeadId } : {},
+      ...runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {},
+      ...runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {},
+      ...runOptions.worktreeOwnerJobId || runOptions.workingDirectory ? {
+        chain_id: runOptions.worktreeOwnerJobId ?? id,
+        chain_root_job_id: runOptions.worktreeOwnerJobId ?? id
+      } : {},
+      ...runOptions.variables?.chain_root_bead_id ? { chain_root_bead_id: runOptions.variables.chain_root_bead_id } : {},
+      ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
+      ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
+      variables_keys: variablesKeys,
+      reviewed_job_id_present: variablesKeys.includes("reviewed_job_id"),
+      reused_worktree_awareness_present: variablesKeys.includes("reused_worktree_awareness"),
+      bead_context_present: variablesKeys.includes("bead_context"),
+      ...activatedSkills.length > 0 ? {
+        skills: {
+          count: activatedSkills.length,
+          activated: activatedSkills
+        }
+      } : {}
+    };
     const initialStatus = {
       id,
       specialist: runOptions.name,
@@ -22908,7 +22945,8 @@ class Supervisor {
         chain_root_job_id: runOptions.worktreeOwnerJobId ?? id
       } : { chain_kind: "prep" },
       ...runOptions.epicId ? { epic_id: runOptions.epicId } : {},
-      ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() }
+      ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
+      startup_context: startupContext
     };
     this.writeStatusFileOnly(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
@@ -22978,7 +23016,7 @@ class Supervisor {
         appendTimelineEvent(createStatusChangeEvent("waiting", previousStatus));
       }
     };
-    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId));
+    const runStartEvent = appendTimelineEventFileOnly(createRunStartEvent(runOptions.name, runOptions.inputBeadId, statusSnapshot.startup_context));
     try {
       this.withSqliteOperation("upsertStatusWithEvent:run_start", (client) => client.upsertStatusWithEvent(statusSnapshot, runStartEvent));
     } catch (error2) {
@@ -23283,6 +23321,14 @@ ${appendError}
             return;
           }
         })();
+        if (eventType === "memory_injection" && memoryInjection) {
+          setStatus({
+            startup_context: {
+              ...statusSnapshot.startup_context ?? {},
+              memory_injection: memoryInjection
+            }
+          });
+        }
         const timelineEvent = mapCallbackEventToTimelineEvent(eventType, {
           tool: toolState?.tool,
           toolCallId,
@@ -27314,6 +27360,23 @@ function formatFooterModel(backend, model) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+function extractReviewedJobIdOverride(prompt) {
+  const match = prompt.match(/(?:^|\n)\s*reviewed_job_id\s*:\s*([^\n]+)/i);
+  const candidate = match?.[1]?.trim();
+  return candidate ? candidate : undefined;
+}
+function buildReusedWorktreeAwarenessBlock(options) {
+  const owner = options.worktreeOwnerJobId ?? options.reusedFromJobId;
+  return [
+    "## Reused workspace awareness (from --job)",
+    `You are entering an existing worktree reused from job: ${options.reusedFromJobId}.`,
+    `Worktree chain owner job: ${owner}.`,
+    "Workspace may contain uncommitted edits, staged changes, generated files, or partial fixes from prior handoff steps.",
+    "Before edits, run and inspect: git status --short --branch, git diff --stat, git diff --cached --stat.",
+    "Treat existing tree state as real input context \u2014 do not assume clean baseline."
+  ].join(`
+`);
+}
 async function run13() {
   const args = await parseArgs6(process.argv.slice(3));
   const loader = new SpecialistLoader;
@@ -27449,10 +27512,19 @@ async function run13() {
   } else if (args.epicId) {
     epicId = args.epicId;
   }
+  variables = {
+    ...variables ?? {},
+    reused_worktree_awareness: ""
+  };
   if (args.reuseJobId) {
+    const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
     variables = {
       ...variables ?? {},
-      reviewed_job_id: args.reuseJobId
+      reviewed_job_id: reviewedJobId,
+      reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({
+        reusedFromJobId: args.reuseJobId,
+        worktreeOwnerJobId
+      })
     };
   }
   if (!prompt && !effectiveBeadId) {
@@ -32543,9 +32615,92 @@ function resolveJobIdFromNodeMember(sqliteClient, nodeId, memberKey) {
   }
   return member.job_id;
 }
+function readTimelineEventsForResult(sqliteClient, jobsDir, jobId) {
+  if (sqliteClient) {
+    try {
+      return sqliteClient.readEvents(jobId);
+    } catch {}
+  }
+  const eventsPath = join21(jobsDir, jobId, "events.jsonl");
+  if (!existsSync19(eventsPath))
+    return [];
+  return readFileSync15(eventsPath, "utf-8").split(`
+`).map((line) => line.trim()).filter(Boolean).map((line) => parseTimelineEvent(line)).filter((event) => event !== null);
+}
+function deriveStartupSnapshot(status, events) {
+  const runStartEvent = events.find((event) => event.type === "run_start");
+  const startupFromEvent = runStartEvent?.type === "run_start" ? runStartEvent.startup_snapshot ?? null : null;
+  const memoryMeta = events.find((event) => event.type === "meta" && !!event.memory_injection);
+  const memoryInjection = memoryMeta?.type === "meta" ? memoryMeta.memory_injection : undefined;
+  const merged = {
+    ...startupFromEvent ?? {},
+    ...status.startup_context ?? {},
+    ...memoryInjection ? { memory_injection: memoryInjection } : {}
+  };
+  if (!merged.job_id)
+    merged.job_id = status.id;
+  if (!merged.specialist_name)
+    merged.specialist_name = status.specialist;
+  if (!merged.bead_id && status.bead_id)
+    merged.bead_id = status.bead_id;
+  if (!merged.reused_from_job_id && status.reused_from_job_id)
+    merged.reused_from_job_id = status.reused_from_job_id;
+  if (!merged.worktree_owner_job_id && status.worktree_owner_job_id)
+    merged.worktree_owner_job_id = status.worktree_owner_job_id;
+  if (!merged.chain_id && status.chain_id)
+    merged.chain_id = status.chain_id;
+  if (!merged.chain_root_job_id && status.chain_root_job_id)
+    merged.chain_root_job_id = status.chain_root_job_id;
+  if (!merged.chain_root_bead_id && status.chain_root_bead_id)
+    merged.chain_root_bead_id = status.chain_root_bead_id;
+  if (!merged.worktree_path && status.worktree_path)
+    merged.worktree_path = status.worktree_path;
+  if (!merged.branch && status.branch)
+    merged.branch = status.branch;
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+function formatStartupSnapshot(snapshot) {
+  if (!snapshot)
+    return null;
+  const lines = [`
+--- startup context ---`];
+  const push = (key, value) => {
+    if (value === undefined || value === null)
+      return;
+    lines.push(`${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`);
+  };
+  push("job_id", snapshot.job_id);
+  push("specialist_name", snapshot.specialist_name);
+  push("bead_id", snapshot.bead_id);
+  push("reused_from_job_id", snapshot.reused_from_job_id);
+  push("worktree_owner_job_id", snapshot.worktree_owner_job_id);
+  push("chain_id", snapshot.chain_id);
+  push("chain_root_job_id", snapshot.chain_root_job_id);
+  push("chain_root_bead_id", snapshot.chain_root_bead_id);
+  push("worktree_path", snapshot.worktree_path);
+  push("branch", snapshot.branch);
+  push("variables_keys", snapshot.variables_keys);
+  push("reviewed_job_id_present", snapshot.reviewed_job_id_present);
+  push("reused_worktree_awareness_present", snapshot.reused_worktree_awareness_present);
+  push("bead_context_present", snapshot.bead_context_present);
+  if (snapshot.memory_injection) {
+    push("memory.static_tokens", snapshot.memory_injection.static_tokens);
+    push("memory.memory_tokens", snapshot.memory_injection.memory_tokens);
+    push("memory.gitnexus_tokens", snapshot.memory_injection.gitnexus_tokens);
+    push("memory.total_tokens", snapshot.memory_injection.total_tokens);
+  }
+  if (snapshot.skills) {
+    push("skills.count", snapshot.skills.count);
+    push("skills.activated", snapshot.skills.activated);
+  }
+  lines.push("---");
+  return `${lines.join(`
+`)}
+`;
+}
 async function run16() {
   const args = parseArgs8(process.argv.slice(3));
-  const emitJson = (status, output2, error2) => {
+  const emitJson = (status, output2, error2, startupContext = null) => {
     console.log(JSON.stringify({
       job: status ? {
         id: status.id,
@@ -32555,17 +32710,20 @@ async function run16() {
         backend: status.backend ?? null,
         bead_id: status.bead_id ?? null,
         metrics: status.metrics ?? null,
+        startup_context: startupContext,
         error: status.error ?? null
       } : null,
       output: output2,
+      startup_context: startupContext,
       error: error2
     }, null, 2));
   };
   const jobsDir = join21(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
-  const emitHumanResult = (output2, status, trailingFooter) => {
-    process.stdout.write(output2);
+  const emitHumanResult = (output2, status, startupContext, trailingFooter) => {
+    const startupBlock = formatStartupSnapshot(startupContext);
+    process.stdout.write(startupBlock ? `${startupBlock}${output2}` : output2);
     const tokenSummaryParts = formatTokenUsageSummary(status.metrics?.token_usage).filter((part) => !part.startsWith("cost="));
     const formattedCost = formatCostUsd(status.metrics?.token_usage?.cost_usd);
     if (tokenSummaryParts.length === 0 && !formattedCost) {
@@ -32621,6 +32779,7 @@ async function run16() {
           process.exit(1);
         }
         if (status2.status === "done") {
+          const startupContext2 = deriveStartupSnapshot(status2, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
           const output3 = readResultOutput();
           if (!output3) {
             if (args.json) {
@@ -32631,16 +32790,17 @@ async function run16() {
             process.exit(1);
           }
           if (args.json) {
-            emitJson(status2, output3, null);
+            emitJson(status2, output3, null, startupContext2);
           } else {
-            emitHumanResult(output3, status2);
+            emitHumanResult(output3, status2, startupContext2);
           }
           return;
         }
         if (status2.status === "error") {
+          const startupContext2 = deriveStartupSnapshot(status2, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
           const message = `Job ${jobId} failed: ${status2.error ?? "unknown error"}`;
           if (args.json) {
-            emitJson(status2, null, message);
+            emitJson(status2, null, message, startupContext2);
           } else {
             process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status2.error ?? "unknown error"}
 `);
@@ -32652,7 +32812,8 @@ async function run16() {
           if (elapsedSecs >= args.timeout) {
             const timeoutMessage = `Timeout: job ${jobId} did not complete within ${args.timeout}s`;
             if (args.json) {
-              emitJson(status2, null, timeoutMessage);
+              const startupContext2 = deriveStartupSnapshot(status2, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+              emitJson(status2, null, timeoutMessage, startupContext2);
             } else {
               process.stderr.write(`${timeoutMessage}
 `);
@@ -32673,11 +32834,12 @@ async function run16() {
       process.exit(1);
     }
     if (status.status === "running" || status.status === "starting") {
+      const startupContext2 = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
       const output3 = readResultOutput();
       if (!output3) {
         const message = `Job ${jobId} is still ${status.status}. Use 'specialists feed --job ${jobId}' to follow.`;
         if (args.json) {
-          emitJson(status, null, message);
+          emitJson(status, null, message, startupContext2);
         } else {
           process.stderr.write(`${dim10(message)}
 `);
@@ -32685,20 +32847,21 @@ async function run16() {
         process.exit(1);
       }
       if (args.json) {
-        emitJson(status, output3, null);
+        emitJson(status, output3, null, startupContext2);
       } else {
         process.stderr.write(`${dim10(`Job ${jobId} is currently ${status.status}. Showing last completed output while it continues.`)}
 `);
-        emitHumanResult(output3, status);
+        emitHumanResult(output3, status, startupContext2);
       }
       return;
     }
     if (status.status === "waiting") {
+      const startupContext2 = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
       const output3 = readResultOutput();
       if (!output3) {
         const message = `Job ${jobId} is waiting for input. Use: specialists resume ${jobId} "..."`;
         if (args.json) {
-          emitJson(status, null, message);
+          emitJson(status, null, message, startupContext2);
         } else {
           process.stderr.write(`${dim10(message)}
 `);
@@ -32709,16 +32872,17 @@ async function run16() {
 --- Session is waiting for your input. Use: specialists resume ${jobId} "..." ---
 `;
       if (args.json) {
-        emitJson(status, `${output3}${waitingFooter}`, null);
+        emitJson(status, `${output3}${waitingFooter}`, null, startupContext2);
       } else {
-        emitHumanResult(output3, status, waitingFooter);
+        emitHumanResult(output3, status, startupContext2, waitingFooter);
       }
       return;
     }
     if (status.status === "error") {
+      const startupContext2 = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
       const message = `Job ${jobId} failed: ${status.error ?? "unknown error"}`;
       if (args.json) {
-        emitJson(status, null, message);
+        emitJson(status, null, message, startupContext2);
       } else {
         process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
 `);
@@ -32734,11 +32898,12 @@ async function run16() {
       }
       process.exit(1);
     }
+    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
     if (args.json) {
-      emitJson(status, output2, null);
+      emitJson(status, output2, null, startupContext);
       return;
     }
-    emitHumanResult(output2, status);
+    emitHumanResult(output2, status, startupContext);
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
     if (args.json) {
@@ -32756,6 +32921,7 @@ var dim10 = (s) => `\x1B[2m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`;
 var init_result = __esm(() => {
   init_supervisor();
   init_observability_sqlite();
+  init_timeline_events();
   init_node_resolve();
   init_format_helpers();
 });
@@ -32981,6 +33147,50 @@ function formatWaitingBanner(jobId, specialist) {
   const prefix = magenta3(bold10("WAIT"));
   return `${prefix} ${specialist} (${jobId}) is waiting for input. Use: specialists resume ${jobId} "..."`;
 }
+function formatStartupContextLine(event) {
+  if (event.type === "run_start") {
+    const snapshot = event.startup_snapshot;
+    if (!snapshot)
+      return null;
+    const parts = [];
+    if (snapshot.job_id)
+      parts.push(`job=${snapshot.job_id}`);
+    if (snapshot.specialist_name)
+      parts.push(`specialist=${snapshot.specialist_name}`);
+    if (snapshot.bead_id)
+      parts.push(`bead=${snapshot.bead_id}`);
+    if (snapshot.reused_from_job_id)
+      parts.push(`reused=${snapshot.reused_from_job_id}`);
+    if (snapshot.worktree_owner_job_id)
+      parts.push(`owner=${snapshot.worktree_owner_job_id}`);
+    if (snapshot.chain_id)
+      parts.push(`chain=${snapshot.chain_id}`);
+    if (snapshot.chain_root_job_id)
+      parts.push(`chain_root_job=${snapshot.chain_root_job_id}`);
+    if (snapshot.chain_root_bead_id)
+      parts.push(`chain_root_bead=${snapshot.chain_root_bead_id}`);
+    if (snapshot.worktree_path)
+      parts.push(`worktree=${snapshot.worktree_path}`);
+    if (snapshot.branch)
+      parts.push(`branch=${snapshot.branch}`);
+    if (snapshot.variables_keys)
+      parts.push(`vars=[${snapshot.variables_keys.join(",")}]`);
+    if (snapshot.reviewed_job_id_present !== undefined)
+      parts.push(`reviewed_present=${snapshot.reviewed_job_id_present}`);
+    if (snapshot.reused_worktree_awareness_present !== undefined)
+      parts.push(`reuse_awareness_present=${snapshot.reused_worktree_awareness_present}`);
+    if (snapshot.bead_context_present !== undefined)
+      parts.push(`bead_context_present=${snapshot.bead_context_present}`);
+    if (snapshot.skills)
+      parts.push(`skills=${snapshot.skills.count}`);
+    return parts.length > 0 ? dim8(`  \u21B3 startup ${parts.join(" ")}`) : null;
+  }
+  if (event.type === "meta" && event.memory_injection) {
+    const mem = event.memory_injection;
+    return dim8(`  \u21B3 memory static=${mem.static_tokens} dynamic=${mem.memory_tokens} gitnexus=${mem.gitnexus_tokens} total=${mem.total_tokens}`);
+  }
+  return null;
+}
 function parseSince(value) {
   if (value.includes("T") || value.includes("-")) {
     return new Date(value).getTime();
@@ -33195,6 +33405,9 @@ function printSnapshot(sqliteClient, merged, options, jobsDir) {
       contextPct: meta.contextPct,
       colorize
     }));
+    const startupContextLine = formatStartupContextLine(event);
+    if (startupContextLine)
+      console.log(startupContextLine);
   }
 }
 function compareMergedEvents(a, b) {
@@ -33415,6 +33628,9 @@ async function followMerged(sqliteClient, jobsDir, options) {
             contextPct: meta.contextPct,
             colorize
           }));
+          const startupContextLine = formatStartupContextLine(event);
+          if (startupContextLine)
+            console.log(startupContextLine);
         }
       }
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
