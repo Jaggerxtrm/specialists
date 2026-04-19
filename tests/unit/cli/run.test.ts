@@ -477,7 +477,7 @@ describe('run CLI', () => {
     expect(matchedLine).toBe(exactMessage);
   });
 
-  it('sets reviewed_job_id variable when --job is provided', async () => {
+  it('sets reviewed_job_id and reused-worktree awareness variables when --job is provided', async () => {
     process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--job', 'job-reviewed'];
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
@@ -505,6 +505,7 @@ describe('run CLI', () => {
           status: 'done',
           started_at_ms: Date.now(),
           worktree_path: '/tmp/wt-job-reviewed',
+          worktree_owner_job_id: 'job-root-owner',
         } as any;
       }
       return {
@@ -526,7 +527,14 @@ describe('run CLI', () => {
     expect(exit).toHaveBeenCalledWith(0);
 
     const runArgs = runnerRun.mock.calls[0][0];
-    expect(runArgs.variables).toEqual(expect.objectContaining({ reviewed_job_id: 'job-reviewed' }));
+    expect(runArgs.variables).toEqual(expect.objectContaining({
+      reviewed_job_id: 'job-reviewed',
+      reused_worktree_awareness: expect.stringContaining('Reused workspace awareness (from --job)'),
+    }));
+    expect(runArgs.variables.reused_worktree_awareness).toContain('job-reviewed');
+    expect(runArgs.variables.reused_worktree_awareness).toContain('job-root-owner');
+    expect(runArgs.variables.reused_worktree_awareness).toContain('Workspace may contain uncommitted edits');
+    expect(runArgs.variables.reused_worktree_awareness).toContain('git status --short --branch');
   });
 
   it('prefers explicit reviewed_job_id override from prompt over --job lineage', async () => {
@@ -1130,6 +1138,47 @@ describe('run CLI', () => {
     expect(exit).toHaveBeenCalledWith(1);
     expect(error).toHaveBeenCalledWith('Error: use either --prompt or --bead, not both.');
     expect(runnerRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps reused_worktree_awareness empty when run does not use --job', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+
+    const runnerRun = vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'done',
+      durationMs: 5,
+      model: 'gemini',
+      backend: 'google-gemini-cli',
+      promptHash: 'abc123def4567890',
+      specialistVersion: '1.0.0',
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    await expect(run()).rejects.toThrow('exit:0');
+    expect(exit).toHaveBeenCalledWith(0);
+
+    const runArgs = runnerRun.mock.calls[0][0];
+    expect(runArgs.variables).toEqual(expect.objectContaining({ reused_worktree_awareness: '' }));
+  });
+
+  it('executor and debugger templates include reused-worktree awareness injection slot', async () => {
+    const executorConfig = JSON.parse(fs.readFileSync('config/specialists/executor.specialist.json', 'utf-8'));
+    const debuggerConfig = JSON.parse(fs.readFileSync('config/specialists/debugger.specialist.json', 'utf-8'));
+
+    expect(executorConfig.specialist.prompt.task_template).toContain('$reused_worktree_awareness');
+    expect(debuggerConfig.specialist.prompt.task_template).toContain('$reused_worktree_awareness');
   });
 
   it('exits when neither prompt nor bead nor stdin is provided', async () => {
