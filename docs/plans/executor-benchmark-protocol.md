@@ -29,12 +29,12 @@ All Anthropic/Claude models excluded by benchmark rule (user constraint + known 
 
 ### 3.1 Corpus size
 
-9 benchmark tasks total.
-- 3 bug-fix tasks
-- 3 refactor tasks
-- 3 implementation tasks
+3 benchmark tasks total — 1 per bucket:
+- 1 bug-fix task
+- 1 refactor task
+- 1 implementation task
 
-Reason: enough diversity for failure detection, still repeatable and affordable.
+Reason: 3 tasks × 4 models × 1 rep = 12 runs. Lean and fast.
 
 ### 3.2 Selection rules (must hold)
 
@@ -51,11 +51,11 @@ Reason: enough diversity for failure detection, still repeatable and affordable.
 
 Use cloned benchmark beads (`bench-*`) mapped 1:1 from historical seeds:
 
-| Bucket | Seed example bead(s) | Why representative |
+| Bucket | Seed bead | Why representative |
 |---|---|---|
-| Bug fix | `unitAI-y4ia`, `unitAI-ug51`, `unitAI-g4bn` | Covers status lifecycle correctness, crash recovery, token parsing/metrics correctness. |
-| Refactor | `unitAI-22tq`, `unitAI-aq1k`, `unitAI-k7lg` | Multi-file structural changes with behavior preservation and constraint handling. |
-| Implementation | `unitAI-8zui`, `unitAI-vozx`, `unitAI-5us0` | New capability delivery + integration paths + reviewer-verifiable outcomes. |
+| Bug fix | `unitAI-y4ia` | Status lifecycle correctness — typical executor bug-fix shape. |
+| Refactor | `unitAI-22tq` | Multi-file structural change with behavior preservation. |
+| Implementation | `unitAI-8zui` | New capability delivery with reviewer-verifiable outcome. |
 
 > If any seed task unavailable, replace with same bucket + same complexity class, then freeze new snapshot before runs.
 
@@ -87,9 +87,9 @@ Use cloned benchmark beads (`bench-*`) mapped 1:1 from historical seeds:
 
 ## 4.3 Run order and replication
 
-- Randomize model order per task (round-robin shuffle) to reduce time-of-day/provider noise.
-- Run each (model, task) pair twice minimum.
-- Total minimum runs: `4 models × 9 tasks × 2 reps = 72 runs`.
+- Randomize model order per task to reduce time-of-day/provider noise.
+- Run each (model, task) pair once.
+- Total runs: `4 models × 3 tasks × 1 rep = 12 runs`.
 
 ## 4.4 Per-run data capture schema (required)
 
