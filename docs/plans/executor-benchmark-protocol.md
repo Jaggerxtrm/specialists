@@ -15,7 +15,7 @@ Baseline fixed from `config/specialists/executor.specialist.json`.
 | Role | Provider | Exact model ID | Why included |
 |---|---|---|---|
 | Baseline | OpenAI Codex | `openai-codex/gpt-5.3-codex` | Current production default for executor. Reference line for quality/cost/time. |
-| Challenger A | OpenAI Codex | `openai-codex/gpt-5.4` | Known stronger reliability in prior runs when `gpt-5.3-codex` had 0-token failures. Measures premium-quality ceiling. |
+| Challenger A | OpenAI Codex | `openai-codex/gpt-5.4-mini` | Cost-effective OpenAI variant relative to baseline; tests whether lower-cost Codex tier preserves quality floor. |
 | Challenger B | DashScope | `dashscope/qwen3.5-plus` | Existing in repo configs; expected cheaper token profile; tests cross-provider behavior. |
 | Challenger C | Z.AI | `zai/glm-5` | Existing in repo configs; useful low-cost challenger with different failure surface. |
 
