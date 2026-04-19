@@ -7,6 +7,7 @@ import {
   evaluateEpicMergeReadiness,
   summarizeEpicTransition,
 } from '../specialist/epic-lifecycle.js';
+import { abandonEpic, syncEpicState, withEpicAdvisoryLock } from '../specialist/epic-reconciler.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { ObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
@@ -39,6 +40,19 @@ interface EpicStatusOptions {
 interface EpicResolveOptions {
   epicId: string;
   dryRun: boolean;
+  json: boolean;
+}
+
+interface EpicSyncOptions {
+  epicId: string;
+  apply: boolean;
+  json: boolean;
+}
+
+interface EpicAbandonOptions {
+  epicId: string;
+  reason: string;
+  force: boolean;
   json: boolean;
 }
 
@@ -179,6 +193,65 @@ function parseResolveOptions(argv: readonly string[]): EpicResolveOptions {
   }
 
   return { epicId, dryRun, json };
+}
+
+function parseSyncOptions(argv: readonly string[]): EpicSyncOptions {
+  const epicId = parseEpicId(argv);
+  let apply = false;
+  let json = false;
+
+  for (const argument of argv) {
+    if (argument === '--apply') {
+      apply = true;
+      continue;
+    }
+    if (argument === '--json') {
+      json = true;
+      continue;
+    }
+    if (argument.startsWith('-') && argument !== '--apply' && argument !== '--json') {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+
+  return { epicId, apply, json };
+}
+
+function parseAbandonOptions(argv: readonly string[]): EpicAbandonOptions {
+  const epicId = parseEpicId(argv);
+  let reason = '';
+  let force = false;
+  let json = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--force') {
+      force = true;
+      continue;
+    }
+    if (argument === '--json') {
+      json = true;
+      continue;
+    }
+    if (argument === '--reason') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('-')) {
+        throw new Error('Missing value for --reason');
+      }
+      reason = value.trim();
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith('-') && argument !== '--force' && argument !== '--json') {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+
+  if (reason.length === 0) {
+    throw new Error('Missing required --reason <text>');
+  }
+
+  return { epicId, reason, force, json };
 }
 
 function readEpicChildrenFromBeads(epicId: string): string[] {
@@ -610,6 +683,102 @@ export async function handleEpicMergeCommand(argv: readonly string[]): Promise<v
   }
 }
 
+export async function handleEpicSyncCommand(argv: readonly string[]): Promise<void> {
+  let options: EpicSyncOptions;
+  try {
+    options = parseSyncOptions(argv);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    console.error('Usage: specialists epic sync <epic-id> [--apply] [--json]');
+    process.exit(1);
+  }
+
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    const message = 'Observability SQLite database not available. Run `sp db setup` first.';
+    if (options.json) {
+      console.log(JSON.stringify({ error: message }, null, 2));
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
+  }
+
+  try {
+    const result = withEpicAdvisoryLock(options.epicId, () => syncEpicState(sqlite, options.epicId, options.apply));
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log('');
+    console.log(`Epic ${result.epic_id} sync (${result.apply ? 'apply' : 'dry-run'})`);
+    console.log(`  stale_chain_refs: ${result.drift.stale_chain_refs.length}`);
+    console.log(`  dead_jobs_blocking_readiness: ${result.drift.dead_jobs_blocking_readiness.length}`);
+    console.log(`  integrity_flags: ${result.drift.integrity_flags.length}`);
+    console.log(`  stale_redirect_markers: ${result.drift.stale_redirect_markers.length}`);
+    if (result.apply) {
+      console.log(`  repaired_dead_jobs: ${result.repairs.dead_jobs_marked_error.length}`);
+      console.log(`  readiness_resynced: ${result.repairs.readiness_resynced}`);
+      console.log(`  redirect_markers_cleared: ${result.repairs.redirect_markers_cleared}`);
+    }
+    console.log(`  readiness_before: ${result.readiness_before.readiness_state}`);
+    console.log(`  readiness_after: ${result.readiness_after.readiness_state}`);
+    console.log('');
+  } finally {
+    sqlite.close();
+  }
+}
+
+export async function handleEpicAbandonCommand(argv: readonly string[]): Promise<void> {
+  let options: EpicAbandonOptions;
+  try {
+    options = parseAbandonOptions(argv);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    console.error('Usage: specialists epic abandon <epic-id> --reason <text> [--force] [--json]');
+    process.exit(1);
+  }
+
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite) {
+    const message = 'Observability SQLite database not available. Run `sp db setup` first.';
+    if (options.json) {
+      console.log(JSON.stringify({ error: message }, null, 2));
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
+  }
+
+  try {
+    const result = withEpicAdvisoryLock(options.epicId, () => abandonEpic(sqlite, options.epicId, options.reason, options.force));
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(`Epic ${result.epic_id}: ${result.from_state} -> ${result.to_state}`);
+    console.log(`Reason: ${result.reason}`);
+    if (result.forced) {
+      console.log('Mode: forced');
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (options.json) {
+      console.log(JSON.stringify({ epic_id: options.epicId, error: message }, null, 2));
+    } else {
+      console.error(message);
+    }
+    process.exit(1);
+  } finally {
+    sqlite.close();
+  }
+}
+
 export async function handleEpicStatusCommand(argv: readonly string[]): Promise<void> {
   let options: EpicStatusOptions;
   try {
@@ -706,12 +875,14 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
   if (!subcommand || subcommand === '--help' || subcommand === '-h') {
     console.log([
       '',
-      'Usage: specialists epic <list|status|resolve|merge> [options]',
+      'Usage: specialists epic <list|status|resolve|sync|abandon|merge> [options]',
       '',
       'Commands:',
       '  list [--unresolved] [--json]                    List epics with lifecycle and readiness summary',
       '  status <epic-id> [--json]                       Show epic state, chain statuses, and merge readiness',
       '  resolve <epic-id> [--dry-run] [--json]          Transition epic from open to resolving',
+      '  sync <epic-id> [--apply] [--json]                Reconcile epic drift (dry-run by default)',
+      '  abandon <epic-id> --reason <text> [--force] [--json]  Transition epic to abandoned',
       '  merge <epic-id> [--rebuild] [--pr] [--json]     Publish epic-owned chains in dependency order',
       '',
       'Epic lifecycle states:',
@@ -731,6 +902,9 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
       '  specialists epic list --unresolved --json',
       '  specialists epic resolve unitAI-3f7b',
       '  specialists epic status unitAI-3f7b --json',
+      '  specialists epic sync unitAI-3f7b',
+      '  specialists epic sync unitAI-3f7b --apply',
+      '  specialists epic abandon unitAI-3f7b --reason "scope changed"',
       '  specialists epic merge unitAI-3f7b --rebuild',
       '  specialists epic merge unitAI-3f7b --pr',
       '',
@@ -748,6 +922,16 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
     return;
   }
 
+  if (subcommand === 'sync') {
+    await handleEpicSyncCommand(argv.slice(1));
+    return;
+  }
+
+  if (subcommand === 'abandon') {
+    await handleEpicAbandonCommand(argv.slice(1));
+    return;
+  }
+
   if (subcommand === 'merge') {
     await handleEpicMergeCommand(argv.slice(1));
     return;
@@ -759,6 +943,6 @@ export async function handleEpicCommand(argv: readonly string[]): Promise<void> 
   }
 
   console.error(`Unknown epic subcommand: ${subcommand}`);
-  console.error('Usage: specialists epic <list|status|resolve|merge>');
+  console.error('Usage: specialists epic <list|status|resolve|sync|abandon|merge>');
   process.exit(1);
 }

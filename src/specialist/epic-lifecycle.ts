@@ -113,6 +113,42 @@ export function evaluateEpicMergeReadiness(input: EpicReadinessInput): EpicReadi
   };
 }
 
+export interface EpicTransitionAuditEntry {
+  from: EpicState;
+  to: EpicState;
+  at_ms: number;
+  reason?: string;
+  trigger?: string;
+  forced?: boolean;
+}
+
+export function appendEpicTransitionAudit(statusJson: string | undefined, entry: EpicTransitionAuditEntry): string {
+  const fallback = {
+    transitions: [],
+  } as { transitions: EpicTransitionAuditEntry[] };
+
+  let parsed: Record<string, unknown> = fallback;
+  if (statusJson) {
+    try {
+      const candidate = JSON.parse(statusJson) as Record<string, unknown>;
+      if (candidate && typeof candidate === 'object') {
+        parsed = candidate;
+      }
+    } catch {
+      parsed = fallback;
+    }
+  }
+
+  const previous = Array.isArray(parsed.transitions)
+    ? parsed.transitions.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
+
+  return JSON.stringify({
+    ...parsed,
+    transitions: [...previous, entry],
+  });
+}
+
 export function summarizeEpicTransition(epicId: string, from: EpicState, to: EpicState): string {
   return `Epic ${epicId}: ${from} -> ${to}`;
 }
