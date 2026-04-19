@@ -31,7 +31,7 @@ function parseArgs(argv) {
     outputRoot: resolve('.specialists/benchmarks/runs'),
     runId: defaultRunId,
     rerunFailed: false,
-    baseRef: 'origin/main',
+    baseRef: 'origin/master',
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -182,10 +182,34 @@ function createBenchmarkBead(seedIssue, sample, runId) {
   return createResult.id;
 }
 
+function waitForNonRunning(jobId, maxWaitMs = 20 * 60 * 1000) {
+  const RUNNING = new Set(['starting', 'running']);
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const r = runCommand('specialists', ['status', '--job', jobId, '--json']);
+    if (r.code === 0) {
+      try {
+        const data = JSON.parse(r.stdout);
+        if (!RUNNING.has(data.status)) return data.status;
+      } catch { /* ignore parse error, keep polling */ }
+    }
+    spawnSync('sleep', ['3']);
+  }
+  throw new Error(`Job ${jobId} still running after ${maxWaitMs / 60000}min`);
+}
+
 function runSpecialist(name, args) {
   const runResult = runCommand('specialists', ['run', name, '--background', ...args]);
   const jobId = parseJobId(runResult.stdout);
-  const result = runJson('specialists', ['result', jobId, '--wait', '--json'], `specialists result ${jobId}`);
+
+  // Poll until non-running; if waiting (keep-alive), stop it so result.txt is accessible
+  const finalStatus = waitForNonRunning(jobId);
+  if (finalStatus === 'waiting') {
+    runCommand('specialists', ['stop', jobId]);
+    spawnSync('sleep', ['2']);
+  }
+
+  const result = runJson('specialists', ['result', jobId, '--json'], `specialists result ${jobId}`);
   return { jobId, runResult, result };
 }
 
