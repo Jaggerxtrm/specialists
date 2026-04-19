@@ -436,6 +436,21 @@ function extractReviewedJobIdOverride(prompt: string): string | undefined {
   return candidate ? candidate : undefined;
 }
 
+function buildReusedWorktreeAwarenessBlock(options: {
+  reusedFromJobId: string;
+  worktreeOwnerJobId?: string;
+}): string {
+  const owner = options.worktreeOwnerJobId ?? options.reusedFromJobId;
+  return [
+    '## Reused workspace awareness (from --job)',
+    `You are entering an existing worktree reused from job: ${options.reusedFromJobId}.`,
+    `Worktree chain owner job: ${owner}.`,
+    'Workspace may contain uncommitted edits, staged changes, generated files, or partial fixes from prior handoff steps.',
+    'Before edits, run and inspect: git status --short --branch, git diff --stat, git diff --cached --stat.',
+    'Treat existing tree state as real input context — do not assume clean baseline.',
+  ].join('\n');
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -596,11 +611,20 @@ export async function run(): Promise<void> {
     epicId = args.epicId;
   }
 
+  variables = {
+    ...(variables ?? {}),
+    reused_worktree_awareness: '',
+  };
+
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
     variables = {
       ...(variables ?? {}),
       reviewed_job_id: reviewedJobId,
+      reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({
+        reusedFromJobId: args.reuseJobId,
+        worktreeOwnerJobId,
+      }),
     };
   }
 
