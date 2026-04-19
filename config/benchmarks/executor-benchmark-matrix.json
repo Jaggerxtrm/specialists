@@ -1,7 +1,7 @@
 {
   "id": "unitAI-gc2a",
   "replicate": 1,
-  "reviewerModel": "openai-codex/gpt-5.3-codex",
+  "reviewerModel": "openai-codex/gpt-5.4-mini",
   "models": [
     "openai-codex/gpt-5.3-codex",
     "openai-codex/gpt-5.4-mini",

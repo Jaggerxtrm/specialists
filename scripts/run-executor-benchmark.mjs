@@ -115,6 +115,7 @@ function parseGate(output, key) {
 }
 
 function readMachineJson(markdown) {
+  if (!markdown) return null;
   const match = markdown.match(/```json\s*([\s\S]*?)```/i);
   if (!match?.[1]) return null;
   try {
@@ -201,7 +202,12 @@ function waitForNonRunning(jobId, maxWaitMs = 20 * 60 * 1000) {
 
 function runSpecialist(name, args) {
   const runResult = runCommand('specialists', ['run', name, '--background', ...args]);
-  const jobId = parseJobId(runResult.stdout);
+  let jobId;
+  try {
+    jobId = parseJobId(runResult.stdout);
+  } catch {
+    throw new Error(`Could not parse job id from ${name} run. stdout=${runResult.stdout.slice(0, 100)} stderr=${runResult.stderr.slice(0, 200)}`);
+  }
 
   // Poll until non-running (done/waiting/error/cancelled)
   waitForNonRunning(jobId);
