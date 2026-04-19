@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import {
   ensureGitignoreHasObservabilityDbEntries,
   ensureObservabilityDbFile,
@@ -10,7 +10,7 @@ import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { derivePersistedChainIdentity } from '../specialist/chain-identity.js';
-import { parseTimelineEvent } from '../specialist/timeline-events.js';
+import { parseTimelineEvent, type TimelineEvent, type TimelineEventRunComplete } from '../specialist/timeline-events.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -392,6 +392,245 @@ function runPrune(options: PruneOptions): void {
   }
 }
 
+interface BenchmarkExportOptions {
+  outputPath: string;
+  epicId?: string;
+  includePrepJobs: boolean;
+}
+
+type ReviewerVerdict = 'PASS' | 'PARTIAL' | 'FAIL' | 'MISSING';
+
+interface BenchmarkRow {
+  task_id: string;
+  model_id: string | null;
+  executor_job_id: string;
+  reviewer_job_id: string | null;
+  lint_pass: boolean | null;
+  tsc_pass: boolean | null;
+  reviewer_verdict: ReviewerVerdict;
+  reviewer_score_if_present: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+  elapsed_ms: number | null;
+  failure_notes: string[];
+  source_of_truth: {
+    task_id: string;
+    model_id: string;
+    executor_job_id: string;
+    reviewer_job_id: string;
+    lint_pass: string;
+    tsc_pass: string;
+    reviewer_verdict: string;
+    reviewer_score_if_present: string;
+    total_tokens: string;
+    cost_usd: string;
+    elapsed_ms: string;
+    failure_notes: string;
+  };
+}
+
+function parseBenchmarkExportOptions(argv: readonly string[]): BenchmarkExportOptions {
+  const defaultOutput = resolve(process.cwd(), '.specialists/benchmarks/executor-benchmark-rows.jsonl');
+  let outputPath = defaultOutput;
+  let epicId: string | undefined;
+  let includePrepJobs = false;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const argument = argv[i];
+    if (argument === '--output' && argv[i + 1]) {
+      outputPath = resolve(process.cwd(), argv[i + 1]!);
+      i += 1;
+      continue;
+    }
+    if (argument === '--epic' && argv[i + 1]) {
+      epicId = argv[i + 1]!;
+      i += 1;
+      continue;
+    }
+    if (argument === '--include-prep') {
+      includePrepJobs = true;
+      continue;
+    }
+    throw new Error(`Unknown option for db benchmark-export: '${argument}'`);
+  }
+
+  return { outputPath, epicId, includePrepJobs };
+}
+
+function parseReviewerVerdict(output: string | null): ReviewerVerdict {
+  if (!output) return 'MISSING';
+  const match = output.match(/Verdict:\s*(PASS|PARTIAL|FAIL)/i);
+  if (!match?.[1]) return 'MISSING';
+  return match[1].toUpperCase() as ReviewerVerdict;
+}
+
+function parseReviewerScore(output: string | null): number | null {
+  if (!output) return null;
+  const match = output.match(/(?:Reviewer\s+)?Score(?:\s*\(0-100\))?\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+  return match?.[1] ? Number(match[1]) : null;
+}
+
+function parseGateResult(output: string | null, key: 'lint' | 'tsc'): boolean | null {
+  if (!output) return null;
+  const regex = key === 'lint'
+    ? /(?:lint_pass|lint)\s*[:=]\s*(true|false|pass|fail)/i
+    : /(?:tsc_pass|tsc(?:\s*--noEmit)?)\s*[:=]\s*(true|false|pass|fail)/i;
+  const match = output.match(regex);
+  if (!match?.[1]) return null;
+  const normalized = match[1].toLowerCase();
+  return normalized === 'true' || normalized === 'pass';
+}
+
+function readLatestRunCompleteEvent(events: readonly TimelineEvent[]): TimelineEventRunComplete | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === 'run_complete') {
+      return event as TimelineEventRunComplete;
+    }
+  }
+  return null;
+}
+
+function inferFailureNotes(input: {
+  status: SupervisorStatus;
+  runComplete: TimelineEventRunComplete | null;
+  reviewerVerdict: ReviewerVerdict;
+  hasLaterExecutorInChain: boolean;
+}): string[] {
+  const notes: string[] = [];
+  if (input.runComplete?.status === 'ERROR') {
+    notes.push(`run_complete_status=ERROR${input.runComplete.error ? `: ${input.runComplete.error}` : ''}`);
+  }
+  if (input.runComplete?.status === 'CANCELLED') {
+    notes.push('run_complete_status=CANCELLED');
+  }
+  if (input.runComplete?.exit_reason) {
+    notes.push(`exit_reason=${input.runComplete.exit_reason}`);
+  }
+  if (input.runComplete?.finish_reason) {
+    notes.push(`finish_reason=${input.runComplete.finish_reason}`);
+  }
+  if (input.status.error) {
+    notes.push(`status_error=${input.status.error}`);
+  }
+  if (input.reviewerVerdict !== 'PASS' && input.hasLaterExecutorInChain) {
+    notes.push('fix_loop_rerun_detected_after_non_pass_review');
+  }
+  if (!input.runComplete) {
+    notes.push('missing_run_complete_event_fallback_to_status_metrics');
+  }
+  return notes;
+}
+
+function runBenchmarkExport(options: BenchmarkExportOptions): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Failed to initialize observability SQLite schema. Run `specialists db setup` first and ensure sqlite3 is installed.');
+  }
+
+  try {
+    const statuses = sqliteClient
+      .listStatuses()
+      .filter((status) => options.includePrepJobs || status.chain_kind === 'chain')
+      .filter((status) => !options.epicId || status.epic_id === options.epicId);
+
+    const byChain = new Map<string, SupervisorStatus[]>();
+    for (const status of statuses) {
+      const chainId = status.chain_id ?? `job:${status.id}`;
+      const group = byChain.get(chainId) ?? [];
+      group.push(status);
+      byChain.set(chainId, group);
+    }
+
+    const rows: BenchmarkRow[] = [];
+
+    for (const chainStatuses of byChain.values()) {
+      const ordered = [...chainStatuses].sort((a, b) => a.started_at_ms - b.started_at_ms);
+      const executorStatuses = ordered.filter((status) => status.specialist === 'executor');
+      const reviewerStatuses = ordered.filter((status) => status.specialist === 'reviewer');
+
+      executorStatuses.forEach((executorStatus, executorIndex) => {
+        const nextExecutor = executorStatuses[executorIndex + 1];
+        const reviewer = reviewerStatuses.find((candidate) => {
+          if (candidate.started_at_ms < executorStatus.started_at_ms) return false;
+          if (!nextExecutor) return true;
+          return candidate.started_at_ms < nextExecutor.started_at_ms;
+        }) ?? null;
+
+        const runComplete = readLatestRunCompleteEvent(sqliteClient.readEvents(executorStatus.id));
+        const reviewerOutput = reviewer ? sqliteClient.readResult(reviewer.id) : null;
+        const reviewerVerdict = parseReviewerVerdict(reviewerOutput);
+
+        const totalTokens = runComplete?.token_usage?.total_tokens
+          ?? runComplete?.metrics?.token_usage?.total_tokens
+          ?? executorStatus.metrics?.token_usage?.total_tokens
+          ?? null;
+        const costUsd = runComplete?.token_usage?.cost_usd
+          ?? runComplete?.metrics?.token_usage?.cost_usd
+          ?? executorStatus.metrics?.token_usage?.cost_usd
+          ?? null;
+        const elapsedMs = runComplete
+          ? Math.round(runComplete.elapsed_s * 1000)
+          : (typeof executorStatus.elapsed_s === 'number' ? Math.round(executorStatus.elapsed_s * 1000) : null);
+
+        const hasLaterExecutorInChain = Boolean(nextExecutor);
+        const failureNotes = inferFailureNotes({
+          status: executorStatus,
+          runComplete,
+          reviewerVerdict,
+          hasLaterExecutorInChain,
+        });
+
+        rows.push({
+          task_id: executorStatus.chain_root_bead_id ?? executorStatus.bead_id ?? 'unknown_task',
+          model_id: executorStatus.model ?? null,
+          executor_job_id: executorStatus.id,
+          reviewer_job_id: reviewer?.id ?? null,
+          lint_pass: parseGateResult(reviewerOutput, 'lint'),
+          tsc_pass: parseGateResult(reviewerOutput, 'tsc'),
+          reviewer_verdict: reviewerVerdict,
+          reviewer_score_if_present: parseReviewerScore(reviewerOutput),
+          total_tokens: totalTokens,
+          cost_usd: costUsd,
+          elapsed_ms: elapsedMs,
+          failure_notes: failureNotes,
+          source_of_truth: {
+            task_id: 'specialist_jobs.chain_root_bead_id fallback bead_id',
+            model_id: 'specialist_jobs.status_json.model',
+            executor_job_id: 'specialist_jobs.job_id',
+            reviewer_job_id: 'specialist_jobs.job_id where specialist=reviewer in same chain window',
+            lint_pass: 'reviewer specialist_results.output regex parse; null when absent',
+            tsc_pass: 'reviewer specialist_results.output regex parse; null when absent',
+            reviewer_verdict: 'reviewer specialist_results.output Verdict: PASS|PARTIAL|FAIL',
+            reviewer_score_if_present: 'reviewer specialist_results.output score regex; null when absent',
+            total_tokens: runComplete ? 'specialist_events.type=run_complete.token_usage.total_tokens' : 'status_json.metrics.token_usage.total_tokens fallback',
+            cost_usd: runComplete ? 'specialist_events.type=run_complete.token_usage.cost_usd' : 'status_json.metrics.token_usage.cost_usd fallback',
+            elapsed_ms: runComplete ? 'specialist_events.type=run_complete.elapsed_s * 1000' : 'status_json.elapsed_s * 1000 fallback',
+            failure_notes: 'run_complete.error/status + status_json.error + chain sequencing heuristics',
+          },
+        });
+      });
+    }
+
+    rows.sort((a, b) => a.task_id.localeCompare(b.task_id) || a.executor_job_id.localeCompare(b.executor_job_id));
+
+    const outputDirectory = dirname(options.outputPath);
+    mkdirSync(outputDirectory, { recursive: true });
+    const jsonl = rows.map((row) => JSON.stringify(row)).join('\n');
+    writeFileSync(options.outputPath, rows.length > 0 ? `${jsonl}\n` : '', 'utf-8');
+
+    console.log(`\n${bold('specialists db benchmark-export')}\n`);
+    console.log(`  ${green('✓')} rows exported: ${rows.length}`);
+    console.log(`  ${green('✓')} output: ${options.outputPath}`);
+    if (options.epicId) {
+      console.log(`  ${green('✓')} epic filter: ${options.epicId}`);
+    }
+    console.log('');
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 function runSetup(): void {
   const location = resolveObservabilityDbLocation(process.cwd());
   if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
@@ -439,6 +678,12 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   if (subcommand === 'prune') {
     const options = parsePruneOptions(argv.slice(1));
     runPrune(options);
+    return;
+  }
+
+  if (subcommand === 'benchmark-export') {
+    const options = parseBenchmarkExportOptions(argv.slice(1));
+    runBenchmarkExport(options);
     return;
   }
 
