@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -477,6 +478,50 @@ export function renderProcessSummary(result: CleanupProcessesResult, dryRun: boo
   return `${result.zombies} zombie job${result.zombies === 1 ? '' : 's'} found (${result.updated} ${action})`;
 }
 
+function runDoctorOrphans(): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    console.log(`\n${bold('specialists doctor orphans')}\n`);
+    fail('observability SQLite not available');
+    fix('specialists db setup');
+    console.log('');
+    process.exit(1);
+  }
+
+  try {
+    const findings = sqliteClient.scanOrphans();
+    const byKind = {
+      orphan: findings.filter(item => item.kind === 'orphan'),
+      stalePointer: findings.filter(item => item.kind === 'stale-pointer'),
+      integrity: findings.filter(item => item.kind === 'integrity-violation'),
+    };
+
+    console.log(`\n${bold('specialists doctor orphans')}\n`);
+
+    if (findings.length === 0) {
+      ok('No orphan/stale/integrity findings');
+      console.log('');
+      return;
+    }
+
+    const renderGroup = (label: string, rows: typeof findings): void => {
+      if (rows.length === 0) return;
+      console.log(`  ${yellow('○')} ${label}: ${rows.length}`);
+      for (const row of rows) {
+        console.log(`    - [${row.code}] ${row.message}`);
+      }
+    };
+
+    renderGroup('orphan', byKind.orphan);
+    renderGroup('stale-pointer', byKind.stalePointer);
+    renderGroup('integrity-violation', byKind.integrity);
+    console.log('');
+    process.exit(1);
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 function checkZombieJobs(): boolean {
   section('Background jobs');
   const jobsDir = join(CWD, '.specialists', 'jobs');
@@ -504,7 +549,18 @@ function checkZombieJobs(): boolean {
   return result.zombies === 0;
 }
 
-export async function run(): Promise<void> {
+export async function run(argv: readonly string[] = process.argv.slice(3)): Promise<void> {
+  const subcommand = argv[0];
+  if (subcommand === 'orphans') {
+    runDoctorOrphans();
+    return;
+  }
+
+  if (subcommand && subcommand !== '--help' && subcommand !== '-h') {
+    console.error(`Unknown doctor subcommand: '${subcommand}'`);
+    process.exit(1);
+  }
+
   console.log(`\n${bold('specialists doctor')}\n`);
   const piOk = checkPi();
   const spOk = checkSpAlias();

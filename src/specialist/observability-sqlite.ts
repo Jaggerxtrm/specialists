@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // bun:sqlite is Bun-only — lazy-load to avoid breaking Node/vitest imports.
@@ -805,6 +805,33 @@ export interface EpicChainLatestJobRecord {
   updated_at_ms: number;
 }
 
+export interface PruneObservabilityOptions {
+  beforeMs: number;
+  includeEpics: boolean;
+  apply: boolean;
+  nowMs?: number;
+  eventsRetentionMs?: number;
+}
+
+export interface PruneObservabilityReport {
+  dryRun: boolean;
+  beforeMs: number;
+  eventsCutoffMs: number;
+  includeEpics: boolean;
+  deletedEvents: number;
+  deletedResults: number;
+  deletedJobs: number;
+  deletedEpicRuns: number;
+  skippedActiveChainJobs: number;
+}
+
+export interface OrphanScanFinding {
+  kind: 'orphan' | 'stale-pointer' | 'integrity-violation';
+  code: 'chain_membership_without_jobs' | 'epic_without_chains' | 'job_epic_without_membership' | 'worktree_missing_on_disk';
+  message: string;
+  details: Record<string, string | number | boolean | null>;
+}
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   upsertEpicRun(epic: EpicRunRecord): void;
@@ -847,13 +874,21 @@ export interface ObservabilitySqliteClient {
   getMemoriesCacheState(): MemoryCacheState | null;
   queryRelevantMemories(keywords: readonly string[], limit?: number, nowMs?: number): RelevantMemoryRecord[];
   invalidateMemoriesCache(): void;
+  hasActiveJobs(statuses?: readonly string[]): boolean;
+  listActiveJobs(statuses?: readonly string[]): Array<{ job_id: string; specialist: string; status: string }>;
+  getDatabaseSizeBytes(): number;
+  vacuumDatabase(): { beforeBytes: number; afterBytes: number };
+  pruneObservabilityData(options: PruneObservabilityOptions): PruneObservabilityReport;
+  scanOrphans(): OrphanScanFinding[];
   close(): void;
 }
 
 class SqliteClient implements ObservabilitySqliteClient {
   private readonly db: BunDb;
+  private readonly dbPath: string;
 
   constructor(dbPath: string) {
+    this.dbPath = dbPath;
     // Open persistent connection with WAL mode and busy_timeout
     const Ctor = loadBunDatabase()!;
     this.db = new Ctor(dbPath);
@@ -1777,6 +1812,268 @@ class SqliteClient implements ObservabilitySqliteClient {
       });
       transaction();
     }, 'invalidateMemoriesCache');
+  }
+
+  hasActiveJobs(statuses: readonly string[] = ['running', 'starting']): boolean {
+    return this.listActiveJobs(statuses).length > 0;
+  }
+
+  listActiveJobs(statuses: readonly string[] = ['running', 'starting']): Array<{ job_id: string; specialist: string; status: string }> {
+    return withRetry(() => {
+      if (statuses.length === 0) return [];
+      const placeholders = statuses.map(() => '?').join(', ');
+      return this.db.query(`
+        SELECT job_id, specialist, status
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `).all(...statuses) as Array<{ job_id: string; specialist: string; status: string }>;
+    }, 'listActiveJobs');
+  }
+
+  getDatabaseSizeBytes(): number {
+    try {
+      return statSync(this.dbPath).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  vacuumDatabase(): { beforeBytes: number; afterBytes: number } {
+    return withRetry(() => {
+      const beforeBytes = this.getDatabaseSizeBytes();
+      this.db.run('VACUUM');
+      const afterBytes = this.getDatabaseSizeBytes();
+      return { beforeBytes, afterBytes };
+    }, 'vacuumDatabase');
+  }
+
+  pruneObservabilityData(options: PruneObservabilityOptions): PruneObservabilityReport {
+    return withRetry(() => {
+      const nowMs = options.nowMs ?? Date.now();
+      const eventsRetentionMs = options.eventsRetentionMs ?? (30 * 24 * 60 * 60 * 1000);
+      const eventsCutoffMs = nowMs - eventsRetentionMs;
+      const terminalStatuses = ['done', 'error', 'stopped'];
+      const activeStatuses = ['running', 'starting', 'waiting'];
+
+      const skippedActiveChainJobs = (this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => '?').join(', ')})
+          AND stale.chain_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM specialist_jobs active
+            WHERE active.chain_id = stale.chain_id
+              AND active.status IN (${activeStatuses.map(() => '?').join(', ')})
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses) as { count?: number } | undefined)?.count ?? 0;
+
+      const resultCandidates = (this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_results results
+        LEFT JOIN specialist_jobs jobs ON jobs.job_id = results.job_id
+        WHERE results.updated_at_ms < ?
+          AND (
+            jobs.job_id IS NULL
+            OR jobs.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => '?').join(', ')})
+            )
+          )
+      `).get(options.beforeMs, ...activeStatuses) as { count?: number } | undefined)?.count ?? 0;
+
+      const jobCandidates = (this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => '?').join(', ')})
+          AND (
+            stale.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = stale.chain_id
+                AND active.status IN (${activeStatuses.map(() => '?').join(', ')})
+            )
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses) as { count?: number } | undefined)?.count ?? 0;
+
+      const eventsCandidates = (this.db.query('SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?').get(eventsCutoffMs) as { count?: number } | undefined)?.count ?? 0;
+
+      const epicCandidates = options.includeEpics
+        ? ((this.db.query(`
+          SELECT COUNT(*) AS count
+          FROM epic_runs epic
+          WHERE epic.updated_at_ms < ?
+            AND epic.status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic.epic_id
+            )
+        `).get(options.beforeMs) as { count?: number } | undefined)?.count ?? 0)
+        : 0;
+
+      if (!options.apply) {
+        return {
+          dryRun: true,
+          beforeMs: options.beforeMs,
+          eventsCutoffMs,
+          includeEpics: options.includeEpics,
+          deletedEvents: eventsCandidates,
+          deletedResults: resultCandidates,
+          deletedJobs: jobCandidates,
+          deletedEpicRuns: epicCandidates,
+          skippedActiveChainJobs,
+        };
+      }
+
+      const deleteResults = this.db.query(`
+        DELETE FROM specialist_results
+        WHERE updated_at_ms < ?
+          AND (
+            job_id NOT IN (SELECT job_id FROM specialist_jobs WHERE chain_id IS NOT NULL)
+            OR job_id IN (
+              SELECT jobs.job_id
+              FROM specialist_jobs jobs
+              WHERE jobs.chain_id IS NULL
+                 OR NOT EXISTS (
+                    SELECT 1
+                    FROM specialist_jobs active
+                    WHERE active.chain_id = jobs.chain_id
+                      AND active.status IN (${activeStatuses.map(() => '?').join(', ')})
+                 )
+            )
+          )
+      `);
+      const deletedResults = deleteResults.run(options.beforeMs, ...activeStatuses).changes ?? 0;
+
+      const deleteEvents = this.db.query('DELETE FROM specialist_events WHERE t < ?');
+      const deletedEvents = deleteEvents.run(eventsCutoffMs).changes ?? 0;
+
+      const deleteJobs = this.db.query(`
+        DELETE FROM specialist_jobs
+        WHERE updated_at_ms < ?
+          AND status IN (${terminalStatuses.map(() => '?').join(', ')})
+          AND (
+            chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = specialist_jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => '?').join(', ')})
+            )
+          )
+      `);
+      const deletedJobs = deleteJobs.run(options.beforeMs, ...terminalStatuses, ...activeStatuses).changes ?? 0;
+
+      let deletedEpicRuns = 0;
+      if (options.includeEpics) {
+        const deleteEpics = this.db.query(`
+          DELETE FROM epic_runs
+          WHERE updated_at_ms < ?
+            AND status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic_runs.epic_id
+            )
+        `);
+        deletedEpicRuns = deleteEpics.run(options.beforeMs).changes ?? 0;
+      }
+
+      return {
+        dryRun: false,
+        beforeMs: options.beforeMs,
+        eventsCutoffMs,
+        includeEpics: options.includeEpics,
+        deletedEvents,
+        deletedResults,
+        deletedJobs,
+        deletedEpicRuns,
+        skippedActiveChainJobs,
+      };
+    }, 'pruneObservabilityData');
+  }
+
+  scanOrphans(): OrphanScanFinding[] {
+    return withRetry(() => {
+      const findings: OrphanScanFinding[] = [];
+
+      const chainMembershipWithoutJobs = this.db.query(`
+        SELECT membership.chain_id, membership.epic_id
+        FROM epic_chain_membership membership
+        LEFT JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+        WHERE jobs.job_id IS NULL
+      `).all() as Array<{ chain_id: string; epic_id: string }>;
+
+      for (const row of chainMembershipWithoutJobs) {
+        findings.push({
+          kind: 'orphan',
+          code: 'chain_membership_without_jobs',
+          message: `chain ${row.chain_id} has epic membership but no jobs`,
+          details: { chain_id: row.chain_id, epic_id: row.epic_id },
+        });
+      }
+
+      const epicsWithoutChains = this.db.query(`
+        SELECT epic.epic_id, epic.status
+        FROM epic_runs epic
+        LEFT JOIN epic_chain_membership membership ON membership.epic_id = epic.epic_id
+        WHERE membership.chain_id IS NULL
+      `).all() as Array<{ epic_id: string; status: string }>;
+
+      for (const row of epicsWithoutChains) {
+        findings.push({
+          kind: 'orphan',
+          code: 'epic_without_chains',
+          message: `epic ${row.epic_id} has no chain membership`,
+          details: { epic_id: row.epic_id, status: row.status },
+        });
+      }
+
+      const jobEpicWithoutMembership = this.db.query(`
+        SELECT jobs.job_id, jobs.epic_id, jobs.chain_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership
+          ON membership.chain_id = jobs.chain_id
+         AND membership.epic_id = jobs.epic_id
+        WHERE jobs.epic_id IS NOT NULL
+          AND (jobs.chain_id IS NULL OR membership.chain_id IS NULL)
+      `).all() as Array<{ job_id: string; epic_id: string; chain_id?: string | null }>;
+
+      for (const row of jobEpicWithoutMembership) {
+        findings.push({
+          kind: 'integrity-violation',
+          code: 'job_epic_without_membership',
+          message: `job ${row.job_id} references epic without chain membership link`,
+          details: { job_id: row.job_id, epic_id: row.epic_id, chain_id: row.chain_id ?? null },
+        });
+      }
+
+      const worktreeRows = this.db.query(`
+        SELECT DISTINCT job_id, worktree_column
+        FROM specialist_jobs
+        WHERE worktree_column IS NOT NULL AND worktree_column != ''
+      `).all() as Array<{ job_id: string; worktree_column: string }>;
+
+      for (const row of worktreeRows) {
+        if (existsSync(row.worktree_column)) continue;
+        findings.push({
+          kind: 'stale-pointer',
+          code: 'worktree_missing_on_disk',
+          message: `job ${row.job_id} points to missing worktree path`,
+          details: { job_id: row.job_id, worktree_path: row.worktree_column },
+        });
+      }
+
+      return findings;
+    }, 'scanOrphans');
   }
 
   close(): void {

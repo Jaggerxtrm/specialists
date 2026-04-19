@@ -12,6 +12,8 @@ import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { derivePersistedChainIdentity } from '../specialist/chain-identity.js';
 import { parseTimelineEvent } from '../specialist/timeline-events.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
@@ -27,33 +29,80 @@ interface BackfillOptions {
   importEvents: boolean;
 }
 
+interface PruneOptions {
+  beforeMs: number;
+  apply: boolean;
+  includeEpics: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = -1;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(2)} ${units[unitIndex]}`;
+}
+
+function parseIsoDate(input: string): number | null {
+  const parsed = Date.parse(input);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseDuration(input: string): number | null {
+  const match = input.trim().toLowerCase().match(/^(\d+)([smhdw])$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const multipliers: Record<string, number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: DAY_MS,
+    w: 7 * DAY_MS,
+  };
+  return amount * multipliers[unit];
+}
+
+function parseBeforeArgument(raw: string): number {
+  const durationMs = parseDuration(raw);
+  if (durationMs !== null) return Date.now() - durationMs;
+  const isoMs = parseIsoDate(raw);
+  if (isoMs !== null) return isoMs;
+  throw new Error(`Invalid --before value '${raw}'. Use ISO date or duration like 7d.`);
+}
+
 function printDbHelp(): void {
   console.log([
     '',
-    'Usage: specialists db <setup|backfill>',
+    'Usage: specialists db <setup|backfill|vacuum|prune>',
     '',
-    'Human-only commands for the shared observability SQLite database.',
+    'Human-only commands for shared observability SQLite database.',
     '',
     'Commands:',
-    '  setup              Provision database file + schema + .gitignore entries',
-    '  init               Alias for setup',
-    '  backfill           Import historical .specialists/jobs/*/status.json rows',
-    '    --events         Also replay events.jsonl into specialist_events',
+    '  setup                              Provision database file + schema + .gitignore entries',
+    '  init                               Alias for setup',
+    '  backfill [--events]                Import historical .specialists/jobs/*/status.json rows',
+    '  vacuum                             Run SQLite VACUUM (refuses when running/starting jobs exist)',
+    '  prune --before <iso|duration>      Prune old rows (default dry-run)',
+    '        [--dry-run] [--apply] [--include-epics]',
     '',
     'Behavior:',
-    '  - resolves storage at git-root (.specialists/db/observability.db),',
-    '    or $XDG_DATA_HOME/specialists/observability.db when XDG_DATA_HOME is set',
-    '  - creates the DB file once (no auto-create from runtime paths)',
-    '  - enforces chmod 644 on the database file',
-    '  - ensures .gitignore excludes .db, .db-wal, and .db-shm files under .specialists/db/',
-    '  - backfill skips jobs already present in SQLite by job_id (idempotent)',
+    '  - prune keeps specialist_events last 30 days always',
+    '  - prune removes specialist_results and terminal specialist_jobs older than --before',
+    '  - prune never touches active-chain jobs',
+    '  - prune never touches epic_runs unless --include-epics',
     '',
     'Examples:',
     '  specialists db setup',
-    '  specialists db backfill',
     '  specialists db backfill --events',
-    '  sp db setup',
-    '  sp db backfill',
+    '  specialists db vacuum',
+    '  specialists db prune --before 30d --dry-run',
+    '  specialists db prune --before 2026-01-01T00:00:00Z --apply --include-epics',
     '',
   ].join('\n'));
 }
@@ -72,7 +121,7 @@ function assertHumanInteractiveTerminal(commandName: 'setup' | 'backfill'): void
   if (!inAgentSession) return;
 
   console.error(
-    `specialists db ${commandName} requires an interactive terminal. This is a user-only setup command — do not invoke from scripts or agent sessions.`
+    `specialists db ${commandName} requires interactive terminal. user-only setup command.`
   );
   process.exit(1);
 }
@@ -106,6 +155,51 @@ function parseBackfillOptions(argv: readonly string[]): BackfillOptions {
   }
 
   return { importEvents };
+}
+
+function parsePruneOptions(argv: readonly string[]): PruneOptions {
+  let beforeValue: string | null = null;
+  let apply = false;
+  let dryRun = true;
+  let includeEpics = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--before') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('Missing value for --before');
+      beforeValue = value;
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--apply') {
+      apply = true;
+      dryRun = false;
+      continue;
+    }
+
+    if (argument === '--dry-run') {
+      dryRun = true;
+      apply = false;
+      continue;
+    }
+
+    if (argument === '--include-epics') {
+      includeEpics = true;
+      continue;
+    }
+
+    throw new Error(`Unknown option for db prune: '${argument}'`);
+  }
+
+  if (!beforeValue) throw new Error('Missing required --before for db prune');
+
+  return {
+    beforeMs: parseBeforeArgument(beforeValue),
+    apply: apply && !dryRun,
+    includeEpics,
+  };
 }
 
 function parseStatusFile(jobDirectoryPath: string, fallbackJobId: string): SupervisorStatus {
@@ -244,6 +338,60 @@ function runBackfill(options: BackfillOptions): void {
   console.log('');
 }
 
+function runVacuum(): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Failed to initialize observability SQLite schema. Run `specialists db setup` first and ensure sqlite3 is installed.');
+  }
+
+  try {
+    const activeJobs = sqliteClient.listActiveJobs(['running', 'starting']);
+    if (activeJobs.length > 0) {
+      const listing = activeJobs.slice(0, 5).map(job => `${job.job_id}:${job.status}`).join(', ');
+      throw new Error(`Refusing vacuum while active jobs exist (${activeJobs.length}): ${listing}`);
+    }
+
+    const { beforeBytes, afterBytes } = sqliteClient.vacuumDatabase();
+    const savedBytes = Math.max(0, beforeBytes - afterBytes);
+
+    console.log(`\n${bold('specialists db vacuum')}\n`);
+    console.log(`  ${green('✓')} before: ${formatBytes(beforeBytes)} (${beforeBytes} bytes)`);
+    console.log(`  ${green('✓')} after:  ${formatBytes(afterBytes)} (${afterBytes} bytes)`);
+    console.log(`  ${green('✓')} saved:  ${formatBytes(savedBytes)} (${savedBytes} bytes)`);
+    console.log('');
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+function runPrune(options: PruneOptions): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Failed to initialize observability SQLite schema. Run `specialists db setup` first and ensure sqlite3 is installed.');
+  }
+
+  try {
+    const report = sqliteClient.pruneObservabilityData({
+      beforeMs: options.beforeMs,
+      includeEpics: options.includeEpics,
+      apply: options.apply,
+    });
+
+    console.log(`\n${bold('specialists db prune')}\n`);
+    console.log(`  ${report.dryRun ? yellow('○ dry-run') : green('✓ applied')}`);
+    console.log(`  ${green('✓')} before: ${new Date(report.beforeMs).toISOString()}`);
+    console.log(`  ${green('✓')} events cutoff (fixed 30d): ${new Date(report.eventsCutoffMs).toISOString()}`);
+    console.log(`  ${green('✓')} specialist_events: ${report.deletedEvents}`);
+    console.log(`  ${green('✓')} specialist_results: ${report.deletedResults}`);
+    console.log(`  ${green('✓')} specialist_jobs: ${report.deletedJobs}`);
+    console.log(`  ${report.includeEpics ? green('✓') : yellow('○')} epic_runs: ${report.deletedEpicRuns} ${report.includeEpics ? '' : '(skipped, use --include-epics)'}`);
+    console.log(`  ${yellow('○')} skipped active-chain jobs: ${report.skippedActiveChainJobs}`);
+    console.log('');
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 function runSetup(): void {
   const location = resolveObservabilityDbLocation(process.cwd());
   if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
@@ -280,6 +428,17 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
     assertHumanInteractiveTerminal('backfill');
     const options = parseBackfillOptions(argv.slice(1));
     runBackfill(options);
+    return;
+  }
+
+  if (subcommand === 'vacuum') {
+    runVacuum();
+    return;
+  }
+
+  if (subcommand === 'prune') {
+    const options = parsePruneOptions(argv.slice(1));
+    runPrune(options);
     return;
   }
 
