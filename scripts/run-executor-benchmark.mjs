@@ -203,12 +203,9 @@ function runSpecialist(name, args) {
   const runResult = runCommand('specialists', ['run', name, '--background', ...args]);
   const jobId = parseJobId(runResult.stdout);
 
-  // Poll until non-running; if waiting (keep-alive), stop it so result.txt is accessible
-  const finalStatus = waitForNonRunning(jobId);
-  if (finalStatus === 'waiting') {
-    runCommand('specialists', ['stop', jobId]);
-    spawnSync('sleep', ['2']);
-  }
+  // Poll until non-running (done/waiting/error/cancelled)
+  // specialists result --json handles waiting status: exits 0 when result.txt exists
+  waitForNonRunning(jobId);
 
   const result = runJson('specialists', ['result', jobId, '--json'], `specialists result ${jobId}`);
   return { jobId, runResult, result };
