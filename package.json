@@ -24,7 +24,8 @@
     "test:bun": "bun test tests/unit/specialist/observability-sqlite.test.ts tests/unit/specialist/observability-db.test.ts tests/unit/cli/db.test.ts",
     "test:watch": "bun --bun vitest",
     "test:coverage": "bun --bun vitest run --coverage",
-    "test:supervisor": "bun --bun vitest run tests/unit/specialist/supervisor.test.ts --no-file-parallelism"
+    "test:supervisor": "bun --bun vitest run tests/unit/specialist/supervisor.test.ts --no-file-parallelism",
+    "benchmark:executor": "node scripts/run-executor-benchmark.mjs"
   },
   "keywords": [
     "omnispecialist",
