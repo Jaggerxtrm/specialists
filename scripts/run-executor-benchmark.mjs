@@ -204,10 +204,20 @@ function runSpecialist(name, args) {
   const jobId = parseJobId(runResult.stdout);
 
   // Poll until non-running (done/waiting/error/cancelled)
-  // specialists result --json handles waiting status: exits 0 when result.txt exists
   waitForNonRunning(jobId);
 
-  const result = runJson('specialists', ['result', jobId, '--json'], `specialists result ${jobId}`);
+  // Parse result JSON regardless of exit code: waiting/no-output jobs exit 1
+  // but still emit full JSON (job metadata + startup_context) to stdout.
+  const resultCmd = runCommand('specialists', ['result', jobId, '--json']);
+  let result;
+  try {
+    result = JSON.parse(resultCmd.stdout);
+  } catch {
+    throw new Error(`specialists result ${jobId} returned non-JSON: ${resultCmd.combined.slice(0, 300)}`);
+  }
+  if (!result) {
+    throw new Error(`specialists result ${jobId} returned empty output`);
+  }
   return { jobId, runResult, result };
 }
 
