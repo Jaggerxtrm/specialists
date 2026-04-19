@@ -146,6 +146,41 @@ function formatWaitingBanner(jobId: string, specialist: string): string {
   return `${prefix} ${specialist} (${jobId}) is waiting for input. Use: specialists resume ${jobId} "..."`;
 }
 
+function formatStartupContextLine(event: TimelineEvent): string | null {
+  if (event.type === 'run_start') {
+    const snapshot = event.startup_snapshot;
+    if (!snapshot) return null;
+
+    const parts: string[] = [];
+    if (snapshot.job_id) parts.push(`job=${snapshot.job_id}`);
+    if (snapshot.specialist_name) parts.push(`specialist=${snapshot.specialist_name}`);
+    if (snapshot.bead_id) parts.push(`bead=${snapshot.bead_id}`);
+    if (snapshot.reused_from_job_id) parts.push(`reused=${snapshot.reused_from_job_id}`);
+    if (snapshot.worktree_owner_job_id) parts.push(`owner=${snapshot.worktree_owner_job_id}`);
+    if (snapshot.chain_id) parts.push(`chain=${snapshot.chain_id}`);
+    if (snapshot.chain_root_job_id) parts.push(`chain_root_job=${snapshot.chain_root_job_id}`);
+    if (snapshot.chain_root_bead_id) parts.push(`chain_root_bead=${snapshot.chain_root_bead_id}`);
+    if (snapshot.worktree_path) parts.push(`worktree=${snapshot.worktree_path}`);
+    if (snapshot.branch) parts.push(`branch=${snapshot.branch}`);
+    if (snapshot.variables_keys) parts.push(`vars=[${snapshot.variables_keys.join(',')}]`);
+    if (snapshot.reviewed_job_id_present !== undefined) parts.push(`reviewed_present=${snapshot.reviewed_job_id_present}`);
+    if (snapshot.reused_worktree_awareness_present !== undefined) parts.push(`reuse_awareness_present=${snapshot.reused_worktree_awareness_present}`);
+    if (snapshot.bead_context_present !== undefined) parts.push(`bead_context_present=${snapshot.bead_context_present}`);
+    if (snapshot.skills) parts.push(`skills=${snapshot.skills.count}`);
+
+    return parts.length > 0 ? dim(`  ↳ startup ${parts.join(' ')}`) : null;
+  }
+
+  if (event.type === 'meta' && event.memory_injection) {
+    const mem = event.memory_injection;
+    return dim(
+      `  ↳ memory static=${mem.static_tokens} dynamic=${mem.memory_tokens} gitnexus=${mem.gitnexus_tokens} total=${mem.total_tokens}`,
+    );
+  }
+
+  return null;
+}
+
 function parseSince(value: string): number | undefined {
   // ISO 8601 timestamp
   if (value.includes('T') || value.includes('-')) {
@@ -417,6 +452,9 @@ function printSnapshot(
       contextPct: meta.contextPct,
       colorize,
     }));
+
+    const startupContextLine = formatStartupContextLine(event);
+    if (startupContextLine) console.log(startupContextLine);
   }
 }
 
@@ -710,6 +748,9 @@ async function followMerged(
             contextPct: meta.contextPct,
             colorize,
           }));
+
+          const startupContextLine = formatStartupContextLine(event);
+          if (startupContextLine) console.log(startupContextLine);
         }
       }
 
