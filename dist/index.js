@@ -26867,7 +26867,8 @@ __export(exports_merge, {
   executePublicationPlan: () => executePublicationPlan,
   evaluateMergeWorthiness: () => evaluateMergeWorthiness,
   ensureTerminalJobs: () => ensureTerminalJobs,
-  checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard
+  checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard,
+  assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
 import { existsSync as existsSync14, readdirSync as readdirSync6, readFileSync as readFileSync10 } from "fs";
 import { spawnSync as spawnSync12 } from "child_process";
@@ -27186,6 +27187,29 @@ function readChangedFilesForLastMerge(cwd = process.cwd()) {
   return diff.stdout.split(`
 `).map((line) => line.trim()).filter(Boolean);
 }
+function isMergeDirtyIgnored(path) {
+  return MERGE_DIRTY_IGNORE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+function assertMainRepoCleanForMerge(cwd) {
+  const status = runCommand("git", ["status", "--porcelain", "--untracked-files=no"], cwd);
+  if (status.status !== 0) {
+    throw new Error(`Unable to read git status in '${cwd}'.`);
+  }
+  const dirty = status.stdout.split(`
+`).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const match = /^..\s(.+?)(?:\s->\s(.+))?$/.exec(line);
+    const path = match ? match[2] ?? match[1] ?? "" : line.slice(3).trim();
+    return path.trim();
+  }).filter((path) => path && !isMergeDirtyIgnored(path));
+  if (dirty.length === 0)
+    return;
+  const list = dirty.map((path) => `- ${path}`).join(`
+`);
+  throw new Error(`Refusing merge: main repo '${cwd}' has uncommitted changes that could cause spurious conflicts.
+` + `Dirty files (tracked, non-dist):
+${list}
+` + `Resolve by committing, stashing, or reverting these changes, then retry merge.`);
+}
 function parseNameStatusLine(line) {
   const trimmed = line.trim();
   if (!trimmed)
@@ -27354,6 +27378,7 @@ function printUsageAndExit(message) {
 }
 function runMergePlan(targets, options) {
   const mainRepoRoot = resolveMainWorktreeRoot();
+  assertMainRepoCleanForMerge(mainRepoRoot);
   const mergedSteps = [];
   for (const target of targets) {
     rebaseBranchOntoMaster(target.branch, target.worktreePath);
@@ -27446,13 +27471,17 @@ async function run12() {
   const mergedSteps = runMergePlan(targets, { rebuild: options.rebuild });
   printSummary(mergedSteps, options.rebuild);
 }
-var TERMINAL_STATUSES, NOISE_PATH_PREFIXES;
+var TERMINAL_STATUSES, NOISE_PATH_PREFIXES, MERGE_DIRTY_IGNORE_PREFIXES;
 var init_merge = __esm(() => {
   init_job_root();
   init_observability_sqlite();
   init_epic_lifecycle();
   TERMINAL_STATUSES = new Set(["done", "error", "cancelled"]);
   NOISE_PATH_PREFIXES = [".xtrm/reports/", ".wolf/", ".specialists/jobs/"];
+  MERGE_DIRTY_IGNORE_PREFIXES = [
+    ...NOISE_PATH_PREFIXES,
+    "dist/"
+  ];
 });
 
 // src/cli/format-helpers.ts

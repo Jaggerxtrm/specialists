@@ -478,6 +478,42 @@ interface MergeWorthinessDecision {
 
 const NOISE_PATH_PREFIXES = ['.xtrm/reports/', '.wolf/', '.specialists/jobs/'] as const;
 
+const MERGE_DIRTY_IGNORE_PREFIXES = [
+  ...NOISE_PATH_PREFIXES,
+  'dist/',
+] as const;
+
+function isMergeDirtyIgnored(path: string): boolean {
+  return MERGE_DIRTY_IGNORE_PREFIXES.some(prefix => path.startsWith(prefix));
+}
+
+export function assertMainRepoCleanForMerge(cwd: string): void {
+  const status = runCommand('git', ['status', '--porcelain', '--untracked-files=no'], cwd);
+  if (status.status !== 0) {
+    throw new Error(`Unable to read git status in '${cwd}'.`);
+  }
+
+  const dirty = status.stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const match = /^..\s(.+?)(?:\s->\s(.+))?$/.exec(line);
+      const path = match ? (match[2] ?? match[1] ?? '') : line.slice(3).trim();
+      return path.trim();
+    })
+    .filter(path => path && !isMergeDirtyIgnored(path));
+
+  if (dirty.length === 0) return;
+
+  const list = dirty.map(path => `- ${path}`).join('\n');
+  throw new Error(
+    `Refusing merge: main repo '${cwd}' has uncommitted changes that could cause spurious conflicts.\n` +
+    `Dirty files (tracked, non-dist):\n${list}\n` +
+    `Resolve by committing, stashing, or reverting these changes, then retry merge.`,
+  );
+}
+
 function parseNameStatusLine(line: string): MergePreviewFileDelta | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -685,6 +721,7 @@ export function runMergePlan(
   options: MergeExecutionOptions,
 ): MergeStepResult[] {
   const mainRepoRoot = resolveMainWorktreeRoot();
+  assertMainRepoCleanForMerge(mainRepoRoot);
   const mergedSteps: MergeStepResult[] = [];
 
   for (const target of targets) {
