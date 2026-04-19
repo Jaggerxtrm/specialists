@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 3.2.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 3.3.0
+updated: 2026-04-19
+synced_at: d2ab473a
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -728,7 +728,29 @@ Status fields: `auto_commit_count`, `last_auto_commit_sha`, `last_auto_commit_at
 
 | Event | When emitted | Key fields |
 |-------|-------------|------------|
-| `run_start` | Job begins | `specialist`, `bead_id` |
+| `run_start` | Job begins | `specialist`, `bead_id`, **`startup_snapshot`** |
+
+**`startup_snapshot` fields** (on `run_start`):
+
+| Field | Source |
+|-------|--------|
+| `job_id` | Supervisor run ID |
+| `specialist_name` | `runOptions.name` |
+| `bead_id` | `runOptions.inputBeadId` |
+| `reused_from_job_id` | `runOptions.reusedFromJobId` |
+| `worktree_owner_job_id` | `runOptions.worktreeOwnerJobId` |
+| `chain_id` / `chain_root_job_id` | Derived from worktree owner or self |
+| `chain_root_bead_id` | `variables.chain_root_bead_id` |
+| `worktree_path` | `runOptions.workingDirectory` |
+| `branch` | `resolveCurrentBranch()` |
+| `variables_keys` | `Object.keys(runOptions.variables)` |
+| `reviewed_job_id_present` | Bool — `reviewed_job_id` in variables |
+| `reused_worktree_awareness_present` | Bool — `reused_worktree_awareness` in variables |
+| `bead_context_present` | Bool — `bead_context` in variables |
+| `memory_injection` | Token counts from `meta` event (backfilled post-emission) |
+| `skills` | `{ count, activated[] }` from `activated_skills` variable |
+
+This snapshot is persisted both in `status.json.startup_context` and in the `run_start` timeline event. `sp result` merges both sources + `meta.memory_injection` into a unified startup context block.
 | `meta` | Model/backend known | `model`, `backend`, `memory_injection` |
 | `thinking` | Reasoning detected | `char_count` |
 | `tool` (start/update/end) | Tool execution | `tool`, `phase`, `tool_call_id`, `args`, `result_summary`, `result_raw`, `is_error` |

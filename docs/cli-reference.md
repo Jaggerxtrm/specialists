@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.6.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 2.7.0
+updated: 2026-04-19
+synced_at: d2ab473a
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
@@ -266,6 +266,18 @@ WAIT  <specialist> (<job-id>) is waiting for input. Use: specialists resume <job
 
 For streamed turn output, `TURN+` lines include an 80-character text preview. When context usage crosses warning thresholds, feed prints context warnings at `WARN` and `CRITICAL` levels.
 
+**Startup context lines** — on `run_start` events with `startup_snapshot`, feed emits a dimmed inline summary:
+
+```
+  ↳ startup job=a1b2c3 specialist=executor bead=unitAI-55d worktree=/repo/.worktrees/... branch=feature/... vars=[bead_context,reviewed_job_id] skills=3
+```
+
+On `meta` events with `memory_injection`, feed emits a memory token accounting line:
+
+```
+  ↳ memory static=1200 dynamic=3400 gitnexus=500 total=5100
+```
+
 `feed` reads from SQLite first and falls back to runtime files when SQLite data is unavailable.
 
 ### Exit codes
@@ -337,6 +349,38 @@ When a job is in the `waiting` state, an explicit message is shown:
 
 ```
 --- Session is waiting for your input. Use: specialists resume <job-id> "..." ---
+```
+
+**Startup context block** — `result` derives a startup snapshot from `status.json.startup_context` merged with `run_start` timeline event and `meta` memory_injection. When present, a human-readable block is prepended before output:
+
+```
+--- startup context ---
+job_id: a1b2c3
+specialist_name: executor
+bead_id: unitAI-55d
+worktree_path: /repo/.worktrees/unitAI-55d/unitAI-55d-executor
+branch: feature/unitAI-55d-executor
+variables_keys: bead_context, reviewed_job_id
+skills.count: 3
+skills.activated: sync-docs, clean-code, using-xtrm
+memory.static_tokens: 1200
+memory.memory_tokens: 3400
+memory.gitnexus_tokens: 500
+memory.total_tokens: 5100
+---
+```
+
+In `--json` mode, `startup_context` appears both at top-level and inside `job`:
+
+```json
+{
+  "job": {
+    "id": "a1b2c3",
+    "startup_context": { ... }
+  },
+  "startup_context": { ... },
+  "output": "..."
+}
 ```
 
 ### Exit codes
