@@ -453,6 +453,10 @@ function resolveOutputContractSchema(
   return mergedSchema;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\''`)}'`;
+}
+
 function buildOutputContractInstruction(
   responseFormat: ResponseFormat,
   outputType: OutputType,
@@ -507,6 +511,47 @@ function buildOutputContractInstruction(
   }
 
   return `\n\n${lines.join('\n')}`;
+}
+
+interface ReviewerDiffContext {
+  stat: string;
+  files: string[];
+  hunks: string;
+}
+
+function buildReviewerDiffContext(cwd: string, maxFiles = 20): ReviewerDiffContext {
+  const stat = execSync('git diff --stat', {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  const files = execSync('git diff --name-only', {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).split('\n').map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
+
+  if (files.length === 0) {
+    throw new Error('Reviewer startup blocked: git diff is empty. No patch context to review.');
+  }
+
+  const hunks = files.map((file) => {
+    const diff = execSync(`git diff -- ${shellQuote(file)}`, {
+      cwd,
+      encoding: 'utf8',
+      timeout: 10_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
+  }).join('\n\n');
+
+  return { stat, files, hunks };
+}
+
+function buildReviewerDiffInstruction(context: ReviewerDiffContext): string {
+  return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;
 }
 
 function tryParseJson(input: string): { value?: unknown; error?: string } {
@@ -924,6 +969,11 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         },
       }),
     });
+
+    if (metadata.name === 'reviewer' && options.reusedFromJobId) {
+      const reviewerDiffContext = buildReviewerDiffContext(runCwd);
+      agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
+    }
 
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
     const outputType = (execution.output_type ?? 'custom') as OutputType;
