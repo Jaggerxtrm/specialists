@@ -21,6 +21,7 @@ export interface EpicSyncResult {
   drift: DriftReport;
   repairs: {
     dead_jobs_marked_error: string[];
+    stale_chain_refs_pruned: string[];
     readiness_resynced: boolean;
     redirect_markers_cleared: boolean;
   };
@@ -166,12 +167,17 @@ export function syncEpicState(sqlite: ObservabilitySqliteClient, epicId: string,
   };
 
   let deadJobsMarkedError: string[] = [];
+  let staleChainRefsPruned: string[] = [];
   let readinessResynced = false;
   let redirectMarkersCleared = false;
 
   if (apply) {
     if (drift.dead_jobs_blocking_readiness.length > 0) {
       deadJobsMarkedError = markDeadJobsAsError(sqlite, jobs);
+    }
+
+    if (drift.stale_chain_refs.length > 0) {
+      staleChainRefsPruned = sqlite.deleteEpicChainMembership(epicId, drift.stale_chain_refs);
     }
 
     const readinessNext = loadEpicReadinessSummary(sqlite, epicId);
@@ -199,6 +205,7 @@ export function syncEpicState(sqlite: ObservabilitySqliteClient, epicId: string,
     drift,
     repairs: {
       dead_jobs_marked_error: deadJobsMarkedError,
+      stale_chain_refs_pruned: staleChainRefsPruned,
       readiness_resynced: readinessResynced,
       redirect_markers_cleared: redirectMarkersCleared,
     },

@@ -218,7 +218,7 @@ function parseSyncOptions(argv: readonly string[]): EpicSyncOptions {
 }
 
 function parseAbandonOptions(argv: readonly string[]): EpicAbandonOptions {
-  const epicId = parseEpicId(argv);
+  let epicId = '';
   let reason = '';
   let force = false;
   let json = false;
@@ -242,9 +242,17 @@ function parseAbandonOptions(argv: readonly string[]): EpicAbandonOptions {
       index += 1;
       continue;
     }
-    if (argument.startsWith('-') && argument !== '--force' && argument !== '--json') {
+    if (argument.startsWith('-')) {
       throw new Error(`Unknown option: ${argument}`);
     }
+    if (epicId.length > 0) {
+      throw new Error('Only one epic ID is supported');
+    }
+    epicId = argument;
+  }
+
+  if (!epicId) {
+    throw new Error('Missing epic ID');
   }
 
   if (reason.length === 0) {
@@ -721,6 +729,7 @@ export async function handleEpicSyncCommand(argv: readonly string[]): Promise<vo
     console.log(`  stale_redirect_markers: ${result.drift.stale_redirect_markers.length}`);
     if (result.apply) {
       console.log(`  repaired_dead_jobs: ${result.repairs.dead_jobs_marked_error.length}`);
+      console.log(`  stale_chain_refs_pruned: ${result.repairs.stale_chain_refs_pruned.length}`);
       console.log(`  readiness_resynced: ${result.repairs.readiness_resynced}`);
       console.log(`  redirect_markers_cleared: ${result.repairs.redirect_markers_cleared}`);
     }
