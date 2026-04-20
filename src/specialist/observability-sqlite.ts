@@ -863,6 +863,7 @@ export interface ObservabilitySqliteClient {
   resolveEpicByChainId(chainId: string): EpicChainRecord | null;
   resolveEpicByChainRootBeadId(chainRootBeadId: string): EpicChainRecord | null;
   listEpicChains(epicId: string): EpicChainRecord[];
+  deleteEpicChainMembership(epicId: string, chainIds: readonly string[]): string[];
   listEpicChainsWithLatestJob(epicId: string): EpicChainLatestJobRecord[];
   readChainIdentity(jobId: string): PersistedChainIdentity | null;
   listChainJobIds(chainId: string): string[];
@@ -1518,6 +1519,27 @@ class SqliteClient implements ObservabilitySqliteClient {
     return withRetry(() => {
       return this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC').all(epicId) as EpicChainRecord[];
     }, 'listEpicChains');
+  }
+
+  deleteEpicChainMembership(epicId: string, chainIds: readonly string[]): string[] {
+    if (chainIds.length === 0) return [];
+
+    return withRetry(() => {
+      const existing = new Set(
+        this.db
+          .query('SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?')
+          .all(epicId)
+          .map((row: unknown) => (row as { chain_id: string }).chain_id),
+      );
+      const removable = chainIds.filter((chainId) => existing.has(chainId));
+      if (removable.length === 0) return [];
+
+      const placeholders = removable.map(() => '?').join(', ');
+      this.db
+        .query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`)
+        .run(epicId, ...removable);
+      return removable;
+    }, 'deleteEpicChainMembership');
   }
 
   listEpicChainsWithLatestJob(epicId: string): EpicChainLatestJobRecord[] {
