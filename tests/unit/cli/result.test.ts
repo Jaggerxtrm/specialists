@@ -211,6 +211,31 @@ describe('result CLI', () => {
     expect(stdoutWrites.join('')).toContain('last completed output');
   });
 
+  it('surfaces api error when done job has no result output', async () => {
+    createJob('job-error', 'done', false);
+    process.argv = ['node', 'specialists', 'result', 'job-error'];
+
+    writeFileSync(
+      join(jobsDir, 'job-error', 'events.jsonl'),
+      JSON.stringify({ t: Date.now(), type: 'error', source: 'stderr', error_message: 'You have hit your ChatGPT usage limit' }),
+      'utf-8',
+    );
+
+    const stderrWrites: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: any) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    const { run } = await import('../../../src/cli/result.js');
+    await expect(run()).rejects.toThrow('exit:1');
+    expect(stderrWrites.join('')).toContain('usage limit');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('exits with code 1 when job is running and result.txt does not exist', async () => {
     createJob('job2', 'running', false);
     process.argv = ['node', 'specialists', 'result', 'job2'];

@@ -1434,6 +1434,17 @@ export class Supervisor {
             return;
           }
 
+          if (metricEvent.type === 'api_error') {
+            mergeRunMetrics({ api_error: metricEvent.errorMessage });
+            appendTimelineEvent({
+              t: Date.now(),
+              type: TIMELINE_EVENT_TYPES.ERROR,
+              source: metricEvent.source,
+              error_message: metricEvent.errorMessage,
+            });
+            return;
+          }
+
           if (metricEvent.type === 'turn_summary') {
             mergeRunMetrics({
               turns: metricEvent.turn_index,

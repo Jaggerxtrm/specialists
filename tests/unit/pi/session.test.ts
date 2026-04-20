@@ -245,6 +245,39 @@ describe('_handleEvent — RPC protocol parsing', () => {
     });
   });
 
+  it('assistantMessageEvent.error emits api_error metric', async () => {
+    const onMetric = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onMetric });
+    await session.start();
+
+    emitLine(fake, {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'error', error: 'You have hit your ChatGPT usage limit' },
+    });
+
+    expect(onMetric).toHaveBeenCalledWith({
+      type: 'api_error',
+      source: 'rpc',
+      errorMessage: 'You have hit your ChatGPT usage limit',
+    });
+  });
+
+  it('stderr api errors emit api_error metric at agent_end', async () => {
+    const onMetric = vi.fn();
+    const session = await PiAgentSession.create({ model: 'gemini', onMetric });
+    await session.start();
+
+    fake.stderrHandlers['data']?.(Buffer.from('You have hit your ChatGPT usage limit\n'));
+
+    emitLine(fake, { type: 'agent_end', messages: [] });
+
+    expect(onMetric).toHaveBeenCalledWith({
+      type: 'api_error',
+      source: 'stderr',
+      errorMessage: 'You have hit your ChatGPT usage limit',
+    });
+  });
+
   it('text_delta nested in message_update calls onToken and onEvent("text")', async () => {
     const onToken = vi.fn();
     const onEvent = vi.fn();

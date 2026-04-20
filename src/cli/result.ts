@@ -183,6 +183,11 @@ function deriveStartupSnapshot(
   return Object.keys(merged).length > 0 ? merged : null;
 }
 
+function deriveApiError(events: TimelineEvent[]): string | null {
+  const errorEvent = [...events].reverse().find((event): event is Extract<TimelineEvent, { type: 'error' }> => event.type === 'error');
+  return errorEvent?.error_message ?? null;
+}
+
 function formatStartupSnapshot(snapshot: StartupSnapshot | null): string | null {
   if (!snapshot) return null;
   const lines: string[] = ['\n--- startup context ---'];
@@ -324,21 +329,28 @@ export async function run(): Promise<void> {
       }
 
       if (status.status === 'done') {
-        const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+        const events = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+        const startupContext = deriveStartupSnapshot(status, events);
+        const apiError = status.error ?? deriveApiError(events);
         const output = readResultOutput();
         if (!output) {
+          const message = apiError
+            ? `Job ${jobId} failed: ${apiError}`
+            : `Result not found for job ${jobId}`;
           if (args.json) {
-            emitJson(status, null, `Result not found for job ${jobId}`);
+            emitJson(status, null, message, startupContext);
           } else {
-            console.error(`Result not found for job ${jobId}`);
+            process.stderr.write(`${red(message)}\n`);
           }
           process.exit(1);
         }
 
+        const enrichedStatus = apiError && !status.error ? { ...status, error: apiError } : status;
+
         if (args.json) {
-          emitJson(status, output, null, startupContext);
+          emitJson(enrichedStatus, output, null, startupContext);
         } else {
-          emitHumanResult(output, status, startupContext);
+          emitHumanResult(output, enrichedStatus, startupContext);
         }
         return;
       }
@@ -432,32 +444,37 @@ export async function run(): Promise<void> {
   }
 
   if (status.status === 'error') {
-    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
-    const message = `Job ${jobId} failed: ${status.error ?? 'unknown error'}`;
+    const events = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+    const startupContext = deriveStartupSnapshot(status, events);
+    const message = `Job ${jobId} failed: ${status.error ?? deriveApiError(events) ?? 'unknown error'}`;
     if (args.json) {
       emitJson(status, null, message, startupContext);
     } else {
-      process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? 'unknown error'}\n`);
+      process.stderr.write(`${red(`Job ${jobId} failed:`)} ${status.error ?? deriveApiError(events) ?? 'unknown error'}\n`);
     }
     process.exit(1);
   }
+  const events = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+  const apiError = status.error ?? deriveApiError(events);
   const output = readResultOutput();
   if (!output) {
+    const message = apiError ? `Job ${jobId} failed: ${apiError}` : `Result not found for job ${jobId}`;
     if (args.json) {
-      emitJson(status, null, `Result not found for job ${jobId}`);
+      emitJson(status, null, message);
     } else {
-      console.error(`Result not found for job ${jobId}`);
+      process.stderr.write(`${red(message)}\n`);
     }
     process.exit(1);
   }
 
-  const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+  const startupContext = deriveStartupSnapshot(status, events);
+  const enrichedStatus = apiError && !status.error ? { ...status, error: apiError } : status;
   if (args.json) {
-    emitJson(status, output, null, startupContext);
+    emitJson(enrichedStatus, output, null, startupContext);
     return;
   }
 
-  emitHumanResult(output, status, startupContext);
+  emitHumanResult(output, enrichedStatus, startupContext);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (args.json) {

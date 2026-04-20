@@ -340,6 +340,12 @@ export interface TimelineEventExtensionError extends TimelineEventBase {
   error_message?: string;
 }
 
+export interface TimelineEventApiError extends TimelineEventBase {
+  type: 'error';
+  source: 'rpc' | 'stderr';
+  error_message: string;
+}
+
 export interface TimelineEventAutoCommit extends TimelineEventBase {
   type: 'auto_commit_success' | 'auto_commit_skipped' | 'auto_commit_failed';
   reason?: string;
@@ -378,6 +384,7 @@ export type TimelineEvent =
   | TimelineEventRetry
   | TimelineEventModelChange
   | TimelineEventExtensionError
+  | TimelineEventApiError
   | TimelineEventAutoCommit
   | TimelineEventLegacyComplete;
 
@@ -403,6 +410,7 @@ export const TIMELINE_EVENT_TYPES = {
   RETRY: 'retry',
   MODEL_CHANGE: 'model_change',
   EXTENSION_ERROR: 'extension_error',
+  ERROR: 'error',
   AUTO_COMMIT_SUCCESS: 'auto_commit_success',
   AUTO_COMMIT_SKIPPED: 'auto_commit_skipped',
   AUTO_COMMIT_FAILED: 'auto_commit_failed',
@@ -470,6 +478,10 @@ export function mapCallbackEventToTimelineEvent(
     extensionError?: {
       extension?: string;
       errorMessage?: string;
+    };
+    apiError?: {
+      source: 'rpc' | 'stderr';
+      errorMessage: string;
     };
     memoryInjection?: {
       static_tokens: number;
@@ -606,6 +618,14 @@ export function mapCallbackEventToTimelineEvent(
         type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
         ...(context.extensionError?.extension ? { extension: context.extensionError.extension } : {}),
         ...(context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}),
+      };
+
+    case 'api_error':
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.ERROR,
+        source: context.apiError?.source ?? 'rpc',
+        error_message: context.apiError?.errorMessage ?? 'Unknown API error',
       };
 
     case 'memory_injection':

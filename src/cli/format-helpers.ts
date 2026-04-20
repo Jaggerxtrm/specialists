@@ -110,7 +110,7 @@ export const EVENT_LABELS: Record<string, string> = {
   turn_summary: 'TURN+',
   compaction: 'CMPCT',
   retry: 'RETRY',
-  error: 'ERR',
+  error: 'ERROR',
 };
 
 /**
@@ -295,6 +295,9 @@ export function formatEventLine(
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === 'tool') {
     detail = formatToolDetail(event);
+  } else if (event.type === 'error') {
+    detailParts.push(`source=${event.source}`);
+    detailParts.push(`error=${event.error_message}`);
   } else if (event.type === 'run_complete') {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
@@ -396,6 +399,8 @@ export function formatEventInline(event: TimelineEvent): string | null {
     }
     case 'stale_warning':
       return yellow(`[warning] ${event.reason}: ${Math.round(event.silence_ms / 1000)}s silent`);
+    case 'error':
+      return red(`[error] ${event.source}: ${event.error_message}`);
     default:
       return null;
   }
