@@ -1,5 +1,6 @@
 // tests/unit/specialist/runner.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -646,6 +647,24 @@ describe('SpecialistRunner', () => {
       expect(renderedTask).toContain('- reviewed_job_id: job-reviewed');
       expect(renderedTask).not.toContain('$reviewed_job_id');
       expect(renderedTask).not.toContain('Need reviewed_job_id');
+    });
+
+    it('defines authoritative review context rules in reviewer config prompt', async () => {
+      const reviewerConfigPath = '/home/dawid/dev/specialists/.worktrees/unitAI-xcaov/unitAI-xcaov-executor/config/specialists/reviewer.specialist.json';
+      const reviewerConfig = JSON.parse(readFileSync(reviewerConfigPath, 'utf8'));
+      const systemPrompt = reviewerConfig?.specialist?.prompt?.system ?? '';
+      expect(systemPrompt).toContain('## AUTHORITATIVE REVIEW CONTEXT');
+      expect(systemPrompt).toContain('Evidence precedence, highest to lowest');
+      expect(systemPrompt).toContain('Missing local artifacts MUST NOT trigger FAIL by itself.');
+      expect(systemPrompt).toContain('authoritative_lineage_present: yes|no');
+      expect(systemPrompt).toContain('authoritative_result_present: yes|no');
+      expect(systemPrompt).toContain('authoritative_diff_present: yes|no');
+      expect(systemPrompt).toContain('local_lookup_status: success|partial|missing|not_attempted');
+      expect(systemPrompt).toContain('contradiction_detected: yes|no');
+      expect(systemPrompt).toContain('missing_required_injected_fields: []|[list]');
+      expect(systemPrompt).toContain('limitation_note: <short note or none>');
+      expect(systemPrompt).toContain('Required injected fields for authoritative traceability:');
+      expect(systemPrompt).toContain('Local lookup failure with valid injected context => PARTIAL or PASS, never FAIL by itself.');
     });
 
     it('does not crash when createBead returns null', async () => {
