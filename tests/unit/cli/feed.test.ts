@@ -228,6 +228,27 @@ describe('feed CLI', () => {
     expect(combined).toContain('exit=agent_end');
   });
 
+  it('surfaces api error event in human feed output', async () => {
+    createJobDir('job-error', 'test', [
+      { t: Date.now(), type: 'error', source: 'stderr', error_message: 'You have hit your ChatGPT usage limit' },
+      { t: Date.now(), type: 'run_complete', status: 'ERROR', elapsed_s: 2, error: 'You have hit your ChatGPT usage limit' },
+    ], { bead_id: 'unitAI-err' });
+
+    process.argv = ['node', 'specialists', 'feed'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = stripAnsi(logs.join('\n'));
+    expect(combined).toContain('ERROR');
+    expect(combined).toContain('usage limit');
+  });
+
   it('outputs JSON with --json flag', async () => {
     createJobDir('job1', 'test', [
       { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5 },

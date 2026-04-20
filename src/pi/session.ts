@@ -79,6 +79,7 @@ export interface SessionRunMetrics {
   tool_call_names?: string[];
   auto_compactions?: number;
   auto_retries?: number;
+  api_error?: string;
 }
 
 export type SessionMetricEvent =
@@ -88,7 +89,8 @@ export type SessionMetricEvent =
   | { type: 'compaction'; phase: 'start' | 'end'; tokensBefore?: number; summary?: string; firstKeptEntryId?: string }
   | { type: 'retry'; phase: 'start' | 'end'; attempt?: number; maxAttempts?: number; delayMs?: number; errorMessage?: string }
   | { type: 'model_change'; action: 'set_model' | 'cycle_model'; model?: string; previousModel?: string }
-  | { type: 'extension_error'; extension?: string; errorMessage?: string };
+  | { type: 'extension_error'; extension?: string; errorMessage?: string }
+  | { type: 'api_error'; source: 'rpc' | 'stderr'; errorMessage: string };
 
 export interface PiSessionOptions {
   model: string;
@@ -271,6 +273,54 @@ function findTokenUsage(payload: unknown): SessionTokenUsage | undefined {
   return normalizeTokenUsage(record);
 }
 
+function findApiErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  const direct = [record.errorMessage, record.error_message, record.error, record.message]
+    .find((value) => typeof value === 'string' && value.trim().length > 0);
+  if (typeof direct === 'string') return direct.trim();
+
+  const nestedError = record.error;
+  if (nestedError && typeof nestedError === 'object') {
+    const nested = nestedError as Record<string, unknown>;
+    const nestedMessage = [nested.message, nested.errorMessage, nested.error_message]
+      .find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (typeof nestedMessage === 'string') return nestedMessage.trim();
+  }
+
+  const message = record.assistantMessageEvent;
+  if (message && typeof message === 'object') {
+    const nested = message as Record<string, unknown>;
+    const nestedMessage = [nested.errorMessage, nested.error_message, nested.error, nested.message]
+      .find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (typeof nestedMessage === 'string') return nestedMessage.trim();
+  }
+
+  return undefined;
+}
+
+function extractApiErrorFromStderr(stderr: string): string | undefined {
+  const compact = stderr.trim();
+  if (!compact) return undefined;
+
+  const patterns = [
+    /You have hit your ChatGPT usage limit[^\n]*/i,
+    /rate limit[^\n]*/i,
+    /quota[^\n]*/i,
+    /auth(?:entication)?[^\n]*/i,
+    /unauthori[sz]ed[^\n]*/i,
+    /forbidden[^\n]*/i,
+    /overloaded[^\n]*/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = compact.match(pattern);
+    if (match) return match[0].trim();
+  }
+
+  return undefined;
+}
+
 function normalizeToolResultPart(contentPart: unknown): string | undefined {
   if (!contentPart || typeof contentPart !== 'object') return undefined;
   const part = contentPart as Record<string, unknown>;
@@ -449,6 +499,7 @@ export class PiAgentSession {
   private _pendingRequests = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private _nextRequestId = 1;
   private _stderrBuffer = '';
+  private _apiError?: string;
   private _stallTimer?: ReturnType<typeof setTimeout>;
   private _stallError?: Error;
   private _testWindowToolCallIds = new Set<string>();
@@ -574,7 +625,9 @@ export class PiAgentSession {
     this._donePromise = donePromise;
 
     this.proc.stderr?.on('data', (chunk: Buffer) => {
-      this._stderrBuffer += chunk.toString();
+      const text = chunk.toString();
+      this._stderrBuffer += text;
+      this._apiError ??= extractApiErrorFromStderr(this._stderrBuffer) ?? extractApiErrorFromStderr(text);
     });
 
     this.proc.stdout?.on('data', (chunk: Buffer) => {
@@ -756,6 +809,12 @@ export class PiAgentSession {
 
       this._updateTokenUsage(findTokenUsage(event), 'agent_end');
       this._updateFinishReason(findFinishReason(event), 'agent_end');
+      const apiError = findApiErrorMessage(event) ?? this._apiError ?? extractApiErrorFromStderr(this._stderrBuffer);
+      if (apiError) {
+        this._apiError = apiError;
+        this._metrics.api_error = apiError;
+        this.options.onMetric?.({ type: 'api_error', source: 'stderr', errorMessage: apiError });
+      }
 
       this._agentEndReceived = true;
       this._clearStallTimer();
@@ -898,6 +957,16 @@ export class PiAgentSession {
           this._updateTokenUsage(tokenUsage, 'message_done');
           this._updateFinishReason(finishReason, 'message_done');
           this.options.onEvent?.('message_done');
+          break;
+        }
+        case 'error': {
+          const apiError = findApiErrorMessage(ae) ?? findApiErrorMessage(event);
+          if (apiError) {
+            this._apiError = apiError;
+            this._metrics.api_error = apiError;
+            this.options.onMetric?.({ type: 'api_error', source: 'rpc', errorMessage: apiError });
+          }
+          this.options.onEvent?.('message_error');
           break;
         }
       }

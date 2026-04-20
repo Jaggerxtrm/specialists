@@ -84,6 +84,8 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `run_start:${event.specialist}:${event.bead_id ?? ''}`;
     case 'run_complete':
       return `run_complete:${event.status}:${event.error ?? ''}`;
+    case 'error':
+      return `error:${event.source}:${event.error_message}`;
     case 'token_usage':
       return `token_usage:${event.token_usage.total_tokens ?? ''}:${event.source}`;
     case 'finish_reason':

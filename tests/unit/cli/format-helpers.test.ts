@@ -201,6 +201,24 @@ describe('format-helpers', () => {
       expect(line).toContain('finish=stop');
       expect(line).toContain('exit=agent_end');
     });
+
+    it('renders api error event', () => {
+      const line = formatEventLine({
+        t: Date.now(),
+        type: 'error',
+        source: 'stderr',
+        error_message: 'You have hit your ChatGPT usage limit',
+      }, {
+        jobId: 'job1',
+        specialist: 'explorer',
+        beadId: 'unitAI-1',
+        colorize: (value: string) => value,
+      });
+
+      expect(line).toContain('ERROR');
+      expect(line).toContain('source=stderr');
+      expect(line).toContain('error=You have hit your ChatGPT usage limit');
+    });
   });
 
   describe('formatEventInlineDebounced', () => {
