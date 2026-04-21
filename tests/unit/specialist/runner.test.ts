@@ -550,6 +550,48 @@ describe('SpecialistRunner', () => {
       expect(renderedTask).not.toContain('$bead_id');
     });
 
+    it.each([
+      'reviewer',
+      'explorer',
+      'debugger',
+      'sync-docs',
+      'executor',
+    ])('injects cwd/worktree boundary rule into bead task payload for %s', async specialistName => {
+      const runner = new SpecialistRunner({
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: specialistName, version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'Task: $prompt', system: 'You are helpful.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await runner.run({
+        name: specialistName,
+        prompt: 'inspect boundary behavior',
+        inputBeadId: 'unitAI-55d',
+        workingDirectory: '/repo/worktree',
+        worktreeBoundary: '/repo/worktree',
+      });
+
+      const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(promptArg).toContain('## Runtime Boundary Rules');
+      expect(promptArg).toContain('Current cwd: /repo/worktree');
+      expect(promptArg).toContain('Assigned worktree boundary: /repo/worktree');
+      expect(promptArg).toContain('Do NOT run `cd` outside the current cwd / assigned worktree.');
+      expect(promptArg).toContain('Do NOT broad-search /home, repo root, or unrelated paths when evidence is missing.');
+      expect(promptArg).toContain('If required evidence is missing inside the current scope, STOP immediately, report exactly what is missing, and ask for the artifact or clarification instead of widening search.');
+    });
+
     it('injects reused lineage variables into task template context', async () => {
       const runner = new SpecialistRunner({
         loader: makeLoader(

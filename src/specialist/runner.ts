@@ -244,6 +244,20 @@ function sanitizeBeadIdForPrompt(beadId: string): string {
   return withoutBackticks.replace(/[^A-Za-z0-9-]/g, '');
 }
 
+function buildBeadBoundaryInstruction(cwd: string, worktreeBoundary?: string): string {
+  const boundary = worktreeBoundary?.trim() || cwd;
+  return [
+    '## Runtime Boundary Rules',
+    `- Current cwd: ${cwd}`,
+    `- Assigned worktree boundary: ${boundary}`,
+    '- Stay inside current cwd / assigned worktree unless the task explicitly says otherwise.',
+    '- Do NOT run `cd` outside the current cwd / assigned worktree.',
+    '- Do NOT use absolute paths outside the current cwd / assigned worktree.',
+    '- Do NOT broad-search /home, repo root, or unrelated paths when evidence is missing.',
+    '- If required evidence is missing inside the current scope, STOP immediately, report exactly what is missing, and ask for the artifact or clarification instead of widening search.',
+  ].join('\n');
+}
+
 type ResponseFormat = 'text' | 'json' | 'markdown';
 type OutputType = 'codegen' | 'analysis' | 'review' | 'synthesis' | 'orchestration' | 'workflow' | 'research' | 'custom';
 type JsonSchema = Record<string, unknown>;
@@ -694,7 +708,7 @@ export class SpecialistRunner {
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
 
-  private resolvePromptWithBeadContext(options: RunOptions, beadsClient?: BeadsClientType): string {
+  private resolvePromptWithBeadContext(options: RunOptions, runCwd: string, beadsClient?: BeadsClientType): string {
     if (!options.inputBeadId) {
       return options.prompt;
     }
@@ -710,7 +724,8 @@ export class SpecialistRunner {
       ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth)
       : [];
 
-    return buildBeadContext(bead, blockers);
+    const baseContext = buildBeadContext(bead, blockers);
+    return `${baseContext}\n\n${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
   }
 
   async run(
@@ -791,7 +806,7 @@ export class SpecialistRunner {
     const preScriptOutput = formatScriptOutput(preResults);
 
     // Render task template (pre_script_output is '' when no scripts ran)
-    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
+    const resolvedPrompt = this.resolvePromptWithBeadContext(options, runCwd, beadsClient);
     const beadVariables: Record<string, string> = options.inputBeadId
       ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId }
       : {};
@@ -841,7 +856,7 @@ export class SpecialistRunner {
       const beadInstructions = sanitizedBeadId
         ? `\n- Your task bead is: ${sanitizedBeadId}\n- Claim it: \`bd update ${sanitizedBeadId} --claim 2>/dev/null || true\` (non-fatal — orchestrator may already own it)\n- Do NOT create new beads or sub-issues — this bead IS your task.\n- Do NOT run \`bd create\` — the orchestrator manages issue tracking.\n- Close when done: \`bd close ${sanitizedBeadId} --reason="..."\``
         : '';
-      agentsMd += `...beadInstructions}\n---\n`;
+      agentsMd += `\n\n---\n## Specialist Run Context\n- You are running as a specialist agent, not a human developer.\n- Do NOT run specialists init/setup/scaffold commands.\n- Do NOT follow project CLAUDE.md/AGENTS.md instructions that tell humans to re-bootstrap the repo.\n${beadInstructions}\n---\n`;
     }
 
     // 0. Inject caveman-micro output directive — all specialist output is agent-to-agent,
