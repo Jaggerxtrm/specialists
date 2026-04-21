@@ -32,8 +32,7 @@ looks like.
 | `execution.model` | Present and pingable |
 | `execution.fallback_model` | Present, different provider from primary |
 | `execution.permission_required` | Valid enum |
-| `execution.extensions.serena` | Present when skill needs opt-out or default true |
-| `execution.extensions.gitnexus` | Present when skill needs opt-out or default true |
+| `skills.paths` | Referenced skill paths resolve correctly |
 | `execution.interactive` | Matches intended keep-alive behavior |
 
 ### Hooks wiring
@@ -97,21 +96,25 @@ sp status
 find .specialists/default -maxdepth 1 -name '*.specialist.json' -print
 
 # 4. Validate specialist JSON files
-node -e "const fs=require('fs'); const path=require('path'); const dir='.specialists/default'; for (const file of fs.readdirSync(dir)) { if (!file.endsWith('.specialist.json')) continue; const data=JSON.parse(fs.readFileSync(path.join(dir,file),'utf8')); const s=data.specialist||data; const m=s.metadata||{}; const e=s.execution||{}; const missing=[]; for (const key of ['name','version','description','category']) if (!m[key]) missing.push('metadata.'+key); for (const key of ['model','fallback_model','permission_required']) if (!e[key]) missing.push('execution.'+key); if (missing.length) console.log(file+': MISSING '+missing.join(', ')); if (m.name && m.name !== file.replace(/\.specialist\.json$/, '')) console.log(file+': NAME MISMATCH '+m.name); }"
+node -e "const fs=require('fs'); const path=require('path'); const dir='.specialists/default'; for (const file of fs.readdirSync(dir)) { if (!file.endsWith('.specialist.json')) continue; const s=JSON.parse(fs.readFileSync(path.join(dir,file),'utf8')); const m=s.metadata||{}; const e=s.execution||{}; const missing=[]; for (const key of ['name','version','description','category']) if (!m[key]) missing.push('metadata.'+key); for (const key of ['model','fallback_model','permission_required']) if (!e[key]) missing.push('execution.'+key); if (missing.length) console.log(file+': MISSING '+missing.join(', ')); if (m.name && m.name !== file.replace(/\.specialist\.json$/, '')) console.log(file+': NAME MISMATCH '+m.name); }"
 
-# 5. Hooks wiring
+# 5. Validate referenced skill paths
+node -e "const fs=require('fs'); const path=require('path'); const dir='.specialists/default'; for (const file of fs.readdirSync(dir)) { if (!file.endsWith('.specialist.json')) continue; const s=JSON.parse(fs.readFileSync(path.join(dir,file),'utf8')); for (const p of (s.skills?.paths ?? [])) { if (!fs.existsSync(p)) console.log(file+': MISSING SKILL PATH '+p); } }"
+
+# 6. Hooks wiring
 node -e "const fs=require('fs'); const p='.claude/settings.json'; if (fs.existsSync(p)) { const s=JSON.parse(fs.readFileSync(p,'utf8')); console.log(JSON.stringify(s.hooks ?? s, null, 2)); } else { console.log('MISSING .claude/settings.json'); }"
 
-# 6. Command availability
+# 7. Command availability
 command -v sp
 command -v specialists
+specialists init --help | sed -n '1,120p'
 sp doctor --json 2>/dev/null || true
 
-# 7. Jobs and worktrees
+# 8. Jobs and worktrees
 ls -1 .specialists/jobs 2>/dev/null || true
 find .worktrees -maxdepth 2 -mindepth 1 -type d 2>/dev/null || true
 
-# 8. Extension registration
+# 9. Extension registration
 node -e "const fs=require('fs'); const p='.pi/settings.json'; if (fs.existsSync(p)) console.log(JSON.stringify(JSON.parse(fs.readFileSync(p,'utf8')).skills ?? JSON.parse(fs.readFileSync(p,'utf8')).extensions ?? {}, null, 2)); else console.log('MISSING .pi/settings.json')"
 ```
 
@@ -121,15 +124,16 @@ Use targeted fixes first. Escalate to full sync only if needed.
 
 | Drift | Fix |
 |-------|-----|
-| Specialist JSON missing required fields | `sp edit <name> ...` or regenerate via `sp init --sync-skills` |
-| Specialist JSON schema mismatch | `sp init --sync-skills` |
-| Hooks missing or stale | `sp init --sync-hooks` if available, otherwise `sp init --sync-skills` or `sp init -y` |
+| Specialist JSON missing required fields | `sp edit <name> ...` or regenerate via `specialists init --sync-defaults` |
+| Specialist JSON schema mismatch | `specialists init --sync-defaults` |
+| Hooks missing or stale | `specialists init` |
 | `sp` / `specialists` missing from PATH | Reinstall / re-bootstrap specialists runtime |
-| Job dir missing | `sp init -y` |
+| Job dir missing | `specialists init` |
 | Orphaned `.worktrees/` entries | `specialists clean` |
-| SQLite schema/version mismatch | `sp doctor` first, then `sp init --sync-skills` or runtime migration command |
-| Pi extensions missing | `sp init --sync-skills` or reinstall extension registration |
-| Hook config format stale | `sp init -y` |
+| SQLite schema/version mismatch | `sp doctor` first, then `specialists init --sync-defaults` or runtime migration command |
+| Pi extensions missing | `specialists init --sync-skills` or reinstall extension registration |
+| Hook config format stale | `specialists init` |
+| Skill symlink / active-skill drift | `specialists init --sync-skills` |
 | Unknown manual drift | Stop, inspect, then apply user-approved fix |
 
 ## Remediation
@@ -140,7 +144,7 @@ If `sp doctor` or JSON validation shows missing fields, wrong names, or schema
 mismatch:
 
 ```bash
-sp init --sync-skills
+specialists init --sync-defaults
 ```
 
 If one specialist needs a small repair and `sp edit` supports it, prefer that over
@@ -151,7 +155,7 @@ full sync.
 If hooks are missing, wrong events, or stale script paths:
 
 ```bash
-sp init -y
+specialists init
 ```
 
 If runtime exposes a narrower hook sync command, prefer it. Use full init only
@@ -184,14 +188,14 @@ If doctor reports DB version mismatch or recovery issue:
 
 1. Run `sp doctor` and capture exact schema error.
 2. Apply runtime migration command if available.
-3. If no automated migration exists, flag manual intervention.
+4. If no automated migration exists, flag manual intervention.
 
 ### Fix: Pi extensions not registered
 
 If `quality-gates`, `pi-gitnexus`, or `pi-serena-tools` are missing:
 
 ```bash
-sp init --sync-skills
+specialists init --sync-skills
 ```
 
 If project uses different extension packaging, re-run install step that writes
@@ -214,7 +218,7 @@ node -e "const fs=require('fs'); const p='.claude/settings.json'; const s=JSON.p
 Expected outcome:
 - `sp doctor` clean
 - `sp status` no drift / no repair hints
-- `sp` and `specialists` reachable
+- `sp` and `specialists` reachable (`sp` is shorthand; `specialists` is canonical)
 - specialist JSON files valid
 - hooks present on required events
 - no orphaned worktrees
