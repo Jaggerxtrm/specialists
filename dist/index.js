@@ -17907,6 +17907,49 @@ function findTokenUsage(payload) {
   }
   return normalizeTokenUsage(record3);
 }
+function findApiErrorMessage(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record3 = payload;
+  const direct = [record3.errorMessage, record3.error_message, record3.error, record3.message].find((value) => typeof value === "string" && value.trim().length > 0);
+  if (typeof direct === "string")
+    return direct.trim();
+  const nestedError = record3.error;
+  if (nestedError && typeof nestedError === "object") {
+    const nested = nestedError;
+    const nestedMessage = [nested.message, nested.errorMessage, nested.error_message].find((value) => typeof value === "string" && value.trim().length > 0);
+    if (typeof nestedMessage === "string")
+      return nestedMessage.trim();
+  }
+  const message = record3.assistantMessageEvent;
+  if (message && typeof message === "object") {
+    const nested = message;
+    const nestedMessage = [nested.errorMessage, nested.error_message, nested.error, nested.message].find((value) => typeof value === "string" && value.trim().length > 0);
+    if (typeof nestedMessage === "string")
+      return nestedMessage.trim();
+  }
+  return;
+}
+function extractApiErrorFromStderr(stderr) {
+  const compact = stderr.trim();
+  if (!compact)
+    return;
+  const patterns = [
+    /You have hit your ChatGPT usage limit[^\n]*/i,
+    /rate limit[^\n]*/i,
+    /quota[^\n]*/i,
+    /auth(?:entication)?[^\n]*/i,
+    /unauthori[sz]ed[^\n]*/i,
+    /forbidden[^\n]*/i,
+    /overloaded[^\n]*/i
+  ];
+  for (const pattern of patterns) {
+    const match = compact.match(pattern);
+    if (match)
+      return match[0].trim();
+  }
+  return;
+}
 function normalizeToolResultPart(contentPart) {
   if (!contentPart || typeof contentPart !== "object")
     return;
@@ -18049,6 +18092,7 @@ class PiAgentSession {
   _pendingRequests = new Map;
   _nextRequestId = 1;
   _stderrBuffer = "";
+  _apiError;
   _stallTimer;
   _stallError;
   _testWindowToolCallIds = new Set;
@@ -18147,7 +18191,9 @@ class PiAgentSession {
     donePromise.catch(() => {});
     this._donePromise = donePromise;
     this.proc.stderr?.on("data", (chunk) => {
-      this._stderrBuffer += chunk.toString();
+      const text = chunk.toString();
+      this._stderrBuffer += text;
+      this._apiError ??= extractApiErrorFromStderr(this._stderrBuffer) ?? extractApiErrorFromStderr(text);
     });
     this.proc.stdout?.on("data", (chunk) => {
       this._lineBuffer += chunk.toString();
@@ -18308,6 +18354,12 @@ class PiAgentSession {
       }
       this._updateTokenUsage(findTokenUsage(event), "agent_end");
       this._updateFinishReason(findFinishReason(event), "agent_end");
+      const apiError = findApiErrorMessage(event) ?? this._apiError ?? extractApiErrorFromStderr(this._stderrBuffer);
+      if (apiError) {
+        this._apiError = apiError;
+        this._metrics.api_error = apiError;
+        this.options.onMetric?.({ type: "api_error", source: "stderr", errorMessage: apiError });
+      }
       this._agentEndReceived = true;
       this._clearStallTimer();
       this.options.onEvent?.("agent_end");
@@ -18432,6 +18484,16 @@ class PiAgentSession {
           this._updateTokenUsage(tokenUsage, "message_done");
           this._updateFinishReason(finishReason, "message_done");
           this.options.onEvent?.("message_done");
+          break;
+        }
+        case "error": {
+          const apiError = findApiErrorMessage(ae) ?? findApiErrorMessage(event);
+          if (apiError) {
+            this._apiError = apiError;
+            this._metrics.api_error = apiError;
+            this.options.onMetric?.({ type: "api_error", source: "rpc", errorMessage: apiError });
+          }
+          this.options.onEvent?.("message_error");
           break;
         }
       }
@@ -20083,6 +20145,19 @@ class SqliteClient {
       return this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC").all(epicId);
     }, "listEpicChains");
   }
+  deleteEpicChainMembership(epicId, chainIds) {
+    if (chainIds.length === 0)
+      return [];
+    return withRetry(() => {
+      const existing = new Set(this.db.query("SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?").all(epicId).map((row) => row.chain_id));
+      const removable = chainIds.filter((chainId) => existing.has(chainId));
+      if (removable.length === 0)
+        return [];
+      const placeholders = removable.map(() => "?").join(", ");
+      this.db.query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`).run(epicId, ...removable);
+      return removable;
+    }, "deleteEpicChainMembership");
+  }
   listEpicChainsWithLatestJob(epicId) {
     return withRetry(() => {
       const rows = this.db.query(`
@@ -20995,6 +21070,9 @@ function resolveOutputContractSchema(responseFormat, outputType, outputSchema) {
   }
   return mergedSchema;
 }
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'''`)}'`;
+}
 function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
   if (responseFormat === "text")
     return "";
@@ -21018,6 +21096,58 @@ function buildOutputContractInstruction(responseFormat, outputType, outputSchema
 
 ${lines.join(`
 `)}`;
+}
+function buildReviewerDiffContext(cwd, maxFiles = 20) {
+  const stat2 = execSync2("git diff --stat", {
+    cwd,
+    encoding: "utf8",
+    timeout: 1e4,
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
+  const files = execSync2("git diff --name-only", {
+    cwd,
+    encoding: "utf8",
+    timeout: 1e4,
+    stdio: ["ignore", "pipe", "pipe"]
+  }).split(`
+`).map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
+  if (files.length === 0) {
+    throw new Error("Reviewer startup blocked: git diff is empty. No patch context to review.");
+  }
+  const hunks = files.map((file) => {
+    const diff = execSync2(`git diff -- ${shellQuote(file)}`, {
+      cwd,
+      encoding: "utf8",
+      timeout: 1e4,
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    return diff ? `### ${file}
+${diff}` : `### ${file}
+(no hunks)`;
+  }).join(`
+
+`);
+  return { stat: stat2, files, hunks };
+}
+function buildReviewerDiffInstruction(context) {
+  return `
+
+---
+## Reviewer Diff Context
+Review only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.
+If patch context is empty, stop and fail fast.
+
+Diff stat:
+${context.stat || "(no stat)"}
+
+Changed files:
+${context.files.map((file) => `- ${file}`).join(`
+`)}
+
+Diff hunks:
+${context.hunks}
+---
+`;
 }
 function tryParseJson(input) {
   try {
@@ -21340,6 +21470,10 @@ ${summaries.join(`
         }
       })
     });
+    if (metadata.name === "reviewer" && options.reusedFromJobId) {
+      const reviewerDiffContext = buildReviewerDiffContext(runCwd);
+      agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
+    }
     const responseFormat = execution.response_format ?? "text";
     const outputType = execution.output_type ?? "custom";
     const specialistOutputSchema = prompt.output_schema;
@@ -21939,6 +22073,13 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
         ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
         ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
       };
+    case "api_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.ERROR,
+        source: context.apiError?.source ?? "rpc",
+        error_message: context.apiError?.errorMessage ?? "Unknown API error"
+      };
     case "memory_injection":
       return {
         t,
@@ -22124,6 +22265,7 @@ var init_timeline_events = __esm(() => {
     RETRY: "retry",
     MODEL_CHANGE: "model_change",
     EXTENSION_ERROR: "extension_error",
+    ERROR: "error",
     AUTO_COMMIT_SUCCESS: "auto_commit_success",
     AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
     AUTO_COMMIT_FAILED: "auto_commit_failed",
@@ -23723,6 +23865,16 @@ ${appendError}
         if (metricEvent.type === "finish_reason") {
           mergeRunMetrics({ finish_reason: metricEvent.finish_reason });
           appendTimelineEvent(createFinishReasonEvent(metricEvent.finish_reason, metricEvent.source));
+          return;
+        }
+        if (metricEvent.type === "api_error") {
+          mergeRunMetrics({ api_error: metricEvent.errorMessage });
+          appendTimelineEvent({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.ERROR,
+            source: metricEvent.source,
+            error_message: metricEvent.errorMessage
+          });
           return;
         }
         if (metricEvent.type === "turn_summary") {
@@ -27579,6 +27731,9 @@ function formatEventLine(event, options) {
     detailParts.push(`backend=${event.backend}`);
   } else if (event.type === "tool") {
     detail = formatToolDetail(event);
+  } else if (event.type === "error") {
+    detailParts.push(`source=${event.source}`);
+    detailParts.push(`error=${event.error_message}`);
   } else if (event.type === "run_complete") {
     detailParts.push(`status=${event.status}`);
     detailParts.push(`elapsed=${formatElapsed(event.elapsed_s)}`);
@@ -27668,6 +27823,8 @@ function formatEventInline(event) {
     }
     case "stale_warning":
       return yellow10(`[warning] ${event.reason}: ${Math.round(event.silence_ms / 1000)}s silent`);
+    case "error":
+      return red2(`[error] ${event.source}: ${event.error_message}`);
     default:
       return null;
   }
@@ -27701,7 +27858,7 @@ var init_format_helpers = __esm(() => {
     turn_summary: "TURN+",
     compaction: "CMPCT",
     retry: "RETRY",
-    error: "ERR"
+    error: "ERROR"
   };
 });
 
@@ -28046,7 +28203,7 @@ function formatFooterModel(backend, model) {
     return model;
   return model.startsWith(`${backend}/`) ? model : `${backend}/${model}`;
 }
-function shellQuote(value) {
+function shellQuote2(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 function extractReviewedJobIdOverride(prompt) {
@@ -28098,7 +28255,7 @@ async function run13() {
     })();
     const cwd = process.cwd();
     const innerArgs = process.argv.slice(2).filter((a) => a !== "--background");
-    const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote).join(" ")}`;
+    const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote2).join(" ")}`;
     let childPid;
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
@@ -31505,11 +31662,15 @@ function syncEpicState(sqlite, epicId, apply) {
     stale_redirect_markers: epicRun && hasRedirectMarkers(epicRun.status_json) ? [epicId] : []
   };
   let deadJobsMarkedError = [];
+  let staleChainRefsPruned = [];
   let readinessResynced = false;
   let redirectMarkersCleared = false;
   if (apply) {
     if (drift.dead_jobs_blocking_readiness.length > 0) {
       deadJobsMarkedError = markDeadJobsAsError(sqlite, jobs);
+    }
+    if (drift.stale_chain_refs.length > 0) {
+      staleChainRefsPruned = sqlite.deleteEpicChainMembership(epicId, drift.stale_chain_refs);
     }
     const readinessNext = loadEpicReadinessSummary(sqlite, epicId);
     const synced = syncEpicStateFromReadiness(sqlite, readinessNext);
@@ -31533,6 +31694,7 @@ function syncEpicState(sqlite, epicId, apply) {
     drift,
     repairs: {
       dead_jobs_marked_error: deadJobsMarkedError,
+      stale_chain_refs_pruned: staleChainRefsPruned,
       readiness_resynced: readinessResynced,
       redirect_markers_cleared: redirectMarkersCleared
     },
@@ -31732,7 +31894,7 @@ function parseSyncOptions(argv) {
   return { epicId, apply, json };
 }
 function parseAbandonOptions(argv) {
-  const epicId = parseEpicId(argv);
+  let epicId = "";
   let reason = "";
   let force = false;
   let json = false;
@@ -31755,9 +31917,16 @@ function parseAbandonOptions(argv) {
       index += 1;
       continue;
     }
-    if (argument.startsWith("-") && argument !== "--force" && argument !== "--json") {
+    if (argument.startsWith("-")) {
       throw new Error(`Unknown option: ${argument}`);
     }
+    if (epicId.length > 0) {
+      throw new Error("Only one epic ID is supported");
+    }
+    epicId = argument;
+  }
+  if (!epicId) {
+    throw new Error("Missing epic ID");
   }
   if (reason.length === 0) {
     throw new Error("Missing required --reason <text>");
@@ -32161,6 +32330,7 @@ async function handleEpicSyncCommand(argv) {
     console.log(`  stale_redirect_markers: ${result.drift.stale_redirect_markers.length}`);
     if (result.apply) {
       console.log(`  repaired_dead_jobs: ${result.repairs.dead_jobs_marked_error.length}`);
+      console.log(`  stale_chain_refs_pruned: ${result.repairs.stale_chain_refs_pruned.length}`);
       console.log(`  readiness_resynced: ${result.repairs.readiness_resynced}`);
       console.log(`  redirect_markers_cleared: ${result.repairs.redirect_markers_cleared}`);
     }
@@ -33709,6 +33879,10 @@ function deriveStartupSnapshot(status, events) {
     merged.branch = status.branch;
   return Object.keys(merged).length > 0 ? merged : null;
 }
+function deriveApiError(events) {
+  const errorEvent = [...events].reverse().find((event) => event.type === "error");
+  return errorEvent?.error_message ?? null;
+}
 function formatStartupSnapshot(snapshot) {
   if (!snapshot)
     return null;
@@ -33829,20 +34003,25 @@ async function run16() {
           process.exit(1);
         }
         if (status2.status === "done") {
-          const startupContext2 = deriveStartupSnapshot(status2, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+          const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+          const startupContext2 = deriveStartupSnapshot(status2, events2);
+          const apiError2 = status2.error ?? deriveApiError(events2);
           const output3 = readResultOutput();
           if (!output3) {
+            const message = apiError2 ? `Job ${jobId} failed: ${apiError2}` : `Result not found for job ${jobId}`;
             if (args.json) {
-              emitJson(status2, null, `Result not found for job ${jobId}`);
+              emitJson(status2, null, message, startupContext2);
             } else {
-              console.error(`Result not found for job ${jobId}`);
+              process.stderr.write(`${red3(message)}
+`);
             }
             process.exit(1);
           }
+          const enrichedStatus2 = apiError2 && !status2.error ? { ...status2, error: apiError2 } : status2;
           if (args.json) {
-            emitJson(status2, output3, null, startupContext2);
+            emitJson(enrichedStatus2, output3, null, startupContext2);
           } else {
-            emitHumanResult(output3, status2, startupContext2);
+            emitHumanResult(output3, enrichedStatus2, startupContext2);
           }
           return;
         }
@@ -33929,31 +34108,37 @@ async function run16() {
       return;
     }
     if (status.status === "error") {
-      const startupContext2 = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
-      const message = `Job ${jobId} failed: ${status.error ?? "unknown error"}`;
+      const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+      const startupContext2 = deriveStartupSnapshot(status, events2);
+      const message = `Job ${jobId} failed: ${status.error ?? deriveApiError(events2) ?? "unknown error"}`;
       if (args.json) {
         emitJson(status, null, message, startupContext2);
       } else {
-        process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? "unknown error"}
+        process.stderr.write(`${red3(`Job ${jobId} failed:`)} ${status.error ?? deriveApiError(events2) ?? "unknown error"}
 `);
       }
       process.exit(1);
     }
+    const events = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+    const apiError = status.error ?? deriveApiError(events);
     const output2 = readResultOutput();
     if (!output2) {
+      const message = apiError ? `Job ${jobId} failed: ${apiError}` : `Result not found for job ${jobId}`;
       if (args.json) {
-        emitJson(status, null, `Result not found for job ${jobId}`);
+        emitJson(status, null, message);
       } else {
-        console.error(`Result not found for job ${jobId}`);
+        process.stderr.write(`${red3(message)}
+`);
       }
       process.exit(1);
     }
-    const startupContext = deriveStartupSnapshot(status, readTimelineEventsForResult(sqliteClient, jobsDir, jobId));
+    const startupContext = deriveStartupSnapshot(status, events);
+    const enrichedStatus = apiError && !status.error ? { ...status, error: apiError } : status;
     if (args.json) {
-      emitJson(status, output2, null, startupContext);
+      emitJson(enrichedStatus, output2, null, startupContext);
       return;
     }
-    emitHumanResult(output2, status, startupContext);
+    emitHumanResult(output2, enrichedStatus, startupContext);
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
     if (args.json) {
@@ -34150,6 +34335,8 @@ function getHumanEventKey(event) {
       return `run_start:${event.specialist}:${event.bead_id ?? ""}`;
     case "run_complete":
       return `run_complete:${event.status}:${event.error ?? ""}`;
+    case "error":
+      return `error:${event.source}:${event.error_message}`;
     case "token_usage":
       return `token_usage:${event.token_usage.total_tokens ?? ""}:${event.source}`;
     case "finish_reason":
