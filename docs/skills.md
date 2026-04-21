@@ -59,6 +59,7 @@ Specialist routing table (run `specialists list` for current set):
 | Doc writing | executor | sync-docs audits; executor writes |
 | Test generation/execution | test-runner | suite runs, failure interpretation |
 | Specialist authoring | specialists-creator | JSON creation against schema |
+| Install drift repair | update-specialists | Canonical-state reconciler for specialists runtime |
 
 Key workflow patterns:
 
@@ -67,6 +68,25 @@ Key workflow patterns:
 - **Merge between waves is mandatory** — merge in FIFO/dep order; never start wave N+1 before merging wave N
 - **Steer/resume** — `steer` redirects any running job; `resume` continues a `waiting` keep-alive job
 - **`--bead` and `--prompt` are mutually exclusive** — for tracked work update bead notes, then `--bead` only
+
+### `update-specialists`
+
+Location: `config/skills/update-specialists/SKILL.md`
+
+Purpose:
+
+- reconcile installed specialists runtime state against canonical install expectations
+- start with `sp doctor` as primary detection command
+- check specialist configs, hooks, CLI reachability, job dirs, SQLite schema, extensions, and worktree GC state
+- map each drift class to targeted fix commands before falling back to full re-init
+- verify repair with `sp doctor` and report manual intervention when auto-fix is unsafe
+
+Key areas covered:
+
+- canonical state table for `.specialists/default/*.specialist.json`, hooks, `sp` / `specialists`, job dirs, SQLite, and extensions
+- detection workflow centered on `sp doctor` plus focused checks for config shape and stale worktrees
+- drift-to-fix mapping for `sp init --sync-skills`, `specialists clean`, and full `sp init -y`
+- manual intervention checklist for corruption, missing binaries, and unsafe cleanup
 
 ### `specialists-creator`
 
