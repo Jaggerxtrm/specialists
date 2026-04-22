@@ -387,8 +387,8 @@ function ensureProjectHookWiring(cwd: string): void {
 }
 
 /**
- * Ensure .claude/skills and .pi/skills are symlinks to .xtrm active skill roots.
- * Creates the symlink if missing (e.g. on a fresh repo where xt install hasn't wired .pi/skills yet).
+ * Ensure .claude/skills and .pi/skills are symlinks to flattened .xtrm active skill root.
+ * Creates the symlink if missing (e.g. on a fresh repo where xt install hasn't wired skill roots yet).
  */
 function ensureRootSymlink(rootPath: string, expectedTargetPath: string): void {
   if (!existsSync(rootPath)) {
@@ -419,7 +419,7 @@ function ensureActiveSkillSymlink(defaultSkillPath: string, activeLinkPath: stri
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
     if (fileError.code === 'ENOENT') {
-      const relativeTarget = `../../default/${basename(defaultSkillPath)}`;
+      const relativeTarget = `../default/${basename(defaultSkillPath)}`;
       symlinkSync(relativeTarget, activeLinkPath, 'dir');
       return;
     }
@@ -461,15 +461,13 @@ function installProjectSkills(cwd: string, syncSkills: boolean): void {
   }
 
   const defaultRoot = join(cwd, '.xtrm', 'skills', 'default');
-  const activeClaudeRoot = join(cwd, '.xtrm', 'skills', 'active', 'claude');
-  const activePiRoot = join(cwd, '.xtrm', 'skills', 'active', 'pi');
+  const activeRoot = join(cwd, '.xtrm', 'skills', 'active');
 
   mkdirSync(defaultRoot, { recursive: true });
-  mkdirSync(activeClaudeRoot, { recursive: true });
-  mkdirSync(activePiRoot, { recursive: true });
+  mkdirSync(activeRoot, { recursive: true });
 
-  ensureRootSymlink(join(cwd, '.claude', 'skills'), activeClaudeRoot);
-  ensureRootSymlink(join(cwd, '.pi', 'skills'), activePiRoot);
+  ensureRootSymlink(join(cwd, '.claude', 'skills'), activeRoot);
+  ensureRootSymlink(join(cwd, '.pi', 'skills'), activeRoot);
 
   let copied = 0;
   let refreshed = 0;
@@ -488,13 +486,12 @@ function installProjectSkills(cwd: string, syncSkills: boolean): void {
       copied++;
     }
 
-    ensureActiveSkillSymlink(defaultSkillPath, join(activeClaudeRoot, skill));
-    ensureActiveSkillSymlink(defaultSkillPath, join(activePiRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join(activeRoot, skill));
   }
 
   if (copied > 0) ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .xtrm/skills/default/`);
   if (refreshed > 0) ok(`re-synced ${refreshed} skill${refreshed === 1 ? '' : 's'} in .xtrm/skills/default/`);
-  ok('verified active skill symlinks in .xtrm/skills/active/{claude,pi}/');
+  ok('verified active skill symlinks in .xtrm/skills/active/');
 }
 
 /**
@@ -737,11 +734,11 @@ function validateInitPostconditions(cwd: string): ReadonlyArray<string> {
   const rootSymlinks: ReadonlyArray<{ linkPath: string; expectedTarget: string }> = [
     {
       linkPath: join(cwd, '.claude', 'skills'),
-      expectedTarget: join(cwd, '.xtrm', 'skills', 'active', 'claude'),
+      expectedTarget: join(cwd, '.xtrm', 'skills', 'active'),
     },
     {
       linkPath: join(cwd, '.pi', 'skills'),
-      expectedTarget: join(cwd, '.xtrm', 'skills', 'active', 'pi'),
+      expectedTarget: join(cwd, '.xtrm', 'skills', 'active'),
     },
   ];
 
@@ -862,9 +859,9 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   console.log(`  .claude/hooks/            ${dim('# symlinks -> .xtrm/hooks/specialists')}`);
   console.log(`  .claude/settings.json     ${dim('# hook wiring')}`);
   console.log(`  .xtrm/skills/default/  ${dim('# canonical skills')}`);
-  console.log(`  .xtrm/skills/active/   ${dim('# active symlink roots for claude/pi')}`);
-  console.log(`  .claude/skills/        ${dim('# symlink -> .xtrm/skills/active/claude')}`);
-  console.log(`  .pi/skills/            ${dim('# symlink -> .xtrm/skills/active/pi')}`);
+  console.log(`  .xtrm/skills/active/   ${dim('# flattened active skill root')}`);
+  console.log(`  .claude/skills/        ${dim('# symlink -> .xtrm/skills/active')}`);
+  console.log(`  .pi/skills/            ${dim('# symlink -> .xtrm/skills/active')}`);
   console.log('');
   console.log(`  ${dim('.specialists/ structure:')}`);
   console.log(`  .specialists/`);

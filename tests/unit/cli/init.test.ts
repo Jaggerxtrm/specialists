@@ -12,17 +12,16 @@ async function importInitModule() {
 
 async function setupXtrmStructure(cwd: string) {
   const { mkdirSync, symlinkSync, existsSync: exists } = await import('node:fs');
-  mkdirSync(join(cwd, '.xtrm', 'skills', 'active', 'claude'), { recursive: true });
-  mkdirSync(join(cwd, '.xtrm', 'skills', 'active', 'pi'), { recursive: true });
+  mkdirSync(join(cwd, '.xtrm', 'skills', 'active'), { recursive: true });
   mkdirSync(join(cwd, '.xtrm', 'skills', 'default'), { recursive: true });
   mkdirSync(join(cwd, '.xtrm', 'hooks'), { recursive: true });
   mkdirSync(join(cwd, '.claude'), { recursive: true });
   mkdirSync(join(cwd, '.pi'), { recursive: true });
   if (!exists(join(cwd, '.claude', 'skills'))) {
-    symlinkSync(join(cwd, '.xtrm', 'skills', 'active', 'claude'), join(cwd, '.claude', 'skills'));
+    symlinkSync(join(cwd, '.xtrm', 'skills', 'active'), join(cwd, '.claude', 'skills'));
   }
   if (!exists(join(cwd, '.pi', 'skills'))) {
-    symlinkSync(join(cwd, '.xtrm', 'skills', 'active', 'pi'), join(cwd, '.pi', 'skills'));
+    symlinkSync(join(cwd, '.xtrm', 'skills', 'active'), join(cwd, '.pi', 'skills'));
   }
 }
 

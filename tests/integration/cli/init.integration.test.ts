@@ -7,14 +7,13 @@ import { spawnSync } from 'node:child_process';
 const repoRoot = resolve(import.meta.dirname, '../../..');
 
 async function setupXtrmStructure(cwd: string) {
-  await mkdir(join(cwd, '.xtrm', 'skills', 'active', 'claude'), { recursive: true });
-  await mkdir(join(cwd, '.xtrm', 'skills', 'active', 'pi'), { recursive: true });
+  await mkdir(join(cwd, '.xtrm', 'skills', 'active'), { recursive: true });
   await mkdir(join(cwd, '.xtrm', 'skills', 'default'), { recursive: true });
   await mkdir(join(cwd, '.xtrm', 'hooks'), { recursive: true });
   await mkdir(join(cwd, '.claude'), { recursive: true });
   await mkdir(join(cwd, '.pi'), { recursive: true });
-  await symlink(join(cwd, '.xtrm', 'skills', 'active', 'claude'), join(cwd, '.claude', 'skills'));
-  await symlink(join(cwd, '.xtrm', 'skills', 'active', 'pi'), join(cwd, '.pi', 'skills'));
+  await symlink(join(cwd, '.xtrm', 'skills', 'active'), join(cwd, '.claude', 'skills'));
+  await symlink(join(cwd, '.xtrm', 'skills', 'active'), join(cwd, '.pi', 'skills'));
 }
 
 function runCli(args: string[], cwd: string) {

@@ -81,6 +81,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-16T21:36:35.680758Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-04-22T15:07:00.260082+00:00",
+      "error_message": "specialists init rejected flattened .xtrm/skills/active layout",
+      "file": "src/cli/init.ts",
+      "root_cause": "init hardcoded legacy active/claude and active/pi roots in symlink validation, installation, and help text after xt installer flattened active/",
+      "fix": "switched init to flattened active root only, updated active symlink wiring/validation/help text, and updated unit+integration tests",
+      "tags": [
+        "bugfix",
+        "init",
+        "xtrm-layout",
+        "skills"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-22T15:07:00.260099+00:00"
     }
   ]
 }

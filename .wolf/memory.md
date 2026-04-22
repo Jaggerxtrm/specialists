@@ -80,3 +80,5 @@
 | 13:56 | fixed ps --follow flicker: replaced \x1Bc terminal reset with buffered render + cursor home (\x1B[H) + clear-to-end (\x1B[J) | src/cli/ps.ts | fixed m749 | ~300 |
 
 | 21:40 | Fixed dead node PID recovery path: now marks error (not waiting/recovery_pending); added regression test | src/specialist/supervisor.ts, tests/unit/specialist/supervisor.test.ts | resolves GH#70 | ~250 |
+
+- 2026-04-22T15:07:00.259146+00:00: specialists init now treats .xtrm/skills/active as the only valid active skill root; old active/claude and active/pi assumptions removed.
