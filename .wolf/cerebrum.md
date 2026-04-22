@@ -15,6 +15,8 @@
 
 ## Do-Not-Repeat
 
+- [2026-04-22] When changing CLI behavior, rebuild and publish updated dist/index.js before claiming fix shipped. Source-only fix is insufficient because npm package executes bundled dist.
+
 <!-- Mistakes made and corrected. Each entry prevents the same mistake recurring. -->
 <!-- Format: [YYYY-MM-DD] Description of what went wrong and what to do instead. -->
 

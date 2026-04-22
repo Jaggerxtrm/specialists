@@ -98,6 +98,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-22T15:07:00.260099+00:00"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-04-22T15:12:44.455587+00:00",
+      "error_message": "Published package still enforced active/claude because dist/index.js was stale",
+      "file": "dist/index.js",
+      "root_cause": "Source fix landed in src/cli/init.ts but release published without rebuilding bundled dist, so CLI behavior on npm remained old",
+      "fix": "Rebuild dist/index.js before release, verify bundled output strings, then bump patch and republish",
+      "tags": [
+        "bugfix",
+        "release",
+        "dist",
+        "publish"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-22T15:12:44.455606+00:00"
     }
   ]
 }

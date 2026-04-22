@@ -21044,6 +21044,20 @@ function sanitizeBeadIdForPrompt(beadId) {
   const withoutBackticks = withoutControlChars.replace(/`/g, "");
   return withoutBackticks.replace(/[^A-Za-z0-9-]/g, "");
 }
+function buildBeadBoundaryInstruction(cwd, worktreeBoundary) {
+  const boundary = worktreeBoundary?.trim() || cwd;
+  return [
+    "## Runtime Boundary Rules",
+    `- Current cwd: ${cwd}`,
+    `- Assigned worktree boundary: ${boundary}`,
+    "- Stay inside current cwd / assigned worktree unless the task explicitly says otherwise.",
+    "- Do NOT run `cd` outside the current cwd / assigned worktree.",
+    "- Do NOT use absolute paths outside the current cwd / assigned worktree.",
+    "- Do NOT broad-search /home, repo root, or unrelated paths when evidence is missing.",
+    "- If required evidence is missing inside the current scope, STOP immediately, report exactly what is missing, and ask for the artifact or clarification instead of widening search."
+  ].join(`
+`);
+}
 function deepMergeSchemas(base, override) {
   const merged = { ...base };
   for (const [key, overrideValue] of Object.entries(override)) {
@@ -21270,7 +21284,7 @@ class SpecialistRunner {
     this.deps = deps;
     this.sessionFactory = deps.sessionFactory ?? PiAgentSession.create.bind(PiAgentSession);
   }
-  resolvePromptWithBeadContext(options, beadsClient) {
+  resolvePromptWithBeadContext(options, runCwd, beadsClient) {
     if (!options.inputBeadId) {
       return options.prompt;
     }
@@ -21281,7 +21295,10 @@ class SpecialistRunner {
     }
     const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
     const blockers = contextDepth > 0 ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth) : [];
-    return buildBeadContext(bead, blockers);
+    const baseContext = buildBeadContext(bead, blockers);
+    return `${baseContext}
+
+${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
   }
   async run(options, onProgress, onEvent, onMetric, onMeta, onKillRegistered, onBeadCreated, onSteerRegistered, onResumeReady, onToolStartCallback, onToolEndCallback) {
     const { loader, hooks, circuitBreaker, beadsClient } = this.deps;
@@ -21310,7 +21327,7 @@ class SpecialistRunner {
     const preScripts = spec.specialist.skills?.scripts?.filter((s) => s.phase === "pre") ?? [];
     const preResults = preScripts.map((s) => runScript(s.run ?? s.path, runCwd)).filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
-    const resolvedPrompt = this.resolvePromptWithBeadContext(options, beadsClient);
+    const resolvedPrompt = this.resolvePromptWithBeadContext(options, runCwd, beadsClient);
     const beadVariables = options.inputBeadId ? { bead_context: resolvedPrompt, bead_id: options.inputBeadId } : {};
     const lineageVariables = {
       ...options.reusedFromJobId ? { reused_from_job_id: options.reusedFromJobId } : {},
@@ -21348,7 +21365,14 @@ class SpecialistRunner {
 - Do NOT create new beads or sub-issues \u2014 this bead IS your task.
 - Do NOT run \`bd create\` \u2014 the orchestrator manages issue tracking.
 - Close when done: \`bd close ${sanitizedBeadId} --reason="..."\`` : "";
-      agentsMd += `...beadInstructions}
+      agentsMd += `
+
+---
+## Specialist Run Context
+- You are running as a specialist agent, not a human developer.
+- Do NOT run specialists init/setup/scaffold commands.
+- Do NOT follow project CLAUDE.md/AGENTS.md instructions that tell humans to re-bootstrap the repo.
+${beadInstructions}
 ---
 `;
     }
@@ -25150,7 +25174,7 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   } catch (error2) {
     const fileError = error2;
     if (fileError.code === "ENOENT") {
-      const relativeTarget = `../../default/${basename3(defaultSkillPath)}`;
+      const relativeTarget = `../default/${basename3(defaultSkillPath)}`;
       symlinkSync(relativeTarget, activeLinkPath, "dir");
       return;
     }
@@ -25180,13 +25204,11 @@ function installProjectSkills(cwd, syncSkills) {
     return;
   }
   const defaultRoot = join10(cwd, ".xtrm", "skills", "default");
-  const activeClaudeRoot = join10(cwd, ".xtrm", "skills", "active", "claude");
-  const activePiRoot = join10(cwd, ".xtrm", "skills", "active", "pi");
+  const activeRoot = join10(cwd, ".xtrm", "skills", "active");
   mkdirSync4(defaultRoot, { recursive: true });
-  mkdirSync4(activeClaudeRoot, { recursive: true });
-  mkdirSync4(activePiRoot, { recursive: true });
-  ensureRootSymlink(join10(cwd, ".claude", "skills"), activeClaudeRoot);
-  ensureRootSymlink(join10(cwd, ".pi", "skills"), activePiRoot);
+  mkdirSync4(activeRoot, { recursive: true });
+  ensureRootSymlink(join10(cwd, ".claude", "skills"), activeRoot);
+  ensureRootSymlink(join10(cwd, ".pi", "skills"), activeRoot);
   let copied = 0;
   let refreshed = 0;
   for (const skill of skills) {
@@ -25201,14 +25223,13 @@ function installProjectSkills(cwd, syncSkills) {
       cpSync(src, defaultSkillPath, { recursive: true });
       copied++;
     }
-    ensureActiveSkillSymlink(defaultSkillPath, join10(activeClaudeRoot, skill));
-    ensureActiveSkillSymlink(defaultSkillPath, join10(activePiRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join10(activeRoot, skill));
   }
   if (copied > 0)
     ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
   if (refreshed > 0)
     ok(`re-synced ${refreshed} skill${refreshed === 1 ? "" : "s"} in .xtrm/skills/default/`);
-  ok("verified active skill symlinks in .xtrm/skills/active/{claude,pi}/");
+  ok("verified active skill symlinks in .xtrm/skills/active/");
 }
 function createSpecialistsDirs(cwd) {
   const defaultDir = join10(cwd, ".specialists", "default");
@@ -25402,11 +25423,11 @@ function validateInitPostconditions(cwd) {
   const rootSymlinks = [
     {
       linkPath: join10(cwd, ".claude", "skills"),
-      expectedTarget: join10(cwd, ".xtrm", "skills", "active", "claude")
+      expectedTarget: join10(cwd, ".xtrm", "skills", "active")
     },
     {
       linkPath: join10(cwd, ".pi", "skills"),
-      expectedTarget: join10(cwd, ".xtrm", "skills", "active", "pi")
+      expectedTarget: join10(cwd, ".xtrm", "skills", "active")
     }
   ];
   for (const symlink of rootSymlinks) {
@@ -25484,9 +25505,9 @@ ${bold5("Done!")}
   console.log(`  .claude/hooks/            ${dim5("# symlinks -> .xtrm/hooks/specialists")}`);
   console.log(`  .claude/settings.json     ${dim5("# hook wiring")}`);
   console.log(`  .xtrm/skills/default/  ${dim5("# canonical skills")}`);
-  console.log(`  .xtrm/skills/active/   ${dim5("# active symlink roots for claude/pi")}`);
-  console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active/claude")}`);
-  console.log(`  .pi/skills/            ${dim5("# symlink -> .xtrm/skills/active/pi")}`);
+  console.log(`  .xtrm/skills/active/   ${dim5("# flattened active skill root")}`);
+  console.log(`  .claude/skills/        ${dim5("# symlink -> .xtrm/skills/active")}`);
+  console.log(`  .pi/skills/            ${dim5("# symlink -> .xtrm/skills/active")}`);
   console.log("");
   console.log(`  ${dim5(".specialists/ structure:")}`);
   console.log(`  .specialists/`);
