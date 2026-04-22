@@ -101,13 +101,24 @@ export function parseMemoriesPayload(jsonText: string): MemoryCacheInputRecord[]
 }
 
 function readBdMemories(cwd: string): MemoryCacheInputRecord[] {
-  const stdout = execSync('bd memories --json', {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 5000,
-  });
-  return parseMemoriesPayload(stdout);
+  try {
+    const stdout = execSync('bd memories --json', {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+    return parseMemoriesPayload(stdout);
+  } catch (error) {
+    const commandError = error as NodeJS.ErrnoException & { stderr?: string | Buffer };
+    const stderr = typeof commandError.stderr === 'string'
+      ? commandError.stderr
+      : commandError.stderr?.toString('utf8') ?? '';
+    if (/no beads database found/i.test(stderr)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export function shouldRefreshCache(args: {

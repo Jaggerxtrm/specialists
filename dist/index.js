@@ -20747,13 +20747,22 @@ function parseMemoriesPayload(jsonText) {
   return [];
 }
 function readBdMemories(cwd) {
-  const stdout = execSync("bd memories --json", {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 5000
-  });
-  return parseMemoriesPayload(stdout);
+  try {
+    const stdout = execSync("bd memories --json", {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5000
+    });
+    return parseMemoriesPayload(stdout);
+  } catch (error2) {
+    const commandError = error2;
+    const stderr = typeof commandError.stderr === "string" ? commandError.stderr : commandError.stderr?.toString("utf8") ?? "";
+    if (/no beads database found/i.test(stderr)) {
+      return [];
+    }
+    throw error2;
+  }
 }
 function shouldRefreshCache(args) {
   if (args.cacheCount === null || args.cacheLastSyncAtMs === null)
@@ -25072,6 +25081,7 @@ function installProjectHooks(cwd) {
   let copied = 0;
   let skippedCopies = 0;
   let linked = 0;
+  let rewiredLinks = 0;
   let skippedLinks = 0;
   for (const file of hooks) {
     const src = join10(sourceDir, file);
@@ -25083,21 +25093,25 @@ function installProjectHooks(cwd) {
       copied++;
     }
     const claudeHookPath = join10(claudeHooksDir, file);
+    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
     if (existsSync9(claudeHookPath)) {
       const stats = lstatSync(claudeHookPath);
       if (!stats.isSymbolicLink()) {
-        skippedLinks++;
+        unlinkSync(claudeHookPath);
+        symlinkSync(relativeTarget, claudeHookPath);
+        rewiredLinks++;
         continue;
       }
       const currentTarget = resolve4(dirname5(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
-        skippedLinks++;
+        unlinkSync(claudeHookPath);
+        symlinkSync(relativeTarget, claudeHookPath);
+        rewiredLinks++;
         continue;
       }
       skippedLinks++;
       continue;
     }
-    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
     symlinkSync(relativeTarget, claudeHookPath);
     linked++;
   }
@@ -25107,6 +25121,8 @@ function installProjectHooks(cwd) {
     skip(`${skippedCopies} hook${skippedCopies === 1 ? "" : "s"} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
   if (linked > 0)
     ok(`linked ${linked} hook${linked === 1 ? "" : "s"} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+  if (rewiredLinks > 0)
+    ok(`rewired ${rewiredLinks} legacy hook${rewiredLinks === 1 ? "" : "s"} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
   if (skippedLinks > 0)
     skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
 }
@@ -25499,8 +25515,9 @@ ${bold5("specialists init")}
     } else {
       skip("memories FTS cache sync skipped (not available)");
     }
-  } catch {
-    warn("memories FTS cache sync failed during init (non-fatal)");
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    warn(`memories FTS cache sync failed during init (non-fatal): ${message}`);
   }
   const postconditionWarnings = validateInitPostconditions(cwd);
   if (postconditionWarnings.length > 0) {

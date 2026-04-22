@@ -288,6 +288,7 @@ function installProjectHooks(cwd: string): void {
   let copied = 0;
   let skippedCopies = 0;
   let linked = 0;
+  let rewiredLinks = 0;
   let skippedLinks = 0;
 
   for (const file of hooks) {
@@ -302,16 +303,21 @@ function installProjectHooks(cwd: string): void {
     }
 
     const claudeHookPath = join(claudeHooksDir, file);
+    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
     if (existsSync(claudeHookPath)) {
       const stats = lstatSync(claudeHookPath);
       if (!stats.isSymbolicLink()) {
-        skippedLinks++;
+        unlinkSync(claudeHookPath);
+        symlinkSync(relativeTarget, claudeHookPath);
+        rewiredLinks++;
         continue;
       }
 
       const currentTarget = resolve(dirname(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
-        skippedLinks++;
+        unlinkSync(claudeHookPath);
+        symlinkSync(relativeTarget, claudeHookPath);
+        rewiredLinks++;
         continue;
       }
 
@@ -319,7 +325,6 @@ function installProjectHooks(cwd: string): void {
       continue;
     }
 
-    const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
     symlinkSync(relativeTarget, claudeHookPath);
     linked++;
   }
@@ -327,6 +332,7 @@ function installProjectHooks(cwd: string): void {
   if (copied > 0) ok(`installed ${copied} hook${copied === 1 ? '' : 's'} to .xtrm/hooks/specialists/`);
   if (skippedCopies > 0) skip(`${skippedCopies} hook${skippedCopies === 1 ? '' : 's'} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
   if (linked > 0) ok(`linked ${linked} hook${linked === 1 ? '' : 's'} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+  if (rewiredLinks > 0) ok(`rewired ${rewiredLinks} legacy hook${rewiredLinks === 1 ? '' : 's'} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
   if (skippedLinks > 0) skip(`${skippedLinks} hook${skippedLinks === 1 ? '' : 's'} already present in .claude/hooks/ (left unchanged)`);
 }
 
@@ -855,8 +861,9 @@ export async function run(opts: InitOptions = {}): Promise<void> {
     } else {
       skip('memories FTS cache sync skipped (not available)');
     }
-  } catch {
-    warn('memories FTS cache sync failed during init (non-fatal)');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warn(`memories FTS cache sync failed during init (non-fatal): ${message}`);
   }
 
   const postconditionWarnings = validateInitPostconditions(cwd);
