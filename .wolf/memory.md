@@ -84,3 +84,5 @@
 - 2026-04-22T15:07:00.259146+00:00: specialists init now treats .xtrm/skills/active as the only valid active skill root; old active/claude and active/pi assumptions removed.
 
 - 2026-04-22T16:54:34.011270+00:00: specialists init auto-rewires legacy root symlinks from active/claude or active/pi to flattened active root during init.
+
+- 2026-04-22T22:27:13.340618+00:00: --sync-defaults must overwrite stale canonical files in .specialists/default/; copy-once semantics are wrong for an explicit sync command.

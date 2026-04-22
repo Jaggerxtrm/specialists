@@ -132,6 +132,22 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-22T16:54:34.012279+00:00"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-04-22T22:27:13.340618+00:00",
+      "error_message": "sp init --sync-defaults left stale files in .specialists/default unchanged",
+      "file": "src/cli/init.ts",
+      "root_cause": "existing canonical specialist and node config files were skipped instead of refreshed during explicit sync",
+      "fix": "copyCanonicalSpecialists and copyCanonicalNodeConfigs now overwrite existing canonical files during --sync-defaults; regression tests added",
+      "tags": [
+        "bugfix",
+        "init",
+        "sync-defaults"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-22T22:27:13.340618+00:00"
     }
   ]
 }

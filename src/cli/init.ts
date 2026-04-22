@@ -180,37 +180,37 @@ function copyCanonicalSpecialists(cwd: string): void {
 
   const targetDir = join(cwd, '.specialists', 'default');
   const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.json'));
-  
+
   if (files.length === 0) {
     skip('no specialist files found in package');
     return;
   }
 
-  // Create target directory
   if (!existsSync(targetDir)) {
     mkdirSync(targetDir, { recursive: true });
   }
 
   let copied = 0;
-  let skipped = 0;
-  
+  let refreshed = 0;
+
   for (const file of files) {
     const src = join(sourceDir, file);
     const dest = join(targetDir, file);
-    
+
     if (existsSync(dest)) {
-      skipped++;
+      copyFileSync(src, dest);
+      refreshed++;
     } else {
       copyFileSync(src, dest);
       copied++;
     }
   }
-  
+
   if (copied > 0) {
     ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to .specialists/default/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} specialist${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  if (refreshed > 0) {
+    ok(`re-synced ${refreshed} canonical specialist${refreshed === 1 ? '' : 's'} in .specialists/default/`);
   }
 }
 
@@ -238,14 +238,15 @@ function copyCanonicalNodeConfigs(cwd: string): void {
   }
 
   let copied = 0;
-  let skipped = 0;
+  let refreshed = 0;
 
   for (const file of files) {
     const src = join(sourceDir, file);
     const dest = join(targetDir, file);
 
     if (existsSync(dest)) {
-      skipped++;
+      copyFileSync(src, dest);
+      refreshed++;
     } else {
       copyFileSync(src, dest);
       copied++;
@@ -255,8 +256,8 @@ function copyCanonicalNodeConfigs(cwd: string): void {
   if (copied > 0) {
     ok(`copied ${copied} canonical node config${copied === 1 ? '' : 's'} to .specialists/default/nodes/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} node config${skipped === 1 ? '' : 's'} already exist (not overwritten)`);
+  if (refreshed > 0) {
+    ok(`re-synced ${refreshed} canonical node config${refreshed === 1 ? '' : 's'} in .specialists/default/nodes/`);
   }
 }
 

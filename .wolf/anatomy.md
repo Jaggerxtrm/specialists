@@ -1204,3 +1204,4 @@
 - `list.ts` — src/cli/list.ts (~2400 tok)
 
 - 2026-04-16: updated dead-PID recovery behavior in src/specialist/supervisor.ts and regression coverage in tests/unit/specialist/supervisor.test.ts.
+- 2026-04-22: updated src/cli/init.ts so --sync-defaults refreshes existing canonical files in .specialists/default/; regression coverage added in tests/unit/cli/init.test.ts.

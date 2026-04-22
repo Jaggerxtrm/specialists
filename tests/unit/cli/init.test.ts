@@ -141,26 +141,40 @@ describe('init CLI — run()', () => {
     expect(existsSync(legacyDefaultPath)).toBe(false);
     expect(existsSync(legacyUserPath)).toBe(false);
   });
-  it('does not overwrite existing specialist files when --sync-defaults', async () => {
+  it('re-syncs existing canonical specialist files when --sync-defaults', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');
     await mkdir(specialistsDir, { recursive: true });
-    const customContent = `specialist:
+    const staleContent = `specialist:
   metadata:
     name: debugger
     version: 99.0.0
-    description: "Custom bug hunt"
+    description: "Stale debugger"
     category: test
   execution:
     model: test-model
   prompt:
-    task_template: "custom"
+    task_template: "stale"
 `;
-    await writeFile(join(specialistsDir, 'debugger.specialist.json'), customContent, 'utf-8');
+    await writeFile(join(specialistsDir, 'debugger.specialist.json'), staleContent, 'utf-8');
+
     await runInit(tempDir, { syncDefaults: true });
-    // The custom file should NOT be overwritten
+
     const content = await readFile(join(specialistsDir, 'debugger.specialist.json'), 'utf-8');
-    expect(content).toContain('99.0.0');
-    expect(content).toContain('Custom bug hunt');
+    expect(content).not.toContain('99.0.0');
+    expect(content).not.toContain('Stale debugger');
+    expect(content).toContain('"name": "debugger"');
+  });
+
+  it('re-syncs existing canonical node config files when --sync-defaults', async () => {
+    const nodesDir = join(tempDir, '.specialists', 'default', 'nodes');
+    await mkdir(nodesDir, { recursive: true });
+    await writeFile(join(nodesDir, 'research.node.json'), '{"stale":true}', 'utf-8');
+
+    await runInit(tempDir, { syncDefaults: true });
+
+    const content = await readFile(join(nodesDir, 'research.node.json'), 'utf-8');
+    expect(content).not.toContain('"stale":true');
+    expect(content).toContain('"name"');
   });
   it('plain init never touches .specialists/default/ even when PI_SESSION_ID is set', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');

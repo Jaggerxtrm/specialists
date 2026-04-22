@@ -25010,12 +25010,13 @@ function copyCanonicalSpecialists(cwd) {
     mkdirSync4(targetDir, { recursive: true });
   }
   let copied = 0;
-  let skipped = 0;
+  let refreshed = 0;
   for (const file of files) {
     const src = join10(sourceDir, file);
     const dest = join10(targetDir, file);
     if (existsSync9(dest)) {
-      skipped++;
+      copyFileSync(src, dest);
+      refreshed++;
     } else {
       copyFileSync(src, dest);
       copied++;
@@ -25024,8 +25025,8 @@ function copyCanonicalSpecialists(cwd) {
   if (copied > 0) {
     ok(`copied ${copied} canonical specialist${copied === 1 ? "" : "s"} to .specialists/default/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} specialist${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  if (refreshed > 0) {
+    ok(`re-synced ${refreshed} canonical specialist${refreshed === 1 ? "" : "s"} in .specialists/default/`);
   }
 }
 function copyCanonicalNodeConfigs(cwd) {
@@ -25044,12 +25045,13 @@ function copyCanonicalNodeConfigs(cwd) {
     mkdirSync4(targetDir, { recursive: true });
   }
   let copied = 0;
-  let skipped = 0;
+  let refreshed = 0;
   for (const file of files) {
     const src = join10(sourceDir, file);
     const dest = join10(targetDir, file);
     if (existsSync9(dest)) {
-      skipped++;
+      copyFileSync(src, dest);
+      refreshed++;
     } else {
       copyFileSync(src, dest);
       copied++;
@@ -25058,8 +25060,8 @@ function copyCanonicalNodeConfigs(cwd) {
   if (copied > 0) {
     ok(`copied ${copied} canonical node config${copied === 1 ? "" : "s"} to .specialists/default/nodes/`);
   }
-  if (skipped > 0) {
-    skip(`${skipped} node config${skipped === 1 ? "" : "s"} already exist (not overwritten)`);
+  if (refreshed > 0) {
+    ok(`re-synced ${refreshed} canonical node config${refreshed === 1 ? "" : "s"} in .specialists/default/nodes/`);
   }
 }
 function installProjectHooks(cwd) {
