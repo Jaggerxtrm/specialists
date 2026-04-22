@@ -24894,7 +24894,7 @@ var exports_init = {};
 __export(exports_init, {
   run: () => run6
 });
-import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync4, readdirSync as readdirSync3, readFileSync as readFileSync7, readlinkSync, renameSync as renameSync2, symlinkSync, writeFileSync as writeFileSync4 } from "fs";
+import { copyFileSync, cpSync, existsSync as existsSync9, lstatSync, mkdirSync as mkdirSync4, readdirSync as readdirSync3, readFileSync as readFileSync7, readlinkSync, renameSync as renameSync2, symlinkSync, unlinkSync, writeFileSync as writeFileSync4 } from "fs";
 import { spawnSync as spawnSync9 } from "child_process";
 import { basename as basename3, dirname as dirname5, join as join10, relative, resolve as resolve4 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
