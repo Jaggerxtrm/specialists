@@ -115,6 +115,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-22T15:12:44.455606+00:00"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-04-22T16:54:34.012262+00:00",
+      "error_message": "specialists init aborted on legacy .pi/.claude skill root symlinks after flattened active migration",
+      "file": "src/cli/init.ts",
+      "root_cause": "validator accepted only exact flattened target and did not auto-rewire repos still pointing at active/pi or active/claude",
+      "fix": "legacy root symlinks are now rewritten in place to flattened active root during init; tests cover both .pi and .claude cases",
+      "tags": [
+        "bugfix",
+        "init",
+        "migration",
+        "symlink"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-22T16:54:34.012279+00:00"
     }
   ]
 }

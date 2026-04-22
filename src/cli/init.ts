@@ -407,9 +407,24 @@ function ensureRootSymlink(rootPath: string, expectedTargetPath: string): void {
   const linkTarget = readlinkSync(rootPath);
   const resolvedTarget = resolve(dirname(rootPath), linkTarget);
   const resolvedExpected = resolve(expectedTargetPath);
-  if (resolvedTarget !== resolvedExpected) {
-    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
+  if (resolvedTarget === resolvedExpected) {
+    return;
   }
+
+  const legacyTargets = [
+    resolve(expectedTargetPath, 'claude'),
+    resolve(expectedTargetPath, 'pi'),
+  ];
+
+  if (legacyTargets.includes(resolvedTarget)) {
+    unlinkSync(rootPath);
+    const relTarget = relative(dirname(rootPath), expectedTargetPath);
+    symlinkSync(relTarget, rootPath);
+    ok(`rewired ${basename(dirname(rootPath))}/${basename(rootPath)} → ${relTarget}`);
+    return;
+  }
+
+  throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
 }
 
 function ensureActiveSkillSymlink(defaultSkillPath: string, activeLinkPath: string): void {
