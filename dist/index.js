@@ -21303,9 +21303,46 @@ function readMergeBase(cwd) {
   const baseBranch = resolveDefaultBranch(cwd);
   return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
 }
-function getPatchSources(cwd) {
+function extractInjectedFileDiff(hunks, file) {
+  const marker = `### ${file}
+`;
+  const start = hunks.indexOf(marker);
+  if (start < 0)
+    return "";
+  const rest = hunks.slice(start + marker.length);
+  const nextHeader = rest.indexOf(`
+
+### `);
+  return (nextHeader >= 0 ? rest.slice(0, nextHeader) : rest).trim();
+}
+function parseInjectedReviewerDiffContext(variables) {
+  const source = variables?.reviewer_diff_source?.trim();
+  const stat2 = variables?.reviewer_diff_stat?.trim();
+  const filesRaw = variables?.reviewer_diff_files?.trim();
+  const hunks = variables?.reviewer_diff_hunks?.trim();
+  if (!source || !filesRaw || !hunks)
+    return null;
+  const files = filesRaw.split(`
+`).map((line) => line.trim()).filter(Boolean);
+  if (files.length === 0)
+    return null;
+  return {
+    source,
+    stat: stat2 || "(no stat)",
+    files,
+    hunks
+  };
+}
+function getPatchSources(cwd, variables) {
   const mergeBase = readMergeBase(cwd);
+  const injectedContext = parseInjectedReviewerDiffContext(variables);
   return [
+    ...injectedContext ? [{
+      source: injectedContext.source,
+      stat: injectedContext.stat,
+      files: injectedContext.files,
+      diffForFile: (file) => extractInjectedFileDiff(injectedContext.hunks, file)
+    }] : [],
     {
       source: "unstaged diff",
       stat: readCommandOutput(cwd, "git diff --stat"),
@@ -21329,8 +21366,8 @@ function getPatchSources(cwd) {
     }
   ];
 }
-function buildReviewerDiffContext(cwd, maxFiles = 20) {
-  for (const source of getPatchSources(cwd)) {
+function buildReviewerDiffContext(cwd, variables, maxFiles = 20) {
+  for (const source of getPatchSources(cwd, variables)) {
     const files = source.files.slice(0, maxFiles);
     if (files.length === 0)
       continue;
@@ -21753,7 +21790,7 @@ ${summaries.join(`
       });
     }
     if (metadata.name === "reviewer" && options.reusedFromJobId) {
-      const reviewerDiffContext = buildReviewerDiffContext(runCwd);
+      const reviewerDiffContext = buildReviewerDiffContext(runCwd, options.variables);
       agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
     }
     const responseFormat = execution.response_format ?? "text";
@@ -28552,6 +28589,59 @@ function buildReusedWorktreeAwarenessBlock(options) {
   ].join(`
 `);
 }
+function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
+  const read = (command) => {
+    try {
+      return execSync3(command, {
+        cwd,
+        stdio: "pipe",
+        encoding: "utf-8",
+        timeout: 5000
+      }).trim();
+    } catch {
+      return "";
+    }
+  };
+  const MAX_TOTAL_HUNKS_CHARS = 12000;
+  const MAX_FILE_DIFF_CHARS = 2000;
+  const stat2 = read("git diff --stat");
+  const files = read("git diff --name-only").split(`
+`).map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
+  if (files.length === 0)
+    return {};
+  let remaining = MAX_TOTAL_HUNKS_CHARS;
+  const sections = [];
+  for (const file of files) {
+    if (remaining <= 0)
+      break;
+    const diff = read(`git diff -- ${shellQuote2(file)}`);
+    const truncated = diff.length > MAX_FILE_DIFF_CHARS ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
+... [truncated]` : diff;
+    const section = truncated ? `### ${file}
+${truncated}` : `### ${file}
+(no hunks)`;
+    if (section.length > remaining) {
+      sections.push(`${section.slice(0, remaining)}
+... [truncated]`);
+      remaining = 0;
+      break;
+    }
+    sections.push(section);
+    remaining -= section.length + 2;
+  }
+  const hunks = sections.join(`
+
+`);
+  if (!hunks.trim())
+    return {};
+  return {
+    reviewer_diff_source: "injected diff context",
+    reviewer_diff_stat: stat2 || "(no stat)",
+    reviewer_diff_files: files.join(`
+`),
+    reviewer_diff_hunks: hunks
+  };
+}
 async function run13() {
   const args = await parseArgs6(process.argv.slice(3));
   const loader = new SpecialistLoader;
@@ -28693,13 +28783,15 @@ async function run13() {
   };
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
+    const injectedReviewerDiffVariables = workingDirectory && args.name === "reviewer" ? buildInjectedReviewerDiffVariables(workingDirectory) : {};
     variables = {
       ...variables ?? {},
       reviewed_job_id: reviewedJobId,
       reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({
         reusedFromJobId: args.reuseJobId,
         worktreeOwnerJobId
-      })
+      }),
+      ...injectedReviewerDiffVariables
     };
   }
   if (!prompt && !effectiveBeadId) {

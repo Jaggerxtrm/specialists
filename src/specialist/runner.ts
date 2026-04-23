@@ -571,10 +571,51 @@ function readMergeBase(cwd: string): string {
   return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
 }
 
-function getPatchSources(cwd: string): PatchSource[] {
+function extractInjectedFileDiff(hunks: string, file: string): string {
+  const marker = `### ${file}\n`;
+  const start = hunks.indexOf(marker);
+  if (start < 0) return '';
+  const rest = hunks.slice(start + marker.length);
+  const nextHeader = rest.indexOf('\n\n### ');
+  return (nextHeader >= 0 ? rest.slice(0, nextHeader) : rest).trim();
+}
+
+function parseInjectedReviewerDiffContext(variables?: Record<string, string>): ReviewerDiffContext | null {
+  const source = variables?.reviewer_diff_source?.trim();
+  const stat = variables?.reviewer_diff_stat?.trim();
+  const filesRaw = variables?.reviewer_diff_files?.trim();
+  const hunks = variables?.reviewer_diff_hunks?.trim();
+
+  if (!source || !filesRaw || !hunks) return null;
+
+  const files = filesRaw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (files.length === 0) return null;
+
+  return {
+    source,
+    stat: stat || '(no stat)',
+    files,
+    hunks,
+  };
+}
+
+function getPatchSources(cwd: string, variables?: Record<string, string>): PatchSource[] {
   const mergeBase = readMergeBase(cwd);
+  const injectedContext = parseInjectedReviewerDiffContext(variables);
 
   return [
+    ...(injectedContext
+      ? [{
+          source: injectedContext.source,
+          stat: injectedContext.stat,
+          files: injectedContext.files,
+          diffForFile: (file: string) => extractInjectedFileDiff(injectedContext.hunks, file),
+        } satisfies PatchSource]
+      : []),
     {
       source: 'unstaged diff',
       stat: readCommandOutput(cwd, 'git diff --stat'),
@@ -596,8 +637,8 @@ function getPatchSources(cwd: string): PatchSource[] {
   ];
 }
 
-function buildReviewerDiffContext(cwd: string, maxFiles = 20): ReviewerDiffContext {
-  for (const source of getPatchSources(cwd)) {
+function buildReviewerDiffContext(cwd: string, variables?: Record<string, string>, maxFiles = 20): ReviewerDiffContext {
+  for (const source of getPatchSources(cwd, variables)) {
     const files = source.files.slice(0, maxFiles);
     if (files.length === 0) continue;
 
@@ -1095,7 +1136,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     }
 
     if (metadata.name === 'reviewer' && options.reusedFromJobId) {
-      const reviewerDiffContext = buildReviewerDiffContext(runCwd);
+      const reviewerDiffContext = buildReviewerDiffContext(runCwd, options.variables);
       agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
     }
 
