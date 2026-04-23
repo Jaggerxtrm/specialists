@@ -136,8 +136,17 @@ function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null 
 
   const content = readFileSync(filePath, 'utf8');
   const rules = parseMandatoryRulesFrontmatter(content, id);
+  if (rules.length > 0) return { id, rules };
 
-  return rules.length > 0 ? { id, rules } : null;
+  const body = content
+    .replace(/^---\n[\s\S]*?\n---\n?/, '')
+    .trim();
+  if (!body) return null;
+
+  return {
+    id,
+    rules: [{ id: `${id}-1`, level: 'required', text: body.replace(/\s+/g, ' ') }],
+  };
 }
 
 function formatMandatoryRulesBlock(sets: MandatoryRuleSet[]): string {
