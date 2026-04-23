@@ -451,6 +451,63 @@ function buildReusedWorktreeAwarenessBlock(options: {
   ].join('\n');
 }
 
+function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20): Record<string, string> {
+  const read = (command: string): string => {
+    try {
+      return execSync(command, {
+        cwd,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+        timeout: 5000,
+      }).trim();
+    } catch {
+      return '';
+    }
+  };
+
+  const MAX_TOTAL_HUNKS_CHARS = 12_000;
+  const MAX_FILE_DIFF_CHARS = 2_000;
+
+  const stat = read('git diff --stat');
+  const files = read('git diff --name-only')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, maxFiles);
+
+  if (files.length === 0) return {};
+
+  let remaining = MAX_TOTAL_HUNKS_CHARS;
+  const sections: string[] = [];
+  for (const file of files) {
+    if (remaining <= 0) break;
+    const diff = read(`git diff -- ${shellQuote(file)}`);
+    const truncated = diff.length > MAX_FILE_DIFF_CHARS
+      ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
+... [truncated]`
+      : diff;
+    const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
+    if (section.length > remaining) {
+      sections.push(`${section.slice(0, remaining)}
+... [truncated]`);
+      remaining = 0;
+      break;
+    }
+    sections.push(section);
+    remaining -= section.length + 2;
+  }
+
+  const hunks = sections.join('\n\n');
+  if (!hunks.trim()) return {};
+
+  return {
+    reviewer_diff_source: 'injected diff context',
+    reviewer_diff_stat: stat || '(no stat)',
+    reviewer_diff_files: files.join('\n'),
+    reviewer_diff_hunks: hunks,
+  };
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run(): Promise<void> {
   const args = await parseArgs(process.argv.slice(3));
@@ -618,6 +675,9 @@ export async function run(): Promise<void> {
 
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
+    const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer'
+      ? buildInjectedReviewerDiffVariables(workingDirectory)
+      : {};
     variables = {
       ...(variables ?? {}),
       reviewed_job_id: reviewedJobId,
@@ -625,6 +685,7 @@ export async function run(): Promise<void> {
         reusedFromJobId: args.reuseJobId,
         worktreeOwnerJobId,
       }),
+      ...injectedReviewerDiffVariables,
     };
   }
 

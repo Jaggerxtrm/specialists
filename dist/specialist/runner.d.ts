@@ -77,6 +77,8 @@ export declare class SpecialistRunner {
         errorMessage?: string;
         tokensBefore?: number;
         summary?: string;
+        source?: string;
+        data?: Record<string, unknown>;
         firstKeptEntryId?: string;
         attempt?: number;
         maxAttempts?: number;

@@ -401,6 +401,43 @@ function buildReusedWorktreeAwarenessBlock(options) {
         'Treat existing tree state as real input context — do not assume clean baseline.',
     ].join('\n');
 }
+function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
+    const read = (command) => {
+        try {
+            return execSync(command, {
+                cwd,
+                stdio: 'pipe',
+                encoding: 'utf-8',
+                timeout: 5000,
+            }).trim();
+        }
+        catch {
+            return '';
+        }
+    };
+    const stat = read('git diff --stat');
+    const files = read('git diff --name-only')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, maxFiles);
+    if (files.length === 0)
+        return {};
+    const hunks = files
+        .map((file) => {
+        const diff = read(`git diff -- ${shellQuote(file)}`);
+        return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
+    })
+        .join('\n\n');
+    if (!hunks.trim())
+        return {};
+    return {
+        reviewer_diff_source: 'injected diff context',
+        reviewer_diff_stat: stat || '(no stat)',
+        reviewer_diff_files: files.join('\n'),
+        reviewer_diff_hunks: hunks,
+    };
+}
 // ── Handler ────────────────────────────────────────────────────────────────────
 export async function run() {
     const args = await parseArgs(process.argv.slice(3));
@@ -549,6 +586,9 @@ export async function run() {
     };
     if (args.reuseJobId) {
         const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
+        const injectedReviewerDiffVariables = workingDirectory
+            ? buildInjectedReviewerDiffVariables(workingDirectory)
+            : {};
         variables = {
             ...(variables ?? {}),
             reviewed_job_id: reviewedJobId,
@@ -556,6 +596,7 @@ export async function run() {
                 reusedFromJobId: args.reuseJobId,
                 worktreeOwnerJobId,
             }),
+            ...injectedReviewerDiffVariables,
         };
     }
     if (!prompt && !effectiveBeadId) {

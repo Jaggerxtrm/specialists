@@ -1,6 +1,9 @@
 // tests/unit/specialist/runner.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -46,6 +49,36 @@ function makeLoader(
       },
     }),
   } as any;
+}
+
+function createReviewerDiffRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'reviewer-diff-'));
+  execSync('git init -b main', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email test@example.com', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name Test User', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -m base', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\nstaged\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  return {
+    dir,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+function createEmptyReviewerRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'reviewer-empty-'));
+  execSync('git init -b main', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email test@example.com', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name Test User', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -m base', { cwd: dir, stdio: 'pipe' });
+  return {
+    dir,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): BeadsClient {
@@ -94,7 +127,9 @@ describe('SpecialistRunner', () => {
     });
     await runner.run({ name: 'test-spec', prompt: 'do thing' });
     expect(mockSession.start).toHaveBeenCalledOnce();
-    expect(mockSession.prompt).toHaveBeenCalledWith('Do do thing');
+    const renderedTask = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+    expect(renderedTask).toContain('Do do thing');
+    expect(renderedTask).toContain('## MANDATORY_RULES');
     expect(mockSession.waitForDone).toHaveBeenCalledOnce();
     expect(mockSession.getLastOutput).toHaveBeenCalledOnce();
     expect(mockSession.close).toHaveBeenCalledOnce();
@@ -131,6 +166,130 @@ describe('SpecialistRunner', () => {
     expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
       excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
     }));
+  });
+
+  it('uses staged diff when unstaged diff empty for reviewer startup', async () => {
+    const repo = createReviewerDiffRepo();
+    try {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+      const runner = new SpecialistRunner({
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: 'reviewer', version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        reusedFromJobId: 'job-reviewed',
+        workingDirectory: repo.dir,
+      });
+
+      const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      const sessionOptions = sessionFactory.mock.calls[0][0] as { systemPrompt?: string };
+      const systemPrompt = sessionOptions.systemPrompt ?? '';
+      expect(promptArg).toContain('review $reviewed_job_id');
+      expect(systemPrompt).toContain('## Reviewer Diff Context');
+      expect(systemPrompt).toContain('Patch source:');
+      expect(systemPrompt).toContain('staged diff');
+      expect(systemPrompt).toContain('Diff stat:');
+      expect(systemPrompt).toContain('tracked.txt');
+      expect(systemPrompt).toContain('staged');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('fails fast when reviewer patch sources all empty', async () => {
+    const repo = createEmptyReviewerRepo();
+    try {
+      const runner = new SpecialistRunner({
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: 'reviewer', version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await expect(runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        reusedFromJobId: 'job-reviewed',
+        workingDirectory: repo.dir,
+      })).rejects.toThrow('Reviewer startup blocked: no patch context found in injected diff, unstaged diff, staged diff, or branch-vs-base diff.');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+
+  it('prefers injected diff context over git fallbacks for reviewer startup', async () => {
+    const repo = createEmptyReviewerRepo();
+    try {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
+      const runner = new SpecialistRunner({
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: 'reviewer', version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory,
+      });
+
+      await runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        reusedFromJobId: 'job-reviewed',
+        workingDirectory: repo.dir,
+        variables: {
+          reviewed_job_id: 'job-reviewed',
+          reviewer_diff_source: 'injected diff context',
+          reviewer_diff_stat: ' tracked.txt | 1 +',
+          reviewer_diff_files: 'tracked.txt',
+          reviewer_diff_hunks: '### tracked.txt\n@@ -1 +1 @@\n-base\n+injected',
+        },
+      });
+
+      const sessionOptions = sessionFactory.mock.calls[0][0] as { systemPrompt?: string };
+      const systemPrompt = sessionOptions.systemPrompt ?? '';
+      expect(systemPrompt).toContain('Patch source:');
+      expect(systemPrompt).toContain('injected diff context');
+      expect(systemPrompt).toContain('tracked.txt');
+      expect(systemPrompt).toContain('+injected');
+    } finally {
+      repo.cleanup();
+    }
   });
 
   it('injects markdown output contract when response_format=markdown', async () => {
@@ -485,11 +644,13 @@ describe('SpecialistRunner', () => {
         prompt: '# Task: Refactor auth',
         inputBeadId: 'unitAI-55d',
       });
-      expect(mockSession.prompt).toHaveBeenCalledWith([
+      const renderedTask = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(renderedTask).toContain([
         'Prompt=# Task: Refactor auth',
         'Bead=# Task: Refactor auth',
         'Id=unitAI-55d',
       ].join('\n'));
+      expect(renderedTask).toContain('## MANDATORY_RULES');
     });
 
     it('substitutes bead template variables in system prompt for bead runs', async () => {

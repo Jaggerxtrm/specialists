@@ -529,44 +529,139 @@ function buildOutputContractInstruction(
 }
 
 interface ReviewerDiffContext {
+  source: string;
   stat: string;
   files: string[];
   hunks: string;
 }
 
-function buildReviewerDiffContext(cwd: string, maxFiles = 20): ReviewerDiffContext {
-  const stat = execSync('git diff --stat', {
-    cwd,
-    encoding: 'utf8',
-    timeout: 10_000,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
-  const files = execSync('git diff --name-only', {
-    cwd,
-    encoding: 'utf8',
-    timeout: 10_000,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).split('\n').map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
+interface PatchSource {
+  source: string;
+  stat: string;
+  files: string[];
+  diffForFile: (file: string) => string;
+}
 
-  if (files.length === 0) {
-    throw new Error('Reviewer startup blocked: git diff is empty. No patch context to review.');
-  }
-
-  const hunks = files.map((file) => {
-    const diff = execSync(`git diff -- ${shellQuote(file)}`, {
+function readCommandOutput(cwd: string, command: string): string {
+  try {
+    return execSync(command, {
       cwd,
       encoding: 'utf8',
       timeout: 10_000,
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
-    return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
-  }).join('\n\n');
+  } catch {
+    return '';
+  }
+}
 
-  return { stat, files, hunks };
+function resolveDefaultBranch(cwd: string): string {
+  const headRef = readCommandOutput(cwd, 'git symbolic-ref refs/remotes/origin/HEAD');
+  if (headRef) {
+    return headRef.split('/').pop() ?? 'main';
+  }
+
+  const remoteHead = readCommandOutput(cwd, 'git remote show origin');
+  const match = remoteHead.match(/HEAD branch:\s*(.+)/);
+  return match?.[1]?.trim() || 'main';
+}
+
+function readMergeBase(cwd: string): string {
+  const baseBranch = resolveDefaultBranch(cwd);
+  return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
+}
+
+function extractInjectedFileDiff(hunks: string, file: string): string {
+  const marker = `### ${file}\n`;
+  const start = hunks.indexOf(marker);
+  if (start < 0) return '';
+  const rest = hunks.slice(start + marker.length);
+  const nextHeader = rest.indexOf('\n\n### ');
+  return (nextHeader >= 0 ? rest.slice(0, nextHeader) : rest).trim();
+}
+
+function parseInjectedReviewerDiffContext(variables?: Record<string, string>): ReviewerDiffContext | null {
+  const source = variables?.reviewer_diff_source?.trim();
+  const stat = variables?.reviewer_diff_stat?.trim();
+  const filesRaw = variables?.reviewer_diff_files?.trim();
+  const hunks = variables?.reviewer_diff_hunks?.trim();
+
+  if (!source || !filesRaw || !hunks) return null;
+
+  const files = filesRaw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (files.length === 0) return null;
+
+  return {
+    source,
+    stat: stat || '(no stat)',
+    files,
+    hunks,
+  };
+}
+
+function getPatchSources(cwd: string, variables?: Record<string, string>): PatchSource[] {
+  const mergeBase = readMergeBase(cwd);
+  const injectedContext = parseInjectedReviewerDiffContext(variables);
+
+  return [
+    ...(injectedContext
+      ? [{
+          source: injectedContext.source,
+          stat: injectedContext.stat,
+          files: injectedContext.files,
+          diffForFile: (file: string) => extractInjectedFileDiff(injectedContext.hunks, file),
+        } satisfies PatchSource]
+      : []),
+    {
+      source: 'unstaged diff',
+      stat: readCommandOutput(cwd, 'git diff --stat'),
+      files: readCommandOutput(cwd, 'git diff --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
+      diffForFile: (file: string) => readCommandOutput(cwd, `git diff -- ${shellQuote(file)}`),
+    },
+    {
+      source: 'staged diff',
+      stat: readCommandOutput(cwd, 'git diff --cached --stat'),
+      files: readCommandOutput(cwd, 'git diff --cached --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
+      diffForFile: (file: string) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`),
+    },
+    {
+      source: 'branch-vs-base diff',
+      stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : '',
+      files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split('\n').map((line) => line.trim()).filter(Boolean) : [],
+      diffForFile: (file: string) => mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : '',
+    },
+  ];
+}
+
+function buildReviewerDiffContext(cwd: string, variables?: Record<string, string>, maxFiles = 20): ReviewerDiffContext {
+  for (const source of getPatchSources(cwd, variables)) {
+    const files = source.files.slice(0, maxFiles);
+    if (files.length === 0) continue;
+
+    const hunks = files.map((file) => {
+      const diff = source.diffForFile(file);
+      return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
+    }).join('\n\n');
+
+    if (hunks.trim()) {
+      return {
+        source: source.source,
+        stat: source.stat,
+        files,
+        hunks,
+      };
+    }
+  }
+
+  throw new Error('Reviewer startup blocked: no patch context found in injected diff, unstaged diff, staged diff, or branch-vs-base diff.');
 }
 
 function buildReviewerDiffInstruction(context: ReviewerDiffContext): string {
-  return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;
+  return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nPatch source:\n${context.source}\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;
 }
 
 function tryParseJson(input: string): { value?: unknown; error?: string } {
@@ -1041,7 +1136,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     }
 
     if (metadata.name === 'reviewer' && options.reusedFromJobId) {
-      const reviewerDiffContext = buildReviewerDiffContext(runCwd);
+      const reviewerDiffContext = buildReviewerDiffContext(runCwd, options.variables);
       agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
     }
 
