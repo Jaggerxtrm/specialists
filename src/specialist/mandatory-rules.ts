@@ -5,6 +5,7 @@ export interface MandatoryRule {
   id: string;
   level: string;
   text: string;
+  when?: string;
 }
 
 export interface MandatoryRuleSet {
@@ -31,6 +32,99 @@ export function loadMandatoryRulesIndex(cwd: string): MandatoryRulesIndex | null
   return readJsonFile<MandatoryRulesIndex>(indexPath);
 }
 
+function parseQuotedScalar(value: string): string {
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
+function parseRuleEntry(lines: string[], startIndex: number): { rule: MandatoryRule; nextIndex: number } | null {
+  const entryLine = lines[startIndex]?.trim();
+  if (!entryLine?.startsWith('- ')) return null;
+
+  const firstLine = entryLine.slice(2).trim();
+  const inlineFields: Record<string, string> = {};
+
+  if (firstLine.length > 0 && !firstLine.includes(':')) {
+    inlineFields.text = parseQuotedScalar(firstLine);
+  } else if (firstLine.length > 0) {
+    const [key, ...rest] = firstLine.split(':');
+    inlineFields[key.trim()] = parseQuotedScalar(rest.join(':'));
+  }
+
+  let nextIndex = startIndex + 1;
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex];
+    if (!line.trim()) {
+      nextIndex += 1;
+      continue;
+    }
+
+    if (/^\s*-\s+/.test(line)) break;
+    if (!/^\s+/.test(line)) break;
+
+    const trimmed = line.trim();
+    const match = trimmed.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!match) {
+      nextIndex += 1;
+      continue;
+    }
+
+    inlineFields[match[1]] = parseQuotedScalar(match[2]);
+    nextIndex += 1;
+  }
+
+  if (!inlineFields.text) return null;
+
+  return {
+    rule: {
+      id: inlineFields.id ?? '',
+      level: inlineFields.level ?? 'required',
+      text: inlineFields.text,
+      ...(inlineFields.when ? { when: inlineFields.when } : {}),
+    },
+    nextIndex,
+  };
+}
+
+function parseMandatoryRulesFrontmatter(content: string, setId: string): MandatoryRule[] {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!frontmatterMatch) return [];
+
+  const lines = frontmatterMatch[1].split('\n');
+  const rulesHeaderIndex = lines.findIndex(line => /^rules:\s*$/.test(line.trim()));
+  if (rulesHeaderIndex === -1) return [];
+
+  const rules: MandatoryRule[] = [];
+  let index = rulesHeaderIndex + 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (!/^\s*-\s+/.test(line)) break;
+
+    const parsed = parseRuleEntry(lines, index);
+    if (!parsed) break;
+
+    const ruleIndex = rules.length + 1;
+    rules.push({
+      id: parsed.rule.id || `${setId}-${ruleIndex}`,
+      level: parsed.rule.level,
+      text: parsed.rule.text,
+      ...(parsed.rule.when ? { when: parsed.rule.when } : {}),
+    });
+    index = parsed.nextIndex;
+  }
+
+  return rules;
+}
+
 function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null {
   const candidates = [
     resolve(cwd, `.specialists/mandatory-rules/${id}.md`),
@@ -41,15 +135,9 @@ function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null 
   if (!filePath) return null;
 
   const content = readFileSync(filePath, 'utf8');
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
-  const body = frontmatterMatch ? content.slice(frontmatterMatch[0].length) : content;
-  const rules = body
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map((text, index) => ({ id: `${id}-${index + 1}`, level: 'required', text }));
+  const rules = parseMandatoryRulesFrontmatter(content, id);
 
-  return { id, rules };
+  return rules.length > 0 ? { id, rules } : null;
 }
 
 function formatMandatoryRulesBlock(sets: MandatoryRuleSet[]): string {

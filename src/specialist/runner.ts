@@ -836,8 +836,9 @@ export class SpecialistRunner {
       : prompt.task_template;
     let renderedTask = renderTemplate(taskTemplate, variables);
 
+    let mandatoryRulesBlock = '';
     try {
-      const mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
+      mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
       if (mandatoryRulesBlock.trim()) {
         const estimatedTokens = Math.ceil((renderedTask.length + mandatoryRulesBlock.length) / 4);
         if (estimatedTokens <= 400) {
@@ -1005,7 +1006,6 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       }),
     });
 
-    const mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
     const mandatoryRulesInjection = (() => {
       if (!mandatoryRulesBlock.trim()) return null;
 
