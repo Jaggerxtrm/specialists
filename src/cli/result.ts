@@ -33,6 +33,13 @@ interface StartupSnapshot {
     gitnexus_tokens: number;
     total_tokens: number;
   };
+  mandatory_rules_injection?: {
+    sets_loaded: string[];
+    rules_count: number;
+    inline_rules_count: number;
+    globals_disabled: boolean;
+    token_estimate: number;
+  };
   skills?: {
     count: number;
     activated: string[];

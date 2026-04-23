@@ -106,6 +106,13 @@ export interface TimelineEventRunStart extends TimelineEventBase {
       gitnexus_tokens: number;
       total_tokens: number;
     };
+    mandatory_rules_injection?: {
+      sets_loaded: string[];
+      rules_count: number;
+      inline_rules_count: number;
+      globals_disabled: boolean;
+      token_estimate: number;
+    };
     skills?: {
       count: number;
       activated: string[];
@@ -129,6 +136,8 @@ export interface TimelineEventMeta extends TimelineEventBase {
     gitnexus_tokens: number;
     total_tokens: number;
   };
+  source?: string;
+  data?: Record<string, unknown>;
 }
 
 /**
@@ -489,6 +498,12 @@ export function mapCallbackEventToTimelineEvent(
       gitnexus_tokens: number;
       total_tokens: number;
     };
+    metaPayload?: {
+      model?: string;
+      backend?: string;
+      source?: string;
+      data?: Record<string, unknown>;
+    };
   }
 ): TimelineEvent | null {
   const t = Date.now();
@@ -636,6 +651,18 @@ export function mapCallbackEventToTimelineEvent(
         backend: 'injected',
         ...(context.memoryInjection ? { memory_injection: context.memoryInjection } : {}),
       };
+
+    case 'meta': {
+      const payload = context.metaPayload;
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: payload?.model ?? 'meta',
+        backend: payload?.backend ?? 'injected',
+        ...(payload?.source ? { source: payload.source } : {}),
+        ...(payload?.data ? { data: payload.data } : {}),
+      };
+    }
 
     case 'text':
       return {

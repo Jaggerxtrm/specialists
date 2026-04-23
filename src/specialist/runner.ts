@@ -744,6 +744,8 @@ export class SpecialistRunner {
         errorMessage?: string;
         tokensBefore?: number;
         summary?: string;
+        source?: string;
+        data?: Record<string, unknown>;
         firstKeptEntryId?: string;
         attempt?: number;
         maxAttempts?: number;
@@ -1002,6 +1004,41 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         },
       }),
     });
+
+    const mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
+    const mandatoryRulesInjection = (() => {
+      if (!mandatoryRulesBlock.trim()) return null;
+
+      const setsLoaded = mandatoryRulesBlock
+        .match(/^###\s+(.+)$/gm)
+        ?.map(line => line.replace(/^###\s+/, '').trim()) ?? [];
+      const ruleCount = (mandatoryRulesBlock.match(/^- \[[^\]]+\]/gm) ?? []).length;
+      const payload = {
+        source: 'mandatory_rules_injection',
+        data: {
+          sets_loaded: setsLoaded,
+          rules_count: ruleCount,
+          inline_rules_count: ruleCount,
+          globals_disabled: false,
+          token_estimate: estimateInjectedTokens(mandatoryRulesBlock),
+        },
+      };
+
+      return {
+        payload,
+        summary: JSON.stringify({
+          kind: 'meta',
+          ...payload,
+        }),
+      };
+    })();
+
+    if (mandatoryRulesInjection) {
+      onEvent?.('meta', {
+        ...mandatoryRulesInjection.payload,
+        summary: mandatoryRulesInjection.summary,
+      });
+    }
 
     if (metadata.name === 'reviewer' && options.reusedFromJobId) {
       const reviewerDiffContext = buildReviewerDiffContext(runCwd);
