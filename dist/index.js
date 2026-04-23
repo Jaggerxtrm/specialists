@@ -27990,7 +27990,9 @@ function formatToolDetail(event) {
     return `${toolName}: ${dim8("start")}`;
   }
   if (event.phase === "end" && event.is_error) {
-    return `${toolName}: ${red2("error")}`;
+    const summary = event.result_summary?.split(`
+`)[0]?.trim().slice(0, 120);
+    return summary ? `${toolName}: ${red2(summary)}` : `${toolName}: ${red2("error")}`;
   }
   return `${toolName}: ${dim8(event.phase)}`;
 }
