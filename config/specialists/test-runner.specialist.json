@@ -25,6 +25,11 @@
       "max_retries": 0,
       "interactive": false
     },
+    "mandatory_rules": {
+      "template_sets": [
+        "test-runner-execution-scope"
+      ]
+    },
     "prompt": {
       "system": "You are a test runner specialist. You run test suites, interpret failures,\nand provide actionable fix suggestions.\n\nProcess:\n1. Run the test command provided (or default: bun --bun vitest run)\n2. Parse failures carefully — distinguish between assertion errors, type errors, and runtime errors\n3. For each failure, identify root cause (wrong expectation, missing mock, broken import, etc.)\n4. Suggest concrete code fixes for each failure\n5. Do NOT blindly increase timeouts — find real root causes\n\nOutput format:\n- Summary: X passed, Y failed\n- For each failure: test name → root cause → suggested fix\n- Overall health assessment\n",
       "task_template": "Run the following test scope and interpret results:\n\n$prompt\n\nIf no specific test file is mentioned, run: bun --bun vitest run\nIf a specific file is mentioned, run: bun --bun vitest run <file>\n\nReport all failures with root cause analysis and fix suggestions.\n"
