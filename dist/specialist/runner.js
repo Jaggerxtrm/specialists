@@ -374,32 +374,66 @@ function buildOutputContractInstruction(responseFormat, outputType, outputSchema
     }
     return `\n\n${lines.join('\n')}`;
 }
-function buildReviewerDiffContext(cwd, maxFiles = 20) {
-    const stat = execSync('git diff --stat', {
-        cwd,
-        encoding: 'utf8',
-        timeout: 10_000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-    const files = execSync('git diff --name-only', {
-        cwd,
-        encoding: 'utf8',
-        timeout: 10_000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-    }).split('\n').map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
-    if (files.length === 0) {
-        throw new Error('Reviewer startup blocked: git diff is empty. No patch context to review.');
-    }
-    const hunks = files.map((file) => {
-        const diff = execSync(`git diff -- ${shellQuote(file)}`, {
+function readCommandOutput(cwd, command) {
+    try {
+        return execSync(command, {
             cwd,
             encoding: 'utf8',
             timeout: 10_000,
             stdio: ['ignore', 'pipe', 'pipe'],
         }).trim();
-        return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
-    }).join('\n\n');
-    return { stat, files, hunks };
+    }
+    catch {
+        return '';
+    }
+}
+function resolveDefaultBranch(cwd) {
+    const headRef = readCommandOutput(cwd, 'git symbolic-ref refs/remotes/origin/HEAD');
+    if (headRef) {
+        return headRef.split('/').pop() ?? 'main';
+    }
+    const remoteHead = readCommandOutput(cwd, 'git remote show origin');
+    const match = remoteHead.match(/HEAD branch:\s*(.+)/);
+    return (match?.[1]?.trim() || 'main');
+}
+function readMergeBase(cwd) {
+    const baseBranch = resolveDefaultBranch(cwd);
+    return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
+}
+function getPatchSources(cwd) {
+    const mergeBase = readMergeBase(cwd);
+    return [
+        {
+            stat: readCommandOutput(cwd, 'git diff --stat'),
+            files: readCommandOutput(cwd, 'git diff --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
+            diffForFile: (file) => readCommandOutput(cwd, `git diff -- ${shellQuote(file)}`),
+        },
+        {
+            stat: readCommandOutput(cwd, 'git diff --cached --stat'),
+            files: readCommandOutput(cwd, 'git diff --cached --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
+            diffForFile: (file) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`),
+        },
+        {
+            stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : '',
+            files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split('\n').map((line) => line.trim()).filter(Boolean) : [],
+            diffForFile: (file) => mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : '',
+        },
+    ];
+}
+function buildReviewerDiffContext(cwd, maxFiles = 20) {
+    for (const source of getPatchSources(cwd)) {
+        const files = source.files.slice(0, maxFiles);
+        if (files.length === 0)
+            continue;
+        const hunks = files.map((file) => {
+            const diff = source.diffForFile(file);
+            return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
+        }).join('\n\n');
+        if (hunks.trim()) {
+            return { stat: source.stat, files, hunks };
+        }
+    }
+    throw new Error('Reviewer startup blocked: no patch context found in injected diff, unstaged diff, staged diff, or branch-vs-base diff.');
 }
 function buildReviewerDiffInstruction(context) {
     return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;

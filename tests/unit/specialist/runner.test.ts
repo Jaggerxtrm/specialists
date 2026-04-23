@@ -1,6 +1,9 @@
 // tests/unit/specialist/runner.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { HookEmitter } from '../../../src/specialist/hooks.js';
 import { CircuitBreaker } from '../../../src/utils/circuitBreaker.js';
@@ -46,6 +49,22 @@ function makeLoader(
       },
     }),
   } as any;
+}
+
+function createReviewerDiffRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'reviewer-diff-'));
+  execSync('git init -b main', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email test@example.com', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name Test User', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -m base', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\nstaged\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  return {
+    dir,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): BeadsClient {
@@ -131,6 +150,37 @@ describe('SpecialistRunner', () => {
     expect(sessionFactory).toHaveBeenCalledWith(expect.objectContaining({
       excludeExtensions: ['pi-serena-tools', 'pi-gitnexus'],
     }));
+  });
+
+  it('uses staged diff when unstaged diff empty for reviewer startup', async () => {
+    const repo = createReviewerDiffRepo();
+    try {
+      const runner = new SpecialistRunner({
+        loader: makeLoader(
+          { permission_required: 'READ_ONLY' },
+          'never',
+          { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+        ),
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        reusedFromJobId: 'job-reviewed',
+        workingDirectory: repo.dir,
+      });
+
+      const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
+      expect(promptArg).toContain('## Reviewer Diff Context');
+      expect(promptArg).toContain('Diff stat:');
+      expect(promptArg).toContain('tracked.txt');
+      expect(promptArg).toContain('staged');
+    } finally {
+      repo.cleanup();
+    }
   });
 
   it('injects markdown output contract when response_format=markdown', async () => {
