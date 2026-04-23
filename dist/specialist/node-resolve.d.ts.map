@@ -1,0 +1,1 @@
+{"version":3,"file":"node-resolve.d.ts","sourceRoot":"","sources":["../../src/specialist/node-resolve.ts"],"names":[],"mappings":"AAAA,OAAO,EAAuD,KAAK,yBAAyB,EAAE,MAAM,2BAA2B,CAAC;AAwBhI,wBAAgB,wBAAwB,CAAC,UAAU,EAAE,MAAM,EAAE,YAAY,EAAE,yBAAyB,GAAG,MAAM,CAQ5G;AAED,wBAAgB,cAAc,CAAC,UAAU,EAAE,MAAM,GAAG,MAAM,CAOzD;AAED,wBAAgB,0BAA0B,CAAC,YAAY,CAAC,EAAE,yBAAyB,GAAG,MAAM,CAe3F"}

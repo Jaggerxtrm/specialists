@@ -1,0 +1,107 @@
+/**
+ * Specialists MCP Server
+ *
+ * Exposes only `use_specialist`. All specialist orchestration runs through the CLI.
+ */
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { CallToolRequestSchema, ListToolsRequestSchema, } from "@modelcontextprotocol/sdk/types.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { join } from "node:path";
+import { MCP_CONFIG } from "./constants.js";
+import { logger } from "./utils/logger.js";
+import { SpecialistLoader } from "./specialist/loader.js";
+import { SpecialistRunner } from "./specialist/runner.js";
+import { HookEmitter } from "./specialist/hooks.js";
+import { CircuitBreaker } from "./utils/circuitBreaker.js";
+import { BeadsClient } from "./specialist/beads.js";
+import { createUseSpecialistTool, useSpecialistSchema } from "./tools/specialist/use_specialist.tool.js";
+import { z } from "zod";
+export class SpecialistsServer {
+    server;
+    tools;
+    constructor() {
+        const circuitBreaker = new CircuitBreaker();
+        const loader = new SpecialistLoader();
+        const hooks = new HookEmitter({
+            tracePath: join(process.cwd(), ".specialists", "trace.jsonl"),
+        });
+        const beadsClient = new BeadsClient();
+        const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
+        this.tools = [createUseSpecialistTool(runner)];
+        this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
+        this.setupHandlers();
+    }
+    toolSchemas = {};
+    setupHandlers() {
+        const schemaMap = {
+            use_specialist: useSpecialistSchema,
+        };
+        this.toolSchemas = schemaMap;
+        this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+            logger.debug("Received ListTools request");
+            const tools = this.tools.map(t => ({
+                name: t.name,
+                description: t.description,
+                inputSchema: zodToJsonSchema(schemaMap[t.name] ?? z.object({})),
+            }));
+            logger.debug(`Returning ${tools.length} tools`);
+            return { tools };
+        });
+        this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+            const { name: toolName, arguments: args = {} } = request.params;
+            logger.info(`Tool call: ${toolName}`);
+            const tool = this.tools.find(t => t.name === toolName);
+            if (!tool) {
+                logger.error(`Tool not found: ${toolName}`);
+                throw new Error(`Tool '${toolName}' not found`);
+            }
+            const schema = this.toolSchemas[toolName];
+            const parsed = schema ? schema.parse(args) : args;
+            // Stream pi tokens → MCP logging notifications
+            const onProgress = (msg) => {
+                this.server.notification({
+                    method: 'notifications/message',
+                    params: { level: 'info', logger: 'specialists', data: msg },
+                }).catch(() => { });
+            };
+            try {
+                const result = await tool.execute(parsed, onProgress);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+                        },
+                    ],
+                };
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.error(`Tool ${toolName} failed: ${message}`);
+                throw error;
+            }
+        });
+    }
+    async start() {
+        try {
+            const transport = new StdioServerTransport();
+            await this.server.connect(transport);
+            logger.info(`Specialists MCP Server v2 started — ${this.tools.length} tools registered`);
+            // Graceful SIGTERM shutdown (e.g. when Claude Code session ends)
+            process.on('SIGTERM', async () => {
+                logger.info('SIGTERM received — shutting down');
+                await this.stop();
+                process.exit(0);
+            });
+        }
+        catch (error) {
+            logger.error("Failed to start server", error);
+            process.exit(1);
+        }
+    }
+    async stop() {
+        logger.info("Stopping server...");
+    }
+}
+//# sourceMappingURL=server.js.map

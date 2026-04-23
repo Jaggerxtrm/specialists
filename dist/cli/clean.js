@@ -1,0 +1,222 @@
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, } from 'node:fs';
+import { join } from 'node:path';
+import { resolveJobsDir } from '../specialist/job-root.js';
+import { collectWorktreeGcCandidates, pruneWorktrees, } from '../specialist/worktree-gc.js';
+const MS_PER_DAY = 86_400_000;
+const DEFAULT_TTL_DAYS = 7;
+const COMPLETED_STATUSES = new Set(['done', 'error']);
+const PROTECTED_SQLITE_SUFFIXES = ['.db', '.db-wal', '.db-shm'];
+function parseTtlDaysFromEnvironment() {
+    const rawValue = process.env.SPECIALISTS_JOB_TTL_DAYS ?? process.env.JOB_TTL_DAYS;
+    if (!rawValue)
+        return DEFAULT_TTL_DAYS;
+    const parsedValue = Number(rawValue);
+    if (!Number.isFinite(parsedValue) || parsedValue < 0)
+        return DEFAULT_TTL_DAYS;
+    return parsedValue;
+}
+function parseOptions(argv) {
+    let removeAllCompleted = false;
+    let dryRun = false;
+    let keepRecentCount = null;
+    for (let index = 0; index < argv.length; index += 1) {
+        const argument = argv[index];
+        if (argument === '--all') {
+            removeAllCompleted = true;
+            continue;
+        }
+        if (argument === '--dry-run') {
+            dryRun = true;
+            continue;
+        }
+        if (argument === '--keep') {
+            const value = argv[index + 1];
+            if (!value) {
+                throw new Error('Missing value for --keep');
+            }
+            const parsedValue = Number(value);
+            const isInteger = Number.isInteger(parsedValue);
+            if (!isInteger || parsedValue < 0) {
+                throw new Error('--keep must be a non-negative integer');
+            }
+            keepRecentCount = parsedValue;
+            index += 1;
+            continue;
+        }
+        if (argument.startsWith('--keep=')) {
+            const value = argument.slice('--keep='.length);
+            const parsedValue = Number(value);
+            const isInteger = Number.isInteger(parsedValue);
+            if (!isInteger || parsedValue < 0) {
+                throw new Error('--keep must be a non-negative integer');
+            }
+            keepRecentCount = parsedValue;
+            continue;
+        }
+        throw new Error(`Unknown option: ${argument}`);
+    }
+    return { removeAllCompleted, dryRun, keepRecentCount };
+}
+function readDirectorySizeBytes(directoryPath) {
+    let totalBytes = 0;
+    const entries = readdirSync(directoryPath, { withFileTypes: true });
+    for (const entry of entries) {
+        const entryPath = join(directoryPath, entry.name);
+        const stats = statSync(entryPath);
+        if (stats.isDirectory()) {
+            totalBytes += readDirectorySizeBytes(entryPath);
+            continue;
+        }
+        totalBytes += stats.size;
+    }
+    return totalBytes;
+}
+function containsProtectedSqliteArtifact(directoryPath) {
+    const entries = readdirSync(directoryPath, { withFileTypes: true });
+    for (const entry of entries) {
+        const entryPath = join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            if (containsProtectedSqliteArtifact(entryPath))
+                return true;
+            continue;
+        }
+        if (PROTECTED_SQLITE_SUFFIXES.some(suffix => entry.name.endsWith(suffix))) {
+            return true;
+        }
+    }
+    return false;
+}
+function readCompletedJobDirectory(baseDirectory, entry) {
+    if (!entry.isDirectory())
+        return null;
+    const directoryPath = join(baseDirectory, entry.name);
+    if (containsProtectedSqliteArtifact(directoryPath))
+        return null;
+    const statusFilePath = join(directoryPath, 'status.json');
+    if (!existsSync(statusFilePath))
+        return null;
+    let statusData;
+    try {
+        statusData = JSON.parse(readFileSync(statusFilePath, 'utf-8'));
+    }
+    catch {
+        return null;
+    }
+    if (!COMPLETED_STATUSES.has(statusData.status))
+        return null;
+    const directoryStats = statSync(directoryPath);
+    return {
+        id: entry.name,
+        directoryPath,
+        modifiedAtMs: directoryStats.mtimeMs,
+        startedAtMs: statusData.started_at_ms,
+        sizeBytes: readDirectorySizeBytes(directoryPath),
+    };
+}
+function collectCompletedJobDirectories(jobsDirectoryPath) {
+    const entries = readdirSync(jobsDirectoryPath, { withFileTypes: true });
+    const completedJobs = [];
+    for (const entry of entries) {
+        const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
+        if (completedJob) {
+            completedJobs.push(completedJob);
+        }
+    }
+    return completedJobs;
+}
+function selectJobsToRemove(completedJobs, options) {
+    const jobsByNewest = [...completedJobs].sort((left, right) => {
+        if (right.startedAtMs !== left.startedAtMs) {
+            return right.startedAtMs - left.startedAtMs;
+        }
+        return right.modifiedAtMs - left.modifiedAtMs;
+    });
+    if (options.keepRecentCount !== null) {
+        return jobsByNewest.slice(options.keepRecentCount);
+    }
+    if (options.removeAllCompleted) {
+        return jobsByNewest;
+    }
+    const ttlDays = parseTtlDaysFromEnvironment();
+    const cutoffMs = Date.now() - ttlDays * MS_PER_DAY;
+    return jobsByNewest.filter(job => job.modifiedAtMs < cutoffMs);
+}
+function formatBytes(bytes) {
+    if (bytes < 1024)
+        return `${bytes} B`;
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+function renderSummary(removedCount, freedBytes, dryRun) {
+    const action = dryRun ? 'Would remove' : 'Removed';
+    const noun = removedCount === 1 ? 'directory' : 'directories';
+    return `${action} ${removedCount} job ${noun} (${formatBytes(freedBytes)} freed)`;
+}
+function printDryRunPlan(jobs) {
+    if (jobs.length === 0)
+        return;
+    console.log('Would remove:');
+    for (const job of jobs) {
+        console.log(`  - ${job.id}`);
+    }
+}
+function printWorktreeDryRunPlan(candidates) {
+    if (candidates.length === 0)
+        return;
+    console.log('Would remove worktrees:');
+    for (const candidate of candidates) {
+        const label = candidate.branch ? ` (${candidate.branch})` : '';
+        console.log(`  - ${candidate.jobId}${label}: ${candidate.worktreePath}`);
+    }
+}
+function printWorktreeGcSummary(removed, skipped) {
+    if (removed.length === 0 && skipped.length === 0)
+        return;
+    const noun = removed.length === 1 ? 'worktree' : 'worktrees';
+    console.log(`Removed ${removed.length} ${noun}` + (skipped.length > 0 ? ` (${skipped.length} skipped)` : '') + '.');
+}
+function printUsageAndExit(message) {
+    console.error(message);
+    console.error('Usage: specialists|sp clean [--all] [--keep <n>] [--dry-run]');
+    process.exit(1);
+}
+export async function run() {
+    let options;
+    try {
+        options = parseOptions(process.argv.slice(3));
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        printUsageAndExit(message);
+    }
+    const jobsDirectoryPath = resolveJobsDir();
+    if (!existsSync(jobsDirectoryPath)) {
+        console.log('No jobs directory found.');
+        return;
+    }
+    const completedJobs = collectCompletedJobDirectories(jobsDirectoryPath);
+    const jobsToRemove = selectJobsToRemove(completedJobs, options);
+    const freedBytes = jobsToRemove.reduce((total, job) => total + job.sizeBytes, 0);
+    const worktreeCandidates = collectWorktreeGcCandidates(jobsDirectoryPath);
+    if (options.dryRun) {
+        printDryRunPlan(jobsToRemove);
+        console.log(renderSummary(jobsToRemove.length, freedBytes, true));
+        printWorktreeDryRunPlan(worktreeCandidates);
+        return;
+    }
+    for (const job of jobsToRemove) {
+        rmSync(job.directoryPath, { recursive: true, force: true });
+    }
+    console.log(renderSummary(jobsToRemove.length, freedBytes, false));
+    if (worktreeCandidates.length > 0) {
+        const worktreeResult = pruneWorktrees(worktreeCandidates);
+        printWorktreeGcSummary(worktreeResult.removed, worktreeResult.skipped);
+    }
+}
+//# sourceMappingURL=clean.js.map

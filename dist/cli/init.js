@@ -1,0 +1,768 @@
+// src/cli/init.ts
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ensureObservabilityDbFile, ensureGitignoreHasObservabilityDbEntries, isPathInsideJobsDirectory, resolveObservabilityDbLocation, } from '../specialist/observability-db.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { syncMemoriesCacheFromBd } from '../specialist/memory-retrieval.js';
+// ── ANSI helpers ───────────────────────────────────────────────────────────────
+const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+function ok(msg) { console.log(`  ${green('✓')} ${msg}`); }
+function skip(msg) { console.log(`  ${yellow('○')} ${msg}`); }
+function warn(msg) { console.warn(`  ${yellow('!')} ${msg}`); }
+function isInstalled(bin) {
+    return spawnSync('which', [bin], { encoding: 'utf8', timeout: 2000 }).status === 0;
+}
+function assertXtrmPrerequisites(cwd) {
+    const hasXtrmDir = existsSync(join(cwd, '.xtrm'));
+    const hasXtCli = isInstalled('xt');
+    if (hasXtrmDir && hasXtCli)
+        return;
+    console.error('specialists requires xtrm. Run: npm install -g xtrm-tools && xt install');
+    process.exit(1);
+}
+function warnMissingOptionalPrerequisites() {
+    const optionalTools = [
+        { name: 'pi', install: 'npm install -g @mariozechner/pi-coding-agent' },
+        { name: 'bd', install: 'npm install -g @jaggerxtrm/beads' },
+        { name: 'sp', install: 'npm install -g @jaggerxtrm/specialists' },
+    ];
+    const missingTools = optionalTools.filter(tool => !isInstalled(tool.name));
+    if (missingTools.length === 0)
+        return;
+    warn('Optional CLI prerequisites are missing. Init will continue, but workflow commands may fail:');
+    for (const tool of missingTools) {
+        warn(`${tool.name}: install via ${tool.install}`);
+    }
+}
+const AGENTS_BLOCK = `
+## Specialists
+
+Use CLI commands via Bash to run and monitor specialists:
+
+Core specialist commands (CLI-first in pi):
+- \`specialists list\`
+- \`specialists run <name> --bead <id>\`
+- \`specialists run <name> --prompt "..."\`
+- \`specialists feed -f\` / \`specialists feed <job-id>\`
+- \`specialists result <job-id>\`
+- \`specialists resume <job-id> "next task"\` (for keep-alive jobs in waiting)
+- \`specialists stop <job-id>\`
+
+For background specialists in pi, prefer the process extension:
+- \`process start\`, \`process list\`, \`process output\`, \`process logs\`, \`process kill\`, \`process clear\`
+- TUI: \`/ps\`, \`/ps:pin\`, \`/ps:logs\`, \`/ps:kill\`, \`/ps:clear\`, \`/ps:dock\`, \`/ps:settings\`
+
+Canonical tracked flow:
+1. Create/claim bead issue
+2. Run specialist with \`--bead <id>\` (for long work, launch via \`process start\`)
+3. Observe progress (\`process output\` / \`process logs\` or \`specialists feed\`)
+4. Read final output (\`specialists result <job-id>\`)
+5. Close/update bead with outcome
+
+Add custom specialists to \`.specialists/user/\` to extend defaults.
+`.trimStart();
+const AGENTS_MARKER = '## Specialists';
+const GITIGNORE_ENTRIES = [
+    '.specialists/jobs/',
+    '.specialists/ready/',
+    '.specialists/db/*.db',
+    '.specialists/db/*.db-wal',
+    '.specialists/db/*.db-shm',
+];
+const MCP_FILE = '.mcp.json';
+const MCP_SERVER_NAME = 'specialists';
+const MCP_SERVER_CONFIG = { command: 'specialists', args: [] };
+function loadJson(path, fallback) {
+    if (!existsSync(path))
+        return structuredClone(fallback);
+    try {
+        return JSON.parse(readFileSync(path, 'utf-8'));
+    }
+    catch {
+        return structuredClone(fallback);
+    }
+}
+function saveJson(path, value) {
+    writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf-8');
+}
+/**
+ * Resolve a path relative to this package's installed location.
+ * Handles both bundled (dist/index.js) and source (src/cli/init.ts) modes.
+ */
+function resolvePackagePath(relativePath) {
+    // All canonical assets now live in config/ directory
+    const configPath = `config/${relativePath}`;
+    // Try from bundled location (dist/index.js -> ../config/relativePath)
+    let resolved = fileURLToPath(new URL(`../${configPath}`, import.meta.url));
+    if (existsSync(resolved))
+        return resolved;
+    // Try from source location (src/cli/init.ts -> ../../config/relativePath)
+    resolved = fileURLToPath(new URL(`../../${configPath}`, import.meta.url));
+    if (existsSync(resolved))
+        return resolved;
+    return null;
+}
+/**
+ * Move legacy nested specialist files from .specialists/<scope>/specialists/
+ * to the flattened .specialists/<scope>/ layout.
+ */
+function migrateLegacySpecialists(cwd, scope) {
+    const sourceDir = join(cwd, '.specialists', scope, 'specialists');
+    if (!existsSync(sourceDir))
+        return;
+    const targetDir = join(cwd, '.specialists', scope);
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+    const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.json') || f.endsWith('.specialist.json'));
+    if (files.length === 0)
+        return;
+    let moved = 0;
+    let skipped = 0;
+    for (const file of files) {
+        const src = join(sourceDir, file);
+        const dest = join(targetDir, file);
+        if (existsSync(dest)) {
+            skipped++;
+            continue;
+        }
+        renameSync(src, dest);
+        moved++;
+    }
+    if (moved > 0) {
+        ok(`migrated ${moved} specialist${moved === 1 ? '' : 's'} from .specialists/${scope}/specialists/ to .specialists/${scope}/`);
+    }
+    if (skipped > 0) {
+        skip(`${skipped} legacy specialist${skipped === 1 ? '' : 's'} already exist in .specialists/${scope}/ (not moved)`);
+    }
+}
+/**
+ * Copy canonical specialists to .specialists/default/
+ */
+function copyCanonicalSpecialists(cwd) {
+    const sourceDir = resolvePackagePath('specialists');
+    if (!sourceDir) {
+        skip('no canonical specialists found in package');
+        return;
+    }
+    const targetDir = join(cwd, '.specialists', 'default');
+    const files = readdirSync(sourceDir).filter(f => f.endsWith('.specialist.json'));
+    if (files.length === 0) {
+        skip('no specialist files found in package');
+        return;
+    }
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+    let copied = 0;
+    let refreshed = 0;
+    for (const file of files) {
+        const src = join(sourceDir, file);
+        const dest = join(targetDir, file);
+        if (existsSync(dest)) {
+            copyFileSync(src, dest);
+            refreshed++;
+        }
+        else {
+            copyFileSync(src, dest);
+            copied++;
+        }
+    }
+    if (copied > 0) {
+        ok(`copied ${copied} canonical specialist${copied === 1 ? '' : 's'} to .specialists/default/`);
+    }
+    if (refreshed > 0) {
+        ok(`re-synced ${refreshed} canonical specialist${refreshed === 1 ? '' : 's'} in .specialists/default/`);
+    }
+}
+/**
+ * Copy canonical node configs to .specialists/default/nodes/
+ */
+function copyCanonicalNodeConfigs(cwd) {
+    const sourceDir = resolvePackagePath('nodes');
+    if (!sourceDir) {
+        skip('no canonical node configs found in package');
+        return;
+    }
+    const targetDir = join(cwd, '.specialists', 'default', 'nodes');
+    const files = readdirSync(sourceDir).filter(f => f.endsWith('.node.json'));
+    if (files.length === 0) {
+        skip('no node config files found in package');
+        return;
+    }
+    if (!existsSync(targetDir)) {
+        mkdirSync(targetDir, { recursive: true });
+    }
+    let copied = 0;
+    let refreshed = 0;
+    for (const file of files) {
+        const src = join(sourceDir, file);
+        const dest = join(targetDir, file);
+        if (existsSync(dest)) {
+            copyFileSync(src, dest);
+            refreshed++;
+        }
+        else {
+            copyFileSync(src, dest);
+            copied++;
+        }
+    }
+    if (copied > 0) {
+        ok(`copied ${copied} canonical node config${copied === 1 ? '' : 's'} to .specialists/default/nodes/`);
+    }
+    if (refreshed > 0) {
+        ok(`re-synced ${refreshed} canonical node config${refreshed === 1 ? '' : 's'} in .specialists/default/nodes/`);
+    }
+}
+/**
+ * Install canonical specialists hooks to .xtrm/hooks/specialists/
+ * and expose .claude/hooks/* entries as symlinks into .xtrm/hooks/.
+ */
+function installProjectHooks(cwd) {
+    const sourceDir = resolvePackagePath('hooks');
+    if (!sourceDir) {
+        skip('no canonical hooks found in package');
+        return;
+    }
+    const xtrmHooksDir = join(cwd, '.xtrm', 'hooks');
+    const targetDir = join(xtrmHooksDir, 'specialists');
+    const claudeHooksDir = join(cwd, '.claude', 'hooks');
+    const hooks = readdirSync(sourceDir).filter(f => f.endsWith('.mjs'));
+    if (hooks.length === 0) {
+        skip('no hook files found in package');
+        return;
+    }
+    mkdirSync(targetDir, { recursive: true });
+    mkdirSync(claudeHooksDir, { recursive: true });
+    let copied = 0;
+    let skippedCopies = 0;
+    let linked = 0;
+    let rewiredLinks = 0;
+    let skippedLinks = 0;
+    for (const file of hooks) {
+        const src = join(sourceDir, file);
+        const xtrmDest = join(targetDir, file);
+        if (existsSync(xtrmDest)) {
+            skippedCopies++;
+        }
+        else {
+            copyFileSync(src, xtrmDest);
+            copied++;
+        }
+        const claudeHookPath = join(claudeHooksDir, file);
+        const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
+        if (existsSync(claudeHookPath)) {
+            const stats = lstatSync(claudeHookPath);
+            if (!stats.isSymbolicLink()) {
+                unlinkSync(claudeHookPath);
+                symlinkSync(relativeTarget, claudeHookPath);
+                rewiredLinks++;
+                continue;
+            }
+            const currentTarget = resolve(dirname(claudeHookPath), readlinkSync(claudeHookPath));
+            if (currentTarget !== xtrmDest) {
+                unlinkSync(claudeHookPath);
+                symlinkSync(relativeTarget, claudeHookPath);
+                rewiredLinks++;
+                continue;
+            }
+            skippedLinks++;
+            continue;
+        }
+        symlinkSync(relativeTarget, claudeHookPath);
+        linked++;
+    }
+    if (copied > 0)
+        ok(`installed ${copied} hook${copied === 1 ? '' : 's'} to .xtrm/hooks/specialists/`);
+    if (skippedCopies > 0)
+        skip(`${skippedCopies} hook${skippedCopies === 1 ? '' : 's'} already exist in .xtrm/hooks/specialists/ (not overwritten)`);
+    if (linked > 0)
+        ok(`linked ${linked} hook${linked === 1 ? '' : 's'} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+    if (rewiredLinks > 0)
+        ok(`rewired ${rewiredLinks} legacy hook${rewiredLinks === 1 ? '' : 's'} in .claude/hooks/ -> .xtrm/hooks/specialists/`);
+    if (skippedLinks > 0)
+        skip(`${skippedLinks} hook${skippedLinks === 1 ? '' : 's'} already present in .claude/hooks/ (left unchanged)`);
+}
+/**
+ * Wire hooks in .claude/settings.json
+ */
+function ensureProjectHookWiring(cwd) {
+    const settingsPath = join(cwd, '.claude', 'settings.json');
+    // Ensure .claude directory exists
+    const settingsDir = join(cwd, '.claude');
+    if (!existsSync(settingsDir)) {
+        mkdirSync(settingsDir, { recursive: true });
+    }
+    const settings = loadJson(settingsPath, {});
+    if (!settings.hooks || typeof settings.hooks !== 'object') {
+        settings.hooks = {};
+    }
+    const hooksObj = settings.hooks;
+    let changed = false;
+    // Clean up stale top-level hook keys from previous buggy versions
+    for (const event of ['UserPromptSubmit', 'PostToolUse', 'SessionStart']) {
+        if (Array.isArray(settings[event])) {
+            delete settings[event];
+            changed = true;
+        }
+    }
+    // Helper to add hook inside settings.hooks (Claude Code's expected format)
+    function addHook(event, command) {
+        const eventList = hooksObj[event] ?? [];
+        hooksObj[event] = eventList;
+        const alreadyWired = eventList.some((entry) => entry?.hooks?.some?.((h) => h?.command === command));
+        if (!alreadyWired) {
+            eventList.push({ matcher: '', hooks: [{ type: 'command', command }] });
+            changed = true;
+        }
+    }
+    // Wire hooks with symlinked .claude/hooks/ paths
+    addHook('UserPromptSubmit', 'node .claude/hooks/specialists-complete.mjs');
+    addHook('PostToolUse', 'node .claude/hooks/specialists-complete.mjs');
+    addHook('PostToolUse', 'node .claude/hooks/specialists-memory-cache-sync.mjs');
+    addHook('SessionStart', 'node .claude/hooks/specialists-session-start.mjs');
+    if (changed) {
+        saveJson(settingsPath, settings);
+        ok('wired specialists hooks in .claude/settings.json');
+    }
+    else {
+        skip('.claude/settings.json already has specialists hooks');
+    }
+}
+/**
+ * Ensure .claude/skills and .pi/skills are symlinks to flattened .xtrm active skill root.
+ * Creates the symlink if missing (e.g. on a fresh repo where xt install hasn't wired skill roots yet).
+ */
+function ensureRootSymlink(rootPath, expectedTargetPath) {
+    if (!existsSync(rootPath)) {
+        mkdirSync(dirname(rootPath), { recursive: true });
+        const relTarget = relative(dirname(rootPath), expectedTargetPath);
+        symlinkSync(relTarget, rootPath);
+        ok(`created ${basename(dirname(rootPath))}/${basename(rootPath)} → ${relTarget}`);
+        return;
+    }
+    const stats = lstatSync(rootPath);
+    if (!stats.isSymbolicLink()) {
+        throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
+    }
+    const linkTarget = readlinkSync(rootPath);
+    const resolvedTarget = resolve(dirname(rootPath), linkTarget);
+    const resolvedExpected = resolve(expectedTargetPath);
+    if (resolvedTarget === resolvedExpected) {
+        return;
+    }
+    const legacyTargets = [
+        resolve(expectedTargetPath, 'claude'),
+        resolve(expectedTargetPath, 'pi'),
+    ];
+    if (legacyTargets.includes(resolvedTarget)) {
+        unlinkSync(rootPath);
+        const relTarget = relative(dirname(rootPath), expectedTargetPath);
+        symlinkSync(relTarget, rootPath);
+        ok(`rewired ${basename(dirname(rootPath))}/${basename(rootPath)} → ${relTarget}`);
+        return;
+    }
+    throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
+}
+function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
+    let stats;
+    try {
+        stats = lstatSync(activeLinkPath);
+    }
+    catch (error) {
+        const fileError = error;
+        if (fileError.code === 'ENOENT') {
+            const relativeTarget = `../default/${basename(defaultSkillPath)}`;
+            symlinkSync(relativeTarget, activeLinkPath, 'dir');
+            return;
+        }
+        throw error;
+    }
+    if (!stats.isSymbolicLink()) {
+        throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
+    }
+    const currentTarget = resolve(dirname(activeLinkPath), readlinkSync(activeLinkPath));
+    if (currentTarget !== resolve(defaultSkillPath)) {
+        throw new Error(`${activeLinkPath} points to an unexpected target.`);
+    }
+}
+/**
+ * Sync canonical skills into .xtrm skill roots and wire active symlinks.
+ */
+function installProjectSkills(cwd, syncSkills) {
+    const xtrmRoot = join(cwd, '.xtrm');
+    if (!existsSync(xtrmRoot)) {
+        throw new Error('.xtrm/ is missing. Install xtrm first, then run specialists init.');
+    }
+    const sourceDir = resolvePackagePath('skills');
+    if (!sourceDir) {
+        skip('no canonical skills found in package');
+        return;
+    }
+    const skills = readdirSync(sourceDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+    if (skills.length === 0) {
+        skip('no skill directories found in package');
+        return;
+    }
+    const defaultRoot = join(cwd, '.xtrm', 'skills', 'default');
+    const activeRoot = join(cwd, '.xtrm', 'skills', 'active');
+    mkdirSync(defaultRoot, { recursive: true });
+    mkdirSync(activeRoot, { recursive: true });
+    ensureRootSymlink(join(cwd, '.claude', 'skills'), activeRoot);
+    ensureRootSymlink(join(cwd, '.pi', 'skills'), activeRoot);
+    let copied = 0;
+    let refreshed = 0;
+    for (const skill of skills) {
+        const src = join(sourceDir, skill);
+        const defaultSkillPath = join(defaultRoot, skill);
+        if (existsSync(defaultSkillPath)) {
+            if (syncSkills) {
+                cpSync(src, defaultSkillPath, { recursive: true, force: true });
+                refreshed++;
+            }
+        }
+        else {
+            cpSync(src, defaultSkillPath, { recursive: true });
+            copied++;
+        }
+        ensureActiveSkillSymlink(defaultSkillPath, join(activeRoot, skill));
+    }
+    if (copied > 0)
+        ok(`copied ${copied} skill${copied === 1 ? '' : 's'} to .xtrm/skills/default/`);
+    if (refreshed > 0)
+        ok(`re-synced ${refreshed} skill${refreshed === 1 ? '' : 's'} in .xtrm/skills/default/`);
+    ok('verified active skill symlinks in .xtrm/skills/active/');
+}
+/**
+ * Create .specialists/default/ and .specialists/user/ directories.
+ * Safe to call always — creates empty dirs only, never writes YAML.
+ */
+function createSpecialistsDirs(cwd) {
+    const defaultDir = join(cwd, '.specialists', 'default');
+    const userDir = join(cwd, '.specialists', 'user');
+    let created = 0;
+    for (const dir of [defaultDir, userDir]) {
+        if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+            created++;
+        }
+    }
+    if (created > 0) {
+        ok('created .specialists/default/ and .specialists/user/');
+    }
+}
+/**
+ * Create runtime directories (jobs, ready)
+ */
+function createRuntimeDirs(cwd) {
+    const runtimeDirs = [
+        join(cwd, '.specialists', 'jobs'),
+        join(cwd, '.specialists', 'ready'),
+    ];
+    let created = 0;
+    for (const dir of runtimeDirs) {
+        if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+            created++;
+        }
+    }
+    if (created > 0) {
+        ok('created .specialists/jobs/ and .specialists/ready/');
+    }
+}
+function ensureProjectMcp(cwd) {
+    const mcpPath = join(cwd, MCP_FILE);
+    const mcp = loadJson(mcpPath, { mcpServers: {} });
+    mcp.mcpServers ??= {};
+    const existing = mcp.mcpServers[MCP_SERVER_NAME];
+    if (existing &&
+        existing.command === MCP_SERVER_CONFIG.command &&
+        Array.isArray(existing.args) &&
+        existing.args.length === MCP_SERVER_CONFIG.args.length) {
+        skip('.mcp.json already registers specialists');
+        return;
+    }
+    mcp.mcpServers[MCP_SERVER_NAME] = MCP_SERVER_CONFIG;
+    saveJson(mcpPath, mcp);
+    ok('registered specialists in project .mcp.json');
+}
+function ensureGitignore(cwd) {
+    const gitignorePath = join(cwd, '.gitignore');
+    const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+    let added = 0;
+    const lines = existing.split('\n');
+    for (const entry of GITIGNORE_ENTRIES) {
+        if (!lines.includes(entry)) {
+            lines.push(entry);
+            added++;
+        }
+    }
+    if (added > 0) {
+        writeFileSync(gitignorePath, lines.join('\n') + '\n', 'utf-8');
+        ok('added .specialists/jobs/ and .specialists/ready/ to .gitignore');
+    }
+    else {
+        skip('.gitignore already has runtime entries');
+    }
+}
+/**
+ * Initialize the observability SQLite database if it doesn't already exist.
+ * Uses exclusive-create (wx flag) internally — safe to call on every init,
+ * will never overwrite or reset an existing database.
+ */
+function ensureObservabilityDb(cwd) {
+    const location = resolveObservabilityDbLocation(cwd);
+    if (isPathInsideJobsDirectory(location.dbPath, location.gitRoot)) {
+        skip('observability DB path resolves inside jobs directory — skipped');
+        return;
+    }
+    const alreadyExists = existsSync(location.dbPath);
+    if (alreadyExists) {
+        skip('observability database already exists (not touched)');
+        return;
+    }
+    const { created } = ensureObservabilityDbFile(location);
+    if (!created) {
+        skip('observability database already exists (not touched)');
+        return;
+    }
+    // Initialize schema on the freshly created file
+    const client = createObservabilitySqliteClient(cwd);
+    if (client) {
+        client.close();
+        ok('created observability database (.specialists/db/observability.db)');
+    }
+    else {
+        ok('created observability database file (schema init deferred — sqlite3/bun not available)');
+    }
+    ensureGitignoreHasObservabilityDbEntries(location.gitRoot);
+}
+function ensureAgentsMd(cwd) {
+    const agentsPath = join(cwd, 'AGENTS.md');
+    if (existsSync(agentsPath)) {
+        const existing = readFileSync(agentsPath, 'utf-8');
+        if (existing.includes(AGENTS_MARKER)) {
+            skip('AGENTS.md already has Specialists section');
+        }
+        else {
+            writeFileSync(agentsPath, existing.trimEnd() + '\n\n' + AGENTS_BLOCK, 'utf-8');
+            ok('appended Specialists section to AGENTS.md');
+        }
+    }
+    else {
+        writeFileSync(agentsPath, AGENTS_BLOCK, 'utf-8');
+        ok('created AGENTS.md with Specialists section');
+    }
+}
+function readJsonObject(path) {
+    if (!existsSync(path))
+        return {};
+    try {
+        return JSON.parse(readFileSync(path, 'utf-8'));
+    }
+    catch {
+        return {};
+    }
+}
+function hasHookCommand(settings, eventName, command) {
+    const hooks = settings.hooks;
+    if (!hooks || typeof hooks !== 'object')
+        return false;
+    const eventEntries = hooks[eventName];
+    if (!Array.isArray(eventEntries))
+        return false;
+    return eventEntries.some(entry => {
+        if (!entry || typeof entry !== 'object')
+            return false;
+        const hookItems = entry.hooks;
+        if (!Array.isArray(hookItems))
+            return false;
+        return hookItems.some(hook => {
+            if (!hook || typeof hook !== 'object')
+                return false;
+            return hook.command === command;
+        });
+    });
+}
+function validateInitPostconditions(cwd) {
+    const warnings = [];
+    const xtrmHooksDir = join(cwd, '.xtrm', 'hooks', 'specialists');
+    const xtrmHookFiles = existsSync(xtrmHooksDir)
+        ? readdirSync(xtrmHooksDir).filter(file => file.endsWith('.mjs'))
+        : [];
+    if (xtrmHookFiles.length === 0) {
+        warnings.push('.xtrm/hooks/specialists/ is missing or has no .mjs hooks');
+    }
+    const claudeHooksDir = join(cwd, '.claude', 'hooks');
+    for (const hookFile of xtrmHookFiles) {
+        const claudeHookPath = join(claudeHooksDir, hookFile);
+        if (!existsSync(claudeHookPath)) {
+            warnings.push(`.claude/hooks/${hookFile} is missing`);
+            continue;
+        }
+        const stats = lstatSync(claudeHookPath);
+        if (!stats.isSymbolicLink()) {
+            warnings.push(`.claude/hooks/${hookFile} is not a symlink`);
+            continue;
+        }
+        const expectedTarget = resolve(xtrmHooksDir, hookFile);
+        const resolvedTarget = resolve(dirname(claudeHookPath), readlinkSync(claudeHookPath));
+        if (resolvedTarget !== expectedTarget) {
+            warnings.push(`.claude/hooks/${hookFile} points to unexpected target`);
+        }
+    }
+    const settings = readJsonObject(join(cwd, '.claude', 'settings.json'));
+    const requiredHookWiring = [
+        { event: 'UserPromptSubmit', command: 'node .claude/hooks/specialists-complete.mjs' },
+        { event: 'PostToolUse', command: 'node .claude/hooks/specialists-complete.mjs' },
+        { event: 'PostToolUse', command: 'node .claude/hooks/specialists-memory-cache-sync.mjs' },
+        { event: 'SessionStart', command: 'node .claude/hooks/specialists-session-start.mjs' },
+    ];
+    for (const hook of requiredHookWiring) {
+        if (!hasHookCommand(settings, hook.event, hook.command)) {
+            warnings.push(`.claude/settings.json missing hook wiring: ${hook.event} -> ${hook.command}`);
+        }
+    }
+    const mcp = readJsonObject(join(cwd, '.mcp.json'));
+    const mcpServers = mcp.mcpServers;
+    const specialistsServer = mcpServers && typeof mcpServers === 'object'
+        ? mcpServers.specialists
+        : undefined;
+    if (!specialistsServer || typeof specialistsServer !== 'object') {
+        warnings.push('.mcp.json missing mcpServers.specialists registration');
+    }
+    const runtimeDirs = [join(cwd, '.specialists', 'jobs'), join(cwd, '.specialists', 'ready')];
+    for (const runtimeDir of runtimeDirs) {
+        if (!existsSync(runtimeDir)) {
+            warnings.push(`${relative(cwd, runtimeDir)} is missing`);
+        }
+    }
+    const defaultSkillsRoot = join(cwd, '.xtrm', 'skills', 'default');
+    const defaultSkills = existsSync(defaultSkillsRoot)
+        ? readdirSync(defaultSkillsRoot, { withFileTypes: true }).filter(entry => entry.isDirectory())
+        : [];
+    if (defaultSkills.length === 0) {
+        warnings.push('.xtrm/skills/default/ is missing or has no skill directories');
+    }
+    const rootSymlinks = [
+        {
+            linkPath: join(cwd, '.claude', 'skills'),
+            expectedTarget: join(cwd, '.xtrm', 'skills', 'active'),
+        },
+        {
+            linkPath: join(cwd, '.pi', 'skills'),
+            expectedTarget: join(cwd, '.xtrm', 'skills', 'active'),
+        },
+    ];
+    for (const symlink of rootSymlinks) {
+        if (!existsSync(symlink.linkPath)) {
+            warnings.push(`${relative(cwd, symlink.linkPath)} is missing`);
+            continue;
+        }
+        const stats = lstatSync(symlink.linkPath);
+        if (!stats.isSymbolicLink()) {
+            warnings.push(`${relative(cwd, symlink.linkPath)} is not a symlink`);
+            continue;
+        }
+        const resolvedTarget = resolve(dirname(symlink.linkPath), readlinkSync(symlink.linkPath));
+        if (resolvedTarget !== resolve(symlink.expectedTarget)) {
+            warnings.push(`${relative(cwd, symlink.linkPath)} points to an unexpected target`);
+        }
+    }
+    return warnings;
+}
+export async function run(opts = {}) {
+    const cwd = process.cwd();
+    const forceInit = process.env.SPECIALISTS_INIT_FORCE === '1';
+    const inAgentSession = !forceInit && (!process.stdin.isTTY ||
+        !!process.env.SPECIALISTS_TMUX_SESSION ||
+        !!process.env.SPECIALISTS_JOB_ID ||
+        !!process.env.PI_SESSION_ID ||
+        !!process.env.PI_RPC_SOCKET);
+    if (inAgentSession) {
+        console.error('specialists init requires an interactive terminal. This is a user-only bootstrap command — do not invoke from scripts or agent sessions.');
+        process.exit(1);
+    }
+    console.log(`\n${bold('specialists init')}\n`);
+    const { syncDefaults = false, syncSkills = false, noXtrmCheck = false } = opts;
+    if (!noXtrmCheck) {
+        assertXtrmPrerequisites(cwd);
+    }
+    warnMissingOptionalPrerequisites();
+    // ── 1. Create .specialists/ structure ─────────────────────────────────────
+    if (syncDefaults) {
+        migrateLegacySpecialists(cwd, 'default');
+        copyCanonicalSpecialists(cwd);
+        copyCanonicalNodeConfigs(cwd);
+    }
+    else {
+        skip('.specialists/default/ not synced (pass --sync-defaults to write canonical specialists)');
+    }
+    migrateLegacySpecialists(cwd, 'user');
+    createSpecialistsDirs(cwd);
+    createRuntimeDirs(cwd);
+    // ── 2. Update .gitignore (only runtime dirs) ──────────────────────────────
+    ensureGitignore(cwd);
+    // ── 3. Scaffold AGENTS.md ─────────────────────────────────────────────────
+    ensureAgentsMd(cwd);
+    // ── 4. Register MCP at project scope ──────────────────────────────────────
+    ensureProjectMcp(cwd);
+    // ── 5. Install hooks via .xtrm/hooks/specialists and .claude symlinks ────
+    installProjectHooks(cwd);
+    ensureProjectHookWiring(cwd);
+    // ── 6. Install skills via .xtrm default + active symlink roots ────────────
+    installProjectSkills(cwd, syncSkills);
+    // ── 7. Initialize observability database (never overwrites existing) ──────
+    ensureObservabilityDb(cwd);
+    // ── 8. Full memory cache sync (FTS bootstrap) ──────────────────────────────
+    try {
+        const syncResult = syncMemoriesCacheFromBd(cwd, Date.now(), true);
+        if (syncResult.synced) {
+            ok(`synced memories FTS cache (${syncResult.memoryCount} records)`);
+        }
+        else {
+            skip('memories FTS cache sync skipped (not available)');
+        }
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warn(`memories FTS cache sync failed during init (non-fatal): ${message}`);
+    }
+    const postconditionWarnings = validateInitPostconditions(cwd);
+    if (postconditionWarnings.length > 0) {
+        warn('Init completed with postcondition warnings:');
+        for (const warningMessage of postconditionWarnings) {
+            warn(warningMessage);
+        }
+    }
+    // ── Done ──────────────────────────────────────────────────────────────────
+    console.log(`\n${bold('Done!')}\n`);
+    console.log(`  ${dim('Project-local installation:')}`);
+    console.log(`  .xtrm/hooks/specialists/ ${dim('# canonical specialists hooks')}`);
+    console.log(`  .claude/hooks/            ${dim('# symlinks -> .xtrm/hooks/specialists')}`);
+    console.log(`  .claude/settings.json     ${dim('# hook wiring')}`);
+    console.log(`  .xtrm/skills/default/  ${dim('# canonical skills')}`);
+    console.log(`  .xtrm/skills/active/   ${dim('# flattened active skill root')}`);
+    console.log(`  .claude/skills/        ${dim('# symlink -> .xtrm/skills/active')}`);
+    console.log(`  .pi/skills/            ${dim('# symlink -> .xtrm/skills/active')}`);
+    console.log('');
+    console.log(`  ${dim('.specialists/ structure:')}`);
+    console.log(`  .specialists/`);
+    console.log(`  ├── default/           ${dim('# canonical specialists (from init --sync-defaults)')}`);
+    console.log(`  ├── user/              ${dim('# your custom specialists')}`);
+    console.log(`  ├── db/                ${dim('# observability SQLite (gitignored)')}`);
+    console.log(`  ├── jobs/              ${dim('# runtime (gitignored)')}`);
+    console.log(`  └── ready/             ${dim('# runtime (gitignored)')}`);
+    console.log(`\n  ${dim('Next steps:')}`);
+    console.log(`  1. Run ${yellow('specialists list')} to see available specialists`);
+    console.log(`  2. Add custom specialists to ${yellow('.specialists/user/')}`);
+    console.log(`  3. Restart Claude Code or pi to pick up changes\n`);
+}
+//# sourceMappingURL=init.js.map
