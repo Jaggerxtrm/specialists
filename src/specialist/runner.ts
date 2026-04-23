@@ -840,13 +840,13 @@ export class SpecialistRunner {
     try {
       mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
       if (mandatoryRulesBlock.trim()) {
-        const estimatedTokens = Math.ceil((renderedTask.length + mandatoryRulesBlock.length) / 4);
-        if (estimatedTokens <= 400) {
+        const rulesTokens = Math.ceil(mandatoryRulesBlock.length / 4);
+        if (rulesTokens <= 2000) {
           renderedTask = `${renderedTask}
 
 ${mandatoryRulesBlock}`;
         } else {
-          console.warn('[specialist runner] Skipping MANDATORY_RULES injection: token budget exceeded');
+          console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: rules block too large (${rulesTokens} tokens, limit 2000)`);
         }
       }
     } catch (error) {
