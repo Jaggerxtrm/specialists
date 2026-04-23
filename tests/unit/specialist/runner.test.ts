@@ -67,6 +67,20 @@ function createReviewerDiffRepo() {
   };
 }
 
+function createEmptyReviewerRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'reviewer-empty-'));
+  execSync('git init -b main', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.email test@example.com', { cwd: dir, stdio: 'pipe' });
+  execSync('git config user.name Test User', { cwd: dir, stdio: 'pipe' });
+  writeFileSync(join(dir, 'tracked.txt'), 'base\n');
+  execSync('git add tracked.txt', { cwd: dir, stdio: 'pipe' });
+  execSync('git commit -m base', { cwd: dir, stdio: 'pipe' });
+  return {
+    dir,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
 function makeBeadsClient(overrides: Partial<Record<string, unknown>> = {}): BeadsClient {
   return {
     isAvailable: vi.fn().mockReturnValue(true),
@@ -155,15 +169,23 @@ describe('SpecialistRunner', () => {
   it('uses staged diff when unstaged diff empty for reviewer startup', async () => {
     const repo = createReviewerDiffRepo();
     try {
+      const sessionFactory = vi.fn().mockResolvedValue(mockSession);
       const runner = new SpecialistRunner({
-        loader: makeLoader(
-          { permission_required: 'READ_ONLY' },
-          'never',
-          { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
-        ),
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: 'reviewer', version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
         hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
         circuitBreaker: new CircuitBreaker(),
-        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+        sessionFactory,
       });
 
       await runner.run({
@@ -174,10 +196,47 @@ describe('SpecialistRunner', () => {
       });
 
       const promptArg = mockSession.prompt.mock.calls.at(-1)?.[0] as string;
-      expect(promptArg).toContain('## Reviewer Diff Context');
-      expect(promptArg).toContain('Diff stat:');
-      expect(promptArg).toContain('tracked.txt');
-      expect(promptArg).toContain('staged');
+      const sessionOptions = sessionFactory.mock.calls[0][0] as { systemPrompt?: string };
+      const systemPrompt = sessionOptions.systemPrompt ?? '';
+      expect(promptArg).toContain('review $reviewed_job_id');
+      expect(systemPrompt).toContain('## Reviewer Diff Context');
+      expect(systemPrompt).toContain('Patch source:');
+      expect(systemPrompt).toContain('staged diff');
+      expect(systemPrompt).toContain('Diff stat:');
+      expect(systemPrompt).toContain('tracked.txt');
+      expect(systemPrompt).toContain('staged');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('fails fast when reviewer patch sources all empty', async () => {
+    const repo = createEmptyReviewerRepo();
+    try {
+      const runner = new SpecialistRunner({
+        loader: {
+          get: vi.fn().mockResolvedValue({
+            specialist: {
+              metadata: { name: 'reviewer', version: '1.0.0' },
+              execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+              prompt: { task_template: 'review $reviewed_job_id', system: 'You are reviewer.' },
+              communication: undefined,
+              capabilities: undefined,
+              beads_integration: 'never',
+            },
+          }),
+        } as any,
+        hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace.jsonl' }),
+        circuitBreaker: new CircuitBreaker(),
+        sessionFactory: vi.fn().mockResolvedValue(mockSession),
+      });
+
+      await expect(runner.run({
+        name: 'reviewer',
+        prompt: 'review this',
+        reusedFromJobId: 'job-reviewed',
+        workingDirectory: repo.dir,
+      })).rejects.toThrow('Reviewer startup blocked: no patch context found in injected diff, unstaged diff, staged diff, or branch-vs-base diff.');
     } finally {
       repo.cleanup();
     }

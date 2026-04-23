@@ -529,12 +529,14 @@ function buildOutputContractInstruction(
 }
 
 interface ReviewerDiffContext {
+  source: string;
   stat: string;
   files: string[];
   hunks: string;
 }
 
 interface PatchSource {
+  source: string;
   stat: string;
   files: string[];
   diffForFile: (file: string) => string;
@@ -574,16 +576,19 @@ function getPatchSources(cwd: string): PatchSource[] {
 
   return [
     {
+      source: 'unstaged diff',
       stat: readCommandOutput(cwd, 'git diff --stat'),
       files: readCommandOutput(cwd, 'git diff --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
       diffForFile: (file: string) => readCommandOutput(cwd, `git diff -- ${shellQuote(file)}`),
     },
     {
+      source: 'staged diff',
       stat: readCommandOutput(cwd, 'git diff --cached --stat'),
       files: readCommandOutput(cwd, 'git diff --cached --name-only').split('\n').map((line) => line.trim()).filter(Boolean),
       diffForFile: (file: string) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`),
     },
     {
+      source: 'branch-vs-base diff',
       stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : '',
       files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split('\n').map((line) => line.trim()).filter(Boolean) : [],
       diffForFile: (file: string) => mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : '',
@@ -603,6 +608,7 @@ function buildReviewerDiffContext(cwd: string, maxFiles = 20): ReviewerDiffConte
 
     if (hunks.trim()) {
       return {
+        source: source.source,
         stat: source.stat,
         files,
         hunks,
@@ -614,7 +620,7 @@ function buildReviewerDiffContext(cwd: string, maxFiles = 20): ReviewerDiffConte
 }
 
 function buildReviewerDiffInstruction(context: ReviewerDiffContext): string {
-  return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;
+  return `\n\n---\n## Reviewer Diff Context\nReview only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.\nIf patch context is empty, stop and fail fast.\n\nPatch source:\n${context.source}\n\nDiff stat:\n${context.stat || '(no stat)'}\n\nChanged files:\n${context.files.map((file) => `- ${file}`).join('\n')}\n\nDiff hunks:\n${context.hunks}\n---\n`;
 }
 
 function tryParseJson(input: string): { value?: unknown; error?: string } {

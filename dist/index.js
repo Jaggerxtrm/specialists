@@ -21307,18 +21307,21 @@ function getPatchSources(cwd) {
   const mergeBase = readMergeBase(cwd);
   return [
     {
+      source: "unstaged diff",
       stat: readCommandOutput(cwd, "git diff --stat"),
       files: readCommandOutput(cwd, "git diff --name-only").split(`
 `).map((line) => line.trim()).filter(Boolean),
       diffForFile: (file) => readCommandOutput(cwd, `git diff -- ${shellQuote(file)}`)
     },
     {
+      source: "staged diff",
       stat: readCommandOutput(cwd, "git diff --cached --stat"),
       files: readCommandOutput(cwd, "git diff --cached --name-only").split(`
 `).map((line) => line.trim()).filter(Boolean),
       diffForFile: (file) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`)
     },
     {
+      source: "branch-vs-base diff",
       stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : "",
       files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split(`
 `).map((line) => line.trim()).filter(Boolean) : [],
@@ -21341,6 +21344,7 @@ ${diff}` : `### ${file}
 `);
     if (hunks.trim()) {
       return {
+        source: source.source,
         stat: source.stat,
         files,
         hunks
@@ -21356,6 +21360,9 @@ function buildReviewerDiffInstruction(context) {
 ## Reviewer Diff Context
 Review only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.
 If patch context is empty, stop and fail fast.
+
+Patch source:
+${context.source}
 
 Diff stat:
 ${context.stat || "(no stat)"}
