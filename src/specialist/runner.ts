@@ -13,6 +13,7 @@ import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 import { stripJsonFences } from './json-output.js';
+import { buildMandatoryRulesBlock } from './mandatory-rules.js';
 
 export interface RunOptions {
   name: string;
@@ -831,7 +832,24 @@ export class SpecialistRunner {
     const taskTemplate = options.inputBeadId
       ? renderTemplate(prompt.task_template, beadTemplateVariables)
       : prompt.task_template;
-    const renderedTask = renderTemplate(taskTemplate, variables);
+    let renderedTask = renderTemplate(taskTemplate, variables);
+
+    try {
+      const mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
+      if (mandatoryRulesBlock.trim()) {
+        const estimatedTokens = Math.ceil((renderedTask.length + mandatoryRulesBlock.length) / 4);
+        if (estimatedTokens <= 400) {
+          renderedTask = `${renderedTask}
+
+${mandatoryRulesBlock}`;
+        } else {
+          console.warn('[specialist runner] Skipping MANDATORY_RULES injection: token budget exceeded');
+        }
+      }
+    } catch (error) {
+      console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
+    }
+
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
     await hooks.emit('post_render', invocationId, metadata.name, metadata.version, {
