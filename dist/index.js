@@ -21299,8 +21299,13 @@ function resolveDefaultBranch(cwd) {
   const match = remoteHead.match(/HEAD branch:\s*(.+)/);
   return match?.[1]?.trim() || "main";
 }
-function buildReviewerDiffContext(cwd, maxFiles = 20) {
-  const patchSources = [
+function readMergeBase(cwd) {
+  const baseBranch = resolveDefaultBranch(cwd);
+  return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
+}
+function getPatchSources(cwd) {
+  const mergeBase = readMergeBase(cwd);
+  return [
     {
       stat: readCommandOutput(cwd, "git diff --stat"),
       files: readCommandOutput(cwd, "git diff --name-only").split(`
@@ -21314,25 +21319,15 @@ function buildReviewerDiffContext(cwd, maxFiles = 20) {
       diffForFile: (file) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`)
     },
     {
-      stat: (() => {
-        const baseBranch = resolveDefaultBranch(cwd);
-        const mergeBase = readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
-        return mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : "";
-      })(),
-      files: (() => {
-        const baseBranch = resolveDefaultBranch(cwd);
-        const mergeBase = readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
-        return mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split(`
-`).map((line) => line.trim()).filter(Boolean) : [];
-      })(),
-      diffForFile: (file) => {
-        const baseBranch = resolveDefaultBranch(cwd);
-        const mergeBase = readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
-        return mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : "";
-      }
+      stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : "",
+      files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split(`
+`).map((line) => line.trim()).filter(Boolean) : [],
+      diffForFile: (file) => mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : ""
     }
   ];
-  for (const source of patchSources) {
+}
+function buildReviewerDiffContext(cwd, maxFiles = 20) {
+  for (const source of getPatchSources(cwd)) {
     const files = source.files.slice(0, maxFiles);
     if (files.length === 0)
       continue;
