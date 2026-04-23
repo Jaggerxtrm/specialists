@@ -13,6 +13,7 @@ import type { SpecialistLoader } from './loader.js';
 import type { HookEmitter } from './hooks.js';
 import { isAuthError, isTransientError, type CircuitBreaker } from '../utils/circuitBreaker.js';
 import { stripJsonFences } from './json-output.js';
+import { buildMandatoryRulesBlock } from './mandatory-rules.js';
 
 export interface RunOptions {
   name: string;
@@ -743,6 +744,8 @@ export class SpecialistRunner {
         errorMessage?: string;
         tokensBefore?: number;
         summary?: string;
+        source?: string;
+        data?: Record<string, unknown>;
         firstKeptEntryId?: string;
         attempt?: number;
         maxAttempts?: number;
@@ -831,7 +834,25 @@ export class SpecialistRunner {
     const taskTemplate = options.inputBeadId
       ? renderTemplate(prompt.task_template, beadTemplateVariables)
       : prompt.task_template;
-    const renderedTask = renderTemplate(taskTemplate, variables);
+    let renderedTask = renderTemplate(taskTemplate, variables);
+
+    let mandatoryRulesBlock = '';
+    try {
+      mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
+      if (mandatoryRulesBlock.trim()) {
+        const estimatedTokens = Math.ceil((renderedTask.length + mandatoryRulesBlock.length) / 4);
+        if (estimatedTokens <= 400) {
+          renderedTask = `${renderedTask}
+
+${mandatoryRulesBlock}`;
+        } else {
+          console.warn('[specialist runner] Skipping MANDATORY_RULES injection: token budget exceeded');
+        }
+      }
+    } catch (error) {
+      console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
+    }
+
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
 
     await hooks.emit('post_render', invocationId, metadata.name, metadata.version, {
@@ -984,6 +1005,40 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         },
       }),
     });
+
+    const mandatoryRulesInjection = (() => {
+      if (!mandatoryRulesBlock.trim()) return null;
+
+      const setsLoaded = mandatoryRulesBlock
+        .match(/^###\s+(.+)$/gm)
+        ?.map(line => line.replace(/^###\s+/, '').trim()) ?? [];
+      const ruleCount = (mandatoryRulesBlock.match(/^- \[[^\]]+\]/gm) ?? []).length;
+      const payload = {
+        source: 'mandatory_rules_injection',
+        data: {
+          sets_loaded: setsLoaded,
+          rules_count: ruleCount,
+          inline_rules_count: ruleCount,
+          globals_disabled: false,
+          token_estimate: estimateInjectedTokens(mandatoryRulesBlock),
+        },
+      };
+
+      return {
+        payload,
+        summary: JSON.stringify({
+          kind: 'meta',
+          ...payload,
+        }),
+      };
+    })();
+
+    if (mandatoryRulesInjection) {
+      onEvent?.('meta', {
+        ...mandatoryRulesInjection.payload,
+        summary: mandatoryRulesInjection.summary,
+      });
+    }
 
     if (metadata.name === 'reviewer' && options.reusedFromJobId) {
       const reviewerDiffContext = buildReviewerDiffContext(runCwd);

@@ -1,12 +1,9 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
-export type MandatoryRuleLevel = 'error' | 'warn' | 'info';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export interface MandatoryRule {
   id: string;
-  level?: MandatoryRuleLevel;
+  level: string;
   text: string;
   when?: string;
 }
@@ -16,168 +13,156 @@ export interface MandatoryRuleSet {
   rules: MandatoryRule[];
 }
 
-export interface MandatoryRulesIndex {
+interface MandatoryRulesIndex {
   required_template_sets?: string[];
   default_template_sets?: string[];
 }
 
-export interface MandatoryRulesConfig {
-  mandatory_rules?: {
-    template_sets?: string[];
-    disable_default_globals?: boolean;
-    inline_rules?: MandatoryRule[];
-  };
+function readJsonFile<T>(filePath: string): T {
+  return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
 
-interface LoadMandatoryRulesOptions {
-  projectDir?: string;
-}
-
-function getProjectDir(options: LoadMandatoryRulesOptions = {}): string {
-  return options.projectDir ?? process.cwd();
-}
-
-function parseJson<T>(content: string, filePath: string): T {
-  try {
-    return JSON.parse(content) as T;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to parse JSON from ${filePath}: ${message}`);
-  }
-}
-
-function parseFrontmatterRules(content: string, filePath: string): MandatoryRule[] {
-  const trimmed = content.trim();
-  if (!trimmed.startsWith('---')) {
-    throw new Error(`Missing YAML frontmatter in ${filePath}`);
+export function loadMandatoryRulesIndex(cwd: string): MandatoryRulesIndex | null {
+  const indexPath = resolve(cwd, 'config/mandatory-rules/index.json');
+  if (!existsSync(indexPath)) {
+    console.warn('[specialist runner] Missing config/mandatory-rules/index.json; skipping MANDATORY_RULES injection');
+    return null;
   }
 
-  const end = trimmed.indexOf('\n---', 3);
-  if (end === -1) {
-    throw new Error(`Unterminated YAML frontmatter in ${filePath}`);
+  return readJsonFile<MandatoryRulesIndex>(indexPath);
+}
+
+function parseQuotedScalar(value: string): string {
+  const trimmed = value.trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
   }
 
-  const frontmatter = trimmed.slice(3, end).trim();
-  const rulesMatch = frontmatter.match(/rules:\s*([\s\S]*)$/m);
-  if (!rulesMatch) return [];
+  return trimmed;
+}
 
-  const lines = rulesMatch[1].split(/\r?\n/);
-  const rules: MandatoryRule[] = [];
-  let current: Partial<MandatoryRule> | null = null;
+function parseRuleEntry(lines: string[], startIndex: number): { rule: MandatoryRule; nextIndex: number } | null {
+  const entryLine = lines[startIndex]?.trim();
+  if (!entryLine?.startsWith('- ')) return null;
 
-  const pushCurrent = () => {
-    if (!current?.id || !current.text) return;
-    rules.push({
-      id: current.id,
-      level: current.level,
-      text: current.text,
-      when: current.when,
-    });
-  };
+  const firstLine = entryLine.slice(2).trim();
+  const inlineFields: Record<string, string> = {};
 
-  for (const line of lines) {
-    if (/^\s*-$/.test(line)) continue;
-    const itemMatch = line.match(/^\s*-\s*id:\s*(.+)$/);
-    if (itemMatch) {
-      pushCurrent();
-      current = { id: itemMatch[1].trim() };
+  if (firstLine.length > 0 && !firstLine.includes(':')) {
+    inlineFields.text = parseQuotedScalar(firstLine);
+  } else if (firstLine.length > 0) {
+    const [key, ...rest] = firstLine.split(':');
+    inlineFields[key.trim()] = parseQuotedScalar(rest.join(':'));
+  }
+
+  let nextIndex = startIndex + 1;
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex];
+    if (!line.trim()) {
+      nextIndex += 1;
       continue;
     }
 
-    const keyMatch = line.match(/^\s{2}(level|text|when):\s*(.*)$/);
-    if (!keyMatch || !current) continue;
-    const [, key, value] = keyMatch;
-    const trimmedValue = value.trim();
-    if (key === 'level') current.level = trimmedValue === '' ? undefined : (trimmedValue as MandatoryRuleLevel);
-    if (key === 'text') current.text = trimmedValue;
-    if (key === 'when') current.when = trimmedValue;
+    if (/^\s*-\s+/.test(line)) break;
+    if (!/^\s+/.test(line)) break;
+
+    const trimmed = line.trim();
+    const match = trimmed.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!match) {
+      nextIndex += 1;
+      continue;
+    }
+
+    inlineFields[match[1]] = parseQuotedScalar(match[2]);
+    nextIndex += 1;
   }
 
-  pushCurrent();
-  return rules;
-}
-
-export async function loadMandatoryRulesIndex(projectDir?: string): Promise<MandatoryRulesIndex> {
-  const root = getProjectDir({ projectDir });
-  const filePath = join(root, 'config', 'mandatory-rules', 'index.json');
-  const content = await readFile(filePath, 'utf-8');
-  return parseJson<MandatoryRulesIndex>(content, filePath);
-}
-
-export async function resolveMandatoryRuleSet(id: string, projectDir?: string): Promise<MandatoryRuleSet> {
-  const root = getProjectDir({ projectDir });
-  const preferredPath = join(root, '.specialists', 'mandatory-rules', `${id}.md`);
-  const fallbackPath = join(root, 'config', 'mandatory-rules', `${id}.md`);
-  const filePath = existsSync(preferredPath) ? preferredPath : fallbackPath;
-
-  if (!existsSync(filePath)) {
-    throw new Error(`Mandatory rule set not found: ${id}`);
-  }
+  if (!inlineFields.text) return null;
 
   return {
-    id,
-    rules: parseFrontmatterRules(await readFile(filePath, 'utf-8'), filePath),
+    rule: {
+      id: inlineFields.id ?? '',
+      level: inlineFields.level ?? 'required',
+      text: inlineFields.text,
+      ...(inlineFields.when ? { when: inlineFields.when } : {}),
+    },
+    nextIndex,
   };
 }
 
-export function mergeMandatoryRuleSets(...sets: MandatoryRuleSet[]): MandatoryRuleSet[] {
-  const merged = new Map<string, MandatoryRuleSet>();
+function parseMandatoryRulesFrontmatter(content: string, setId: string): MandatoryRule[] {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!frontmatterMatch) return [];
 
-  for (const set of sets) {
-    const existing = merged.get(set.id);
-    if (existing) {
-      process.stderr.write(`[specialists] mandatory rules set override: ${set.id}\n`);
+  const lines = frontmatterMatch[1].split('\n');
+  const rulesHeaderIndex = lines.findIndex(line => /^rules:\s*$/.test(line.trim()));
+  if (rulesHeaderIndex === -1) return [];
+
+  const rules: MandatoryRule[] = [];
+  let index = rulesHeaderIndex + 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
     }
-    merged.set(set.id, {
-      id: set.id,
-      rules: mergeRules(existing?.rules ?? [], set.rules),
+
+    if (!/^\s*-\s+/.test(line)) break;
+
+    const parsed = parseRuleEntry(lines, index);
+    if (!parsed) break;
+
+    const ruleIndex = rules.length + 1;
+    rules.push({
+      id: parsed.rule.id || `${setId}-${ruleIndex}`,
+      level: parsed.rule.level,
+      text: parsed.rule.text,
+      ...(parsed.rule.when ? { when: parsed.rule.when } : {}),
     });
+    index = parsed.nextIndex;
   }
 
-  return [...merged.values()];
+  return rules;
 }
 
-function mergeRules(existingRules: MandatoryRule[], incomingRules: MandatoryRule[]): MandatoryRule[] {
-  const byId = new Map<string, MandatoryRule>();
-  for (const rule of existingRules) byId.set(rule.id, rule);
-  for (const rule of incomingRules) {
-    if (byId.has(rule.id)) {
-      process.stderr.write(`[specialists] mandatory rule override: ${rule.id}\n`);
-    }
-    byId.set(rule.id, rule);
-  }
-  return [...byId.values()];
+function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null {
+  const candidates = [
+    resolve(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve(cwd, `config/mandatory-rules/${id}.md`),
+  ];
+
+  const filePath = candidates.find(path => existsSync(path));
+  if (!filePath) return null;
+
+  const content = readFileSync(filePath, 'utf8');
+  const rules = parseMandatoryRulesFrontmatter(content, id);
+
+  return rules.length > 0 ? { id, rules } : null;
 }
 
-function renderRule(rule: MandatoryRule): string {
-  const level = rule.level ?? 'error';
-  const parts = [`- [${level}] ${rule.text}`];
-  if (rule.when) parts[0] += ` (when: ${rule.when})`;
-  return parts[0];
+function formatMandatoryRulesBlock(sets: MandatoryRuleSet[]): string {
+  if (sets.length === 0) return '';
+
+  const sections = sets.map(set => {
+    const rules = set.rules.map(rule => `- [${rule.level}] ${rule.text}`).join('\n');
+    return `### ${set.id}\n${rules}`;
+  });
+
+  return `## MANDATORY_RULES\n${sections.join('\n\n')}`;
 }
 
-export function formatMandatoryRulesBlock(sets: MandatoryRuleSet[]): string {
-  const lines: string[] = ['## MANDATORY_RULES'];
-  for (const set of sets) {
-    lines.push('', `### ${set.id}`);
-    for (const rule of set.rules) lines.push(renderRule(rule));
-  }
-  return lines.join('\n');
-}
+export function buildMandatoryRulesBlock(specialistConfig: { cwd?: string }): string {
+  const cwd = specialistConfig.cwd ?? process.cwd();
+  const index = loadMandatoryRulesIndex(cwd);
+  if (!index) return '';
 
-export async function buildMandatoryRulesBlock(specialistConfig: MandatoryRulesConfig, projectDir?: string): Promise<string> {
-  const index = await loadMandatoryRulesIndex(projectDir);
-  const templateSets = specialistConfig.mandatory_rules?.template_sets ?? [];
-  const defaultSets = specialistConfig.mandatory_rules?.disable_default_globals ? [] : index.default_template_sets ?? [];
-  const setIds = [...new Set([...(index.required_template_sets ?? []), ...defaultSets, ...templateSets])];
+  const setIds = [
+    ...(index.required_template_sets ?? []),
+    ...(index.default_template_sets ?? []),
+  ];
+  const sets = setIds
+    .map(id => readMandatoryRuleSet(cwd, id))
+    .filter((set): set is MandatoryRuleSet => set !== null);
 
-  const resolvedSets = await Promise.all(setIds.map(id => resolveMandatoryRuleSet(id, projectDir)));
-  const merged = mergeMandatoryRuleSets(...resolvedSets);
-  const inlineRules = specialistConfig.mandatory_rules?.inline_rules ?? [];
-
-  if (inlineRules.length) {
-    merged.push({ id: 'inline', rules: inlineRules });
-  }
-
-  return formatMandatoryRulesBlock(merged);
+  return formatMandatoryRulesBlock(sets);
 }

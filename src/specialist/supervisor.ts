@@ -105,6 +105,13 @@ export interface SupervisorStatus {
       gitnexus_tokens: number;
       total_tokens: number;
     };
+    mandatory_rules_injection?: {
+      sets_loaded: string[];
+      rules_count: number;
+      inline_rules_count: number;
+      globals_disabled: boolean;
+      token_estimate: number;
+    };
     skills?: {
       count: number;
       activated: string[];
@@ -1333,35 +1340,68 @@ export class Supervisor {
             ? activeToolCalls.get(toolCallId)
             : latestUncorrelatedToolState;
 
-          const memoryInjection = (() => {
-            if (eventType !== 'memory_injection' || !details?.summary) return undefined;
+          const parsedMeta = (() => {
+            if (eventType !== 'memory_injection' && eventType !== 'meta' || !details?.summary) return undefined;
             try {
-              const parsed = JSON.parse(details.summary) as {
+              return JSON.parse(details.summary) as {
                 memory_injection?: {
                   static_tokens?: number;
                   memory_tokens?: number;
                   gitnexus_tokens?: number;
                   total_tokens?: number;
                 };
-              };
-              const injection = parsed.memory_injection;
-              if (!injection) return undefined;
-              return {
-                static_tokens: injection.static_tokens ?? 0,
-                memory_tokens: injection.memory_tokens ?? 0,
-                gitnexus_tokens: injection.gitnexus_tokens ?? 0,
-                total_tokens: injection.total_tokens ?? 0,
+                kind?: 'meta';
+                source?: string;
+                backend?: string;
+                data?: {
+                  sets_loaded?: string[];
+                  rules_count?: number;
+                  inline_rules_count?: number;
+                  globals_disabled?: boolean;
+                  token_estimate?: number;
+                };
               };
             } catch {
               return undefined;
             }
           })();
+          const metaDetails = details as {
+            source?: string;
+            backend?: string;
+            data?: {
+              sets_loaded?: string[];
+              rules_count?: number;
+              inline_rules_count?: number;
+              globals_disabled?: boolean;
+              token_estimate?: number;
+            };
+          } | undefined;
 
-          if (eventType === 'memory_injection' && memoryInjection) {
+          const memoryInjection = parsedMeta?.memory_injection
+            ? {
+                static_tokens: parsedMeta.memory_injection.static_tokens ?? 0,
+                memory_tokens: parsedMeta.memory_injection.memory_tokens ?? 0,
+                gitnexus_tokens: parsedMeta.memory_injection.gitnexus_tokens ?? 0,
+                total_tokens: parsedMeta.memory_injection.total_tokens ?? 0,
+              }
+            : undefined;
+
+          const mandatoryRulesInjection = parsedMeta?.source === 'mandatory_rules_injection' && parsedMeta.data
+            ? {
+                sets_loaded: parsedMeta.data.sets_loaded ?? [],
+                rules_count: parsedMeta.data.rules_count ?? 0,
+                inline_rules_count: parsedMeta.data.inline_rules_count ?? 0,
+                globals_disabled: parsedMeta.data.globals_disabled ?? false,
+                token_estimate: parsedMeta.data.token_estimate ?? 0,
+              }
+            : undefined;
+
+          if (memoryInjection || mandatoryRulesInjection) {
             setStatus({
               startup_context: {
                 ...(statusSnapshot.startup_context ?? {}),
-                memory_injection: memoryInjection,
+                ...(memoryInjection ? { memory_injection: memoryInjection } : {}),
+                ...(mandatoryRulesInjection ? { mandatory_rules_injection: mandatoryRulesInjection } : {}),
               },
             });
           }
@@ -1399,6 +1439,12 @@ export class Supervisor {
               errorMessage: details?.errorMessage,
             },
             memoryInjection,
+            metaPayload: eventType === 'meta' ? {
+              model: details?.model,
+              backend: metaDetails?.backend,
+              source: metaDetails?.source,
+              data: metaDetails?.data,
+            } : undefined,
           });
 
           if (timelineEvent) {

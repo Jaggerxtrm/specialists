@@ -293,6 +293,7 @@ export function formatEventLine(
   if (event.type === 'meta') {
     detailParts.push(`model=${event.model}`);
     detailParts.push(`backend=${event.backend}`);
+    if (event.source) detailParts.push(`source=${event.source}`);
   } else if (event.type === 'tool') {
     detail = formatToolDetail(event);
   } else if (event.type === 'error') {

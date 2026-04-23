@@ -173,6 +173,17 @@ function formatStartupContextLine(event: TimelineEvent): string | null {
     return parts.length > 0 ? dim(`  ↳ startup ${parts.join(' ')}`) : null;
   }
 
+  if (event.type === 'meta' && event.source === 'mandatory_rules_injection' && event.data) {
+    const data = event.data as {
+      sets_loaded?: string[];
+      rules_count?: number;
+      token_estimate?: number;
+    };
+    return dim(
+      `  ↳ mandatory_rules sets=${(data.sets_loaded ?? []).join(',') || 'none'} rules=${data.rules_count ?? 0} tokens=~${data.token_estimate ?? 0}`,
+    );
+  }
+
   if (event.type === 'meta' && event.memory_injection) {
     const mem = event.memory_injection;
     return dim(
