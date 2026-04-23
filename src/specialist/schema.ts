@@ -101,6 +101,19 @@ const ValidationSchema = z.object({
   stale_threshold_days: z.number().optional(),
 }).optional();
 
+const MandatoryRuleSchema = z.object({
+  id: z.string(),
+  level: z.enum(['error', 'warn', 'info']).default('error'),
+  text: z.string(),
+  when: z.string().optional(),
+});
+
+const MandatoryRulesSchema = z.object({
+  template_sets: z.array(KebabCase).default([]),
+  disable_default_globals: z.boolean().default(false),
+  inline_rules: z.array(MandatoryRuleSchema).default([]),
+}).optional();
+
 const StallDetectionSchema = z.object({
   /** ms of silence while running before warn (default 60_000) */
   running_silence_warn_ms: z.number().optional(),
@@ -122,6 +135,7 @@ export const SpecialistSchema = z.object({
     communication: CommunicationSchema,
     validation: ValidationSchema,
     stall_detection: StallDetectionSchema,
+    mandatory_rules: MandatoryRulesSchema,
     /** Write the final output to this file path after the session completes */
     output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),

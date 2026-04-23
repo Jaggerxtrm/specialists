@@ -1,0 +1,830 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { bold, cyan, dim, formatCostUsd, formatTokenUsageSummary, green, magenta, red, yellow } from './format-helpers.js';
+import { isJobDead } from '../specialist/supervisor.js';
+import { resolveJobsDir } from '../specialist/job-root.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { parseTimelineEvent } from '../specialist/timeline-events.js';
+import { resolveNodeRefWithClient } from '../specialist/node-resolve.js';
+import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from '../specialist/epic-readiness.js';
+const ACTIVE_STATES = ['starting', 'running', 'waiting'];
+const TERMINAL_STATES = ['done', 'error', 'cancelled'];
+const BEAD_TITLE_CACHE = new Map();
+const STATUS_PRIORITY = {
+    waiting: 3,
+    running: 2,
+    starting: 1,
+    done: 0,
+    error: 0,
+    cancelled: 0,
+};
+const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⣺', '⣹', '⣸', '⣷', '⣶'];
+function parseArgs(argv) {
+    let nodeId;
+    const positional = [];
+    for (let i = 0; i < argv.length; i += 1) {
+        const token = argv[i];
+        if (token === '--node' && argv[i + 1]) {
+            nodeId = argv[i + 1];
+            i += 1;
+            continue;
+        }
+        if (!token.startsWith('-')) {
+            positional.push(token);
+        }
+    }
+    return {
+        json: argv.includes('--json'),
+        all: argv.includes('--all'),
+        follow: argv.includes('--follow') || argv.includes('-f'),
+        includeMerged: argv.includes('--include-merged'),
+        nodeId,
+        inspectId: positional[0],
+    };
+}
+function isVisibleStatus(status, all) {
+    if (all)
+        return true;
+    return ACTIVE_STATES.includes(status);
+}
+function readStatusesFromFiles(jobsDir) {
+    if (!existsSync(jobsDir))
+        return [];
+    const statuses = [];
+    for (const entry of readdirSync(jobsDir)) {
+        const statusPath = join(jobsDir, entry, 'status.json');
+        if (!existsSync(statusPath))
+            continue;
+        try {
+            statuses.push(JSON.parse(readFileSync(statusPath, 'utf-8')));
+        }
+        catch {
+            // ignore malformed status files
+        }
+    }
+    return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
+}
+function readLastToolEventFromFile(jobsDir, jobId) {
+    const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+    if (!existsSync(eventsPath))
+        return undefined;
+    try {
+        const lines = readFileSync(eventsPath, 'utf-8').split('\n');
+        for (let index = lines.length - 1; index >= 0; index -= 1) {
+            const line = lines[index]?.trim();
+            if (!line)
+                continue;
+            const parsed = parseTimelineEvent(line);
+            if (!parsed || parsed.type !== 'tool')
+                continue;
+            return parsed;
+        }
+    }
+    catch {
+        return undefined;
+    }
+    return undefined;
+}
+function resolveDerivedCurrentTool(status, jobsDir, sqliteClient) {
+    let lastToolEvent;
+    try {
+        lastToolEvent = sqliteClient?.readLatestToolEvent(status.id) ?? undefined;
+    }
+    catch {
+        lastToolEvent = undefined;
+    }
+    if (!lastToolEvent) {
+        lastToolEvent = readLastToolEventFromFile(jobsDir, status.id);
+    }
+    if (!lastToolEvent)
+        return status.current_tool;
+    if (lastToolEvent.phase === 'start')
+        return lastToolEvent.tool;
+    return undefined;
+}
+function enrichStatusesWithDerivedCurrentTool(statuses, jobsDir, sqliteClient) {
+    return statuses.map((status) => ({
+        ...status,
+        current_tool: resolveDerivedCurrentTool(status, jobsDir, sqliteClient),
+    }));
+}
+function loadStatuses() {
+    const sqliteClient = createObservabilitySqliteClient();
+    const jobsDir = resolveJobsDir();
+    const fileStatuses = readStatusesFromFiles(jobsDir);
+    try {
+        const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
+        if (sqliteStatuses.length === 0) {
+            return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
+                .sort((a, b) => b.started_at_ms - a.started_at_ms);
+        }
+        const merged = new Map();
+        for (const status of fileStatuses)
+            merged.set(status.id, status);
+        for (const status of sqliteStatuses) {
+            const current = merged.get(status.id);
+            if (!current || status.started_at_ms >= current.started_at_ms) {
+                merged.set(status.id, status);
+            }
+        }
+        return enrichStatusesWithDerivedCurrentTool([...merged.values()], jobsDir, sqliteClient)
+            .sort((a, b) => b.started_at_ms - a.started_at_ms);
+    }
+    catch {
+        return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient)
+            .sort((a, b) => b.started_at_ms - a.started_at_ms);
+    }
+    finally {
+        sqliteClient?.close();
+    }
+}
+function toJobNode(job) {
+    const beadAwareStatus = job;
+    return {
+        kind: 'job',
+        id: job.id,
+        specialist: job.specialist,
+        status: job.status,
+        pid: job.pid,
+        is_dead: job.is_dead,
+        bead_id: job.bead_id,
+        bead_title: beadAwareStatus.bead_title,
+        node_id: job.node_id,
+        worktree_owner_job_id: job.worktree_owner_job_id,
+        reused_from_job_id: job.reused_from_job_id,
+        worktree_path: job.worktree_path,
+        branch: job.branch,
+        epic_id: job.epic_id,
+        started_at_ms: job.started_at_ms,
+        elapsed_s: job.elapsed_s,
+        context_pct: job.context_pct,
+        context_health: job.context_health,
+        metrics: job.metrics,
+        children: [],
+    };
+}
+function buildReuseForest(jobs) {
+    const nodes = new Map();
+    for (const job of jobs)
+        nodes.set(job.id, toJobNode(job));
+    const roots = [];
+    for (const node of nodes.values()) {
+        const parentId = node.reused_from_job_id;
+        if (parentId && nodes.has(parentId)) {
+            nodes.get(parentId).children.push(node);
+            continue;
+        }
+        roots.push(node);
+    }
+    const sortTree = (jobNode) => {
+        jobNode.children.sort((a, b) => a.started_at_ms - b.started_at_ms);
+        for (const child of jobNode.children)
+            sortTree(child);
+    };
+    roots.sort((a, b) => a.started_at_ms - b.started_at_ms);
+    for (const root of roots)
+        sortTree(root);
+    return roots;
+}
+function getTreeUrgency(jobs) {
+    return jobs.reduce((highest, job) => Math.max(highest, STATUS_PRIORITY[job.status]), 0);
+}
+function getTreeNewestStart(jobs) {
+    return jobs.reduce((latest, job) => Math.max(latest, job.started_at_ms), 0);
+}
+function groupByTree(jobs) {
+    const groups = new Map();
+    for (const job of jobs) {
+        if (job.node_id)
+            continue;
+        const ownerId = job.worktree_owner_job_id ?? job.id;
+        if (!groups.has(ownerId))
+            groups.set(ownerId, []);
+        groups.get(ownerId).push(job);
+    }
+    return groupTreeEntries([...groups.entries()]);
+}
+function groupTreeEntries(groupEntries) {
+    const trees = [];
+    const sortedGroups = groupEntries.sort(([ownerA, jobsA], [ownerB, jobsB]) => {
+        const urgencyDelta = getTreeUrgency(jobsB) - getTreeUrgency(jobsA);
+        if (urgencyDelta !== 0)
+            return urgencyDelta;
+        const startDelta = getTreeNewestStart(jobsB) - getTreeNewestStart(jobsA);
+        if (startDelta !== 0)
+            return startDelta;
+        return ownerA.localeCompare(ownerB);
+    });
+    for (const [ownerJobId, treeJobs] of sortedGroups) {
+        const representative = treeJobs.find((job) => job.id === ownerJobId) ?? treeJobs[0];
+        trees.push({
+            owner_job_id: ownerJobId,
+            worktree_path: representative.worktree_path,
+            branch: representative.branch,
+            children: buildReuseForest(treeJobs),
+        });
+    }
+    return trees;
+}
+function normalizeChainId(job) {
+    if (job.chain_kind === 'chain') {
+        if (job.chain_id)
+            return job.chain_id;
+        if (job.worktree_owner_job_id)
+            return job.worktree_owner_job_id;
+        return `chain:${job.id}`;
+    }
+    return 'prep';
+}
+function buildEpicGroups(jobs, epicReadiness) {
+    const byEpic = new Map();
+    for (const job of jobs) {
+        if (!job.epic_id)
+            continue;
+        if (!byEpic.has(job.epic_id))
+            byEpic.set(job.epic_id, []);
+        byEpic.get(job.epic_id).push(job);
+    }
+    const groups = [];
+    for (const [epicId, epicJobs] of byEpic.entries()) {
+        const prepJobs = epicJobs
+            .filter((job) => job.chain_kind !== 'chain')
+            .map((job) => toJobNode(job))
+            .sort((a, b) => {
+            const urgencyDelta = STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status];
+            if (urgencyDelta !== 0)
+                return urgencyDelta;
+            return b.started_at_ms - a.started_at_ms;
+        });
+        const chainBuckets = new Map();
+        for (const job of epicJobs) {
+            if (job.chain_kind !== 'chain')
+                continue;
+            const chainId = normalizeChainId(job);
+            if (!chainBuckets.has(chainId))
+                chainBuckets.set(chainId, []);
+            chainBuckets.get(chainId).push(job);
+        }
+        const chains = [...chainBuckets.entries()]
+            .map(([chainId, chainJobs]) => {
+            const treeBuckets = new Map();
+            for (const chainJob of chainJobs) {
+                const ownerId = chainJob.worktree_owner_job_id ?? chainJob.id;
+                if (!treeBuckets.has(ownerId))
+                    treeBuckets.set(ownerId, []);
+                treeBuckets.get(ownerId).push(chainJob);
+            }
+            const chainSummary = epicReadiness.get(epicId)?.chains.find((chain) => chain.chain_id === chainId);
+            return {
+                chain_id: chainId,
+                chain_root_bead_id: chainSummary?.chain_root_bead_id ?? chainJobs[0]?.chain_root_bead_id,
+                trees: groupTreeEntries([...treeBuckets.entries()]),
+            };
+        })
+            .sort((a, b) => a.chain_id.localeCompare(b.chain_id));
+        groups.push({
+            epic_id: epicId,
+            readiness: epicReadiness.get(epicId),
+            prep_jobs: prepJobs,
+            chains,
+        });
+    }
+    groups.sort((a, b) => {
+        const aNewest = Math.max(...a.prep_jobs.map((job) => job.started_at_ms), ...a.chains.flatMap((chain) => chain.trees.flatMap((tree) => tree.children.map((child) => child.started_at_ms))), 0);
+        const bNewest = Math.max(...b.prep_jobs.map((job) => job.started_at_ms), ...b.chains.flatMap((chain) => chain.trees.flatMap((tree) => tree.children.map((child) => child.started_at_ms))), 0);
+        return bNewest - aNewest;
+    });
+    return groups;
+}
+function resolveNodeRunMap(nodeIds) {
+    const nodeIdSet = new Set(nodeIds.filter((nodeId) => nodeId.length > 0));
+    if (nodeIdSet.size === 0)
+        return new Map();
+    const sqliteClient = createObservabilitySqliteClient();
+    if (!sqliteClient)
+        return new Map();
+    try {
+        const byId = new Map();
+        const rows = sqliteClient.listNodeRuns();
+        for (const row of rows) {
+            if (!nodeIdSet.has(row.id))
+                continue;
+            byId.set(row.id, { node_name: row.node_name, status: row.status });
+        }
+        return byId;
+    }
+    catch {
+        return new Map();
+    }
+    finally {
+        sqliteClient.close();
+    }
+}
+function groupByNode(jobs) {
+    const nodeGroups = new Map();
+    for (const job of jobs) {
+        if (!job.node_id)
+            continue;
+        if (!nodeGroups.has(job.node_id))
+            nodeGroups.set(job.node_id, []);
+        nodeGroups.get(job.node_id).push(job);
+    }
+    const nodeInfoById = resolveNodeRunMap([...nodeGroups.keys()]);
+    const nodeTrees = [];
+    for (const [nodeId, nodeJobs] of nodeGroups.entries()) {
+        const representative = nodeJobs[0];
+        const nodeInfo = nodeInfoById.get(nodeId);
+        const members = nodeJobs
+            .map((job) => toJobNode(job))
+            .sort((a, b) => {
+            const urgencyDelta = STATUS_PRIORITY[b.status] - STATUS_PRIORITY[a.status];
+            if (urgencyDelta !== 0)
+                return urgencyDelta;
+            return b.started_at_ms - a.started_at_ms;
+        });
+        nodeTrees.push({
+            node_id: nodeId,
+            node_name: nodeInfo?.node_name ?? representative?.specialist ?? 'node',
+            status: nodeInfo?.status ?? representative?.status ?? 'unknown',
+            member_count: members.length,
+            newest_activity_ms: getTreeNewestStart(nodeJobs),
+            members,
+        });
+    }
+    nodeTrees.sort((a, b) => {
+        const timeDelta = b.newest_activity_ms - a.newest_activity_ms;
+        if (timeDelta !== 0)
+            return timeDelta;
+        return a.node_id.localeCompare(b.node_id);
+    });
+    return nodeTrees;
+}
+function statusLabel(status) {
+    if (status === 'running')
+        return bold(green(status));
+    if (status === 'waiting')
+        return bold(magenta(status));
+    if (status === 'done')
+        return dim(status);
+    if (status === 'error')
+        return bold(red(status));
+    if (status === 'cancelled')
+        return dim(status);
+    return bold(yellow(status));
+}
+function epicStateLabel(state) {
+    if (state === 'merge_ready')
+        return green('merge_ready');
+    if (state === 'merged')
+        return dim('merged');
+    if (state === 'failed')
+        return red('failed');
+    if (state === 'blocked')
+        return yellow('blocked');
+    if (state === 'resolving')
+        return cyan('resolving');
+    if (state === 'abandoned')
+        return dim('abandoned');
+    return magenta('unresolved');
+}
+function withPidLiveness(statuses) {
+    return statuses.map((job) => ({
+        ...job,
+        is_dead: isJobDead(job),
+    }));
+}
+function formatElapsed(seconds) {
+    if (seconds === undefined || !Number.isFinite(seconds))
+        return '--';
+    if (seconds < 60)
+        return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `${minutes}m${String(remainder).padStart(2, '0')}s`;
+}
+function getBeadTitleFromBd(beadId) {
+    const result = spawnSync('bd', ['show', beadId, '--json'], {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 1500,
+    });
+    if (result.status !== 0 || !result.stdout)
+        return null;
+    try {
+        const parsed = JSON.parse(result.stdout);
+        const payload = (Array.isArray(parsed) ? parsed[0] : parsed);
+        if (typeof payload?.title === 'string' && payload.title.trim().length > 0)
+            return payload.title.trim();
+        if (typeof payload?.issue?.title === 'string' && payload.issue.title.trim().length > 0) {
+            return payload.issue.title.trim();
+        }
+    }
+    catch {
+        return null;
+    }
+    return null;
+}
+function sanitizeBeadTitle(title) {
+    return title.replace(/\s+/g, ' ').trim();
+}
+function buildBeadTitleCache(jobs) {
+    const titles = new Map(BEAD_TITLE_CACHE);
+    for (const job of jobs) {
+        const beadAwareStatus = job;
+        const beadId = job.bead_id;
+        if (!beadId || titles.has(beadId))
+            continue;
+        const cachedTitle = beadAwareStatus.bead_title;
+        if (typeof cachedTitle === 'string' && cachedTitle.trim().length > 0) {
+            const title = sanitizeBeadTitle(cachedTitle);
+            titles.set(beadId, title);
+            BEAD_TITLE_CACHE.set(beadId, title);
+            continue;
+        }
+        const resolvedTitle = getBeadTitleFromBd(beadId);
+        if (resolvedTitle) {
+            const title = sanitizeBeadTitle(resolvedTitle);
+            titles.set(beadId, title);
+            BEAD_TITLE_CACHE.set(beadId, title);
+        }
+    }
+    return titles;
+}
+function getStatusIcon(job) {
+    if (job.is_dead)
+        return red('◉');
+    if (job.status === 'running')
+        return cyan('◉');
+    if (job.status === 'waiting')
+        return magenta('◐');
+    if (job.status === 'starting')
+        return yellow('◐');
+    if (job.status === 'done')
+        return green('○');
+    if (job.status === 'error')
+        return red('○');
+    return dim('○');
+}
+function getNextAction(job) {
+    if (job.is_dead)
+        return 'dead';
+    if (job.status === 'running' || job.status === 'starting')
+        return 'feed';
+    if (job.status === 'waiting')
+        return 'resume';
+    if (job.status === 'done')
+        return 'result';
+    if (job.status === 'error')
+        return 'result';
+    return '';
+}
+function formatCtxWithIndicator(contextPct, contextHealth) {
+    if (contextPct === undefined || !Number.isFinite(contextPct))
+        return '  --';
+    const pct = `${Math.round(contextPct)}%`;
+    const warn = contextHealth === 'WARN' || contextHealth === 'CRITICAL' ? '▲' : '';
+    return `${pct}${warn}`.padStart(4);
+}
+function renderJobLine(job, beadTitles, prefix, connector) {
+    const icon = getStatusIcon(job);
+    const id = job.id.padEnd(8);
+    const spec = job.specialist.slice(0, 13).padEnd(13);
+    const status = statusLabel(job.status).padEnd(18);
+    const ctx = dim(formatCtxWithIndicator(job.context_pct, job.context_health));
+    const elapsedBase = formatElapsed(job.elapsed_s);
+    const metricParts = [];
+    if (job.metrics?.turns)
+        metricParts.push(`${job.metrics.turns}t`);
+    if (job.metrics?.tool_calls)
+        metricParts.push(`${job.metrics.tool_calls}tc`);
+    const totalTokens = job.metrics?.token_usage?.total_tokens;
+    if (totalTokens)
+        metricParts.push(`${totalTokens}tok`);
+    const elapsed = metricParts.length > 0 ? dim(`${elapsedBase} ${metricParts.join('·')}`) : dim(elapsedBase);
+    const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+    const beadCol = dim((job.bead_id ? job.bead_id : '').padEnd(14));
+    const action = getNextAction(job);
+    const actionCol = job.is_dead ? red(action) : dim(action);
+    const titleSuffix = beadTitle ? dim(` ${beadTitle.slice(0, 40)}`) : '';
+    return `${prefix}${connector}${icon} ${id} ${spec} ${status} ${ctx} ${elapsed} ${beadCol} ${actionCol}${titleSuffix}`;
+}
+function renderTreeNodes(nodes, beadTitles, prefix, renderedJobIds) {
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const isLast = i === nodes.length - 1;
+        const connector = prefix === '' ? '  ' : isLast ? '└ ' : '├ ';
+        const childPrefix = prefix === '' ? '  ' : prefix + (isLast ? '  ' : '│ ');
+        if (!renderedJobIds.has(node.id)) {
+            renderedJobIds.add(node.id);
+            console.log(renderJobLine(node, beadTitles, prefix, connector));
+        }
+        if (node.children.length > 0) {
+            renderTreeNodes(node.children, beadTitles, childPrefix, renderedJobIds);
+        }
+    }
+}
+function resolveEpicReadinessMap(jobs) {
+    const epicIds = [...new Set(jobs.map((job) => job.epic_id).filter((epicId) => Boolean(epicId)))];
+    if (epicIds.length === 0)
+        return new Map();
+    const sqlite = createObservabilitySqliteClient();
+    if (!sqlite)
+        return new Map();
+    try {
+        const readinessMap = new Map();
+        for (const epicId of epicIds) {
+            const summary = loadEpicReadinessSummary(sqlite, epicId);
+            syncEpicStateFromReadiness(sqlite, summary);
+            readinessMap.set(epicId, summary);
+        }
+        return readinessMap;
+    }
+    catch {
+        return new Map();
+    }
+    finally {
+        sqlite.close();
+    }
+}
+function renderHuman(jobs, nodes, trees, all, epicReadiness) {
+    const beadTitles = buildBeadTitleCache(jobs);
+    const renderedJobIds = new Set();
+    const epicGroups = buildEpicGroups(jobs, epicReadiness);
+    console.log('');
+    for (const epic of epicGroups) {
+        const prepCount = epic.prep_jobs.length;
+        const chainCount = epic.chains.length;
+        const readiness = epic.readiness;
+        const readinessState = readiness?.readiness_state ?? 'unresolved';
+        const persistedState = readiness?.persisted_state ?? 'open';
+        const prepSummary = readiness?.prep
+            ? `prep ${readiness.prep.done}/${readiness.prep.total} done${readiness.prep.running > 0 ? ` ${readiness.prep.running} running` : ''}${readiness.prep.failed > 0 ? ` ${readiness.prep.failed} failed` : ''}`
+            : `prep ${prepCount}`;
+        const chainSummary = readiness?.chains
+            ? `chains ${readiness.chains.filter((chain) => chain.state === 'pass').length}/${readiness.chains.length} pass`
+            : `chains ${chainCount}`;
+        const epicBanner = bold(cyan(`┏━ EPIC ${epic.epic_id} ━ ${String(readinessState).toUpperCase()} ━ ${prepSummary} ━ ${chainSummary}`));
+        console.log(epicBanner);
+        console.log(`  ${dim(`state:${persistedState}`)} · ${epicStateLabel(readiness?.readiness_state)}`);
+        console.log(`  ${bold('Prep')}`);
+        if (epic.prep_jobs.length === 0) {
+            console.log(dim('    (none)'));
+        }
+        else {
+            for (const prepJob of epic.prep_jobs) {
+                if (!renderedJobIds.has(prepJob.id)) {
+                    renderedJobIds.add(prepJob.id);
+                    console.log(renderJobLine(prepJob, beadTitles, '    ', ''));
+                }
+            }
+        }
+        console.log(`  ${bold('Chains')}`);
+        if (epic.chains.length === 0) {
+            console.log(dim('    (none)'));
+        }
+        else {
+            for (const chain of epic.chains) {
+                const chainReadiness = readiness?.chains.find((entry) => entry.chain_id === chain.chain_id);
+                const readinessLabel = chainReadiness ? ` · ${chainReadiness.state}` : '';
+                const rootBeadSuffix = chain.chain_root_bead_id ? ` · root:${chain.chain_root_bead_id}` : '';
+                console.log(`    ${bold(chain.chain_id)}${dim(rootBeadSuffix)}${dim(readinessLabel)}`);
+                for (const tree of chain.trees) {
+                    const branch = tree.branch ?? 'master';
+                    console.log(`      ${dim(branch)}`);
+                    renderTreeNodes(tree.children, beadTitles, '      ', renderedJobIds);
+                }
+            }
+        }
+        console.log('');
+    }
+    const legacyNodes = nodes.filter((node) => !node.members.some((member) => member.epic_id));
+    const legacyTrees = trees.filter((tree) => !tree.children.some((child) => child.epic_id));
+    for (const node of legacyNodes) {
+        console.log(`${cyan('⬢')} ${node.node_id} · ${node.node_name} · ${statusLabel(node.status)} · ${node.member_count} members`);
+        for (const member of node.members) {
+            if (!renderedJobIds.has(member.id)) {
+                renderedJobIds.add(member.id);
+                console.log(renderJobLine(member, beadTitles, '    ', ''));
+            }
+        }
+        console.log('');
+    }
+    for (const tree of legacyTrees) {
+        const branch = tree.branch ?? 'master';
+        const beadId = tree.children[0]?.bead_id;
+        const beadSuffix = beadId ? ` · ${beadId}` : '';
+        console.log(`${dim(branch)}${dim(beadSuffix)}`);
+        renderTreeNodes(tree.children, beadTitles, '', renderedJobIds);
+        console.log('');
+    }
+    if (epicGroups.length === 0 && legacyNodes.length === 0 && legacyTrees.length === 0) {
+        console.log(dim('  no active jobs'));
+        console.log('');
+    }
+    const renderedJobs = jobs.filter((job) => renderedJobIds.has(job.id));
+    const runningCount = renderedJobs.filter((job) => job.status === 'running').length;
+    const waitingCount = renderedJobs.filter((job) => job.status === 'waiting').length;
+    console.log(dim(`${renderedJobIds.size} jobs · ${epicGroups.length} epics · ${legacyNodes.length} nodes · ${legacyTrees.length} worktrees · ${runningCount} running · ${waitingCount} waiting${all ? ' · include terminal' : ''}`));
+}
+function renderInspect(jobId) {
+    const statuses = withPidLiveness(loadStatuses());
+    const epicReadiness = resolveEpicReadinessMap(statuses);
+    const job = statuses.find((s) => s.id.startsWith(jobId));
+    if (!job) {
+        console.error(`Job not found: ${jobId}`);
+        process.exitCode = 1;
+        return;
+    }
+    const beadTitles = buildBeadTitleCache([job]);
+    const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
+    const ctx = job.context_pct !== undefined ? `${Math.round(job.context_pct)}% ${job.context_health ?? ''}` : '--';
+    const deadLabel = job.is_dead ? ` ${red('dead')}` : '';
+    // Find chain via worktree_owner_job_id
+    const chainJobs = job.worktree_owner_job_id
+        ? statuses.filter((s) => s.worktree_owner_job_id === job.worktree_owner_job_id).sort((a, b) => a.started_at_ms - b.started_at_ms)
+        : [job];
+    const chainStr = chainJobs.map((j) => j.id === job.id ? bold(j.id) : dim(j.id)).join(' → ');
+    console.log(`\n${job.id}  ${job.specialist}  ${getStatusIcon(toJobNode(job))} ${statusLabel(job.status)}  ${ctx}${deadLabel}`);
+    if (job.epic_id) {
+        const readiness = epicReadiness.get(job.epic_id);
+        const readinessSuffix = readiness ? ` · ${readiness.readiness_state} (${readiness.persisted_state})` : '';
+        console.log(`  epic      ${job.epic_id}${readinessSuffix}`);
+    }
+    console.log(`  model     ${job.model ?? '--'} ${job.backend ? `(${job.backend})` : ''}`);
+    if (job.bead_id)
+        console.log(`  bead      ${job.bead_id}${beadTitle ? ` — ${beadTitle}` : ''}`);
+    if (job.worktree_path || job.branch) {
+        const wt = job.worktree_path ? dim(` ${job.worktree_path}`) : '';
+        console.log(`  worktree  ${job.branch ?? 'master'}${wt}`);
+    }
+    const chainRole = job.chain_kind === 'chain' ? 'chain' : 'prep';
+    const chainIdentity = job.chain_kind === 'chain' ? (job.chain_id ?? job.worktree_owner_job_id ?? '--') : '--';
+    console.log(`  role      ${chainRole}`);
+    console.log(`  chain_id  ${chainIdentity}`);
+    if (chainJobs.length > 1)
+        console.log(`  chain     ${chainStr}`);
+    console.log(`  elapsed   ${formatElapsed(job.elapsed_s)}${job.metrics ? ` · ${job.metrics.turns ?? 0} turns · ${job.metrics.tool_calls ?? 0} tools` : ''}`);
+    const tokenUsage = job.metrics?.token_usage;
+    const tokenSummaryParts = formatTokenUsageSummary(tokenUsage).filter((part) => !part.startsWith('cost='));
+    if (tokenSummaryParts.length > 0) {
+        console.log(`  tokens    ${tokenSummaryParts.join(' · ')}`);
+    }
+    const formattedCost = formatCostUsd(tokenUsage?.cost_usd);
+    if (formattedCost) {
+        console.log(`  cost_usd  ${formattedCost}`);
+    }
+    console.log(`  context   ${ctx}`);
+    if (job.current_tool)
+        console.log(`  current   ${job.current_tool}`);
+    const inspectActions = [];
+    if (job.status === 'running' || job.status === 'starting')
+        inspectActions.push(`feed -f ${job.id}`);
+    if (job.status === 'waiting')
+        inspectActions.push(`resume ${job.id} "..."`);
+    if (job.status === 'running')
+        inspectActions.push(`steer ${job.id} "..."`);
+    if (job.tmux_session)
+        inspectActions.push(`attach ${job.id}`);
+    if (job.status === 'done' || job.status === 'error')
+        inspectActions.push(`result ${job.id}`);
+    if (job.is_dead)
+        inspectActions.push('clean --zombies');
+    console.log(`\n  ${dim(inspectActions.join(' | '))}`);
+}
+function renderJson(jobs, nodes, trees, _all, epicReadiness, args) {
+    console.log(JSON.stringify({
+        generated_at_ms: Date.now(),
+        include_terminal: _all,
+        include_merged: args.includeMerged,
+        counts: {
+            jobs: jobs.length,
+            nodes: nodes.length,
+            trees: trees.length,
+        },
+        flat: jobs.map((job) => ({
+            id: job.id,
+            specialist: job.specialist,
+            status: job.status,
+            pid: job.pid,
+            is_dead: job.is_dead,
+            bead_id: job.bead_id,
+            bead_title: job.bead_title,
+            node_id: job.node_id,
+            worktree_owner_job_id: job.worktree_owner_job_id,
+            reused_from_job_id: job.reused_from_job_id,
+            worktree_path: job.worktree_path,
+            branch: job.branch,
+            epic_id: job.epic_id,
+            chain_kind: job.chain_kind,
+            chain_id: job.chain_id,
+            chain_root_job_id: job.chain_root_job_id,
+            chain_root_bead_id: job.chain_root_bead_id,
+            started_at_ms: job.started_at_ms,
+            elapsed_s: job.elapsed_s,
+            context_pct: job.context_pct,
+            context_health: job.context_health,
+        })),
+        nodes,
+        trees,
+        epics: buildEpicGroups(jobs, epicReadiness),
+        epic_readiness: Object.fromEntries([...epicReadiness.entries()].map(([epicId, summary]) => [epicId, summary])),
+    }, null, 2));
+}
+function dedupeStatusesById(statuses) {
+    const byId = new Map();
+    for (const status of statuses) {
+        const existing = byId.get(status.id);
+        if (!existing) {
+            byId.set(status.id, status);
+            continue;
+        }
+        const shouldReplace = status.started_at_ms >= existing.started_at_ms;
+        if (shouldReplace)
+            byId.set(status.id, status);
+    }
+    return [...byId.values()].sort((a, b) => b.started_at_ms - a.started_at_ms);
+}
+function render(args) {
+    const statusesWithLiveness = dedupeStatusesById(withPidLiveness(loadStatuses()));
+    const epicReadiness = resolveEpicReadinessMap(statusesWithLiveness);
+    const visibleStatuses = statusesWithLiveness.filter((job) => {
+        const readiness = job.epic_id ? epicReadiness.get(job.epic_id) : undefined;
+        const readinessState = readiness?.readiness_state;
+        if (args.nodeId && job.node_id !== args.nodeId)
+            return false;
+        if (readinessState === 'merged' && !args.includeMerged && !args.all)
+            return false;
+        if (args.all)
+            return true;
+        if (job.is_dead)
+            return false;
+        if (isVisibleStatus(job.status, false))
+            return true;
+        if (!job.epic_id)
+            return false;
+        if (!TERMINAL_STATES.includes(job.status))
+            return false;
+        if (readinessState === 'merged' || readinessState === 'abandoned')
+            return false;
+        return true;
+    });
+    const nodes = groupByNode(visibleStatuses);
+    const trees = groupByTree(visibleStatuses);
+    if (args.json) {
+        renderJson(visibleStatuses, nodes, trees, args.all, epicReadiness, args);
+        return;
+    }
+    renderHuman(visibleStatuses, nodes, trees, args.all, epicReadiness);
+}
+function renderBuffered(args) {
+    const lines = [];
+    const origLog = console.log;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    console.log = (...logArgs) => lines.push(logArgs.map(String).join(' '));
+    try {
+        render(args);
+    }
+    finally {
+        console.log = origLog;
+    }
+    return lines.join('\n');
+}
+async function follow(args) {
+    process.stdout.write('\x1B[?25l'); // hide cursor while updating
+    process.on('exit', () => process.stdout.write('\x1B[?25h')); // restore on exit
+    const drawFrame = () => {
+        const frame = renderBuffered(args);
+        process.stdout.write(`\x1B[H\x1B[J${frame}\n`);
+    };
+    process.stdout.write('\x1B[2J\x1B[H');
+    drawFrame();
+    await new Promise(() => {
+        setInterval(() => {
+            drawFrame();
+        }, 1000);
+    });
+}
+export async function run() {
+    const args = parseArgs(process.argv.slice(3));
+    const sqliteClient = createObservabilitySqliteClient();
+    try {
+        const resolvedArgs = {
+            ...args,
+            nodeId: args.nodeId && sqliteClient ? resolveNodeRefWithClient(args.nodeId, sqliteClient) : args.nodeId,
+        };
+        if (resolvedArgs.inspectId) {
+            renderInspect(resolvedArgs.inspectId);
+            return;
+        }
+        if (resolvedArgs.follow) {
+            await follow(resolvedArgs);
+            return;
+        }
+        render(resolvedArgs);
+    }
+    finally {
+        sqliteClient?.close();
+    }
+}
+//# sourceMappingURL=ps.js.map
