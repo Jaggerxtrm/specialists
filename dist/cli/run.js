@@ -415,6 +415,8 @@ function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
             return '';
         }
     };
+    const MAX_TOTAL_HUNKS_CHARS = 12_000;
+    const MAX_FILE_DIFF_CHARS = 2_000;
     const stat = read('git diff --stat');
     const files = read('git diff --name-only')
         .split('\n')
@@ -423,12 +425,27 @@ function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
         .slice(0, maxFiles);
     if (files.length === 0)
         return {};
-    const hunks = files
-        .map((file) => {
+    let remaining = MAX_TOTAL_HUNKS_CHARS;
+    const sections = [];
+    for (const file of files) {
+        if (remaining <= 0)
+            break;
         const diff = read(`git diff -- ${shellQuote(file)}`);
-        return diff ? `### ${file}\n${diff}` : `### ${file}\n(no hunks)`;
-    })
-        .join('\n\n');
+        const truncated = diff.length > MAX_FILE_DIFF_CHARS
+            ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
+... [truncated]`
+            : diff;
+        const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
+        if (section.length > remaining) {
+            sections.push(`${section.slice(0, remaining)}
+... [truncated]`);
+            remaining = 0;
+            break;
+        }
+        sections.push(section);
+        remaining -= section.length + 2;
+    }
+    const hunks = sections.join('\n\n');
     if (!hunks.trim())
         return {};
     return {
@@ -586,7 +603,7 @@ export async function run() {
     };
     if (args.reuseJobId) {
         const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
-        const injectedReviewerDiffVariables = workingDirectory
+        const injectedReviewerDiffVariables = workingDirectory && args.name === 'reviewer'
             ? buildInjectedReviewerDiffVariables(workingDirectory)
             : {};
         variables = {

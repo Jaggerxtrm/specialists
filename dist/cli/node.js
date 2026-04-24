@@ -190,9 +190,15 @@ function parseNodeArgs(argv) {
 }
 const NODE_CONFIG_SUFFIX = '.node.json';
 const NODE_DISCOVERY_DIRS = [
-    { path: '.specialists/default/nodes', source: 'default' },
-    { path: 'config/nodes', source: 'project' },
+    { path: 'config/nodes', source: 'repo' },
+    { path: '.specialists/default/nodes', source: 'default-mirror' },
+    { path: 'config/nodes', source: 'package-fallback' },
 ];
+const NODE_SOURCE_LABELS = {
+    repo: 'repo config/nodes',
+    'default-mirror': '.specialists/default/nodes',
+    'package-fallback': 'package config/nodes',
+};
 function toNodeName(filePath) {
     const fileName = basename(filePath);
     return fileName.endsWith(NODE_CONFIG_SUFFIX)
@@ -216,19 +222,25 @@ function discoverNodeConfigs(cwd) {
     }
     return [...discoveredByName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
+function getNodeDiscoverySummary() {
+    return [
+        'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes -> package config/nodes',
+        'customize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes',
+    ].join('\n');
+}
 function resolveNodeConfigPath(cwd, input) {
     const explicitPath = resolve(cwd, input);
     if (existsSync(explicitPath)) {
-        return explicitPath;
+        return { name: toNodeName(explicitPath), path: explicitPath, source: 'repo' };
     }
     const normalizedName = input.endsWith(NODE_CONFIG_SUFFIX)
         ? input.slice(0, -NODE_CONFIG_SUFFIX.length)
         : input;
     const discovered = discoverNodeConfigs(cwd).find((entry) => entry.name === normalizedName);
     if (discovered) {
-        return discovered.path;
+        return discovered;
     }
-    throw new Error(`Node config not found: ${input}. Checked explicit path and discovery dirs: ${NODE_DISCOVERY_DIRS.map((entry) => entry.path).join(', ')}`);
+    throw new Error(`Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes, package config/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`);
 }
 function parseNodeConfig(raw) {
     const parsed = JSON.parse(raw);
@@ -323,9 +335,14 @@ async function handleNodeRun(args) {
         throw new Error('Observability SQLite DB is unavailable. Run: specialists db setup');
     }
     try {
-        const rawConfig = args.inlineJson
-            ? args.inlineJson
-            : readFileSync(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput), 'utf-8');
+        let rawConfig;
+        if (args.inlineJson) {
+            rawConfig = args.inlineJson;
+        }
+        else {
+            const nodeConfigPath = resolveNodeConfigPath(process.cwd(), args.nodeConfigInput);
+            rawConfig = readFileSync(nodeConfigPath.path, 'utf-8');
+        }
         const config = parseNodeConfig(rawConfig);
         const loader = new SpecialistLoader();
         const runner = new SpecialistRunner({
@@ -448,11 +465,13 @@ async function handleNodeList(args) {
         return;
     }
     if (nodes.length === 0) {
-        console.log('No node configs found. Checked: .specialists/default/nodes and config/nodes');
+        console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes, package config/nodes');
+        console.log(getNodeDiscoverySummary());
         return;
     }
+    console.log(getNodeDiscoverySummary());
     for (const node of nodes) {
-        console.log(`${node.name}\t${node.source}\t${node.path}`);
+        console.log(`${node.name}\t${NODE_SOURCE_LABELS[node.source]}\t${node.path}`);
     }
 }
 function requireNodeRun(sqliteClient, nodeId) {

@@ -244,6 +244,17 @@ export function mapCallbackEventToTimelineEvent(callbackEvent, context) {
                 backend: 'injected',
                 ...(context.memoryInjection ? { memory_injection: context.memoryInjection } : {}),
             };
+        case 'meta': {
+            const payload = context.metaPayload;
+            return {
+                t,
+                type: TIMELINE_EVENT_TYPES.META,
+                model: payload?.model ?? 'meta',
+                backend: payload?.backend ?? 'injected',
+                ...(payload?.source ? { source: payload.source } : {}),
+                ...(payload?.data ? { data: payload.data } : {}),
+            };
+        }
         case 'text':
             return {
                 t,

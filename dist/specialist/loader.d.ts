@@ -16,7 +16,12 @@ export interface SpecialistSummary {
     thinking_level?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     skills: string[];
     scripts: ScriptEntry[];
-    scope: 'default' | 'user';
+    scope: 'user' | 'default' | 'package';
+    /**
+     * Scope says where override came from.
+     * user = repo authoring layer, default = repo-managed mirror, package = upstream fallback.
+     */
+    source: 'user' | 'default-mirror' | 'package-fallback' | 'legacy';
     filePath: string;
     updated?: string;
     filestoWatch?: string[];

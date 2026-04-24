@@ -99,6 +99,13 @@ export interface TimelineEventRunStart extends TimelineEventBase {
             gitnexus_tokens: number;
             total_tokens: number;
         };
+        mandatory_rules_injection?: {
+            sets_loaded: string[];
+            rules_count: number;
+            inline_rules_count: number;
+            globals_disabled: boolean;
+            token_estimate: number;
+        };
         skills?: {
             count: number;
             activated: string[];
@@ -121,6 +128,8 @@ export interface TimelineEventMeta extends TimelineEventBase {
         gitnexus_tokens: number;
         total_tokens: number;
     };
+    source?: string;
+    data?: Record<string, unknown>;
 }
 /**
  * Thinking event.
@@ -400,6 +409,12 @@ export declare function mapCallbackEventToTimelineEvent(callbackEvent: string, c
         memory_tokens: number;
         gitnexus_tokens: number;
         total_tokens: number;
+    };
+    metaPayload?: {
+        model?: string;
+        backend?: string;
+        source?: string;
+        data?: Record<string, unknown>;
     };
 }): TimelineEvent | null;
 /**

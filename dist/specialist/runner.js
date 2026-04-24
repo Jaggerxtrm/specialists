@@ -5,7 +5,7 @@ import { renderTemplate } from './templateEngine.js';
 import { PiAgentSession, SessionKilledError, } from '../pi/session.js';
 import { isAuthError, isTransientError } from '../utils/circuitBreaker.js';
 import { stripJsonFences } from './json-output.js';
-import { buildMandatoryRulesBlock } from './mandatory-rules.js';
+import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { BeadsClient, buildBeadContext, shouldCreateBead } from './beads.js';
 import { STATIC_WORKFLOW_RULES_BLOCK, buildFilteredMemoryInjection, estimateInjectedTokens, } from './memory-retrieval.js';
 import { execSync, spawnSync } from 'node:child_process';
@@ -693,8 +693,10 @@ export class SpecialistRunner {
             : prompt.task_template;
         let renderedTask = renderTemplate(taskTemplate, variables);
         let mandatoryRulesBlock = '';
+        let mandatoryRulesInjection = null;
         try {
-            mandatoryRulesBlock = buildMandatoryRulesBlock({ cwd: runCwd });
+            mandatoryRulesInjection = buildMandatoryRulesInjection({ cwd: runCwd, specialist: spec.specialist });
+            mandatoryRulesBlock = mandatoryRulesInjection.block;
             if (mandatoryRulesBlock.trim()) {
                 const rulesTokens = Math.ceil(mandatoryRulesBlock.length / 4);
                 if (rulesTokens <= 2000) {
@@ -844,35 +846,25 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
                 },
             }),
         });
-        const mandatoryRulesInjection = (() => {
-            if (!mandatoryRulesBlock.trim())
-                return null;
-            const setsLoaded = mandatoryRulesBlock
-                .match(/^###\s+(.+)$/gm)
-                ?.map(line => line.replace(/^###\s+/, '').trim()) ?? [];
-            const ruleCount = (mandatoryRulesBlock.match(/^- \[[^\]]+\]/gm) ?? []).length;
-            const payload = {
+        const mandatoryRulesMeta = mandatoryRulesInjection && mandatoryRulesBlock.trim()
+            ? {
                 source: 'mandatory_rules_injection',
                 data: {
-                    sets_loaded: setsLoaded,
-                    rules_count: ruleCount,
-                    inline_rules_count: ruleCount,
-                    globals_disabled: false,
+                    sets_loaded: mandatoryRulesInjection.setsLoaded,
+                    rules_count: mandatoryRulesInjection.ruleCount,
+                    inline_rules_count: mandatoryRulesInjection.inlineRulesCount,
+                    globals_disabled: mandatoryRulesInjection.globalsDisabled,
                     token_estimate: estimateInjectedTokens(mandatoryRulesBlock),
                 },
-            };
-            return {
-                payload,
+            }
+            : null;
+        if (mandatoryRulesMeta) {
+            onEvent?.('meta', {
+                ...mandatoryRulesMeta,
                 summary: JSON.stringify({
                     kind: 'meta',
-                    ...payload,
+                    ...mandatoryRulesMeta,
                 }),
-            };
-        })();
-        if (mandatoryRulesInjection) {
-            onEvent?.('meta', {
-                ...mandatoryRulesInjection.payload,
-                summary: mandatoryRulesInjection.summary,
             });
         }
         if (metadata.name === 'reviewer' && options.reusedFromJobId) {

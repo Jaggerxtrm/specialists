@@ -212,7 +212,8 @@ function formatToolDetail(event) {
         return `${toolName}: ${dim('start')}`;
     }
     if (event.phase === 'end' && event.is_error) {
-        return `${toolName}: ${red('error')}`;
+        const summary = event.result_summary?.split('\n')[0]?.trim().slice(0, 120);
+        return summary ? `${toolName}: ${red(summary)}` : `${toolName}: ${red('error')}`;
     }
     return `${toolName}: ${dim(event.phase)}`;
 }
@@ -232,6 +233,8 @@ export function formatEventLine(event, options) {
     if (event.type === 'meta') {
         detailParts.push(`model=${event.model}`);
         detailParts.push(`backend=${event.backend}`);
+        if (event.source)
+            detailParts.push(`source=${event.source}`);
     }
     else if (event.type === 'tool') {
         detail = formatToolDetail(event);

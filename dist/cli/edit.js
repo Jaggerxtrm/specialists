@@ -450,7 +450,7 @@ function printDryRun(filePath, before, after) {
 }
 async function resolveTargets(args) {
     const loader = new SpecialistLoader();
-    const allSpecialists = await loader.list();
+    const allSpecialists = (await loader.list()).filter((specialist) => specialist.scope !== 'package');
     if (args.all) {
         return allSpecialists;
     }
