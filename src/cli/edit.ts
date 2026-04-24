@@ -183,6 +183,15 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (token === '--fork-from') {
+      const rawForkFrom = argv[++i];
+      if (!rawForkFrom || rawForkFrom.startsWith('--')) {
+        fail(`Error: --fork-from requires a specialist name\n\n${usage()}`);
+      }
+      forkFrom = rawForkFrom;
+      continue;
+    }
+
     if (token === '--file') {
       const rawFilePath = argv[++i];
       if (!rawFilePath || rawFilePath.startsWith('--')) {
@@ -634,7 +643,9 @@ export async function run(): Promise<void> {
   }
 
   const resolvedPath = resolvePath(args.path!);
-  let targets = await resolveTargets(args);
+  let targets = args.forkFrom
+    ? []
+    : await resolveTargets(args);
   if (args.forkFrom) {
     const sourceLoader = new SpecialistLoader();
     const source = (await sourceLoader.list()).find(specialist => specialist.name === args.forkFrom);

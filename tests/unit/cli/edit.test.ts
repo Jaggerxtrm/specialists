@@ -166,15 +166,15 @@ describe('edit CLI — run() YAML mutations', () => {
     const defaultPath = join(defaultDir, 'base.specialist.json');
     await writeFile(defaultPath, JSON.stringify({ specialist: { metadata: { name: 'base', version: '1.0.0', description: 'Base', category: 'test' }, execution: { model: 'anthropic/claude-sonnet-4-6', permission_required: 'LOW', interactive: false }, prompt: { task_template: 'Do $prompt' } } }, null, 2), 'utf-8');
 
-    process.argv = ['node', 'specialists', 'edit', 'base', '--model', 'anthropic/claude-haiku-4-5-20251001'];
+    process.argv = ['node', 'specialists', 'edit', 'child', '--fork-from', 'base', '--model', 'anthropic/claude-haiku-4-5-20251001'];
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
 
-    const userPath = join(tempDir, '.specialists', 'user', 'base.specialist.json');
+    const userPath = join(tempDir, '.specialists', 'user', 'child.specialist.json');
     const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('claude-haiku-4-5-20251001');
-    expect(content).toContain('"name": "base"');
+    expect(content).toContain('"name": "child"');
   });
 
   it('exits 1 for non-numeric timeout', async () => {
