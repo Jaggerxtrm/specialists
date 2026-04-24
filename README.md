@@ -90,6 +90,10 @@ specialists doctor
 | Pi subprocess isolation and extensions | [docs/pi-session.md](docs/pi-session.md) |
 | NodeSupervisor architecture, node lifecycle, and `sp node` CLI | [docs/nodes.md](docs/nodes.md) |
 
+## Ownership model
+
+Specialists uses layered ownership with deterministic loader precedence: user layer overrides default layer, and default layer falls back to package source (`.specialists/user/*` > `.specialists/default/*` > `config/*`). Operationally: `config/*` is upstream source shipped by package, `.specialists/default/*` is managed mirror refreshed by `specialists init --sync-defaults` (scope: specialists + mandatory-rules + nodes), `.specialists/user/*` is repo customization layer, and `.specialists/{jobs,ready,db}` is runtime/generated state. Use `sp edit --fork-from <base>` to promote non-user specialist into user layer before editing.
+
 ## Project structure
 
 ```text
