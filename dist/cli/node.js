@@ -73,7 +73,12 @@ function parseNodeArgs(argv) {
             continue;
         }
         if (token === '--context-depth') {
-            contextDepth = Math.max(0, Number.parseInt(readValue('--context-depth'), 10) || 0);
+            const value = argv[i + 1];
+            if (!value || value.startsWith('--')) {
+                throw new Error('--context-depth requires a numeric value');
+            }
+            i += 1;
+            contextDepth = Math.max(0, Number.parseInt(value, 10) || 0);
             continue;
         }
         if (token === '--member' || token === '--member-key') {
@@ -192,12 +197,10 @@ const NODE_CONFIG_SUFFIX = '.node.json';
 const NODE_DISCOVERY_DIRS = [
     { path: 'config/nodes', source: 'repo' },
     { path: '.specialists/default/nodes', source: 'default-mirror' },
-    { path: 'config/nodes', source: 'package-fallback' },
 ];
 const NODE_SOURCE_LABELS = {
     repo: 'repo config/nodes',
     'default-mirror': '.specialists/default/nodes',
-    'package-fallback': 'package config/nodes',
 };
 function toNodeName(filePath) {
     const fileName = basename(filePath);
@@ -224,7 +227,7 @@ function discoverNodeConfigs(cwd) {
 }
 function getNodeDiscoverySummary() {
     return [
-        'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes -> package config/nodes',
+        'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes',
         'customize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes',
     ].join('\n');
 }
@@ -240,7 +243,7 @@ function resolveNodeConfigPath(cwd, input) {
     if (discovered) {
         return discovered;
     }
-    throw new Error(`Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes, package config/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`);
+    throw new Error(`Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`);
 }
 function parseNodeConfig(raw) {
     const parsed = JSON.parse(raw);
@@ -465,7 +468,7 @@ async function handleNodeList(args) {
         return;
     }
     if (nodes.length === 0) {
-        console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes, package config/nodes');
+        console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes');
         console.log(getNodeDiscoverySummary());
         return;
     }
@@ -726,7 +729,7 @@ function emitNodeCommandError(error, jsonMode) {
         return;
     }
     console.error(payload.error);
-    process.exitCode = 1;
+    process.exit(1);
 }
 async function createNodeActionRunnerDependencies() {
     const loader = new SpecialistLoader();

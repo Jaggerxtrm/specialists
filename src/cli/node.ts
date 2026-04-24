@@ -141,7 +141,12 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     }
 
     if (token === '--context-depth') {
-      contextDepth = Math.max(0, Number.parseInt(readValue('--context-depth'), 10) || 0);
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--context-depth requires a numeric value');
+      }
+      i += 1;
+      contextDepth = Math.max(0, Number.parseInt(value, 10) || 0);
       continue;
     }
 
@@ -284,20 +289,18 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
 interface DiscoveredNodeConfig {
   name: string;
   path: string;
-  source: 'repo' | 'default-mirror' | 'package-fallback';
+  source: 'repo' | 'default-mirror';
 }
 
 const NODE_CONFIG_SUFFIX = '.node.json';
 const NODE_DISCOVERY_DIRS: ReadonlyArray<{ path: string; source: DiscoveredNodeConfig['source'] }> = [
   { path: 'config/nodes', source: 'repo' },
   { path: '.specialists/default/nodes', source: 'default-mirror' },
-  { path: 'config/nodes', source: 'package-fallback' },
 ];
 
 const NODE_SOURCE_LABELS: Record<DiscoveredNodeConfig['source'], string> = {
   repo: 'repo config/nodes',
   'default-mirror': '.specialists/default/nodes',
-  'package-fallback': 'package config/nodes',
 };
 
 function toNodeName(filePath: string): string {
@@ -328,7 +331,7 @@ function discoverNodeConfigs(cwd: string): DiscoveredNodeConfig[] {
 
 function getNodeDiscoverySummary(): string {
   return [
-    'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes -> package config/nodes',
+    'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes',
     'customize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes',
   ].join('\n');
 }
@@ -348,7 +351,7 @@ function resolveNodeConfigPath(cwd: string, input: string): DiscoveredNodeConfig
   }
 
   throw new Error(
-    `Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes, package config/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`,
+    `Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`,
   );
 }
 
@@ -597,7 +600,7 @@ async function handleNodeList(args: ParsedNodeArgs): Promise<void> {
   }
 
   if (nodes.length === 0) {
-    console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes, package config/nodes');
+    console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes');
     console.log(getNodeDiscoverySummary());
     return;
   }
@@ -895,7 +898,7 @@ function emitNodeCommandError(error: unknown, jsonMode: boolean): void {
   }
 
   console.error(payload.error);
-  process.exitCode = 1;
+  process.exit(1);
 }
 
 async function createNodeActionRunnerDependencies(): Promise<{ loader: SpecialistLoader; runner: SpecialistRunner }> {

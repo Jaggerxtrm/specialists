@@ -146,17 +146,20 @@ describe('node CLI run wiring', () => {
       await rm(cwd, { recursive: true, force: true });
     }
 
-    expect(stdoutSpy).toHaveBeenCalledWith('node resolution order: explicit path -> config/nodes -> .specialists/default/nodes -> package config/nodes\ncustomize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes');
+    expect(stdoutSpy).toHaveBeenCalledWith('node resolution order: explicit path -> config/nodes -> .specialists/default/nodes\ncustomize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes');
     expect(stdoutSpy).toHaveBeenCalledWith(`research\trepo config/nodes\t${join(cwd, 'config', 'nodes', 'research.node.json')}`);
     expect(stdoutSpy).toHaveBeenCalledWith(`fallback\t.specialists/default/nodes\t${join(cwd, '.specialists', 'default', 'nodes', 'fallback.node.json')}`);
   });
 
-  it('reports missing --context-depth as parse error', async () => {
+  it('exits with code 1 when --context-depth value is missing', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await handleNodeCommand(['run', '--inline', '{"name":"r"}', '--context-depth']);
+    await expect(handleNodeCommand(['run', '--inline', '{"name":"r"}', '--context-depth'])).rejects.toThrow('exit:1');
 
-    expect(errorSpy).toHaveBeenCalledWith('--context-depth requires a value');
-    expect(process.exitCode).toBe(1);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy).toHaveBeenCalledWith('--context-depth requires a numeric value');
   });
 });

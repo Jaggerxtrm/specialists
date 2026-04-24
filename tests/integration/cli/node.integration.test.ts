@@ -166,8 +166,8 @@ describe('integration: sp node CLI surface', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Usage: specialists node <run|list|status|feed|promote|members|memory|steer|stop|attach>');
     expect(result.stdout).toContain('run <node-config> [--inline JSON] [--bead <bead-id>] [--context-depth <n>] [--json]');
-    expect(result.stdout).toContain('list [--json]                                       List node configs; source order: repo config/nodes -> .specialists/default/nodes -> package config/nodes');
-    expect(result.stdout).toContain('Node configs: explicit path wins; named lookup prefers repo config/nodes, then .specialists/default/nodes, then package config/nodes.');
+    expect(result.stdout).toContain('list [--json]                                       List node configs; source order: repo config/nodes -> .specialists/default/nodes');
+    expect(result.stdout).toContain('Node configs: explicit path wins; named lookup prefers repo config/nodes, then .specialists/default/nodes.');
     expect(result.stdout).toContain('members <node-id> [--json]');
     expect(result.stdout).toContain('memory <node-id> [--json]');
     expect(result.stdout).toContain('steer <node-id> <message> [--json]');
