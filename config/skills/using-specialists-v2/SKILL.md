@@ -31,6 +31,63 @@ Use this skill for substantial work: codebase exploration, debugging, implementa
 10. Merge specialist branches with `sp merge` or `sp epic merge`, never manual `git merge`.
 11. Specialists must not perform destructive or irreversible actions.
 12. If a specialist fails, inspect feed/result and either steer, resume, rerun with a better bead, or report the blocker.
+13. Drive chains autonomously. Do not ask the operator to approve routine stage transitions. Escalate only on critical events (see Autonomous Drive section).
+
+## Autonomous Drive
+
+Once the operator has approved a plan or specified a task, push the chain to completion without pausing for per-stage confirmation. Dispatch, wait with `sleep`, read results, dispatch the next stage, review, and merge. Treat each stage transition as a mechanical step — not a decision point.
+
+Escalate to the operator only for:
+
+- Reviewer verdict `FAIL` (not `PARTIAL` — fix those autonomously via resume).
+- Destructive/irreversible action required (history rewrite, force push, credential rotation, mass delete, prod-impacting op).
+- Repeated specialist crashes on the same chain (2+ in a row with same failure mode).
+- Context-exhaustion risk above 80% with no clean handoff available.
+- Ambiguous requirements the bead cannot resolve (rare — fix by updating the bead contract first and retrying).
+- Explicit user-facing question embedded in reviewer output that needs human judgment.
+
+Anything else — stage transitions, routine reviewer `PARTIAL` with concrete findings, merge gates passing, test retries — proceed without asking.
+
+### Sleep-Based Polling
+
+Use `sleep` between dispatch and status check. Size the sleep to the observed median for the specialist and adjust by polling once and checking `sp ps <job-id>`:
+
+| Specialist | First sleep | Poll interval after |
+| --- | --- | --- |
+| executor | `sleep 180` (3m) | 60-120s |
+| reviewer | `sleep 120` (2m) | 60s |
+| explorer | `sleep 180` (3m) | 60s |
+| debugger | `sleep 480` (8m) | 120s |
+| overthinker | `sleep 240` (4m) | 60s |
+| planner | `sleep 300` (5m) | 60s |
+| sync-docs | `sleep 180` (3m) | 60s |
+| researcher | `sleep 120` (2m) | 60s |
+| test-runner | `sleep 120` (2m) | 60s |
+
+Medians are empirical (derived from run history). Adjust for observed run complexity. If `sp ps` shows `running` after the first sleep, poll once more before assuming stuck. If `waiting`, read `sp result` — reviewer verdicts and READ_ONLY outputs land in the bead notes automatically.
+
+Do not busy-loop `sp ps` in tight intervals. One sleep + one confirmation poll is enough for routine runs.
+
+### Drive Loop Pattern
+
+```bash
+# Dispatch
+JOB=$(sp run <specialist> --bead <bead-id> --context-depth 2 --background 2>&1 | tail -1)
+
+# Sleep for median
+sleep 180
+
+# Check
+sp ps "$JOB"
+
+# Still running? Short follow-up sleep, then re-check
+# Waiting or done? Read result
+sp result "$JOB"
+
+# Advance to next stage based on output — no operator prompt
+```
+
+Launch sleeps in the background when other orchestration work can proceed in parallel; the harness will notify on completion. Return to `sp ps`/`sp result` after the median interval elapses.
 
 ## Bead Task Contract
 
