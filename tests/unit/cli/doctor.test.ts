@@ -30,6 +30,7 @@ describe('doctor CLI — run()', () => {
     expect(combined).toContain('Claude Code hooks');
     expect(combined).toContain('MCP');
     expect(combined).toContain('Skill drift');
+    expect(combined).toContain('Managed mirrors');
     expect(combined).toContain('Background jobs');
   });
 
@@ -50,6 +51,11 @@ describe('doctor CLI — run()', () => {
     for (const hook of hooks) {
       expect(combined, `missing hook check: ${hook}`).toContain(hook);
     }
+  });
+
+  it('mentions managed mirror fixes', async () => {
+    const { combined } = await runDoctor();
+    expect(combined).toContain('specialists init --sync-defaults');
   });
 
   it('mentions fix hints for failures', async () => {
