@@ -108,6 +108,9 @@ describe('integration: migration docs and operator guidance alignment', () => {
     expect(nodeHelp.stdout).toContain('List node configs; source order: repo config/nodes -> .specialists/default/nodes');
     expect(nodeHelp.stdout).toContain('Node configs: explicit path wins; named lookup prefers repo config/nodes, then .specialists/default/nodes.');
 
+    const doctorResult = runCli(tempDir, ['doctor']);
+    expect(doctorResult.stdout).toContain('Managed mirrors');
+
     const validateResult = runCli(tempDir, ['validate', 'alpha', '--json']);
     expect(validateResult.status).toBe(0);
     const payload = JSON.parse(validateResult.stdout);
