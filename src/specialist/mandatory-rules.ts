@@ -54,19 +54,21 @@ function mergeIndex(base: MandatoryRulesIndex, overlay: MandatoryRulesIndex): Ma
 }
 
 export function loadMandatoryRulesIndex(cwd: string): MandatoryRulesIndex | null {
-  const canonicalPath = resolve(cwd, 'config/mandatory-rules/index.json');
-  const repoOverlayPath = resolve(cwd, '.specialists/mandatory-rules/index.json');
+  const sourcePath = resolve(cwd, 'config/mandatory-rules/index.json');
+  const canonicalCopyPath = resolve(cwd, '.specialists/default/mandatory-rules/index.json');
+  const overlayPath = resolve(cwd, '.specialists/mandatory-rules/index.json');
 
-  const canonical = existsSync(canonicalPath) ? readJsonFile<MandatoryRulesIndex>(canonicalPath) : null;
-  const overlay = existsSync(repoOverlayPath) ? readJsonFile<MandatoryRulesIndex>(repoOverlayPath) : null;
+  const tiers: MandatoryRulesIndex[] = [];
+  for (const path of [sourcePath, canonicalCopyPath, overlayPath]) {
+    if (existsSync(path)) tiers.push(readJsonFile<MandatoryRulesIndex>(path));
+  }
 
-  if (!canonical && !overlay) {
-    console.warn('[specialist runner] Missing config/mandatory-rules/index.json; skipping MANDATORY_RULES injection');
+  if (tiers.length === 0) {
+    console.warn('[specialist runner] Missing mandatory-rules index (checked config/, .specialists/default/, .specialists/); skipping MANDATORY_RULES injection');
     return null;
   }
 
-  if (canonical && overlay) return mergeIndex(canonical, overlay);
-  return canonical ?? overlay;
+  return tiers.reduce((acc, next) => mergeIndex(acc, next));
 }
 
 function parseQuotedScalar(value: string): string {
@@ -165,6 +167,7 @@ function parseMandatoryRulesFrontmatter(content: string, setId: string): Mandato
 function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null {
   const candidates = [
     resolve(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve(cwd, `.specialists/default/mandatory-rules/${id}.md`),
     resolve(cwd, `config/mandatory-rules/${id}.md`),
   ];
 
