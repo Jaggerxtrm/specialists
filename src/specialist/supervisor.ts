@@ -1087,6 +1087,7 @@ export class Supervisor {
     );
 
     const shouldWriteExternalBeadNotes = runOptions.beadsWriteNotes ?? true;
+    let skipFinalKeepAliveInputBeadAppend = false;
     const appendResultToInputBead = (params: {
       output: string;
       model: string;
@@ -1273,6 +1274,20 @@ export class Supervisor {
 
     const sigtermHandler = () => {
       if (keepAliveSession) {
+        const hasPendingKeepAliveOutput = Boolean(
+          latestOutput
+          && statusSnapshot.status === 'waiting'
+          && !shouldAutoCloseReadOnlyKeepAlive(latestOutput),
+        );
+        if (hasPendingKeepAliveOutput) {
+          appendResultToInputBead({
+            output: latestOutput,
+            model: statusSnapshot.model ?? 'unknown',
+            backend: statusSnapshot.backend ?? 'unknown',
+            status: 'cancelled',
+          });
+          skipFinalKeepAliveInputBeadAppend = true;
+        }
         void closeKeepAliveSession();
         return;
       }
@@ -1730,14 +1745,17 @@ export class Supervisor {
       const appendedStatus: SupervisorJobStatus = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output)
         ? 'waiting'
         : 'done';
-      appendResultToInputBead({
-        output: finalResult.output,
-        model: finalResult.model,
-        backend: finalResult.backend,
-        status: appendedStatus,
-        promptHash: finalResult.promptHash,
-        durationMs: finalResult.durationMs,
-      });
+      const shouldSkipFinalInputBeadAppend = keepAliveSession && skipFinalKeepAliveInputBeadAppend;
+      if (!shouldSkipFinalInputBeadAppend) {
+        appendResultToInputBead({
+          output: finalResult.output,
+          model: finalResult.model,
+          backend: finalResult.backend,
+          status: appendedStatus,
+          promptHash: finalResult.promptHash,
+          durationMs: finalResult.durationMs,
+        });
+      }
 
       if (ownsBead && finalResult.beadId) {
         this.opts.beadsClient?.updateBeadNotes(finalResult.beadId, formatBeadNotes({
