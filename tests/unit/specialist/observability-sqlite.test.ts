@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { Database } from 'bun:sqlite';
 import { rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -93,7 +93,7 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(10);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(11);
 
       const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
       expect(schemaVersionRow.version).toBe(10);
@@ -738,6 +738,58 @@ describe('observability-sqlite', () => {
       expect(parseJournalMode(null)).toBe(null);
       expect(parseJournalMode(undefined)).toBe(null);
       expect(parseJournalMode('')).toBe(null);
+    });
+  });
+
+  describe('job metrics aggregation', () => {
+    it('extracts tool counts and trajectories from specialist_events', () => {
+      const client = createClient();
+      client.upsertStatus({ id: 'job-metrics', specialist: 'executor', status: 'done', started_at_ms: 1, updated_at_ms: 5 });
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 10, type: 'tool', tool: 'bash', phase: 'start' } as never);
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 20, type: 'tool', tool: 'bash', phase: 'end' } as never);
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 30, type: 'turn_summary', turn_index: 1, token_usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 }, context_pct: 25 } as never);
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 40, type: 'token_usage', token_usage: { input_tokens: 11, output_tokens: 22, total_tokens: 33 }, source: 'turn_end' } as never);
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 50, type: 'stale_warning', reason: 'tool_duration', silence_ms: 9000, threshold_ms: 5000, tool: 'read' } as never);
+      client.appendEvent('job-metrics', 'executor', 'bead-1', { t: 60, type: 'run_complete', status: 'COMPLETE', elapsed_s: 0.06, model: 'gpt-5', token_usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 } } as never);
+
+      const metrics = client.aggregateJobMetrics('job-metrics');
+      expect(metrics).not.toBeNull();
+      expect(metrics?.total_tools).toBe(2);
+      expect(metrics?.total_turns).toBe(1);
+      expect(JSON.parse(metrics?.tool_call_counts_json ?? '{}')).toEqual({ bash: 2 });
+      expect(JSON.parse(metrics?.token_trajectory_json ?? '[]')).toHaveLength(2);
+      expect(JSON.parse(metrics?.context_trajectory_json ?? '[]')).toEqual([{ turn_index: 1, t: 30, context_pct: 25 }]);
+      expect(JSON.parse(metrics?.stall_gaps_json ?? '[]')).toEqual([{ t: 50, tool: 'read', silence_ms: 9000, threshold_ms: 5000 }]);
+    });
+
+    it('is idempotent on repeated aggregation', () => {
+      const client = createClient();
+      client.upsertStatus({ id: 'job-idempotent', specialist: 'executor', status: 'done', started_at_ms: 1, updated_at_ms: 5 });
+      const location = resolveObservabilityDbLocation(tempRoot);
+      db = new Database(location.dbPath);
+      db.run(
+        `INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ['job-idempotent', 1, 'executor', null, 10, 'run_complete', JSON.stringify({ status: 'COMPLETE', elapsed_s: 1 })],
+      );
+
+      const first = client.aggregateJobMetrics('job-idempotent');
+      const second = client.aggregateJobMetrics('job-idempotent');
+      expect(first).toEqual(second);
+      const count = db.query(`SELECT COUNT(*) AS count FROM specialist_job_metrics WHERE job_id = 'job-idempotent'`).get() as { count: number };
+      expect(count.count).toBe(1);
+    });
+
+    it('prune refuses to delete events when extract throws', () => {
+      const client = createClient();
+      client.upsertStatus({ id: 'job-prune', specialist: 'executor', status: 'done', started_at_ms: 1, updated_at_ms: 5 });
+      const location = resolveObservabilityDbLocation(tempRoot);
+      db = new Database(location.dbPath);
+      db.run(`INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json) VALUES (?, ?, ?, ?, ?, ?, ?)`, ['job-prune', 1, 'executor', null, 10, 'run_complete', JSON.stringify({ status: 'COMPLETE', elapsed_s: 1 })]);
+      vi.spyOn(client, 'aggregateJobMetrics').mockImplementation(() => { throw new Error('fail metrics'); });
+
+      expect(() => client.pruneObservabilityData({ beforeMs: 1000, includeEpics: false, apply: true })).toThrow(/fail metrics/);
+      const remaining = db.query(`SELECT COUNT(*) AS count FROM specialist_events WHERE job_id = 'job-prune'`).get() as { count: number };
+      expect(remaining.count).toBe(1);
     });
   });
 });

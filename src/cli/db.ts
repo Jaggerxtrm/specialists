@@ -33,6 +33,20 @@ interface PruneOptions {
   beforeMs: number;
   apply: boolean;
   includeEpics: boolean;
+  skipExtract: boolean;
+}
+
+interface ExtractOptions {
+  jobId?: string;
+  allMissing: boolean;
+  sinceMs?: number;
+}
+
+interface StatsOptions {
+  spec?: string;
+  model?: string;
+  sinceMs?: number;
+  format: 'json' | 'table';
 }
 
 function formatBytes(bytes: number): string {
@@ -89,7 +103,9 @@ function printDbHelp(): void {
     '  backfill [--events]                Import historical .specialists/jobs/*/status.json rows',
     '  vacuum                             Run SQLite VACUUM (refuses when running/starting jobs exist)',
     '  prune --before <iso|duration>      Prune old rows (default dry-run)',
-    '        [--dry-run] [--apply] [--include-epics]',
+    '        [--dry-run] [--apply] [--include-epics] [--skip-extract]',
+    '  extract [--job <id>] [--all-missing] [--since <dur>]',
+    '  stats [--spec <name>] [--model <glob>] [--since <dur>] [--format json|table]',
     '',
     'Behavior:',
     '  - prune keeps specialist_events last 30 days always',
@@ -162,6 +178,7 @@ function parsePruneOptions(argv: readonly string[]): PruneOptions {
   let apply = false;
   let dryRun = true;
   let includeEpics = false;
+  let skipExtract = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -190,6 +207,11 @@ function parsePruneOptions(argv: readonly string[]): PruneOptions {
       continue;
     }
 
+    if (argument === '--skip-extract') {
+      skipExtract = true;
+      continue;
+    }
+
     throw new Error(`Unknown option for db prune: '${argument}'`);
   }
 
@@ -199,7 +221,75 @@ function parsePruneOptions(argv: readonly string[]): PruneOptions {
     beforeMs: parseBeforeArgument(beforeValue),
     apply: apply && !dryRun,
     includeEpics,
+    skipExtract,
   };
+}
+
+function parseExtractOptions(argv: readonly string[]): ExtractOptions {
+  let jobId: string | undefined;
+  let allMissing = false;
+  let sinceMs: number | undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--job' && argv[index + 1]) {
+      jobId = argv[index + 1]!;
+      index += 1;
+      continue;
+    }
+    if (argument === '--all-missing') {
+      allMissing = true;
+      continue;
+    }
+    if (argument === '--since' && argv[index + 1]) {
+      const durationMs = parseDuration(argv[index + 1]!);
+      if (durationMs === null) throw new Error(`Invalid --since value '${argv[index + 1]}'`);
+      sinceMs = Date.now() - durationMs;
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown option for db extract: '${argument}'`);
+  }
+
+  return { jobId, allMissing, sinceMs };
+}
+
+function parseStatsOptions(argv: readonly string[]): StatsOptions {
+  let spec: string | undefined;
+  let model: string | undefined;
+  let sinceMs: number | undefined;
+  let format: 'json' | 'table' = 'table';
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--spec' && argv[index + 1]) {
+      spec = argv[index + 1]!;
+      index += 1;
+      continue;
+    }
+    if (argument === '--model' && argv[index + 1]) {
+      model = argv[index + 1]!;
+      index += 1;
+      continue;
+    }
+    if (argument === '--since' && argv[index + 1]) {
+      const durationMs = parseDuration(argv[index + 1]!);
+      if (durationMs === null) throw new Error(`Invalid --since value '${argv[index + 1]}'`);
+      sinceMs = Date.now() - durationMs;
+      index += 1;
+      continue;
+    }
+    if (argument === '--format' && argv[index + 1]) {
+      const value = argv[index + 1]!;
+      if (value !== 'json' && value !== 'table') throw new Error(`Invalid --format value '${value}'`);
+      format = value;
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown option for db stats: '${argument}'`);
+  }
+
+  return { spec, model, sinceMs, format };
 }
 
 function parseStatusFile(jobDirectoryPath: string, fallbackJobId: string): SupervisorStatus {
@@ -375,6 +465,7 @@ function runPrune(options: PruneOptions): void {
       beforeMs: options.beforeMs,
       includeEpics: options.includeEpics,
       apply: options.apply,
+      skipExtract: options.skipExtract,
     });
 
     console.log(`\n${bold('specialists db prune')}\n`);
@@ -384,8 +475,68 @@ function runPrune(options: PruneOptions): void {
     console.log(`  ${green('✓')} specialist_events: ${report.deletedEvents}`);
     console.log(`  ${green('✓')} specialist_results: ${report.deletedResults}`);
     console.log(`  ${green('✓')} specialist_jobs: ${report.deletedJobs}`);
+    console.log(`  ${green('✓')} extracted jobs: ${report.extractedJobs}`);
     console.log(`  ${report.includeEpics ? green('✓') : yellow('○')} epic_runs: ${report.deletedEpicRuns} ${report.includeEpics ? '' : '(skipped, use --include-epics)'}`);
     console.log(`  ${yellow('○')} skipped active-chain jobs: ${report.skippedActiveChainJobs}`);
+    console.log('');
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+function runExtract(options: ExtractOptions): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Failed to initialize observability SQLite schema. Run `specialists db setup` first and ensure sqlite3 is installed.');
+  }
+
+  try {
+    const statusRows = options.jobId
+      ? sqliteClient.listStatuses().filter((status) => status.id === options.jobId)
+      : sqliteClient.listStatuses().filter((status) => options.sinceMs === undefined || status.started_at_ms >= options.sinceMs);
+
+    const jobIds = options.allMissing
+      ? statusRows.filter((status) => !sqliteClient.listJobMetrics({ spec: status.specialist }).some((row) => row.job_id === status.id)).map((status) => status.id)
+      : (options.jobId ? [options.jobId] : statusRows.map((status) => status.id));
+
+    let extracted = 0;
+    for (const jobId of jobIds) {
+      const metrics = sqliteClient.aggregateJobMetrics(jobId);
+      if (!metrics) continue;
+      extracted += 1;
+    }
+
+    console.log(`\n${bold('specialists db extract')}\n`);
+    console.log(`  ${green('✓')} extracted jobs: ${extracted}`);
+    console.log('');
+  } finally {
+    sqliteClient.close();
+  }
+}
+
+function formatStatsTable(rows: Array<Record<string, unknown>>): string {
+  const headers = ['job_id', 'specialist', 'model', 'status', 'elapsed_ms', 'total_tools', 'total_turns'];
+  const tableRows = rows.map((row) => headers.map((header) => String(row[header] ?? '')));
+  const widths = headers.map((header, index) => Math.max(header.length, ...tableRows.map((row) => row[index].length)));
+  const line = (cells: string[]) => `| ${cells.map((cell, index) => cell.padEnd(widths[index])).join(' | ')} |`;
+  return [line(headers), `| ${widths.map((width) => '-'.repeat(width)).join(' | ')} |`, ...tableRows.map(line)].join('\n');
+}
+
+function runStats(options: StatsOptions): void {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) {
+    throw new Error('Failed to initialize observability SQLite schema. Run `specialists db setup` first and ensure sqlite3 is installed.');
+  }
+
+  try {
+    const rows = sqliteClient.listJobMetrics({ spec: options.spec, model: options.model, sinceMs: options.sinceMs });
+    if (options.format === 'json') {
+      console.log(JSON.stringify({ rows, count: rows.length }, null, 2));
+      return;
+    }
+
+    console.log(`\n${bold('specialists db stats')}\n`);
+    console.log(formatStatsTable(rows as unknown as Array<Record<string, unknown>>));
     console.log('');
   } finally {
     sqliteClient.close();
@@ -678,6 +829,18 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   if (subcommand === 'prune') {
     const options = parsePruneOptions(argv.slice(1));
     runPrune(options);
+    return;
+  }
+
+  if (subcommand === 'extract') {
+    const options = parseExtractOptions(argv.slice(1));
+    runExtract(options);
+    return;
+  }
+
+  if (subcommand === 'stats') {
+    const options = parseStatsOptions(argv.slice(1));
+    runStats(options);
     return;
   }
 
