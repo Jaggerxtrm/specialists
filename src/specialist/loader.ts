@@ -23,7 +23,12 @@ export interface SpecialistSummary {
   thinking_level?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   skills: string[];
   scripts: ScriptEntry[];
-  scope: 'default' | 'user';
+  scope: 'user' | 'default' | 'package';
+  /**
+   * Scope says where override came from.
+   * user = repo authoring layer, default = repo-managed mirror, package = upstream fallback.
+   */
+  source: 'user' | 'default-mirror' | 'package-fallback' | 'legacy';
   filePath: string;
   updated?: string;
   filestoWatch?: string[];
@@ -65,25 +70,25 @@ export class SpecialistLoader {
     this.projectDir = options.projectDir ?? process.cwd();
   }
 
-  private getScanDirs(): Array<{ path: string; scope: 'default' | 'user' }> {
-    const dirs: Array<{ path: string; scope: 'default' | 'user' }> = [
-      // User specialists take precedence over defaults
-      { path: join(this.projectDir, '.specialists', 'user'), scope: 'user' },
-      // Back-compat nested user path
-      { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user' },
+  private getScanDirs(): Array<{ path: string; scope: SpecialistSummary['scope']; source: SpecialistSummary['source'] }> {
+    const dirs: Array<{ path: string; scope: SpecialistSummary['scope']; source: SpecialistSummary['source'] }> = [
+      // Runtime contract: repo authoring layer wins, then repo-managed mirror, then upstream package fallback.
+      { path: join(this.projectDir, '.specialists', 'user'), scope: 'user', source: 'user' },
+      // Back-compat nested user path — migration bridge only.
+      { path: join(this.projectDir, '.specialists', 'user', 'specialists'), scope: 'user', source: 'legacy' },
 
-      // Canonical source-of-truth definitions
-      { path: join(this.projectDir, 'config', 'specialists'), scope: 'default' },
+      // Repo-managed mirror. Same-name files here override package fallback; new names extend catalog.
+      { path: join(this.projectDir, '.specialists', 'default'), scope: 'default', source: 'default-mirror' },
+      // Back-compat nested default path — migration bridge only.
+      { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default', source: 'legacy' },
 
-      // Project-local defaults (generated copies)
-      { path: join(this.projectDir, '.specialists', 'default'), scope: 'default' },
-      // Back-compat nested default path
-      { path: join(this.projectDir, '.specialists', 'default', 'specialists'), scope: 'default' },
+      // Upstream source. Read-only fallback in runtime; not repo-authoring surface.
+      { path: join(this.projectDir, 'config', 'specialists'), scope: 'package', source: 'package-fallback' },
 
-      // Legacy locations retained for compatibility
-      { path: join(this.projectDir, 'specialists'), scope: 'default' },
-      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'default' },
-      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'default' },
+      // Legacy locations retained for compatibility, but never primary anymore.
+      { path: join(this.projectDir, 'specialists'), scope: 'default', source: 'legacy' },
+      { path: join(this.projectDir, '.claude', 'specialists'), scope: 'default', source: 'legacy' },
+      { path: join(this.projectDir, '.agent-forge', 'specialists'), scope: 'default', source: 'legacy' },
     ];
     return dirs.filter(d => existsSync(d.path));
   }
@@ -142,6 +147,7 @@ export class SpecialistLoader {
             skills: spec.specialist.skills?.paths ?? [],
             scripts: spec.specialist.skills?.scripts ?? [],
             scope: dir.scope,
+            source: dir.source,
             filePath: resolved.filePath,
             updated,
             filestoWatch: spec.specialist.validation?.files_to_watch,

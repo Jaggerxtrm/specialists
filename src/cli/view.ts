@@ -10,6 +10,7 @@ const dim = (value: string): string => `\x1b[2m${value}${ANSI_RESET}`;
 const cyan = (value: string): string => `\x1b[36m${value}${ANSI_RESET}`;
 const green = (value: string): string => `\x1b[32m${value}${ANSI_RESET}`;
 const yellow = (value: string): string => `\x1b[33m${value}${ANSI_RESET}`;
+const blue = (value: string): string => `\x1b[34m${value}${ANSI_RESET}`;
 const magenta = (value: string): string => `\x1b[35m${value}${ANSI_RESET}`;
 
 const SECTION_ALIASES: Record<string, keyof Specialist['specialist'] | 'beads'> = {
@@ -154,9 +155,10 @@ function printGenericSection(title: string, color: (value: string) => string, va
 }
 
 function printHeader(summary: SpecialistSummary): void {
-  const scope = summary.scope === 'default' ? green('[default]') : yellow('[user]');
+  const scope = summary.scope === 'default' ? green('[default]') : summary.scope === 'package' ? blue('[package]') : yellow('[user]');
+  const source = dim(summary.source);
   console.log();
-  console.log(`${bold(cyan(summary.name))} ${scope} ${permissionBadge(summary.permission_required)}`);
+  console.log(`${bold(cyan(summary.name))} ${scope} ${permissionBadge(summary.permission_required)} ${source}`);
   console.log(dim(summary.description));
   console.log(`${dim('model:')} ${summary.model}`);
   console.log(`${dim('version:')} ${summary.version}`);
@@ -175,9 +177,9 @@ function printCatalog(summaries: readonly SpecialistSummary[]): void {
   console.log();
 
   for (const summary of rows) {
-    const scope = summary.scope === 'default' ? green('[default]') : yellow('[user]');
+    const scope = summary.scope === 'default' ? green('[default]') : summary.scope === 'package' ? blue('[package]') : yellow('[user]');
     const keepAlive = summary.interactive ? yellow('[keep-alive]') : dim('[single-turn]');
-    console.log(`${cyan(summary.name)} ${scope} ${permissionBadge(summary.permission_required)} ${keepAlive}`);
+    console.log(`${cyan(summary.name)} ${scope} ${permissionBadge(summary.permission_required)} ${keepAlive} ${dim(summary.source)}`);
     console.log(`${dim('  model:')} ${summary.model}`);
     console.log(`${dim('  category:')} ${summary.category}  ${dim('version:')} ${summary.version}`);
     console.log(`${dim('  desc:')} ${summary.description}`);

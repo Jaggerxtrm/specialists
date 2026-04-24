@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { STATIC_WORKFLOW_RULES_BLOCK } from './memory-retrieval.js';
 
 export interface MandatoryRule {
   id: string;
@@ -13,9 +14,23 @@ export interface MandatoryRuleSet {
   rules: MandatoryRule[];
 }
 
+export interface SpecialistMandatoryRulesConfig {
+  template_sets?: string[];
+  disable_default_globals?: boolean;
+  inline_rules?: MandatoryRule[];
+}
+
 interface MandatoryRulesIndex {
   required_template_sets?: string[];
   default_template_sets?: string[];
+}
+
+export interface MandatoryRulesInjection {
+  block: string;
+  setsLoaded: string[];
+  ruleCount: number;
+  inlineRulesCount: number;
+  globalsDisabled: boolean;
 }
 
 function readJsonFile<T>(filePath: string): T {
@@ -149,29 +164,76 @@ function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null 
   };
 }
 
-function formatMandatoryRulesBlock(sets: MandatoryRuleSet[]): string {
-  if (sets.length === 0) return '';
+function formatMandatoryRulesBlock(sets: MandatoryRuleSet[], inlineRules: MandatoryRule[] = []): string {
+  if (sets.length === 0 && inlineRules.length === 0) return '';
 
-  const sections = sets.map(set => {
-    const rules = set.rules.map(rule => `- [${rule.level}] ${rule.text}`).join('\n');
-    return `### ${set.id}\n${rules}`;
-  });
+  const sections = [
+    ...sets.map(set => {
+      const rules = set.rules.map(rule => `- [${rule.level}] ${rule.text}`).join('\n');
+      return `### ${set.id}\n${rules}`;
+    }),
+    ...(inlineRules.length > 0
+      ? [
+          `### specialist-inline-rules\n${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join('\n')}`,
+        ]
+      : []),
+  ];
 
   return `## MANDATORY_RULES\n${sections.join('\n\n')}`;
 }
 
-export function buildMandatoryRulesBlock(specialistConfig: { cwd?: string }): string {
+function collectMandatoryRuleSets(cwd: string, setIds: string[]): MandatoryRuleSet[] {
+  const seen = new Set<string>();
+  const sets: MandatoryRuleSet[] = [];
+
+  for (const id of setIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const set = readMandatoryRuleSet(cwd, id);
+    if (!set) {
+      console.warn(`[specialist runner] Missing mandatory-rules set: ${id}`);
+      continue;
+    }
+
+    sets.push(set);
+  }
+
+  return sets;
+}
+
+export function buildMandatoryRulesInjection(
+  specialistConfig: { cwd?: string; specialist?: { mandatory_rules?: SpecialistMandatoryRulesConfig } },
+): MandatoryRulesInjection {
   const cwd = specialistConfig.cwd ?? process.cwd();
   const index = loadMandatoryRulesIndex(cwd);
-  if (!index) return '';
+  const mandatoryRules = specialistConfig.specialist?.mandatory_rules;
 
   const setIds = [
-    ...(index.required_template_sets ?? []),
-    ...(index.default_template_sets ?? []),
+    ...(index?.required_template_sets ?? []),
+    ...(index?.default_template_sets ?? []),
+    ...(mandatoryRules?.template_sets ?? []),
   ];
-  const sets = setIds
-    .map(id => readMandatoryRuleSet(cwd, id))
-    .filter((set): set is MandatoryRuleSet => set !== null);
+  const sets = collectMandatoryRuleSets(cwd, setIds);
+  const inlineRules = mandatoryRules?.inline_rules ?? [];
+  const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
+  const globals = globalsDisabled
+    ? []
+    : [{
+        id: 'workflow-quick-rules',
+        rules: [{ id: 'workflow-quick-rules-1', level: 'required', text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, '') }],
+      }];
 
-  return formatMandatoryRulesBlock(sets);
+  const block = formatMandatoryRulesBlock([...globals, ...sets], inlineRules);
+  return {
+    block,
+    setsLoaded: [...globals.map((set) => set.id), ...sets.map((set) => set.id)],
+    ruleCount: [...globals, ...sets].reduce((count, set) => count + set.rules.length, 0) + inlineRules.length,
+    inlineRulesCount: inlineRules.length,
+    globalsDisabled,
+  };
+}
+
+export function buildMandatoryRulesBlock(specialistConfig: { cwd?: string; specialist?: { mandatory_rules?: SpecialistMandatoryRulesConfig } }): string {
+  return buildMandatoryRulesInjection(specialistConfig).block;
 }

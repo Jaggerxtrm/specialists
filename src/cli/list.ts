@@ -14,6 +14,7 @@ const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const cyan   = (s: string) => `\x1b[36m${s}\x1b[0m`;
 const green  = (s: string) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+const blue = (s: string) => `\x1b[34m${s}\x1b[0m`;
 const magenta = (s: string) => `\x1b[35m${s}\x1b[0m`;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ export async function run(): Promise<void> {
 
   console.log(`\n${bold(`Specialists (${specialists.length})`)}\n`);
   for (const s of specialists) {
-    const scopeTag = s.scope === 'default' ? green('[default]') : yellow('[user]');
+    const scopeTag = s.scope === 'default' ? green('[default]') : s.scope === 'package' ? blue('[package]') : yellow('[user]');
     const permission = permissionBadge(s.permission_required);
     const keepAliveTag = s.interactive ? `  ${yellow('[keep-alive]')}` : '';
     const thinkingTag = s.thinking_level && s.thinking_level !== 'off'
