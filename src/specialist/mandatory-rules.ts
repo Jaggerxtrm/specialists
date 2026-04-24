@@ -37,14 +37,36 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
 
+function mergeIndex(base: MandatoryRulesIndex, overlay: MandatoryRulesIndex): MandatoryRulesIndex {
+  const dedupe = (values: string[] | undefined): string[] | undefined =>
+    values ? Array.from(new Set(values)) : undefined;
+
+  return {
+    required_template_sets: dedupe([
+      ...(base.required_template_sets ?? []),
+      ...(overlay.required_template_sets ?? []),
+    ]),
+    default_template_sets: dedupe([
+      ...(base.default_template_sets ?? []),
+      ...(overlay.default_template_sets ?? []),
+    ]),
+  };
+}
+
 export function loadMandatoryRulesIndex(cwd: string): MandatoryRulesIndex | null {
-  const indexPath = resolve(cwd, 'config/mandatory-rules/index.json');
-  if (!existsSync(indexPath)) {
+  const canonicalPath = resolve(cwd, 'config/mandatory-rules/index.json');
+  const repoOverlayPath = resolve(cwd, '.specialists/mandatory-rules/index.json');
+
+  const canonical = existsSync(canonicalPath) ? readJsonFile<MandatoryRulesIndex>(canonicalPath) : null;
+  const overlay = existsSync(repoOverlayPath) ? readJsonFile<MandatoryRulesIndex>(repoOverlayPath) : null;
+
+  if (!canonical && !overlay) {
     console.warn('[specialist runner] Missing config/mandatory-rules/index.json; skipping MANDATORY_RULES injection');
     return null;
   }
 
-  return readJsonFile<MandatoryRulesIndex>(indexPath);
+  if (canonical && overlay) return mergeIndex(canonical, overlay);
+  return canonical ?? overlay;
 }
 
 function parseQuotedScalar(value: string): string {

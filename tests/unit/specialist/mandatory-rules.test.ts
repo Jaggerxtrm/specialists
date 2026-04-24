@@ -137,6 +137,55 @@ describe('mandatory rules resolution', () => {
     expect((result.block.match(/^- \[/gm) ?? []).length).toBe(2);
   });
 
+  it('merges repo-specific .specialists/mandatory-rules/index.json with canonical config', async () => {
+    await mkdir(join(tempDir, 'config', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, 'config', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        required_template_sets: ['core-session-boundary'],
+        default_template_sets: ['git-workflow-safe'],
+      }),
+    );
+    await mkdir(join(tempDir, '.specialists', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, '.specialists', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        default_template_sets: ['bun-native-tooling', 'git-workflow-safe'],
+      }),
+    );
+    await writeFile(join(tempDir, '.specialists', 'mandatory-rules', 'core-session-boundary.md'), '---\nrules:\n  - id: boundary-1\n    level: error\n    text: stay inside boundary\n---\n');
+    await writeFile(join(tempDir, '.specialists', 'mandatory-rules', 'git-workflow-safe.md'), '---\nrules:\n  - id: git-1\n    level: error\n    text: keep history linear\n---\n');
+    await writeFile(join(tempDir, '.specialists', 'mandatory-rules', 'bun-native-tooling.md'), '---\nrules:\n  - id: bun-1\n    level: required\n    text: use bunx not npx\n---\n');
+
+    const { result } = captureWarnings(() => buildMandatoryRulesInjection({
+      cwd: tempDir,
+      specialist: {},
+    }));
+
+    expect(result.setsLoaded).toEqual(['workflow-quick-rules', 'core-session-boundary', 'git-workflow-safe', 'bun-native-tooling']);
+    expect(result.block).toContain('### bun-native-tooling');
+    expect(result.block).toContain('use bunx not npx');
+  });
+
+  it('loads repo-specific index alone when canonical config absent', async () => {
+    await mkdir(join(tempDir, '.specialists', 'mandatory-rules'), { recursive: true });
+    await writeFile(
+      join(tempDir, '.specialists', 'mandatory-rules', 'index.json'),
+      JSON.stringify({
+        default_template_sets: ['bun-native-tooling'],
+      }),
+    );
+    await writeFile(join(tempDir, '.specialists', 'mandatory-rules', 'bun-native-tooling.md'), '---\nrules:\n  - id: bun-1\n    level: required\n    text: use bunx not npx\n---\n');
+
+    const { result } = captureWarnings(() => buildMandatoryRulesInjection({
+      cwd: tempDir,
+      specialist: {},
+    }));
+
+    expect(result.setsLoaded).toEqual(['workflow-quick-rules', 'bun-native-tooling']);
+    expect(result.block).toContain('### bun-native-tooling');
+  });
+
   it('falls back gracefully when index missing', () => {
     const { result } = captureWarnings(() => buildMandatoryRulesInjection({
       cwd: tempDir,
