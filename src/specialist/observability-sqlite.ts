@@ -179,6 +179,62 @@ function migrateToV3(db: BunDb): void {
   `);
 }
 
+function migrateToV11(db: BunDb): void {
+  const hasV11 = db.query('SELECT 1 FROM schema_version WHERE version = 11 LIMIT 1').get() as { 1?: number } | undefined;
+  if (hasV11) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC)');
+    return;
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_job_metrics (
+      job_id TEXT PRIMARY KEY,
+      specialist TEXT NOT NULL,
+      model TEXT,
+      status TEXT NOT NULL,
+      chain_kind TEXT,
+      chain_id TEXT,
+      bead_id TEXT,
+      node_id TEXT,
+      epic_id TEXT,
+      started_at_ms INTEGER,
+      completed_at_ms INTEGER,
+      elapsed_ms INTEGER,
+      total_turns INTEGER NOT NULL DEFAULT 0,
+      total_tools INTEGER NOT NULL DEFAULT 0,
+      tool_call_counts_json TEXT NOT NULL,
+      token_trajectory_json TEXT NOT NULL,
+      context_trajectory_json TEXT NOT NULL,
+      stall_gaps_json TEXT NOT NULL,
+      run_complete_json TEXT,
+      updated_at_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (11, strftime('%s', 'now') * 1000);
+  `);
+}
+
+function parseJsonRecord(input: string | null | undefined): Record<string, unknown> {
+  if (!input) return {};
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function readNumber(input: unknown): number | null {
+  return typeof input === 'number' && Number.isFinite(input) ? input : null;
+}
+
+function stringifyJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
 function migrateToV4(db: BunDb): void {
   const hasV4 = db.query('SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1').get() as { 1?: number } | undefined;
   if (hasV4) {
@@ -403,6 +459,7 @@ export function initSchema(db: BunDb): void {
   migrateToV8(db);
   migrateToV9(db);
   migrateToV10(db);
+  migrateToV11(db);
   verifyWalMode(db);
 }
 
@@ -811,6 +868,30 @@ export interface PruneObservabilityOptions {
   apply: boolean;
   nowMs?: number;
   eventsRetentionMs?: number;
+  skipExtract?: boolean;
+}
+
+export interface JobMetricsRecord {
+  job_id: string;
+  specialist: string;
+  model: string | null;
+  status: string;
+  chain_kind: string | null;
+  chain_id: string | null;
+  bead_id: string | null;
+  node_id: string | null;
+  epic_id: string | null;
+  started_at_ms: number | null;
+  completed_at_ms: number | null;
+  elapsed_ms: number | null;
+  total_turns: number;
+  total_tools: number;
+  tool_call_counts_json: string;
+  token_trajectory_json: string;
+  context_trajectory_json: string;
+  stall_gaps_json: string;
+  run_complete_json: string | null;
+  updated_at_ms: number;
 }
 
 export interface PruneObservabilityReport {
@@ -823,6 +904,7 @@ export interface PruneObservabilityReport {
   deletedJobs: number;
   deletedEpicRuns: number;
   skippedActiveChainJobs: number;
+  extractedJobs: number;
 }
 
 export interface OrphanScanFinding {
@@ -870,6 +952,8 @@ export interface ObservabilitySqliteClient {
   resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null;
   readEvents(jobId: string): TimelineEvent[];
   readLatestToolEvent(jobId: string): TimelineEventTool | null;
+  aggregateJobMetrics(jobId: string): JobMetricsRecord | null;
+  listJobMetrics(filters?: { spec?: string; model?: string; sinceMs?: number }): JobMetricsRecord[];
   readResult(jobId: string): string | null;
   syncMemoriesCache(memories: readonly MemoryCacheInputRecord[], syncedAtMs?: number): void;
   getMemoriesCacheState(): MemoryCacheState | null;
@@ -1517,7 +1601,13 @@ class SqliteClient implements ObservabilitySqliteClient {
 
   listEpicChains(epicId: string): EpicChainRecord[] {
     return withRetry(() => {
-      return this.db.query('SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE epic_id = ? ORDER BY updated_at_ms DESC').all(epicId) as EpicChainRecord[];
+      return this.db.query(`
+        SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms
+        FROM epic_chain_membership
+        WHERE epic_id = ?
+          AND (chain_root_job_id IS NULL OR chain_root_job_id != chain_id)
+        ORDER BY updated_at_ms DESC
+      `).all(epicId) as EpicChainRecord[];
     }, 'listEpicChains');
   }
 
@@ -1609,7 +1699,9 @@ class SqliteClient implements ObservabilitySqliteClient {
         LIMIT 1
       `).get(jobId) as { chain_kind?: string; chain_id?: string | null; chain_root_job_id?: string | null; chain_root_bead_id?: string | null } | undefined;
 
-      if (!row?.chain_kind) return null;
+      if (!row?.chain_kind || row.chain_kind.trim().length === 0) {
+        return { chain_kind: 'prep' };
+      }
 
       return {
         chain_kind: row.chain_kind === 'chain' ? 'chain' : 'prep',
@@ -1695,6 +1787,146 @@ class SqliteClient implements ObservabilitySqliteClient {
         return null;
       }
     }, 'readLatestToolEvent');
+  }
+
+  aggregateJobMetrics(jobId: string): JobMetricsRecord | null {
+    return withRetry(() => {
+      const jobRow = this.db.query(`
+        SELECT job_id, specialist, status, chain_kind, chain_id, bead_id, node_id, epic_id, updated_at_ms
+        FROM specialist_jobs
+        WHERE job_id = ?
+      `).get(jobId) as {
+        job_id: string;
+        specialist: string;
+        status: string;
+        chain_kind?: string | null;
+        chain_id?: string | null;
+        bead_id?: string | null;
+        node_id?: string | null;
+        epic_id?: string | null;
+        updated_at_ms: number;
+      } | undefined;
+
+      if (!jobRow) return null;
+
+      const events = this.readEvents(jobId);
+      const toolCallCounts: Record<string, number> = {};
+      const tokenTrajectory: Array<Record<string, unknown>> = [];
+      const contextTrajectory: Array<Record<string, unknown>> = [];
+      const stallGaps: Array<Record<string, unknown>> = [];
+      let totalTools = 0;
+      let totalTurns = 0;
+      let startedAtMs: number | null = null;
+      let completedAtMs: number | null = null;
+      let runCompleteJson: string | null = null;
+      let model: string | null = null;
+      let elapsedMs: number | null = null;
+
+      for (const event of events) {
+        startedAtMs = startedAtMs === null ? event.t : Math.min(startedAtMs, event.t);
+        completedAtMs = completedAtMs === null ? event.t : Math.max(completedAtMs, event.t);
+
+        if (event.type === 'tool') {
+          totalTools += 1;
+          toolCallCounts[event.tool] = (toolCallCounts[event.tool] ?? 0) + 1;
+          continue;
+        }
+
+        if (event.type === 'turn_summary') {
+          totalTurns += 1;
+          if (event.token_usage) tokenTrajectory.push({ turn_index: event.turn_index, t: event.t, token_usage: event.token_usage });
+          if (event.context_pct !== undefined) contextTrajectory.push({ turn_index: event.turn_index, t: event.t, context_pct: event.context_pct });
+          continue;
+        }
+
+        if (event.type === 'token_usage') {
+          tokenTrajectory.push({ t: event.t, source: event.source, token_usage: event.token_usage });
+          continue;
+        }
+
+        if (event.type === 'run_complete') {
+          runCompleteJson = JSON.stringify(event);
+          model = event.model ?? model;
+          elapsedMs = Math.round(event.elapsed_s * 1000);
+          continue;
+        }
+
+        if (event.type === 'stale_warning' && event.reason === 'tool_duration') {
+          stallGaps.push({ t: event.t, tool: event.tool ?? null, silence_ms: event.silence_ms, threshold_ms: event.threshold_ms });
+        }
+      }
+
+      const record: JobMetricsRecord = {
+        job_id: jobRow.job_id,
+        specialist: jobRow.specialist,
+        model,
+        status: jobRow.status,
+        chain_kind: jobRow.chain_kind ?? null,
+        chain_id: jobRow.chain_id ?? null,
+        bead_id: jobRow.bead_id ?? null,
+        node_id: jobRow.node_id ?? null,
+        epic_id: jobRow.epic_id ?? null,
+        started_at_ms: startedAtMs,
+        completed_at_ms: completedAtMs,
+        elapsed_ms: elapsedMs,
+        total_turns: totalTurns,
+        total_tools: totalTools,
+        tool_call_counts_json: stringifyJson(toolCallCounts),
+        token_trajectory_json: stringifyJson(tokenTrajectory),
+        context_trajectory_json: stringifyJson(contextTrajectory),
+        stall_gaps_json: stringifyJson(stallGaps),
+        run_complete_json: runCompleteJson,
+        updated_at_ms: jobRow.updated_at_ms,
+      };
+
+      this.db.run(`
+        INSERT INTO specialist_job_metrics (
+          job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
+          started_at_ms, completed_at_ms, elapsed_ms, total_turns, total_tools,
+          tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
+          run_complete_json, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          specialist = excluded.specialist,
+          model = excluded.model,
+          status = excluded.status,
+          chain_kind = excluded.chain_kind,
+          chain_id = excluded.chain_id,
+          bead_id = excluded.bead_id,
+          node_id = excluded.node_id,
+          epic_id = excluded.epic_id,
+          started_at_ms = excluded.started_at_ms,
+          completed_at_ms = excluded.completed_at_ms,
+          elapsed_ms = excluded.elapsed_ms,
+          total_turns = excluded.total_turns,
+          total_tools = excluded.total_tools,
+          tool_call_counts_json = excluded.tool_call_counts_json,
+          token_trajectory_json = excluded.token_trajectory_json,
+          context_trajectory_json = excluded.context_trajectory_json,
+          stall_gaps_json = excluded.stall_gaps_json,
+          run_complete_json = excluded.run_complete_json,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [
+        record.job_id, record.specialist, record.model, record.status, record.chain_kind, record.chain_id, record.bead_id, record.node_id, record.epic_id,
+        record.started_at_ms, record.completed_at_ms, record.elapsed_ms, record.total_turns, record.total_tools,
+        record.tool_call_counts_json, record.token_trajectory_json, record.context_trajectory_json, record.stall_gaps_json,
+        record.run_complete_json, record.updated_at_ms,
+      ]);
+
+      return record;
+    }, 'aggregateJobMetrics');
+  }
+
+  listJobMetrics(filters?: { spec?: string; model?: string; sinceMs?: number }): JobMetricsRecord[] {
+    return withRetry(() => {
+      const clauses: string[] = [];
+      const params: Array<string | number> = [];
+      if (filters?.spec) { clauses.push('specialist = ?'); params.push(filters.spec); }
+      if (filters?.model) { clauses.push('model LIKE ?'); params.push(filters.model.replace(/\*/g, '%')); }
+      if (filters?.sinceMs !== undefined) { clauses.push('updated_at_ms >= ?'); params.push(filters.sinceMs); }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+      return this.db.query(`SELECT * FROM specialist_job_metrics ${where} ORDER BY updated_at_ms DESC, job_id DESC`).all(...params) as JobMetricsRecord[];
+    }, 'listJobMetrics');
   }
 
   readResult(jobId: string): string | null {
@@ -1925,6 +2157,14 @@ class SqliteClient implements ObservabilitySqliteClient {
           )
       `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses) as { count?: number } | undefined)?.count ?? 0;
 
+      const extractCandidates = options.skipExtract
+        ? 0
+        : (this.db.query(`
+          SELECT COUNT(DISTINCT job_id) AS count
+          FROM specialist_events
+          WHERE t < ?
+        `).get(eventsCutoffMs) as { count?: number } | undefined)?.count ?? 0;
+
       const eventsCandidates = (this.db.query('SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?').get(eventsCutoffMs) as { count?: number } | undefined)?.count ?? 0;
 
       const epicCandidates = options.includeEpics
@@ -1952,7 +2192,26 @@ class SqliteClient implements ObservabilitySqliteClient {
           deletedJobs: jobCandidates,
           deletedEpicRuns: epicCandidates,
           skippedActiveChainJobs,
+          extractedJobs: extractCandidates,
         };
+      }
+
+      let extractedJobs = 0;
+      if (!options.skipExtract) {
+        const jobsToExtract = this.db.query(`
+          SELECT DISTINCT stale.job_id
+          FROM specialist_events stale
+          WHERE stale.t < ?
+        `).all(eventsCutoffMs) as Array<{ job_id?: string | null }>;
+
+        for (const row of jobsToExtract) {
+          if (!row.job_id) continue;
+          const metrics = this.aggregateJobMetrics(row.job_id);
+          if (!metrics) {
+            throw new Error(`Failed to aggregate metrics for job ${row.job_id}`);
+          }
+          extractedJobs += 1;
+        }
       }
 
       const deleteResults = this.db.query(`
@@ -2019,6 +2278,7 @@ class SqliteClient implements ObservabilitySqliteClient {
         deletedJobs,
         deletedEpicRuns,
         skippedActiveChainJobs,
+        extractedJobs,
       };
     }, 'pruneObservabilityData');
   }
