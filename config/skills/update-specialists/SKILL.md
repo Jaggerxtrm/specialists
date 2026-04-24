@@ -6,8 +6,8 @@ description: >
   "sp is out of date", "hooks not firing", "skills not loading after update",
   or when drift is detected in installed specialists config, hooks, jobs, DB,
   extensions, or worktree cleanup.
-version: 1.2
-synced_at: 2026-04-24
+version: 1.3
+synced_at: 2026-04-25
 ---
 
 # update-specialists
@@ -90,10 +90,14 @@ looks like.
 
 | Check | Expected value |
 |-------|----------------|
-| specialists DB | Opens cleanly |
-| Schema version | Matches runtime expectation |
+| specialists DB | Opens cleanly (`.specialists/db/observability.db`) |
+| Schema version | Matches runtime expectation (current: v11) |
+| `specialist_job_metrics` table | Present at v11+ — holds aggregated per-job metrics |
 | WAL / busy timeout settings | Present when runtime uses SQLite |
 | Corruption / lock errors | None in `sp doctor` |
+| Pre-prune extract | `sp db prune --apply` extracts metrics to `specialist_job_metrics` before deleting events |
+| Extract backfill | `sp db extract --all-missing` populates metrics for jobs whose events still exist |
+| Historical stats query | `sp db stats [--spec <name>] [--model <glob>] [--since <dur>]` reads the aggregated table |
 
 ### Skills + extensions parity
 
@@ -178,6 +182,9 @@ find .worktrees -maxdepth 2 -mindepth 1 -type d 2>/dev/null || true
 # 12. Extension registration
 node -e "const fs=require('fs'); const p='.pi/settings.json'; if (fs.existsSync(p)) console.log(JSON.stringify(JSON.parse(fs.readFileSync(p,'utf8')).skills ?? JSON.parse(fs.readFileSync(p,'utf8')).extensions ?? {}, null, 2)); else console.log('MISSING .pi/settings.json')"
 
+# 13a. Observability schema + metrics coverage
+node -e "const {Database} = require('bun:sqlite'); const p='.specialists/db/observability.db'; const fs=require('fs'); if (!fs.existsSync(p)) { console.log('NO_DB'); process.exit(0); } const db=new Database(p,{readonly:true}); const v=db.query(\"SELECT value FROM schema_meta WHERE key='version'\").get(); const has=db.query(\"SELECT name FROM sqlite_master WHERE type='table' AND name='specialist_job_metrics'\").get(); const jobs=db.query('SELECT COUNT(*) c FROM specialist_jobs').get(); const metrics=has ? db.query('SELECT COUNT(*) c FROM specialist_job_metrics').get() : null; console.log(JSON.stringify({schema_version: v?.value, has_metrics_table: !!has, jobs: jobs.c, metrics_rows: metrics?.c ?? 0, metrics_coverage: metrics ? (metrics.c/jobs.c).toFixed(2) : null}, null, 2));" 2>/dev/null || echo "REQUIRES_BUN_RUNTIME"
+
 # 13. Mandatory-rules template tiers + reference checks (three-tier resolution)
 find .specialists/default/mandatory-rules -maxdepth 1 -type f 2>/dev/null || true
 find .specialists/mandatory-rules -maxdepth 1 -type f 2>/dev/null || true
@@ -205,6 +212,10 @@ Use targeted fixes first. Escalate to full sync only if needed.
 | Job dir missing | `specialists init` |
 | Orphaned `.worktrees/` entries | `specialists clean` |
 | SQLite schema/version mismatch | `sp doctor` first, then `specialists init --sync-defaults` or runtime migration command |
+| Schema below v11 (no `specialist_job_metrics`) | Reinstall / upgrade runtime; table is created by initSchema / migrateToV11. No data loss — raw events untouched. |
+| Events about to be pruned but never aggregated | `sp db extract --all-missing` BEFORE `sp db prune --apply`. Prune refuses when extract fails (safe by design). |
+| Emergency: need to prune but extract is wedged | `sp db prune --apply --skip-extract` — raw events deleted without aggregation. Use only when data loss is acceptable. |
+| Historical per-job stats needed | `sp db stats` reads `specialist_job_metrics`. Replaces ad-hoc `status.json` scans. Supports `--format json\|table`. |
 | Pi extensions missing | `specialists init --sync-skills` or reinstall extension registration |
 | Hook config format stale | `specialists init` |
 | Skill symlink / active-skill drift | `specialists init --sync-skills` |
@@ -288,6 +299,31 @@ If doctor reports DB version mismatch or recovery issue:
 1. Run `sp doctor` and capture exact schema error.
 2. Apply runtime migration command if available.
 3. If no automated migration exists, flag manual intervention.
+
+### Fix: metrics aggregation missing or stale
+
+Schema v11 introduced `specialist_job_metrics` (aggregated per-job stats). If you see low `metrics_coverage` in the detection output, or want historical stats before running `sp db prune`:
+
+```bash
+# Backfill metrics for any job whose events still exist but lack a metrics row.
+sp db extract --all-missing
+
+# Inspect specific job metrics.
+sp db extract --job <job-id>
+
+# Query aggregates.
+sp db stats
+sp db stats --spec executor --since 7d --format json
+sp db stats --model 'openai-codex/*' --since 30d
+```
+
+`sp db prune --apply` automatically extracts for every job whose events will be deleted (unless `--skip-extract`). If extract throws, prune aborts — investigate the failing job instead of bypassing.
+
+Safe order before a retention cleanup:
+1. `sp db extract --all-missing` — verify no extract errors.
+2. `sp db prune --before 30d --dry-run` — confirm scope.
+3. `sp db prune --before 30d --apply` — prune with pre-extract built in.
+4. `sp db vacuum` — compact file size.
 
 ### Fix: Skills/defaults differ from shipped package copy
 
