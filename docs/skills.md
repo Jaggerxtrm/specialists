@@ -83,9 +83,10 @@ Purpose:
 
 Key areas covered:
 
-- canonical state table for `.specialists/default/*.specialist.json`, hooks, `sp` / `specialists`, job dirs, SQLite, and extensions
+- canonical state table for `.specialists/default/*` mirror assets (specialists + mandatory-rules + nodes), hooks, `sp` / `specialists`, job dirs, SQLite, and extensions
 - detection workflow centered on `sp doctor` plus focused checks for config shape and stale worktrees
-- drift-to-fix mapping for `sp init --sync-skills`, `specialists clean`, and full `sp init -y`
+- drift-to-fix mapping for `sp init --sync-skills`, `sp init --sync-defaults`, `specialists clean`, and full `sp init -y`
+- explicit ownership guidance: no hand edits in `.specialists/default/`; customize via `.specialists/user/` and repo `config/nodes/`
 - manual intervention checklist for corruption, missing binaries, and unsafe cleanup
 
 ### `specialists-creator`

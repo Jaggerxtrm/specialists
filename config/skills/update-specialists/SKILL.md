@@ -15,8 +15,16 @@ synced_at: 00000000
 Bring specialists install back to canonical state. Detect drift, apply targeted
 fixes, then verify with `sp doctor`. Treat canonical state as both:
 1. healthy repo wiring and runtime behavior, and
-2. parity with the currently installed `@jaggerxtrm/specialists` package version
+2. parity with currently installed `@jaggerxtrm/specialists` package version
    when package-level comparison is available.
+
+Ownership contract during repair:
+- upstream source: package `config/*` (read-only for repo operators)
+- managed mirror: `.specialists/default/*` (refresh via `sp init --sync-defaults`, no hand edits)
+- repo custom layer: `.specialists/user/*` + `config/nodes/*`
+- runtime/generated: `.specialists/{jobs,ready,db}`
+
+Isolation rule: backlog-clean surfaces out of scope for this skill.
 
 ## Canonical State
 

@@ -169,7 +169,7 @@ specialists node stop <node-id> [--json]
 ### Subcommands
 
 - `run`: Start a node run from discovered config name, config path, or inline JSON.
-- `list`: List discovered node configs from `.specialists/default/nodes` then `config/nodes` (default wins on collision).
+- `list`: List discovered node configs from `config/nodes` then `.specialists/default/nodes` (repo wins on collision).
 - `promote`: Promote one node memory finding into bead notes.
 - `members`: Inspect member generation/status/worktree lineage.
 - `memory`: Inspect node memory entries and aggregate counts.
@@ -724,6 +724,7 @@ specialists edit <name> --file <path> <dot.path>
 - `--scope <default|user>`: Target scope (default: auto-detect)
 - `--dry-run`: Preview changes without writing
 - `--all`: Apply to all specialists
+- `--fork-from <base-name>`: Create `.specialists/user/<name>.specialist.json` fork from resolved base specialist
 
 **Legacy field aliases** (compat only, translated to dot-paths):
 - `--model`, `--fallback-model`, `--description`, `--permission`, `--timeout`, `--tags`
@@ -818,7 +819,12 @@ specialists edit executor --set specialist.execution.timeout_ms 300000 --dry-run
 
 ### Notes
 
-- Specialist configs are now **JSON format** (YAML migration complete as of 2026-04-06).
+- Specialist configs are **JSON format** (`.specialist.json`).
+- Ownership model for edits:
+  - package source in `config/specialists/` is upstream fallback, not repo customization surface
+  - `.specialists/default/` is managed mirror; do not hand-edit
+  - `.specialists/user/` is repo customization/fork layer
+- `--fork-from` supports both same-name override and new-name fork into `.specialists/user/`.
 - All dot-paths must start with `specialist.` (auto-prefixed if omitted).
 - `--all` without other flags opens all config JSON files in `$EDITOR`.
 - Array operations (`--append`, `--remove`) require valid JSON array element syntax.
@@ -856,13 +862,13 @@ specialists init [--sync-defaults]
 
 | Flag | Description |
 |------|-------------|
-| `--sync-defaults` | Also copy canonical specialists to `.specialists/default/`. Human-only. |
+| `--sync-defaults` | Refresh managed mirror into `.specialists/default/` for specialists, mandatory-rules, and nodes. Human-only. |
 
 ### Examples
 
 ```bash
-specialists init                 # safe for agents
-specialists init --sync-defaults # human-only: sync canonical specialists
+specialists init                 # human-only bootstrap (interactive terminal)
+specialists init --sync-defaults # human-only: refresh managed mirror
 ```
 
 ### Exit codes
@@ -871,15 +877,17 @@ specialists init --sync-defaults # human-only: sync canonical specialists
 - `1`: Unhandled runtime error.
 
 What it sets up (always):
-- `.specialists/user/` (custom specialists)
-- `.specialists/jobs/`, `.specialists/ready/` runtime dirs
-- `.gitignore` runtime entries
+- `.specialists/default/`, `.specialists/user/`
+- `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` runtime dirs
+- `.gitignore` runtime/db entries
 - `AGENTS.md` Specialists section
 - `.mcp.json` `mcpServers.specialists`
-- `.claude/hooks`, `.claude/settings.json`, `.claude/skills`, `.pi/skills`
+- `.xtrm/hooks/specialists` + `.claude/hooks` symlinks + `.claude/settings.json` hook wiring
+- `.xtrm/skills/default`, `.xtrm/skills/active`, `.claude/skills` symlink, `.pi/skills` symlink
 
 With `--sync-defaults` only:
-- `.specialists/default/` (canonical specialist files)
+- refresh `.specialists/default/` managed mirror for specialists, mandatory-rules, nodes
+- migrate legacy nested default layout (`default/specialists/*.specialist.json` -> `default/*.specialist.json`)
 
 ---
 
@@ -1050,7 +1058,11 @@ specialists validate code-review --json
 ### Exit codes
 
 - `0`: Validation passed.
-- `1`: Not found, read error, YAML/schema validation failure, or invalid args.
+- `1`: Not found, read error, schema validation failure, or invalid args.
+
+### Notes
+
+- `validate` resolves specialist by runtime precedence (`user` -> `default-mirror` -> `package-fallback`) and reports file path + source in output.
 
 ---
 

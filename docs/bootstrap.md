@@ -53,20 +53,18 @@ specialists init
 
 What it does (always safe, idempotent):
 
-1. creates `.specialists/user/` for custom specialists
-2. creates `.specialists/jobs/` and `.specialists/ready/` (gitignored runtime dirs)
-3. adds runtime and db paths to `.gitignore`:
+1. creates `.specialists/default/` (managed mirror root) and `.specialists/user/` (repo custom layer)
+2. creates runtime dirs `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/`
+3. adds runtime/db paths to `.gitignore`:
    - `.specialists/jobs/`
    - `.specialists/ready/`
    - `.specialists/db/*.db` / `*.db-wal` / `*.db-shm`
-4. injects the Specialists section into `AGENTS.md`
+4. injects Specialists section into `AGENTS.md`
 5. registers Specialists in `.mcp.json`
-6. installs hooks to `.claude/hooks/` and wires them in `.claude/settings.json`:
-   - `specialists-complete.mjs` on `UserPromptSubmit` and `PostToolUse`
-   - `specialists-memory-cache-sync.mjs` on `PostToolUse` (FTS cache incremental sync)
-   - `specialists-session-start.mjs` on `SessionStart`
-7. installs skills to `.claude/skills/` (Claude Code) and `.pi/skills/` (pi)
-8. runs full FTS memory cache sync from `bd memories` (non-fatal if unavailable)
+6. installs canonical hooks into `.xtrm/hooks/specialists/`, then symlinks `.claude/hooks/*`
+7. wires hook commands in `.claude/settings.json`
+8. installs canonical skills into `.xtrm/skills/default/`, verifies `.xtrm/skills/active/` symlinks, and ensures `.claude/skills` + `.pi/skills` root symlinks
+9. runs full FTS memory cache sync from `bd memories` (non-fatal if unavailable)
 
 ## Sync canonical specialists (human-only)
 
@@ -76,10 +74,13 @@ To copy the canonical specialist JSON files to `.specialists/default/`, pass `--
 specialists init --sync-defaults
 ```
 
-Additional step performed:
+Additional steps performed:
 
-- copies canonical specialists to `.specialists/default/`
-- migrates any legacy nested layout (`default/specialists/*.specialist.json`) to the flat `default/*.specialist.json` layout
+- refreshes canonical mirrors into `.specialists/default/`:
+  - specialists (`*.specialist.json`)
+  - mandatory-rules (`mandatory-rules/*`)
+  - nodes (`nodes/*.node.json`)
+- migrates legacy nested specialist layouts (`default/specialists/*.specialist.json`) into flat `default/*.specialist.json`
 
 > **Do not run `--sync-defaults` from automated agents.** Agents that need MCP wiring should call plain `specialists init`.
 
@@ -89,21 +90,39 @@ Specialists live in `.specialists/` in the project root. Skills and hooks are pr
 
 ```
 .claude/
-├── hooks/         # Claude Code hooks
-├── settings.json  # hook wiring
-└── skills/        # skills for Claude
+├── hooks/         # symlinks -> .xtrm/hooks/specialists/*.mjs
+├── settings.json  # hook wiring (settings.hooks)
+└── skills -> ../.xtrm/skills/active
 
 .pi/
-└── skills/        # skills for pi
+└── skills -> ../.xtrm/skills/active
+
+.xtrm/
+├── hooks/specialists/   # canonical specialist hooks
+└── skills/
+    ├── default/         # canonical specialist skills mirror
+    └── active/          # active symlinks to default/*
 
 .specialists/
-├── default/       # canonical specialists (from init --sync-defaults)
-├── user/          # custom specialists
-├── jobs/          # runtime (gitignored)
-└── ready/         # runtime (gitignored)
+├── default/             # managed mirror (specialists, mandatory-rules, nodes)
+├── user/                # repo-owned custom specialists
+├── db/                  # runtime db (gitignored)
+├── jobs/                # runtime (gitignored)
+└── ready/               # runtime (gitignored)
 ```
 
 Add custom specialists to `.specialists/user/`.
+
+## Managed mirror guidance
+
+- Treat `.specialists/default/` as generated mirror state.
+- Do not hand-edit files under `.specialists/default/`.
+- For custom behavior use `.specialists/user/` (specialists) or `config/nodes/` (nodes).
+- Reconcile drift with `specialists init --sync-defaults`.
+
+## Explicit non-goal
+
+This bootstrap/migration contract does not change backlog-clean behavior or ownership.
 
 ## Verify bootstrap
 
