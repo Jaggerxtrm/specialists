@@ -45,14 +45,25 @@ Meaning:
 
 ### Mandatory rules
 
-Injection merge order:
+Three-tier index resolution. Loader reads and union-merges all that exist (dedup by set id):
 
-1. required sets from `config/mandatory-rules/index.json`
-2. default sets from `config/mandatory-rules/index.json`
+1. `config/mandatory-rules/index.json` — upstream source, ships with package
+2. `.specialists/default/mandatory-rules/index.json` — managed mirror, refreshed by `sp init --sync-defaults`
+3. `.specialists/mandatory-rules/index.json` — repo overlay, wins on set-id conflict
+
+Set-file lookup (`<set-id>.md`) probes the same three paths in reverse precedence:
+`.specialists/mandatory-rules/` first, then `.specialists/default/mandatory-rules/`, then `config/mandatory-rules/`.
+
+Injection merge order (within the resolved index):
+
+1. required sets (union of all tiers)
+2. default sets (union of all tiers)
 3. specialist `mandatory_rules.template_sets`
 4. specialist `mandatory_rules.inline_rules`
 
 Global workflow block injected unless `mandatory_rules.disable_default_globals=true`.
+
+Full authoring guide: [`config/mandatory-rules/README.md`](../config/mandatory-rules/README.md).
 
 ### Nodes
 

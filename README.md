@@ -98,21 +98,26 @@ Specialists uses layered ownership with deterministic loader precedence: user la
 
 ```text
 config/
-├── specialists/    canonical specialist definitions (.specialist.yaml)
-├── hooks/          bundled hook scripts
-├── skills/         repo-local skills used by specialists
-└── extensions/     pi extensions (future)
+├── specialists/       canonical specialist definitions (.specialist.json)
+├── mandatory-rules/   canonical rule sets injected into specialist prompts (+ README)
+├── nodes/             canonical node configs
+├── hooks/             bundled hook scripts
+├── skills/            repo-local skills used by specialists
+└── extensions/        pi extensions (future)
 .specialists/
-├── default/        canonical assets (from init)
+├── default/           managed mirror of canonical (from sp init --sync-defaults)
+│   ├── specialists/
+│   ├── mandatory-rules/
+│   ├── nodes/
+│   ├── hooks/
+│   └── skills/
+├── user/              repo-owned customizations (overrides default + canonical)
 │   ├── specialists/
 │   ├── hooks/
 │   └── skills/
-├── user/           custom additions
-│   ├── specialists/
-│   ├── hooks/
-│   └── skills/
-├── jobs/           runtime — gitignored
-└── ready/          runtime — gitignored
+├── mandatory-rules/   repo-specific rule overlay (wins on set-id conflict)
+├── jobs/              runtime — gitignored
+└── ready/             runtime — gitignored
 src/                CLI, server, loader, runner, tools
 ```
 
