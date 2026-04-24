@@ -6,8 +6,8 @@ description: >
   "sp is out of date", "hooks not firing", "skills not loading after update",
   or when drift is detected in installed specialists config, hooks, jobs, DB,
   extensions, or worktree cleanup.
-version: 1.1
-synced_at: 00000000
+version: 1.2
+synced_at: 2026-04-24
 ---
 
 # update-specialists
@@ -21,7 +21,7 @@ fixes, then verify with `sp doctor`. Treat canonical state as both:
 Ownership contract during repair:
 - upstream source: package `config/*` (read-only for repo operators)
 - managed mirror: `.specialists/default/*` (refresh via `sp init --sync-defaults`; sync scope = specialists + mandatory-rules + nodes; no hand edits)
-- repo custom layer: `.specialists/user/*` + `config/nodes/*`
+- repo custom layer: `.specialists/user/*` + `config/nodes/*` + `.specialists/mandatory-rules/*` (rule overlay, wins on set-id conflict; NOT drift — do not overwrite or flag)
 - runtime/generated: `.specialists/{jobs,ready,db}`
 
 Isolation rule: backlog-clean surfaces out of scope for this skill.
@@ -107,14 +107,20 @@ looks like.
 | `pi-serena-tools` | Registered when Serena integration is expected |
 | Extension paths | Resolve from installed project, not stale workspace copies |
 
-### Mandatory-rules template parity
+### Mandatory-rules template parity (three-tier)
+
+Loader unions indexes from three paths and probes set files in reverse precedence
+(overlay wins on set-id conflict). Full authoring guide:
+`config/mandatory-rules/README.md`.
 
 | Check | Expected value |
 |-------|----------------|
-| `.specialists/default/mandatory-rules/*` | Mirrors canonical package templates after `sp init --sync-defaults` |
+| `.specialists/default/mandatory-rules/*` | Mirrors canonical package templates after `sp init --sync-defaults` (managed mirror, no hand edits) |
+| `.specialists/mandatory-rules/*` | Repo-specific overlay (user-maintained). Present when repo ships its own rules. NOT drift. |
 | Template frontmatter | YAML frontmatter present and parseable |
-| `specialist.mandatory_rules.template_sets` references | Point to existing template ids/files |
-| Prompt injection behavior | Runner appends resolved template content at end of prompt |
+| `specialist.mandatory_rules.template_sets` references | Resolve in order: `.specialists/mandatory-rules/` → `.specialists/default/mandatory-rules/` → `config/mandatory-rules/` |
+| Index files (`index.json`) | Any of the three tiers may define `required_template_sets` / `default_template_sets`; loader unions + dedups |
+| Prompt injection behavior | Runner appends resolved `MANDATORY_RULES` block at end of prompt; supervisor emits `mandatory_rules_injection` meta event |
 
 ## Detection
 
@@ -172,9 +178,10 @@ find .worktrees -maxdepth 2 -mindepth 1 -type d 2>/dev/null || true
 # 12. Extension registration
 node -e "const fs=require('fs'); const p='.pi/settings.json'; if (fs.existsSync(p)) console.log(JSON.stringify(JSON.parse(fs.readFileSync(p,'utf8')).skills ?? JSON.parse(fs.readFileSync(p,'utf8')).extensions ?? {}, null, 2)); else console.log('MISSING .pi/settings.json')"
 
-# 13. Mandatory-rules template mirror + reference checks
+# 13. Mandatory-rules template tiers + reference checks (three-tier resolution)
 find .specialists/default/mandatory-rules -maxdepth 1 -type f 2>/dev/null || true
-node -e "const fs=require('fs'); const path=require('path'); const roots=['.specialists/default/specialists','.specialists/user/specialists']; const missing=[]; for (const root of roots) { if (!fs.existsSync(root)) continue; for (const file of fs.readdirSync(root)) { if (!file.endsWith('.specialist.json')) continue; const spec=JSON.parse(fs.readFileSync(path.join(root,file),'utf8')); const sets=spec.specialist?.mandatory_rules?.template_sets ?? []; for (const set of sets) { const candidates=[path.join('.specialists/default/mandatory-rules',set+'.md'), path.join('config/mandatory-rules',set+'.md')]; if (!candidates.some((p)=>fs.existsSync(p))) missing.push(file+': missing template set '+set); } } } if (missing.length) console.log(missing.join('\n'));"
+find .specialists/mandatory-rules -maxdepth 1 -type f 2>/dev/null || true
+node -e "const fs=require('fs'); const path=require('path'); const roots=['.specialists/default/specialists','.specialists/user/specialists']; const missing=[]; for (const root of roots) { if (!fs.existsSync(root)) continue; for (const file of fs.readdirSync(root)) { if (!file.endsWith('.specialist.json')) continue; const spec=JSON.parse(fs.readFileSync(path.join(root,file),'utf8')); const sets=spec.specialist?.mandatory_rules?.template_sets ?? []; for (const set of sets) { const candidates=[path.join('.specialists/mandatory-rules',set+'.md'), path.join('.specialists/default/mandatory-rules',set+'.md'), path.join('config/mandatory-rules',set+'.md')]; if (!candidates.some((p)=>fs.existsSync(p))) missing.push(file+': missing template set '+set); } } } if (missing.length) console.log(missing.join('\n'));"
 
 # 14. Shipped skill frontmatter parity
 node -e "const fs=require('fs'); const path=require('path'); const dir='.xtrm/skills/default'; if (!fs.existsSync(dir)) process.exit(0); for (const name of fs.readdirSync(dir)) { const p=path.join(dir,name,'SKILL.md'); if (!fs.existsSync(p)) continue; const head=fs.readFileSync(p,'utf8').split('---')[1] || ''; const version=(head.match(/version:\s*([^\n]+)/)||[])[1]; const synced=(head.match(/synced_at:\s*([^\n]+)/)||[])[1]; console.log(name+': version='+(version||'missing')+' synced_at='+(synced||'missing')); }"
@@ -204,7 +211,8 @@ Use targeted fixes first. Escalate to full sync only if needed.
 | Installed default skill differs from canonical package copy | `specialists init --sync-skills` unless local customization is intentional |
 | Skill frontmatter version / synced_at drift | `specialists init --sync-skills` or refresh packaged skills |
 | Mandatory-rules mirror drift (`.specialists/default/mandatory-rules`) | `specialists init --sync-defaults` |
-| Missing/invalid `template_sets` references | `sp edit <name> --fork-from <base>` then fix references, or sync defaults if mirror missing |
+| `.specialists/mandatory-rules/` overlay present | Leave alone — this is repo overlay, NOT drift |
+| Missing/invalid `template_sets` references | Check all three tiers first; `sp edit <name> --fork-from <base>` then fix references, or sync defaults if mirror missing, or add set to overlay if intended |
 | Unknown manual drift | Stop, inspect, then apply user-approved fix |
 
 ## Remediation
