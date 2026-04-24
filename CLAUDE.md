@@ -290,6 +290,7 @@ starting → running → waiting → (resume) → running → ... → done/error
 - READ_ONLY specialist output auto-appends to input bead notes
 - `max_retries` in JSON controls transient error retry (default: 0)
 - **Memory injection**: Specialists receive `.xtrm/memory.md` + static workflow rules + keyword-filtered bd memories + GitNexus cheatsheet at spawn (~1500 tokens, down from ~3800)
+- **Mandatory-rules injection**: `MANDATORY_RULES` block appended to every specialist prompt. Three-tier resolution: `config/mandatory-rules/` (source) → `.specialists/default/mandatory-rules/` (managed mirror) → `.specialists/mandatory-rules/` (repo overlay, wins on id). Authoring guide: `config/mandatory-rules/README.md`. Repo-scoped rules live in `.specialists/mandatory-rules/` and don't leak to downstream projects.
 - **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
 - **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
 
@@ -328,7 +329,7 @@ Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (3809 symbols, 8632 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (3884 symbols, 8802 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
