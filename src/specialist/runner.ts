@@ -1127,8 +1127,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     }
 
     if (metadata.name === 'reviewer' && options.reusedFromJobId) {
-      const reviewerDiffContext = buildReviewerDiffContext(runCwd, options.variables);
-      agentsMd += buildReviewerDiffInstruction(reviewerDiffContext);
+      agentsMd += '\n\nReviewer patch retrieval: run `git diff master..HEAD -- ":!dist/" ":!*.map"` inside reused worktree. Find worktree path via `sp ps ${reviewed_job_id}` first.\n';
     }
 
     const responseFormat = (execution.response_format ?? 'text') as ResponseFormat;
