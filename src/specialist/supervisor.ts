@@ -1095,14 +1095,14 @@ export class Supervisor {
       status: SupervisorJobStatus;
       promptHash?: string;
       durationMs?: number;
-    }): void => {
+    }): boolean => {
       const inputBeadId = runOptions.inputBeadId;
       const shouldAppendResultToInputBead = Boolean(
         shouldWriteExternalBeadNotes
         && inputBeadId
         && this.opts.beadsClient,
       );
-      if (!shouldAppendResultToInputBead || !inputBeadId || !this.opts.beadsClient) return;
+      if (!shouldAppendResultToInputBead || !inputBeadId || !this.opts.beadsClient) return false;
 
       const notes = formatBeadNotes({
         output: params.output,
@@ -1116,7 +1116,7 @@ export class Supervisor {
         timestamp: new Date().toISOString(),
       });
       const appendResult = this.opts.beadsClient.updateBeadNotes(inputBeadId, notes);
-      if (appendResult.ok) return;
+      if (appendResult.ok) return true;
 
       const appendError = `[bead-append-failed] ${appendResult.error ?? 'Unknown error'}`;
       appendTimelineEvent(createMetaEvent('bead_append_failed', appendError));
@@ -1126,6 +1126,7 @@ export class Supervisor {
       } catch {
         // ignore secondary artifact write failures
       }
+      return false;
     };
 
     const applyAutoCommitCheckpoint = (target: 'waiting' | 'terminal', autoCommitPolicy: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal' | undefined): void => {
@@ -1280,13 +1281,15 @@ export class Supervisor {
           && !shouldAutoCloseReadOnlyKeepAlive(latestOutput),
         );
         if (hasPendingKeepAliveOutput) {
-          appendResultToInputBead({
+          const appendSucceeded = appendResultToInputBead({
             output: latestOutput,
             model: statusSnapshot.model ?? 'unknown',
             backend: statusSnapshot.backend ?? 'unknown',
             status: 'cancelled',
           });
-          skipFinalKeepAliveInputBeadAppend = true;
+          if (appendSucceeded) {
+            skipFinalKeepAliveInputBeadAppend = true;
+          }
         }
         void closeKeepAliveSession();
         return;
