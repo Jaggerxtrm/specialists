@@ -1,5 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as z from 'zod';
 import { SpecialistLoader, type SpecialistSummary } from '../specialist/loader.js';
@@ -56,7 +55,7 @@ function loadPresets(): Record<string, PresetDefinition> {
   return {};
 }
 
-type Action = 'get' | 'set' | 'append' | 'remove' | 'open-all' | 'list-presets' | 'preset';
+type Action = 'get' | 'set' | 'append' | 'remove' | 'list-presets' | 'preset';
 
 interface ParsedArgs {
   name?: string;
@@ -68,6 +67,7 @@ interface ParsedArgs {
   value?: string;
   filePath?: string;
   preset?: string;
+  forkFrom?: string;
 }
 
 interface ResolvedPath {
@@ -83,9 +83,9 @@ function usage(): string {
     '  specialists edit <name> <dot.path> <value> [options]',
     '  specialists edit <name> --set <dot.path> <value> [options]',
     '  specialists edit <name> --get <dot.path> [--scope <default|user>]',
+    '  specialists edit <name> --fork-from <base-name> [--dry-run]',
     '  specialists edit --all --set <dot.path> <value> [options]',
     '  specialists edit --all --get <dot.path>',
-    '  specialists edit --all',
     '  specialists edit <name> --preset <preset> [--dry-run]',
     '  specialists edit --list-presets',
     '',
@@ -109,10 +109,6 @@ function fail(message: string): never {
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  if (argv.length === 1 && argv[0] === '--all') {
-    return { all: true, dryRun: false, action: 'open-all' };
-  }
-
   if (argv.includes('--list-presets')) {
     return { all: false, dryRun: false, action: 'list-presets' };
   }
@@ -127,6 +123,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let filePath: string | undefined;
   let pendingArrayOp: 'append' | 'remove' | undefined;
   let preset: string | undefined;
+  let forkFrom: string | undefined;
 
   const positional: string[] = [];
 
@@ -183,6 +180,15 @@ function parseArgs(argv: string[]): ParsedArgs {
       }
       preset = presetName;
       action = 'preset';
+      continue;
+    }
+
+    if (token === '--fork-from') {
+      const rawForkFrom = argv[++i];
+      if (!rawForkFrom || rawForkFrom.startsWith('--')) {
+        fail(`Error: --fork-from requires a specialist name\n\n${usage()}`);
+      }
+      forkFrom = rawForkFrom;
       continue;
     }
 
@@ -258,7 +264,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
 
   if (action === 'preset') {
-    return { name, all, scope, dryRun, action, path, value, filePath, preset };
+    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
   }
 
   if (!path) {
@@ -277,7 +283,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: file not found: ${filePath}`);
   }
 
-  return { name, all, scope, dryRun, action, path, value, filePath, preset };
+  return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
 }
 
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -441,29 +447,6 @@ function formatOutputValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function openAllConfigSpecialistsInEditor(): void {
-  const configDir = join(process.cwd(), 'config', 'specialists');
-  if (!existsSync(configDir)) {
-    fail(`Error: missing directory: ${configDir}`);
-  }
-
-  const files = readdirSync(configDir)
-    .filter(file => file.endsWith('.specialist.json'))
-    .sort()
-    .map(file => join(configDir, file));
-
-  if (files.length === 0) {
-    fail('Error: no specialist JSON files found in config/specialists/');
-  }
-
-  const editor = process.env.VISUAL ?? process.env.EDITOR ?? 'vi';
-  const result = spawnSync(editor, files, { stdio: 'inherit', shell: true });
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-}
-
 function getRawValue(args: ParsedArgs, resolvedPath: ResolvedPath): string {
   if (!args.filePath) {
     return args.value!;
@@ -555,6 +538,36 @@ function printDryRun(filePath: string, before: string, after: string): void {
   console.log();
 }
 
+
+function readJsonFile(filePath: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      fail(`Error: specialist file must contain a JSON object (${filePath})`);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    fail(`Error: failed to parse JSON in ${filePath}: ${message}`);
+  }
+}
+
+function createUserFork(source: EditableSpecialistSummary, targetName: string): EditableSpecialistSummary {
+  if (source.scope === 'user') return source;
+
+  const targetDir = join(process.cwd(), '.specialists', 'user');
+  mkdirSync(targetDir, { recursive: true });
+  const targetFile = join(targetDir, `${targetName}.specialist.json`);
+  const doc = readJsonFile(source.filePath) as { specialist?: { metadata?: Record<string, unknown> } };
+  doc.specialist = doc.specialist ?? {};
+  doc.specialist.metadata = doc.specialist.metadata ?? {};
+  doc.specialist.metadata.name = targetName;
+  writeFileSync(targetFile, `${JSON.stringify(doc, null, 2)}
+`, 'utf-8');
+
+  return { ...source, name: targetName, scope: 'user', source: 'user', filePath: targetFile };
+}
+
 async function resolveTargets(args: ParsedArgs): Promise<EditableSpecialistSummary[]> {
   const loader = new SpecialistLoader();
   const allSpecialists = (await loader.list()).filter(
@@ -579,11 +592,6 @@ async function resolveTargets(args: ParsedArgs): Promise<EditableSpecialistSumma
 
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
-
-  if (args.action === 'open-all') {
-    openAllConfigSpecialistsInEditor();
-    return;
-  }
 
   if (args.action === 'list-presets') {
     const presets = loadPresets();
@@ -635,7 +643,17 @@ export async function run(): Promise<void> {
   }
 
   const resolvedPath = resolvePath(args.path!);
-  const targets = await resolveTargets(args);
+  let targets = args.forkFrom
+    ? []
+    : await resolveTargets(args);
+  if (args.forkFrom) {
+    const sourceLoader = new SpecialistLoader();
+    const source = (await sourceLoader.list()).find(specialist => specialist.name === args.forkFrom);
+    if (!source) fail(`Error: fork source not found: ${args.forkFrom}`);
+    targets = [createUserFork(source as EditableSpecialistSummary, args.name!)];
+  } else if (targets.length === 1 && targets[0]!.scope !== 'user') {
+    targets = [createUserFork(targets[0]!, args.name!)];
+  }
 
   if (targets.length === 0) {
     fail('Error: no specialists found');

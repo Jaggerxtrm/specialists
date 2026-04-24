@@ -65,21 +65,27 @@ describe('edit CLI — parseArgs error paths (via process.exit mock)', () => {
 
 // ── Full run() integration: apply YAML changes in temp dir ─────────────────────
 
-const MINIMAL_YAML = `specialist:
-  metadata:
-    name: test-spec
-    version: 1.0.0
-    description: Original description
-    category: test
-    tags: []
-  execution:
-    model: anthropic/claude-sonnet-4-6
-    fallback_model: anthropic/claude-haiku-4-5-20251001
-    permission_required: LOW
-    timeout_ms: 60000
-  prompt:
-    task_template: Do $prompt
-`;
+const MINIMAL_YAML = JSON.stringify({
+  specialist: {
+    metadata: {
+      name: 'test-spec',
+      version: '1.0.0',
+      description: 'Original description',
+      category: 'test',
+      tags: [],
+    },
+    execution: {
+      model: 'anthropic/claude-sonnet-4-6',
+      fallback_model: 'anthropic/claude-haiku-4-5-20251001',
+      permission_required: 'LOW',
+      timeout_ms: 60000,
+      interactive: false,
+    },
+    prompt: {
+      task_template: 'Do $prompt',
+    },
+  },
+}, null, 2);
 
 describe('edit CLI — run() YAML mutations', () => {
   let tempDir: string;
@@ -107,7 +113,8 @@ describe('edit CLI — run() YAML mutations', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
-    const content = await readFile(specPath, 'utf-8');
+    const userPath = join(tempDir, '.specialists', 'user', 'test-spec.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('claude-haiku-4-5-20251001');
   });
 
@@ -116,7 +123,8 @@ describe('edit CLI — run() YAML mutations', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
-    const content = await readFile(specPath, 'utf-8');
+    const userPath = join(tempDir, '.specialists', 'user', 'test-spec.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('Updated description');
   });
 
@@ -125,7 +133,8 @@ describe('edit CLI — run() YAML mutations', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
-    const content = await readFile(specPath, 'utf-8');
+    const userPath = join(tempDir, '.specialists', 'user', 'test-spec.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('120000');
   });
 
@@ -134,7 +143,8 @@ describe('edit CLI — run() YAML mutations', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
-    const content = await readFile(specPath, 'utf-8');
+    const userPath = join(tempDir, '.specialists', 'user', 'test-spec.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('review');
     expect(content).toContain('analysis');
   });
@@ -144,10 +154,27 @@ describe('edit CLI — run() YAML mutations', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const { run } = await import('../../../src/cli/edit.js');
     await run();
-    const content = await readFile(specPath, 'utf-8');
-    // File unchanged — original model still present
+    const userPath = join(tempDir, '.specialists', 'user', 'test-spec.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
     expect(content).toContain('claude-sonnet-4-6');
     expect(content).not.toContain('new-model');
+  });
+
+  it('forks default specialist into user layer before edit', async () => {
+    const defaultDir = join(tempDir, '.specialists', 'default');
+    await mkdir(defaultDir, { recursive: true });
+    const defaultPath = join(defaultDir, 'base.specialist.json');
+    await writeFile(defaultPath, JSON.stringify({ specialist: { metadata: { name: 'base', version: '1.0.0', description: 'Base', category: 'test' }, execution: { model: 'anthropic/claude-sonnet-4-6', permission_required: 'LOW', interactive: false }, prompt: { task_template: 'Do $prompt' } } }, null, 2), 'utf-8');
+
+    process.argv = ['node', 'specialists', 'edit', 'child', '--fork-from', 'base', '--model', 'anthropic/claude-haiku-4-5-20251001'];
+    vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+    const { run } = await import('../../../src/cli/edit.js');
+    await run();
+
+    const userPath = join(tempDir, '.specialists', 'user', 'child.specialist.json');
+    const content = await readFile(userPath, 'utf-8');
+    expect(content).toContain('claude-haiku-4-5-20251001');
+    expect(content).toContain('"name": "child"');
   });
 
   it('exits 1 for non-numeric timeout', async () => {
