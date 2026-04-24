@@ -62,8 +62,17 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
 9. **Executor does not run tests.** Executor runs lint + tsc only. Tests are the reviewer's and test-runner's responsibility in the chained pipeline.
 10. **Keep specialists alive through the review cycle.** Never `sp stop` an executor or debugger before the reviewer delivers its verdict. The specialist stays in `waiting` so you can `resume` it — to commit changes, apply fixes from reviewer feedback, or continue work. Only stop after final reviewer PASS and confirmed commit.
-11. **Respect ownership layers.** Upstream source = `config/*` in package; managed mirror = `.specialists/default/*` (no hand edits); repo custom layer = `.specialists/user/*`; runtime/generated = `.specialists/{jobs,ready,db}`.
+11. **Respect ownership layers and loader precedence.** Loader resolution order is `.specialists/user/*` > `.specialists/default/*` > package fallback `config/*`. Upstream source = package `config/*` (read-only for repo operators); managed mirror = `.specialists/default/*` (no hand edits); repo custom layer = `.specialists/user/*`; runtime/generated = `.specialists/{jobs,ready,db}`.
 12. **Keep backlog-clean isolated.** Do not mix backlog-clean changes into specialist ownership/migration tasks.
+
+## Mandatory-rules template sets
+
+Use template-driven mandatory rules for repeatable policy bundles.
+
+- Specialist config field: `specialist.mandatory_rules.template_sets`
+- Template source: `config/mandatory-rules/*.md`
+- Template format: YAML frontmatter + body content
+- Runtime behavior: runner resolves templates and injects rendered rules at end of prompt
 
 ---
 
@@ -129,11 +138,13 @@ specialists stop <job-id> --force             # 5s SIGTERM timeout, then pgroup 
 
 # Management
 specialists edit <name>                       # edit specialist config (dot-path, --preset)
+specialists edit <name> --fork-from <base>   # fork non-user specialist into .specialists/user/ then edit
 specialists clean                             # purge old job dirs + worktree GC
 specialists clean --processes                 # kill all running/starting specialist jobs
 specialists db vacuum                         # compact SQLite storage (refuses if jobs running)
 specialists db prune --before <iso|duration> --dry-run|--apply  # prune old events/results/terminal jobs
 specialists doctor orphans                    # integrity scan: orphan, stale-pointer, integrity-violation
+specialists init --sync-defaults              # refresh specialists + mandatory-rules + nodes from canonical defaults
 specialists init --sync-skills                # re-sync skills only (no full init)
 specialists init --no-xtrm-check              # skip xtrm prerequisite check (CI/testing)
 ```

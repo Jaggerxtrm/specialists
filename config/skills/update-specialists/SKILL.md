@@ -20,7 +20,7 @@ fixes, then verify with `sp doctor`. Treat canonical state as both:
 
 Ownership contract during repair:
 - upstream source: package `config/*` (read-only for repo operators)
-- managed mirror: `.specialists/default/*` (refresh via `sp init --sync-defaults`, no hand edits)
+- managed mirror: `.specialists/default/*` (refresh via `sp init --sync-defaults`; sync scope = specialists + mandatory-rules + nodes; no hand edits)
 - repo custom layer: `.specialists/user/*` + `config/nodes/*`
 - runtime/generated: `.specialists/{jobs,ready,db}`
 
@@ -107,6 +107,15 @@ looks like.
 | `pi-serena-tools` | Registered when Serena integration is expected |
 | Extension paths | Resolve from installed project, not stale workspace copies |
 
+### Mandatory-rules template parity
+
+| Check | Expected value |
+|-------|----------------|
+| `.specialists/default/mandatory-rules/*` | Mirrors canonical package templates after `sp init --sync-defaults` |
+| Template frontmatter | YAML frontmatter present and parseable |
+| `specialist.mandatory_rules.template_sets` references | Point to existing template ids/files |
+| Prompt injection behavior | Runner appends resolved template content at end of prompt |
+
 ## Detection
 
 Run these in order. Report which checks pass and which drift.
@@ -153,6 +162,7 @@ node -e "const fs=require('fs'); const p='.claude/settings.json'; if (fs.existsS
 command -v sp
 command -v specialists
 specialists init --help | sed -n '1,120p'
+specialists edit --help | sed -n '1,120p' | grep -E -- '--fork-from|fork-from' || true
 sp doctor --json 2>/dev/null || true
 
 # 11. Jobs and worktrees
@@ -162,7 +172,11 @@ find .worktrees -maxdepth 2 -mindepth 1 -type d 2>/dev/null || true
 # 12. Extension registration
 node -e "const fs=require('fs'); const p='.pi/settings.json'; if (fs.existsSync(p)) console.log(JSON.stringify(JSON.parse(fs.readFileSync(p,'utf8')).skills ?? JSON.parse(fs.readFileSync(p,'utf8')).extensions ?? {}, null, 2)); else console.log('MISSING .pi/settings.json')"
 
-# 13. Shipped skill frontmatter parity
+# 13. Mandatory-rules template mirror + reference checks
+find .specialists/default/mandatory-rules -maxdepth 1 -type f 2>/dev/null || true
+node -e "const fs=require('fs'); const path=require('path'); const roots=['.specialists/default/specialists','.specialists/user/specialists']; const missing=[]; for (const root of roots) { if (!fs.existsSync(root)) continue; for (const file of fs.readdirSync(root)) { if (!file.endsWith('.specialist.json')) continue; const spec=JSON.parse(fs.readFileSync(path.join(root,file),'utf8')); const sets=spec.specialist?.mandatory_rules?.template_sets ?? []; for (const set of sets) { const candidates=[path.join('.specialists/default/mandatory-rules',set+'.md'), path.join('config/mandatory-rules',set+'.md')]; if (!candidates.some((p)=>fs.existsSync(p))) missing.push(file+': missing template set '+set); } } } if (missing.length) console.log(missing.join('\n'));"
+
+# 14. Shipped skill frontmatter parity
 node -e "const fs=require('fs'); const path=require('path'); const dir='.xtrm/skills/default'; if (!fs.existsSync(dir)) process.exit(0); for (const name of fs.readdirSync(dir)) { const p=path.join(dir,name,'SKILL.md'); if (!fs.existsSync(p)) continue; const head=fs.readFileSync(p,'utf8').split('---')[1] || ''; const version=(head.match(/version:\s*([^\n]+)/)||[])[1]; const synced=(head.match(/synced_at:\s*([^\n]+)/)||[])[1]; console.log(name+': version='+(version||'missing')+' synced_at='+(synced||'missing')); }"
 ```
 
@@ -175,7 +189,8 @@ Use targeted fixes first. Escalate to full sync only if needed.
 | Installed package version mismatch | reinstall / upgrade `@jaggerxtrm/specialists`, then re-run checks |
 | CLI version mismatch vs package | reinstall runtime so `sp` / `specialists` align with installed package |
 | Specialist JSON missing required fields | `sp edit <name> ...` or regenerate via `specialists init --sync-defaults` |
-| Specialist JSON schema mismatch | `specialists init --sync-defaults` |
+| Need user-layer override from default/package specialist | `sp edit <name> --fork-from <base>` to materialize editable copy in `.specialists/user/` |
+| Specialist JSON schema mismatch | `specialists init --sync-defaults` (refreshes specialists + mandatory-rules + nodes) |
 | Installed specialist default differs from canonical package copy | `specialists init --sync-defaults` unless local customization is intentional |
 | Hooks missing or stale | `specialists init` |
 | Installed hook file differs from canonical package copy | `specialists init` unless local customization is intentional |
@@ -188,6 +203,8 @@ Use targeted fixes first. Escalate to full sync only if needed.
 | Skill symlink / active-skill drift | `specialists init --sync-skills` |
 | Installed default skill differs from canonical package copy | `specialists init --sync-skills` unless local customization is intentional |
 | Skill frontmatter version / synced_at drift | `specialists init --sync-skills` or refresh packaged skills |
+| Mandatory-rules mirror drift (`.specialists/default/mandatory-rules`) | `specialists init --sync-defaults` |
+| Missing/invalid `template_sets` references | `sp edit <name> --fork-from <base>` then fix references, or sync defaults if mirror missing |
 | Unknown manual drift | Stop, inspect, then apply user-approved fix |
 
 ## Remediation
@@ -214,8 +231,14 @@ shows missing fields, wrong names, or schema mismatch:
 specialists init --sync-defaults
 ```
 
+`--sync-defaults` refreshes specialists + mandatory-rules + nodes mirrors.
+
 If one specialist needs a small repair and `sp edit` supports it, prefer that over
-full sync.
+full sync. If target specialist lives in default/package layer, fork first:
+
+```bash
+sp edit <name> --fork-from <base>
+```
 
 ### Fix: Hooks not firing
 
