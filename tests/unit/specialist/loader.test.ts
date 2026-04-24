@@ -6,60 +6,81 @@ import { tmpdir, homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
 import { SpecialistLoader, checkStaleness, type SpecialistSummary } from '../../../src/specialist/loader.js';
 
-const MINIMAL_YAML = (name: string) => `
-specialist:
-  metadata:
-    name: ${name}
-    version: 1.0.0
-    description: Test specialist
-    category: test
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt`;
+const MINIMAL_YAML = (name: string) => JSON.stringify({
+  specialist: {
+    metadata: {
+      name,
+      version: '1.0.0',
+      description: 'Test specialist',
+      category: 'test',
+    },
+    execution: {
+      model: 'gemini',
+    },
+    prompt: {
+      task_template: 'Do $prompt',
+    },
+  },
+});
 
-const CATEGORIZED_YAML = (name: string, category: string) => `
-specialist:
-  metadata:
-    name: ${name}
-    version: 1.0.0
-    description: Test specialist
-    category: ${category}
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt`;
+const CATEGORIZED_YAML = (name: string, category: string) => JSON.stringify({
+  specialist: {
+    metadata: {
+      name,
+      version: '1.0.0',
+      description: 'Test specialist',
+      category,
+    },
+    execution: {
+      model: 'gemini',
+    },
+    prompt: {
+      task_template: 'Do $prompt',
+    },
+  },
+});
 
-const YAML_WITH_SKILLS_PATHS = (name: string, paths: string[]) => `
-specialist:
-  metadata:
-    name: ${name}
-    version: 1.0.0
-    description: Test specialist
-    category: test
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt
-  skills:
-    paths:
-${paths.map(p => `      - ${p}`).join('\n')}`;
+const YAML_WITH_SKILLS_PATHS = (name: string, paths: string[]) => JSON.stringify({
+  specialist: {
+    metadata: {
+      name,
+      version: '1.0.0',
+      description: 'Test specialist',
+      category: 'test',
+    },
+    execution: {
+      model: 'gemini',
+    },
+    prompt: {
+      task_template: 'Do $prompt',
+    },
+    skills: {
+      paths,
+    },
+  },
+});
 
-const YAML_WITH_VALIDATION = (name: string, filestoWatch: string[], updated: string, staleThresholdDays?: number) => `
-specialist:
-  metadata:
-    name: ${name}
-    version: 1.0.0
-    description: Test specialist
-    category: test
-    updated: "${updated}"
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt
-  validation:
-    files_to_watch:
-${filestoWatch.map(f => `      - ${f}`).join('\n')}${staleThresholdDays !== undefined ? `\n    stale_threshold_days: ${staleThresholdDays}` : ''}`;
+const YAML_WITH_VALIDATION = (name: string, filestoWatch: string[], updated: string, staleThresholdDays?: number) => JSON.stringify({
+  specialist: {
+    metadata: {
+      name,
+      version: '1.0.0',
+      description: 'Test specialist',
+      category: 'test',
+      updated,
+    },
+    execution: {
+      model: 'gemini',
+    },
+    prompt: {
+      task_template: 'Do $prompt',
+    },
+    validation: {
+      files_to_watch: filestoWatch,
+      ...(staleThresholdDays !== undefined ? { stale_threshold_days: staleThresholdDays } : {}),
+    },
+  },
+});
 
 describe('SpecialistLoader', () => {
   let tempDir: string;
@@ -82,6 +103,7 @@ describe('SpecialistLoader', () => {
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('my-spec');
     expect(list[0].scope).toBe('default');
+    expect(list[0].source).toBe('default-mirror');
   });
 
   it('discovers specialists in .specialists/user/', async () => {
@@ -92,6 +114,7 @@ describe('SpecialistLoader', () => {
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('my-spec');
     expect(list[0].scope).toBe('user');
+    expect(list[0].source).toBe('user');
   });
 
   it('discovers specialists in legacy nested directories for backward compatibility', async () => {
@@ -119,6 +142,7 @@ describe('SpecialistLoader', () => {
     const list = await loader.list();
     expect(list.filter(s => s.name === 'shared')).toHaveLength(1); // deduped
     expect(list.find(s => s.name === 'shared')!.scope).toBe('user'); // user wins
+    expect(list.find(s => s.name === 'shared')!.source).toBe('user');
   });
 
   it('returns empty list when no specialists', async () => {
@@ -159,7 +183,7 @@ describe('SpecialistLoader', () => {
 
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('good');
-    expect(stderrChunks.join('')).toMatch(/skipping.*bad\.specialist\.yaml/);
+    expect(stderrChunks.join('')).toMatch(/skipping.*bad\.specialist\.json/);
   });
 
   // --- Other functionality ---
@@ -271,6 +295,54 @@ describe('SpecialistLoader', () => {
     expect(paths).toBeDefined();
     expect(paths![0]).toBe(absPath);
   });
+
+  it('prefers user over default over package fallback for same name', async () => {
+    const packageDir = join(tempDir, 'config', 'specialists');
+    const defaultDir = join(tempDir, '.specialists', 'default');
+    const userDir = join(tempDir, '.specialists', 'user');
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(defaultDir, { recursive: true });
+    await mkdir(userDir, { recursive: true });
+
+    await writeFile(join(packageDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
+    await writeFile(join(defaultDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
+    await writeFile(join(userDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
+
+    const list = await loader.list();
+    const shared = list.find((entry) => entry.name === 'shared');
+
+    expect(shared).toBeDefined();
+    expect(shared?.scope).toBe('user');
+    expect(shared?.source).toBe('user');
+    expect((await loader.get('shared')).specialist.metadata.name).toBe('shared');
+  });
+
+  it('exposes package fallback as package scope when no repo overrides exist', async () => {
+    const packageDir = join(tempDir, 'config', 'specialists');
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(join(packageDir, 'package-only.specialist.json'), MINIMAL_YAML('package-only'));
+
+    const list = await loader.list();
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('package-only');
+    expect(list[0].scope).toBe('package');
+    expect(list[0].source).toBe('package-fallback');
+  });
+
+  it('keeps new-name forks alongside upstream originals', async () => {
+    const packageDir = join(tempDir, 'config', 'specialists');
+    const userDir = join(tempDir, '.specialists', 'user');
+    await mkdir(packageDir, { recursive: true });
+    await mkdir(userDir, { recursive: true });
+
+    await writeFile(join(packageDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
+    await writeFile(join(userDir, 'shared-fork.specialist.json'), MINIMAL_YAML('shared-fork'));
+
+    const list = await loader.list();
+    expect(list.map((entry) => entry.name).sort()).toEqual(['shared', 'shared-fork']);
+    expect(list.find((entry) => entry.name === 'shared')?.source).toBe('package-fallback');
+    expect(list.find((entry) => entry.name === 'shared-fork')?.source).toBe('user');
+  });
 });
 
 describe('checkStaleness', () => {
@@ -291,6 +363,7 @@ describe('checkStaleness', () => {
     version: '1.0.0',
     model: 'gemini',
     scope: 'default',
+    source: 'default-mirror',
     filePath: '/fake/path',
   });
 
@@ -412,22 +485,28 @@ describe('SpecialistLoader — stall_detection YAML parsing', () => {
   });
 
   it('parses stall_detection config from YAML and exposes it on SpecialistSummary', async () => {
-    const yaml = `
-specialist:
-  metadata:
-    name: stall-aware
-    version: 1.0.0
-    description: Has stall detection
-    category: test
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt
-  stall_detection:
-    running_silence_warn_ms: 30000
-    running_silence_error_ms: 120000
-    waiting_stale_ms: 1800000
-    tool_duration_warn_ms: 60000`;
+    const yaml = JSON.stringify({
+      specialist: {
+        metadata: {
+          name: 'stall-aware',
+          version: '1.0.0',
+          description: 'Has stall detection',
+          category: 'test',
+        },
+        execution: {
+          model: 'gemini',
+        },
+        prompt: {
+          task_template: 'Do $prompt',
+        },
+        stall_detection: {
+          running_silence_warn_ms: 30000,
+          running_silence_error_ms: 120000,
+          waiting_stale_ms: 1800000,
+          tool_duration_warn_ms: 60000,
+        },
+      },
+    });
 
     await writeFile(join(specsDir, 'stall-aware.specialist.json'), yaml);
     const results = await loader.list();
@@ -443,17 +522,22 @@ specialist:
   });
 
   it('stallDetection is undefined when stall_detection is absent from YAML', async () => {
-    const yaml = `
-specialist:
-  metadata:
-    name: no-stall-config
-    version: 1.0.0
-    description: No stall detection
-    category: test
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt`;
+    const yaml = JSON.stringify({
+      specialist: {
+        metadata: {
+          name: 'no-stall-config',
+          version: '1.0.0',
+          description: 'No stall detection',
+          category: 'test',
+        },
+        execution: {
+          model: 'gemini',
+        },
+        prompt: {
+          task_template: 'Do $prompt',
+        },
+      },
+    });
 
     await writeFile(join(specsDir, 'no-stall-config.specialist.json'), yaml);
     const results = await loader.list();
@@ -464,19 +548,25 @@ specialist:
   });
 
   it('partial stall_detection config — only specified fields are present, others absent', async () => {
-    const yaml = `
-specialist:
-  metadata:
-    name: partial-stall
-    version: 1.0.0
-    description: Partial stall detection
-    category: test
-  execution:
-    model: gemini
-  prompt:
-    task_template: Do $prompt
-  stall_detection:
-    running_silence_warn_ms: 45000`;
+    const yaml = JSON.stringify({
+      specialist: {
+        metadata: {
+          name: 'partial-stall',
+          version: '1.0.0',
+          description: 'Partial stall detection',
+          category: 'test',
+        },
+        execution: {
+          model: 'gemini',
+        },
+        prompt: {
+          task_template: 'Do $prompt',
+        },
+        stall_detection: {
+          running_silence_warn_ms: 45000,
+        },
+      },
+    });
 
     await writeFile(join(specsDir, 'partial-stall.specialist.json'), yaml);
     const results = await loader.list();

@@ -114,16 +114,26 @@ describe('init CLI — run()', () => {
     const yamlFiles = files.filter(f => f.endsWith('.specialist.json'));
     expect(yamlFiles.length).toBe(0);
   });
-  it('copies canonical specialists to .specialists/default/ when --sync-defaults', async () => {
+  it('copies canonical specialists, mandatory-rules, and nodes to .specialists/default/ when --sync-defaults', async () => {
     await runInit(tempDir, { syncDefaults: true });
+
     const specialistsDir = join(tempDir, '.specialists', 'default');
-    const files = await readdir(specialistsDir).catch(() => []);
-    const yamlFiles = files.filter(f => f.endsWith('.specialist.json'));
-    
+    const specialistFiles = await readdir(specialistsDir).catch(() => []);
+    const yamlFiles = specialistFiles.filter(f => f.endsWith('.specialist.json'));
+
+    const mandatoryRulesDir = join(tempDir, '.specialists', 'default', 'mandatory-rules');
+    const mandatoryRuleFiles = await readdir(mandatoryRulesDir).catch(() => []);
+
+    const nodesDir = join(tempDir, '.specialists', 'default', 'nodes');
+    const nodeFiles = await readdir(nodesDir).catch(() => []);
+
     expect(yamlFiles.length).toBeGreaterThan(0);
     expect(yamlFiles).toContain('debugger.specialist.json');
     expect(yamlFiles).toContain('explorer.specialist.json');
     expect(yamlFiles).toContain('overthinker.specialist.json');
+    expect(mandatoryRuleFiles).toContain('core-session-boundary.md');
+    expect(mandatoryRuleFiles).toContain('git-workflow-safe.md');
+    expect(nodeFiles).toContain('research.node.json');
   });
   it('migrates legacy nested specialists directories to flattened layout', async () => {
     const legacyDefaultDir = join(tempDir, '.specialists', 'default', 'specialists');
@@ -165,16 +175,22 @@ describe('init CLI — run()', () => {
     expect(content).toContain('"name": "debugger"');
   });
 
-  it('re-syncs existing canonical node config files when --sync-defaults', async () => {
+  it('re-syncs existing canonical mandatory-rules and node config files when --sync-defaults', async () => {
+    const mandatoryRulesDir = join(tempDir, '.specialists', 'default', 'mandatory-rules');
     const nodesDir = join(tempDir, '.specialists', 'default', 'nodes');
+    await mkdir(mandatoryRulesDir, { recursive: true });
     await mkdir(nodesDir, { recursive: true });
+    await writeFile(join(mandatoryRulesDir, 'core-session-boundary.md'), 'stale rule', 'utf-8');
     await writeFile(join(nodesDir, 'research.node.json'), '{"stale":true}', 'utf-8');
 
     await runInit(tempDir, { syncDefaults: true });
 
-    const content = await readFile(join(nodesDir, 'research.node.json'), 'utf-8');
-    expect(content).not.toContain('"stale":true');
-    expect(content).toContain('"name"');
+    const ruleContent = await readFile(join(mandatoryRulesDir, 'core-session-boundary.md'), 'utf-8');
+    const nodeContent = await readFile(join(nodesDir, 'research.node.json'), 'utf-8');
+    expect(ruleContent).not.toContain('stale rule');
+    expect(ruleContent).toContain('core-session-boundary');
+    expect(nodeContent).not.toContain('"stale":true');
+    expect(nodeContent).toContain('"name"');
   });
   it('plain init never touches .specialists/default/ even when PI_SESSION_ID is set', async () => {
     const specialistsDir = join(tempDir, '.specialists', 'default');

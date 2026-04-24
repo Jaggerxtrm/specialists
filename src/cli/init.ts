@@ -168,7 +168,8 @@ function migrateLegacySpecialists(cwd: string, scope: 'default' | 'user'): void 
 }
 
 /**
- * Copy canonical specialists to .specialists/default/
+ * Copy canonical specialists to .specialists/default/.
+ * Repo mirror only; package config stays upstream source.
  */
 function copyCanonicalSpecialists(cwd: string): void {
   const sourceDir = resolvePackagePath('specialists');
@@ -215,7 +216,56 @@ function copyCanonicalSpecialists(cwd: string): void {
 }
 
 /**
- * Copy canonical node configs to .specialists/default/nodes/
+ * Copy canonical mandatory-rules to .specialists/default/mandatory-rules/.
+ * Repo mirror only; package config stays upstream source.
+ */
+function copyCanonicalMandatoryRules(cwd: string): void {
+  const sourceDir = resolvePackagePath('mandatory-rules');
+
+  if (!sourceDir) {
+    skip('no canonical mandatory-rules found in package');
+    return;
+  }
+
+  const targetDir = join(cwd, '.specialists', 'default', 'mandatory-rules');
+  const files = readdirSync(sourceDir).filter(f => f.endsWith('.md') || f.endsWith('.json'));
+
+  if (files.length === 0) {
+    skip('no mandatory-rules files found in package');
+    return;
+  }
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  let copied = 0;
+  let refreshed = 0;
+
+  for (const file of files) {
+    const src = join(sourceDir, file);
+    const dest = join(targetDir, file);
+
+    if (existsSync(dest)) {
+      copyFileSync(src, dest);
+      refreshed++;
+    } else {
+      copyFileSync(src, dest);
+      copied++;
+    }
+  }
+
+  if (copied > 0) {
+    ok(`copied ${copied} mandatory-rule${copied === 1 ? '' : 's'} to .specialists/default/mandatory-rules/`);
+  }
+  if (refreshed > 0) {
+    ok(`re-synced ${refreshed} mandatory-rule${refreshed === 1 ? '' : 's'} in .specialists/default/mandatory-rules/`);
+  }
+}
+
+/**
+ * Copy canonical node configs to .specialists/default/nodes/.
+ * Repo mirror only; package config stays upstream source.
  */
 function copyCanonicalNodeConfigs(cwd: string): void {
   const sourceDir = resolvePackagePath('nodes');
@@ -826,9 +876,10 @@ export async function run(opts: InitOptions = {}): Promise<void> {
   if (syncDefaults) {
     migrateLegacySpecialists(cwd, 'default');
     copyCanonicalSpecialists(cwd);
+    copyCanonicalMandatoryRules(cwd);
     copyCanonicalNodeConfigs(cwd);
   } else {
-    skip('.specialists/default/ not synced (pass --sync-defaults to write canonical specialists)');
+    skip('.specialists/default/ not synced (pass --sync-defaults to write canonical specialists, mandatory-rules, and nodes)');
   }
 
   migrateLegacySpecialists(cwd, 'user');

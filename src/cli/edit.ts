@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as z from 'zod';
-import { SpecialistLoader } from '../specialist/loader.js';
+import { SpecialistLoader, type SpecialistSummary } from '../specialist/loader.js';
 import { SpecialistSchema } from '../specialist/schema.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -534,6 +534,8 @@ function applyMutation(
   return typedValue;
 }
 
+type EditableSpecialistSummary = Exclude<SpecialistSummary, { scope: 'package' }>;
+
 function printDryRun(filePath: string, before: string, after: string): void {
   console.log(`\n${bold(`[dry-run] ${filePath}`)}\n`);
   console.log(dim('--- current'));
@@ -553,9 +555,11 @@ function printDryRun(filePath: string, before: string, after: string): void {
   console.log();
 }
 
-async function resolveTargets(args: ParsedArgs): Promise<Array<{ name: string; filePath: string; scope: 'default' | 'user' }>> {
+async function resolveTargets(args: ParsedArgs): Promise<EditableSpecialistSummary[]> {
   const loader = new SpecialistLoader();
-  const allSpecialists = await loader.list();
+  const allSpecialists = (await loader.list()).filter(
+    (specialist): specialist is EditableSpecialistSummary => specialist.scope !== 'package',
+  );
 
   if (args.all) {
     return allSpecialists;
