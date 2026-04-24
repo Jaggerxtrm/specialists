@@ -37,14 +37,38 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8')) as T;
 }
 
+function mergeIndex(base: MandatoryRulesIndex, overlay: MandatoryRulesIndex): MandatoryRulesIndex {
+  const dedupe = (values: string[] | undefined): string[] | undefined =>
+    values ? Array.from(new Set(values)) : undefined;
+
+  return {
+    required_template_sets: dedupe([
+      ...(base.required_template_sets ?? []),
+      ...(overlay.required_template_sets ?? []),
+    ]),
+    default_template_sets: dedupe([
+      ...(base.default_template_sets ?? []),
+      ...(overlay.default_template_sets ?? []),
+    ]),
+  };
+}
+
 export function loadMandatoryRulesIndex(cwd: string): MandatoryRulesIndex | null {
-  const indexPath = resolve(cwd, 'config/mandatory-rules/index.json');
-  if (!existsSync(indexPath)) {
-    console.warn('[specialist runner] Missing config/mandatory-rules/index.json; skipping MANDATORY_RULES injection');
+  const sourcePath = resolve(cwd, 'config/mandatory-rules/index.json');
+  const canonicalCopyPath = resolve(cwd, '.specialists/default/mandatory-rules/index.json');
+  const overlayPath = resolve(cwd, '.specialists/mandatory-rules/index.json');
+
+  const tiers: MandatoryRulesIndex[] = [];
+  for (const path of [sourcePath, canonicalCopyPath, overlayPath]) {
+    if (existsSync(path)) tiers.push(readJsonFile<MandatoryRulesIndex>(path));
+  }
+
+  if (tiers.length === 0) {
+    console.warn('[specialist runner] Missing mandatory-rules index (checked config/, .specialists/default/, .specialists/); skipping MANDATORY_RULES injection');
     return null;
   }
 
-  return readJsonFile<MandatoryRulesIndex>(indexPath);
+  return tiers.reduce((acc, next) => mergeIndex(acc, next));
 }
 
 function parseQuotedScalar(value: string): string {
@@ -143,6 +167,7 @@ function parseMandatoryRulesFrontmatter(content: string, setId: string): Mandato
 function readMandatoryRuleSet(cwd: string, id: string): MandatoryRuleSet | null {
   const candidates = [
     resolve(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve(cwd, `.specialists/default/mandatory-rules/${id}.md`),
     resolve(cwd, `config/mandatory-rules/${id}.md`),
   ];
 
