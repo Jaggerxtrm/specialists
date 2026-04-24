@@ -1121,30 +1121,40 @@ export class Supervisor {
                 const toolState = toolCallId
                     ? activeToolCalls.get(toolCallId)
                     : latestUncorrelatedToolState;
-                const memoryInjection = (() => {
-                    if (eventType !== 'memory_injection' || !details?.summary)
+                const parsedMeta = (() => {
+                    if (eventType !== 'memory_injection' && eventType !== 'meta' || !details?.summary)
                         return undefined;
                     try {
-                        const parsed = JSON.parse(details.summary);
-                        const injection = parsed.memory_injection;
-                        if (!injection)
-                            return undefined;
-                        return {
-                            static_tokens: injection.static_tokens ?? 0,
-                            memory_tokens: injection.memory_tokens ?? 0,
-                            gitnexus_tokens: injection.gitnexus_tokens ?? 0,
-                            total_tokens: injection.total_tokens ?? 0,
-                        };
+                        return JSON.parse(details.summary);
                     }
                     catch {
                         return undefined;
                     }
                 })();
-                if (eventType === 'memory_injection' && memoryInjection) {
+                const metaDetails = details;
+                const memoryInjection = parsedMeta?.memory_injection
+                    ? {
+                        static_tokens: parsedMeta.memory_injection.static_tokens ?? 0,
+                        memory_tokens: parsedMeta.memory_injection.memory_tokens ?? 0,
+                        gitnexus_tokens: parsedMeta.memory_injection.gitnexus_tokens ?? 0,
+                        total_tokens: parsedMeta.memory_injection.total_tokens ?? 0,
+                    }
+                    : undefined;
+                const mandatoryRulesInjection = parsedMeta?.source === 'mandatory_rules_injection' && parsedMeta.data
+                    ? {
+                        sets_loaded: parsedMeta.data.sets_loaded ?? [],
+                        rules_count: parsedMeta.data.rules_count ?? 0,
+                        inline_rules_count: parsedMeta.data.inline_rules_count ?? 0,
+                        globals_disabled: parsedMeta.data.globals_disabled ?? false,
+                        token_estimate: parsedMeta.data.token_estimate ?? 0,
+                    }
+                    : undefined;
+                if (memoryInjection || mandatoryRulesInjection) {
                     setStatus({
                         startup_context: {
                             ...(statusSnapshot.startup_context ?? {}),
-                            memory_injection: memoryInjection,
+                            ...(memoryInjection ? { memory_injection: memoryInjection } : {}),
+                            ...(mandatoryRulesInjection ? { mandatory_rules_injection: mandatoryRulesInjection } : {}),
                         },
                     });
                 }
@@ -1181,6 +1191,12 @@ export class Supervisor {
                         errorMessage: details?.errorMessage,
                     },
                     memoryInjection,
+                    metaPayload: eventType === 'meta' ? {
+                        model: details?.model,
+                        backend: metaDetails?.backend,
+                        source: metaDetails?.source,
+                        data: metaDetails?.data,
+                    } : undefined,
                 });
                 if (timelineEvent) {
                     appendTimelineEvent(timelineEvent);

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const sqliteClientMock = {
   close: vi.fn(),
@@ -105,6 +108,47 @@ describe('node CLI run wiring', () => {
     const ctor = nodeSupervisorState.ctorArgs[0];
     const runOptions = ctor.runOptions as Record<string, unknown>;
     expect(runOptions.contextDepth).toBe(0);
+  });
+
+  it('keeps explicit path ahead of discovery dirs', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'sp-node-explicit-'));
+    const originalCwd = process.cwd();
+    await writeFile(join(cwd, 'custom.node.json'), '{"name":"explicit","coordinator":"node-coordinator","members":[],"initialPrompt":"Explicit"}');
+    await mkdir(join(cwd, 'config', 'nodes'), { recursive: true });
+    await writeFile(join(cwd, 'config', 'nodes', 'explicit.node.json'), '{"name":"explicit","coordinator":"node-coordinator","members":[],"initialPrompt":"Repo"}');
+
+    process.chdir(cwd);
+    try {
+      await handleNodeCommand(['run', 'custom.node.json', '--json']);
+    } finally {
+      process.chdir(originalCwd);
+      await rm(cwd, { recursive: true, force: true });
+    }
+
+    const ctor = nodeSupervisorState.ctorArgs[0];
+    expect(ctor.nodeConfigSnapshot).toMatchObject({ name: 'explicit', initialPrompt: 'Explicit' });
+  });
+
+  it('lists node configs with repo-over-default source labels', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'sp-node-list-'));
+    const originalCwd = process.cwd();
+    await mkdir(join(cwd, 'config', 'nodes'), { recursive: true });
+    await mkdir(join(cwd, '.specialists', 'default', 'nodes'), { recursive: true });
+    await writeFile(join(cwd, 'config', 'nodes', 'research.node.json'), '{"name":"research","coordinator":"node-coordinator","members":[],"initialPrompt":"Repo"}');
+    await writeFile(join(cwd, '.specialists', 'default', 'nodes', 'fallback.node.json'), '{"name":"fallback","coordinator":"node-coordinator","members":[],"initialPrompt":"Mirror"}');
+
+    const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    process.chdir(cwd);
+    try {
+      await handleNodeCommand(['list']);
+    } finally {
+      process.chdir(originalCwd);
+      await rm(cwd, { recursive: true, force: true });
+    }
+
+    expect(stdoutSpy).toHaveBeenCalledWith('node resolution order: explicit path -> config/nodes -> .specialists/default/nodes\ncustomize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes');
+    expect(stdoutSpy).toHaveBeenCalledWith(`research\trepo config/nodes\t${join(cwd, 'config', 'nodes', 'research.node.json')}`);
+    expect(stdoutSpy).toHaveBeenCalledWith(`fallback\t.specialists/default/nodes\t${join(cwd, '.specialists', 'default', 'nodes', 'fallback.node.json')}`);
   });
 
   it('exits with code 1 when --context-depth value is missing', async () => {

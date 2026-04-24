@@ -8,6 +8,7 @@ const dim = (value) => `\x1b[2m${value}${ANSI_RESET}`;
 const cyan = (value) => `\x1b[36m${value}${ANSI_RESET}`;
 const green = (value) => `\x1b[32m${value}${ANSI_RESET}`;
 const yellow = (value) => `\x1b[33m${value}${ANSI_RESET}`;
+const blue = (value) => `\x1b[34m${value}${ANSI_RESET}`;
 const magenta = (value) => `\x1b[35m${value}${ANSI_RESET}`;
 const SECTION_ALIASES = {
     metadata: 'metadata',
@@ -128,9 +129,10 @@ function printGenericSection(title, color, value) {
     console.log(formatValue(value));
 }
 function printHeader(summary) {
-    const scope = summary.scope === 'default' ? green('[default]') : yellow('[user]');
+    const scope = summary.scope === 'default' ? green('[default]') : summary.scope === 'package' ? blue('[package]') : yellow('[user]');
+    const source = dim(summary.source);
     console.log();
-    console.log(`${bold(cyan(summary.name))} ${scope} ${permissionBadge(summary.permission_required)}`);
+    console.log(`${bold(cyan(summary.name))} ${scope} ${permissionBadge(summary.permission_required)} ${source}`);
     console.log(dim(summary.description));
     console.log(`${dim('model:')} ${summary.model}`);
     console.log(`${dim('version:')} ${summary.version}`);
@@ -146,9 +148,9 @@ function printCatalog(summaries) {
     console.log(bold(`Specialists catalog (${rows.length})`));
     console.log();
     for (const summary of rows) {
-        const scope = summary.scope === 'default' ? green('[default]') : yellow('[user]');
+        const scope = summary.scope === 'default' ? green('[default]') : summary.scope === 'package' ? blue('[package]') : yellow('[user]');
         const keepAlive = summary.interactive ? yellow('[keep-alive]') : dim('[single-turn]');
-        console.log(`${cyan(summary.name)} ${scope} ${permissionBadge(summary.permission_required)} ${keepAlive}`);
+        console.log(`${cyan(summary.name)} ${scope} ${permissionBadge(summary.permission_required)} ${keepAlive} ${dim(summary.source)}`);
         console.log(`${dim('  model:')} ${summary.model}`);
         console.log(`${dim('  category:')} ${summary.category}  ${dim('version:')} ${summary.version}`);
         console.log(`${dim('  desc:')} ${summary.description}`);

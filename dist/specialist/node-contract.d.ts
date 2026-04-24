@@ -31,11 +31,11 @@ export declare const memberSpawnSchema: z.ZodObject<{
     isolated: z.ZodDefault<z.ZodBoolean>;
     retry_of: z.ZodDefault<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
-    role: string;
     scope: {
         paths: string[];
         mutates: boolean;
     };
+    role: string;
     bead_id: string;
     member_key: string;
     depends_on: string[];
@@ -43,11 +43,11 @@ export declare const memberSpawnSchema: z.ZodObject<{
     isolated: boolean;
     retry_of: string | null;
 }, {
-    role: string;
     scope: {
         paths: string[];
         mutates: boolean;
     };
+    role: string;
     bead_id: string;
     member_key: string;
     failure_policy: "blocking" | "non_blocking";
@@ -78,11 +78,11 @@ export declare const phaseSchema: z.ZodObject<{
         isolated: z.ZodDefault<z.ZodBoolean>;
         retry_of: z.ZodDefault<z.ZodNullable<z.ZodString>>;
     }, "strip", z.ZodTypeAny, {
-        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
+        role: string;
         bead_id: string;
         member_key: string;
         depends_on: string[];
@@ -90,11 +90,11 @@ export declare const phaseSchema: z.ZodObject<{
         isolated: boolean;
         retry_of: string | null;
     }, {
-        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
+        role: string;
         bead_id: string;
         member_key: string;
         failure_policy: "blocking" | "non_blocking";
@@ -107,11 +107,11 @@ export declare const phaseSchema: z.ZodObject<{
     phase_kind: "review" | "custom" | "explore" | "design" | "impl" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members: {
-        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
+        role: string;
         bead_id: string;
         member_key: string;
         depends_on: string[];
@@ -124,11 +124,11 @@ export declare const phaseSchema: z.ZodObject<{
     phase_kind: "review" | "custom" | "explore" | "design" | "impl" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members?: {
-        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
+        role: string;
         bead_id: string;
         member_key: string;
         failure_policy: "blocking" | "non_blocking";

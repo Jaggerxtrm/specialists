@@ -141,7 +141,12 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
     }
 
     if (token === '--context-depth') {
-      contextDepth = Math.max(0, Number.parseInt(readValue('--context-depth'), 10) || 0);
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--context-depth requires a numeric value');
+      }
+      i += 1;
+      contextDepth = Math.max(0, Number.parseInt(value, 10) || 0);
       continue;
     }
 
@@ -284,14 +289,19 @@ function parseNodeArgs(argv: string[]): ParsedNodeArgs {
 interface DiscoveredNodeConfig {
   name: string;
   path: string;
-  source: 'default' | 'project';
+  source: 'repo' | 'default-mirror';
 }
 
 const NODE_CONFIG_SUFFIX = '.node.json';
 const NODE_DISCOVERY_DIRS: ReadonlyArray<{ path: string; source: DiscoveredNodeConfig['source'] }> = [
-  { path: '.specialists/default/nodes', source: 'default' },
-  { path: 'config/nodes', source: 'project' },
+  { path: 'config/nodes', source: 'repo' },
+  { path: '.specialists/default/nodes', source: 'default-mirror' },
 ];
+
+const NODE_SOURCE_LABELS: Record<DiscoveredNodeConfig['source'], string> = {
+  repo: 'repo config/nodes',
+  'default-mirror': '.specialists/default/nodes',
+};
 
 function toNodeName(filePath: string): string {
   const fileName = basename(filePath);
@@ -319,10 +329,17 @@ function discoverNodeConfigs(cwd: string): DiscoveredNodeConfig[] {
   return [...discoveredByName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function resolveNodeConfigPath(cwd: string, input: string): string {
+function getNodeDiscoverySummary(): string {
+  return [
+    'node resolution order: explicit path -> config/nodes -> .specialists/default/nodes',
+    'customize repo nodes in config/nodes; managed mirror lives in .specialists/default/nodes',
+  ].join('\n');
+}
+
+function resolveNodeConfigPath(cwd: string, input: string): DiscoveredNodeConfig {
   const explicitPath = resolve(cwd, input);
   if (existsSync(explicitPath)) {
-    return explicitPath;
+    return { name: toNodeName(explicitPath), path: explicitPath, source: 'repo' };
   }
 
   const normalizedName = input.endsWith(NODE_CONFIG_SUFFIX)
@@ -330,11 +347,11 @@ function resolveNodeConfigPath(cwd: string, input: string): string {
     : input;
   const discovered = discoverNodeConfigs(cwd).find((entry) => entry.name === normalizedName);
   if (discovered) {
-    return discovered.path;
+    return discovered;
   }
 
   throw new Error(
-    `Node config not found: ${input}. Checked explicit path and discovery dirs: ${NODE_DISCOVERY_DIRS.map((entry) => entry.path).join(', ')}`,
+    `Node config not found: ${input}. Checked explicit path, repo config/nodes, .specialists/default/nodes. Customize repo-owned nodes in config/nodes and refresh managed mirror with specialists init.`,
   );
 }
 
@@ -446,9 +463,13 @@ async function handleNodeRun(args: ParsedNodeArgs): Promise<void> {
   }
 
   try {
-    const rawConfig = args.inlineJson
-      ? args.inlineJson
-      : readFileSync(resolveNodeConfigPath(process.cwd(), args.nodeConfigInput!), 'utf-8');
+    let rawConfig: string;
+    if (args.inlineJson) {
+      rawConfig = args.inlineJson;
+    } else {
+      const nodeConfigPath = resolveNodeConfigPath(process.cwd(), args.nodeConfigInput!);
+      rawConfig = readFileSync(nodeConfigPath.path, 'utf-8');
+    }
     const config = parseNodeConfig(rawConfig);
 
     const loader = new SpecialistLoader();
@@ -579,12 +600,14 @@ async function handleNodeList(args: ParsedNodeArgs): Promise<void> {
   }
 
   if (nodes.length === 0) {
-    console.log('No node configs found. Checked: .specialists/default/nodes and config/nodes');
+    console.log('No node configs found. Checked: config/nodes, .specialists/default/nodes');
+    console.log(getNodeDiscoverySummary());
     return;
   }
 
+  console.log(getNodeDiscoverySummary());
   for (const node of nodes) {
-    console.log(`${node.name}\t${node.source}\t${node.path}`);
+    console.log(`${node.name}\t${NODE_SOURCE_LABELS[node.source]}\t${node.path}`);
   }
 }
 
@@ -875,7 +898,7 @@ function emitNodeCommandError(error: unknown, jsonMode: boolean): void {
   }
 
   console.error(payload.error);
-  process.exitCode = 1;
+  process.exit(1);
 }
 
 async function createNodeActionRunnerDependencies(): Promise<{ loader: SpecialistLoader; runner: SpecialistRunner }> {

@@ -12,7 +12,7 @@ export declare function createSpecialistStatusTool(loader: SpecialistLoader, cir
         };
         specialists: {
             name: string;
-            scope: "default" | "user";
+            scope: "default" | "user" | "package";
             category: string;
             version: string;
             staleness: "OK" | "STALE" | "AGED";
