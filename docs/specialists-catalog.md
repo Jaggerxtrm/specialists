@@ -16,11 +16,12 @@ domain:
 
 # Specialists Catalog
 
-Current specialists are loaded from:
-- `.specialists/user/` (project custom)
-- `.specialists/default/` (canonical defaults)
+Current specialists runtime resolution:
+- `.specialists/user/` (repo custom, highest precedence)
+- `.specialists/default/` (managed mirror)
+- `config/specialists/` (package fallback)
 
-Canonical definitions are sourced from `config/specialists/*.specialist.json` during init/update flows.
+Mirror source is `config/specialists/*.specialist.json` during `specialists init --sync-defaults`.
 
 ## Current specialists
 

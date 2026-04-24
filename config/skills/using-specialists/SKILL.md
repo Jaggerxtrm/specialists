@@ -62,6 +62,8 @@ Specialists are autonomous AI agents that run independently — fresh context, d
 8. **No destructive operations by specialists.** No `rm -rf`, no force pushes, no database drops, no credential rotation, no mass deletes, no history rewrites. Surface destructive requirements to the user.
 9. **Executor does not run tests.** Executor runs lint + tsc only. Tests are the reviewer's and test-runner's responsibility in the chained pipeline.
 10. **Keep specialists alive through the review cycle.** Never `sp stop` an executor or debugger before the reviewer delivers its verdict. The specialist stays in `waiting` so you can `resume` it — to commit changes, apply fixes from reviewer feedback, or continue work. Only stop after final reviewer PASS and confirmed commit.
+11. **Respect ownership layers.** Upstream source = `config/*` in package; managed mirror = `.specialists/default/*` (no hand edits); repo custom layer = `.specialists/user/*`; runtime/generated = `.specialists/{jobs,ready,db}`.
+12. **Keep backlog-clean isolated.** Do not mix backlog-clean changes into specialist ownership/migration tasks.
 
 ---
 
