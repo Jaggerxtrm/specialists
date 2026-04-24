@@ -1,5 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as z from 'zod';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -53,9 +52,9 @@ function usage() {
         '  specialists edit <name> <dot.path> <value> [options]',
         '  specialists edit <name> --set <dot.path> <value> [options]',
         '  specialists edit <name> --get <dot.path> [--scope <default|user>]',
+        '  specialists edit <name> --fork-from <base-name> [--dry-run]',
         '  specialists edit --all --set <dot.path> <value> [options]',
         '  specialists edit --all --get <dot.path>',
-        '  specialists edit --all',
         '  specialists edit <name> --preset <preset> [--dry-run]',
         '  specialists edit --list-presets',
         '',
@@ -77,9 +76,6 @@ function fail(message) {
     process.exit(1);
 }
 function parseArgs(argv) {
-    if (argv.length === 1 && argv[0] === '--all') {
-        return { all: true, dryRun: false, action: 'open-all' };
-    }
     if (argv.includes('--list-presets')) {
         return { all: false, dryRun: false, action: 'list-presets' };
     }
@@ -93,6 +89,7 @@ function parseArgs(argv) {
     let filePath;
     let pendingArrayOp;
     let preset;
+    let forkFrom;
     const positional = [];
     for (let i = 0; i < argv.length; i++) {
         const token = argv[i];
@@ -139,6 +136,14 @@ function parseArgs(argv) {
             }
             preset = presetName;
             action = 'preset';
+            continue;
+        }
+        if (token === '--fork-from') {
+            const rawForkFrom = argv[++i];
+            if (!rawForkFrom || rawForkFrom.startsWith('--')) {
+                fail(`Error: --fork-from requires a specialist name\n\n${usage()}`);
+            }
+            forkFrom = rawForkFrom;
             continue;
         }
         if (token === '--file') {
@@ -204,7 +209,7 @@ function parseArgs(argv) {
         fail(`Error: missing specialist name. Use <name> or --all\n\n${usage()}`);
     }
     if (action === 'preset') {
-        return { name, all, scope, dryRun, action, path, value, filePath, preset };
+        return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
     }
     if (!path) {
         fail(`Error: missing dot-path\n\n${usage()}`);
@@ -218,7 +223,7 @@ function parseArgs(argv) {
     if (filePath && !existsSync(filePath)) {
         fail(`Error: file not found: ${filePath}`);
     }
-    return { name, all, scope, dryRun, action, path, value, filePath, preset };
+    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
 }
 function unwrapSchema(schema) {
     let current = schema;
@@ -359,24 +364,6 @@ function formatOutputValue(value) {
         return value;
     return JSON.stringify(value);
 }
-function openAllConfigSpecialistsInEditor() {
-    const configDir = join(process.cwd(), 'config', 'specialists');
-    if (!existsSync(configDir)) {
-        fail(`Error: missing directory: ${configDir}`);
-    }
-    const files = readdirSync(configDir)
-        .filter(file => file.endsWith('.specialist.json'))
-        .sort()
-        .map(file => join(configDir, file));
-    if (files.length === 0) {
-        fail('Error: no specialist JSON files found in config/specialists/');
-    }
-    const editor = process.env.VISUAL ?? process.env.EDITOR ?? 'vi';
-    const result = spawnSync(editor, files, { stdio: 'inherit', shell: true });
-    if (result.status !== 0) {
-        process.exit(result.status ?? 1);
-    }
-}
 function getRawValue(args, resolvedPath) {
     if (!args.filePath) {
         return args.value;
@@ -448,6 +435,33 @@ function printDryRun(filePath, before, after) {
     });
     console.log();
 }
+function readJsonFile(filePath) {
+    try {
+        const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            fail(`Error: specialist file must contain a JSON object (${filePath})`);
+        }
+        return parsed;
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(`Error: failed to parse JSON in ${filePath}: ${message}`);
+    }
+}
+function createUserFork(source, targetName) {
+    if (source.scope === 'user')
+        return source;
+    const targetDir = join(process.cwd(), '.specialists', 'user');
+    mkdirSync(targetDir, { recursive: true });
+    const targetFile = join(targetDir, `${targetName}.specialist.json`);
+    const doc = readJsonFile(source.filePath);
+    doc.specialist = doc.specialist ?? {};
+    doc.specialist.metadata = doc.specialist.metadata ?? {};
+    doc.specialist.metadata.name = targetName;
+    writeFileSync(targetFile, `${JSON.stringify(doc, null, 2)}
+`, 'utf-8');
+    return { ...source, name: targetName, scope: 'user', source: 'user', filePath: targetFile };
+}
 async function resolveTargets(args) {
     const loader = new SpecialistLoader();
     const allSpecialists = (await loader.list()).filter((specialist) => specialist.scope !== 'package');
@@ -463,10 +477,6 @@ async function resolveTargets(args) {
 }
 export async function run() {
     const args = parseArgs(process.argv.slice(3));
-    if (args.action === 'open-all') {
-        openAllConfigSpecialistsInEditor();
-        return;
-    }
     if (args.action === 'list-presets') {
         const presets = loadPresets();
         const entries = Object.entries(presets);
@@ -511,7 +521,19 @@ export async function run() {
         return;
     }
     const resolvedPath = resolvePath(args.path);
-    const targets = await resolveTargets(args);
+    let targets = args.forkFrom
+        ? []
+        : await resolveTargets(args);
+    if (args.forkFrom) {
+        const sourceLoader = new SpecialistLoader();
+        const source = (await sourceLoader.list()).find(specialist => specialist.name === args.forkFrom);
+        if (!source)
+            fail(`Error: fork source not found: ${args.forkFrom}`);
+        targets = [createUserFork(source, args.name)];
+    }
+    else if (targets.length === 1 && targets[0].scope !== 'user') {
+        targets = [createUserFork(targets[0], args.name)];
+    }
     if (targets.length === 0) {
         fail('Error: no specialists found');
     }

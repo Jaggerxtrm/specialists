@@ -1,11 +1,7 @@
-// src/cli/validate.ts
-//
-// Validate a specialist config file against the schema.
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { SpecialistLoader } from '../specialist/loader.js';
 import { validateSpecialist } from '../specialist/schema.js';
-// ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -18,38 +14,21 @@ export class ArgParseError extends Error {
         this.name = 'ArgParseError';
     }
 }
-// ── Argument parser ────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
     const name = argv[0];
     if (!name || name.startsWith('--')) {
         throw new ArgParseError('Usage: specialists validate <name> [--json]');
     }
-    const json = argv.includes('--json');
-    return { name, json };
+    return { name, json: argv.includes('--json') };
 }
-/** Find a specialist file by name, searching in standard locations. */
-function findSpecialistFile(name) {
-    const scanDirs = [
-        join(process.cwd(), '.specialists', 'user'),
-        join(process.cwd(), '.specialists', 'user', 'specialists'), // back-compat
-        join(process.cwd(), '.specialists', 'default'),
-        join(process.cwd(), '.specialists', 'default', 'specialists'), // back-compat
-        join(process.cwd(), 'specialists'),
-    ];
-    for (const dir of scanDirs) {
-        const jsonCandidate = join(dir, `${name}.specialist.json`);
-        if (existsSync(jsonCandidate)) {
-            return jsonCandidate;
-        }
-        const yamlCandidate = join(dir, `${name}.specialist.json`);
-        if (existsSync(yamlCandidate)) {
-            process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${yamlCandidate}. Please migrate to .specialist.json\n`);
-            return yamlCandidate;
-        }
-    }
-    return undefined;
+function getSourceLabel(summary) {
+    return `${summary.scope}/${summary.source}`;
 }
-// ── Handler ────────────────────────────────────────────────────────────────────
+async function findSpecialist(name) {
+    const loader = new SpecialistLoader();
+    const list = await loader.list();
+    return list.find(item => item.name === name);
+}
 export async function run() {
     let args;
     try {
@@ -62,45 +41,39 @@ export async function run() {
         }
         throw err;
     }
-    const { name, json } = args;
-    // Find the specialist file directly (don't use loader to avoid error spam)
-    const filePath = findSpecialistFile(name);
-    if (!filePath) {
-        if (json) {
-            console.log(JSON.stringify({ valid: false, errors: [{ path: 'name', message: `Specialist not found: ${name}`, code: 'not_found' }] }));
+    const summary = await findSpecialist(args.name);
+    if (!summary) {
+        if (args.json) {
+            console.log(JSON.stringify({ valid: false, errors: [{ path: 'name', message: `Specialist not found: ${args.name}`, code: 'not_found' }] }));
         }
         else {
-            console.error(`${red('✗')} Specialist not found: ${cyan(name)}`);
+            console.error(`${red('✗')} Specialist not found: ${cyan(args.name)}`);
         }
         process.exit(1);
     }
-    // Read and validate the file
-    let content;
-    try {
-        content = await readFile(filePath, 'utf-8');
-    }
-    catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (json) {
-            console.log(JSON.stringify({ valid: false, errors: [{ path: 'file', message: `Failed to read file: ${msg}`, code: 'read_error' }] }));
+    if (!existsSync(summary.filePath)) {
+        const message = `Failed to read file: ${summary.filePath}`;
+        if (args.json) {
+            console.log(JSON.stringify({ valid: false, errors: [{ path: 'file', message, code: 'read_error' }] }));
         }
         else {
-            console.error(`${red('✗')} Failed to read file: ${msg}`);
+            console.error(`${red('✗')} ${message}`);
         }
         process.exit(1);
     }
+    const content = await readFile(summary.filePath, 'utf-8');
     const result = await validateSpecialist(content);
-    if (json) {
+    if (args.json) {
         console.log(JSON.stringify({
             valid: result.valid,
             errors: result.errors,
             warnings: result.warnings,
-            file: filePath,
+            file: summary.filePath,
+            source: getSourceLabel(summary),
         }, null, 2));
         process.exit(result.valid ? 0 : 1);
     }
-    // Human-readable output
-    console.log(`\n${bold('Validating')} ${cyan(name)} ${dim(`(${filePath})`)}\n`);
+    console.log(`\n${bold('Validating')} ${cyan(args.name)} ${dim(`(${summary.filePath})`)} ${dim(`[${getSourceLabel(summary)}]`)}\n`);
     if (result.valid) {
         console.log(`${green('✓')} Schema validation passed\n`);
     }

@@ -34,7 +34,11 @@ const XTRM_ACTIVE_SKILLS_DIR = join(XTRM_SKILLS_DIR, 'active');
 const ACTIVE_CLAUDE_SKILLS_DIR = join(XTRM_ACTIVE_SKILLS_DIR, 'claude');
 const ACTIVE_PI_SKILLS_DIR = join(XTRM_ACTIVE_SKILLS_DIR, 'pi');
 const CONFIG_SKILLS_DIR = join(CWD, 'config', 'skills');
+const CONFIG_SPECIALISTS_DIR = join(CWD, 'config', 'specialists');
+const CONFIG_MANDATORY_RULES_DIR = join(CWD, 'config', 'mandatory-rules');
+const CONFIG_NODES_DIR = join(CWD, 'config', 'nodes');
 const SPECIALISTS_DIR = join(CWD, '.specialists');
+const DEFAULT_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'default');
 const HOOKS_DIR = join(CWD, '.xtrm', 'hooks', 'specialists');
 const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
@@ -342,6 +346,48 @@ function checkSkillDrift() {
     }
     return drifted.length === 0 && missingInDefault.length === 0 && linksOk && rootLinksOk;
 }
+function checkManagedMirror(label, sourceDir, mirrorDir, fixHint) {
+    if (!existsSync(sourceDir)) {
+        warn(`${label} source missing: ${relative(CWD, sourceDir)}`);
+        fix(fixHint);
+        return false;
+    }
+    if (!existsSync(mirrorDir)) {
+        fail(`${label} mirror missing: ${relative(CWD, mirrorDir)}`);
+        fix(fixHint);
+        return false;
+    }
+    const sourceHashes = collectFileHashes(sourceDir);
+    const mirrorHashes = collectFileHashes(mirrorDir);
+    const drifted = [...sourceHashes.keys()].filter(relPath => mirrorHashes.get(relPath) !== sourceHashes.get(relPath));
+    const missing = [...sourceHashes.keys()].filter(relPath => !mirrorHashes.has(relPath));
+    const extra = [...mirrorHashes.keys()].filter(relPath => !sourceHashes.has(relPath));
+    if (drifted.length === 0 && missing.length === 0 && extra.length === 0) {
+        ok(`${label} mirror in sync`);
+        return true;
+    }
+    if (drifted.length > 0) {
+        fail(`${label}: ${drifted.length} drifted file${drifted.length === 1 ? '' : 's'}`);
+        hint(`example: ${drifted.slice(0, 3).join(', ')}${drifted.length > 3 ? ', ...' : ''}`);
+    }
+    if (missing.length > 0) {
+        fail(`${label}: ${missing.length} missing mirror file${missing.length === 1 ? '' : 's'}`);
+        hint(`example: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ', ...' : ''}`);
+    }
+    if (extra.length > 0) {
+        warn(`${label}: ${extra.length} extra mirror file${extra.length === 1 ? '' : 's'}`);
+        hint(`example: ${extra.slice(0, 3).join(', ')}${extra.length > 3 ? ', ...' : ''}`);
+    }
+    fix(fixHint);
+    return false;
+}
+function checkManagedAssetMirrors() {
+    section('Managed mirrors  (specialists / mandatory-rules / nodes)');
+    const specialistsOk = checkManagedMirror('specialists', CONFIG_SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, 'specialists init --sync-defaults');
+    const rulesOk = checkManagedMirror('mandatory-rules', CONFIG_MANDATORY_RULES_DIR, join(DEFAULT_SPECIALISTS_DIR, 'mandatory-rules'), 'specialists init --sync-defaults');
+    const nodesOk = checkManagedMirror('nodes', CONFIG_NODES_DIR, join(DEFAULT_SPECIALISTS_DIR, 'nodes'), 'specialists init --sync-defaults');
+    return specialistsOk && rulesOk && nodesOk;
+}
 function checkRuntimeDirs() {
     section('.specialists/ runtime directories');
     const rootDir = join(CWD, '.specialists');
@@ -531,16 +577,17 @@ export async function run(argv = process.argv.slice(3)) {
     const hooksOk = checkHooks();
     const mcpOk = checkMCP();
     const skillDriftOk = checkSkillDrift();
+    const mirrorOk = checkManagedAssetMirrors();
     const dirsOk = checkRuntimeDirs();
     const jobsOk = checkZombieJobs();
-    const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && dirsOk && jobsOk;
+    const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && mirrorOk && dirsOk && jobsOk;
     console.log('');
     if (allOk) {
         console.log(`  ${green('✓')} ${bold('All checks passed')}  — specialists is healthy`);
     }
     else {
         console.log(`  ${yellow('○')} ${bold('Some checks failed')}  — follow the fix hints above`);
-        console.log(`  ${dim('specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues.')}`);
+        console.log(`  ${dim('specialists init fixes hook + MCP registration; specialists init --sync-skills fixes skill drift/symlink issues; specialists init --sync-defaults fixes managed mirrors.')}`);
     }
     console.log('');
 }
