@@ -245,6 +245,66 @@ describe('integration: sp node CLI surface', () => {
     expect(attachArgs.trim()).toBe('attach-session -t node-session');
   });
 
+  it('prefers repo node configs over default mirror for same name in list output', async () => {
+    await mkdir(join(tempDir, 'config', 'nodes'), { recursive: true });
+    await mkdir(join(tempDir, '.specialists', 'default', 'nodes'), { recursive: true });
+
+    await writeFile(
+      join(tempDir, 'config', 'nodes', 'priority.node.json'),
+      JSON.stringify({
+        name: 'repo-priority',
+        coordinator: 'node-coordinator',
+        members: [],
+        initialPrompt: 'repo',
+      }),
+      'utf-8',
+    );
+
+    await writeFile(
+      join(tempDir, '.specialists', 'default', 'nodes', 'priority.node.json'),
+      JSON.stringify({
+        name: 'default-priority',
+        coordinator: 'node-coordinator',
+        members: [],
+        initialPrompt: 'default',
+      }),
+      'utf-8',
+    );
+
+    const result = runCli(tempDir, ['node', 'list', '--json']);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as Array<{ name: string; source: string; path: string }>;
+
+    const priority = payload.find((entry) => entry.name === 'priority');
+    expect(priority).toBeDefined();
+    expect(priority!.source).toBe('repo');
+    expect(priority!.path).toContain('config/nodes/priority.node.json');
+  });
+
+  it('uses explicit path first when running node config resolution', async () => {
+    await mkdir(join(tempDir, 'config', 'nodes'), { recursive: true });
+    await mkdir(join(tempDir, '.specialists', 'default', 'nodes'), { recursive: true });
+
+    await writeFile(
+      join(tempDir, 'config', 'nodes', 'explicit.node.json'),
+      JSON.stringify({
+        name: 'repo-explicit',
+        coordinator: 'node-coordinator',
+        members: [],
+        initialPrompt: 'repo',
+      }),
+      'utf-8',
+    );
+
+    const explicitPath = join(tempDir, '.specialists', 'default', 'nodes', 'explicit.node.json');
+    await writeFile(explicitPath, '{not-json}', 'utf-8');
+
+    const result = runCli(tempDir, ['node', 'run', explicitPath, '--json']);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('Unexpected token');
+  });
+
   it('returns clear non-zero failures for missing args and unsupported targets', () => {
     const missingNodeResult = runCli(tempDir, ['node', 'members']);
     expect(missingNodeResult.status).toBe(1);
