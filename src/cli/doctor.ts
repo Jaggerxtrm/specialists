@@ -460,6 +460,7 @@ export function compareVersions(left: string, right: string): number {
   return 0;
 }
 
+// Legacy/repair only: rewrite file-era status artifact during repair.
 export function setStatusError(statusPath: string): void {
   try {
     const raw = readFileSync(statusPath, 'utf8');
@@ -479,6 +480,7 @@ interface CleanupProcessesResult {
   zombieJobIds: string[];
 }
 
+// Legacy/repair only: direct file scan for zombie status repair.
 export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProcessesResult {
   let entries: string[];
   try { entries = readdirSync(jobsDir); } catch { entries = []; }
@@ -574,11 +576,12 @@ function runDoctorOrphans(): void {
   }
 }
 
+// Legacy/repair only: file-artifact zombie scan. Normal runtime health uses SQLite.
 function checkZombieJobs(): boolean {
-  section('Background jobs');
+  section('Background jobs (legacy repair)');
   const jobsDir = join(CWD, '.specialists', 'jobs');
   if (!existsSync(jobsDir)) {
-    hint('No .specialists/jobs/ — skipping');
+    hint('No .specialists/jobs/ — skipping legacy repair scan');
     return true;
   }
 
