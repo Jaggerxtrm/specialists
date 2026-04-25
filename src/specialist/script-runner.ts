@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { SpecialistLoader, type SpecialistSummary } from './loader.js';
+import { SpecialistLoader } from './loader.js';
 import { renderTemplate } from './templateEngine.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { Specialist } from './schema.js';
@@ -15,6 +15,7 @@ export type ScriptSpecialistErrorType =
   | 'timeout'
   | 'network'
   | 'invalid_json'
+  | 'output_too_large'
   | 'internal';
 
 export interface ScriptGenerateRequest {
@@ -47,6 +48,7 @@ export interface ScriptRunnerOptions {
   userDir?: string;
   fallbackModel?: string;
   observabilityDbPath?: string;
+  onChild?: (child: ChildProcess) => void;
 }
 
 function hasUnsubstitutedVariables(template: string): string | null {
@@ -54,7 +56,7 @@ function hasUnsubstitutedVariables(template: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function compatGuard(summary: SpecialistSummary, spec: Specialist): void {
+export function compatGuard(spec: Specialist): void {
   const execution = spec.specialist.execution;
   if (execution.interactive) throw new Error('interactive specialists are not allowed');
   if (execution.requires_worktree) throw new Error('worktree specialists are not allowed');
@@ -73,6 +75,7 @@ function mapErrorType(message: string): ScriptSpecialistErrorType {
   if (message.includes('Specialist not found')) return 'specialist_not_found';
   if (message.includes('interactive') || message.includes('worktree') || message.includes('permission_required') || message.includes('scripts not allowed')) return 'specialist_load_error';
   if (message.includes('Missing template variable')) return 'template_variable_missing';
+  if (message.includes('output too large')) return 'output_too_large';
   if (message.includes('auth') || message.includes('403')) return 'auth';
   if (message.includes('quota') || message.includes('rate limit')) return 'quota';
   if (message.includes('timeout')) return 'timeout';
@@ -99,7 +102,7 @@ function extractAssistantText(lines: string[]): string {
 
 function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number): void {
   if (!client) return;
-  const status: SupervisorStatus = {
+  const status = {
     id: traceId,
     specialist,
     status: 'done',
@@ -107,9 +110,15 @@ function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient
     started_at_ms: Date.now() - durationMs,
     elapsed_s: durationMs / 1000,
     last_event_at_ms: Date.now(),
-  };
+    surface: 'script_specialist',
+  } as unknown as SupervisorStatus;
   client.upsertStatus(status);
   client.upsertResult(traceId, output);
+}
+
+function openObservabilityClient(options: ScriptRunnerOptions): ReturnType<typeof createObservabilitySqliteClient> {
+  const dbPath = options.observabilityDbPath ?? options.userDir;
+  return createObservabilitySqliteClient(dbPath);
 }
 
 export async function runScriptSpecialist(input: ScriptGenerateRequest, options: ScriptRunnerOptions): Promise<ScriptGenerateResult> {
@@ -117,9 +126,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
   const startedAt = Date.now();
   try {
     const spec = await options.loader.get(input.specialist);
-    const summary = await options.loader.list().then(items => items.find(item => item.name === input.specialist) ?? null);
-    if (!summary) throw new Error(`Specialist not found: ${input.specialist}`);
-    compatGuard(summary, spec);
+    compatGuard(spec);
 
     const template = input.template ?? spec.specialist.prompt.task_template;
     const prompt = renderTaskTemplate(template, input.variables ?? {});
@@ -131,16 +138,31 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     args.push('--', prompt);
 
     const pi = spawn('pi', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    options.onChild?.(pi);
+
     const chunks: Buffer[] = [];
     let stderr = '';
     let timedOut = false;
+    let outputTooLarge = false;
+    const stdoutLimit = 4 * 1024 * 1024;
+    let stdoutBytes = 0;
+
     const timer = setTimeout(() => {
       timedOut = true;
       pi.kill('SIGTERM');
       setTimeout(() => pi.kill('SIGKILL'), 2000);
     }, timeoutMs);
 
-    pi.stdout.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    pi.stdout.on('data', chunk => {
+      const buffer = Buffer.from(chunk);
+      chunks.push(buffer);
+      stdoutBytes += buffer.length;
+      if (stdoutBytes > stdoutLimit && !outputTooLarge) {
+        outputTooLarge = true;
+        pi.kill('SIGTERM');
+        setTimeout(() => pi.kill('SIGKILL'), 2000);
+      }
+    });
     pi.stderr.on('data', chunk => { stderr += String(chunk); });
 
     const exitCode = await new Promise<number>((resolve, reject) => {
@@ -151,9 +173,12 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const stdout = Buffer.concat(chunks).toString('utf-8');
     const text = extractAssistantText(stdout.split(/\r?\n/));
     const durationMs = Date.now() - startedAt;
-    const observability = createObservabilitySqliteClient();
+    const observability = openObservabilityClient(options);
     if (observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs);
 
+    if (outputTooLarge) {
+      return { success: false, error: 'stdout exceeded 4MB cap', error_type: 'output_too_large', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
     if (timedOut) {
       return { success: false, error: stderr || 'timed out', error_type: 'timeout', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }

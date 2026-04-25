@@ -14,11 +14,19 @@ const baseSpec = {
 
 describe('script-runner compat guard', () => {
   it('rejects interactive specialist', () => {
-    expect(() => compatGuard({ name: 'x', description: '', category: '', version: '', model: '', permission_required: 'READ_ONLY', interactive: true, skills: [], scripts: [], scope: 'user', source: 'user', filePath: '' }, { ...baseSpec, specialist: { ...baseSpec.specialist, execution: { ...baseSpec.specialist.execution, interactive: true } } } as never)).toThrow('interactive');
+    expect(() => compatGuard({ ...baseSpec, specialist: { ...baseSpec.specialist, execution: { ...baseSpec.specialist.execution, interactive: true } } } as never)).toThrow('interactive');
   });
 
   it('rejects worktree specialist', () => {
-    expect(() => compatGuard({ name: 'x', description: '', category: '', version: '', model: '', permission_required: 'READ_ONLY', interactive: false, skills: [], scripts: [], scope: 'user', source: 'user', filePath: '' }, { ...baseSpec, specialist: { ...baseSpec.specialist, execution: { ...baseSpec.specialist.execution, requires_worktree: true } } } as never)).toThrow('worktree');
+    expect(() => compatGuard({ ...baseSpec, specialist: { ...baseSpec.specialist, execution: { ...baseSpec.specialist.execution, requires_worktree: true } } } as never)).toThrow('worktree');
+  });
+
+  it('rejects non read only specialist', () => {
+    expect(() => compatGuard({ ...baseSpec, specialist: { ...baseSpec.specialist, execution: { ...baseSpec.specialist.execution, permission_required: 'LOW' } } } as never)).toThrow('permission_required');
+  });
+
+  it('rejects scripted specialist', () => {
+    expect(() => compatGuard({ ...baseSpec, specialist: { ...baseSpec.specialist, skills: { scripts: [{ run: 'echo hi', phase: 'pre', inject_output: false }] } } } as never)).toThrow('scripts not allowed');
   });
 });
 

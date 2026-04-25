@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { startServe } from '../../src/cli/serve.js';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 
 const originalCwd = process.cwd();
 let tempRoot = '';
+let server: ChildProcess | undefined;
 
 beforeEach(() => {
   tempRoot = mkdtempSync(join(tmpdir(), 'sp-serve-'));
@@ -37,8 +38,19 @@ beforeEach(() => {
     }),
   );
   writeFileSync(
+    join(tempRoot, 'query-db.mjs'),
+    [
+      "import { Database } from 'bun:sqlite';",
+      'const db = new Database(process.argv[2]);',
+      'const jobId = process.argv[3];',
+      "const rows = db.query('SELECT specialist, status_json FROM specialist_jobs WHERE job_id = ?').all(jobId);",
+      'console.log(JSON.stringify(rows));',
+      'db.close();',
+    ].join('\n'),
+  );
+  writeFileSync(
     join(tempRoot, 'bin', 'pi'),
-    '#!/usr/bin/env node\nconst fs = require("node:fs");\nconst input = process.argv.slice(2).join(" ");\nif (input.includes("--model")) {\n  process.stdout.write(JSON.stringify({ type: "assistant", data: { text: JSON.stringify({ message: "hello" }) } }) + "\\n");\n}\n',
+    '#!/usr/bin/env node\nconst input = process.argv.slice(2).join(" ");\nif (input.includes("--model")) {\n  process.stdout.write(JSON.stringify({ type: "assistant", data: { text: JSON.stringify({ message: "hello" }) } }) + "\\n");\n}\n',
     { mode: 0o755 },
   );
   process.chdir(tempRoot);
@@ -46,13 +58,32 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (server && !server.killed) server.kill('SIGTERM');
   process.chdir(originalCwd);
 });
 
 describe('sp serve', () => {
   it('serves generate and writes observability row', async () => {
-    const started = await startServe(['--port', '0', '--user-dir', tempRoot]);
-    const port = (started.server.address() as { port: number }).port;
+    const port = 8123;
+    server = spawn('bun', ['src/index.ts', 'serve', '--port', String(port), '--user-dir', tempRoot], {
+      cwd: originalCwd,
+      env: { ...process.env, PATH: `${join(tempRoot, 'bin')}:${process.env.PATH ?? ''}` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('server start timeout')), 10_000);
+      server?.stdout?.on('data', (chunk) => {
+        if (String(chunk).includes('sp serve listening on')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      server?.once('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`server exit ${code ?? 'unknown'}`));
+      });
+    });
 
     const response = await fetch(`http://127.0.0.1:${port}/v1/generate`, {
       method: 'POST',
@@ -66,8 +97,12 @@ describe('sp serve', () => {
     expect(body.output).toContain('hello');
     expect(body.meta?.trace_id).toBeTruthy();
 
-    const dbPath = join(tempRoot, '.specialists', 'db', 'observability.db');
-    expect(existsSync(dbPath)).toBe(true);
-    started.server.close();
+    const traceId = body.meta?.trace_id ?? '';
+    const query = spawnSync('bun', [join(tempRoot, 'query-db.mjs'), join(tempRoot, '.specialists', 'db', 'observability.db'), traceId], { encoding: 'utf-8' });
+    expect(query.status).toBe(0);
+    const rows = JSON.parse(query.stdout.trim()) as Array<{ specialist: string; status_json: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].specialist).toBe('echo');
+    expect(JSON.parse(rows[0].status_json).surface).toBe('script_specialist');
   });
 });
