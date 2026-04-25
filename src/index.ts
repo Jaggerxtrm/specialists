@@ -950,6 +950,25 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'serve') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--user-dir <path>]',
+        '',
+        'HTTP wrapper for script-class specialists.',
+        '',
+        'Routes:',
+        '  POST /v1/generate',
+        '  GET  /healthz',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/serve.js');
+    return handler(process.argv.slice(3));
+  }
+
   if (sub === 'help' || sub === '--help' || sub === '-h') {
     const { run: handler } = await import('./cli/help.js');
     return handler();
