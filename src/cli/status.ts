@@ -8,6 +8,7 @@ import { Supervisor } from '../specialist/supervisor.js';
 import type { SupervisorStatus, SupervisorStatusView } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { detectJobFileOutputMode } from '../specialist/job-file-output.js';
 import {
   bold,
   dim,
@@ -292,6 +293,7 @@ export async function run(): Promise<void> {
   const specialistsBin = cmd('which', ['specialists']);
 
   const jobsDir = resolveJobsDir();
+  const jobFileOutputMode = detectJobFileOutputMode();
   let jobs: SupervisorStatusView[] = [];
   if (existsSync(jobsDir)) {
     supervisor = new Supervisor({
@@ -318,6 +320,9 @@ export async function run(): Promise<void> {
 
     if (jsonMode) {
       console.log(JSON.stringify({
+        runtime: {
+          job_file_output_mode: jobFileOutputMode,
+        },
         job: {
           ...selectedJob,
           event_count: eventCount,
@@ -340,9 +345,6 @@ export async function run(): Promise<void> {
   // ── JSON output ─────────────────────────────────────────────────────────────
   if (jsonMode) {
     const output = {
-      runtime: {
-        job_file_output: detectJobOutputMode(),
-      },
       specialists: {
         count: allSpecialists.length,
         items: allSpecialists.map(s => ({
@@ -366,6 +368,9 @@ export async function run(): Promise<void> {
       mcp: {
         specialists_installed: specialistsBin.ok,
         binary_path: specialistsBin.ok ? specialistsBin.stdout : null,
+      },
+      runtime: {
+        job_file_output_mode: jobFileOutputMode,
       },
       jobs: jobs.map(j => ({
         id: j.id,

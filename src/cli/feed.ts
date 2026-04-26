@@ -752,7 +752,7 @@ async function followMerged(
         }
 
         if (trackedJobs.has(jobId)) {
-          if (isKeepAliveJobStatus(status)) {
+          if (isKeepAliveJobStatus(status ?? null)) {
             continue;
           }
           const isTerminal = status?.status === 'done' || status?.status === 'error' || status?.status === 'cancelled';

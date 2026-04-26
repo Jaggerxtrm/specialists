@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Supervisor } from '../../../src/specialist/supervisor.js';
+import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
 
 function makeRunOptions() {
   return { name: 'test-specialist', prompt: 'do something', keepAlive: true, inputBeadId: 'unitAI-readonly-1' };
@@ -30,29 +30,83 @@ function invokeSigtermListenersAddedSince(baseline: Set<NodeJS.SignalsListener>)
   }
 }
 
+type SupervisorType = typeof import('../../../src/specialist/supervisor.js').Supervisor;
+
 describe('Supervisor SIGTERM append behavior', () => {
   let tmpDir: string;
   let jobsDir: string;
-  let supervisors: Supervisor[];
+  let supervisors: Array<InstanceType<SupervisorType>>;
   let baselineSigtermListeners: Set<NodeJS.SignalsListener>;
+  let previousCwd: string;
+  let previousJobFileOutputMode: string | undefined;
+  let Supervisor: SupervisorType;
 
-  const createSupervisor = (options: ConstructorParameters<typeof Supervisor>[0]): Supervisor => {
+  const createSupervisor = (options: ConstructorParameters<SupervisorType>[0]): InstanceType<SupervisorType> => {
     const supervisor = new Supervisor(options);
     supervisors.push(supervisor);
     return supervisor;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.doMock('../../../src/specialist/observability-sqlite.js', () => {
+      const statusById = new Map<string, any>();
+      const eventsById = new Map<string, any[]>();
+      return {
+        createObservabilitySqliteClient: () => ({
+          close: vi.fn(),
+          readStatus: (id: string) => statusById.get(id) ?? null,
+          listStatuses: () => [...statusById.values()],
+          upsertStatus: (status: any) => {
+            statusById.set(status.id, status);
+          },
+          appendEvent: (id: string, _specialist: string, _beadId: string | undefined, event: any) => {
+            const existing = eventsById.get(id) ?? [];
+            existing.push(event);
+            eventsById.set(id, existing);
+          },
+          upsertStatusWithEvent: (status: any, event: any) => {
+            statusById.set(status.id, status);
+            const existing = eventsById.get(status.id) ?? [];
+            existing.push(event);
+            eventsById.set(status.id, existing);
+          },
+          upsertStatusWithEventAndResult: (status: any, event: any) => {
+            statusById.set(status.id, status);
+            const existing = eventsById.get(status.id) ?? [];
+            existing.push(event);
+            eventsById.set(status.id, existing);
+          },
+          upsertEpicRun: vi.fn(),
+          upsertEpicChainMembership: vi.fn(),
+        }),
+      };
+    });
+
+    ({ Supervisor } = await import('../../../src/specialist/supervisor.js'));
+
     tmpDir = mkdtempSync(join(tmpdir(), 'supervisor-sigterm-append-'));
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
     supervisors = [];
     baselineSigtermListeners = new Set(process.listeners('SIGTERM') as NodeJS.SignalsListener[]);
+
+    previousCwd = process.cwd();
+    process.chdir(tmpDir);
+    previousJobFileOutputMode = process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'on';
+    ensureObservabilityDbFile(resolveObservabilityDbLocation(tmpDir));
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
     await Promise.all(supervisors.map((supervisor) => supervisor.dispose()));
+    process.chdir(previousCwd);
+    if (previousJobFileOutputMode === undefined) {
+      delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    } else {
+      process.env.SPECIALISTS_JOB_FILE_OUTPUT = previousJobFileOutputMode;
+    }
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
