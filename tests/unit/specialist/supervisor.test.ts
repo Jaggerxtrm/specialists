@@ -23,6 +23,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 });
 import { Supervisor } from '../../../src/specialist/supervisor.js';
 import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
+import { createObservabilitySqliteClient } from '../../../src/specialist/observability-sqlite.js';
 
 function makeMockRunner(output = 'test output', model = 'haiku', backend = 'anthropic') {
   return {
@@ -56,16 +57,18 @@ describe('Supervisor', () => {
   let tmpDir: string;
   let jobsDir: string;
   let originalTmuxSessionEnv: string | undefined;
+  let originalJobFileOutputEnv: string | undefined;
   let supervisors: Supervisor[];
 
   const createSupervisor = (options: ConstructorParameters<typeof Supervisor>[0]): Supervisor => {
-    const supervisor = createSupervisor(options);
+    const supervisor = new Supervisor(options);
     supervisors.push(supervisor);
     return supervisor;
   };
 
   beforeEach(() => {
     originalTmuxSessionEnv = process.env.SPECIALISTS_TMUX_SESSION;
+    originalJobFileOutputEnv = process.env.SPECIALISTS_JOB_FILE_OUTPUT;
     tmpDir = mkdtempSync(join(tmpdir(), 'supervisor-test-'));
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
@@ -77,6 +80,11 @@ describe('Supervisor', () => {
       delete process.env.SPECIALISTS_TMUX_SESSION;
     } else {
       process.env.SPECIALISTS_TMUX_SESSION = originalTmuxSessionEnv;
+    }
+    if (originalJobFileOutputEnv === undefined) {
+      delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    } else {
+      process.env.SPECIALISTS_JOB_FILE_OUTPUT = originalJobFileOutputEnv;
     }
     vi.restoreAllMocks();
     await Promise.all(supervisors.map((supervisor) => supervisor.dispose()));
@@ -113,6 +121,44 @@ describe('Supervisor', () => {
     expect(status.model).toBe('claude-haiku');
     expect(status.backend).toBe('anthropic');
     expect(status.bead_id).toBeUndefined();
+  });
+
+  it('detached watchdog boots with bun sqlite and db path', async () => {
+    const spawnSpy = vi.spyOn(childProcess, 'spawn').mockImplementation((() => {
+      return { pid: 1234, unref: vi.fn() } as any;
+    }) as any);
+
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    await sup.run();
+
+    const watchdogSpawn = spawnSpy.mock.calls.find(([command, args]) => command === process.execPath && args[0] === '-e');
+    expect(watchdogSpawn).toBeDefined();
+    const options = watchdogSpawn?.[2] as any;
+    expect(options?.env?.SPECIALISTS_OBSERVABILITY_DB_PATH).toContain('.specialists');
+    expect(options?.env?.SPECIALISTS_STATUS_JOB_ID).toBeDefined();
+    expect(options?.env?.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS).toBe('5000');
+  });
+
+  it('crashRecovery repairs db-backed running job when file output off', async () => {
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'off';
+    const sqlite = createObservabilitySqliteClient(tmpDir);
+    expect(sqlite).not.toBeNull();
+    sqlite!.upsertStatus({
+      id: 'dead01',
+      specialist: 'test',
+      status: 'running',
+      started_at_ms: Date.now() - 10_000,
+      last_event_at_ms: Date.now() - 10_000,
+      pid: 999999,
+    });
+
+    const sup = createSupervisor({ jobsDir, runner: makeMockRunner(), runOptions: makeRunOptions() });
+    await sup.run();
+
+    const recovered = sup.readStatus('dead01');
+    expect(recovered?.status).toBe('error');
+    expect(recovered?.error).toBe('Process crashed or was killed');
+    expect(existsSync(join(jobsDir, 'dead01', 'status.json'))).toBe(false);
   });
 
   it('persists runner metrics to status.json and run_complete', async () => {
@@ -1052,6 +1098,7 @@ describe('Supervisor', () => {
   });
 
   describe('stale job scanning (crashRecovery)', () => {
+    it('jobs in done/error state are not scanned — no stale_warning emitted', async () => {
     it('jobs in done/error state are not scanned — no stale_warning emitted', async () => {
       const doneId = 'done01';
       const errorId = 'err01';

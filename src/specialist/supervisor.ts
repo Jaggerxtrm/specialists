@@ -42,6 +42,7 @@ import {
 import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
+import { resolveObservabilityDbLocation } from './observability-db.js';
 import { resolveChainId } from './epic-lifecycle.js';
 import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from './epic-readiness.js';
 import { derivePersistedChainIdentity } from './chain-identity.js';
@@ -391,19 +392,31 @@ function startDetachedGitnexusAnalyze(cwd: string): void {
 }
 
 const STATUS_WATCHDOG_INTERVAL_MS = 5_000;
+const STATUS_WATCHDOG_STALE_AFTER_MS = 30_000;
 
-function startDetachedStatusWatchdog(statusPath: string, pid: number): number | undefined {
+function startDetachedStatusWatchdog(dbPath: string, statusPath: string, jobId: string, pid: number): number | undefined {
   const watchdogScript = `
-const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
+const { existsSync, readFileSync, writeFileSync, renameSync } = require('node:fs');
 
+const dbPath = process.env.SPECIALISTS_OBSERVABILITY_DB_PATH;
 const statusPath = process.env.SPECIALISTS_STATUS_PATH;
+const jobId = process.env.SPECIALISTS_STATUS_JOB_ID;
 const pidRaw = process.env.SPECIALISTS_STATUS_PID;
 const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
+const staleAfterRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS;
 
 const targetPid = Number(pidRaw);
 const intervalMs = Number(intervalRaw);
+const staleAfterMs = Number(staleAfterRaw);
 
-if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+if (!dbPath || !statusPath || !jobId || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0) {
+  process.exit(1);
+}
+
+let Database;
+try {
+  Database = require('bun:sqlite').Database;
+} catch {
   process.exit(1);
 }
 
@@ -416,40 +429,34 @@ const isPidAlive = () => {
   }
 };
 
-const run = () => {
-  if (!existsSync(statusPath)) {
-    process.exit(0);
+const readJobStatus = () => {
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    const row = db.query('SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId);
+    return row?.status_json ? JSON.parse(row.status_json) : null;
+  } finally {
+    db.close();
   }
+};
+
+const markError = (reason) => {
+  if (!existsSync(statusPath)) return;
 
   let status;
   try {
     status = JSON.parse(readFileSync(statusPath, 'utf-8'));
   } catch {
-    process.exit(0);
-  }
-
-  if (!status || typeof status !== 'object') {
-    process.exit(0);
-  }
-
-  if (status.status === 'done' || status.status === 'error') {
-    process.exit(0);
-  }
-
-  if (status.status !== 'running' && status.status !== 'starting') {
     return;
   }
 
-  if (isPidAlive()) {
-    return;
-  }
+  if (!status || typeof status !== 'object') return;
+  if (status.status === 'done' || status.status === 'error') return;
 
-  const now = Date.now();
   const updated = {
     ...status,
     status: 'error',
-    error: 'Supervisor process exited unexpectedly',
-    last_event_at_ms: now,
+    error: reason,
+    last_event_at_ms: Date.now(),
   };
 
   const tmpPath = statusPath + '.tmp';
@@ -459,8 +466,32 @@ const run = () => {
   } catch {
     // Best effort only.
   }
+};
 
-  process.exit(0);
+const run = () => {
+  const status = readJobStatus();
+  if (!status) {
+    if (!isPidAlive()) {
+      markError('Supervisor process exited unexpectedly');
+      process.exit(0);
+    }
+    return;
+  }
+
+  if (status.status === 'done' || status.status === 'error') {
+    process.exit(0);
+  }
+
+  const updatedAtMs = Number(status.updated_at_ms ?? status.last_event_at_ms ?? status.started_at_ms ?? 0);
+  if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > staleAfterMs) {
+    markError('Supervisor status stale');
+    return;
+  }
+
+  if (!isPidAlive()) {
+    markError('Supervisor process exited unexpectedly');
+    process.exit(0);
+  }
 };
 
 setInterval(run, intervalMs);
@@ -472,9 +503,12 @@ run();
     stdio: 'ignore',
     env: {
       ...process.env,
+      SPECIALISTS_OBSERVABILITY_DB_PATH: dbPath,
       SPECIALISTS_STATUS_PATH: statusPath,
+      SPECIALISTS_STATUS_JOB_ID: jobId,
       SPECIALISTS_STATUS_PID: String(pid),
       SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS),
+      SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS: String(STATUS_WATCHDOG_STALE_AFTER_MS),
     },
   });
 
@@ -576,6 +610,15 @@ export class Supervisor {
 
   private resultPath(id: string): string {
     return join(this.jobDir(id), 'result.txt');
+  }
+
+  private observabilityDbPath(): string {
+    return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
+  }
+
+  private shouldWriteJobFiles(): boolean {
+    const mode = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase();
+    return mode === '' || mode === 'on' || mode === 'true' || mode === '1';
   }
 
   private eventsPath(id: string): string {
@@ -697,6 +740,7 @@ export class Supervisor {
   }
 
   private writeStatusFileOnly(id: string, data: SupervisorStatus): void {
+    if (!this.shouldWriteJobFiles()) return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
@@ -903,8 +947,8 @@ export class Supervisor {
         : { branch: resolveCurrentBranch() }),
       startup_context: startupContext,
     };
-    this.writeStatusFileOnly(id, initialStatus);
-    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
+    this.writeStatusFile(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
     // Persist a latest marker so other processes can discover the active job id immediately
     writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
     this.opts.onJobStarted?.({ id });
