@@ -78,6 +78,8 @@ Specialists are the same JSON files the rest of this repo uses. The service read
 
 Any other spec runs as-is — same model resolution, same `fallback_model` and circuit-breaker behavior, same `thinking_level`, same `output_schema` validation as `sp run` performs today.
 
+> Full schema reference for script-class specs (required, optional, forbidden fields, with examples): [`docs/authoring.md` § Script-class authoring](authoring.md#script-class-authoring).
+
 ## Configuration
 
 ```

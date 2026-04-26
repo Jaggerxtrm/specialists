@@ -66,6 +66,8 @@ Variable substitution uses `$name` (single-dollar, no braces). Pick a model your
 
 A working reference example ships with the repo at [`docs/examples/smoke-echo.specialist.json`](examples/smoke-echo.specialist.json) — copy it into your `.specialists/user/` to verify a fresh deployment end-to-end.
 
+For the full schema (every required, optional, and forbidden field with explanations), see [`docs/authoring.md` § Script-class authoring](authoring.md#script-class-authoring).
+
 ## Compose file walkthrough
 
 Copy `docker/compose.example.yml` and replace placeholders.
@@ -157,7 +159,7 @@ podman run -d --rm --name specialists \
   -v "$HOME/.pi:/pi-home/.pi:ro,z" \
   -e HOME=/pi-home \
   -p 8000:8000 \
-  ghcr.io/<org>/specialists-service:<tag>
+  specialists-service:local
 ```
 
 The compose template targets standard Docker; if you're on Fedora + rootless Podman, copy the above command form instead.

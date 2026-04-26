@@ -517,8 +517,68 @@ Quality degrades as the context grows — compressed early context causes incons
 
 ---
 
+## Script-class authoring
+
+For specialists run through `specialists-service` (HTTP `/v1/generate` or `sp serve`).
+
+Script-class specs are a **subset** of the full schema — same loader, same `parseSpecialist()`, but with runtime constraints enforced by the service's `compatGuard` (`src/specialist/script-runner.ts`). The schema is unchanged; what differs is which combinations the service will accept at request time.
+
+Use this section when authoring specs for `specialists-service`. Use the rest of this guide for full agent-class specs run via `sp run`.
+
+### Required fields (script class)
+
+Same as for any specialist:
+
+- `metadata.name`, `metadata.version`, `metadata.description`, `metadata.category`
+- `execution.model` (must be resolvable from the host's `~/.pi/agent/auth.json`)
+- `prompt.task_template`
+
+### Constraint-marked fields (the script-class boundary)
+
+The service rejects any spec that doesn't match these at request time with `error_type: "specialist_load_error"`:
+
+| Field | Required value | Reason |
+|---|---|---|
+| `execution.interactive` | `false` | HTTP request cannot host a multi-turn keep-alive session |
+| `execution.requires_worktree` | `false` | The service is stateless; no git branching |
+| `execution.permission_required` | `"READ_ONLY"` | One-shot pi spawns with `--no-tools` |
+| `execution.max_retries` | `0` | Caller (HTTP client / cron) owns retries; internal retries amplify cost |
+| `skills.scripts` | omitted or `[]` | Local shell hooks are a host-side capability not available in service mode |
+
+### Optional supported fields
+
+These run unchanged:
+
+- `execution.timeout_ms`, `execution.fallback_model`, `execution.thinking_level`, `execution.response_format` (`"text"` | `"json"` | `"markdown"`)
+- `prompt.system`, `prompt.normalize_template`, `prompt.output_schema`, `prompt.examples`
+- `metadata.tags`, `metadata.author`, `metadata.created`, `metadata.updated`
+
+### Forbidden under v1 (deferred behind trust flags)
+
+Allowed by the schema but rejected by the service unless launched in a trusted-mode that does not yet exist (`unitAI-3k6sa`):
+
+- `skills.paths` — would inject host files into the prompt as `--skill` args
+- `prompt.skill_inherit` — same trust concern
+
+If you author a spec that needs these, file against `unitAI-3k6sa` and continue using `sp run` until that bead lands.
+
+### Output validation
+
+`prompt.output_schema.required` is checked against `parsed_json` when `response_format: "json"`. Missing keys produce `error_type: "invalid_json"` with a message naming the field. Nested schema is currently warn-only; tracked in `unitAI-xutg2` (passthrough) and the deferred-strict-mode discussion in `docs/specialists-service-evaluation.md` §29.
+
+### Reference example
+
+[`docs/examples/smoke-echo.specialist.json`](examples/smoke-echo.specialist.json) is a minimal working script-class spec. Copy it into a project's `.specialists/user/` to verify a fresh `sp serve` deployment end-to-end.
+
+### Same loader, same edit path
+
+`sp edit <name> specialist.execution.model <new-model>` works identically for script-class specs — the JSON file is round-tripped, no special handling needed.
+
+---
+
 ## See also
 
 - [specialists-catalog.md](specialists-catalog.md)
 - [workflow.md](workflow.md)
+- [specialists-service.md](specialists-service.md) — the HTTP service contract that consumes script-class specs
 - [mcp-tools.md](mcp-tools.md)
