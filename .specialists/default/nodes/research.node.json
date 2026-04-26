@@ -1,0 +1,27 @@
+{
+  "name": "research",
+  "coordinator": "node-coordinator",
+  "members": [
+    {
+      "memberId": "explorer",
+      "specialist": "explorer",
+      "role": "Codebase exploration and discovery. Read files, search code, map architecture. Report findings."
+    },
+    {
+      "memberId": "overthinker",
+      "specialist": "overthinker",
+      "role": "Deep multi-phase analysis. Reason about tradeoffs, critique assumptions, synthesize insights."
+    },
+    {
+      "memberId": "researcher",
+      "specialist": "researcher",
+      "role": "Documentation and code researcher. Targeted lookup via ctx7/deepwiki CLIs, or discovery mode via ghgrep to find real-world patterns across GitHub. Report findings with code examples."
+    }
+  ],
+  "initialPrompt": "You are coordinating a research node with an explorer, an overthinker, and a researcher. Plan an explicit explore phase first, then wait for the phase barrier, read every member result, synthesize the evidence, and decide whether a design or implementation phase is actually needed. On start, launch the explorer for codebase findings. Use the researcher only when external docs or ecosystem patterns are needed. Use the overthinker after evidence is gathered to analyze tradeoffs and synthesize insights. Maintain memory_patch entries (facts, questions, decisions) throughout.",
+  "memoryNamespace": "research",
+  "completion_strategy": "pr",
+  "max_retries": 3,
+  "default_context_depth": 1,
+  "base_branch": "master"
+}

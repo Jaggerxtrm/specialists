@@ -148,6 +148,24 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-04-22T22:27:13.340618+00:00"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-04-24T23:25:38.239881+00:00",
+      "error_message": "Executor verification path attempted vitest/bun tests and job died before completion",
+      "file": "specialist execution workflow",
+      "root_cause": "I treated executor verification like a normal local test step instead of following the project rule that executors do not use Bun/Vitest here.",
+      "fix": "Do not request vitest or bun test commands from executors; restrict executor verification to lint/tsc and run tests through reviewer/test-runner or manual follow-up outside the executor path.",
+      "tags": [
+        "bugfix",
+        "workflow",
+        "executors",
+        "vitest",
+        "bun"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-24T23:25:38.239881+00:00"
     }
   ]
 }

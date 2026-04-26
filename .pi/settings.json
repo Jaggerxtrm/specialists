@@ -1,5 +1,20 @@
 {
-  "packages": [],
+  "packages": [
+    "npm:@jaggerxtrm/pi-extensions"
+  ],
   "extensions": [],
-  "skills": ["../.xtrm/skills/active/pi"]
+  "skills": [
+    "../.xtrm/skills/active",
+    "../.xtrm/skills/active/pi"
+  ],
+  "serena": {
+    "blockedTools": [
+      "edit",
+      "find",
+      "grep",
+      "ls",
+      "read",
+      "write"
+    ]
+  }
 }

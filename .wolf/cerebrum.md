@@ -16,6 +16,7 @@
 ## Do-Not-Repeat
 
 - [2026-04-22] When changing CLI behavior, rebuild and publish updated dist/index.js before claiming fix shipped. Source-only fix is insufficient because npm package executes bundled dist.
+- [2026-04-24] In this project, executor specialists do not use Bun/Vitest for verification. Do not ask executors to run vitest or bun test commands; keep executor verification to lint/tsc and handle tests via reviewer/test-runner or manual follow-up outside the executor path.
 
 <!-- Mistakes made and corrected. Each entry prevents the same mistake recurring. -->
 <!-- Format: [YYYY-MM-DD] Description of what went wrong and what to do instead. -->

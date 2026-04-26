@@ -556,6 +556,16 @@ function listMatchingJobIds(
   return jobIds;
 }
 
+interface JobEventsCacheEntry {
+  size: number;
+  mtimeMs: number;
+}
+
+function sortEvents(events: TimelineEvent[]): TimelineEvent[] {
+  events.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
+  return events;
+}
+
 function readJobEventsFresh(
   sqliteClient: ObservabilitySqliteClient,
   jobsDir: string,
@@ -564,8 +574,7 @@ function readJobEventsFresh(
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
     if (sqliteEvents.length > 0) {
-      sqliteEvents.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
-      return sqliteEvents;
+      return sortEvents(sqliteEvents);
     }
   } catch (error) {
     console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
@@ -582,8 +591,45 @@ function readJobEventsFresh(
     if (parsed) events.push(parsed);
   }
 
-  events.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.t - b.t);
-  return events;
+  return sortEvents(events);
+}
+
+function readJobEventsIncremental(
+  sqliteClient: ObservabilitySqliteClient,
+  jobsDir: string,
+  jobId: string,
+  afterSeq: number,
+  fileCache: Map<string, JobEventsCacheEntry>,
+): TimelineEvent[] {
+  try {
+    const sqliteEvents = afterSeq > 0
+      ? (sqliteClient?.readEventsAfterSeq(jobId, afterSeq) ?? [])
+      : (sqliteClient?.readEvents(jobId) ?? []);
+    if (sqliteEvents.length > 0) {
+      return sortEvents(sqliteEvents);
+    }
+  } catch (error) {
+    console.warn(`SQLite incremental events read failed for job ${jobId}; falling back to events.jsonl`, error);
+  }
+
+  const eventsPath = join(jobsDir, jobId, 'events.jsonl');
+  let stats: ReturnType<typeof statSync>;
+  try {
+    stats = statSync(eventsPath);
+  } catch {
+    return [];
+  }
+
+  const cached = fileCache.get(jobId);
+  if (afterSeq > 0 && cached && cached.size === stats.size && cached.mtimeMs === stats.mtimeMs) {
+    return [];
+  }
+
+  fileCache.set(jobId, { size: stats.size, mtimeMs: stats.mtimeMs });
+
+  const events = readJobEventsFresh(sqliteClient, jobsDir, jobId);
+  if (afterSeq <= 0) return events;
+  return events.filter((event) => typeof event.seq === 'number' && event.seq > afterSeq);
 }
 
 function readFilteredBatchesFresh(
@@ -612,9 +658,8 @@ async function followMerged(
 ): Promise<void> {
   const colorMap = new JobColorMap();
   const getJobMeta = makeJobMetaReader(sqliteClient, jobsDir, { useCache: false });
-
-  // Track last seen timestamp per job
-  const lastSeenT = new Map<string, number>();
+  const lastSeenSeq = new Map<string, number>();
+  const fileEventCache = new Map<string, JobEventsCacheEntry>();
   const initialMatchingJobIds = listMatchingJobIds(sqliteClient, jobsDir, options);
   const hasInitialMatchingJobs = initialMatchingJobIds.length > 0;
   const trackedJobs = new Set<string>(
@@ -624,7 +669,6 @@ async function followMerged(
 
   const filteredBatches = () => readFilteredBatchesFresh(sqliteClient, jobsDir, options);
 
-  // Initial snapshot
   const initial = filterMergedEventsByCursor(
     filterMergedEventsByNode(
       sqliteClient,
@@ -643,17 +687,14 @@ async function followMerged(
   printSnapshot(sqliteClient, initial, { ...options, json: options.json }, jobsDir);
 
   for (const batch of filteredBatches()) {
-    if (batch.events.length > 0) {
-      const maxT = Math.max(...batch.events.map((event) => event.t));
-      lastSeenT.set(batch.jobId, maxT);
-    }
+    const maxSeq = batch.events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0);
+    lastSeenSeq.set(batch.jobId, maxSeq);
 
     if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
       completedJobs.add(batch.jobId);
     }
   }
 
-  // Exit early only when there are no active jobs at follow start.
   if (!options.forever && trackedJobs.size === 0) {
     if (!options.json) {
       const message = hasInitialMatchingJobs ? 'All jobs complete.\n' : 'No jobs found.\n';
@@ -662,8 +703,6 @@ async function followMerged(
     return;
   }
 
-  // If all tracked jobs already completed during the initial snapshot/seed pass,
-  // there is nothing left to follow.
   if (!options.forever && hasInitialMatchingJobs && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
     if (!options.json) {
       process.stderr.write('All jobs complete.\n');
@@ -678,51 +717,51 @@ async function followMerged(
   const lastPrintedEventKey = new Map<string, string>();
   const seenMetaKey = new Map<string, string>();
 
-  // Poll for new events
   await new Promise<void>((resolve) => {
     const interval = setInterval(() => {
-      const batches = filteredBatches();
-      for (const jobId of listMatchingJobIds(sqliteClient, jobsDir, options)) {
-        if (!isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
+      const currentJobIds = listMatchingJobIds(sqliteClient, jobsDir, options);
+      const statusByJobId = new Map<string, Record<string, unknown> | null>();
+
+      for (const jobId of currentJobIds) {
+        const status = readStatusJson(sqliteClient, jobsDir, jobId);
+        statusByJobId.set(jobId, status);
+        const isTerminal = status?.status === 'done' || status?.status === 'error' || status?.status === 'cancelled';
+        if (!isKeepAliveJobStatus(status) && isTerminal) {
+          completedJobs.add(jobId);
+          continue;
+        }
+        if (!isTerminal) {
           trackedJobs.add(jobId);
         }
       }
-      for (const jobId of trackedJobs) {
-        if (isTerminalJobStatus(sqliteClient, jobsDir, jobId)) {
-          completedJobs.add(jobId);
-        }
-      }
 
-      // Filter and merge new events
       const newEvents: MergedEvent[] = [];
-      for (const batch of batches) {
-        const lastT = lastSeenT.get(batch.jobId) ?? 0;
-        const maxT = batch.events.length > 0
-          ? Math.max(...batch.events.map((event) => event.t))
-          : null;
+      for (const jobId of currentJobIds) {
+        const status = statusByJobId.get(jobId);
+        const specialist = typeof status?.specialist === 'string' ? status.specialist : 'unknown';
+        const beadId = typeof status?.bead_id === 'string' ? status.bead_id : undefined;
+        const previousSeq = lastSeenSeq.get(jobId) ?? 0;
+        const events = readJobEventsIncremental(sqliteClient, jobsDir, jobId, previousSeq, fileEventCache);
+        const maxSeq = events.reduce((max, event) => Math.max(max, event.seq ?? 0), previousSeq);
+        lastSeenSeq.set(jobId, maxSeq);
 
-        if (maxT !== null) {
-          lastSeenT.set(batch.jobId, maxT);
-        }
-
-        for (const event of batch.events) {
-          if (event.t > lastT && isEventAtOrAfterCursor(batch.jobId, event, options.from)) {
-            newEvents.push({
-              jobId: batch.jobId,
-              specialist: batch.specialist,
-              beadId: batch.beadId,
-              event,
-            });
+        for (const event of events) {
+          if (isEventAtOrAfterCursor(jobId, event, options.from)) {
+            newEvents.push({ jobId, specialist, beadId, event });
           }
         }
 
-        // Check completion for jobs that were active during follow.
-        if (trackedJobs.has(batch.jobId) && isJobCompleteForFollow(sqliteClient, jobsDir, batch.jobId, batch.events)) {
-          completedJobs.add(batch.jobId);
+        if (trackedJobs.has(jobId)) {
+          if (isKeepAliveJobStatus(status)) {
+            continue;
+          }
+          const isTerminal = status?.status === 'done' || status?.status === 'error' || status?.status === 'cancelled';
+          if (events.some(isRunCompleteEvent) || isTerminal) {
+            completedJobs.add(jobId);
+          }
         }
       }
 
-      // Sort and print new events
       newEvents.sort(compareMergedEvents);
 
       for (const { jobId, specialist, beadId, event } of newEvents) {
@@ -767,12 +806,11 @@ async function followMerged(
         }
       }
 
-      // Resolve if not forever and all tracked jobs are complete.
       if (!options.forever && trackedJobs.size > 0 && completedJobs.size === trackedJobs.size) {
         clearInterval(interval);
         resolve();
       }
-    }, 500);
+    }, 750);
   });
 }
 

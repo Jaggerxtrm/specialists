@@ -1,0 +1,16 @@
+{
+  "name": "@xtrm/pi-xtrm-loader",
+  "version": "1.0.0",
+  "description": "xtrm Pi extension: xtrm-loader",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "xtrm"
+  ],
+  "author": "xtrm",
+  "license": "MIT"
+}

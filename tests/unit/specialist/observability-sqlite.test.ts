@@ -730,6 +730,31 @@ describe('observability-sqlite', () => {
     });
   });
 
+  describe('readEventsAfterSeq', () => {
+    it('returns only events after the requested sequence in ascending order', () => {
+      const client = createClient();
+      const now = Date.now();
+
+      client.upsertStatus({
+        id: 'job-events-after',
+        specialist: 'executor',
+        status: 'running',
+        started_at_ms: now - 1_000,
+        updated_at_ms: now,
+      } as any);
+
+      client.appendEvent('job-events-after', 'executor', undefined, { t: now - 300, type: 'run_start', specialist: 'executor' } as any);
+      client.appendEvent('job-events-after', 'executor', undefined, { t: now - 200, type: 'text' } as any);
+      client.appendEvent('job-events-after', 'executor', undefined, { t: now - 100, type: 'run_complete', status: 'COMPLETE', elapsed_s: 1 } as any);
+
+      const events = client.readEventsAfterSeq('job-events-after', 1);
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => event.seq)).toEqual([2, 3]);
+      expect(events[0]?.type).toBe('text');
+      expect(events[1]?.type).toBe('run_complete');
+    });
+  });
+
   describe('parseJournalMode', () => {
     it('normalizes journal mode to lowercase', () => {
       expect(parseJournalMode('WAL')).toBe('wal');

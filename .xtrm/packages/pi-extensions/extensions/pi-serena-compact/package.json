@@ -1,0 +1,23 @@
+{
+  "name": "pi-serena-compact",
+  "version": "1.0.0",
+  "description": "Compact output for Serena MCP tools in Pi",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "serena",
+    "mcp"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.56.0",
+    "@mariozechner/pi-tui": "^0.56.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

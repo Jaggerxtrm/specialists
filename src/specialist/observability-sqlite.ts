@@ -951,6 +951,7 @@ export interface ObservabilitySqliteClient {
   listChainJobIds(chainId: string): string[];
   resolveChainEpicLinkByJobId(jobId: string): ChainEpicLinkRecord | null;
   readEvents(jobId: string): TimelineEvent[];
+  readEventsAfterSeq(jobId: string, afterSeq: number): TimelineEvent[];
   readLatestToolEvent(jobId: string): TimelineEventTool | null;
   aggregateJobMetrics(jobId: string): JobMetricsRecord | null;
   listJobMetrics(filters?: { spec?: string; model?: string; sinceMs?: number }): JobMetricsRecord[];
@@ -1766,6 +1767,27 @@ class SqliteClient implements ObservabilitySqliteClient {
       }
       return events;
     }, 'readEvents');
+  }
+
+  readEventsAfterSeq(jobId: string, afterSeq: number): TimelineEvent[] {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND seq > ?
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId, afterSeq) as Array<{ seq?: number; event_json?: string }>;
+      const events: TimelineEvent[] = [];
+      for (const row of rows) {
+        if (!row.event_json) continue;
+        try {
+          const parsed = JSON.parse(row.event_json) as TimelineEvent;
+          events.push(typeof parsed.seq === 'number' ? parsed : { ...parsed, seq: row.seq });
+        } catch {
+          /* ignore malformed rows */
+        }
+      }
+      return events;
+    }, 'readEventsAfterSeq');
   }
 
   readLatestToolEvent(jobId: string): TimelineEventTool | null {

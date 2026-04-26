@@ -1,0 +1,16 @@
+{
+  "name": "@xtrm/pi-service-skills",
+  "version": "1.0.0",
+  "description": "xtrm Pi extension: service-skills",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "xtrm"
+  ],
+  "author": "xtrm",
+  "license": "MIT"
+}

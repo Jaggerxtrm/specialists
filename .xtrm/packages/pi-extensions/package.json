@@ -1,0 +1,46 @@
+{
+  "name": "@jaggerxtrm/pi-extensions",
+  "version": "0.7.12",
+  "description": "Unified Pi extension entrypoint for xtrm-managed extensions",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "xtrm"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "author": "xtrm",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jaggerxtrm/xtrm-tools.git",
+    "directory": "packages/pi-extensions"
+  },
+  "homepage": "https://github.com/Jaggerxtrm/xtrm-tools/tree/main/packages/pi-extensions",
+  "bugs": {
+    "url": "https://github.com/Jaggerxtrm/xtrm-tools/issues"
+  },
+  "scripts": {
+    "prepublishOnly": "npm run verify:runtime",
+    "verify:runtime": "node -e \"const fs=require('fs');const required=['src/index.ts','src/registry.ts','extensions','themes'];const missing=required.filter((entry)=>!fs.existsSync(entry));if(missing.length){console.error('Missing publish runtime assets: '+missing.join(', '));process.exit(1);}console.log('Runtime assets present for npm publish.');\""
+  },
+  "files": [
+    "src",
+    "extensions",
+    "themes",
+    "MIGRATION_NOTES.md",
+    "README.md"
+  ]
+}

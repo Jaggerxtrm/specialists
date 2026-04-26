@@ -1,10 +1,3 @@
-# OpenWolf
-
-@.wolf/OPENWOLF.md
-
-Project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
-
-
 <!-- xtrm:start -->
 # XTRM Agent Workflow
 
@@ -15,23 +8,23 @@ Project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md 
 
 1. `bd prime` — load workflow context and active claims
 2. `bd memories <keyword>` — retrieve memories relevant to today's task
-3. `bd recall <key>` — retrieve specific memory by key if needed
+3. `bd recall <key>` — retrieve a specific memory by key if needed
 4. `bv --robot-triage` — graph-aware triage: ranked picks, unblock targets, project health
 5. `bd update <id> --claim` — claim before any file edit
 
 ## Execution Interaction Policy
 
-- Proceed by default on standard implementation tasks once scope clear.
-- Do **not** ask repetitive "Proceed? Yes/No" confirmations.
-- Ask confirmation only when actions destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
-- Prefer concise clarifying questions only when requirements genuinely ambiguous.
+- Proceed by default on standard implementation tasks once scope is clear.
+- Do **not** ask repetitive “Proceed? Yes/No” confirmations.
+- Ask for confirmation only when actions are destructive, irreversible, or high-risk (e.g. `rm`, history rewrite, mass deletes, credential rotation, prod-impacting ops).
+- Prefer concise clarifying questions only when requirements are genuinely ambiguous.
 
-## Active Gates (hooks enforce — not optional)
+## Active Gates (hooks enforce these — not optional)
 
 | Gate | Trigger | Required action |
 |------|---------|-----------------|
 | **Edit** | Write/Edit without active claim | `bd update <id> --claim` |
-| **Commit** | `git commit` while claim open | `bd close <id>` first, then commit |
+| **Commit** | `git commit` while claim is open | `bd close <id>` first, then commit |
 | **Stop** | Session end with unclosed claim | `bd close <id>` |
 | **Memory** | `bd close <id>` without issue ack | First run `bd remember "<insight>"` (or decide nothing novel), then `bd kv set "memory-acked:<id>" "saved:<key>"` or `"nothing novel:<reason>"`, then retry `bd close <id> --reason="..."` (Stop hook remains fallback reminder) |
 
@@ -93,13 +86,13 @@ bd close <id> --reason="..."                 # closes issue
 xt end                                       # push, PR, merge, worktree cleanup
 ```
 
-**Never** continue new work on previously used branch.
+**Never** continue new work on a previously used branch.
 
 ## bv — Graph-Aware Triage
 
-bv = graph-aware triage engine for beads issue board. Use instead of `bd ready` when need ranked picks, dependency-aware scheduling, or project health signals.
+bv is a graph-aware triage engine for the beads issue board. Use it instead of `bd ready` when you need ranked picks, dependency-aware scheduling, or project health signals.
 
-> **CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches interactive TUI that blocks session.**
+> **CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
 
 ```bash
 bv --robot-triage             # THE entry point — ranked picks, quick wins, blockers, health
@@ -128,7 +121,7 @@ bv --robot-insights | jq '.Cycles'    # Circular deps — must fix
 
 Use **Serena** (`using-serena-lsp` skill) for all code reads and edits:
 - `find_symbol` → `get_symbols_overview` → `replace_symbol_body`
-- Never grep-read-sed when symbolic tools available
+- Never grep-read-sed when symbolic tools are available
 
 Use **GitNexus** MCP tools before touching any symbol:
 - `gitnexus_impact({target: "symbolName", direction: "upstream"})` — blast radius
@@ -136,7 +129,7 @@ Use **GitNexus** MCP tools before touching any symbol:
 - `gitnexus_detect_changes()` — verify scope before every commit
 - `gitnexus_query({query: "concept"})` — explore unfamiliar areas
 
-Stop and warn user if impact returns HIGH or CRITICAL risk.
+Stop and warn the user if impact returns HIGH or CRITICAL risk.
 
 ## Quality Gates (automatic)
 
@@ -144,192 +137,275 @@ Run on every file edit via PostToolUse hooks:
 - **TypeScript/JS**: ESLint + tsc
 - **Python**: ruff + mypy
 
-Gate output appears as hook context. Fix failures before proceeding — no commit with lint errors.
+Gate output appears as hook context. Fix failures before proceeding — do not commit with lint errors.
 
 ## Worktree Sessions
 
-- `xt claude` — launch Claude Code in sandboxed worktree
+- `xt claude` — launch Claude Code in a sandboxed worktree
 - `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
+# Specialists Project Guide
+
+@.wolf/OPENWOLF.md
+
+Project uses OpenWolf for context management. Read `.wolf/OPENWOLF.md` every session. Check `.wolf/cerebrum.md` before generating code and `.wolf/anatomy.md` before broad file reads.
+
+## Operating Loop
+
+Use this loop for normal project work. It merges beads, bv, GitNexus, specialists, and quality gates into one sequence.
+
+1. Prime context: `bd prime`.
+2. Pull relevant memory only when useful: `bd memories <keyword>` or `bd recall <key>`.
+3. Pick work: `bv --robot-triage --format toon`; inspect a candidate with `bd show <id>`.
+4. Specify the bead before dispatch or edits. A vague bead is a vague prompt.
+5. Claim before file edits: `bd update <id> --claim`.
+6. Before editing code symbols, run GitNexus impact/context on the touched symbol or execution flow.
+7. Execute directly for small deterministic work; use specialists for substantial discovery, implementation, review, testing, docs, or orchestration.
+8. Verify with relevant gates: lint, typecheck, tests, `git diff --stat`, and `gitnexus_detect_changes()` before commit.
+9. Close tracked work only after memory ack: `bd remember` if novel, `bd kv set "memory-acked:<id>" ...`, then `bd close <id> --reason="..."`.
+10. Publish through the project workflow: close bead before commit; use `xt end`, `sp merge`, or `sp epic merge` as appropriate.
+
+## Bead Task Contract
+
+`--bead` is the prompt. Do not run a specialist or start implementation until the bead is a usable task contract.
+
+Every dispatchable bead should include:
+
+```text
+PROBLEM: What is wrong or needed.
+SUCCESS: Observable completion criteria.
+SCOPE: Files, symbols, commands, docs, or discovery area.
+NON_GOALS: Explicitly out of scope.
+CONSTRAINTS: Compatibility, safety, style, permissions, sequencing.
+VALIDATION: Checks/tests/review expected before closure.
+OUTPUT: Expected handoff format.
+```
+
+For an explorer bead, `SCOPE` may be a code area and `OUTPUT` should name the questions to answer plus the stop condition. For an executor bead, `SCOPE`, `SUCCESS`, `CONSTRAINTS`, and `VALIDATION` should be concrete enough that the executor can act without rediscovering the whole problem. For a reviewer bead, include the executor job, requirements to verify, and expected verdict format: `PASS`, `PARTIAL`, or `FAIL`.
+
+Use `bd update <id> --notes "CONTRACT: ..."` to strengthen an existing bead before dispatch. Do not compensate for vague beads with `--prompt` for tracked work.
+
+## Beads And Triage
+
+Beads are the source of truth for tracked work.
+
+Core commands:
+
+```bash
+bd show <id>                         # full issue detail
+bd update <id> --claim               # required before edits
+bd update <id> --notes "..."         # append task contract or findings
+bd dep add <issue> <depends-on>      # issue depends on blocker
+bd close <id> --reason="..."         # close after memory ack
+bv --robot-triage --format toon      # ranked work and health
+bv --robot-plan                      # dependency-aware tracks
+bv --robot-insights                  # graph metrics and cycles
+```
+
+Use `bv` to decide what to work on. Use `bd` to specify, claim, relate, and close the work. Never use bare `bv`; it opens an interactive TUI.
+
+## GitNexus Rules
+
+Use GitNexus before modifying functions, classes, methods, or execution-flow-sensitive modules.
+
+Required before code edits:
+
+```text
+gitnexus_impact({target: "SymbolName", direction: "upstream"})
+gitnexus_context({name: "SymbolName"})
+```
+
+Required before commit:
+
+```text
+gitnexus_detect_changes()
+```
+
+For unfamiliar areas, query by concept before grepping:
+
+```text
+gitnexus_query({query: "auth validation"})
+```
+
+If impact is HIGH or CRITICAL, warn the user before editing. If the GitNexus index is stale, run `npx gitnexus analyze`; preserve embeddings with `npx gitnexus analyze --embeddings` when `.gitnexus/meta.json` shows embeddings exist.
+
+## Specialists Policy
+
+Specialists are project-scoped agents executed through `pi` RPC sessions. Runtime is bead-first: `specialists run <name> --bead <id>` reads the bead, parent context, completed blockers, and injected project rules.
+
+Use specialists for substantial discovery, debugging, implementation, review, tests, docs, planning, or multi-chain orchestration. Do small deterministic edits directly when the scope is already clear and delegation adds ceremony.
+
+Tracked work uses `--bead`, not `--prompt`. If the specialist needs better instructions, update the bead notes first.
+
+Specialist selection:
+
+| Need | Specialist | Notes |
+| --- | --- | --- |
+| Codebase mapping | `explorer` | READ_ONLY; answer explicit questions. |
+| Root-cause investigation | `debugger` | Use for failures, traces, regressions. |
+| Planning or issue breakdown | `planner` | Produces scoped beads/dependencies. |
+| Tradeoff/design analysis | `overthinker` | Use before risky or ambiguous implementation. |
+| Implementation | `executor` | Use `--worktree`; runs lint/type gates, not full tests. |
+| Post-implementation review | `reviewer` | Use `--job <executor-job>` and own review bead. |
+| Test execution/interpretation | `test-runner` | Use after implementation/review. |
+| Documentation audit/sync | `sync-docs` | Use for doc drift and targeted sync. |
+| Specialist config authoring | `specialists-creator` | Use before editing specialist JSON. |
+
+Core commands:
+
+```bash
+specialists list
+specialists run <name> --bead <id> --context-depth 2 --background
+specialists run executor --worktree --bead <impl-bead> --context-depth 2 --background
+specialists run reviewer --bead <review-bead> --job <exec-job> --context-depth 2 --keep-alive --background
+specialists ps
+specialists feed <job-id>
+specialists result <job-id>
+specialists steer <job-id> "new direction"
+specialists resume <job-id> "next task"
+specialists stop <job-id>
+specialists doctor
+```
+
+## Specialist Chain Pattern
+
+Use a chain when implementation needs independent workspace isolation and review.
+
+1. Create a task bead with the full task contract.
+2. Create an explorer bead only if the implementation path is unclear.
+3. Create an implementation bead with scope, non-goals, constraints, and validation.
+4. Run executor with `--worktree`.
+5. Create a reviewer bead and run reviewer with `--job <executor-job>`.
+6. If reviewer returns `PARTIAL`, resume the same executor when possible; otherwise create a fix bead and re-enter with `--job`.
+7. Repeat review until `PASS`.
+8. Merge with `sp merge <chain-root-bead>` for standalone chains or `sp epic merge <epic-id>` for epic-owned chains.
+
+Invariants:
+
+- `--worktree` creates the workspace for edit-capable specialists.
+- `--job` reuses an existing job workspace; the caller's own `--bead` remains the prompt.
+- `--worktree` and `--job` are mutually exclusive.
+- `--context-depth 2` is the default for chained work.
+- Keep executor/debugger jobs alive through review so they can be resumed.
+- Do not manually `git merge` specialist branches.
+- Do not allow specialists to perform destructive or irreversible actions.
+
+## Epic And Parallel Work
+
+Use an epic when multiple chains must publish together or when stages depend on prior merged output.
+
+Canonical pattern:
+
+```text
+epic
+  -> shared explorer/planner prep
+  -> impl-a, impl-b, impl-c in parallel only if file scopes are disjoint
+  -> reviewer per implementation chain
+  -> one batched test bead when useful
+  -> sp epic status <epic>
+  -> sp epic merge <epic>
+```
+
+Rules:
+
+- Chains in the same stage may run in parallel only with disjoint write scopes.
+- Do not start the next stage until the prior stage is complete and merged when downstream code depends on it.
+- Use `--epic <id>` for prep jobs that should appear under the epic but do not have the epic as parent.
+- `sp merge <chain>` is for standalone chains only; epic-owned chains publish through `sp epic merge <epic>`.
+
+## Runtime Architecture
+
+Core surfaces:
+
+- CLI: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor|merge`.
+- MCP: `use_specialist` only.
+- Job storage: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`.
+- Beads storage is separate from specialist job storage.
+
+Job lifecycle:
+
+```text
+starting -> running -> waiting -> running -> done|error|cancelled
+```
+
+Important runtime behavior:
+
+- `run --bead <id>` reads the bead via `bd show --json`.
+- Runner builds prompt from bead context, parent context, completed blockers, mandatory rules, memory, and GitNexus cheatsheet when available.
+- `--bead` sets `bead-claim:<id>` for edit-gate access.
+- Supervisor writes status immediately and emits timeline events.
+- READ_ONLY specialist output auto-appends to the input bead notes.
+- `steer` works for running jobs; `resume` works for waiting keep-alive jobs.
+- `sp stop` marks terminal status based on run completion evidence.
+
+## Key Files
+
+- `src/cli/run.ts` — run command, `--bead`, `--epic`, output modes.
+- `src/cli/ps.ts` — job/worktree snapshot, context usage, epic grouping.
+- `src/cli/feed.ts` — event stream.
+- `src/cli/stop.ts` — terminal status resolution.
+- `src/cli/epic.ts` — epic lifecycle and merge commands.
+- `src/cli/merge.ts` — standalone chain merge guard and gates.
+- `src/specialist/runner.ts` — execution, prompt construction, retry behavior.
+- `src/specialist/beads.ts` — bead prompt construction and context loading.
+- `src/specialist/supervisor.ts` — job lifecycle, FIFO, output append.
+- `src/specialist/chain-identity.ts` — chain to epic linkage.
+- `src/specialist/epic-readiness.ts` — merge readiness checks.
+- `src/specialist/node-contract.ts` — node state machine and renderers.
+- `src/tools/specialist/use_specialist.tool.ts` — MCP foreground run.
+
 ## Node Coordination
 
-Nodes = multi-agent research/execution groups with coordinator + members. Coordinator **CLI-native** (LOW permission, bash access, no file edits), drives members via `sp node` commands.
+Nodes are multi-agent groups with a LOW-permission coordinator that drives members through CLI commands. Use `config/skills/using-nodes/SKILL.md` for node-specific workflows.
 
-### Coordinator model
-- Permission: LOW (bash, no edits). Config: `config/specialists/node-coordinator.specialist.json`
-- Calls `sp node` commands via bash, reads structured JSON responses
-- `$SPECIALISTS_NODE_ID` env var available in coordinator bash sessions (injected by runner)
-- Skill: `config/skills/using-nodes/SKILL.md` (v3.0, CLI-native)
-- SSoT: `src/specialist/node-contract.ts` — state machine, phase kinds, renderers
+Core node commands:
 
-### CLI surface (`sp node`)
 ```bash
-sp node run <config> --bead <id>                    # start a node
-sp node spawn-member --node <id> --member-key <key> --specialist <name> [--json]
-sp node create-bead --node <id> --title "..." [--json]
-sp node complete --node <id> --strategy <pr|manual> [--json]
-sp node wait-phase --node <id> --phase <id> --members <k1,k2> [--json]
-sp node members [--json]                             # member registry
-sp node stop <node-id>                               # stop node
+sp node run <config> --bead <id>
+sp node spawn-member --node <id> --member-key <key> --specialist <name> --json
+sp node wait-phase --node <id> --phase <id> --members <keys> --json
+sp node complete --node <id> --strategy <pr|manual> --json
+sp node stop <node-id>
 ```
 
-Node operations moved to top-level CLI:
-- status/snapshot: `sp ps` (optionally scoped to node jobs)
-- event stream: `sp feed` (optionally scoped with `--node <id>`)
-- steering: `sp steer <coordinator-job-id> "message"`
-- attach: `sp attach <coordinator-job-id>`
-- member output: `sp result <node-ref>:<member-key>` (node refs accept any unique prefix: `research`, `research-5eaf`, or full ID)
+## Quality Gates
 
-### Key files
-- `src/cli/node.ts` — CLI command routing + action handlers
-- `src/specialist/node-supervisor.ts` — node lifecycle, member spawning, action execution
-- `src/specialist/node-contract.ts` — Zod schema, state machine, renderers
-- `config/nodes/research.node.json` — research node config (explorer + overthinker + researcher)
+Automatic hooks run on file edits:
 
-### Completion strategy
-Node configs declare `completion_strategy` (manual or pr):
-- **manual**: coordinator synthesis → node waits for operator closure via `sp node stop`
-- **pr** (default): coordinator synthesis → node auto-closes to `done`
-Use `manual` for research/interactive nodes, `pr` for implementation nodes.
+- TypeScript/JavaScript: ESLint and `tsc`.
+- Python: `ruff` and `mypy`.
 
+Before finishing code changes, run the most relevant manual checks:
 
-# CLAUDE.md - AI Agent Development Guide
-
-> **Purpose**: Operational guidance for current Specialists codebase and MCP surface.
-
-## Project Overview
-
-**Specialists** = project-scoped MCP server discovering `.specialist.json` files, executing through `pi` RPC sessions. Runtime bead-first: when run bead-linked, bead = task source, run metadata keeps bead linkage throughout execution and feed output.
-
-## Architecture (current)
-
-### Core surfaces
-
-- **CLI**: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor|merge`
-- **MCP tools**: `use_specialist` only (foreground, returns result directly to conversation context)
-- **Runtime persistence**: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`
-
-### Job status lifecycle
-
-```
-starting → running → waiting → (resume) → running → ... → done/error/cancelled
+```bash
+npm run lint
+npx tsc --noEmit
+npm test
+git diff --stat
 ```
 
-**Terminal statuses**:
-- `done` — normal completion with `run_complete` event
-- `error` — failure (exception, timeout, crash)
-- `cancelled` — intentional stop without completion evidence
+Do not commit with unresolved gate failures. If a full test suite is too expensive or unstable, state what was not run and why.
 
-**`sp stop` behavior**:
-- Checks for `run_complete` event before SIGTERM
-- If found → writes `done` to `status.json`
-- If not found → writes `cancelled` to `status.json`
-- Prevents zombie "waiting" jobs after external kills
+## Recovery Cheatsheet
 
-### Execution semantics
-
-1. `run --bead <id>` / `use_specialist({bead_id})`
-   - Reads bead via `bd show --json`
-   - Builds prompt from bead context + optional completed blockers
-   - Injects "Specialist Run Context" override (claim provided bead, don't `bd create`)
-   - **Injects project memory context**: `.xtrm/memory.md` + static workflow rules + keyword-filtered bd memories (~1500 tokens total)
-   - **Injects GitNexus cheatsheet**: when `.gitnexus/meta.json` exists (~100 tokens)
-   - Sets bead-claim KV key for edit gate: `bead-claim:<bead-id>`
-   - Threads bead linkage as `inputBeadId`
-2. Supervisor writes `status.json` immediately (including `bead_id` when available)
-3. FIFO steer pipe created for all jobs (enables mid-run `specialists steer`)
-4. Timeline emits structured events (`run_start`, `meta`, `tool`, `text`, `thinking`, `run_complete`)
-5. Feed/observers expose same run with event envelope metadata
-6. On completion: READ_ONLY specialists auto-append output to input bead notes
-7. Retry on transient errors: exponential backoff + jitter, controlled by `execution.max_retries`
-
-### Key behavioral notes
-
-- `--background` = preferred async path — `specialists run <name> --prompt "..." --background`
-- `steer` works for **all running jobs** (not just keep-alive) — sends message via FIFO pipe
-- `resume` for **waiting keep-alive jobs** only — sends next-turn prompt
-- `response_format` + `output_schema` injected into system prompt by runner
-- `required_tools` validated against `permission_required` before run start
-- MCP intentionally minimal: `use_specialist` only
-- `start_specialist` legacy/deprecated: if encountered, output includes deprecation warning pointing to CLI `--background`; remove from MCP tool surface in next major
-
-## Key Files Reference (current)
-
-- `src/cli/run.ts` — run command, `--bead`, `--epic`, output modes (`human|json|raw`), event tailing
-- `src/cli/resume.ts` — resume keep-alive jobs in `waiting`
-- `src/cli/steer.ts` — mid-run steering via FIFO pipe (all running jobs)
-- `src/cli/feed.ts` — merged feed stream, envelope metadata, cursor behavior
-- `src/cli/status.ts` — health check + `--job <id>` single-job detail view
-- `src/cli/ps.ts` — process snapshot: worktree trees, context%, bead titles, urgency sort, epic/chain grouping
-- `src/cli/stop.ts` — SIGTERM with terminal status resolution (`done` vs `cancelled` based on `run_complete` evidence)
-- `src/cli/epic.ts` — epic lifecycle: `list|status|merge|resolve`, merge-gated publication
-- `src/cli/merge.ts` — chain merge with epic guard, `src/` validation, TypeScript gate
-- `src/cli/end.ts` — session close: epic-aware, `--pr` publication, auto-redirect to `sp epic merge`
-- `src/specialist/epic-lifecycle.ts` — epic state machine (`open→resolving→merge_ready→merged/failed`)
-- `src/specialist/chain-identity.ts` — chain→epic linkage persistence
-- `src/specialist/epic-readiness.ts` — merge readiness detection (all chains terminal, tsc pass)
-- `src/specialist/runner.ts` — execution, retry logic, output contract injection, bead-aware prompt
-- `src/specialist/supervisor.ts` — job lifecycle, FIFO creation, READ_ONLY output auto-append
-- `src/specialist/beads.ts` — bead prompt construction, parent epic context, blocker context
-- `src/specialist/schema.ts` — JSON schema incl. `max_retries`, `response_format`, `output_schema`
-- `src/tools/specialist/use_specialist.tool.ts` — foreground MCP run (`bead_id` aware)
-
-## Operator Notes
-
-- Prefer bead-linked runs for tracked work: `specialists run <name> --bead <id>`
-- Steer running specialists: `specialists steer <job-id> "new direction"`
-- Resume waiting keep-alive jobs: `specialists resume <job-id> "next task"`
-- Observe jobs with `specialists feed -f`
-- Monitor all active jobs: `specialists ps` (live: `specialists ps --follow`)
-- Stop jobs with terminal status resolution: `specialists stop <job-id>`
-- Use `specialists result <job-id>` for final output text
-- Edit specialist configs with dot-path syntax: `specialists edit <name> specialist.execution.model anthropic/claude-sonnet-4-6`
-- Apply presets: `specialists edit <name> --preset cheap|medium|power`
-- List presets: `specialists edit --list-presets`
-- READ_ONLY specialist output auto-appends to input bead notes
-- `max_retries` in JSON controls transient error retry (default: 0)
-- **Memory injection**: Specialists receive `.xtrm/memory.md` + static workflow rules + keyword-filtered bd memories + GitNexus cheatsheet at spawn (~1500 tokens, down from ~3800)
-- **Mandatory-rules injection**: `MANDATORY_RULES` block appended to every specialist prompt. Three-tier resolution: `config/mandatory-rules/` (source) → `.specialists/default/mandatory-rules/` (managed mirror) → `.specialists/mandatory-rules/` (repo overlay, wins on id). Authoring guide: `config/mandatory-rules/README.md`. Repo-scoped rules live in `.specialists/mandatory-rules/` and don't leak to downstream projects.
-- **Edit gate**: Specialists with `--bead` set `bead-claim:<id>` KV key for write access
-- **Worktree opt-out**: Set `requires_worktree: false` to bypass isolation guard (workflow specialists)
-
-## Crash Recovery
-
-Supervisor runs `crashRecovery()` at startup to reconcile orphaned jobs:
-
-**Dead running/starting jobs**:
-- Dead PID → `error` ("Process crashed or was killed")
-- Node members → `waiting`/`recovery_pending` (preserved for NodeSupervisor)
-
-**Dead waiting jobs**:
-- Emits `stale_warning` if idle past threshold
-- Does NOT auto-close — keep-alive sessions remain recoverable
-- Node members preserved
-
-## Epic/Chain Lifecycle (wave-bound publication)
-
-- `sp epic list` — enumerate epics with status and chain counts
-- `sp epic status <id>` — chains, blockers, readiness, merge readiness check
-- `sp epic merge <id>` — canonical publication for wave-bound chains (topological merge, tsc gate)
-- Epic chain membership auto-syncs on job completion (both success/error paths)
-- `sp epic resolve <id>` — transition `open→resolving` (operator marks epic as merge-ready target)
-- `--epic <id>` on `sp run` — explicit epic membership (prep jobs, chain-root seeding)
-- `sp merge <chain>` — guarded: refuses if chain belongs to unresolved epic
-- `sp end [--epic <id>] [--pr]` — session close with PR publication; auto-redirects to `sp epic merge` for epic-bound chains
-
-## Documentation
-
-- `docs/cli-reference.md` — complete CLI command reference
-- `docs/ARCHITECTURE.md` — event pipeline, RPC adapter, Supervisor lifecycle
-- `docs/features.md` — structured output, observation, beads, resume, stuck detection
-- `docs/pi-rpc-boundary.md` — what pi owns vs what Specialists owns
-- `docs/mcp-tools.md` — single MCP tool contract (`use_specialist`) plus CLI-first guidance
+- No current work: `bv --robot-triage --format toon`.
+- Need full bead detail: `bd show <id>`.
+- Specialist appears stuck: `specialists ps <job-id>`, then `specialists feed <job-id>`.
+- Specialist context may be rotting: inspect `TOKNS ... tokens=<total> in=<delta> out=<delta> cost=<cost>` in feed; around 50k tokens, steer toward conclusion or handoff unless the deep run is intentional.
+- Running job needs correction: `specialists steer <job-id> "..."`.
+- Waiting keep-alive should continue: `specialists resume <job-id> "..."`.
+- Dead/zombie job: `specialists stop <job-id>` or `specialists clean --processes`.
+- Epic state unclear: `sp epic status <epic-id>`, then `sp epic sync <epic-id> --apply` if needed.
+- Specialist config/runtime issue: `specialists doctor`.
+- CLI reference: `docs/cli-reference.md`.
+- Architecture reference: `docs/ARCHITECTURE.md`.
+- Beads/features reference: `docs/features.md`.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **specialists** (3884 symbols, 8802 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **specialists** (4289 symbols, 9364 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
