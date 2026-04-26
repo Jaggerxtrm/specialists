@@ -64,7 +64,7 @@ The legacy `script-specialists` system used a flat YAML shape; the new schema is
 | `max_retries` | `specialist.execution.max_retries` | **must be `0` for script class** — caller owns retries |
 | `response_format` (`"json"`) | `specialist.execution.response_format` | `"text"` / `"json"` / `"markdown"` |
 | `prompt` (string) | `specialist.prompt.task_template` | rendered with `$varname` (single-dollar, no braces) |
-| `prompt_normalize` (rolling-context analyst) | `specialist.prompt.normalize_template` | optional second template, callable via `template: "normalize_template"` from Python |
+| `prompt_normalize` (rolling-context analyst) | second specialist JSON file | schema has one `task_template` per spec — ship a sibling spec for the normalize pass; see Multi-stage section below |
 | `output_schema.required` | `specialist.prompt.output_schema.required` | shape preserved; nested validation is warn-only today |
 | (must add — see Phase 0) | `specialist.execution.interactive: false` | constraint enforced by service |
 | (must add) | `specialist.execution.requires_worktree: false` | constraint enforced by service |
@@ -114,19 +114,23 @@ client.run("mercury-atomic-summarizer",
 
 Variable names must match the `$varname` tokens in the chosen template; missing variables produce `error_type: "template_variable_missing"`.
 
-### Multi-template specialists (rolling-context analyst)
+### Multi-stage specialists (rolling-context analyst)
 
-Per Phase 3, the analyst stage uses both `task_template` (default) and `normalize_template` (alternate). Both live on the same JSON file:
+The schema has one `task_template` per spec; there is no in-spec alternate-template lookup. For Phase 3's analyst stage (initial analysis + normalize pass), ship two specialist files:
 
-```json
-"prompt": {
-  "task_template": "Initial analysis of …\n$context",
-  "normalize_template": "Normalize the prior synthesis …\n$context",
-  "output_schema": { "required": ["sessions"] }
-}
+```
+.specialists/user/squawk-session-analyst.specialist.json           # task_template = initial analysis
+.specialists/user/squawk-session-analyst-normalize.specialist.json # task_template = normalize the prior synthesis
 ```
 
-Python calls the alternate path with `template="normalize_template"`. No second JSON file is needed.
+Python calls each by name:
+
+```python
+client.run("squawk-session-analyst", variables={"context": stage1_input})
+client.run("squawk-session-analyst-normalize", variables={"context": stage1_output})
+```
+
+If the prompts share a system block, factor it into a shared snippet that both specs include verbatim. Two files cost less than a runtime template-lookup feature and they keep the schema strictly 1:1 with the runner.
 
 ### Validation before commit
 
@@ -188,12 +192,13 @@ After each port, run the corresponding integration tests against a real `special
 
 8. **Replay harness** — adapt `tests/test_rolling_context_specialists.py` into a regression harness that runs the full pipeline against a real `specialists-service` with recorded fixtures. **This is the safety rail; do not skip.** Rolling context has many implicit operational guarantees that can drift silently.
 
-9. Convert all three rolling-context YAMLs to JSON in `.specialists/user/`:
+9. Convert the rolling-context YAMLs to JSON in `.specialists/user/`. The analyst stage becomes two files:
    - `squawk-rolling-context.specialist.json`
    - `squawk-event-curator.specialist.json`
-   - `squawk-session-analyst.specialist.json`
+   - `squawk-session-analyst.specialist.json` (initial analysis)
+   - `squawk-session-analyst-normalize.specialist.json` (normalize pass)
 
-   Note that the analyst stage uses `normalize_template`. Pass `template: "normalize_template"` from Python.
+   Python calls each spec by name — no `template=` parameter needed.
 
 ## Phase 4 — Production cutover
 

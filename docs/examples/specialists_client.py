@@ -103,15 +103,20 @@ class SpecialistsClient:
         self,
         name: str,
         variables: dict[str, str] | None = None,
-        template: str = "task_template",
+        template: str | None = None,
         timeout_ms: int | None = None,
         model_override: str | None = None,
     ) -> SpecialistResult:
         """Invoke a script-class specialist and return a service-shaped result.
 
-        `template` selects which prompt template on the spec to render.
-        Default `task_template`; alternates (e.g. `normalize_template` for
-        the rolling-context analyst stage) are passed by name.
+        Default behavior: the spec's `prompt.task_template` is rendered with
+        `$varname` substitution from `variables`. To use a multi-stage
+        specialist (e.g. analyst initial + normalize pass), ship two specs
+        and call each by name — there is no in-spec alternate-template
+        lookup.
+
+        `template` overrides the rendered template text directly for this
+        call only. Most callers leave it None and rely on the spec.
 
         `timeout_ms` overrides the service-side timeout for this call only.
         Caller-side socket timeout is set to `timeout_ms + 5_000` so the
@@ -120,7 +125,7 @@ class SpecialistsClient:
         """
         effective_timeout_ms = timeout_ms if timeout_ms is not None else self.default_timeout_ms
         payload: dict[str, Any] = {"specialist": name, "variables": variables or {}}
-        if template != "task_template":
+        if template is not None:
             payload["template"] = template
         if timeout_ms is not None:
             payload["timeout_ms"] = timeout_ms
