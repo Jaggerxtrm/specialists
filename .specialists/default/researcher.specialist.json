@@ -17,7 +17,7 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "nano-gpt/zai-org/glm-5",
+      "model": "dashscope/qwen3.5-plus",
       "fallback_model": "anthropic/claude-sonnet-4-6",
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
@@ -38,18 +38,18 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/find-docs/SKILL.md",
-        ".xtrm/skills/active/pi/deepwiki/SKILL.md",
-        ".xtrm/skills/active/pi/github-search/SKILL.md",
-        ".xtrm/skills/active/pi/last30days/SKILL.md"
+        ".xtrm/skills/active/find-docs/SKILL.md",
+        ".xtrm/skills/active/deepwiki/SKILL.md",
+        ".xtrm/skills/active/github-search/SKILL.md",
+        ".xtrm/skills/active/last30days/SKILL.md"
       ],
       "scripts": []
     },
     "validation": {
       "files_to_watch": [
-        ".xtrm/skills/active/pi/find-docs/SKILL.md",
-        ".xtrm/skills/active/pi/deepwiki/SKILL.md",
-        ".xtrm/skills/active/pi/github-search/SKILL.md"
+        ".xtrm/skills/active/find-docs/SKILL.md",
+        ".xtrm/skills/active/deepwiki/SKILL.md",
+        ".xtrm/skills/active/github-search/SKILL.md"
       ],
       "stale_threshold_days": 30
     },

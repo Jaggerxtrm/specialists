@@ -38,10 +38,10 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/find-docs/SKILL.md",
-        ".xtrm/skills/active/pi/deepwiki/SKILL.md",
-        ".xtrm/skills/active/pi/github-search/SKILL.md",
-        ".xtrm/skills/active/pi/last30days/SKILL.md"
+        ".xtrm/skills/active/find-docs/SKILL.md",
+        ".xtrm/skills/active/deepwiki/SKILL.md",
+        ".xtrm/skills/active/github-search/SKILL.md",
+        ".xtrm/skills/active/last30days/SKILL.md"
       ],
       "scripts": []
     },

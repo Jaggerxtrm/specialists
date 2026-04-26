@@ -34,8 +34,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/documenting/SKILL.md",
-        ".xtrm/skills/active/pi/using-xtrm/SKILL.md"
+        ".xtrm/skills/active/documenting/SKILL.md",
+        ".xtrm/skills/active/using-xtrm/SKILL.md"
       ],
       "scripts": []
     },

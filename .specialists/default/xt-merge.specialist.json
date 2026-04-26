@@ -42,7 +42,7 @@
       "files_to_watch": [
         "src/specialist/schema.ts",
         "src/specialist/runner.ts",
-        ".xtrm/skills/active/pi/xt-merge/SKILL.md"
+        ".xtrm/skills/active/xt-merge/SKILL.md"
       ],
       "stale_threshold_days": 30
     },
