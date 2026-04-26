@@ -52,9 +52,9 @@ describe('command-specific --help', () => {
     expect(out).toContain('--dry-run');
   });
 
-  it('db --help documents the human-only setup command', () => {
+  it('db --help documents legacy migration scope', () => {
     const out = captureIndexHelp(['db', '--help']);
-    expect(out).toContain('Usage: specialists db setup');
+    expect(out).toContain('legacy/migration tooling');
     expect(out).toContain('human-only');
     expect(out).toContain('XDG_DATA_HOME');
   });

@@ -93,19 +93,20 @@ function parseBeforeArgument(raw: string): number {
 function printDbHelp(): void {
   console.log([
     '',
-    'Usage: specialists db <setup|backfill|vacuum|prune>',
+    'Usage: specialists db <setup|backfill|vacuum|prune> (legacy/migration tooling)',
     '',
-    'Human-only commands for shared observability SQLite database.',
+    'Human-only commands for shared observability SQLite database maintenance and migration.',
     '',
     'Commands:',
-    '  setup                              Provision database file + schema + .gitignore entries',
-    '  init                               Alias for setup',
-    '  backfill [--events]                Import historical .specialists/jobs/*/status.json rows',
-    '  vacuum                             Run SQLite VACUUM (refuses when running/starting jobs exist)',
-    '  prune --before <iso|duration>      Prune old rows (default dry-run)',
-    '        [--dry-run] [--apply] [--include-epics] [--skip-extract]',
-    '  extract [--job <id>] [--all-missing] [--since <dur>]',
-    '  stats [--spec <name>] [--model <glob>] [--since <dur>] [--format json|table]',
+    '  [BOOTSTRAP] setup                  Provision database file + schema + .gitignore entries',
+    '  [BOOTSTRAP] init                   Alias for setup',
+    '  [MIGRATION] backfill [--events]    Import historical .specialists/jobs/*/status.json rows',
+    '  [MIGRATION] vacuum                 Run SQLite VACUUM (refuses when running/starting jobs exist)',
+    '  [MIGRATION] prune --before <iso|duration>      Prune old rows (default dry-run)',
+    '              [--dry-run] [--apply] [--include-epics] [--skip-extract]',
+    '  [MIGRATION] extract [--job <id>] [--all-missing] [--since <dur>]',
+    '  [QUERY] stats [--spec <name>] [--model <glob>] [--since <dur>] [--format json|table]',
+    '  [ANALYSIS] benchmark-export [--output <path>] [--include-prep-jobs] [--epic-id <id>]',
     '',
     'Behavior:',
     '  - prune keeps specialist_events last 30 days always',
@@ -673,6 +674,10 @@ function inferFailureNotes(input: {
   return notes;
 }
 
+/**
+ * Legacy migration tooling for benchmark export.
+ * Supported for human-only maintenance workflows, not normal runtime behavior.
+ */
 function runBenchmarkExport(options: BenchmarkExportOptions): void {
   const sqliteClient = createObservabilitySqliteClient();
   if (!sqliteClient) {
