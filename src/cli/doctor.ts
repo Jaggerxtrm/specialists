@@ -479,8 +479,13 @@ interface CleanupProcessesResult {
   zombieJobIds: string[];
 }
 
+function detectJobOutputMode(): 'db-first' | 'file-only' {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on' ? 'file-only' : 'db-first';
+}
+
 export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProcessesResult {
-  const sqliteClient = createObservabilitySqliteClient();
+  const outputMode = detectJobOutputMode();
+  const sqliteClient = outputMode === 'db-first' ? createObservabilitySqliteClient() : null;
   if (sqliteClient) {
     const result: CleanupProcessesResult = {
       total: 0,
