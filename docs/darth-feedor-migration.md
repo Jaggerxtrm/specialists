@@ -74,7 +74,7 @@ If the legacy YAML uses anything not in this table — `tools`, `worktree_requir
 
 ### Worked example — `mercury-atomic-summarizer`
 
-This is the spec called out by Phase 1. The shape applies to all five YAMLs being ported.
+This is the spec called out by Phase 1. The shape applies to all five YAMLs being ported. The same JSON lives in [`docs/examples/mercury-atomic-summarizer.specialist.json`](examples/mercury-atomic-summarizer.specialist.json) — copy it directly into `.specialists/user/` to start.
 
 ```json
 {

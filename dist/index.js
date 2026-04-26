@@ -25181,7 +25181,7 @@ function printBySection(spec, section) {
     return;
   }
   const value = spec.specialist[section];
-  printGenericSection(section, section === "metadata" ? cyan2 : green2, value);
+  printGenericSection(String(section), section === "metadata" ? cyan2 : green2, value);
 }
 function printFullSpecialist(spec) {
   printBySection(spec, "metadata");
@@ -37572,8 +37572,9 @@ async function runScriptSpecialist(input2, options) {
     const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
     const timeoutMs = input2.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
     const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--model", model];
-    if (spec.specialist.execution.thinking_level)
-      args.push("--thinking", spec.specialist.execution.thinking_level);
+    const thinkingLevel = input2.thinking_level ?? spec.specialist.execution.thinking_level;
+    if (thinkingLevel)
+      args.push("--thinking", thinkingLevel);
     args.push(prompt);
     const pi = spawn3("pi", args, { stdio: ["ignore", "pipe", "pipe"] });
     options.onChild?.(pi);
@@ -37609,7 +37610,7 @@ async function runScriptSpecialist(input2, options) {
     const text = extractAssistantText(stdout.split(/\r?\n/));
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
-    if (observability)
+    if (input2.trace !== false && observability)
       writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
     if (outputTooLarge) {
       return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
@@ -37777,16 +37778,153 @@ var init_serve = __esm(() => {
   init_observability_db();
 });
 
+// src/cli/script.ts
+var exports_script = {};
+__export(exports_script, {
+  scriptCli: () => scriptCli,
+  run: () => run30,
+  parseArgs: () => parseArgs12,
+  mapExitCode: () => mapExitCode
+});
+import { spawnSync as spawnSync21 } from "child_process";
+function parseVar(entry) {
+  const index = entry.indexOf("=");
+  if (index <= 0)
+    throw new Error(`Invalid --vars entry: ${entry}`);
+  return [entry.slice(0, index), entry.slice(index + 1)];
+}
+function parseArgs12(argv) {
+  if (argv.length === 0)
+    throw new Error("Missing specialist name");
+  const specialist = argv[0];
+  const variables = {};
+  let template;
+  let modelOverride;
+  let thinking;
+  let userDir = process.cwd();
+  let dbPath;
+  let timeoutMs;
+  let json = false;
+  let singleInstance;
+  let trace = true;
+  for (let i = 1;i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--vars" && argv[i + 1]) {
+      const [key, value] = parseVar(argv[++i]);
+      variables[key] = value;
+    } else if (token === "--template" && argv[i + 1])
+      template = argv[++i];
+    else if (token === "--model" && argv[i + 1])
+      modelOverride = argv[++i];
+    else if (token === "--thinking" && argv[i + 1])
+      thinking = argv[++i];
+    else if (token === "--user-dir" && argv[i + 1])
+      userDir = argv[++i];
+    else if (token === "--db-path" && argv[i + 1])
+      dbPath = argv[++i];
+    else if (token === "--timeout-ms" && argv[i + 1])
+      timeoutMs = Number(argv[++i]);
+    else if (token === "--json")
+      json = true;
+    else if (token === "--single-instance" && argv[i + 1])
+      singleInstance = argv[++i];
+    else if (token === "--no-trace")
+      trace = false;
+    else if (token === "--vars")
+      throw new Error("Missing value for --vars");
+    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
+      throw new Error(`Missing value for ${token}`);
+    }
+  }
+  if (!specialist)
+    throw new Error("Missing specialist name");
+  if (Number.isNaN(timeoutMs))
+    throw new Error("Invalid --timeout-ms value");
+  return { specialist, variables, template, modelOverride, thinking, userDir, dbPath, timeoutMs, json, singleInstance, trace };
+}
+function buildRequest(args) {
+  return {
+    specialist: args.specialist,
+    variables: args.variables,
+    template: args.template,
+    model_override: args.modelOverride,
+    thinking_level: args.thinking,
+    timeout_ms: args.timeoutMs,
+    trace: args.trace
+  };
+}
+function mapExitCode(result) {
+  if (result.success)
+    return 0;
+  switch (result.error_type) {
+    case "specialist_not_found":
+    case "specialist_load_error":
+      return 2;
+    case "template_variable_missing":
+      return 3;
+    case "auth":
+    case "quota":
+      return 4;
+    case "timeout":
+    case "network":
+      return 5;
+    case "invalid_json":
+      return 6;
+    case "output_too_large":
+      return 7;
+    default:
+      return 1;
+  }
+}
+function printResult(result, json) {
+  if (json) {
+    console.log(JSON.stringify(result));
+    return;
+  }
+  if (result.success) {
+    console.log(result.output);
+    return;
+  }
+  console.error(result.error);
+}
+function runUnderLock(lockPath, argv) {
+  const flock = spawnSync21("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
+    encoding: "utf-8",
+    stdio: "inherit"
+  });
+  if (flock.status === 0)
+    return 0;
+  if (flock.status === 1)
+    return 75;
+  return flock.status ?? 1;
+}
+async function run30(argv = process.argv.slice(3)) {
+  const args = parseArgs12(argv);
+  if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
+    process.exit(runUnderLock(args.singleInstance, argv));
+  }
+  const loader = new SpecialistLoader({ projectDir: args.userDir });
+  const result = await runScriptSpecialist(buildRequest(args), { loader, userDir: args.userDir, observabilityDbPath: args.dbPath ?? args.userDir });
+  printResult(result, args.json);
+  process.exit(mapExitCode(result));
+}
+var scriptCli;
+var init_script = __esm(() => {
+  init_loader();
+  init_script_runner();
+  scriptCli = { parseArgs: parseArgs12, mapExitCode };
+});
+
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run30
+  run: () => run31
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run30() {
+async function run31() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -45425,7 +45563,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run31() {
+async function run32() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -46367,6 +46505,25 @@ async function run31() {
     const { run: handler } = await Promise.resolve().then(() => (init_serve(), exports_serve));
     return handler(process.argv.slice(3));
   }
+  if (sub === "script") {
+    if (wantsHelp()) {
+      console.log([
+        "",
+        "Usage: specialists script <name> [--vars key=value ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]",
+        "",
+        "One-shot script-class specialist runner for cron and host scripts.",
+        "",
+        "Outputs:",
+        "  default  assistant text only",
+        "  --json   full GenerateResponse JSON",
+        ""
+      ].join(`
+`));
+      return;
+    }
+    const { run: handler } = await Promise.resolve().then(() => (init_script(), exports_script));
+    return handler(process.argv.slice(3));
+  }
   if (sub === "help" || sub === "--help" || sub === "-h") {
     const { run: handler } = await Promise.resolve().then(() => (init_help(), exports_help));
     return handler();
@@ -46380,7 +46537,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run31().catch((error2) => {
+run32().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });

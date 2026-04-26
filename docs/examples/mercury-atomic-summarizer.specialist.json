@@ -1,0 +1,26 @@
+{
+  "specialist": {
+    "metadata": {
+      "name": "mercury-atomic-summarizer",
+      "version": "1.0.0",
+      "description": "Summarizes one news article into one structured row. Reference port of the legacy darth-feedor YAML — see docs/darth-feedor-migration.md for migration context.",
+      "category": "synthesis"
+    },
+    "execution": {
+      "mode": "auto",
+      "model": "anthropic/claude-haiku-4-5",
+      "fallback_model": "openai-codex/gpt-5.4-mini",
+      "timeout_ms": 60000,
+      "interactive": false,
+      "response_format": "json",
+      "output_type": "synthesis",
+      "permission_required": "READ_ONLY",
+      "requires_worktree": false,
+      "max_retries": 0
+    },
+    "prompt": {
+      "task_template": "Summarize the article below into JSON of shape {\"summary\": \"...\", \"controlled_tags\": [...]}.\n\nTitle: $title\n\nContent:\n$content",
+      "output_schema": { "required": ["summary", "controlled_tags"] }
+    }
+  }
+}
