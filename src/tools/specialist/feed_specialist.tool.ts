@@ -59,9 +59,10 @@ export function createFeedSpecialistTool(jobsDir: string) {
         }
       }
 
-      const allEvents = detectJobOutputMode() === 'on'
-        ? readJobEventsById(jobsDir, job_id)
-        : (sqliteClient?.readEvents(job_id) ?? []);
+      const dbEvents = sqliteClient?.readEvents(job_id);
+      const allEvents = (dbEvents && dbEvents.length > 0)
+        ? dbEvents
+        : (detectJobOutputMode() === 'on' ? readJobEventsById(jobsDir, job_id) : (dbEvents ?? []));
       const total = allEvents.length;
 
       // Apply cursor + limit slice

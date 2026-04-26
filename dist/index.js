@@ -24786,7 +24786,9 @@ function listLiveJobs(showDead) {
   const jobsDir = join9(process.cwd(), ".specialists", "jobs");
   const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
   const sqliteJobs = sqliteClient?.listStatuses().map((status) => toLiveJob(status)).filter((job) => job !== null).filter((job) => showDead || !job.isDead) ?? [];
-  if (sqliteJobs.length > 0 || !fileOutputEnabled)
+  if (!fileOutputEnabled)
+    return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
+  if (sqliteJobs.length > 0)
     return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
   if (!existsSync9(jobsDir))
     return [];
@@ -33563,7 +33565,8 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run14
+  run: () => run14,
+  detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync18, readFileSync as readFileSync16 } from "fs";
@@ -33659,7 +33662,10 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
       return sqliteEvents.length;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
+    console.warn(`SQLite events read failed for job ${jobId}`, error2);
+  }
+  if (detectJobOutputMode() !== "on") {
+    return 0;
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -33693,7 +33699,10 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
         return snapshot;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
+    console.warn(`SQLite events read failed for job ${jobId}`, error2);
+  }
+  if (detectJobOutputMode() !== "on") {
+    return null;
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -35995,7 +36004,7 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
       status = sqliteClient.readStatus(jobId);
     } catch {}
   }
-  if (!status) {
+  if (!status && detectJobOutputMode() === "on") {
     const statusPath = join24(jobDir, "status.json");
     if (existsSync23(statusPath)) {
       try {
@@ -36009,7 +36018,7 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
       fullOutput = sqliteClient.readResult(jobId) ?? "";
     } catch {}
   }
-  if (!fullOutput) {
+  if (!fullOutput && detectJobOutputMode() === "on") {
     const resultPath = join24(jobDir, "result.txt");
     if (existsSync23(resultPath)) {
       try {
@@ -36017,7 +36026,8 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
       } catch {}
     }
   }
-  const events = readJobEventsById(jobsDir, jobId);
+  const dbEvents = sqliteClient?.readEvents(jobId);
+  const events = dbEvents && dbEvents.length > 0 ? dbEvents : detectJobOutputMode() === "on" ? readJobEventsById(jobsDir, jobId) : dbEvents ?? [];
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
   const startedAt = status?.started_at_ms ?? Date.now();
@@ -36073,6 +36083,7 @@ async function run18() {
 var init_poll = __esm(() => {
   init_timeline_query();
   init_observability_sqlite();
+  init_status();
 });
 
 // src/cli/steer.ts
@@ -36780,7 +36791,7 @@ function readStatus(statusPath, jobId) {
     return JSON.parse(readFileSync24(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
-      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
+      return null;
     }
     const details = error2 instanceof Error ? error2.message : String(error2);
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
@@ -36794,7 +36805,13 @@ async function run25() {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join27(process.cwd(), ".specialists", "jobs");
   const statusPath = join27(jobsDir, jobId, "status.json");
-  const status = sqliteClient?.readStatus(jobId) ?? readStatus(statusPath, jobId);
+  const outputMode = detectJobOutputMode();
+  const dbStatus = sqliteClient?.readStatus(jobId) ?? null;
+  const fileStatus = dbStatus ? null : outputMode === "on" ? readStatus(statusPath, jobId) : null;
+  const status = dbStatus ?? fileStatus;
+  if (!status) {
+    exitWithError(`Job \`${jobId}\` not found.`);
+  }
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
   }
@@ -36814,6 +36831,7 @@ async function run25() {
 }
 var init_attach = __esm(() => {
   init_observability_sqlite();
+  init_status();
 });
 
 // src/cli/quickstart.ts

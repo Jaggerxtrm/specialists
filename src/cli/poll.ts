@@ -115,9 +115,10 @@ function readJobState(jobsDir: string, jobId: string, cursor: number, outputCurs
     }
   }
 
-  const events = detectJobOutputMode() === 'on'
-    ? readJobEventsById(jobsDir, jobId)
-    : (sqliteClient?.readEvents(jobId) ?? []);
+  const dbEvents = sqliteClient?.readEvents(jobId);
+  const events = (dbEvents && dbEvents.length > 0)
+    ? dbEvents
+    : (detectJobOutputMode() === 'on' ? readJobEventsById(jobsDir, jobId) : (dbEvents ?? []));
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
 
