@@ -34,8 +34,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/documenting/SKILL.md",
-        ".xtrm/skills/active/pi/using-xtrm/SKILL.md"
+        ".xtrm/skills/active/documenting/SKILL.md",
+        ".xtrm/skills/active/using-xtrm/SKILL.md"
       ],
       "scripts": []
     },
@@ -47,12 +47,6 @@
         ".xtrm/skills/default/using-xtrm/SKILL.md"
       ],
       "stale_threshold_days": 30
-    },
-    "communication": {
-      "publishes": [
-        "memory_report",
-        "memory_md"
-      ]
     },
     "capabilities": {
       "required_tools": [],

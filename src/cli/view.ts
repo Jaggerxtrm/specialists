@@ -125,21 +125,9 @@ function printPromptSection(prompt: Specialist['specialist']['prompt']): void {
   console.log(`${bold('task_template')}:`);
   console.log(formatPromptValue(prompt.task_template));
 
-  if (prompt.normalize_template !== undefined) {
-    console.log();
-    console.log(`${bold('normalize_template')}:`);
-    console.log(formatValue(prompt.normalize_template));
-  }
-
   if (prompt.skill_inherit !== undefined) {
     console.log();
     console.log(`${bold('skill_inherit')}: ${formatValue(prompt.skill_inherit)}`);
-  }
-
-  if (prompt.examples !== undefined) {
-    console.log();
-    console.log(`${bold('examples')}:`);
-    console.log(formatValue(prompt.examples));
   }
 
   if (prompt.output_schema !== undefined) {

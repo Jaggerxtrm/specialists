@@ -5,7 +5,6 @@
       "version": "1.0.0",
       "description": "General-purpose code execution agent for heavy implementation work. Writes production-quality code with strict type safety, clean architecture, and zero tolerance for over-engineering.",
       "category": "codegen",
-      "author": "dawid",
       "updated": "2026-03-29",
       "tags": [
         "implementation",
@@ -80,8 +79,8 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/gitnexus-impact-analysis",
-        ".xtrm/skills/active/pi/clean-code"
+        ".xtrm/skills/active/gitnexus-impact-analysis",
+        ".xtrm/skills/active/clean-code"
       ],
       "scripts": [
         {
@@ -119,7 +118,6 @@
     "output_file": ".specialists/executor-result.md",
     "beads_integration": "auto",
     "stall_detection": {},
-    "beads_write_notes": true,
-    "communication": {}
+    "beads_write_notes": true
   }
 }

@@ -17479,15 +17479,6 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
-    if (spec.specialist.prompt.normalize_template) {
-      warnings.push("prompt.normalize_template is deprecated (Mercury compat) and will be ignored");
-    }
-    if (spec.specialist.execution.preferred_profile) {
-      warnings.push("execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored");
-    }
-    if (spec.specialist.execution.approval_mode) {
-      warnings.push("execution.approval_mode is deprecated (Agent Forge compat) and will be ignored");
-    }
     if (!spec.specialist.execution.model.includes("/")) {
       warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
@@ -17511,7 +17502,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, CommunicationSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -17521,8 +17512,6 @@ var init_schema = __esm(() => {
     version: Semver,
     description: stringType(),
     category: stringType(),
-    author: stringType().optional(),
-    created: stringType().optional(),
     updated: stringType().optional(),
     tags: arrayType(stringType()).optional()
   }).passthrough();
@@ -17543,40 +17532,26 @@ var init_schema = __esm(() => {
     extensions: objectType({
       serena: booleanType().optional(),
       gitnexus: booleanType().optional()
-    }).passthrough().optional(),
-    preferred_profile: stringType().optional(),
-    approval_mode: stringType().optional()
+    }).passthrough().optional()
   }).passthrough();
   PromptSchema2 = objectType({
     system: stringType().optional(),
     task_template: stringType(),
-    normalize_template: stringType().optional(),
     output_schema: recordType(unknownType()).optional(),
-    examples: arrayType(unknownType()).optional(),
     skill_inherit: stringType().optional()
   }).passthrough();
   ScriptEntrySchema = objectType({
-    run: stringType().optional(),
-    path: stringType().optional(),
+    run: stringType(),
     phase: enumType(["pre", "post"]),
     inject_output: booleanType().default(false)
-  }).passthrough().transform((s) => ({
-    run: s.run ?? s.path ?? "",
-    phase: s.phase,
-    inject_output: s.inject_output
-  }));
+  }).passthrough();
   SkillsSchema = objectType({
     paths: arrayType(stringType()).optional(),
     scripts: arrayType(ScriptEntrySchema).optional()
   }).passthrough().optional();
   CapabilitiesSchema = objectType({
     required_tools: arrayType(stringType()).optional(),
-    external_commands: arrayType(stringType()).optional(),
-    diagnostic_scripts: arrayType(stringType()).optional()
-  }).passthrough().optional();
-  CommunicationSchema = objectType({
-    next_specialists: unionType([stringType(), arrayType(stringType())]).optional(),
-    publishes: arrayType(stringType()).optional()
+    external_commands: arrayType(stringType()).optional()
   }).passthrough().optional();
   ValidationSchema = objectType({
     files_to_watch: arrayType(stringType()).optional(),
@@ -17606,14 +17581,12 @@ var init_schema = __esm(() => {
       prompt: PromptSchema2,
       skills: SkillsSchema,
       capabilities: CapabilitiesSchema,
-      communication: CommunicationSchema,
       validation: ValidationSchema,
       stall_detection: StallDetectionSchema,
       mandatory_rules: MandatoryRulesSchema,
       output_file: stringType().optional(),
       beads_integration: enumType(["auto", "always", "never"]).default("auto"),
-      beads_write_notes: booleanType().default(true),
-      heartbeat: unknownType().optional()
+      beads_write_notes: booleanType().default(true)
     }).passthrough()
   }).passthrough();
 });
@@ -25099,19 +25072,9 @@ function printPromptSection(prompt) {
   console.log();
   console.log(`${bold3("task_template")}:`);
   console.log(formatPromptValue(prompt.task_template));
-  if (prompt.normalize_template !== undefined) {
-    console.log();
-    console.log(`${bold3("normalize_template")}:`);
-    console.log(formatValue(prompt.normalize_template));
-  }
   if (prompt.skill_inherit !== undefined) {
     console.log();
     console.log(`${bold3("skill_inherit")}: ${formatValue(prompt.skill_inherit)}`);
-  }
-  if (prompt.examples !== undefined) {
-    console.log();
-    console.log(`${bold3("examples")}:`);
-    console.log(formatValue(prompt.examples));
   }
   if (prompt.output_schema !== undefined) {
     console.log();

@@ -48,12 +48,6 @@
       ],
       "stale_threshold_days": 30
     },
-    "communication": {
-      "publishes": [
-        "memory_report",
-        "memory_md"
-      ]
-    },
     "capabilities": {
       "required_tools": [],
       "external_commands": []

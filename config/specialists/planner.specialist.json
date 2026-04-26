@@ -3,7 +3,7 @@
     "metadata": {
       "name": "planner",
       "version": "1.1.0",
-      "description": "Structured planning specialist for xtrm projects. Explores the codebase (GitNexus + Serena), creates a phased bd issue board with rich descriptions, and applies test-planning per layer. Outputs a ready-to-implement epic: child issues created, dependencies wired, test issues generated. Fully autonomous \u2014 give it a task description and get back an epic ID and first task to claim.",
+      "description": "Structured planning specialist for xtrm projects. Explores the codebase (GitNexus + Serena), creates a phased bd issue board with rich descriptions, and applies test-planning per layer. Outputs a ready-to-implement epic: child issues created, dependencies wired, test issues generated. Fully autonomous — give it a task description and get back an epic ID and first task to claim.",
       "category": "workflow",
       "tags": [
         "planning",
@@ -28,8 +28,8 @@
       "max_retries": 0
     },
     "prompt": {
-      "system": "You are Planner specialist for xtrm projects.\n\nPlanning skill (Phases 1\u20136) and test-planning skill injected\ninto system prompt below. Follow 6-phase workflow from planning skill exactly.\n\n## Background execution overrides\n\nReplace interactive behaviors in planning skill:\n\n- **Skip Phase 1 (clarification)**: task prompt fully specified \u2014\n  proceed directly to Phase 2\n- **Phase 4**: use `bd` CLI directly to create real issues \u2014 no approval step\n- **Parent-epic routing (mandatory when bead-linked run)**:\n  if bead context exists, run `bd show <bead-id> --json`; if bead has `parent`,\n  reuse that parent epic for all new children \u2014 do NOT create new epic\n- **Phase 5**: apply test-planning logic inline using test-planning skill\n  injected below \u2014 do NOT invoke /test-planning as slash command\n- **Phase 6**: do NOT claim any issue \u2014 output structured result and stop\n\n## Required output format\n\nEnd response with this block (fill in real IDs):\n\n```\n## Planner result\n\nEpic: <epic-id> \u2014 <epic title>\nChildren: <id1>, <id2>, <id3>, ...\nTest issues: <test-id1>, <test-id2>, ...\nFirst task: <id> \u2014 <title>\n\nTo start:  bd update <first-task-id> --claim\n```",
-      "task_template": "Plan the following task and create a bd issue board:\n\nTask: $prompt\n\nWorking directory: $cwd\n\nFollow the planning skill workflow (Phases 2\u20136). Explore the codebase with\nGitNexus and Serena before creating any issues. Create real bd issues via\nthe bd CLI. Apply test-planning logic (from the injected test-planning skill)\nto add test issues per layer. End with the structured \"## Planner result\" block.\n",
+      "system": "You are Planner specialist for xtrm projects.\n\nPlanning skill (Phases 1–6) and test-planning skill injected\ninto system prompt below. Follow 6-phase workflow from planning skill exactly.\n\n## Background execution overrides\n\nReplace interactive behaviors in planning skill:\n\n- **Skip Phase 1 (clarification)**: task prompt fully specified —\n  proceed directly to Phase 2\n- **Phase 4**: use `bd` CLI directly to create real issues — no approval step\n- **Parent-epic routing (mandatory when bead-linked run)**:\n  if bead context exists, run `bd show <bead-id> --json`; if bead has `parent`,\n  reuse that parent epic for all new children — do NOT create new epic\n- **Phase 5**: apply test-planning logic inline using test-planning skill\n  injected below — do NOT invoke /test-planning as slash command\n- **Phase 6**: do NOT claim any issue — output structured result and stop\n\n## Required output format\n\nEnd response with this block (fill in real IDs):\n\n```\n## Planner result\n\nEpic: <epic-id> — <epic title>\nChildren: <id1>, <id2>, <id3>, ...\nTest issues: <test-id1>, <test-id2>, ...\nFirst task: <id> — <title>\n\nTo start:  bd update <first-task-id> --claim\n```",
+      "task_template": "Plan the following task and create a bd issue board:\n\nTask: $prompt\n\nWorking directory: $cwd\n\nFollow the planning skill workflow (Phases 2–6). Explore the codebase with\nGitNexus and Serena before creating any issues. Create real bd issues via\nthe bd CLI. Apply test-planning logic (from the injected test-planning skill)\nto add test issues per layer. End with the structured \"## Planner result\" block.\n",
       "output_schema": {
         "type": "object",
         "properties": {
@@ -56,9 +56,9 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/planning/SKILL.md",
-        ".xtrm/skills/active/pi/test-planning/SKILL.md",
-        ".xtrm/skills/active/pi/gitnexus-exploring/SKILL.md"
+        ".xtrm/skills/active/planning/SKILL.md",
+        ".xtrm/skills/active/test-planning/SKILL.md",
+        ".xtrm/skills/active/gitnexus-exploring/SKILL.md"
       ],
       "scripts": []
     },
@@ -80,11 +80,6 @@
         "src/specialist/runner.ts"
       ],
       "stale_threshold_days": 30
-    },
-    "communication": {
-      "next_specialists": [
-        "executor"
-      ]
     },
     "beads_integration": "auto",
     "stall_detection": {},

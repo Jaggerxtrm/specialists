@@ -47,17 +47,11 @@
     },
     "validation": {
       "files_to_watch": [
-        ".xtrm/skills/active/pi/find-docs/SKILL.md",
-        ".xtrm/skills/active/pi/deepwiki/SKILL.md",
-        ".xtrm/skills/active/pi/github-search/SKILL.md"
+        ".xtrm/skills/active/find-docs/SKILL.md",
+        ".xtrm/skills/active/deepwiki/SKILL.md",
+        ".xtrm/skills/active/github-search/SKILL.md"
       ],
       "stale_threshold_days": 30
-    },
-    "communication": {
-      "publishes": [
-        "documentation_research",
-        "code_discovery"
-      ]
     },
     "capabilities": {
       "required_tools": [],

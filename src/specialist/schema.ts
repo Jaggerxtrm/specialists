@@ -9,8 +9,6 @@ const MetadataSchema = z.object({
   version: Semver,
   description: z.string(),
   category: z.string(),
-  author: z.string().optional(),
-  created: z.string().optional(),
   updated: z.string().optional(),
   tags: z.array(z.string()).optional(),
 }).passthrough();
@@ -43,34 +41,23 @@ const ExecutionSchema = z.object({
     serena: z.boolean().optional(),
     gitnexus: z.boolean().optional(),
   }).passthrough().optional(),
-  // Agent Forge compat — accepted but ignored by specialists
-  preferred_profile: z.string().optional(),
-  approval_mode: z.string().optional(),
 }).passthrough();
 
 const PromptSchema = z.object({
   system: z.string().optional(),
   task_template: z.string(),
-  normalize_template: z.string().optional(),   // Mercury compat — ignored
   output_schema: z.record(z.unknown()).optional(),
-  examples: z.array(z.unknown()).optional(),
-  skill_inherit: z.string().optional(),         // Agent Forge compat — injected via --skill
+  skill_inherit: z.string().optional(),         // injected via pi --skill
 }).passthrough();
 
 /** Script/command entry for pre/post execution hooks.
  *  `run` accepts either a file path (./scripts/check.sh) or a shell command (bd ready).
- *  `path` is a deprecated alias for `run` — prefer `run`.
  */
 const ScriptEntrySchema = z.object({
-  run: z.string().optional(),
-  path: z.string().optional(),   // deprecated: use run
+  run: z.string(),
   phase: z.enum(['pre', 'post']),
   inject_output: z.boolean().default(false),
-}).passthrough().transform(s => ({
-  run: s.run ?? s.path ?? '',
-  phase: s.phase,
-  inject_output: s.inject_output,
-}));
+}).passthrough();
 
 const SkillsSchema = z.object({
   /** Skill folders/files passed as pi --skill; folder loads SKILL.md inside it */
@@ -84,21 +71,6 @@ const CapabilitiesSchema = z.object({
   required_tools: z.array(z.string()).optional(),
   /** CLI binaries the agent depends on (validated at run-time before session starts). */
   external_commands: z.array(z.string()).optional(),
-  /** Declarative shell commands the agent may run for diagnostics (no runtime executor — agent invokes them itself). */
-  diagnostic_scripts: z.array(z.string()).optional(),
-}).passthrough().optional();
-
-const CommunicationSchema = z.object({
-  /**
-   * Declarative pipeline metadata only.
-   * Runner does not auto-chain specialists; orchestrators may consume this field.
-   */
-  next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
-  /**
-   * Declarative output kinds this specialist emits (e.g. "code_discovery", "documentation_research").
-   * Runner does not consume this; orchestrators may use it for routing/discovery.
-   */
-  publishes: z.array(z.string()).optional(),
 }).passthrough().optional();
 
 const ValidationSchema = z.object({
@@ -139,7 +111,6 @@ export const SpecialistSchema = z.object({
     prompt: PromptSchema,
     skills: SkillsSchema,
     capabilities: CapabilitiesSchema,
-    communication: CommunicationSchema,
     validation: ValidationSchema,
     stall_detection: StallDetectionSchema,
     mandatory_rules: MandatoryRulesSchema,
@@ -147,7 +118,6 @@ export const SpecialistSchema = z.object({
     output_file: z.string().optional(),
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
     beads_write_notes: z.boolean().default(true),
-    heartbeat: z.unknown().optional(), // intentional placeholder for future liveness metadata (accepted, ignored)
   }).passthrough(),
 }).passthrough();
 
@@ -246,18 +216,7 @@ export async function validateSpecialist(jsonContent: string): Promise<Validatio
   } else {
     // Additional semantic validations (warnings, not errors)
     const spec = result.data;
-    
-    // Check for deprecated fields
-    if (spec.specialist.prompt.normalize_template) {
-      warnings.push('prompt.normalize_template is deprecated (Mercury compat) and will be ignored');
-    }
-    if (spec.specialist.execution.preferred_profile) {
-      warnings.push('execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored');
-    }
-    if (spec.specialist.execution.approval_mode) {
-      warnings.push('execution.approval_mode is deprecated (Agent Forge compat) and will be ignored');
-    }
-    
+
     // Check for common mistakes
     if (!spec.specialist.execution.model.includes('/')) {
       warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);

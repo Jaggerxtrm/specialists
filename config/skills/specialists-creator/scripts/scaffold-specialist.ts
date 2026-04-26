@@ -3,12 +3,7 @@ import { join } from "node:path";
 import * as z from "zod";
 import { SpecialistSchema } from "../../../../src/specialist/schema.ts";
 
-const DEAD_FIELDS = new Set([
-  "preferred_profile",
-  "approval_mode",
-  "normalize_template",
-  "heartbeat",
-]);
+const DEAD_FIELDS = new Set<string>([]);
 
 interface AddedField {
   path: string;

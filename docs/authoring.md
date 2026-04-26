@@ -239,7 +239,6 @@ Use `execution.extensions` only when specialist must skip default extension inje
 - `run` accepts either:
   - a file path (`./scripts/foo.sh`, `~/scripts/foo.sh`), or
   - a shell command (`bd ready`, `git status`).
-- `path` is still accepted as a deprecated alias for `run`.
 - `phase` can be `"pre"` or `"post"`.
 - `inject_output: true` makes script stdout available as `$pre_script_output`.
 
@@ -287,28 +286,6 @@ If any `external_commands` binary is missing, startup hard-fails and the session
 ```
 
 Writes final specialist output to the file after completion. Relative paths are resolved from the working directory.
-
----
-
-## `specialist.communication` (optional)
-
-```json
-{
-  "communication": {
-    "next_specialists": "planner"
-  }
-}
-```
-
-```json
-{
-  "communication": {
-    "next_specialists": ["planner", "test-runner"]
-  }
-}
-```
-
-`next_specialists` declares downstream chain targets that should receive `$previous_result`. This field is metadata; execution/chaining is performed by the caller/pipeline.
 
 ---
 
@@ -514,8 +491,7 @@ Quality degrades as the context grows — compressed early context causes incons
 ### Design patterns
 
 1. **Phase-bounded runs**: Split large tasks into discrete phases with explicit completion points
-2. **Checkpoint handoffs**: Use `next_specialists` to transfer state to fresh sessions
-3. **Summarization gates**: Emit structured summaries at phase boundaries for downstream context injection
+2. **Summarization gates**: Emit structured summaries at phase boundaries for downstream context injection
 
 ---
 
@@ -552,8 +528,8 @@ The service rejects any spec that doesn't match these at request time with `erro
 These run unchanged:
 
 - `execution.timeout_ms`, `execution.fallback_model`, `execution.thinking_level`, `execution.response_format` (`"text"` | `"json"` | `"markdown"`)
-- `prompt.system`, `prompt.normalize_template`, `prompt.output_schema`, `prompt.examples`
-- `metadata.tags`, `metadata.author`, `metadata.created`, `metadata.updated`
+- `prompt.system`, `prompt.output_schema`
+- `metadata.tags`, `metadata.updated`
 
 ### Forbidden under v1 (deferred behind trust flags)
 

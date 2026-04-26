@@ -13,7 +13,6 @@
         "keep-alive",
         "worktree"
       ],
-      "created": "2026-04-03",
       "updated": "2026-04-10"
     },
     "execution": {
@@ -34,7 +33,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/using-nodes"
+        ".xtrm/skills/active/using-nodes"
       ]
     },
     "capabilities": {
@@ -45,9 +44,6 @@
         "sp",
         "specialists"
       ]
-    },
-    "communication": {
-      "next_specialists": []
     },
     "validation": {
       "files_to_watch": [

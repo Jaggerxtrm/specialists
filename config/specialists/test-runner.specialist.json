@@ -37,19 +37,14 @@
     "skills": {
       "scripts": [
         {
-          "path": "bun --bun vitest run --reporter=verbose 2>&1 | tail -100",
           "phase": "pre",
-          "inject_output": true
+          "inject_output": true,
+          "run": "bun --bun vitest run --reporter=verbose 2>&1 | tail -100"
         }
       ],
       "paths": []
     },
     "capabilities": {
-      "diagnostic_scripts": [
-        "bun --bun vitest run --reporter=verbose 2>&1 | tail -50",
-        "cat vitest.config.ts",
-        "cat package.json | grep -A5 '\"test\"'"
-      ],
       "required_tools": [],
       "external_commands": []
     },
@@ -59,11 +54,6 @@
         "src/specialist/runner.ts"
       ],
       "stale_threshold_days": 30
-    },
-    "communication": {
-      "publishes": [
-        "test_results"
-      ]
     },
     "stall_detection": {},
     "beads_integration": "auto",

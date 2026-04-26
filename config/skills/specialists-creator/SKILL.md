@@ -383,8 +383,6 @@ planner — epic result:
 
 `run` accepts either a **file path** (`./scripts/foo.sh`, `~/scripts/foo.sh`) or a **shell command** (`bd ready`, `git status`). Pre-run validation checks that file paths exist and shell commands are on `PATH`. Shebang typos (e.g. `pytho` instead of `python`) are caught and reported as errors before the session starts.
 
-`path` is accepted as a deprecated alias for `run`.
-
 ### `specialist.capabilities` (optional)
 
 Informational declarations used by pre-run validation and future tooling (e.g. `specialists doctor`).
@@ -409,27 +407,6 @@ Informational declarations used by pre-run validation and future tooling (e.g. `
 ```
 
 Writes the final session output to this file path after the session completes. Relative to the working directory.
-
-### `specialist.communication` (optional)
-
-```json
-{
-  "communication": {
-    "next_specialists": "planner"
-  }
-}
-```
-
-Or as an array:
-```json
-{
-  "communication": {
-    "next_specialists": ["planner", "test-runner"]
-  }
-}
-```
-
-`next_specialists` declares which specialist(s) should receive this specialist's output as `$previous_result`. Chaining is executed by the caller (e.g. `run_parallel` pipeline) — this field is declarative metadata.
 
 ### `specialist.validation` (optional)
 
@@ -602,9 +579,6 @@ Scripts run **locally** (not inside the agent session):
     "capabilities": {
       "required_tools": ["bash", "read"],
       "external_commands": ["git"]
-    },
-    "communication": {
-      "next_specialists": ["sync-docs"]
     },
     "output_file": ".specialists/review.md",
     "beads_integration": "auto"

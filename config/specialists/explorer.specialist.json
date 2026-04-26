@@ -60,7 +60,7 @@
     },
     "skills": {
       "paths": [
-        ".xtrm/skills/active/pi/gitnexus-exploring/SKILL.md"
+        ".xtrm/skills/active/gitnexus-exploring/SKILL.md"
       ],
       "scripts": []
     },
@@ -71,11 +71,6 @@
         ".agents/skills/gitnexus-exploring/SKILL.md"
       ],
       "stale_threshold_days": 30
-    },
-    "communication": {
-      "publishes": [
-        "codebase_analysis"
-      ]
     },
     "capabilities": {
       "required_tools": [],
