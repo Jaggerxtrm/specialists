@@ -774,7 +774,7 @@ export class Supervisor {
 
       const chainId = resolveChainId(normalizedStatus);
       if (!normalizedStatus.epic_id || !chainId) {
-        return;
+        return true;
       }
 
       client.upsertEpicRun({
@@ -801,6 +801,7 @@ export class Supervisor {
 
       const readiness = loadEpicReadinessSummary(client, normalizedStatus.epic_id);
       syncEpicStateFromReadiness(client, readiness);
+      return true;
     });
 
     if (persisted === undefined) {
@@ -1037,6 +1038,7 @@ export class Supervisor {
 
       const persisted = this.withSqliteOperation('appendEvent', (client) => {
         client.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
+        return true;
       });
       if (persisted === undefined) {
         throw new Error('[supervisor] SQLite appendEvent failed: database client unavailable');
@@ -1074,6 +1076,7 @@ export class Supervisor {
     ));
     const runStartPersisted = this.withSqliteOperation('upsertStatusWithEvent:run_start', (client) => {
       client.upsertStatusWithEvent(statusSnapshot, runStartEvent);
+      return true;
     });
     if (runStartPersisted === undefined) {
       throw new Error('[supervisor] SQLite upsertStatusWithEvent failed during run start: database client unavailable');
@@ -1917,6 +1920,7 @@ export class Supervisor {
           metrics: runMetrics,
           ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
         }), latestOutput);
+        return true;
       });
       if (completePersisted === undefined) {
         throw new Error('[supervisor] SQLite upsertStatusWithEventAndResult failed: database client unavailable');
@@ -1985,6 +1989,7 @@ export class Supervisor {
       }));
       const errorPersisted = this.withSqliteOperation('upsertStatusWithEvent:error', (client) => {
         client.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
+        return true;
       });
       if (errorPersisted === undefined) {
         throw new Error('[supervisor] SQLite upsertStatusWithEvent failed during error completion: database client unavailable');
