@@ -42,6 +42,7 @@ import {
 import type { SessionMetricEvent, SessionRunMetrics } from '../pi/session.js';
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
+import { resolveObservabilityDbLocation } from './observability-db.js';
 import { resolveChainId } from './epic-lifecycle.js';
 import { loadEpicReadinessSummary, syncEpicStateFromReadiness } from './epic-readiness.js';
 import { derivePersistedChainIdentity } from './chain-identity.js';
@@ -391,19 +392,53 @@ function startDetachedGitnexusAnalyze(cwd: string): void {
 }
 
 const STATUS_WATCHDOG_INTERVAL_MS = 5_000;
+const STATUS_WATCHDOG_STALE_AFTER_MS = 30_000;
 
-function startDetachedStatusWatchdog(statusPath: string, pid: number): number | undefined {
+function resolveDetachedRuntime(): string {
+  if (process.execPath.endsWith('/bun')) return process.execPath;
+
+  const envRuntime = process.env.SPECIALISTS_BUN_PATH ?? process.env.BUN_PATH;
+  if (envRuntime) return envRuntime;
+
+  const whichResult = spawnSync('which', ['bun'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+  if (whichResult.status === 0) {
+    const resolved = (whichResult.stdout ?? '').trim();
+    if (resolved) return resolved;
+  }
+
+  if (String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase() === 'on') {
+    return process.execPath;
+  }
+
+  throw new Error('bun:sqlite watchdog requires Bun runtime; either run under Bun or set SPECIALISTS_JOB_FILE_OUTPUT=on');
+}
+
+function startDetachedStatusWatchdog(dbPath: string, statusPath: string, jobId: string, pid: number): number | undefined {
   const watchdogScript = `
-const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
+const { existsSync, readFileSync, writeFileSync, renameSync } = require('node:fs');
 
+const dbPath = process.env.SPECIALISTS_OBSERVABILITY_DB_PATH;
 const statusPath = process.env.SPECIALISTS_STATUS_PATH;
+const jobId = process.env.SPECIALISTS_STATUS_JOB_ID;
 const pidRaw = process.env.SPECIALISTS_STATUS_PID;
 const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
+const staleAfterRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS;
+const mode = process.env.SPECIALISTS_STATUS_WATCHDOG_MODE;
 
 const targetPid = Number(pidRaw);
 const intervalMs = Number(intervalRaw);
+const staleAfterMs = Number(staleAfterRaw);
 
-if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+if (!dbPath || !statusPath || !jobId || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0) {
+  console.error('[watchdog] invalid env');
+  process.exit(1);
+}
+
+let Database;
+try {
+  ({ Database } = require('bun:sqlite'));
+} catch (error) {
+  console.error('[watchdog] bun:sqlite unavailable:', error?.message ?? String(error));
   process.exit(1);
 }
 
@@ -416,65 +451,78 @@ const isPidAlive = () => {
   }
 };
 
-const run = () => {
-  if (!existsSync(statusPath)) {
-    process.exit(0);
-  }
-
-  let status;
-  try {
-    status = JSON.parse(readFileSync(statusPath, 'utf-8'));
-  } catch {
-    process.exit(0);
-  }
-
-  if (!status || typeof status !== 'object') {
-    process.exit(0);
-  }
-
-  if (status.status === 'done' || status.status === 'error') {
-    process.exit(0);
-  }
-
-  if (status.status !== 'running' && status.status !== 'starting') {
-    return;
-  }
-
-  if (isPidAlive()) {
-    return;
-  }
-
-  const now = Date.now();
-  const updated = {
-    ...status,
-    status: 'error',
-    error: 'Supervisor process exited unexpectedly',
-    last_event_at_ms: now,
+if (mode === 'db') {
+  const readJobStatus = () => {
+    const db = new Database(dbPath, { readonly: true, create: false });
+    try {
+      const row = db.query('SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId);
+      return row?.status_json ? JSON.parse(row.status_json) : null;
+    } finally {
+      db.close();
+    }
   };
 
-  const tmpPath = statusPath + '.tmp';
-  try {
-    writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
-    renameSync(tmpPath, statusPath);
-  } catch {
-    // Best effort only.
-  }
+  const run = () => {
+    const status = readJobStatus();
+    if (!status) {
+      if (!isPidAlive()) process.exit(0);
+      return;
+    }
+    if (status.status === 'done' || status.status === 'error') process.exit(0);
+    if (!isPidAlive()) process.exit(0);
+  };
 
-  process.exit(0);
-};
+  setInterval(run, intervalMs);
+  run();
+  return;
+}
 
-setInterval(run, intervalMs);
-run();
+if (mode === 'file') {
+  const run = () => {
+    if (!existsSync(statusPath)) return;
+    let status;
+    try {
+      status = JSON.parse(readFileSync(statusPath, 'utf-8'));
+    } catch {
+      return;
+    }
+    if (!status || typeof status !== 'object') return;
+    if (status.status === 'done' || status.status === 'error') {
+      process.exit(0);
+      return;
+    }
+    const updatedAtMs = Number(status.updated_at_ms ?? status.last_event_at_ms ?? status.started_at_ms ?? 0);
+    if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > staleAfterMs) {
+      process.exit(0);
+      return;
+    }
+    if (!isPidAlive()) process.exit(0);
+  };
+
+  console.warn('[watchdog] file mode degraded; Bun unavailable, polling status file');
+  setInterval(run, intervalMs);
+  run();
+  return;
+}
+
+console.error('[watchdog] invalid watchdog mode');
+process.exit(1);
 `;
 
-  const watchdog = spawn(process.execPath, ['-e', watchdogScript], {
+  const runtime = resolveDetachedRuntime();
+  const watchdogMode = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase() === 'on' && runtime === process.execPath ? 'file' : 'db';
+  const watchdog = spawn(runtime, ['-e', watchdogScript], {
     detached: true,
     stdio: 'ignore',
     env: {
       ...process.env,
+      SPECIALISTS_OBSERVABILITY_DB_PATH: dbPath,
       SPECIALISTS_STATUS_PATH: statusPath,
+      SPECIALISTS_STATUS_JOB_ID: jobId,
       SPECIALISTS_STATUS_PID: String(pid),
       SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS),
+      SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS: String(STATUS_WATCHDOG_STALE_AFTER_MS),
+      SPECIALISTS_STATUS_WATCHDOG_MODE: watchdogMode,
     },
   });
 
@@ -576,6 +624,15 @@ export class Supervisor {
 
   private resultPath(id: string): string {
     return join(this.jobDir(id), 'result.txt');
+  }
+
+  private observabilityDbPath(): string {
+    return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
+  }
+
+  private shouldWriteJobFiles(): boolean {
+    const mode = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase();
+    return mode === '' || mode === 'on' || mode === 'true' || mode === '1';
   }
 
   private eventsPath(id: string): string {
@@ -697,6 +754,7 @@ export class Supervisor {
   }
 
   private writeStatusFileOnly(id: string, data: SupervisorStatus): void {
+    if (!this.shouldWriteJobFiles()) return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
@@ -764,54 +822,92 @@ export class Supervisor {
 
   /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
+    if (!existsSync(this.resolvedJobsDir)) return;
     const thresholds: Required<StallDetectionConfig> = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
     };
     const now = Date.now();
-    const jobs = this.sqliteClient?.listStatuses() ?? [];
-    for (const s of jobs) {
-      if (s.node_id) continue;
+    const shouldUseFiles = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase() !== 'off';
 
-      if (s.status === 'running' || s.status === 'starting') {
-        if (!s.pid) continue;
-        let pidAlive = true;
-        try { process.kill(s.pid, 0); } catch {
-          pidAlive = false;
+    if (this.sqliteClient && !shouldUseFiles) {
+      for (const job of this.sqliteClient.listActiveJobs(['running', 'starting', 'waiting'])) {
+        const status = (this.sqliteClient as unknown as { readStatus(jobId: string): SupervisorStatus | null }).readStatus(job.job_id);
+        if (!status) continue;
+        if (status.status === 'running' || status.status === 'starting') {
+          if (!status.pid || isPidAlive(status.pid)) continue;
+          const tmp = this.statusPath(status.id) + '.tmp';
+          const updated: SupervisorStatus = {
+            ...status,
+            status: 'error',
+            error: 'orphaned (parent supervisor died)',
+            last_event_at_ms: now,
+          };
+          writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
+          renameSync(tmp, this.statusPath(status.id));
+          continue;
         }
-        if (!pidAlive) {
-          this.updateJobStatus(s.id, 'error', 'Process crashed or was killed');
-          const current = this.readStatus(s.id);
-          if (current) {
-            this.writeStatusFile(s.id, {
-              ...current,
-              last_event_at_ms: now,
-            });
-          }
-        } else if (s.status === 'running') {
-          const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+        if (status.status === 'waiting') {
+          const lastEventAt = status.last_event_at_ms ?? status.started_at_ms;
           const silenceMs = now - lastEventAt;
-          if (silenceMs > thresholds.running_silence_error_ms) {
-            this.updateJobStatus(
-              s.id,
-              'error',
-              `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
-            );
+          if (silenceMs > thresholds.waiting_stale_ms) {
+            const eventsPath = join(this.resolvedJobsDir, status.id, 'events.jsonl');
+            const event = createStaleWarningEvent('waiting_stale', {
+              silence_ms: silenceMs,
+              threshold_ms: thresholds.waiting_stale_ms,
+            });
+            try { appendFileSync(eventsPath, JSON.stringify(event) + '\n'); } catch { /* best effort */ }
           }
-        }
-      } else if (s.status === 'waiting') {
-        const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-        const silenceMs = now - lastEventAt;
-        if (silenceMs > thresholds.waiting_stale_ms) {
-          const event = createStaleWarningEvent('waiting_stale', {
-            silence_ms: silenceMs,
-            threshold_ms: thresholds.waiting_stale_ms,
-          });
-          try {
-            appendFileSync(this.eventsPath(s.id), `${JSON.stringify(event)}\n`);
-          } catch { /* best effort */ }
         }
       }
+      return;
+    }
+
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const statusPath = join(this.resolvedJobsDir, entry, 'status.json');
+      if (!existsSync(statusPath)) continue;
+      try {
+        const s: SupervisorStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
+
+        if (s.status === 'running' || s.status === 'starting') {
+          if (!s.pid) continue;
+          if (!isPidAlive(s.pid)) {
+            const tmp = statusPath + '.tmp';
+            const updated: SupervisorStatus = {
+              ...s,
+              status: 'error',
+              error: 'orphaned (parent supervisor died)',
+              last_event_at_ms: now,
+            };
+            writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
+            renameSync(tmp, statusPath);
+          } else if (s.status === 'running') {
+            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+            const silenceMs = now - lastEventAt;
+            if (silenceMs > thresholds.running_silence_error_ms) {
+              const tmp = statusPath + '.tmp';
+              const updated: SupervisorStatus = {
+                ...s,
+                status: 'error',
+                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`,
+              };
+              writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
+              renameSync(tmp, statusPath);
+            }
+          }
+        } else if (s.status === 'waiting') {
+          const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+          const silenceMs = now - lastEventAt;
+          if (silenceMs > thresholds.waiting_stale_ms) {
+            const eventsPath = join(this.resolvedJobsDir, entry, 'events.jsonl');
+            const event = createStaleWarningEvent('waiting_stale', {
+              silence_ms: silenceMs,
+              threshold_ms: thresholds.waiting_stale_ms,
+            });
+            try { appendFileSync(eventsPath, JSON.stringify(event) + '\n'); } catch { /* best effort */ }
+          }
+        }
+      } catch { /* ignore */ }
     }
   }
 
@@ -894,8 +990,8 @@ export class Supervisor {
         : { branch: resolveCurrentBranch() }),
       startup_context: startupContext,
     };
-    this.writeStatusFileOnly(id, initialStatus);
-    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
+    this.writeStatusFile(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
     // Persist a latest marker so other processes can discover the active job id immediately
     writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
     this.opts.onJobStarted?.({ id });

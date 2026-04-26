@@ -23427,18 +23427,29 @@ function startDetachedGitnexusAnalyze(cwd) {
   });
   child.unref();
 }
-function startDetachedStatusWatchdog(statusPath, pid) {
+function startDetachedStatusWatchdog(dbPath, statusPath, jobId, pid) {
   const watchdogScript = `
-const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
+const { existsSync, readFileSync, writeFileSync, renameSync } = require('node:fs');
 
+const dbPath = process.env.SPECIALISTS_OBSERVABILITY_DB_PATH;
 const statusPath = process.env.SPECIALISTS_STATUS_PATH;
+const jobId = process.env.SPECIALISTS_STATUS_JOB_ID;
 const pidRaw = process.env.SPECIALISTS_STATUS_PID;
 const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
+const staleAfterRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS;
 
 const targetPid = Number(pidRaw);
 const intervalMs = Number(intervalRaw);
+const staleAfterMs = Number(staleAfterRaw);
 
-if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+if (!dbPath || !statusPath || !jobId || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0) {
+  process.exit(1);
+}
+
+let Database;
+try {
+  Database = require('bun:sqlite').Database;
+} catch {
   process.exit(1);
 }
 
@@ -23451,40 +23462,34 @@ const isPidAlive = () => {
   }
 };
 
-const run = () => {
-  if (!existsSync(statusPath)) {
-    process.exit(0);
+const readJobStatus = () => {
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    const row = db.query('SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId);
+    return row?.status_json ? JSON.parse(row.status_json) : null;
+  } finally {
+    db.close();
   }
+};
+
+const markError = (reason) => {
+  if (!existsSync(statusPath)) return;
 
   let status;
   try {
     status = JSON.parse(readFileSync(statusPath, 'utf-8'));
   } catch {
-    process.exit(0);
-  }
-
-  if (!status || typeof status !== 'object') {
-    process.exit(0);
-  }
-
-  if (status.status === 'done' || status.status === 'error') {
-    process.exit(0);
-  }
-
-  if (status.status !== 'running' && status.status !== 'starting') {
     return;
   }
 
-  if (isPidAlive()) {
-    return;
-  }
+  if (!status || typeof status !== 'object') return;
+  if (status.status === 'done' || status.status === 'error') return;
 
-  const now = Date.now();
   const updated = {
     ...status,
     status: 'error',
-    error: 'Supervisor process exited unexpectedly',
-    last_event_at_ms: now,
+    error: reason,
+    last_event_at_ms: Date.now(),
   };
 
   const tmpPath = statusPath + '.tmp';
@@ -23494,8 +23499,32 @@ const run = () => {
   } catch {
     // Best effort only.
   }
+};
 
-  process.exit(0);
+const run = () => {
+  const status = readJobStatus();
+  if (!status) {
+    if (!isPidAlive()) {
+      markError('Supervisor process exited unexpectedly');
+      process.exit(0);
+    }
+    return;
+  }
+
+  if (status.status === 'done' || status.status === 'error') {
+    process.exit(0);
+  }
+
+  const updatedAtMs = Number(status.updated_at_ms ?? status.last_event_at_ms ?? status.started_at_ms ?? 0);
+  if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > staleAfterMs) {
+    markError('Supervisor status stale');
+    return;
+  }
+
+  if (!isPidAlive()) {
+    markError('Supervisor process exited unexpectedly');
+    process.exit(0);
+  }
 };
 
 setInterval(run, intervalMs);
@@ -23506,9 +23535,12 @@ run();
     stdio: "ignore",
     env: {
       ...process.env,
+      SPECIALISTS_OBSERVABILITY_DB_PATH: dbPath,
       SPECIALISTS_STATUS_PATH: statusPath,
+      SPECIALISTS_STATUS_JOB_ID: jobId,
       SPECIALISTS_STATUS_PID: String(pid),
-      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS)
+      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS),
+      SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS: String(STATUS_WATCHDOG_STALE_AFTER_MS)
     }
   });
   watchdog.unref();
@@ -23603,6 +23635,13 @@ class Supervisor {
   }
   resultPath(id) {
     return join8(this.jobDir(id), "result.txt");
+  }
+  observabilityDbPath() {
+    return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
+  }
+  shouldWriteJobFiles() {
+    const mode = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? "").trim().toLowerCase();
+    return mode === "" || mode === "on" || mode === "true" || mode === "1";
   }
   eventsPath(id) {
     return join8(this.jobDir(id), "events.jsonl");
@@ -23708,6 +23747,8 @@ class Supervisor {
     };
   }
   writeStatusFileOnly(id, data) {
+    if (!this.shouldWriteJobFiles())
+      return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync3(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
@@ -23875,8 +23916,8 @@ class Supervisor {
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
       startup_context: startupContext
     };
-    this.writeStatusFileOnly(id, initialStatus);
-    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
+    this.writeStatusFile(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
     writeFileSync3(join8(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     this.opts.onJobStarted?.({ id });
@@ -24704,11 +24745,12 @@ ${appendError}
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
 var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
   init_observability_sqlite();
+  init_observability_db();
   init_epic_lifecycle();
   init_epic_readiness();
   init_chain_identity();
