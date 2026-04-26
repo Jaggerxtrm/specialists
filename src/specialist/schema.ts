@@ -92,6 +92,11 @@ const CommunicationSchema = z.object({
    * Runner does not auto-chain specialists; orchestrators may consume this field.
    */
   next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
+  /**
+   * Declarative output kinds this specialist emits (e.g. "code_discovery", "documentation_research").
+   * Runner does not consume this; orchestrators may use it for routing/discovery.
+   */
+  publishes: z.array(z.string()).optional(),
 }).passthrough().optional();
 
 const ValidationSchema = z.object({
