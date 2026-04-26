@@ -1,0 +1,29 @@
+services:
+  specialists:
+    image: ghcr.io/<org>/specialists-service:<tag>
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      HOME: /pi-home
+    volumes:
+      - ./.specialists:/work/.specialists
+      - ${HOME}/.pi:/pi-home/.pi:ro
+    working_dir: /work
+    command: ["--port", "8000"]
+    networks:
+      - app
+    restart: unless-stopped
+
+  app:
+    depends_on:
+      - specialists
+    networks:
+      - app
+
+networks:
+  app:
+
+# SQLite + bind mount rules:
+# 1. Mount .specialists/ directory, not only .db file, so SQLite can create .db-wal and .db-shm siblings.
+# 2. Keep .specialists/db/ on local disk; remote filesystems break SQLite locking.
+# 3. Match container UID/GID to host owner so trace rows can write into bind-mounted files.
+# 4. Keep .specialists/user/ inside bind mount; specs load from host state, not image state.
