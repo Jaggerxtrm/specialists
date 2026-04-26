@@ -189,7 +189,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
 
     const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-tools', '--model', model];
     if (spec.specialist.execution.thinking_level) args.push('--thinking', spec.specialist.execution.thinking_level);
-    args.push('--', prompt);
+    args.push(prompt);
 
     const pi = spawn('pi', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     options.onChild?.(pi);

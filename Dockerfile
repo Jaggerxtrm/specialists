@@ -22,7 +22,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates sqlite3 npm \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --create-home --home-dir /home/specialists --shell /usr/sbin/nologin specialists \
-  && npm install -g @mariozechner/pi-coding-agent@0.64.0
+  && npm install -g @mariozechner/pi-coding-agent@latest
 
 COPY --from=builder /app/dist ./dist
 
