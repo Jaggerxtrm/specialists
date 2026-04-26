@@ -89,7 +89,8 @@ function listLiveJobs(showDead: boolean): LiveJob[] {
     .map((status) => toLiveJob(status))
     .filter((job): job is LiveJob => job !== null)
     .filter((job) => showDead || !job.isDead) ?? [];
-  if (sqliteJobs.length > 0 || !fileOutputEnabled) return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
+  if (!fileOutputEnabled) return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
+  if (sqliteJobs.length > 0) return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
 
   if (!existsSync(jobsDir)) return [];
   return readdirSync(jobsDir)

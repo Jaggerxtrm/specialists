@@ -26,6 +26,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJobEventsById } from '../specialist/timeline-query.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { detectJobOutputMode } from './status.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
 
 interface PollResult {
@@ -94,7 +95,7 @@ function readJobState(jobsDir: string, jobId: string, cursor: number, outputCurs
       status = sqliteClient.readStatus(jobId);
     } catch { /* ignore */ }
   }
-  if (!status) {
+  if (!status && detectJobOutputMode() === 'on') {
     const statusPath = join(jobDir, 'status.json');
     if (existsSync(statusPath)) {
       try { status = JSON.parse(readFileSync(statusPath, 'utf-8')); } catch { /* ignore */ }
@@ -107,14 +108,16 @@ function readJobState(jobsDir: string, jobId: string, cursor: number, outputCurs
       fullOutput = sqliteClient.readResult(jobId) ?? '';
     } catch { /* ignore */ }
   }
-  if (!fullOutput) {
+  if (!fullOutput && detectJobOutputMode() === 'on') {
     const resultPath = join(jobDir, 'result.txt');
     if (existsSync(resultPath)) {
       try { fullOutput = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
     }
   }
 
-  const events = readJobEventsById(jobsDir, jobId);
+  const events = detectJobOutputMode() === 'on'
+    ? readJobEventsById(jobsDir, jobId)
+    : (sqliteClient?.readEvents(jobId) ?? []);
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { readJobEventsById, isJobComplete } from '../../specialist/timeline-query.js';
 import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { formatSpecialistModel } from '../../specialist/model-display.js';
+import { detectJobOutputMode } from '../../cli/status.js';
 
 export const feedSpecialistSchema = z.object({
   job_id: z.string().describe('Job ID printed by specialists run'),
@@ -43,7 +44,7 @@ export function createFeedSpecialistTool(jobsDir: string) {
       let model: string | undefined = statusRecord?.model;
       let bead_id: string | undefined = statusRecord?.bead_id;
       let metrics: Record<string, unknown> | undefined = statusRecord?.metrics as Record<string, unknown> | undefined;
-      if (!statusRecord && existsSync(statusPath)) {
+      if (!statusRecord && detectJobOutputMode() === 'on' && existsSync(statusPath)) {
         try {
           const s = JSON.parse(readFileSync(statusPath, 'utf-8'));
           status = s.status ?? 'unknown';
@@ -58,8 +59,9 @@ export function createFeedSpecialistTool(jobsDir: string) {
         }
       }
 
-      // Read all events from events.jsonl
-      const allEvents = readJobEventsById(jobsDir, job_id);
+      const allEvents = detectJobOutputMode() === 'on'
+        ? readJobEventsById(jobsDir, job_id)
+        : (sqliteClient?.readEvents(job_id) ?? []);
       const total = allEvents.length;
 
       // Apply cursor + limit slice
