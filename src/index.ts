@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              status, ps, result, feed, poll, clean, merge, epic, end, stop, attach, quickstart, help
+ *              status, ps, result, feed, poll, clean, merge, epic, end, stop, attach, quickstart, serve, script, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -966,6 +966,25 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/serve.js');
+    return handler(process.argv.slice(3));
+  }
+
+  if (sub === 'script') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists script <name> [--vars key=value ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]',
+        '',
+        'One-shot script-class specialist runner for cron and host scripts.',
+        '',
+        'Outputs:',
+        '  default  assistant text only',
+        '  --json   full GenerateResponse JSON',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/script.js');
     return handler(process.argv.slice(3));
   }
 

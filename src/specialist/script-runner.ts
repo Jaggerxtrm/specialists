@@ -23,6 +23,7 @@ export interface ScriptGenerateRequest {
   variables?: Record<string, string>;
   template?: string;
   model_override?: string;
+  thinking_level?: string;
   timeout_ms?: number;
   trace?: boolean;
 }
@@ -188,7 +189,8 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const timeoutMs = input.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120_000;
 
     const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-tools', '--model', model];
-    if (spec.specialist.execution.thinking_level) args.push('--thinking', spec.specialist.execution.thinking_level);
+    const thinkingLevel = input.thinking_level ?? spec.specialist.execution.thinking_level;
+    if (thinkingLevel) args.push('--thinking', thinkingLevel);
     args.push(prompt);
 
     const pi = spawn('pi', args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -228,7 +230,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const text = extractAssistantText(stdout.split(/\r?\n/));
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
-    if (observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs);
+    if (input.trace !== false && observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs);
 
     if (outputTooLarge) {
       return { success: false, error: 'stdout exceeded 4MB cap', error_type: 'output_too_large', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };

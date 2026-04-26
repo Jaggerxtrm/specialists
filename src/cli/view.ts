@@ -223,7 +223,7 @@ function printBySection(spec: Specialist, section: keyof Specialist['specialist'
   }
 
   const value = spec.specialist[section];
-  printGenericSection(section, section === 'metadata' ? cyan : green, value);
+  printGenericSection(String(section), section === 'metadata' ? cyan : green, value);
 }
 
 function printFullSpecialist(spec: Specialist): void {
