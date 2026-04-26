@@ -84,6 +84,7 @@ describe('status CLI — run()', () => {
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'specialists-status-'));
     process.chdir(tempDir);
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'on';
   });
 
   afterEach(() => {
@@ -93,6 +94,7 @@ describe('status CLI — run()', () => {
     vi.doUnmock('../../../src/specialist/observability-sqlite.js');
     vi.resetModules();
     vi.restoreAllMocks();
+    delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
   });
 
   it('completes without throwing', async () => {

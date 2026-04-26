@@ -1,6 +1,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { detectJobOutputMode } from './status.js';
 
 interface JobStatus {
   status?: string;
@@ -12,12 +14,12 @@ function exitWithError(message: string): never {
   process.exit(1);
 }
 
-function readStatus(statusPath: string, jobId: string): JobStatus {
+function readStatus(statusPath: string, jobId: string): JobStatus | null {
   try {
     return JSON.parse(readFileSync(statusPath, 'utf-8')) as JobStatus;
   } catch (error: unknown) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
+      return null;
     }
 
     const details = error instanceof Error ? error.message : String(error);
@@ -32,9 +34,18 @@ export async function run(): Promise<void> {
     exitWithError('Usage: specialists attach <job-id>');
   }
 
+  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const statusPath = join(jobsDir, jobId, 'status.json');
-  const status = readStatus(statusPath, jobId);
+  const outputMode = detectJobOutputMode();
+
+  const dbStatus = sqliteClient?.readStatus(jobId) ?? null;
+  const fileStatus = dbStatus ? null : (outputMode === 'on' ? readStatus(statusPath, jobId) : null);
+  const status = dbStatus ?? fileStatus;
+
+  if (!status) {
+    exitWithError(`Job \`${jobId}\` not found.`);
+  }
 
   if (status.status === 'done' || status.status === 'error') {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);

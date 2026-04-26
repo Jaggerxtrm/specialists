@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 import { checkStaleness } from '../../specialist/loader.js';
+import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
@@ -9,7 +10,7 @@ const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBreaker: CircuitBreaker) {
   return {
     name: 'specialist_status' as const,
-    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from .specialists/jobs/.',
+    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-first observability, with file fallback only when SPECIALISTS_JOB_FILE_OUTPUT=on.',
     inputSchema: z.object({}),
     async execute(_: object) {
       const list = await loader.list();
@@ -17,19 +18,9 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
       // Check staleness for each specialist concurrently
       const stalenessResults = await Promise.all(list.map(s => checkStaleness(s)));
 
-      // Include active background jobs from file-based job state
-      const { existsSync, readdirSync, readFileSync } = await import('node:fs');
-      const { join } = await import('node:path');
-      const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-      const jobs: any[] = [];
-      if (existsSync(jobsDir)) {
-        for (const entry of readdirSync(jobsDir)) {
-          const statusPath = join(jobsDir, entry, 'status.json');
-          if (!existsSync(statusPath)) continue;
-          try { jobs.push(JSON.parse(readFileSync(statusPath, 'utf-8'))); } catch { /* skip */ }
-        }
-        jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
-      }
+      // Include active background jobs from DB-first observability.
+      const sqliteClient = createObservabilitySqliteClient();
+      const jobs = sqliteClient?.listStatuses() ?? [];
 
       return {
         loaded_count: list.length,

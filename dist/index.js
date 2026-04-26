@@ -23768,68 +23768,54 @@ class Supervisor {
     }
   }
   crashRecovery() {
-    if (!existsSync8(this.resolvedJobsDir))
-      return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection
     };
     const now = Date.now();
-    for (const entry of readdirSync(this.resolvedJobsDir)) {
-      const statusPath = join8(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync8(statusPath))
+    const jobs = this.sqliteClient?.listStatuses() ?? [];
+    for (const s of jobs) {
+      if (s.node_id)
         continue;
-      try {
-        const s = JSON.parse(readFileSync6(statusPath, "utf-8"));
-        if (s.status === "running" || s.status === "starting") {
-          if (!s.pid)
-            continue;
-          let pidAlive = true;
-          try {
-            process.kill(s.pid, 0);
-          } catch {
-            pidAlive = false;
-          }
-          if (!pidAlive) {
-            const tmp = statusPath + ".tmp";
-            const updated = {
-              ...s,
-              status: "error",
-              error: "Process crashed or was killed",
+      if (s.status === "running" || s.status === "starting") {
+        if (!s.pid)
+          continue;
+        let pidAlive = true;
+        try {
+          process.kill(s.pid, 0);
+        } catch {
+          pidAlive = false;
+        }
+        if (!pidAlive) {
+          this.updateJobStatus(s.id, "error", "Process crashed or was killed");
+          const current = this.readStatus(s.id);
+          if (current) {
+            this.writeStatusFile(s.id, {
+              ...current,
               last_event_at_ms: now
-            };
-            writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
-            renameSync(tmp, statusPath);
-          } else if (s.status === "running") {
-            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-            const silenceMs = now - lastEventAt;
-            if (silenceMs > thresholds.running_silence_error_ms) {
-              const tmp = statusPath + ".tmp";
-              const updated = {
-                ...s,
-                status: "error",
-                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
-              };
-              writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
-              renameSync(tmp, statusPath);
-            }
+            });
           }
-        } else if (s.status === "waiting") {
+        } else if (s.status === "running") {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
-          if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join8(this.resolvedJobsDir, entry, "events.jsonl");
-            const event = createStaleWarningEvent("waiting_stale", {
-              silence_ms: silenceMs,
-              threshold_ms: thresholds.waiting_stale_ms
-            });
-            try {
-              appendFileSync(eventsPath, JSON.stringify(event) + `
-`);
-            } catch {}
+          if (silenceMs > thresholds.running_silence_error_ms) {
+            this.updateJobStatus(s.id, "error", `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`);
           }
         }
-      } catch {}
+      } else if (s.status === "waiting") {
+        const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+        const silenceMs = now - lastEventAt;
+        if (silenceMs > thresholds.waiting_stale_ms) {
+          const event = createStaleWarningEvent("waiting_stale", {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.waiting_stale_ms
+          });
+          try {
+            appendFileSync(this.eventsPath(s.id), `${JSON.stringify(event)}
+`);
+          } catch {}
+        }
+      }
     }
   }
   async run() {
@@ -24796,11 +24782,17 @@ function readJobStatus(statusPath) {
   }
 }
 function listLiveJobs(showDead) {
+  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join9(process.cwd(), ".specialists", "jobs");
+  const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
+  const sqliteJobs = sqliteClient?.listStatuses().map((status) => toLiveJob(status)).filter((job) => job !== null).filter((job) => showDead || !job.isDead) ?? [];
+  if (!fileOutputEnabled)
+    return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
+  if (sqliteJobs.length > 0)
+    return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
   if (!existsSync9(jobsDir))
     return [];
-  const jobs = readdirSync2(jobsDir).map((entry) => toLiveJob(readJobStatus(join9(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
-  return jobs;
+  return readdirSync2(jobsDir).map((entry) => toLiveJob(readJobStatus(join9(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
 }
 function formatLiveChoice(job) {
   const state = job.isDead ? "dead" : job.status;
@@ -24986,6 +24978,7 @@ ${bold2(`Specialists (${specialists.length})`)}
 var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, ArgParseError;
 var init_list = __esm(() => {
   init_loader();
+  init_observability_sqlite();
   init_supervisor();
   ArgParseError = class ArgParseError extends Error {
     constructor(message) {
@@ -33572,7 +33565,8 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run14
+  run: () => run14,
+  detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync18, readFileSync as readFileSync16 } from "fs";
@@ -33630,6 +33624,9 @@ function statusColor(job) {
       return job.status;
   }
 }
+function detectJobOutputMode() {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on" ? "on" : "off";
+}
 function parseStatusArgs(argv) {
   let jsonMode = false;
   let jobId;
@@ -33665,7 +33662,10 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
       return sqliteEvents.length;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
+    console.warn(`SQLite events read failed for job ${jobId}`, error2);
+  }
+  if (detectJobOutputMode() !== "on") {
+    return 0;
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -33699,7 +33699,10 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
         return snapshot;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
+    console.warn(`SQLite events read failed for job ${jobId}`, error2);
+  }
+  if (detectJobOutputMode() !== "on") {
+    return null;
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -33852,6 +33855,9 @@ async function run14() {
     }
     if (jsonMode) {
       const output2 = {
+        runtime: {
+          job_file_output: detectJobOutputMode()
+        },
         specialists: {
           count: allSpecialists.length,
           items: allSpecialists.map((s) => ({
@@ -36009,22 +36015,38 @@ function parseArgs10(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
+  const sqliteClient = createObservabilitySqliteClient();
   const jobDir = join24(jobsDir, jobId);
-  const statusPath = join24(jobDir, "status.json");
   let status = null;
-  if (existsSync23(statusPath)) {
+  if (sqliteClient) {
     try {
-      status = JSON.parse(readFileSync21(statusPath, "utf-8"));
+      status = sqliteClient.readStatus(jobId);
     } catch {}
   }
-  const resultPath = join24(jobDir, "result.txt");
+  if (!status && detectJobOutputMode() === "on") {
+    const statusPath = join24(jobDir, "status.json");
+    if (existsSync23(statusPath)) {
+      try {
+        status = JSON.parse(readFileSync21(statusPath, "utf-8"));
+      } catch {}
+    }
+  }
   let fullOutput = "";
-  if (existsSync23(resultPath)) {
+  if (sqliteClient) {
     try {
-      fullOutput = readFileSync21(resultPath, "utf-8");
+      fullOutput = sqliteClient.readResult(jobId) ?? "";
     } catch {}
   }
-  const events = readJobEventsById(jobsDir, jobId);
+  if (!fullOutput && detectJobOutputMode() === "on") {
+    const resultPath = join24(jobDir, "result.txt");
+    if (existsSync23(resultPath)) {
+      try {
+        fullOutput = readFileSync21(resultPath, "utf-8");
+      } catch {}
+    }
+  }
+  const dbEvents = sqliteClient?.readEvents(jobId);
+  const events = dbEvents && dbEvents.length > 0 ? dbEvents : detectJobOutputMode() === "on" ? readJobEventsById(jobsDir, jobId) : dbEvents ?? [];
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
   const startedAt = status?.started_at_ms ?? Date.now();
@@ -36079,6 +36101,8 @@ async function run18() {
 }
 var init_poll = __esm(() => {
   init_timeline_query();
+  init_observability_sqlite();
+  init_status();
 });
 
 // src/cli/steer.ts
@@ -36842,7 +36866,7 @@ function readStatus(statusPath, jobId) {
     return JSON.parse(readFileSync24(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
-      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
+      return null;
     }
     const details = error2 instanceof Error ? error2.message : String(error2);
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
@@ -36853,9 +36877,16 @@ async function run25() {
   if (!jobId) {
     exitWithError("Usage: specialists attach <job-id>");
   }
+  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join27(process.cwd(), ".specialists", "jobs");
   const statusPath = join27(jobsDir, jobId, "status.json");
-  const status = readStatus(statusPath, jobId);
+  const outputMode = detectJobOutputMode();
+  const dbStatus = sqliteClient?.readStatus(jobId) ?? null;
+  const fileStatus = dbStatus ? null : outputMode === "on" ? readStatus(statusPath, jobId) : null;
+  const status = dbStatus ?? fileStatus;
+  if (!status) {
+    exitWithError(`Job \`${jobId}\` not found.`);
+  }
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
   }
@@ -36873,7 +36904,10 @@ async function run25() {
     process.exit(1);
   }
 }
-var init_attach = () => {};
+var init_attach = __esm(() => {
+  init_observability_sqlite();
+  init_status();
+});
 
 // src/cli/quickstart.ts
 var exports_quickstart = {};

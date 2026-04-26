@@ -764,63 +764,54 @@ export class Supervisor {
 
   /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
-    if (!existsSync(this.resolvedJobsDir)) return;
     const thresholds: Required<StallDetectionConfig> = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
     };
     const now = Date.now();
-    for (const entry of readdirSync(this.resolvedJobsDir)) {
-      const statusPath = join(this.resolvedJobsDir, entry, 'status.json');
-      if (!existsSync(statusPath)) continue;
-      try {
-        const s: SupervisorStatus = JSON.parse(readFileSync(statusPath, 'utf-8'));
+    const jobs = this.sqliteClient?.listStatuses() ?? [];
+    for (const s of jobs) {
+      if (s.node_id) continue;
 
-        if (s.status === 'running' || s.status === 'starting') {
-          if (!s.pid) continue;
-          let pidAlive = true;
-          try { process.kill(s.pid, 0); } catch {
-            pidAlive = false;
-          }
-          if (!pidAlive) {
-            const tmp = statusPath + '.tmp';
-            const updated: SupervisorStatus = {
-              ...s,
-              status: 'error',
-              error: 'Process crashed or was killed',
+      if (s.status === 'running' || s.status === 'starting') {
+        if (!s.pid) continue;
+        let pidAlive = true;
+        try { process.kill(s.pid, 0); } catch {
+          pidAlive = false;
+        }
+        if (!pidAlive) {
+          this.updateJobStatus(s.id, 'error', 'Process crashed or was killed');
+          const current = this.readStatus(s.id);
+          if (current) {
+            this.writeStatusFile(s.id, {
+              ...current,
               last_event_at_ms: now,
-            };
-            writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
-            renameSync(tmp, statusPath);
-          } else if (s.status === 'running') {
-            // PID alive but check age-based staleness for running jobs
-            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-            const silenceMs = now - lastEventAt;
-            if (silenceMs > thresholds.running_silence_error_ms) {
-              const tmp = statusPath + '.tmp';
-              const updated: SupervisorStatus = {
-                ...s,
-                status: 'error',
-                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`,
-              };
-              writeFileSync(tmp, JSON.stringify(updated, null, 2), 'utf-8');
-              renameSync(tmp, statusPath);
-            }
+            });
           }
-        } else if (s.status === 'waiting') {
-          // Waiting jobs: emit stale_warning if idle too long (do NOT auto-close)
+        } else if (s.status === 'running') {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
-          if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join(this.resolvedJobsDir, entry, 'events.jsonl');
-            const event = createStaleWarningEvent('waiting_stale', {
-              silence_ms: silenceMs,
-              threshold_ms: thresholds.waiting_stale_ms,
-            });
-            try { appendFileSync(eventsPath, JSON.stringify(event) + '\n'); } catch { /* best effort */ }
+          if (silenceMs > thresholds.running_silence_error_ms) {
+            this.updateJobStatus(
+              s.id,
+              'error',
+              `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
+            );
           }
         }
-      } catch { /* ignore */ }
+      } else if (s.status === 'waiting') {
+        const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+        const silenceMs = now - lastEventAt;
+        if (silenceMs > thresholds.waiting_stale_ms) {
+          const event = createStaleWarningEvent('waiting_stale', {
+            silence_ms: silenceMs,
+            threshold_ms: thresholds.waiting_stale_ms,
+          });
+          try {
+            appendFileSync(this.eventsPath(s.id), `${JSON.stringify(event)}\n`);
+          } catch { /* best effort */ }
+        }
+      }
     }
   }
 

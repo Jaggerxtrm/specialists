@@ -67,6 +67,12 @@ interface ParsedStatusArgs {
   jobId?: string;
 }
 
+export type JobOutputMode = 'on' | 'off';
+
+export function detectJobOutputMode(): JobOutputMode {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on' ? 'on' : 'off';
+}
+
 function parseStatusArgs(argv: string[]): ParsedStatusArgs {
   let jsonMode = false;
   let jobId: string | undefined;
@@ -101,7 +107,7 @@ function parseStatusArgs(argv: string[]): ParsedStatusArgs {
 function countJobEvents(
   sqliteClient: ReturnType<typeof createObservabilitySqliteClient>,
   jobsDir: string,
-  jobId: string
+  jobId: string,
 ): number {
   try {
     const sqliteEvents = sqliteClient?.readEvents(jobId) ?? [];
@@ -109,7 +115,11 @@ function countJobEvents(
       return sqliteEvents.length;
     }
   } catch (error) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
+    console.warn(`SQLite events read failed for job ${jobId}`, error);
+  }
+
+  if (detectJobOutputMode() !== 'on') {
+    return 0;
   }
 
   const eventsFile = join(jobsDir, jobId, 'events.jsonl');
@@ -149,7 +159,11 @@ function getLatestContextSnapshot(
       if (snapshot) return snapshot;
     }
   } catch (error) {
-    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error);
+    console.warn(`SQLite events read failed for job ${jobId}`, error);
+  }
+
+  if (detectJobOutputMode() !== 'on') {
+    return null;
   }
 
   const eventsFile = join(jobsDir, jobId, 'events.jsonl');
@@ -326,6 +340,9 @@ export async function run(): Promise<void> {
   // ── JSON output ─────────────────────────────────────────────────────────────
   if (jsonMode) {
     const output = {
+      runtime: {
+        job_file_output: detectJobOutputMode(),
+      },
       specialists: {
         count: allSpecialists.length,
         items: allSpecialists.map(s => ({

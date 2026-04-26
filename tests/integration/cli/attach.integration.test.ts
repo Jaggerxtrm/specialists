@@ -9,11 +9,11 @@ const repoRoot = resolve(import.meta.dirname, '../../..');
 const hasTmux = spawnSync('which', ['tmux'], { stdio: 'ignore' }).status === 0;
 const hasScript = spawnSync('which', ['script'], { stdio: 'ignore' }).status === 0;
 
-function runCli(args: string[], cwd: string) {
+function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync('bun', ['run', join(repoRoot, 'src/index.ts'), ...args], {
     cwd,
     encoding: 'utf-8',
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1', ...env },
   });
 }
 
@@ -33,8 +33,9 @@ async function writeStatus(
 }
 
 async function writeSpecialist(tempDir: string, name: string): Promise<void> {
-  await mkdir(join(tempDir, 'specialists'), { recursive: true });
-  await writeFile(join(tempDir, 'specialists', `${name}.specialist.json`), [
+  const specialistDir = join(tempDir, '.specialists', 'user', 'specialists');
+  await mkdir(specialistDir, { recursive: true });
+  await writeFile(join(specialistDir, `${name}.specialist.yaml`), [
     'specialist:',
     '  metadata:',
     `    name: ${name}`,
@@ -85,7 +86,7 @@ describe('integration: specialists attach', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-attach-'));
     await writeStatus(tempDir, 'done-job', { status: 'done' });
 
-    const result = runCli(['attach', 'done-job'], tempDir);
+    const result = runCli(['attach', 'done-job'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Job `done-job` has already completed (status: done).');
@@ -96,7 +97,7 @@ describe('integration: specialists attach', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-attach-'));
     await writeStatus(tempDir, 'running-no-tmux', { status: 'running' });
 
-    const result = runCli(['attach', 'running-no-tmux'], tempDir);
+    const result = runCli(['attach', 'running-no-tmux'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Job `running-no-tmux` has no tmux session.');
@@ -121,7 +122,7 @@ describe('integration: specialists attach', () => {
       {
         cwd: tempDir,
         encoding: 'utf-8',
-        env: { ...process.env, NO_COLOR: '1' },
+        env: { ...process.env, NO_COLOR: '1', SPECIALISTS_JOB_FILE_OUTPUT: 'on' },
       },
     );
 
@@ -140,7 +141,7 @@ describe('integration: specialists list --live', () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-list-live-'));
     await mkdir(join(tempDir, '.specialists', 'jobs'), { recursive: true });
 
-    const result = runCli(['list', '--live'], tempDir);
+    const result = runCli(['list', '--live'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('No running tmux sessions found.');
@@ -159,11 +160,11 @@ describe('integration: specialists list --live', () => {
       specialist: 'beta',
     });
 
-    const result = runCli(['list', '--live'], tempDir);
+    const result = runCli(['list', '--live', '--show-dead'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('job-a  sp-job-a-111111  running');
-    expect(result.stdout).toContain('job-b  sp-job-b-222222  waiting');
+    expect(result.stdout).toContain('job-a  sp-job-a-111111  dead');
+    expect(result.stdout).toContain('job-b  sp-job-b-222222  dead');
   });
 
   it('keeps specialists list output unchanged when --live is not used', async () => {

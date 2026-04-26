@@ -3,7 +3,9 @@ import * as z from 'zod';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJobEventsById, isJobComplete } from '../../specialist/timeline-query.js';
+import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { formatSpecialistModel } from '../../specialist/model-display.js';
+import { detectJobOutputMode } from '../../cli/status.js';
 
 export const feedSpecialistSchema = z.object({
   job_id: z.string().describe('Job ID printed by specialists run'),
@@ -29,32 +31,38 @@ export function createFeedSpecialistTool(jobsDir: string) {
     async execute(input: z.infer<typeof feedSpecialistSchema>) {
       const { job_id, cursor = 0, limit = 50 } = input;
 
-      // Read job metadata from status.json
+      const sqliteClient = createObservabilitySqliteClient();
+      // Read job metadata from DB first, file fallback only when file output is on.
       const statusPath = join(jobsDir, job_id, 'status.json');
-      if (!existsSync(statusPath)) {
+      const statusRecord = sqliteClient?.readStatus(job_id);
+      if (!statusRecord && !existsSync(statusPath)) {
         return { error: `Job not found: ${job_id}`, job_id };
       }
 
-      let status = 'unknown';
-      let specialist = 'unknown';
-      let model: string | undefined;
-      let bead_id: string | undefined;
-      let metrics: Record<string, unknown> | undefined;
-      try {
-        const s = JSON.parse(readFileSync(statusPath, 'utf-8'));
-        status = s.status ?? 'unknown';
-        specialist = s.specialist ?? 'unknown';
-        model = s.model;
-        bead_id = s.bead_id;
-        metrics = typeof s.metrics === 'object' && s.metrics !== null
-          ? s.metrics as Record<string, unknown>
-          : undefined;
-      } catch {
-        // status.json unreadable — continue with defaults
+      let status = statusRecord?.status ?? 'unknown';
+      let specialist = statusRecord?.specialist ?? 'unknown';
+      let model: string | undefined = statusRecord?.model;
+      let bead_id: string | undefined = statusRecord?.bead_id;
+      let metrics: Record<string, unknown> | undefined = statusRecord?.metrics as Record<string, unknown> | undefined;
+      if (!statusRecord && detectJobOutputMode() === 'on' && existsSync(statusPath)) {
+        try {
+          const s = JSON.parse(readFileSync(statusPath, 'utf-8'));
+          status = s.status ?? 'unknown';
+          specialist = s.specialist ?? 'unknown';
+          model = s.model;
+          bead_id = s.bead_id;
+          metrics = typeof s.metrics === 'object' && s.metrics !== null
+            ? s.metrics as Record<string, unknown>
+            : undefined;
+        } catch {
+          // status.json unreadable — continue with defaults
+        }
       }
 
-      // Read all events from events.jsonl
-      const allEvents = readJobEventsById(jobsDir, job_id);
+      const dbEvents = sqliteClient?.readEvents(job_id);
+      const allEvents = (dbEvents && dbEvents.length > 0)
+        ? dbEvents
+        : (detectJobOutputMode() === 'on' ? readJobEventsById(jobsDir, job_id) : (dbEvents ?? []));
       const total = allEvents.length;
 
       // Apply cursor + limit slice

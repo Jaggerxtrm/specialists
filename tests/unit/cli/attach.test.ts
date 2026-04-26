@@ -28,6 +28,7 @@ describe('attach CLI', () => {
     jobsDir = join(specialistsDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
     vi.spyOn(process, 'cwd').mockReturnValue(tempRoot);
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'on';
     (spawnSync as unknown as { mockReset: () => void }).mockReset();
     (execFileSync as unknown as { mockReset: () => void }).mockReset();
   });
@@ -36,6 +37,7 @@ describe('attach CLI', () => {
     process.argv = originalArgv;
     if (existsSync(tempRoot)) rmSync(tempRoot, { recursive: true, force: true });
     vi.restoreAllMocks();
+    delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
   });
 
   it('exits with usage when job-id is missing', async () => {
@@ -61,7 +63,7 @@ describe('attach CLI', () => {
 
     const { run } = await import('../../../src/cli/attach.js');
     await expect(run()).rejects.toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Job `job-missing` not found. Run `specialists status` to see active jobs.');
+    expect(errorSpy).toHaveBeenCalledWith('Job `job-missing` not found.');
   });
 
   it('exits when the job is already completed', async () => {
