@@ -480,6 +480,37 @@ interface CleanupProcessesResult {
 }
 
 export function cleanupProcesses(jobsDir: string, dryRun: boolean): CleanupProcessesResult {
+  const sqliteClient = createObservabilitySqliteClient();
+  if (sqliteClient) {
+    const result: CleanupProcessesResult = {
+      total: 0,
+      running: 0,
+      zombies: 0,
+      updated: 0,
+      zombieJobIds: [] as string[],
+    };
+
+    const statuses = sqliteClient.listStatuses();
+    for (const status of statuses) {
+      if (status.status !== 'running' && status.status !== 'starting') continue;
+      result.total += 1;
+      if (status.pid && process.kill(status.pid, 0)) {
+        result.running += 1;
+        continue;
+      }
+
+      result.zombies += 1;
+      result.zombieJobIds.push(status.id);
+      if (!dryRun) {
+        const updatedStatus = { ...status, status: 'error' as const };
+        sqliteClient.upsertStatus(updatedStatus);
+        result.updated += 1;
+      }
+    }
+
+    return result;
+  }
+
   let entries: string[];
   try { entries = readdirSync(jobsDir); } catch { entries = []; }
 
