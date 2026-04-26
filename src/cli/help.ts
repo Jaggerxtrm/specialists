@@ -14,6 +14,8 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['edit', 'Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets'],
   ['validate', 'Validate a specialist JSON config against the schema'],
   ['run', 'Run a specialist; --json for NDJSON event stream, --raw for legacy text'],
+  ['serve', 'HTTP wrapper for script-class specialists (POST /v1/generate); long-running daemon'],
+  ['script', 'One-shot CLI peer to sp serve for cron/scripts; cron-friendly exit codes, --single-instance'],
   ['node', 'Run and inspect NodeSupervisor nodes (run/status)'],
   ['epic', 'Epic lifecycle management: list/status/resolve wave-bound chain groups'],
   ['feed', 'Tail job events; use -f to follow all jobs'],
