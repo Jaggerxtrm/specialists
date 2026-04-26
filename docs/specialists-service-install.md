@@ -26,7 +26,7 @@ Tag whatever you want (`:local`, `:v0.1`, etc.) — your compose file references
 
 The image runs as non-root, UID `10001` (label `org.specialists.uid=10001`). Override at runtime with `--user $UID:$GID` (Docker) or `--userns=keep-id --user $UID:$GID` (rootless Podman) so container writes are owned by your host user. The compose template wires this automatically.
 
-The image pins `pi-coding-agent` to a known-good version for predictable spawn behavior. Bump the pin in the Dockerfile when you've verified a newer pi against the script-runner spawn flags. Tracked: bead `unitAI-w0h7z`.
+The image installs `@mariozechner/pi-coding-agent@latest` at build time. Pin to a specific version in the Dockerfile if you need reproducible rebuilds across pi releases.
 
 > **Future** — `docker pull ghcr.io/<org>/specialists-service:<tag>` once the image is published.
 
