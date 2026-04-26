@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
 import { SpecialistLoader, type SpecialistSummary } from '../specialist/loader.js';
-import { validateSpecialist } from '../specialist/schema.js';
+import { SpecialistSchema, validateSpecialist } from '../specialist/schema.js';
+import { compatGuard } from '../specialist/script-runner.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -11,8 +13,9 @@ const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 
 export interface ParsedArgs {
-  name: string;
+  value: string;
   json?: boolean;
+  target?: 'script';
 }
 
 export class ArgParseError extends Error {
@@ -23,11 +26,18 @@ export class ArgParseError extends Error {
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
-  const name = argv[0];
-  if (!name || name.startsWith('--')) {
-    throw new ArgParseError('Usage: specialists validate <name> [--json]');
+  const value = argv[0];
+  if (!value || value.startsWith('--')) {
+    throw new ArgParseError('Usage: specialists validate <name|path> [--target=<surface>] [--json]');
   }
-  return { name, json: argv.includes('--json') };
+
+  const targetFlag = argv.find(arg => arg === '--target' || arg.startsWith('--target='));
+  const target = targetFlag ? (targetFlag.includes('=') ? targetFlag.split('=', 2)[1] : argv[argv.indexOf(targetFlag) + 1]) : undefined;
+  if (target && target !== 'script') {
+    throw new ArgParseError('Usage: specialists validate <name|path> [--target=<surface>] [--json]');
+  }
+
+  return { value, json: argv.includes('--json'), target: target === 'script' ? 'script' : undefined };
 }
 
 function getSourceLabel(summary: SpecialistSummary): string {
@@ -38,6 +48,26 @@ async function findSpecialist(name: string): Promise<SpecialistSummary | undefin
   const loader = new SpecialistLoader();
   const list = await loader.list();
   return list.find(item => item.name === name);
+}
+
+async function loadSpecFromFile(filePath: string) {
+  const content = await readFile(filePath, 'utf-8');
+  const raw = filePath.endsWith('.yaml') || filePath.endsWith('.yml') ? parseYaml(content) : JSON.parse(content);
+  return SpecialistSchema.parseAsync(raw);
+}
+
+function formatCompatGuardError(message: string): string {
+  if (message.includes('interactive')) return 'compatGuard: interactive';
+  if (message.includes('worktree')) return 'compatGuard: requires_worktree';
+  if (message.includes('permission_required')) return 'compatGuard: permission_required';
+  if (message.includes('scripts not allowed')) return 'compatGuard: scripts';
+  return `compatGuard: ${message}`;
+}
+
+function printStructuredErrors(filePath: string, errors: Array<{ path: string; message: string }>): void {
+  for (const error of errors) {
+    console.error(`${filePath}:${error.path} ${error.message}`);
+  }
 }
 
 export async function run(): Promise<void> {
@@ -53,13 +83,31 @@ export async function run(): Promise<void> {
     throw err;
   }
 
-  const summary = await findSpecialist(args.name);
+  if (args.target === 'script') {
+    try {
+      const spec = await loadSpecFromFile(args.value);
+      compatGuard(spec);
+      console.log(`PASS ${args.value} script`);
+      process.exit(0);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === 'exit:0') throw err;
+      if (args.json) {
+        console.log(JSON.stringify({ valid: false, errors: [{ path: 'target.script', message: formatCompatGuardError(message), code: 'compat_guard_error' }] }, null, 2));
+      } else {
+        console.error(`${red('✗')} ${args.value}: ${formatCompatGuardError(message)}`);
+      }
+      process.exit(1);
+    }
+  }
+
+  const summary = await findSpecialist(args.value);
 
   if (!summary) {
     if (args.json) {
-      console.log(JSON.stringify({ valid: false, errors: [{ path: 'name', message: `Specialist not found: ${args.name}`, code: 'not_found' }] }));
+      console.log(JSON.stringify({ valid: false, errors: [{ path: 'name', message: `Specialist not found: ${args.value}`, code: 'not_found' }] }));
     } else {
-      console.error(`${red('✗')} Specialist not found: ${cyan(args.name)}`);
+      console.error(`${red('✗')} Specialist not found: ${cyan(args.value)}`);
     }
     process.exit(1);
   }
@@ -88,7 +136,7 @@ export async function run(): Promise<void> {
     process.exit(result.valid ? 0 : 1);
   }
 
-  console.log(`\n${bold('Validating')} ${cyan(args.name)} ${dim(`(${summary.filePath})`)} ${dim(`[${getSourceLabel(summary)}]`)}\n`);
+  console.log(`\n${bold('Validating')} ${cyan(args.value)} ${dim(`(${summary.filePath})`)} ${dim(`[${getSourceLabel(summary)}]`)}\n`);
 
   if (result.valid) {
     console.log(`${green('✓')} Schema validation passed\n`);
