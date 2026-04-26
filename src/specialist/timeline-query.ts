@@ -29,12 +29,12 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import {
   type TimelineEvent,
   parseTimelineEvent,
   compareTimelineEvents,
 } from './timeline-events.js';
-import { createObservabilitySqliteClient } from './observability-sqlite.js';
 
 // ============================================================================
 // SINGLE JOB READING
@@ -56,6 +56,8 @@ export function readJobEvents(jobDir: string): TimelineEvent[] {
   } catch {
     // fallback to file-based timeline
   }
+
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== 'on') return [];
 
   const eventsPath = join(jobDir, 'events.jsonl');
   if (!existsSync(eventsPath)) return [];
@@ -97,6 +99,22 @@ export interface JobEventsBatch {
  * Returns batches unsorted — use mergeTimelineEvents for chronological order.
  */
 export function readAllJobEvents(jobsDir: string): JobEventsBatch[] {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0 && sqliteClient) {
+    return statuses.flatMap((status) => {
+      const events = sqliteClient.readEvents(status.id);
+      if (events.length === 0) return [];
+      return [{
+        jobId: status.id,
+        specialist: status.specialist ?? 'unknown',
+        beadId: status.bead_id,
+        events,
+      }];
+    });
+  }
+
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== 'on') return [];
   if (!existsSync(jobsDir)) return [];
 
   const batches: JobEventsBatch[] = [];
@@ -114,7 +132,6 @@ export function readAllJobEvents(jobsDir: string): JobEventsBatch[] {
     const jobId = entry;
     const statusPath = join(jobDir, 'status.json');
 
-    // Read specialist name from status.json
     let specialist = 'unknown';
     let beadId: string | undefined;
     if (existsSync(statusPath)) {

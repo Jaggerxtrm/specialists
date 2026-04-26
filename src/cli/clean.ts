@@ -9,6 +9,7 @@ import {
 import { join } from 'node:path';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import {
   collectWorktreeGcCandidates,
   pruneWorktrees,
@@ -24,8 +25,8 @@ interface CleanOptions {
 interface CompletedJobDirectory {
   id: string;
   directoryPath: string;
-  modifiedAtMs: number;
-  startedAtMs: number;
+  completedAtMs: number;
+  createdAtMs: number;
   sizeBytes: number;
 }
 
@@ -135,6 +136,17 @@ function containsProtectedSqliteArtifact(directoryPath: string): boolean {
   return false;
 }
 
+function getJobTimestamps(status: SupervisorStatus): { createdAtMs: number; completedAtMs: number } {
+  const typedStatus = status as SupervisorStatus & {
+    created_at_ms?: number;
+    completed_at_ms?: number;
+    updated_at_ms?: number;
+  };
+  const createdAtMs = typedStatus.started_at_ms ?? typedStatus.created_at_ms ?? typedStatus.updated_at_ms ?? 0;
+  const completedAtMs = typedStatus.completed_at_ms ?? typedStatus.updated_at_ms ?? createdAtMs;
+  return { createdAtMs, completedAtMs };
+}
+
 function readCompletedJobDirectory(baseDirectory: string, entry: Dirent): CompletedJobDirectory | null {
   if (!entry.isDirectory()) return null;
 
@@ -153,26 +165,56 @@ function readCompletedJobDirectory(baseDirectory: string, entry: Dirent): Comple
 
   if (!COMPLETED_STATUSES.has(statusData.status)) return null;
 
-  const directoryStats = statSync(directoryPath);
+  const { createdAtMs, completedAtMs } = getJobTimestamps(statusData);
 
   return {
     id: entry.name,
     directoryPath,
-    modifiedAtMs: directoryStats.mtimeMs,
-    startedAtMs: statusData.started_at_ms,
+    completedAtMs,
+    createdAtMs,
     sizeBytes: readDirectorySizeBytes(directoryPath),
   };
 }
 
+function collectCompletedJobDirectoriesFromDb(jobsDirectoryPath: string): CompletedJobDirectory[] {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  const completedJobs = statuses
+    .filter(status => COMPLETED_STATUSES.has(status.status))
+    .map(status => {
+      const directoryPath = join(jobsDirectoryPath, status.id);
+      if (containsProtectedSqliteArtifact(directoryPath)) return null;
+      if (!existsSync(directoryPath)) return null;
+
+      const { createdAtMs, completedAtMs } = getJobTimestamps(status);
+      return {
+        id: status.id,
+        directoryPath,
+        completedAtMs,
+        createdAtMs,
+        sizeBytes: readDirectorySizeBytes(directoryPath),
+      } satisfies CompletedJobDirectory;
+    })
+    .filter((job): job is CompletedJobDirectory => job !== null);
+
+  return completedJobs;
+}
+
 function collectCompletedJobDirectories(jobsDirectoryPath: string): CompletedJobDirectory[] {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0) {
+    return collectCompletedJobDirectoriesFromDb(jobsDirectoryPath);
+  }
+
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== 'on') return [];
+
   const entries = readdirSync(jobsDirectoryPath, { withFileTypes: true });
   const completedJobs: CompletedJobDirectory[] = [];
 
   for (const entry of entries) {
     const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
-    if (completedJob) {
-      completedJobs.push(completedJob);
-    }
+    if (completedJob) completedJobs.push(completedJob);
   }
 
   return completedJobs;
@@ -180,10 +222,10 @@ function collectCompletedJobDirectories(jobsDirectoryPath: string): CompletedJob
 
 function selectJobsToRemove(completedJobs: readonly CompletedJobDirectory[], options: CleanOptions): CompletedJobDirectory[] {
   const jobsByNewest = [...completedJobs].sort((left, right) => {
-    if (right.startedAtMs !== left.startedAtMs) {
-      return right.startedAtMs - left.startedAtMs;
+    if (right.createdAtMs !== left.createdAtMs) {
+      return right.createdAtMs - left.createdAtMs;
     }
-    return right.modifiedAtMs - left.modifiedAtMs;
+    return right.completedAtMs - left.completedAtMs;
   });
 
   if (options.keepRecentCount !== null) {
@@ -196,7 +238,7 @@ function selectJobsToRemove(completedJobs: readonly CompletedJobDirectory[], opt
 
   const ttlDays = parseTtlDaysFromEnvironment();
   const cutoffMs = Date.now() - ttlDays * MS_PER_DAY;
-  return jobsByNewest.filter(job => job.modifiedAtMs < cutoffMs);
+  return jobsByNewest.filter(job => job.completedAtMs < cutoffMs);
 }
 
 function formatBytes(bytes: number): string {
