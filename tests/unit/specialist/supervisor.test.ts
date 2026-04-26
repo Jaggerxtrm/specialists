@@ -1099,7 +1099,6 @@ describe('Supervisor', () => {
 
   describe('stale job scanning (crashRecovery)', () => {
     it('jobs in done/error state are not scanned — no stale_warning emitted', async () => {
-    it('jobs in done/error state are not scanned — no stale_warning emitted', async () => {
       const doneId = 'done01';
       const errorId = 'err01';
 

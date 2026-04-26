@@ -574,8 +574,16 @@ function runDoctorOrphans(): void {
   }
 }
 
+function resolveWatchdogMode(): string {
+  const fileOutput = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase();
+  if (fileOutput === 'off') return 'db';
+  if (process.execPath.endsWith('/bun')) return 'db';
+  return 'file (degraded; Bun unavailable)';
+}
+
 function checkZombieJobs(): boolean {
   section('Background jobs');
+  hint(`watchdog mode: ${resolveWatchdogMode()}`);
   const jobsDir = join(CWD, '.specialists', 'jobs');
   if (!existsSync(jobsDir)) {
     hint('No .specialists/jobs/ — skipping');
