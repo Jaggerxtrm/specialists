@@ -158,6 +158,8 @@ In the darth feedor (VPS) repo:
 
    `SpecialistResult` matches the existing `qwen_client` return shape (`success`, `output`, `error`, `error_type`, `attempts`) plus `parsed_json` and `meta.trace_id`. Existing call sites change in a minimal way.
 
+   A canonical reference implementation lives at [`docs/examples/specialists_client.py`](examples/specialists_client.py) — stdlib-only, ~150 LOC. Copy it into `shared/specialists_client.py` and tweak imports; the public API matches this contract exactly.
+
 2. **Convert one YAML to JSON** — start with `mercury-atomic-summarizer`. Drop into `.specialists/user/mercury-atomic-summarizer.specialist.json` per `docs/specialists-service.md` §3.
 
 3. **Smoke test** — point a local script at staging `specialists-service`; verify one real article summarization round-trip works and produces an `articles.summary` row identical (or equivalent) to legacy output on the same input.
