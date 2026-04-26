@@ -7,11 +7,11 @@ import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 
-function runCli(args: string[], cwd: string) {
+function runCli(args: string[], cwd: string, envOverrides: Record<string, string | undefined> = {}) {
   return spawnSync('bun', ['run', join(repoRoot, 'src/index.ts'), ...args], {
     cwd,
     encoding: 'utf-8',
-    env: { ...process.env, NO_COLOR: '1' },
+    env: { ...process.env, NO_COLOR: '1', ...envOverrides },
     timeout: 10_000,
   });
 }
@@ -42,20 +42,26 @@ describe('integration: specialists poll', () => {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('outputs JSON for a done job', async () => {
+  it('uses file fallback only when SPECIALISTS_JOB_FILE_OUTPUT=on', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'specialists-int-poll-'));
     const jobsDir = join(tempDir, '.specialists', 'jobs');
     await writeJobFiles(jobsDir, 'abc123', { status: 'done' }, 'the result\n');
 
-    const result = runCli(['poll', 'abc123'], tempDir);
+    const offResult = runCli(['poll', 'abc123'], tempDir);
+    expect(offResult.status).toBe(0);
+    const offJson = JSON.parse(offResult.stdout);
+    expect(offJson.job_id).toBe('abc123');
+    expect(offJson.status).toBe('starting');
+    expect(offJson.output).toBe('');
 
-    expect(result.status).toBe(0);
-    const json = JSON.parse(result.stdout);
-    expect(json.job_id).toBe('abc123');
-    expect(json.status).toBe('done');
-    expect(json.output).toContain('the result');
-    expect(typeof json.cursor).toBe('number');
-    expect(typeof json.output_cursor).toBe('number');
+    const onResult = runCli(['poll', 'abc123'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
+    expect(onResult.status).toBe(0);
+    const onJson = JSON.parse(onResult.stdout);
+    expect(onJson.job_id).toBe('abc123');
+    expect(onJson.status).toBe('done');
+    expect(onJson.output).toContain('the result');
+    expect(typeof onJson.cursor).toBe('number');
+    expect(typeof onJson.output_cursor).toBe('number');
   });
 
   it('populates output_delta when output_cursor is behind result.txt length', async () => {
@@ -64,13 +70,13 @@ describe('integration: specialists poll', () => {
     await writeJobFiles(jobsDir, 'delta1', { status: 'done' }, 'hello world\n');
 
     // First poll: output_cursor=0 → delta should be the full content
-    const r1 = runCli(['poll', 'delta1', '--output-cursor', '0'], tempDir);
+    const r1 = runCli(['poll', 'delta1', '--output-cursor', '0'], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
     const j1 = JSON.parse(r1.stdout);
     expect(j1.output_delta).toBe('hello world\n');
     expect(j1.output_cursor).toBe(12); // 'hello world\n'.length
 
     // Second poll: pass back output_cursor → delta should be empty (caught up)
-    const r2 = runCli(['poll', 'delta1', '--output-cursor', String(j1.output_cursor)], tempDir);
+    const r2 = runCli(['poll', 'delta1', '--output-cursor', String(j1.output_cursor)], tempDir, { SPECIALISTS_JOB_FILE_OUTPUT: 'on' });
     const j2 = JSON.parse(r2.stdout);
     expect(j2.output_delta).toBe('');
   });

@@ -23,8 +23,11 @@ describe('feed_specialist tool', () => {
   let tmpDir: string;
   let jobsDir: string;
   let tool: ReturnType<typeof createFeedSpecialistTool>;
+  let originalFileOutputMode: string | undefined;
 
   beforeEach(() => {
+    originalFileOutputMode = process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'on';
     tmpDir = join(process.cwd(), `.feed-specialist-test-${Date.now()}`);
     jobsDir = join(tmpDir, 'jobs');
     mkdirSync(jobsDir, { recursive: true });
@@ -32,6 +35,11 @@ describe('feed_specialist tool', () => {
   });
 
   afterEach(() => {
+    if (originalFileOutputMode === undefined) {
+      delete process.env.SPECIALISTS_JOB_FILE_OUTPUT;
+    } else {
+      process.env.SPECIALISTS_JOB_FILE_OUTPUT = originalFileOutputMode;
+    }
     if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -66,23 +74,24 @@ describe('feed_specialist tool', () => {
     expect(result.job_id).toBe('nonexistent');
   });
 
-  it('returns all events with correct cursor fields for a small job', async () => {
+  it('returns defaults with empty events when file fallback is disabled', async () => {
     const events = makeEvents(3);
     createJob('job1', events);
+    process.env.SPECIALISTS_JOB_FILE_OUTPUT = 'off';
 
     const result = await tool.execute({ job_id: 'job1', cursor: 0, limit: 50 }) as any;
 
     expect(result.job_id).toBe('job1');
-    expect(result.specialist).toBe('test-spec');
-    expect(result.status).toBe('done');
-    expect(result.events).toHaveLength(3);
+    expect(result.specialist).toBe('unknown');
+    expect(result.status).toBe('unknown');
+    expect(result.events).toHaveLength(0);
     expect(result.cursor).toBe(0);
-    expect(result.next_cursor).toBe(3);
+    expect(result.next_cursor).toBe(0);
     expect(result.has_more).toBe(false);
-    expect(result.is_complete).toBe(true);
+    expect(result.is_complete).toBe(false);
   });
 
-  it('cursor pagination: slices events and reports has_more correctly', async () => {
+  it('cursor pagination: slices events and reports has_more correctly when file fallback enabled', async () => {
     const events = makeEvents(10);
     createJob('job2', events);
 
