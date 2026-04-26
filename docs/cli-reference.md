@@ -878,7 +878,7 @@ specialists init --sync-defaults # human-only: refresh managed mirror
 
 What it sets up (always):
 - `.specialists/default/`, `.specialists/user/`
-- `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` runtime dirs
+- `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` runtime dirs (`observability.db` is canonical runtime store)
 - `.gitignore` runtime/db entries
 - `AGENTS.md` Specialists section
 - `.mcp.json` `mcpServers.specialists`
@@ -1322,7 +1322,7 @@ Both `sp merge` and `sp epic merge` use a preview-based worthiness guard to prev
 
 - `.xtrm/reports/`
 - `.wolf/`
-- `.specialists/jobs/`
+- `.specialists/jobs/` (legacy fallback, migration, export)
 
 **Blocking conditions**:
 

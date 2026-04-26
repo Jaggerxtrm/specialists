@@ -20,7 +20,7 @@ domain:
 
 > `sp` is an alias for `specialists`.
 
-Every `specialists run` is Supervisor-backed and writes runtime artifacts to `.specialists/jobs/<job-id>/`.
+Every `specialists run` is Supervisor-backed and writes runtime state to `observability.db`; legacy files live under `.specialists/jobs/<job-id>/` for crash recovery.
 
 ## Start a run
 
@@ -43,6 +43,8 @@ Latest job id is also written to:
 ```text
 .specialists/jobs/latest
 ```
+
+Legacy convenience pointer only; observability.db stays canonical runtime store.
 
 ## Keep-alive sessions
 

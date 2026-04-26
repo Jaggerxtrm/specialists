@@ -1,6 +1,6 @@
 # Specialist Run Stats — Baseline
 
-> Snapshot generated: 2026-04-24. Source: `.specialists/jobs/*/status.json` (300 dirs, 299 with status). Richer per-event data lives in `.specialists/db/observability.db` (~257MB at snapshot) — not yet aggregated. See `unitAI-9j7n` for the retention/metrics-extraction pipeline.
+> Snapshot generated: 2026-04-24. Source: `observability.db` (canonical runtime store). Legacy fallback: `.specialists/jobs/*/status.json` (300 dirs, 299 with status). Richer per-event data lives in `.specialists/db/observability.db` (~257MB at snapshot) — not yet aggregated. See `unitAI-9j7n` for the retention/metrics-extraction pipeline.
 
 ## Totals
 

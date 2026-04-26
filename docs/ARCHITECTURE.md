@@ -243,7 +243,7 @@ Parses `git worktree list --porcelain` output into a `Map<branch, absolute-path>
 
 ### Durable artifacts (authoritative)
 
-For each run (`.specialists/jobs/<id>/`):
+Legacy file artifacts (`.specialists/jobs/<id>/`):
 
 - `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch, **`node_id`**)
 - `events.jsonl` — append-only canonical timeline stream (JSON-first source of truth)
@@ -253,8 +253,9 @@ For each run (`.specialists/jobs/<id>/`):
 
 Persistence is **JSON-first**:
 
-- Files under `.specialists/jobs/<id>/` are the canonical write path and crash-recovery source.
-- SQLite mirrors the same payloads (`status_json`, `event_json`) for fast listing/querying and node-level analytics.
+- `observability.db` is the canonical runtime store.
+- Files under `.specialists/jobs/<id>/` are crash-recovery fallback and migration/debug/export artifacts.
+- SQLite stores the same payloads (`status_json`, `event_json`) for fast listing/querying and node-level analytics.
 
 Dual-write behavior is intentionally split by durability role:
 

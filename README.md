@@ -49,6 +49,8 @@ specialists merge <bead-id> --rebuild # rebuild after merge
 
 `specialists run` prints `[job started: <id>]` early and also writes the id to `.specialists/jobs/latest`.
 
+Runtime state lives in `observability.db`; `.specialists/jobs/latest` is legacy convenience pointer only.
+
 Ad-hoc work:
 
 ```bash
