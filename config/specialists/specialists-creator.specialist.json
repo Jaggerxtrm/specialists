@@ -6,7 +6,13 @@
       "description": "Guides an agent through writing a valid .specialist.json file using the schema reference and common error fixes.",
       "category": "authoring",
       "updated": "2026-04-03",
-      "tags": ["authoring", "json", "specialist", "schema", "guide"]
+      "tags": [
+        "authoring",
+        "json",
+        "specialist",
+        "schema",
+        "guide"
+      ]
     },
     "execution": {
       "mode": "tool",
@@ -24,7 +30,9 @@
       "task_template": "$prompt\n\nWorking directory: $cwd\n\nAvailable models (from pi --list-models — use this, do not guess):\n$pre_script_output\n\nInstructions:\n  1. Read the model list above. Select primary + fallback from different providers.\n  2. Ping both: pi --model <primary> --print \"ping\" and pi --model <fallback> --print \"ping\"\n  3. Only proceed after both return \"pong\".\n  4. Run scaffold-specialist.ts first, then mutate fields with `sp edit` (dot.path + preset).\n  5. Use `--file` only for prompt.system and prompt.task_template.\n  6. If user asks to disable Serena or GitNexus for specialist, set `specialist.execution.extensions.serena false` and/or `specialist.execution.extensions.gitnexus false`.\n  7. Run `sp view <name>` and schema validation before outputting the final result.\n"
     },
     "skills": {
-      "paths": [".xtrm/skills/active/specialists-creator/SKILL.md"],
+      "paths": [
+        ".xtrm/skills/active/pi/specialists-creator/SKILL.md"
+      ],
       "scripts": [
         {
           "run": "pi --list-models",
@@ -39,7 +47,9 @@
       ]
     },
     "capabilities": {
-      "external_commands": ["pi"],
+      "external_commands": [
+        "pi"
+      ],
       "required_tools": []
     },
     "validation": {

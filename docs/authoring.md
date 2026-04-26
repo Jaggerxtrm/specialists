@@ -81,8 +81,6 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `output_type` | enum | `"custom"` | semantic archetype: `"codegen"`, `"analysis"`, `"review"`, `"synthesis"`, `"orchestration"`, `"workflow"`, `"research"`, `"custom"` |
 | `permission_required` | `"READ_ONLY" \| "LOW" \| "MEDIUM" \| "HIGH"` | `"READ_ONLY"` | tool-access tier |
 | `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | forwarded to thinking-capable models |
-| `requires_worktree` | boolean | `true` | set `false` for workflow/script-class specialists that should not be sandboxed in a worktree |
-| `auto_commit` | `"never" \| "checkpoint_on_waiting" \| "checkpoint_on_terminal"` | `"never"` | when to auto-commit specialist edits to the worktree |
 | `extensions.serena` | boolean | `true` | `false` disables Serena extension injection for this specialist |
 | `extensions.gitnexus` | boolean | `true` | `false` disables GitNexus extension injection for this specialist |
 
@@ -544,7 +542,7 @@ The service rejects any spec that doesn't match these at request time with `erro
 | `execution.interactive` | `false` | HTTP request cannot host a multi-turn keep-alive session |
 | `execution.requires_worktree` | `false` | The service is stateless; no git branching |
 | `execution.permission_required` | `"READ_ONLY"` | One-shot pi spawns with `--no-tools` |
-| `execution.max_retries` | `0` (recommended) | Script-class ignores `max_retries` entirely — value has no effect. Caller (HTTP client / cron) owns retries. Set `0` so the spec's intent matches behavior. |
+| `execution.max_retries` | `0` | Caller (HTTP client / cron) owns retries; internal retries amplify cost |
 | `skills.scripts` | omitted or `[]` | Local shell hooks are a host-side capability not available in service mode |
 
 ### Optional supported fields

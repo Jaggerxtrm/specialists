@@ -169,7 +169,7 @@ specialists models  # confirm assignments look balanced
 node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 2. Apply a preset for common model/thinking defaults (optional but preferred)
-sp edit my-specialist --preset medium
+sp edit my-specialist --preset standard
 
 # 3. Set individual fields via dot.path (primary mutation workflow)
 sp edit my-specialist specialist.metadata.name my-specialist
@@ -188,7 +188,7 @@ sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.
 sp view my-specialist
 
 # 6. Validate schema
-bun config/skills/specialists-creator/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
+bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
 ```
 
 ---
@@ -507,7 +507,7 @@ Files listed under `skills.paths` are read and appended to the system prompt at 
 {
   "skills": {
     "paths": [
-      ".xtrm/skills/active/specialists-creator/SKILL.md",
+      "skills/specialist-author/SKILL.md",
       ".claude/agents.md"
     ]
   }
@@ -708,7 +708,7 @@ pi --model <provider>/<fallback-model-id> --print "ping"   # must return "pong"
 node config/skills/specialists-creator/scripts/scaffold-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 3. Mutate with sp edit (dot.path + presets)
-sp edit my-specialist --preset medium
+sp edit my-specialist --preset standard
 sp edit my-specialist specialist.execution.model <provider>/<primary-model-id>
 sp edit my-specialist specialist.execution.fallback_model <provider>/<fallback-model-id>
 
@@ -720,7 +720,7 @@ sp edit my-specialist specialist.prompt.task_template --file .tmp/task-template.
 sp view my-specialist
 
 # 6. Validate schema with the bundled helper
-bun config/skills/specialists-creator/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
+bun skills/specialist-author/scripts/validate-specialist.ts config/specialists/my-specialist.specialist.json
 
 # 7. List to confirm discovery
 specialists list
@@ -729,4 +729,4 @@ specialists list
 specialists run my-specialist --prompt "ping" --no-beads
 ```
 
-If you need the underlying implementation, read `config/skills/specialists-creator/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.
+If you need the underlying implementation, read `skills/specialist-author/scripts/validate-specialist.ts`. It is a thin Bun/TypeScript wrapper over `parseSpecialist()` from `src/specialist/schema.ts`, which keeps the helper cross-platform for Windows, macOS, and Linux.
