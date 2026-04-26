@@ -79,6 +79,7 @@ sp run executor --prompt "Investigate failing tests" --raw
 All observation reads Supervisor artifacts under:
 
 ```text
+Legacy fallback artifacts (`observability.db` is primary runtime store):
 .specialists/jobs/<job-id>/
   status.json
   events.jsonl

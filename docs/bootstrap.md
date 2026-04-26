@@ -54,7 +54,7 @@ specialists init
 What it does (always safe, idempotent):
 
 1. creates `.specialists/default/` (managed mirror root) and `.specialists/user/` (repo custom layer)
-2. creates runtime dirs `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/`
+2. creates runtime dirs `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` (observability.db is canonical runtime store)
 3. adds runtime/db paths to `.gitignore`:
    - `.specialists/jobs/`
    - `.specialists/ready/`
