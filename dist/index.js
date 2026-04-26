@@ -26822,6 +26822,222 @@ var init_db = __esm(() => {
   DAY_MS = 24 * 60 * 60 * 1000;
 });
 
+// src/specialist/script-runner.ts
+import { spawn as spawn3 } from "child_process";
+import { randomUUID } from "crypto";
+function hasUnsubstitutedVariables(template) {
+  const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
+  return match?.[1] ?? null;
+}
+function compatGuard(spec) {
+  const execution = spec.specialist.execution;
+  if (execution.interactive)
+    throw new Error("interactive specialists are not allowed");
+  if (execution.requires_worktree)
+    throw new Error("worktree specialists are not allowed");
+  if (execution.permission_required !== "READ_ONLY")
+    throw new Error("permission_required must be READ_ONLY");
+  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
+    throw new Error("scripts not allowed");
+}
+function renderTaskTemplate(template, variables) {
+  const output2 = renderTemplate(template, variables);
+  const missing = hasUnsubstitutedVariables(output2);
+  if (missing)
+    throw new Error(`Missing template variable: ${missing}`);
+  return output2;
+}
+function mapErrorType(message) {
+  if (message.includes("Specialist not found"))
+    return "specialist_not_found";
+  if (message.includes("interactive") || message.includes("worktree") || message.includes("permission_required") || message.includes("scripts not allowed"))
+    return "specialist_load_error";
+  if (message.includes("Missing template variable"))
+    return "template_variable_missing";
+  if (message.includes("output too large"))
+    return "output_too_large";
+  if (message.includes("auth") || message.includes("403") || message.includes("401"))
+    return "auth";
+  if (message.includes("quota") || message.includes("rate limit") || message.includes("out of extra usage") || message.includes("insufficient_quota") || message.includes("429"))
+    return "quota";
+  if (message.includes("timeout"))
+    return "timeout";
+  if (message.includes("network") || message.includes("ECONN"))
+    return "network";
+  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
+    return "invalid_json";
+  return "internal";
+}
+function textFromMessage(message) {
+  if (!message || message.role !== "assistant")
+    return "";
+  if (!Array.isArray(message.content))
+    return "";
+  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
+}
+function extractAssistantText(lines) {
+  for (let i = lines.length - 1;i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line)
+      continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === "message_end") {
+      const text = textFromMessage(event.message);
+      if (text)
+        return text;
+    }
+    if (event.type === "agent_end" && Array.isArray(event.messages)) {
+      for (let j = event.messages.length - 1;j >= 0; j--) {
+        const text = textFromMessage(event.messages[j]);
+        if (text)
+          return text;
+      }
+    }
+    if (event.type === "assistant" && typeof event.data?.text === "string")
+      return event.data.text;
+    const legacyContent = event.data?.content?.[0]?.text;
+    if (typeof legacyContent === "string")
+      return legacyContent;
+  }
+  return "";
+}
+function stripMarkdownFences(text) {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+function extractPiErrorMessage(lines) {
+  for (let i = lines.length - 1;i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line)
+      continue;
+    try {
+      const event = JSON.parse(line);
+      const errMsg = event.message?.errorMessage;
+      if (typeof errMsg === "string" && errMsg.length > 0)
+        return errMsg;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+function writeTraceRow(client, specialist, model, traceId, output2, durationMs) {
+  if (!client)
+    return;
+  const status = {
+    id: traceId,
+    specialist,
+    status: "done",
+    model,
+    started_at_ms: Date.now() - durationMs,
+    elapsed_s: durationMs / 1000,
+    last_event_at_ms: Date.now(),
+    surface: "script_specialist"
+  };
+  client.upsertStatus(status);
+  client.upsertResult(traceId, output2);
+}
+function openObservabilityClient(options) {
+  const dbPath = options.observabilityDbPath ?? options.projectDir;
+  return createObservabilitySqliteClient(dbPath);
+}
+async function runScriptSpecialist(input2, options) {
+  const traceId = randomUUID();
+  const startedAt = Date.now();
+  try {
+    const spec = await options.loader.get(input2.specialist);
+    compatGuard(spec);
+    const template = input2.template ?? spec.specialist.prompt.task_template;
+    const prompt = renderTaskTemplate(template, input2.variables ?? {});
+    const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
+    const timeoutMs = input2.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
+    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--model", model];
+    const thinkingLevel = input2.thinking_level ?? spec.specialist.execution.thinking_level;
+    if (thinkingLevel)
+      args.push("--thinking", thinkingLevel);
+    args.push(prompt);
+    const pi = spawn3("pi", args, { stdio: ["ignore", "pipe", "pipe"] });
+    options.onChild?.(pi);
+    const chunks = [];
+    let stderr = "";
+    let timedOut = false;
+    let outputTooLarge = false;
+    const stdoutLimit = 4 * 1024 * 1024;
+    let stdoutBytes = 0;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      pi.kill("SIGTERM");
+      setTimeout(() => pi.kill("SIGKILL"), 2000);
+    }, timeoutMs);
+    pi.stdout.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      chunks.push(buffer);
+      stdoutBytes += buffer.length;
+      if (stdoutBytes > stdoutLimit && !outputTooLarge) {
+        outputTooLarge = true;
+        pi.kill("SIGTERM");
+        setTimeout(() => pi.kill("SIGKILL"), 2000);
+      }
+    });
+    pi.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const exitCode = await new Promise((resolve7, reject) => {
+      pi.on("error", reject);
+      pi.on("close", (code) => resolve7(code ?? 0));
+    }).finally(() => clearTimeout(timer));
+    const stdout = Buffer.concat(chunks).toString("utf-8");
+    const text = extractAssistantText(stdout.split(/\r?\n/));
+    const durationMs = Date.now() - startedAt;
+    const observability = openObservabilityClient(options);
+    if (input2.trace !== false && observability)
+      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
+    if (outputTooLarge) {
+      return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (timedOut) {
+      return { success: false, error: stderr || "timed out", error_type: "timeout", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (exitCode !== 0) {
+      return { success: false, error: stderr || `pi exit ${exitCode}`, error_type: mapErrorType(stderr), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (!text) {
+      const piError = extractPiErrorMessage(stdout.split(/\r?\n/));
+      if (piError) {
+        return { success: false, error: piError, error_type: mapErrorType(piError), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+      }
+      return { success: false, error: "pi produced no assistant text", error_type: "internal", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    let parsed_json;
+    if (spec.specialist.execution.response_format === "json") {
+      try {
+        parsed_json = JSON.parse(stripMarkdownFences(text));
+        const required2 = Array.isArray(spec.specialist.prompt.output_schema?.required) ? spec.specialist.prompt.output_schema.required.filter((value) => typeof value === "string") : [];
+        for (const key of required2) {
+          if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json)) {
+            throw new Error(`Missing required output field: ${key}`);
+          }
+        }
+      } catch (error2) {
+        return { success: false, error: error2 instanceof Error ? error2.message : String(error2), error_type: "invalid_json", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+      }
+    }
+    return { success: true, output: text, parsed_json, meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: input2.specialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+  }
+}
+var init_script_runner = __esm(() => {
+  init_observability_sqlite();
+});
+
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
@@ -26832,11 +27048,16 @@ __export(exports_validate, {
 import { readFile as readFile3 } from "fs/promises";
 import { existsSync as existsSync12 } from "fs";
 function parseArgs4(argv) {
-  const name = argv[0];
-  if (!name || name.startsWith("--")) {
-    throw new ArgParseError3("Usage: specialists validate <name> [--json]");
+  const value = argv[0];
+  if (!value || value.startsWith("--")) {
+    throw new ArgParseError3("Usage: specialists validate <name|path> [--target=<surface>] [--json]");
   }
-  return { name, json: argv.includes("--json") };
+  const targetFlag = argv.find((arg) => arg === "--target" || arg.startsWith("--target="));
+  const target = targetFlag ? targetFlag.includes("=") ? targetFlag.split("=", 2)[1] : argv[argv.indexOf(targetFlag) + 1] : undefined;
+  if (target && target !== "script") {
+    throw new ArgParseError3("Usage: specialists validate <name|path> [--target=<surface>] [--json]");
+  }
+  return { value, json: argv.includes("--json"), target: target === "script" ? "script" : undefined };
 }
 function getSourceLabel(summary) {
   return `${summary.scope}/${summary.source}`;
@@ -26845,6 +27066,22 @@ async function findSpecialist(name) {
   const loader = new SpecialistLoader;
   const list = await loader.list();
   return list.find((item) => item.name === name);
+}
+async function loadSpecFromFile(filePath) {
+  const content = await readFile3(filePath, "utf-8");
+  const raw = filePath.endsWith(".yaml") || filePath.endsWith(".yml") ? $parse(content) : JSON.parse(content);
+  return SpecialistSchema.parseAsync(raw);
+}
+function formatCompatGuardError(message) {
+  if (message.includes("interactive"))
+    return "compatGuard: interactive";
+  if (message.includes("worktree"))
+    return "compatGuard: requires_worktree";
+  if (message.includes("permission_required"))
+    return "compatGuard: permission_required";
+  if (message.includes("scripts not allowed"))
+    return "compatGuard: scripts";
+  return `compatGuard: ${message}`;
 }
 async function run9() {
   let args;
@@ -26857,12 +27094,30 @@ async function run9() {
     }
     throw err;
   }
-  const summary = await findSpecialist(args.name);
+  if (args.target === "script") {
+    try {
+      const spec = await loadSpecFromFile(args.value);
+      compatGuard(spec);
+      console.log(`PASS ${args.value} script`);
+      process.exit(0);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === "exit:0")
+        throw err;
+      if (args.json) {
+        console.log(JSON.stringify({ valid: false, errors: [{ path: "target.script", message: formatCompatGuardError(message), code: "compat_guard_error" }] }, null, 2));
+      } else {
+        console.error(`${red("\u2717")} ${args.value}: ${formatCompatGuardError(message)}`);
+      }
+      process.exit(1);
+    }
+  }
+  const summary = await findSpecialist(args.value);
   if (!summary) {
     if (args.json) {
-      console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${args.name}`, code: "not_found" }] }));
+      console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${args.value}`, code: "not_found" }] }));
     } else {
-      console.error(`${red("\u2717")} Specialist not found: ${cyan4(args.name)}`);
+      console.error(`${red("\u2717")} Specialist not found: ${cyan4(args.value)}`);
     }
     process.exit(1);
   }
@@ -26888,7 +27143,7 @@ async function run9() {
     process.exit(result.valid ? 0 : 1);
   }
   console.log(`
-${bold8("Validating")} ${cyan4(args.name)} ${dim6(`(${summary.filePath})`)} ${dim6(`[${getSourceLabel(summary)}]`)}
+${bold8("Validating")} ${cyan4(args.value)} ${dim6(`(${summary.filePath})`)} ${dim6(`[${getSourceLabel(summary)}]`)}
 `);
   if (result.valid) {
     console.log(`${green6("\u2713")} Schema validation passed
@@ -26916,8 +27171,10 @@ ${bold8("Validating")} ${cyan4(args.name)} ${dim6(`(${summary.filePath})`)} ${di
 }
 var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
 var init_validate = __esm(() => {
+  init_dist();
   init_loader();
   init_schema();
+  init_script_runner();
   ArgParseError3 = class ArgParseError3 extends Error {
     constructor(message) {
       super(message);
@@ -31468,7 +31725,7 @@ __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
 import { existsSync as existsSync17, readFileSync as readFileSync14, readdirSync as readdirSync6 } from "fs";
-import { randomUUID } from "crypto";
+import { randomUUID as randomUUID2 } from "crypto";
 import { spawnSync as spawnSync13 } from "child_process";
 import { basename as basename4, join as join17, resolve as resolve8 } from "path";
 function parseNodeArgs(argv) {
@@ -31791,7 +32048,7 @@ async function handleNodeRun(args) {
       hooks: new HookEmitter({ tracePath: join17(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
-    const nodeId = `${config2.name}-${randomUUID().slice(0, 8)}`;
+    const nodeId = `${config2.name}-${randomUUID2().slice(0, 8)}`;
     const effectiveContextDepth = args.contextDepth ?? config2.defaultContextDepth;
     const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
     let beadContext;
@@ -34943,6 +35200,8 @@ function readJobEvents(jobDir) {
       return sqliteEvents;
     }
   } catch {}
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
+    return [];
   const eventsPath = join22(jobDir, "events.jsonl");
   if (!existsSync21(eventsPath))
     return [];
@@ -34962,6 +35221,23 @@ function readJobEventsById(jobsDir, jobId) {
   return readJobEvents(join22(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0 && sqliteClient) {
+    return statuses.flatMap((status) => {
+      const events = sqliteClient.readEvents(status.id);
+      if (events.length === 0)
+        return [];
+      return [{
+        jobId: status.id,
+        specialist: status.specialist ?? "unknown",
+        beadId: status.bead_id,
+        events
+      }];
+    });
+  }
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
+    return [];
   if (!existsSync21(jobsDir))
     return [];
   const batches = [];
@@ -35044,8 +35320,8 @@ function queryTimeline(jobsDir, filter = {}) {
   return filterTimelineEvents(merged, filter);
 }
 var init_timeline_query = __esm(() => {
-  init_timeline_events();
   init_observability_sqlite();
+  init_timeline_events();
 });
 
 // src/specialist/model-display.ts
@@ -35940,6 +36216,9 @@ function readJobStatus2(jobDir) {
     return null;
   }
 }
+function getFileFallbackEnabled() {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
+}
 function isTerminal2(status) {
   return TERMINAL_STATUSES3.has(status);
 }
@@ -35947,6 +36226,25 @@ function isActive(status) {
   return ACTIVE_STATUSES.has(status);
 }
 function collectWorktreeGcCandidates(jobsDir) {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0) {
+    return statuses.filter((status) => !isActive(status.status) && isTerminal2(status.status)).map((status) => {
+      const worktreePath = status.worktree_path;
+      if (!worktreePath)
+        return null;
+      if (!existsSync24(worktreePath))
+        return null;
+      return {
+        jobId: status.id,
+        worktreePath,
+        branch: status.branch,
+        jobStatus: status.status
+      };
+    }).filter((candidate) => candidate !== null);
+  }
+  if (!getFileFallbackEnabled())
+    return [];
   if (!existsSync24(jobsDir))
     return [];
   const candidates = [];
@@ -35999,6 +36297,7 @@ function pruneWorktrees(candidates) {
 }
 var TERMINAL_STATUSES3, ACTIVE_STATUSES;
 var init_worktree_gc = __esm(() => {
+  init_observability_sqlite();
   TERMINAL_STATUSES3 = new Set(["done", "error"]);
   ACTIVE_STATUSES = new Set(["starting", "running", "waiting"]);
 });
@@ -36096,6 +36395,12 @@ function containsProtectedSqliteArtifact(directoryPath) {
   }
   return false;
 }
+function getJobTimestamps(status) {
+  const typedStatus = status;
+  const createdAtMs = typedStatus.started_at_ms ?? typedStatus.created_at_ms ?? typedStatus.updated_at_ms ?? 0;
+  const completedAtMs = typedStatus.completed_at_ms ?? typedStatus.updated_at_ms ?? createdAtMs;
+  return { createdAtMs, completedAtMs };
+}
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
@@ -36113,32 +36418,58 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   }
   if (!COMPLETED_STATUSES.has(statusData.status))
     return null;
-  const directoryStats = statSync4(directoryPath);
+  const { createdAtMs, completedAtMs } = getJobTimestamps(statusData);
   return {
     id: entry.name,
     directoryPath,
-    modifiedAtMs: directoryStats.mtimeMs,
-    startedAtMs: statusData.started_at_ms,
+    completedAtMs,
+    createdAtMs,
     sizeBytes: readDirectorySizeBytes(directoryPath)
   };
 }
+function collectCompletedJobDirectoriesFromDb(jobsDirectoryPath) {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  const completedJobs = statuses.filter((status) => COMPLETED_STATUSES.has(status.status)).map((status) => {
+    const directoryPath = join26(jobsDirectoryPath, status.id);
+    if (containsProtectedSqliteArtifact(directoryPath))
+      return null;
+    if (!existsSync25(directoryPath))
+      return null;
+    const { createdAtMs, completedAtMs } = getJobTimestamps(status);
+    return {
+      id: status.id,
+      directoryPath,
+      completedAtMs,
+      createdAtMs,
+      sizeBytes: readDirectorySizeBytes(directoryPath)
+    };
+  }).filter((job) => job !== null);
+  return completedJobs;
+}
 function collectCompletedJobDirectories(jobsDirectoryPath) {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0) {
+    return collectCompletedJobDirectoriesFromDb(jobsDirectoryPath);
+  }
+  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
+    return [];
   const entries = readdirSync11(jobsDirectoryPath, { withFileTypes: true });
   const completedJobs = [];
   for (const entry of entries) {
     const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
-    if (completedJob) {
+    if (completedJob)
       completedJobs.push(completedJob);
-    }
   }
   return completedJobs;
 }
 function selectJobsToRemove(completedJobs, options) {
   const jobsByNewest = [...completedJobs].sort((left, right) => {
-    if (right.startedAtMs !== left.startedAtMs) {
-      return right.startedAtMs - left.startedAtMs;
+    if (right.createdAtMs !== left.createdAtMs) {
+      return right.createdAtMs - left.createdAtMs;
     }
-    return right.modifiedAtMs - left.modifiedAtMs;
+    return right.completedAtMs - left.completedAtMs;
   });
   if (options.keepRecentCount !== null) {
     return jobsByNewest.slice(options.keepRecentCount);
@@ -36148,7 +36479,7 @@ function selectJobsToRemove(completedJobs, options) {
   }
   const ttlDays = parseTtlDaysFromEnvironment();
   const cutoffMs = Date.now() - ttlDays * MS_PER_DAY;
-  return jobsByNewest.filter((job) => job.modifiedAtMs < cutoffMs);
+  return jobsByNewest.filter((job) => job.completedAtMs < cutoffMs);
 }
 function formatBytes2(bytes) {
   if (bytes < 1024)
@@ -36230,6 +36561,7 @@ async function run22() {
 var MS_PER_DAY = 86400000, DEFAULT_TTL_DAYS = 7, COMPLETED_STATUSES, PROTECTED_SQLITE_SUFFIXES;
 var init_clean = __esm(() => {
   init_job_root();
+  init_observability_sqlite();
   init_worktree_gc();
   COMPLETED_STATUSES = new Set(["done", "error"]);
   PROTECTED_SQLITE_SUFFIXES = [".db", ".db-wal", ".db-shm"];
@@ -37384,222 +37716,6 @@ async function run28() {
 }
 var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`;
 
-// src/specialist/script-runner.ts
-import { spawn as spawn3 } from "child_process";
-import { randomUUID as randomUUID2 } from "crypto";
-function hasUnsubstitutedVariables(template) {
-  const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
-  return match?.[1] ?? null;
-}
-function compatGuard(spec) {
-  const execution = spec.specialist.execution;
-  if (execution.interactive)
-    throw new Error("interactive specialists are not allowed");
-  if (execution.requires_worktree)
-    throw new Error("worktree specialists are not allowed");
-  if (execution.permission_required !== "READ_ONLY")
-    throw new Error("permission_required must be READ_ONLY");
-  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
-    throw new Error("scripts not allowed");
-}
-function renderTaskTemplate(template, variables) {
-  const output2 = renderTemplate(template, variables);
-  const missing = hasUnsubstitutedVariables(output2);
-  if (missing)
-    throw new Error(`Missing template variable: ${missing}`);
-  return output2;
-}
-function mapErrorType(message) {
-  if (message.includes("Specialist not found"))
-    return "specialist_not_found";
-  if (message.includes("interactive") || message.includes("worktree") || message.includes("permission_required") || message.includes("scripts not allowed"))
-    return "specialist_load_error";
-  if (message.includes("Missing template variable"))
-    return "template_variable_missing";
-  if (message.includes("output too large"))
-    return "output_too_large";
-  if (message.includes("auth") || message.includes("403") || message.includes("401"))
-    return "auth";
-  if (message.includes("quota") || message.includes("rate limit") || message.includes("out of extra usage") || message.includes("insufficient_quota") || message.includes("429"))
-    return "quota";
-  if (message.includes("timeout"))
-    return "timeout";
-  if (message.includes("network") || message.includes("ECONN"))
-    return "network";
-  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
-    return "invalid_json";
-  return "internal";
-}
-function textFromMessage(message) {
-  if (!message || message.role !== "assistant")
-    return "";
-  if (!Array.isArray(message.content))
-    return "";
-  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
-}
-function extractAssistantText(lines) {
-  for (let i = lines.length - 1;i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line)
-      continue;
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === "message_end") {
-      const text = textFromMessage(event.message);
-      if (text)
-        return text;
-    }
-    if (event.type === "agent_end" && Array.isArray(event.messages)) {
-      for (let j = event.messages.length - 1;j >= 0; j--) {
-        const text = textFromMessage(event.messages[j]);
-        if (text)
-          return text;
-      }
-    }
-    if (event.type === "assistant" && typeof event.data?.text === "string")
-      return event.data.text;
-    const legacyContent = event.data?.content?.[0]?.text;
-    if (typeof legacyContent === "string")
-      return legacyContent;
-  }
-  return "";
-}
-function stripMarkdownFences(text) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-function extractPiErrorMessage(lines) {
-  for (let i = lines.length - 1;i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line)
-      continue;
-    try {
-      const event = JSON.parse(line);
-      const errMsg = event.message?.errorMessage;
-      if (typeof errMsg === "string" && errMsg.length > 0)
-        return errMsg;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-function writeTraceRow(client, specialist, model, traceId, output2, durationMs) {
-  if (!client)
-    return;
-  const status = {
-    id: traceId,
-    specialist,
-    status: "done",
-    model,
-    started_at_ms: Date.now() - durationMs,
-    elapsed_s: durationMs / 1000,
-    last_event_at_ms: Date.now(),
-    surface: "script_specialist"
-  };
-  client.upsertStatus(status);
-  client.upsertResult(traceId, output2);
-}
-function openObservabilityClient(options) {
-  const dbPath = options.observabilityDbPath ?? options.userDir;
-  return createObservabilitySqliteClient(dbPath);
-}
-async function runScriptSpecialist(input2, options) {
-  const traceId = randomUUID2();
-  const startedAt = Date.now();
-  try {
-    const spec = await options.loader.get(input2.specialist);
-    compatGuard(spec);
-    const template = input2.template ?? spec.specialist.prompt.task_template;
-    const prompt = renderTaskTemplate(template, input2.variables ?? {});
-    const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
-    const timeoutMs = input2.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
-    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--model", model];
-    const thinkingLevel = input2.thinking_level ?? spec.specialist.execution.thinking_level;
-    if (thinkingLevel)
-      args.push("--thinking", thinkingLevel);
-    args.push(prompt);
-    const pi = spawn3("pi", args, { stdio: ["ignore", "pipe", "pipe"] });
-    options.onChild?.(pi);
-    const chunks = [];
-    let stderr = "";
-    let timedOut = false;
-    let outputTooLarge = false;
-    const stdoutLimit = 4 * 1024 * 1024;
-    let stdoutBytes = 0;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      pi.kill("SIGTERM");
-      setTimeout(() => pi.kill("SIGKILL"), 2000);
-    }, timeoutMs);
-    pi.stdout.on("data", (chunk) => {
-      const buffer = Buffer.from(chunk);
-      chunks.push(buffer);
-      stdoutBytes += buffer.length;
-      if (stdoutBytes > stdoutLimit && !outputTooLarge) {
-        outputTooLarge = true;
-        pi.kill("SIGTERM");
-        setTimeout(() => pi.kill("SIGKILL"), 2000);
-      }
-    });
-    pi.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    const exitCode = await new Promise((resolve10, reject) => {
-      pi.on("error", reject);
-      pi.on("close", (code) => resolve10(code ?? 0));
-    }).finally(() => clearTimeout(timer));
-    const stdout = Buffer.concat(chunks).toString("utf-8");
-    const text = extractAssistantText(stdout.split(/\r?\n/));
-    const durationMs = Date.now() - startedAt;
-    const observability = openObservabilityClient(options);
-    if (input2.trace !== false && observability)
-      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
-    if (outputTooLarge) {
-      return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (timedOut) {
-      return { success: false, error: stderr || "timed out", error_type: "timeout", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (exitCode !== 0) {
-      return { success: false, error: stderr || `pi exit ${exitCode}`, error_type: mapErrorType(stderr), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (!text) {
-      const piError = extractPiErrorMessage(stdout.split(/\r?\n/));
-      if (piError) {
-        return { success: false, error: piError, error_type: mapErrorType(piError), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-      }
-      return { success: false, error: "pi produced no assistant text", error_type: "internal", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    let parsed_json;
-    if (spec.specialist.execution.response_format === "json") {
-      try {
-        parsed_json = JSON.parse(stripMarkdownFences(text));
-        const required2 = Array.isArray(spec.specialist.prompt.output_schema?.required) ? spec.specialist.prompt.output_schema.required.filter((value) => typeof value === "string") : [];
-        for (const key of required2) {
-          if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json)) {
-            throw new Error(`Missing required output field: ${key}`);
-          }
-        }
-      } catch (error2) {
-        return { success: false, error: error2 instanceof Error ? error2.message : String(error2), error_type: "invalid_json", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-      }
-    }
-    return { success: true, output: text, parsed_json, meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: input2.specialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
-  }
-}
-var init_script_runner = __esm(() => {
-  init_observability_sqlite();
-});
-
 // src/cli/serve.ts
 var exports_serve = {};
 __export(exports_serve, {
@@ -37613,7 +37729,7 @@ function parseArgs11(argv) {
   let concurrency = 4;
   let queueTimeoutMs = 5000;
   let shutdownGraceMs = 30000;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let fallbackModel;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
@@ -37625,12 +37741,12 @@ function parseArgs11(argv) {
       queueTimeoutMs = Number(argv[++i]);
     else if (token === "--shutdown-grace-ms" && argv[i + 1])
       shutdownGraceMs = Number(argv[++i]);
-    else if (token === "--user-dir" && argv[i + 1])
-      userDir = argv[++i];
+    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
+      projectDir = argv[++i];
     else if (token === "--fallback-model" && argv[i + 1])
       fallbackModel = argv[++i];
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, userDir, fallbackModel };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -37656,10 +37772,10 @@ async function waitForSlot(limit, timeoutMs, getActive) {
 }
 async function startServe(argv = process.argv.slice(3)) {
   const args = parseArgs11(argv);
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const dbLocation = resolveObservabilityDbLocation(args.userDir);
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const dbLocation = resolveObservabilityDbLocation(args.projectDir);
   ensureObservabilityDbFile(dbLocation);
-  const db = createObservabilitySqliteClient(args.userDir);
+  const db = createObservabilitySqliteClient(args.projectDir);
   let active = 0;
   let shuttingDown = false;
   const children = new Set;
@@ -37685,7 +37801,7 @@ async function startServe(argv = process.argv.slice(3)) {
         }
         if (!isValidRequest(parsed))
           return sendJson(res, 400, { success: false, error: "malformed_request", error_type: "invalid_json" });
-        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.userDir, onChild: (child) => {
+        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.projectDir, onChild: (child) => {
           children.add(child);
           child.once("exit", () => children.delete(child));
         } });
@@ -37749,7 +37865,7 @@ function parseArgs12(argv) {
   let template;
   let modelOverride;
   let thinking;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let dbPath;
   let timeoutMs;
   let json = false;
@@ -37766,8 +37882,8 @@ function parseArgs12(argv) {
       modelOverride = argv[++i];
     else if (token === "--thinking" && argv[i + 1])
       thinking = argv[++i];
-    else if (token === "--user-dir" && argv[i + 1])
-      userDir = argv[++i];
+    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
+      projectDir = argv[++i];
     else if (token === "--db-path" && argv[i + 1])
       dbPath = argv[++i];
     else if (token === "--timeout-ms" && argv[i + 1])
@@ -37780,7 +37896,7 @@ function parseArgs12(argv) {
       trace = false;
     else if (token === "--vars")
       throw new Error("Missing value for --vars");
-    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
+    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--project-dir" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
       throw new Error(`Missing value for ${token}`);
     }
   }
@@ -37788,7 +37904,7 @@ function parseArgs12(argv) {
     throw new Error("Missing specialist name");
   if (Number.isNaN(timeoutMs))
     throw new Error("Invalid --timeout-ms value");
-  return { specialist, variables, template, modelOverride, thinking, userDir, dbPath, timeoutMs, json, singleInstance, trace };
+  return { specialist, variables, template, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
 }
 function buildRequest(args) {
   return {
@@ -37851,8 +37967,8 @@ async function run30(argv = process.argv.slice(3)) {
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
   }
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const result = await runScriptSpecialist(buildRequest(args), { loader, userDir: args.userDir, observabilityDbPath: args.dbPath ?? args.userDir });
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const result = await runScriptSpecialist(buildRequest(args), { loader, projectDir: args.projectDir, observabilityDbPath: args.dbPath ?? args.projectDir });
   printResult(result, args.json);
   process.exit(mapExitCode(result));
 }
@@ -37976,8 +38092,10 @@ var init_help = __esm(() => {
     ["list", "List specialists; --live for interactive tmux session picker"],
     ["view", "Pretty-print specialist config with readable prompts; --section, --raw"],
     ["edit", "Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets"],
-    ["validate", "Validate a specialist JSON config against the schema"],
+    ["validate", "Validate specialist schema; --target=script adds compatGuard checks"],
     ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
+    ["serve", "HTTP wrapper for script-class specialists (POST /v1/generate); long-running daemon"],
+    ["script", "One-shot CLI peer to sp serve for cron/scripts; cron-friendly exit codes, --single-instance"],
     ["node", "Run and inspect NodeSupervisor nodes (run/status)"],
     ["epic", "Epic lifecycle management: list/status/resolve wave-bound chain groups"],
     ["feed", "Tail job events; use -f to follow all jobs"],
@@ -45629,7 +45747,7 @@ async function run32() {
         "",
         "What it does (always safe, idempotent):",
         "  \u2022 creates .specialists/user/ for custom specialists",
-        "  \u2022 creates observability.db (primary), .specialists/jobs/ (legacy fallback), and .specialists/ready/",
+        "  \u2022 creates .specialists/jobs/ and .specialists/ready/ runtime dirs",
         "  \u2022 adds runtime dirs to .gitignore",
         "  \u2022 injects the Specialists section into AGENTS.md",
         "  \u2022 registers the Specialists MCP server at project scope (.mcp.json)",
@@ -45697,8 +45815,8 @@ async function run32() {
         "Commands:",
         "  setup      Create and initialize the observability DB (one-time)",
         "  init       Alias for setup",
-        "  backfill   Backfill specialist_jobs from legacy .specialists/jobs/*/status.json",
-        "             Use --events to also replay events.jsonl (migration use only)",
+        "  backfill   Backfill specialist_jobs from .specialists/jobs/*/status.json",
+        "             Use --events to also replay events.jsonl",
         "  vacuum     Run SQLite VACUUM (refuses when active jobs running/starting)",
         "  prune      Prune old rows: requires --before <iso|duration>, dry-run by default",
         "             Use --apply to execute; --include-epics to also prune epic_runs",
@@ -45729,22 +45847,23 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists validate <name> [--json]",
+        "Usage: specialists validate <name|path> [--target=<surface>] [--json]",
         "",
-        "Validate a specialist YAML file against the schema.",
+        "Validate a specialist config against the schema.",
+        "Use --target=script for pre-deploy script-runner compat checks.",
         "",
         "What it checks:",
-        "  - YAML syntax is valid",
-        "  - Required fields are present (name, version, description, category, model)",
-        "  - Field values match expected formats (kebab-case names, semver versions)",
-        "  - Enum values are valid (permission_required, mode, beads_integration)",
+        "  - Full schema: syntax and required fields",
+        "  - Script target: schema + compatGuard rules",
         "",
         "Options:",
-        "  --json   Output validation result as JSON",
+        "  --target=<surface>  Validate for surface-specific rules; script is only supported value today",
+        "  --json              Output validation result as JSON",
         "",
         "Examples:",
         "  specialists validate my-specialist",
-        "  specialists validate my-specialist --json",
+        "  specialists validate ./docs/example.specialist.json --target=script",
+        "  specialists validate ./docs/example.specialist.json --target script --json",
         "",
         "Exit codes:",
         "  0 \u2014 validation passed",
@@ -46126,7 +46245,7 @@ async function run32() {
         "Usage: specialists poll <job-id> [--cursor N] [--json]",
         "",
         "Machine-readable job status polling for scripts and Claude Code.",
-        "Reads from observability.db (primary) with fallback to .specialists/jobs/<id>/ files.",
+        "Reads from .specialists/jobs/<id>/ files.",
         "",
         "Output (JSON mode):",
         "  {",
@@ -46244,7 +46363,7 @@ async function run32() {
         "",
         "Usage: specialists clean [--all] [--keep <n>] [--dry-run]",
         "",
-        "Purge legacy job directories from .specialists/jobs/. (observability.db is canonical)",
+        "Purge completed job directories from .specialists/jobs/.",
         "",
         "Default behavior:",
         "  - removes done/error jobs older than SPECIALISTS_JOB_TTL_DAYS",
@@ -46438,7 +46557,7 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--user-dir <path>]",
+        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--project-dir <path>]",
         "",
         "HTTP wrapper for script-class specialists.",
         "",

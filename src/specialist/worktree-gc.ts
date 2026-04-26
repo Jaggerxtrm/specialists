@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { SupervisorStatus } from './supervisor.js';
+import { createObservabilitySqliteClient } from './observability-sqlite.js';
 
 const TERMINAL_STATUSES = new Set<SupervisorStatus['status']>(['done', 'error']);
 const ACTIVE_STATUSES = new Set<SupervisorStatus['status']>(['starting', 'running', 'waiting']);
@@ -38,6 +39,10 @@ function readJobStatus(jobDir: string): JobStatusWithBranch | null {
   }
 }
 
+function getFileFallbackEnabled(): boolean {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on';
+}
+
 function isTerminal(status: SupervisorStatus['status']): status is 'done' | 'error' {
   return TERMINAL_STATUSES.has(status);
 }
@@ -52,6 +57,26 @@ function isActive(status: SupervisorStatus['status']): boolean {
  * Skips any job whose status is active to prevent accidental removal.
  */
 export function collectWorktreeGcCandidates(jobsDir: string): WorktreeGcCandidate[] {
+  const sqliteClient = createObservabilitySqliteClient();
+  const statuses = sqliteClient?.listStatuses() ?? [];
+  if (statuses.length > 0) {
+    return statuses
+      .filter((status) => !isActive(status.status) && isTerminal(status.status))
+      .map((status) => {
+        const worktreePath = status.worktree_path;
+        if (!worktreePath) return null;
+        if (!existsSync(worktreePath)) return null;
+        return {
+          jobId: status.id,
+          worktreePath,
+          branch: status.branch,
+          jobStatus: status.status as WorktreeGcCandidate['jobStatus'],
+        } satisfies WorktreeGcCandidate;
+      })
+      .filter((candidate): candidate is WorktreeGcCandidate => candidate !== null);
+  }
+
+  if (!getFileFallbackEnabled()) return [];
   if (!existsSync(jobsDir)) return [];
 
   const candidates: WorktreeGcCandidate[] = [];
@@ -62,14 +87,12 @@ export function collectWorktreeGcCandidates(jobsDir: string): WorktreeGcCandidat
     const status = readJobStatus(join(jobsDir, entry.name));
     if (!status) continue;
 
-    // Skip active jobs unconditionally — safety guard against data races.
     if (isActive(status.status)) continue;
     if (!isTerminal(status.status)) continue;
 
     const { worktree_path: worktreePath, branch } = status;
     if (!worktreePath) continue;
 
-    // Skip if the directory no longer exists — already cleaned up.
     if (!existsSync(worktreePath)) continue;
 
     candidates.push({
