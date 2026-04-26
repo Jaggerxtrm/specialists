@@ -10,23 +10,25 @@ Install path for consumers who do **not** clone specialists source.
 
 The container reads `pi` auth from a bind-mounted `~/.pi` directory. No secret file ships in image.
 
-## Pull or build
+## Build the image
 
-Pull published image:
-
-```bash
-docker pull ghcr.io/<org>/specialists-service:<tag>
-```
-
-Build locally from this repo:
+> Image publishing to a registry is deferred. For now, build from this repo's source.
 
 ```bash
-docker build -t specialists-service:dev .
+git clone https://github.com/Jaggerxtrm/specialists.git
+cd specialists
+docker build -t specialists-service:local .
+# or with rootless podman:
+podman build -t specialists-service:local .
 ```
 
-Image runs as non-root, UID `10001` (label `org.specialists.uid=10001`). Override with `--user $UID:$GID` at runtime so container writes are owned by your host user — see compose example.
+Tag whatever you want (`:local`, `:v0.1`, etc.) — your compose file references the same tag.
 
-The image pins `pi` to a known-good version for predictable spawn behavior. Bump the pin in the Dockerfile when you've verified a newer pi against the script-runner spawn flags.
+The image runs as non-root, UID `10001` (label `org.specialists.uid=10001`). Override at runtime with `--user $UID:$GID` (Docker) or `--userns=keep-id --user $UID:$GID` (rootless Podman) so container writes are owned by your host user. The compose template wires this automatically.
+
+The image pins `pi-coding-agent` to a known-good version for predictable spawn behavior. Bump the pin in the Dockerfile when you've verified a newer pi against the script-runner spawn flags. Tracked: bead `unitAI-w0h7z`.
+
+> **Future** — `docker pull ghcr.io/<org>/specialists-service:<tag>` once the image is published.
 
 ## Author first specialist
 
@@ -61,6 +63,8 @@ Create one script-class specialist in `.specialists/user/hello.specialist.json`.
 ```
 
 Variable substitution uses `$name` (single-dollar, no braces). Pick a model your host's `~/.pi/agent/auth.json` has credentials for. The runtime contract — script-class, non-interactive, read-only, no worktree, task_template present — is enforced at request time; mismatches return `specialist_load_error`.
+
+A working reference example ships with the repo at [`docs/examples/smoke-echo.specialist.json`](examples/smoke-echo.specialist.json) — copy it into your `.specialists/user/` to verify a fresh deployment end-to-end.
 
 ## Compose file walkthrough
 

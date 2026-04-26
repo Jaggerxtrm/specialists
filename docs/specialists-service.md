@@ -99,7 +99,7 @@ Sidecar pattern. One service per consumer.
 ```yaml
 services:
   specialists:
-    image: ghcr.io/<org>/specialists-service:<version>
+    image: specialists-service:local        # build from this repo until publishing lands; future: ghcr.io/<org>/specialists-service:<version>
     command: [sp, serve, --port=8000]
     user: "${UID:-1000}:${GID:-1000}"          # match host file owner
     environment:

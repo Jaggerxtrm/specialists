@@ -1,10 +1,19 @@
 services:
   specialists:
-    image: ghcr.io/<org>/specialists-service:<tag>
+    # Image publishing is deferred. Until then, build from a local checkout
+    # of the specialists repo and reference that tag below.
+    image: specialists-service:local
+    # build:
+    #   context: ../specialists           # path to specialists repo checkout
+    #   dockerfile: Dockerfile
+    # Once the image is published, replace the lines above with:
+    # image: ghcr.io/<org>/specialists-service:<tag>
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       HOME: /pi-home
     volumes:
+      # On Fedora / rootless Podman, append `:z` to bind mounts for SELinux relabel
+      # and pass `--userns=keep-id` to the runtime. See specialists-service-install.md.
       - ./.specialists:/work/.specialists
       - ${HOME}/.pi:/pi-home/.pi:ro
     working_dir: /work

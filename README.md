@@ -77,7 +77,9 @@ specialists doctor
 | Need | Doc |
 |---|---|
 | Install and bootstrap a project | [docs/bootstrap.md](docs/bootstrap.md) |
-| Package specialists-service for Docker | [docs/release-image.md](docs/release-image.md) |
+| Run a script-class specialist over HTTP (`sp serve`) — overview & contract | [docs/specialists-service.md](docs/specialists-service.md) |
+| Install `sp serve` in another project (sidecar Docker / Podman) | [docs/specialists-service-install.md](docs/specialists-service-install.md) |
+| Build & publish the specialists-service image | [docs/release-image.md](docs/release-image.md) |
 | Bead-first workflow and semantics | [docs/workflow.md](docs/workflow.md) |
 | CLI commands and flags | [docs/cli-reference.md](docs/cli-reference.md) |
 | Background jobs, feed, result, stop | [docs/background-jobs.md](docs/background-jobs.md) |
