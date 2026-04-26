@@ -13,7 +13,7 @@ const MetadataSchema = z.object({
   created: z.string().optional(),
   updated: z.string().optional(),
   tags: z.array(z.string()).optional(),
-});
+}).passthrough();
 
 const ExecutionSchema = z.object({
   mode: z.enum(['tool', 'skill', 'auto']).default('auto'),
@@ -42,11 +42,11 @@ const ExecutionSchema = z.object({
   extensions: z.object({
     serena: z.boolean().optional(),
     gitnexus: z.boolean().optional(),
-  }).optional(),
+  }).passthrough().optional(),
   // Agent Forge compat — accepted but ignored by specialists
   preferred_profile: z.string().optional(),
   approval_mode: z.string().optional(),
-});
+}).passthrough();
 
 const PromptSchema = z.object({
   system: z.string().optional(),
@@ -55,7 +55,7 @@ const PromptSchema = z.object({
   output_schema: z.record(z.unknown()).optional(),
   examples: z.array(z.unknown()).optional(),
   skill_inherit: z.string().optional(),         // Agent Forge compat — injected via --skill
-});
+}).passthrough();
 
 /** Script/command entry for pre/post execution hooks.
  *  `run` accepts either a file path (./scripts/check.sh) or a shell command (bd ready).
@@ -66,7 +66,7 @@ const ScriptEntrySchema = z.object({
   path: z.string().optional(),   // deprecated: use run
   phase: z.enum(['pre', 'post']),
   inject_output: z.boolean().default(false),
-}).transform(s => ({
+}).passthrough().transform(s => ({
   run: s.run ?? s.path ?? '',
   phase: s.phase,
   inject_output: s.inject_output,
@@ -77,14 +77,14 @@ const SkillsSchema = z.object({
   paths: z.array(z.string()).optional(),
   /** Pre/post scripts or commands run locally (not inside the agent session) */
   scripts: z.array(ScriptEntrySchema).optional(),
-}).optional();
+}).passthrough().optional();
 
 const CapabilitiesSchema = z.object({
   /** Pi tool names required by this specialist (validated pre-run against permission level). */
   required_tools: z.array(z.string()).optional(),
   /** CLI binaries the agent depends on (validated at run-time before session starts). */
   external_commands: z.array(z.string()).optional(),
-}).optional();
+}).passthrough().optional();
 
 const CommunicationSchema = z.object({
   /**
@@ -92,27 +92,27 @@ const CommunicationSchema = z.object({
    * Runner does not auto-chain specialists; orchestrators may consume this field.
    */
   next_specialists: z.union([z.string(), z.array(z.string())]).optional(),
-}).optional();
+}).passthrough().optional();
 
 const ValidationSchema = z.object({
   /** File paths to watch — if any mtime > metadata.updated, specialist is marked STALE */
   files_to_watch: z.array(z.string()).optional(),
   /** Days before STALE escalates to AGED */
   stale_threshold_days: z.number().optional(),
-}).optional();
+}).passthrough().optional();
 
 const MandatoryRuleSchema = z.object({
   id: z.string(),
   level: z.enum(['error', 'warn', 'info']).default('error'),
   text: z.string(),
   when: z.string().optional(),
-});
+}).passthrough();
 
 const MandatoryRulesSchema = z.object({
   template_sets: z.array(KebabCase).default([]),
   disable_default_globals: z.boolean().default(false),
   inline_rules: z.array(MandatoryRuleSchema).default([]),
-}).optional();
+}).passthrough().optional();
 
 const StallDetectionSchema = z.object({
   /** ms of silence while running before warn (default 60_000) */
@@ -123,7 +123,7 @@ const StallDetectionSchema = z.object({
   waiting_stale_ms: z.number().optional(),
   /** ms a single tool execution may run before warning (default 120_000) */
   tool_duration_warn_ms: z.number().optional(),
-}).optional();
+}).passthrough().optional();
 
 export const SpecialistSchema = z.object({
   specialist: z.object({
@@ -141,8 +141,8 @@ export const SpecialistSchema = z.object({
     beads_integration: z.enum(['auto', 'always', 'never']).default('auto'),
     beads_write_notes: z.boolean().default(true),
     heartbeat: z.unknown().optional(), // intentional placeholder for future liveness metadata (accepted, ignored)
-  }),
-});
+  }).passthrough(),
+}).passthrough();
 
 export type Specialist = z.infer<typeof SpecialistSchema>;
 export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
