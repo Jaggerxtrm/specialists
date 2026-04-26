@@ -1,0 +1,10 @@
+node_modules
+.git
+.specialists/jobs
+.specialists/db
+.worktrees
+.beads
+dist
+tests
+docs
+*.md
