@@ -262,6 +262,7 @@ export async function run(): Promise<void> {
   }
 
   if (args.live) {
+    process.stderr.write('Mode: live tmux session picker; active jobs are DB-backed and file scans are legacy/operator-only.\n');
     await runLiveMode(Boolean(args.showDead));
     return;
   }

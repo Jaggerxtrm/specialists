@@ -47,7 +47,7 @@ specialists merge <bead-id>           # single chain or epic (topological)
 specialists merge <bead-id> --rebuild # rebuild after merge
 ```
 
-`specialists run` prints `[job started: <id>]` early and also writes the id to `.specialists/jobs/latest`.
+`specialists run` prints `[job started: <id>]` early. Normal runtime is DB-backed; `.specialists/jobs/latest` is legacy/operator-only.
 
 Ad-hoc work:
 
@@ -95,7 +95,7 @@ specialists doctor
 
 ## Ownership model
 
-Specialists uses layered ownership with deterministic loader precedence: user layer overrides default layer, and default layer falls back to package source (`.specialists/user/*` > `.specialists/default/*` > `config/*`). Operationally: `config/*` is upstream source shipped by package, `.specialists/default/*` is managed mirror refreshed by `specialists init --sync-defaults` (scope: specialists + mandatory-rules + nodes), `.specialists/user/*` is repo customization layer, and `.specialists/{jobs,ready,db}` is runtime/generated state. Use `sp edit --fork-from <base>` to promote non-user specialist into user layer before editing.
+Specialists uses layered ownership with deterministic loader precedence: user layer overrides default layer, and default layer falls back to package source (`.specialists/user/*` > `.specialists/default/*` > `config/*`). Operationally: `config/*` is upstream source shipped by package, `.specialists/default/*` is managed mirror refreshed by `specialists init --sync-defaults` (scope: specialists + mandatory-rules + nodes), `.specialists/user/*` is repo customization layer, and `.specialists/{jobs,ready,db}` is runtime/generated state; `.specialists/jobs/` is legacy mirror/debug surface, not normal-runtime source of truth. Use `sp edit --fork-from <base>` to promote non-user specialist into user layer before editing.
 
 ## Project structure
 

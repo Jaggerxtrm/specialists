@@ -76,7 +76,7 @@ sp run executor --prompt "Investigate failing tests" --raw
 
 ## 2) Job observation: `feed`, `poll`, `result`
 
-All observation reads Supervisor artifacts under:
+All observation reads DB-backed runtime state first. Legacy/operator mirrors under:
 
 ```text
 .specialists/jobs/<job-id>/
@@ -87,13 +87,13 @@ All observation reads Supervisor artifacts under:
 
 ### SQLite persistence (schema v4)
 
-When SQLite is available, Supervisor uses it as the primary storage backend with file-based fallback:
+When SQLite is available, Supervisor uses it as the primary storage backend. File-based fallback is legacy/operator-only:
 
 - **`specialist_jobs` table**: status, bead_id, node_id, worktree_path, branch, last_output, elapsed_ms
 - **`specialist_events` table**: append-only timeline with event_json (JSON-first design)
 - **Node tables** (schema v4): `node_runs`, `node_members`, `node_events`, `node_memory` for orchestrator tracking
 - **Dual-write**: atomic transactions at job start/completion; mid-run writes are standalone for resilience
-- **Backward compatible**: file-based storage remains functional when SQLite is unavailable
+- **Backward compatible**: file-based storage remains available only for recovery/debug tooling when SQLite is unavailable
 
 ### `feed` (timeline-first)
 
@@ -358,7 +358,7 @@ starting → running → waiting → (resume) → running → ... → done/error
 
 Introduced to distinguish intentional stops from failures:
 - Set by `sp stop` when job has no `run_complete` event
-- Preserved in SQLite + file-based `status.json`
+- Preserved in SQLite + legacy/operator file mirror `status.json`
 - Rendered in `sp ps` and `sp status` (gray color)
 
 ---

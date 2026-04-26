@@ -2,7 +2,8 @@
 /**
  * CLI command: specialists poll <job-id>
  *
- * Machine-readable job status polling. Reads from .specialists/jobs/<id>/ files.
+ * Machine-readable job status polling.
+ * DB-backed in normal runtime; file reads remain legacy/operator-only.
  * Designed for programmatic consumption (Claude Code, scripts).
  *
  * Output (JSON mode):

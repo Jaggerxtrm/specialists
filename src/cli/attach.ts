@@ -17,7 +17,7 @@ function readStatus(statusPath: string, jobId: string): JobStatus {
     return JSON.parse(readFileSync(statusPath, 'utf-8')) as JobStatus;
   } catch (error: unknown) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs.`);
+      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs in current mode.`);
     }
 
     const details = error instanceof Error ? error.message : String(error);
@@ -29,7 +29,7 @@ export async function run(): Promise<void> {
   const [jobId] = process.argv.slice(3);
 
   if (!jobId) {
-    exitWithError('Usage: specialists attach <job-id>');
+    exitWithError('Usage: specialists attach <job-id>  (normal runtime is DB-backed; job files are legacy/operator-only)');
   }
 
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');

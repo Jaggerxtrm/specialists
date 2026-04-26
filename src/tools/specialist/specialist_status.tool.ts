@@ -9,7 +9,7 @@ const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBreaker: CircuitBreaker) {
   return {
     name: 'specialist_status' as const,
-    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from .specialists/jobs/.',
+    description: 'System health: backend circuit breaker states, loaded specialists, staleness. Also shows active background jobs from DB-backed runtime state; .specialists/jobs/ is legacy/operator-only.',
     inputSchema: z.object({}),
     async execute(_: object) {
       const list = await loader.list();

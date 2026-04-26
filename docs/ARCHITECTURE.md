@@ -243,7 +243,7 @@ Parses `git worktree list --porcelain` output into a `Map<branch, absolute-path>
 
 ### Durable artifacts (authoritative)
 
-For each run (`.specialists/jobs/<id>/`):
+For each run (`.specialists/jobs/<id>/` legacy/operator mirror):
 
 - `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch, **`node_id`**)
 - `events.jsonl` — append-only canonical timeline stream (JSON-first source of truth)
@@ -253,8 +253,8 @@ For each run (`.specialists/jobs/<id>/`):
 
 Persistence is **JSON-first**:
 
-- Files under `.specialists/jobs/<id>/` are the canonical write path and crash-recovery source.
-- SQLite mirrors the same payloads (`status_json`, `event_json`) for fast listing/querying and node-level analytics.
+- SQLite is the canonical runtime store for listing/querying and node-level analytics.
+- Files under `.specialists/jobs/<id>/` are legacy/operator mirrors for recovery and debugging.
 
 Dual-write behavior is intentionally split by durability role:
 
@@ -689,7 +689,7 @@ function runAutoCommitCheckpoint(options: {
 }): { status: 'skipped' | 'success' | 'failed'; ... }
 ```
 
-Noise filtering: `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` are ignored.
+Noise filtering: `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` are ignored. `.specialists/jobs/` is legacy/operator-only.
 
 Timeline events: `auto_commit_success`, `auto_commit_skipped`, `auto_commit_failed`.
 
