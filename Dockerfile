@@ -9,6 +9,7 @@ RUN bun install --frozen-lockfile
 RUN bun run build
 
 FROM docker.io/oven/bun:1.3.5-slim AS runtime
+ARG PI_VERSION=latest
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -22,7 +23,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates sqlite3 npm \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --create-home --home-dir /home/specialists --shell /usr/sbin/nologin specialists \
-  && npm install -g @mariozechner/pi-coding-agent@latest
+  && npm install -g "@mariozechner/pi-coding-agent@${PI_VERSION}"
 
 COPY --from=builder /app/dist ./dist
 

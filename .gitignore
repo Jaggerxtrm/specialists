@@ -23,7 +23,8 @@ gemini-error.json
 .factory/
 venv/
 .obsidian/
-.github/
+.github/copilot/
+.github/codex/
 .mcp.json
 .cursor/mcp.json
 .gitnexus

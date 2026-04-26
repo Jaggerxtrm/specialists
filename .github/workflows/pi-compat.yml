@@ -1,0 +1,109 @@
+name: pi-compat
+
+# Detects when a newer @mariozechner/pi-coding-agent breaks our spawn flags.
+# We unpinned the Dockerfile to @latest, so this is the canary.
+#
+# Trigger: weekly cron, PRs that touch the spawn surface, manual dispatch.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # Mondays 12:00 UTC
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'src/specialist/script-runner.ts'
+      - 'src/pi/session.ts'
+      - '.github/workflows/pi-compat.yml'
+  workflow_dispatch:
+    inputs:
+      pi_version:
+        description: 'pi-coding-agent version to test (default: latest)'
+        default: 'latest'
+        required: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve pi version
+        id: pi
+        run: |
+          PI_VERSION="${{ inputs.pi_version || 'latest' }}"
+          echo "version=$PI_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install pi
+        run: |
+          npm install -g "@mariozechner/pi-coding-agent@${{ steps.pi.outputs.version }}"
+          pi --version
+
+      - name: Smoke spawn flags (script-runner path)
+        run: |
+          set -e
+          # Required flags used by src/specialist/script-runner.ts.
+          # If pi removes/renames any, --help loses the line and we fail.
+          REQUIRED=(--mode --no-session --no-extensions --no-tools --model --thinking)
+          HELP="$(pi --help 2>&1)"
+          MISSING=()
+          for flag in "${REQUIRED[@]}"; do
+            if ! grep -qE "(^|[[:space:]])${flag}([[:space:]]|,|$)" <<<"$HELP"; then
+              MISSING+=("$flag")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error title=pi compat regression::Required script-runner flags missing from pi --help: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "All required script-runner flags present in pi --help."
+
+      - name: Smoke spawn flags (RPC session path)
+        run: |
+          set -e
+          # Required flags used by src/pi/session.ts (--mode rpc).
+          REQUIRED=(--mode --no-session --no-extensions --provider --tools --thinking --skill --append-system-prompt)
+          HELP="$(pi --help 2>&1)"
+          MISSING=()
+          for flag in "${REQUIRED[@]}"; do
+            if ! grep -qE "(^|[[:space:]])${flag}([[:space:]]|,|$)" <<<"$HELP"; then
+              MISSING+=("$flag")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error title=pi compat regression::Required RPC session flags missing from pi --help: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "All required RPC session flags present in pi --help."
+
+      - name: Smoke positional prompt (no '--' separator)
+        run: |
+          set -e
+          # Real spawn with our script-runner args + a model that won't auth-succeed.
+          # We expect failure, but failure must NOT be 'Unknown option'.
+          STDERR=$(pi --mode json --no-session --no-extensions --no-tools --model "fake/fake" "say hi" 2>&1 >/dev/null || true)
+          if grep -qiE "unknown option|invalid argument|unrecognized" <<<"$STDERR"; then
+            echo "::error title=pi compat regression::pi rejected our spawn args (positional prompt)"
+            echo "$STDERR"
+            exit 1
+          fi
+          echo "pi accepted our spawn args (auth/provider error is fine, args parse is fine)."
+
+      - name: Build image with latest pi
+        run: |
+          docker build --build-arg "PI_VERSION=${{ steps.pi.outputs.version }}" -t specialists-service:ci .
+
+      - name: Container boot smoke
+        run: |
+          set -e
+          CID=$(docker run -d --rm -p 8765:8000 specialists-service:ci --port 8000)
+          trap "docker stop $CID >/dev/null 2>&1 || true" EXIT
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; then
+              echo "Container booted; /healthz green."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error title=pi compat regression::Container did not become healthy in 20s"
+          docker logs "$CID" || true
+          exit 1
