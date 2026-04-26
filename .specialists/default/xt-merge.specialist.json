@@ -5,20 +5,12 @@
       "version": "1.1.0",
       "description": "Drains the xt worktree PR queue in FIFO order: pre-flight checks (auth, fetch, dirty tree), lists open xt/ PRs sorted by creation time, checks CI status on the oldest (verifying SHA matches post-rebase tip), merges it with --rebase --delete-branch, then rebases all remaining branches onto the new default branch with --force-with-lease --force-if-includes and verifies each push landed. Handles rebase conflicts (abort + report), stale CI detection, push verification, stash/pop for dirty state, and reports final queue state.",
       "category": "workflow",
-      "tags": [
-        "git",
-        "pr",
-        "merge",
-        "worktree",
-        "xt",
-        "rebase",
-        "ci"
-      ],
+      "tags": ["git", "pr", "merge", "worktree", "xt", "rebase", "ci"],
       "updated": "2026-03-28"
     },
     "execution": {
       "mode": "tool",
-      "model": "dashscope/qwen3.5-plus",
+      "model": "anthropic/claude-sonnet-4-6",
       "fallback_model": "google-gemini-cli/gemini-3-flash-preview",
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
@@ -33,9 +25,7 @@
       "task_template": "Drain the xt worktree PR merge queue.\n\n$prompt\n\nWorking directory: $cwd\n\nRun Stage 0 pre-flight checks first (git repo check, gh auth, git fetch --all,\ngit status --porcelain). Stop and report if any check fails.\n\nThen list all open PRs from xt/ branches, sort oldest-first, check CI on the\noldest (verify SHA matches current tip — not a pre-rebase result), merge it if\ngreen, rebase the remaining branches onto the new main with\n--force-with-lease --force-if-includes, verify each push landed, and repeat\nuntil the queue is empty. Report final state when done.\n"
     },
     "skills": {
-      "paths": [
-        ".xtrm/skills/active/pi/xt-merge/SKILL.md"
-      ],
+      "paths": [".xtrm/skills/active/xt-merge/SKILL.md"],
       "scripts": []
     },
     "validation": {
@@ -46,9 +36,8 @@
       ],
       "stale_threshold_days": 30
     },
-    "communication": {
-      "output_to": ".specialists/merge-prs-result.md"
-    },
+    "communication": {},
+    "output_file": ".specialists/merge-prs-result.md",
     "capabilities": {
       "required_tools": [],
       "external_commands": []

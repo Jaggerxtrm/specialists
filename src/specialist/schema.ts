@@ -84,6 +84,8 @@ const CapabilitiesSchema = z.object({
   required_tools: z.array(z.string()).optional(),
   /** CLI binaries the agent depends on (validated at run-time before session starts). */
   external_commands: z.array(z.string()).optional(),
+  /** Declarative shell commands the agent may run for diagnostics (no runtime executor — agent invokes them itself). */
+  diagnostic_scripts: z.array(z.string()).optional(),
 }).passthrough().optional();
 
 const CommunicationSchema = z.object({

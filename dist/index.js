@@ -17571,7 +17571,8 @@ var init_schema = __esm(() => {
   }).passthrough().optional();
   CapabilitiesSchema = objectType({
     required_tools: arrayType(stringType()).optional(),
-    external_commands: arrayType(stringType()).optional()
+    external_commands: arrayType(stringType()).optional(),
+    diagnostic_scripts: arrayType(stringType()).optional()
   }).passthrough().optional();
   CommunicationSchema = objectType({
     next_specialists: unionType([stringType(), arrayType(stringType())]).optional(),

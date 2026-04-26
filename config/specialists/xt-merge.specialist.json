@@ -46,9 +46,8 @@
       ],
       "stale_threshold_days": 30
     },
-    "communication": {
-      "output_to": ".specialists/merge-prs-result.md"
-    },
+    "communication": {},
+    "output_file": ".specialists/merge-prs-result.md",
     "capabilities": {
       "required_tools": [],
       "external_commands": []
