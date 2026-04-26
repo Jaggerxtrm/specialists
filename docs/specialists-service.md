@@ -157,6 +157,26 @@ Set `trace: false` in the request to skip the row. No file-based job dirs (`stat
 - Public exposure. Container-network access only.
 - Reimplementing model resolution, validation, or trace writing — all delegated to the existing runtime.
 
+## CLI peer (`sp script`)
+
+`sp script <name> [--vars k=v ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]` is a one-shot CLI that reuses the same code path as the HTTP handler. No daemon, no port — for cron jobs and host scripts.
+
+Default prints the assistant text to stdout. `--json` prints the full `GenerateResponse`. `--single-instance <lockpath>` uses `flock`; on contention it returns exit code `75` (EX_TEMPFAIL) so cron logs the skip without alerting.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Internal/unknown error |
+| `2` | `specialist_not_found` or `specialist_load_error` |
+| `3` | `template_variable_missing` |
+| `4` | `auth` or `quota` |
+| `5` | `timeout` or `network` |
+| `6` | `invalid_json` (response_format=json validation failed) |
+| `7` | `output_too_large` |
+| `75` | `--single-instance` lock contention |
+
 ## Versioning
 
 `/v1/generate` is the only endpoint. Breaking changes ship under `/v2/...`. Image tags follow the npm package semver. Pin to `:vX.Y.Z` in production.
