@@ -2,10 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
+import { openObservabilityTestDb, seedObservabilityFullJob } from '../../utils/observabilityFixtures.js';
 
 let tempRoot: string;
-let specialistsDir: string;
 let jobsDir: string;
 
 function createJob(jobId: string, status: 'starting' | 'running' | 'waiting' | 'done' | 'error', withResult = false): void {
@@ -39,26 +38,8 @@ function createJob(jobId: string, status: 'starting' | 'running' | 'waiting' | '
 
 async function seedSqliteResult(jobId: string, status: Record<string, unknown>, output: string): Promise<boolean> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Database } = require('bun:sqlite');
-    const location = resolveObservabilityDbLocation(tempRoot);
-    mkdirSync(location.dbDirectory, { recursive: true });
-    const db = new Database(location.dbPath);
-    const { initSchema } = await import('../../../src/specialist/observability-sqlite.js');
-    initSchema(db);
-
-    db.run(
-      `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
-       VALUES (?, ?, ?, ?, ?)`,
-      [jobId, String(status.specialist ?? 'bug-hunt'), String(status.status ?? 'done'), JSON.stringify(status), Date.now()]
-    );
-
-    db.run(
-      `INSERT INTO specialist_results (job_id, output, updated_at_ms)
-       VALUES (?, ?, ?)`,
-      [jobId, output, Date.now()]
-    );
-
+    const db = openObservabilityTestDb(tempRoot);
+    seedObservabilityFullJob(db, jobId, status, [], output);
     db.close();
     return true;
   } catch {

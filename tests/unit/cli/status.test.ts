@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-function stripAnsi(input: string): string {
-  return input.replace(/\x1b\[[0-9;]*m/g, '');
-}
+import { openObservabilityTestDb, seedObservabilityEvents, seedObservabilityStatus, stripAnsi } from '../../utils/observabilityFixtures.js';
 
 function createJob(rootDir: string, jobId: string, eventCount = 0): void {
   const jobDir = join(rootDir, '.specialists', 'jobs', jobId);
@@ -45,29 +41,9 @@ function createJob(rootDir: string, jobId: string, eventCount = 0): void {
 
 async function seedSqliteStatus(rootDir: string, jobId: string, status: Record<string, unknown>, events: any[] = []): Promise<boolean> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Database } = require('bun:sqlite');
-    const location = resolveObservabilityDbLocation(rootDir);
-    mkdirSync(location.dbDirectory, { recursive: true });
-    const db = new Database(location.dbPath);
-    const { initSchema } = await import('../../../src/specialist/observability-sqlite.js');
-    initSchema(db);
-
-    db.run(
-      `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
-       VALUES (?, ?, ?, ?, ?)`,
-      [jobId, String(status.specialist ?? 'unknown'), String(status.status ?? 'running'), JSON.stringify(status), Date.now()]
-    );
-
-    for (let index = 0; index < events.length; index += 1) {
-      const event = { ...events[index], seq: index + 1 };
-      db.run(
-        `INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [jobId, event.seq, String(status.specialist ?? 'unknown'), status.bead_id ?? null, Number(event.t ?? Date.now()), String(event.type ?? 'tool_start'), JSON.stringify(event)]
-      );
-    }
-
+    const db = openObservabilityTestDb(rootDir);
+    seedObservabilityStatus(db, jobId, status);
+    seedObservabilityEvents(db, jobId, String(status.specialist ?? 'unknown'), events, null);
     db.close();
     return true;
   } catch {

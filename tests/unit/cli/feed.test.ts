@@ -1,25 +1,18 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
-import { appendFileSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
-import { resolveObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
-import { join } from 'node:path';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openObservabilityTestDb, seedObservabilityEvents, seedObservabilityStatus, stripAnsi } from '../../utils/observabilityFixtures.js';
 
-// Use a temp directory — never the real .specialists/ which contains live job state
 let tempRoot: string;
-let specialistsDir: string;
 let jobsDir: string;
 
 describe('feed CLI', () => {
   const originalArgv = process.argv;
 
-  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
-
   beforeEach(() => {
-    // Use a fresh temp directory per test — never touch the real .specialists/
     tempRoot = mkdtempSync(join(tmpdir(), 'sp-feed-test-'));
-    specialistsDir = join(tempRoot, '.specialists');
-    jobsDir = join(specialistsDir, 'jobs');
+    jobsDir = join(tempRoot, '.specialists', 'jobs');
     mkdirSync(jobsDir, { recursive: true });
     vi.spyOn(process, 'cwd').mockReturnValue(tempRoot);
   });
@@ -34,29 +27,9 @@ describe('feed CLI', () => {
 
   async function seedSqliteJob(jobId: string, events: any[], status: Record<string, unknown>): Promise<boolean> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Database } = require('bun:sqlite');
-      const location = resolveObservabilityDbLocation(tempRoot);
-      mkdirSync(location.dbDirectory, { recursive: true });
-      const db = new Database(location.dbPath);
-      const { initSchema } = await import('../../../src/specialist/observability-sqlite.js');
-      initSchema(db);
-
-      db.run(
-        `INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
-         VALUES (?, ?, ?, ?, ?)`,
-        [jobId, String(status.specialist ?? 'unknown'), String(status.status ?? 'done'), JSON.stringify(status), Date.now()]
-      );
-
-      for (let index = 0; index < events.length; index += 1) {
-        const event = { ...events[index], seq: events[index].seq ?? index + 1 };
-        db.run(
-          `INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [jobId, event.seq, String(status.specialist ?? 'unknown'), status.bead_id ?? null, Number(event.t ?? Date.now()), String(event.type ?? 'text'), JSON.stringify(event)]
-        );
-      }
-
+      const db = openObservabilityTestDb(tempRoot);
+      seedObservabilityStatus(db, jobId, status);
+      seedObservabilityEvents(db, jobId, String(status.specialist ?? 'unknown'), events, (status.bead_id as string | undefined) ?? null);
       db.close();
       return true;
     } catch {
