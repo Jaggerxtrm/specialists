@@ -50,7 +50,7 @@ beforeEach(() => {
   );
   writeFileSync(
     join(tempRoot, 'bin', 'pi'),
-    '#!/usr/bin/env node\nconst input = process.argv.slice(2).join(" ");\nif (input.includes("--model")) {\n  process.stdout.write(JSON.stringify({ type: "assistant", data: { text: JSON.stringify({ message: "hello" }) } }) + "\\n");\n}\n',
+    '#!/usr/bin/env node\nconst input = process.argv.slice(2).join(" ");\nif (input.includes("--model")) {\n  const event = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify({ message: "hello" }) }] } };\n  process.stdout.write(JSON.stringify(event) + "\\n");\n}\n',
     { mode: 0o755 },
   );
   process.chdir(tempRoot);

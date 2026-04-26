@@ -76,28 +76,82 @@ function mapErrorType(message: string): ScriptSpecialistErrorType {
   if (message.includes('interactive') || message.includes('worktree') || message.includes('permission_required') || message.includes('scripts not allowed')) return 'specialist_load_error';
   if (message.includes('Missing template variable')) return 'template_variable_missing';
   if (message.includes('output too large')) return 'output_too_large';
-  if (message.includes('auth') || message.includes('403')) return 'auth';
-  if (message.includes('quota') || message.includes('rate limit')) return 'quota';
+  if (message.includes('auth') || message.includes('403') || message.includes('401')) return 'auth';
+  if (message.includes('quota') || message.includes('rate limit') || message.includes('out of extra usage') || message.includes('insufficient_quota') || message.includes('429')) return 'quota';
   if (message.includes('timeout')) return 'timeout';
   if (message.includes('network') || message.includes('ECONN')) return 'network';
   if (message.includes('invalid JSON') || message.includes('Unexpected token')) return 'invalid_json';
   return 'internal';
 }
 
+interface PiMessage {
+  role?: string;
+  content?: Array<{ type?: string; text?: string }>;
+  errorMessage?: string;
+}
+
+interface PiEvent {
+  type?: string;
+  message?: PiMessage;
+  messages?: PiMessage[];
+  data?: { text?: string; content?: Array<{ text?: string }> };
+}
+
+function textFromMessage(message: PiMessage | undefined): string {
+  if (!message || message.role !== 'assistant') return '';
+  if (!Array.isArray(message.content)) return '';
+  return message.content
+    .filter(part => part.type === 'text' && typeof part.text === 'string')
+    .map(part => part.text as string)
+    .join('');
+}
+
 function extractAssistantText(lines: string[]): string {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
+    let event: PiEvent;
     try {
-      const event = JSON.parse(line) as { type?: string; data?: { text?: string; content?: Array<{ text?: string }> } };
-      if (event.type === 'assistant' && typeof event.data?.text === 'string') return event.data.text;
-      const content = event.data?.content?.[0]?.text;
-      if (typeof content === 'string') return content;
+      event = JSON.parse(line) as PiEvent;
+    } catch {
+      continue;
+    }
+    if (event.type === 'message_end') {
+      const text = textFromMessage(event.message);
+      if (text) return text;
+    }
+    if (event.type === 'agent_end' && Array.isArray(event.messages)) {
+      for (let j = event.messages.length - 1; j >= 0; j--) {
+        const text = textFromMessage(event.messages[j]);
+        if (text) return text;
+      }
+    }
+    if (event.type === 'assistant' && typeof event.data?.text === 'string') return event.data.text;
+    const legacyContent = event.data?.content?.[0]?.text;
+    if (typeof legacyContent === 'string') return legacyContent;
+  }
+  return '';
+}
+
+function stripMarkdownFences(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+function extractPiErrorMessage(lines: string[]): string | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const event = JSON.parse(line) as PiEvent;
+      const errMsg = event.message?.errorMessage;
+      if (typeof errMsg === 'string' && errMsg.length > 0) return errMsg;
     } catch {
       continue;
     }
   }
-  return '';
+  return null;
 }
 
 function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number): void {
@@ -186,10 +240,18 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       return { success: false, error: stderr || `pi exit ${exitCode}`, error_type: mapErrorType(stderr), meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }
 
+    if (!text) {
+      const piError = extractPiErrorMessage(stdout.split(/\r?\n/));
+      if (piError) {
+        return { success: false, error: piError, error_type: mapErrorType(piError), meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+      }
+      return { success: false, error: 'pi produced no assistant text', error_type: 'internal', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+
     let parsed_json: unknown;
     if (spec.specialist.execution.response_format === 'json') {
       try {
-        parsed_json = JSON.parse(text);
+        parsed_json = JSON.parse(stripMarkdownFences(text));
         const required = Array.isArray(spec.specialist.prompt.output_schema?.required)
           ? spec.specialist.prompt.output_schema.required.filter((value): value is string => typeof value === 'string')
           : [];
