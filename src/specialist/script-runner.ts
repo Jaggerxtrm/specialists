@@ -46,7 +46,7 @@ export type ScriptGenerateResult = ScriptGenerateSuccess | ScriptGenerateFailure
 
 export interface ScriptRunnerOptions {
   loader: SpecialistLoader;
-  userDir?: string;
+  projectDir?: string;
   fallbackModel?: string;
   observabilityDbPath?: string;
   onChild?: (child: ChildProcess) => void;
@@ -172,7 +172,7 @@ function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient
 }
 
 function openObservabilityClient(options: ScriptRunnerOptions): ReturnType<typeof createObservabilitySqliteClient> {
-  const dbPath = options.observabilityDbPath ?? options.userDir;
+  const dbPath = options.observabilityDbPath ?? options.projectDir;
   return createObservabilitySqliteClient(dbPath);
 }
 

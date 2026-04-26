@@ -8,7 +8,7 @@ interface ScriptArgs {
   template?: string;
   modelOverride?: string;
   thinking?: string;
-  userDir: string;
+  projectDir: string;
   dbPath?: string;
   timeoutMs?: number;
   json: boolean;
@@ -29,7 +29,7 @@ export function parseArgs(argv: string[]): ScriptArgs {
   let template: string | undefined;
   let modelOverride: string | undefined;
   let thinking: string | undefined;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let dbPath: string | undefined;
   let timeoutMs: number | undefined;
   let json = false;
@@ -44,14 +44,14 @@ export function parseArgs(argv: string[]): ScriptArgs {
     } else if (token === '--template' && argv[i + 1]) template = argv[++i];
     else if (token === '--model' && argv[i + 1]) modelOverride = argv[++i];
     else if (token === '--thinking' && argv[i + 1]) thinking = argv[++i];
-    else if (token === '--user-dir' && argv[i + 1]) userDir = argv[++i];
+    else if ((token === '--project-dir' || token === '--user-dir') && argv[i + 1]) projectDir = argv[++i];
     else if (token === '--db-path' && argv[i + 1]) dbPath = argv[++i];
     else if (token === '--timeout-ms' && argv[i + 1]) timeoutMs = Number(argv[++i]);
     else if (token === '--json') json = true;
     else if (token === '--single-instance' && argv[i + 1]) singleInstance = argv[++i];
     else if (token === '--no-trace') trace = false;
     else if (token === '--vars') throw new Error('Missing value for --vars');
-    else if (token === '--template' || token === '--model' || token === '--thinking' || token === '--user-dir' || token === '--db-path' || token === '--timeout-ms' || token === '--single-instance') {
+    else if (token === '--template' || token === '--model' || token === '--thinking' || token === '--project-dir' || token === '--user-dir' || token === '--db-path' || token === '--timeout-ms' || token === '--single-instance') {
       throw new Error(`Missing value for ${token}`);
     }
   }
@@ -59,7 +59,7 @@ export function parseArgs(argv: string[]): ScriptArgs {
   if (!specialist) throw new Error('Missing specialist name');
   if (Number.isNaN(timeoutMs)) throw new Error('Invalid --timeout-ms value');
 
-  return { specialist, variables, template, modelOverride, thinking, userDir, dbPath, timeoutMs, json, singleInstance, trace };
+  return { specialist, variables, template, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
 }
 
 function buildRequest(args: ScriptArgs): ScriptGenerateRequest {
@@ -118,8 +118,8 @@ export async function run(argv: string[] = process.argv.slice(3)): Promise<void>
     process.exit(runUnderLock(args.singleInstance, argv));
   }
 
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const result = await runScriptSpecialist(buildRequest(args), { loader, userDir: args.userDir, observabilityDbPath: args.dbPath ?? args.userDir });
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const result = await runScriptSpecialist(buildRequest(args), { loader, projectDir: args.projectDir, observabilityDbPath: args.dbPath ?? args.projectDir });
   printResult(result, args.json);
   process.exit(mapExitCode(result));
 }

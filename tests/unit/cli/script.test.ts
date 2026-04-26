@@ -15,9 +15,9 @@ describe('script CLI', () => {
     vi.restoreAllMocks();
   });
 
-  it('parses flags and variables', async () => {
+  it('parses flags and variables (--project-dir)', async () => {
     const { parseArgs } = await import('../../../src/cli/script.js');
-    const parsed = parseArgs(['echo', '--vars', 'name=world', '--template', 'hi', '--model', 'mock/model', '--thinking', 'low', '--user-dir', '/tmp/user', '--db-path', '/tmp/db', '--timeout-ms', '2500', '--json', '--single-instance', '/tmp/lock', '--no-trace']);
+    const parsed = parseArgs(['echo', '--vars', 'name=world', '--template', 'hi', '--model', 'mock/model', '--thinking', 'low', '--project-dir', '/tmp/proj', '--db-path', '/tmp/db', '--timeout-ms', '2500', '--json', '--single-instance', '/tmp/lock', '--no-trace']);
 
     expect(parsed).toMatchObject({
       specialist: 'echo',
@@ -25,13 +25,21 @@ describe('script CLI', () => {
       template: 'hi',
       modelOverride: 'mock/model',
       thinking: 'low',
-      userDir: '/tmp/user',
+      projectDir: '/tmp/proj',
       dbPath: '/tmp/db',
       timeoutMs: 2500,
       json: true,
       singleInstance: '/tmp/lock',
       trace: false,
     });
+  });
+
+  it('accepts --user-dir as a deprecated alias for --project-dir', async () => {
+    const { parseArgs } = await import('../../../src/cli/script.js');
+    const projectFlag = parseArgs(['echo', '--project-dir', '/tmp/proj']);
+    const userFlag = parseArgs(['echo', '--user-dir', '/tmp/proj']);
+    expect(projectFlag.projectDir).toBe('/tmp/proj');
+    expect(userFlag.projectDir).toBe('/tmp/proj');
   });
 
   it('maps exit codes from result types', async () => {

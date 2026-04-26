@@ -11,7 +11,7 @@ interface ServeArgs {
   concurrency: number;
   queueTimeoutMs: number;
   shutdownGraceMs: number;
-  userDir: string;
+  projectDir: string;
   fallbackModel?: string;
 }
 
@@ -20,7 +20,7 @@ function parseArgs(argv: string[]): ServeArgs {
   let concurrency = 4;
   let queueTimeoutMs = 5_000;
   let shutdownGraceMs = 30_000;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let fallbackModel: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -29,11 +29,11 @@ function parseArgs(argv: string[]): ServeArgs {
     else if (token === '--concurrency' && argv[i + 1]) concurrency = Number(argv[++i]);
     else if (token === '--queue-timeout-ms' && argv[i + 1]) queueTimeoutMs = Number(argv[++i]);
     else if (token === '--shutdown-grace-ms' && argv[i + 1]) shutdownGraceMs = Number(argv[++i]);
-    else if (token === '--user-dir' && argv[i + 1]) userDir = argv[++i];
+    else if ((token === '--project-dir' || token === '--user-dir') && argv[i + 1]) projectDir = argv[++i];
     else if (token === '--fallback-model' && argv[i + 1]) fallbackModel = argv[++i];
   }
 
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, userDir, fallbackModel };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel };
 }
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
@@ -62,10 +62,10 @@ async function waitForSlot(limit: number, timeoutMs: number, getActive: () => nu
 
 export async function startServe(argv: string[] = process.argv.slice(3)) {
   const args = parseArgs(argv);
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const dbLocation = resolveObservabilityDbLocation(args.userDir);
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const dbLocation = resolveObservabilityDbLocation(args.projectDir);
   ensureObservabilityDbFile(dbLocation);
-  const db = createObservabilitySqliteClient(args.userDir);
+  const db = createObservabilitySqliteClient(args.projectDir);
   let active = 0;
   let shuttingDown = false;
   const children = new Set<ChildProcess>();
@@ -84,7 +84,7 @@ export async function startServe(argv: string[] = process.argv.slice(3)) {
         let parsed: unknown;
         try { parsed = JSON.parse(raw); } catch { return sendJson(res, 400, { success: false, error: 'malformed_request', error_type: 'invalid_json' }); }
         if (!isValidRequest(parsed)) return sendJson(res, 400, { success: false, error: 'malformed_request', error_type: 'invalid_json' });
-        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.userDir, onChild: (child) => {
+        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.projectDir, onChild: (child) => {
           children.add(child);
           child.once('exit', () => children.delete(child));
         } });

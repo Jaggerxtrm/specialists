@@ -159,7 +159,9 @@ Set `trace: false` in the request to skip the row. No file-based job dirs (`stat
 
 ## CLI peer (`sp script`)
 
-`sp script <name> [--vars k=v ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]` is a one-shot CLI that reuses the same code path as the HTTP handler. No daemon, no port — for cron jobs and host scripts.
+`sp script <name> [--vars k=v ...] [--template <text>] [--model <override>] [--thinking <level>] [--project-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]` is a one-shot CLI that reuses the same code path as the HTTP handler. No daemon, no port — for cron jobs and host scripts.
+
+`--project-dir` is the project root; the loader resolves specs from `<project-dir>/.specialists/user/`. `--user-dir` is accepted as a deprecated alias.
 
 Default prints the assistant text to stdout. `--json` prints the full `GenerateResponse`. `--single-instance <lockpath>` uses `flock`; on contention it returns exit code `75` (EX_TEMPFAIL) so cron logs the skip without alerting.
 

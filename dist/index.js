@@ -37558,7 +37558,7 @@ function writeTraceRow(client, specialist, model, traceId, output2, durationMs) 
   client.upsertResult(traceId, output2);
 }
 function openObservabilityClient(options) {
-  const dbPath = options.observabilityDbPath ?? options.userDir;
+  const dbPath = options.observabilityDbPath ?? options.projectDir;
   return createObservabilitySqliteClient(dbPath);
 }
 async function runScriptSpecialist(input2, options) {
@@ -37665,7 +37665,7 @@ function parseArgs11(argv) {
   let concurrency = 4;
   let queueTimeoutMs = 5000;
   let shutdownGraceMs = 30000;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let fallbackModel;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
@@ -37677,12 +37677,12 @@ function parseArgs11(argv) {
       queueTimeoutMs = Number(argv[++i]);
     else if (token === "--shutdown-grace-ms" && argv[i + 1])
       shutdownGraceMs = Number(argv[++i]);
-    else if (token === "--user-dir" && argv[i + 1])
-      userDir = argv[++i];
+    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
+      projectDir = argv[++i];
     else if (token === "--fallback-model" && argv[i + 1])
       fallbackModel = argv[++i];
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, userDir, fallbackModel };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -37708,10 +37708,10 @@ async function waitForSlot(limit, timeoutMs, getActive) {
 }
 async function startServe(argv = process.argv.slice(3)) {
   const args = parseArgs11(argv);
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const dbLocation = resolveObservabilityDbLocation(args.userDir);
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const dbLocation = resolveObservabilityDbLocation(args.projectDir);
   ensureObservabilityDbFile(dbLocation);
-  const db = createObservabilitySqliteClient(args.userDir);
+  const db = createObservabilitySqliteClient(args.projectDir);
   let active = 0;
   let shuttingDown = false;
   const children = new Set;
@@ -37737,7 +37737,7 @@ async function startServe(argv = process.argv.slice(3)) {
         }
         if (!isValidRequest(parsed))
           return sendJson(res, 400, { success: false, error: "malformed_request", error_type: "invalid_json" });
-        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.userDir, onChild: (child) => {
+        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.projectDir, onChild: (child) => {
           children.add(child);
           child.once("exit", () => children.delete(child));
         } });
@@ -37801,7 +37801,7 @@ function parseArgs12(argv) {
   let template;
   let modelOverride;
   let thinking;
-  let userDir = process.cwd();
+  let projectDir = process.cwd();
   let dbPath;
   let timeoutMs;
   let json = false;
@@ -37818,8 +37818,8 @@ function parseArgs12(argv) {
       modelOverride = argv[++i];
     else if (token === "--thinking" && argv[i + 1])
       thinking = argv[++i];
-    else if (token === "--user-dir" && argv[i + 1])
-      userDir = argv[++i];
+    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
+      projectDir = argv[++i];
     else if (token === "--db-path" && argv[i + 1])
       dbPath = argv[++i];
     else if (token === "--timeout-ms" && argv[i + 1])
@@ -37832,7 +37832,7 @@ function parseArgs12(argv) {
       trace = false;
     else if (token === "--vars")
       throw new Error("Missing value for --vars");
-    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
+    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--project-dir" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
       throw new Error(`Missing value for ${token}`);
     }
   }
@@ -37840,7 +37840,7 @@ function parseArgs12(argv) {
     throw new Error("Missing specialist name");
   if (Number.isNaN(timeoutMs))
     throw new Error("Invalid --timeout-ms value");
-  return { specialist, variables, template, modelOverride, thinking, userDir, dbPath, timeoutMs, json, singleInstance, trace };
+  return { specialist, variables, template, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
 }
 function buildRequest(args) {
   return {
@@ -37903,8 +37903,8 @@ async function run30(argv = process.argv.slice(3)) {
   if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
     process.exit(runUnderLock(args.singleInstance, argv));
   }
-  const loader = new SpecialistLoader({ projectDir: args.userDir });
-  const result = await runScriptSpecialist(buildRequest(args), { loader, userDir: args.userDir, observabilityDbPath: args.dbPath ?? args.userDir });
+  const loader = new SpecialistLoader({ projectDir: args.projectDir });
+  const result = await runScriptSpecialist(buildRequest(args), { loader, projectDir: args.projectDir, observabilityDbPath: args.dbPath ?? args.projectDir });
   printResult(result, args.json);
   process.exit(mapExitCode(result));
 }
@@ -46490,7 +46490,7 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--user-dir <path>]",
+        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--project-dir <path>]",
         "",
         "HTTP wrapper for script-class specialists.",
         "",
