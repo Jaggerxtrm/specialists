@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import readline from 'node:readline';
 import { SpecialistLoader } from '../specialist/loader.js';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 
@@ -80,16 +81,22 @@ function readJobStatus(statusPath: string): SupervisorStatus | null {
 }
 
 function listLiveJobs(showDead: boolean): LiveJob[] {
+  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-  if (!existsSync(jobsDir)) return [];
+  const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on';
 
-  const jobs = readdirSync(jobsDir)
+  const sqliteJobs = sqliteClient?.listStatuses()
+    .map((status) => toLiveJob(status))
+    .filter((job): job is LiveJob => job !== null)
+    .filter((job) => showDead || !job.isDead) ?? [];
+  if (sqliteJobs.length > 0 || !fileOutputEnabled) return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
+
+  if (!existsSync(jobsDir)) return [];
+  return readdirSync(jobsDir)
     .map(entry => toLiveJob(readJobStatus(join(jobsDir, entry, 'status.json'))))
     .filter((job): job is LiveJob => job !== null)
     .filter((job) => showDead || !job.isDead)
     .sort((a, b) => b.startedAtMs - a.startedAtMs);
-
-  return jobs;
 }
 
 function formatLiveChoice(job: LiveJob): string {

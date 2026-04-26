@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 
 interface JobStatus {
   status?: string;
@@ -32,9 +33,10 @@ export async function run(): Promise<void> {
     exitWithError('Usage: specialists attach <job-id>');
   }
 
+  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const statusPath = join(jobsDir, jobId, 'status.json');
-  const status = readStatus(statusPath, jobId);
+  const status = sqliteClient?.readStatus(jobId) ?? readStatus(statusPath, jobId);
 
   if (status.status === 'done' || status.status === 'error') {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);

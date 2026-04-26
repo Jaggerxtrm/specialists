@@ -67,6 +67,12 @@ interface ParsedStatusArgs {
   jobId?: string;
 }
 
+type JobOutputMode = 'on' | 'off';
+
+function detectJobOutputMode(): JobOutputMode {
+  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on' ? 'on' : 'off';
+}
+
 function parseStatusArgs(argv: string[]): ParsedStatusArgs {
   let jsonMode = false;
   let jobId: string | undefined;
@@ -326,6 +332,9 @@ export async function run(): Promise<void> {
   // ── JSON output ─────────────────────────────────────────────────────────────
   if (jsonMode) {
     const output = {
+      runtime: {
+        job_file_output: detectJobOutputMode(),
+      },
       specialists: {
         count: allSpecialists.length,
         items: allSpecialists.map(s => ({
