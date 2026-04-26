@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // @bun
+import { createRequire as __createRequire } from "module";
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
@@ -27,7 +28,7 @@ var __export = (target, all) => {
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
-var __require = import.meta.require;
+var __require = __createRequire(import.meta.url);
 
 // node_modules/zod/v3/helpers/util.js
 var util, objectUtil, ZodParsedType, getParsedType = (data) => {
@@ -17479,6 +17480,15 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
+    if (spec.specialist.prompt.normalize_template) {
+      warnings.push("prompt.normalize_template is deprecated (Mercury compat) and will be ignored");
+    }
+    if (spec.specialist.execution.preferred_profile) {
+      warnings.push("execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored");
+    }
+    if (spec.specialist.execution.approval_mode) {
+      warnings.push("execution.approval_mode is deprecated (Agent Forge compat) and will be ignored");
+    }
     if (!spec.specialist.execution.model.includes("/")) {
       warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
@@ -17502,7 +17512,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, CommunicationSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -17512,6 +17522,8 @@ var init_schema = __esm(() => {
     version: Semver,
     description: stringType(),
     category: stringType(),
+    author: stringType().optional(),
+    created: stringType().optional(),
     updated: stringType().optional(),
     tags: arrayType(stringType()).optional()
   }).passthrough();
@@ -17532,19 +17544,28 @@ var init_schema = __esm(() => {
     extensions: objectType({
       serena: booleanType().optional(),
       gitnexus: booleanType().optional()
-    }).passthrough().optional()
+    }).passthrough().optional(),
+    preferred_profile: stringType().optional(),
+    approval_mode: stringType().optional()
   }).passthrough();
   PromptSchema2 = objectType({
     system: stringType().optional(),
     task_template: stringType(),
+    normalize_template: stringType().optional(),
     output_schema: recordType(unknownType()).optional(),
+    examples: arrayType(unknownType()).optional(),
     skill_inherit: stringType().optional()
   }).passthrough();
   ScriptEntrySchema = objectType({
-    run: stringType(),
+    run: stringType().optional(),
+    path: stringType().optional(),
     phase: enumType(["pre", "post"]),
     inject_output: booleanType().default(false)
-  }).passthrough();
+  }).passthrough().transform((s) => ({
+    run: s.run ?? s.path ?? "",
+    phase: s.phase,
+    inject_output: s.inject_output
+  }));
   SkillsSchema = objectType({
     paths: arrayType(stringType()).optional(),
     scripts: arrayType(ScriptEntrySchema).optional()
@@ -17552,6 +17573,9 @@ var init_schema = __esm(() => {
   CapabilitiesSchema = objectType({
     required_tools: arrayType(stringType()).optional(),
     external_commands: arrayType(stringType()).optional()
+  }).passthrough().optional();
+  CommunicationSchema = objectType({
+    next_specialists: unionType([stringType(), arrayType(stringType())]).optional()
   }).passthrough().optional();
   ValidationSchema = objectType({
     files_to_watch: arrayType(stringType()).optional(),
@@ -17581,12 +17605,14 @@ var init_schema = __esm(() => {
       prompt: PromptSchema2,
       skills: SkillsSchema,
       capabilities: CapabilitiesSchema,
+      communication: CommunicationSchema,
       validation: ValidationSchema,
       stall_detection: StallDetectionSchema,
       mandatory_rules: MandatoryRulesSchema,
       output_file: stringType().optional(),
       beads_integration: enumType(["auto", "always", "never"]).default("auto"),
-      beads_write_notes: booleanType().default(true)
+      beads_write_notes: booleanType().default(true),
+      heartbeat: unknownType().optional()
     }).passthrough()
   }).passthrough();
 });
@@ -25072,9 +25098,19 @@ function printPromptSection(prompt) {
   console.log();
   console.log(`${bold3("task_template")}:`);
   console.log(formatPromptValue(prompt.task_template));
+  if (prompt.normalize_template !== undefined) {
+    console.log();
+    console.log(`${bold3("normalize_template")}:`);
+    console.log(formatValue(prompt.normalize_template));
+  }
   if (prompt.skill_inherit !== undefined) {
     console.log();
     console.log(`${bold3("skill_inherit")}: ${formatValue(prompt.skill_inherit)}`);
+  }
+  if (prompt.examples !== undefined) {
+    console.log();
+    console.log(`${bold3("examples")}:`);
+    console.log(formatValue(prompt.examples));
   }
   if (prompt.output_schema !== undefined) {
     console.log();
@@ -25146,7 +25182,7 @@ function printBySection(spec, section) {
     return;
   }
   const value = spec.specialist[section];
-  printGenericSection(String(section), section === "metadata" ? cyan2 : green2, value);
+  printGenericSection(section, section === "metadata" ? cyan2 : green2, value);
 }
 function printFullSpecialist(spec) {
   printBySection(spec, "metadata");
@@ -26169,19 +26205,19 @@ function parseBeforeArgument(raw) {
 function printDbHelp() {
   console.log([
     "",
-    "Usage: specialists db <setup|backfill|vacuum|prune>",
+    "Usage: specialists db <setup|backfill|vacuum|prune> (legacy/migration tooling)",
     "",
-    "Human-only commands for shared observability SQLite database.",
+    "Human-only commands for shared observability SQLite database maintenance and migration.",
     "",
     "Commands:",
-    "  setup                              Provision database file + schema + .gitignore entries",
-    "  init                               Alias for setup",
-    "  backfill [--events]                Import historical .specialists/jobs/*/status.json rows",
-    "  vacuum                             Run SQLite VACUUM (refuses when running/starting jobs exist)",
-    "  prune --before <iso|duration>      Prune old rows (default dry-run)",
+    "  [BOOTSTRAP] setup                  Provision database file + schema + .gitignore entries",
+    "  [BOOTSTRAP] init                   Alias for setup",
+    "  [MIGRATION] backfill [--events]    Import historical .specialists/jobs/*/status.json rows",
+    "  [MIGRATION] vacuum                 Run SQLite VACUUM (refuses when running/starting jobs exist)",
+    "  [MIGRATION] prune --before <iso|duration>      Prune old rows (default dry-run)",
     "        [--dry-run] [--apply] [--include-epics] [--skip-extract]",
-    "  extract [--job <id>] [--all-missing] [--since <dur>]",
-    "  stats [--spec <name>] [--model <glob>] [--since <dur>] [--format json|table]",
+    "  [MIGRATION] extract [--job <id>] [--all-missing] [--since <dur>]",
+    "  [QUERY] stats [--spec <name>] [--model <glob>] [--since <dur>] [--format json|table]",
     "",
     "Behavior:",
     "  - prune keeps specialist_events last 30 days always",
@@ -26806,222 +26842,6 @@ var init_db = __esm(() => {
   DAY_MS = 24 * 60 * 60 * 1000;
 });
 
-// src/specialist/script-runner.ts
-import { spawn as spawn3 } from "child_process";
-import { randomUUID } from "crypto";
-function hasUnsubstitutedVariables(template) {
-  const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
-  return match?.[1] ?? null;
-}
-function compatGuard(spec) {
-  const execution = spec.specialist.execution;
-  if (execution.interactive)
-    throw new Error("interactive specialists are not allowed");
-  if (execution.requires_worktree)
-    throw new Error("worktree specialists are not allowed");
-  if (execution.permission_required !== "READ_ONLY")
-    throw new Error("permission_required must be READ_ONLY");
-  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
-    throw new Error("scripts not allowed");
-}
-function renderTaskTemplate(template, variables) {
-  const output2 = renderTemplate(template, variables);
-  const missing = hasUnsubstitutedVariables(output2);
-  if (missing)
-    throw new Error(`Missing template variable: ${missing}`);
-  return output2;
-}
-function mapErrorType(message) {
-  if (message.includes("Specialist not found"))
-    return "specialist_not_found";
-  if (message.includes("interactive") || message.includes("worktree") || message.includes("permission_required") || message.includes("scripts not allowed"))
-    return "specialist_load_error";
-  if (message.includes("Missing template variable"))
-    return "template_variable_missing";
-  if (message.includes("output too large"))
-    return "output_too_large";
-  if (message.includes("auth") || message.includes("403") || message.includes("401"))
-    return "auth";
-  if (message.includes("quota") || message.includes("rate limit") || message.includes("out of extra usage") || message.includes("insufficient_quota") || message.includes("429"))
-    return "quota";
-  if (message.includes("timeout"))
-    return "timeout";
-  if (message.includes("network") || message.includes("ECONN"))
-    return "network";
-  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
-    return "invalid_json";
-  return "internal";
-}
-function textFromMessage(message) {
-  if (!message || message.role !== "assistant")
-    return "";
-  if (!Array.isArray(message.content))
-    return "";
-  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
-}
-function extractAssistantText(lines) {
-  for (let i = lines.length - 1;i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line)
-      continue;
-    let event;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === "message_end") {
-      const text = textFromMessage(event.message);
-      if (text)
-        return text;
-    }
-    if (event.type === "agent_end" && Array.isArray(event.messages)) {
-      for (let j = event.messages.length - 1;j >= 0; j--) {
-        const text = textFromMessage(event.messages[j]);
-        if (text)
-          return text;
-      }
-    }
-    if (event.type === "assistant" && typeof event.data?.text === "string")
-      return event.data.text;
-    const legacyContent = event.data?.content?.[0]?.text;
-    if (typeof legacyContent === "string")
-      return legacyContent;
-  }
-  return "";
-}
-function stripMarkdownFences(text) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-function extractPiErrorMessage(lines) {
-  for (let i = lines.length - 1;i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line)
-      continue;
-    try {
-      const event = JSON.parse(line);
-      const errMsg = event.message?.errorMessage;
-      if (typeof errMsg === "string" && errMsg.length > 0)
-        return errMsg;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-function writeTraceRow(client, specialist, model, traceId, output2, durationMs) {
-  if (!client)
-    return;
-  const status = {
-    id: traceId,
-    specialist,
-    status: "done",
-    model,
-    started_at_ms: Date.now() - durationMs,
-    elapsed_s: durationMs / 1000,
-    last_event_at_ms: Date.now(),
-    surface: "script_specialist"
-  };
-  client.upsertStatus(status);
-  client.upsertResult(traceId, output2);
-}
-function openObservabilityClient(options) {
-  const dbPath = options.observabilityDbPath ?? options.projectDir;
-  return createObservabilitySqliteClient(dbPath);
-}
-async function runScriptSpecialist(input2, options) {
-  const traceId = randomUUID();
-  const startedAt = Date.now();
-  try {
-    const spec = await options.loader.get(input2.specialist);
-    compatGuard(spec);
-    const template = input2.template ?? spec.specialist.prompt.task_template;
-    const prompt = renderTaskTemplate(template, input2.variables ?? {});
-    const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
-    const timeoutMs = input2.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
-    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--model", model];
-    const thinkingLevel = input2.thinking_level ?? spec.specialist.execution.thinking_level;
-    if (thinkingLevel)
-      args.push("--thinking", thinkingLevel);
-    args.push(prompt);
-    const pi = spawn3("pi", args, { stdio: ["ignore", "pipe", "pipe"] });
-    options.onChild?.(pi);
-    const chunks = [];
-    let stderr = "";
-    let timedOut = false;
-    let outputTooLarge = false;
-    const stdoutLimit = 4 * 1024 * 1024;
-    let stdoutBytes = 0;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      pi.kill("SIGTERM");
-      setTimeout(() => pi.kill("SIGKILL"), 2000);
-    }, timeoutMs);
-    pi.stdout.on("data", (chunk) => {
-      const buffer = Buffer.from(chunk);
-      chunks.push(buffer);
-      stdoutBytes += buffer.length;
-      if (stdoutBytes > stdoutLimit && !outputTooLarge) {
-        outputTooLarge = true;
-        pi.kill("SIGTERM");
-        setTimeout(() => pi.kill("SIGKILL"), 2000);
-      }
-    });
-    pi.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    const exitCode = await new Promise((resolve7, reject) => {
-      pi.on("error", reject);
-      pi.on("close", (code) => resolve7(code ?? 0));
-    }).finally(() => clearTimeout(timer));
-    const stdout = Buffer.concat(chunks).toString("utf-8");
-    const text = extractAssistantText(stdout.split(/\r?\n/));
-    const durationMs = Date.now() - startedAt;
-    const observability = openObservabilityClient(options);
-    if (input2.trace !== false && observability)
-      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
-    if (outputTooLarge) {
-      return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (timedOut) {
-      return { success: false, error: stderr || "timed out", error_type: "timeout", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (exitCode !== 0) {
-      return { success: false, error: stderr || `pi exit ${exitCode}`, error_type: mapErrorType(stderr), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    if (!text) {
-      const piError = extractPiErrorMessage(stdout.split(/\r?\n/));
-      if (piError) {
-        return { success: false, error: piError, error_type: mapErrorType(piError), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-      }
-      return { success: false, error: "pi produced no assistant text", error_type: "internal", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-    }
-    let parsed_json;
-    if (spec.specialist.execution.response_format === "json") {
-      try {
-        parsed_json = JSON.parse(stripMarkdownFences(text));
-        const required2 = Array.isArray(spec.specialist.prompt.output_schema?.required) ? spec.specialist.prompt.output_schema.required.filter((value) => typeof value === "string") : [];
-        for (const key of required2) {
-          if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json)) {
-            throw new Error(`Missing required output field: ${key}`);
-          }
-        }
-      } catch (error2) {
-        return { success: false, error: error2 instanceof Error ? error2.message : String(error2), error_type: "invalid_json", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-      }
-    }
-    return { success: true, output: text, parsed_json, meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: input2.specialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
-  }
-}
-var init_script_runner = __esm(() => {
-  init_observability_sqlite();
-});
-
 // src/cli/validate.ts
 var exports_validate = {};
 __export(exports_validate, {
@@ -27032,16 +26852,11 @@ __export(exports_validate, {
 import { readFile as readFile3 } from "fs/promises";
 import { existsSync as existsSync12 } from "fs";
 function parseArgs4(argv) {
-  const value = argv[0];
-  if (!value || value.startsWith("--")) {
-    throw new ArgParseError3("Usage: specialists validate <name|path> [--target=<surface>] [--json]");
+  const name = argv[0];
+  if (!name || name.startsWith("--")) {
+    throw new ArgParseError3("Usage: specialists validate <name> [--json]");
   }
-  const targetFlag = argv.find((arg) => arg === "--target" || arg.startsWith("--target="));
-  const target = targetFlag ? targetFlag.includes("=") ? targetFlag.split("=", 2)[1] : argv[argv.indexOf(targetFlag) + 1] : undefined;
-  if (target && target !== "script") {
-    throw new ArgParseError3("Usage: specialists validate <name|path> [--target=<surface>] [--json]");
-  }
-  return { value, json: argv.includes("--json"), target: target === "script" ? "script" : undefined };
+  return { name, json: argv.includes("--json") };
 }
 function getSourceLabel(summary) {
   return `${summary.scope}/${summary.source}`;
@@ -27050,22 +26865,6 @@ async function findSpecialist(name) {
   const loader = new SpecialistLoader;
   const list = await loader.list();
   return list.find((item) => item.name === name);
-}
-async function loadSpecFromFile(filePath) {
-  const content = await readFile3(filePath, "utf-8");
-  const raw = filePath.endsWith(".yaml") || filePath.endsWith(".yml") ? $parse(content) : JSON.parse(content);
-  return SpecialistSchema.parseAsync(raw);
-}
-function formatCompatGuardError(message) {
-  if (message.includes("interactive"))
-    return "compatGuard: interactive";
-  if (message.includes("worktree"))
-    return "compatGuard: requires_worktree";
-  if (message.includes("permission_required"))
-    return "compatGuard: permission_required";
-  if (message.includes("scripts not allowed"))
-    return "compatGuard: scripts";
-  return `compatGuard: ${message}`;
 }
 async function run9() {
   let args;
@@ -27078,30 +26877,12 @@ async function run9() {
     }
     throw err;
   }
-  if (args.target === "script") {
-    try {
-      const spec = await loadSpecFromFile(args.value);
-      compatGuard(spec);
-      console.log(`PASS ${args.value} script`);
-      process.exit(0);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message === "exit:0")
-        throw err;
-      if (args.json) {
-        console.log(JSON.stringify({ valid: false, errors: [{ path: "target.script", message: formatCompatGuardError(message), code: "compat_guard_error" }] }, null, 2));
-      } else {
-        console.error(`${red("\u2717")} ${args.value}: ${formatCompatGuardError(message)}`);
-      }
-      process.exit(1);
-    }
-  }
-  const summary = await findSpecialist(args.value);
+  const summary = await findSpecialist(args.name);
   if (!summary) {
     if (args.json) {
-      console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${args.value}`, code: "not_found" }] }));
+      console.log(JSON.stringify({ valid: false, errors: [{ path: "name", message: `Specialist not found: ${args.name}`, code: "not_found" }] }));
     } else {
-      console.error(`${red("\u2717")} Specialist not found: ${cyan4(args.value)}`);
+      console.error(`${red("\u2717")} Specialist not found: ${cyan4(args.name)}`);
     }
     process.exit(1);
   }
@@ -27127,7 +26908,7 @@ async function run9() {
     process.exit(result.valid ? 0 : 1);
   }
   console.log(`
-${bold8("Validating")} ${cyan4(args.value)} ${dim6(`(${summary.filePath})`)} ${dim6(`[${getSourceLabel(summary)}]`)}
+${bold8("Validating")} ${cyan4(args.name)} ${dim6(`(${summary.filePath})`)} ${dim6(`[${getSourceLabel(summary)}]`)}
 `);
   if (result.valid) {
     console.log(`${green6("\u2713")} Schema validation passed
@@ -27155,10 +26936,8 @@ ${bold8("Validating")} ${cyan4(args.value)} ${dim6(`(${summary.filePath})`)} ${d
 }
 var bold8 = (s) => `\x1B[1m${s}\x1B[0m`, dim6 = (s) => `\x1B[2m${s}\x1B[0m`, green6 = (s) => `\x1B[32m${s}\x1B[0m`, red = (s) => `\x1B[31m${s}\x1B[0m`, yellow7 = (s) => `\x1B[33m${s}\x1B[0m`, cyan4 = (s) => `\x1B[36m${s}\x1B[0m`, ArgParseError3;
 var init_validate = __esm(() => {
-  init_dist();
   init_loader();
   init_schema();
-  init_script_runner();
   ArgParseError3 = class ArgParseError3 extends Error {
     constructor(message) {
       super(message);
@@ -31709,7 +31488,7 @@ __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
 import { existsSync as existsSync17, readFileSync as readFileSync14, readdirSync as readdirSync6 } from "fs";
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID } from "crypto";
 import { spawnSync as spawnSync13 } from "child_process";
 import { basename as basename4, join as join17, resolve as resolve8 } from "path";
 function parseNodeArgs(argv) {
@@ -32032,7 +31811,7 @@ async function handleNodeRun(args) {
       hooks: new HookEmitter({ tracePath: join17(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
-    const nodeId = `${config2.name}-${randomUUID2().slice(0, 8)}`;
+    const nodeId = `${config2.name}-${randomUUID().slice(0, 8)}`;
     const effectiveContextDepth = args.contextDepth ?? config2.defaultContextDepth;
     const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
     let beadContext;
@@ -37658,6 +37437,221 @@ async function run28() {
 }
 var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`;
 
+// src/specialist/script-runner.ts
+import { spawn as spawn3 } from "child_process";
+import { randomUUID as randomUUID2 } from "crypto";
+function hasUnsubstitutedVariables(template) {
+  const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
+  return match?.[1] ?? null;
+}
+function compatGuard(spec) {
+  const execution = spec.specialist.execution;
+  if (execution.interactive)
+    throw new Error("interactive specialists are not allowed");
+  if (execution.requires_worktree)
+    throw new Error("worktree specialists are not allowed");
+  if (execution.permission_required !== "READ_ONLY")
+    throw new Error("permission_required must be READ_ONLY");
+  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
+    throw new Error("scripts not allowed");
+}
+function renderTaskTemplate(template, variables) {
+  const output2 = renderTemplate(template, variables);
+  const missing = hasUnsubstitutedVariables(output2);
+  if (missing)
+    throw new Error(`Missing template variable: ${missing}`);
+  return output2;
+}
+function mapErrorType(message) {
+  if (message.includes("Specialist not found"))
+    return "specialist_not_found";
+  if (message.includes("interactive") || message.includes("worktree") || message.includes("permission_required") || message.includes("scripts not allowed"))
+    return "specialist_load_error";
+  if (message.includes("Missing template variable"))
+    return "template_variable_missing";
+  if (message.includes("output too large"))
+    return "output_too_large";
+  if (message.includes("auth") || message.includes("403") || message.includes("401"))
+    return "auth";
+  if (message.includes("quota") || message.includes("rate limit") || message.includes("out of extra usage") || message.includes("insufficient_quota") || message.includes("429"))
+    return "quota";
+  if (message.includes("timeout"))
+    return "timeout";
+  if (message.includes("network") || message.includes("ECONN"))
+    return "network";
+  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
+    return "invalid_json";
+  return "internal";
+}
+function textFromMessage(message) {
+  if (!message || message.role !== "assistant")
+    return "";
+  if (!Array.isArray(message.content))
+    return "";
+  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
+}
+function extractAssistantText(lines) {
+  for (let i = lines.length - 1;i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line)
+      continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === "message_end") {
+      const text = textFromMessage(event.message);
+      if (text)
+        return text;
+    }
+    if (event.type === "agent_end" && Array.isArray(event.messages)) {
+      for (let j = event.messages.length - 1;j >= 0; j--) {
+        const text = textFromMessage(event.messages[j]);
+        if (text)
+          return text;
+      }
+    }
+    if (event.type === "assistant" && typeof event.data?.text === "string")
+      return event.data.text;
+    const legacyContent = event.data?.content?.[0]?.text;
+    if (typeof legacyContent === "string")
+      return legacyContent;
+  }
+  return "";
+}
+function stripMarkdownFences(text) {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+function extractPiErrorMessage(lines) {
+  for (let i = lines.length - 1;i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line)
+      continue;
+    try {
+      const event = JSON.parse(line);
+      const errMsg = event.message?.errorMessage;
+      if (typeof errMsg === "string" && errMsg.length > 0)
+        return errMsg;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+function writeTraceRow(client, specialist, model, traceId, output2, durationMs) {
+  if (!client)
+    return;
+  const status = {
+    id: traceId,
+    specialist,
+    status: "done",
+    model,
+    started_at_ms: Date.now() - durationMs,
+    elapsed_s: durationMs / 1000,
+    last_event_at_ms: Date.now(),
+    surface: "script_specialist"
+  };
+  client.upsertStatus(status);
+  client.upsertResult(traceId, output2);
+}
+function openObservabilityClient(options) {
+  const dbPath = options.observabilityDbPath ?? options.userDir;
+  return createObservabilitySqliteClient(dbPath);
+}
+async function runScriptSpecialist(input2, options) {
+  const traceId = randomUUID2();
+  const startedAt = Date.now();
+  try {
+    const spec = await options.loader.get(input2.specialist);
+    compatGuard(spec);
+    const template = input2.template ?? spec.specialist.prompt.task_template;
+    const prompt = renderTaskTemplate(template, input2.variables ?? {});
+    const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
+    const timeoutMs = input2.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
+    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--model", model];
+    if (spec.specialist.execution.thinking_level)
+      args.push("--thinking", spec.specialist.execution.thinking_level);
+    args.push(prompt);
+    const pi = spawn3("pi", args, { stdio: ["ignore", "pipe", "pipe"] });
+    options.onChild?.(pi);
+    const chunks = [];
+    let stderr = "";
+    let timedOut = false;
+    let outputTooLarge = false;
+    const stdoutLimit = 4 * 1024 * 1024;
+    let stdoutBytes = 0;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      pi.kill("SIGTERM");
+      setTimeout(() => pi.kill("SIGKILL"), 2000);
+    }, timeoutMs);
+    pi.stdout.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      chunks.push(buffer);
+      stdoutBytes += buffer.length;
+      if (stdoutBytes > stdoutLimit && !outputTooLarge) {
+        outputTooLarge = true;
+        pi.kill("SIGTERM");
+        setTimeout(() => pi.kill("SIGKILL"), 2000);
+      }
+    });
+    pi.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const exitCode = await new Promise((resolve10, reject) => {
+      pi.on("error", reject);
+      pi.on("close", (code) => resolve10(code ?? 0));
+    }).finally(() => clearTimeout(timer));
+    const stdout = Buffer.concat(chunks).toString("utf-8");
+    const text = extractAssistantText(stdout.split(/\r?\n/));
+    const durationMs = Date.now() - startedAt;
+    const observability = openObservabilityClient(options);
+    if (observability)
+      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
+    if (outputTooLarge) {
+      return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (timedOut) {
+      return { success: false, error: stderr || "timed out", error_type: "timeout", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (exitCode !== 0) {
+      return { success: false, error: stderr || `pi exit ${exitCode}`, error_type: mapErrorType(stderr), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    if (!text) {
+      const piError = extractPiErrorMessage(stdout.split(/\r?\n/));
+      if (piError) {
+        return { success: false, error: piError, error_type: mapErrorType(piError), meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+      }
+      return { success: false, error: "pi produced no assistant text", error_type: "internal", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+    }
+    let parsed_json;
+    if (spec.specialist.execution.response_format === "json") {
+      try {
+        parsed_json = JSON.parse(stripMarkdownFences(text));
+        const required2 = Array.isArray(spec.specialist.prompt.output_schema?.required) ? spec.specialist.prompt.output_schema.required.filter((value) => typeof value === "string") : [];
+        for (const key of required2) {
+          if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json)) {
+            throw new Error(`Missing required output field: ${key}`);
+          }
+        }
+      } catch (error2) {
+        return { success: false, error: error2 instanceof Error ? error2.message : String(error2), error_type: "invalid_json", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+      }
+    }
+    return { success: true, output: text, parsed_json, meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: input2.specialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+  }
+}
+var init_script_runner = __esm(() => {
+  init_observability_sqlite();
+});
+
 // src/cli/serve.ts
 var exports_serve = {};
 __export(exports_serve, {
@@ -37671,7 +37665,7 @@ function parseArgs11(argv) {
   let concurrency = 4;
   let queueTimeoutMs = 5000;
   let shutdownGraceMs = 30000;
-  let projectDir = process.cwd();
+  let userDir = process.cwd();
   let fallbackModel;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
@@ -37683,12 +37677,12 @@ function parseArgs11(argv) {
       queueTimeoutMs = Number(argv[++i]);
     else if (token === "--shutdown-grace-ms" && argv[i + 1])
       shutdownGraceMs = Number(argv[++i]);
-    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
-      projectDir = argv[++i];
+    else if (token === "--user-dir" && argv[i + 1])
+      userDir = argv[++i];
     else if (token === "--fallback-model" && argv[i + 1])
       fallbackModel = argv[++i];
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, userDir, fallbackModel };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -37714,10 +37708,10 @@ async function waitForSlot(limit, timeoutMs, getActive) {
 }
 async function startServe(argv = process.argv.slice(3)) {
   const args = parseArgs11(argv);
-  const loader = new SpecialistLoader({ projectDir: args.projectDir });
-  const dbLocation = resolveObservabilityDbLocation(args.projectDir);
+  const loader = new SpecialistLoader({ projectDir: args.userDir });
+  const dbLocation = resolveObservabilityDbLocation(args.userDir);
   ensureObservabilityDbFile(dbLocation);
-  const db = createObservabilitySqliteClient(args.projectDir);
+  const db = createObservabilitySqliteClient(args.userDir);
   let active = 0;
   let shuttingDown = false;
   const children = new Set;
@@ -37743,7 +37737,7 @@ async function startServe(argv = process.argv.slice(3)) {
         }
         if (!isValidRequest(parsed))
           return sendJson(res, 400, { success: false, error: "malformed_request", error_type: "invalid_json" });
-        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.projectDir, onChild: (child) => {
+        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.userDir, onChild: (child) => {
           children.add(child);
           child.once("exit", () => children.delete(child));
         } });
@@ -37784,153 +37778,16 @@ var init_serve = __esm(() => {
   init_observability_db();
 });
 
-// src/cli/script.ts
-var exports_script = {};
-__export(exports_script, {
-  scriptCli: () => scriptCli,
-  run: () => run30,
-  parseArgs: () => parseArgs12,
-  mapExitCode: () => mapExitCode
-});
-import { spawnSync as spawnSync21 } from "child_process";
-function parseVar(entry) {
-  const index = entry.indexOf("=");
-  if (index <= 0)
-    throw new Error(`Invalid --vars entry: ${entry}`);
-  return [entry.slice(0, index), entry.slice(index + 1)];
-}
-function parseArgs12(argv) {
-  if (argv.length === 0)
-    throw new Error("Missing specialist name");
-  const specialist = argv[0];
-  const variables = {};
-  let template;
-  let modelOverride;
-  let thinking;
-  let projectDir = process.cwd();
-  let dbPath;
-  let timeoutMs;
-  let json = false;
-  let singleInstance;
-  let trace = true;
-  for (let i = 1;i < argv.length; i++) {
-    const token = argv[i];
-    if (token === "--vars" && argv[i + 1]) {
-      const [key, value] = parseVar(argv[++i]);
-      variables[key] = value;
-    } else if (token === "--template" && argv[i + 1])
-      template = argv[++i];
-    else if (token === "--model" && argv[i + 1])
-      modelOverride = argv[++i];
-    else if (token === "--thinking" && argv[i + 1])
-      thinking = argv[++i];
-    else if ((token === "--project-dir" || token === "--user-dir") && argv[i + 1])
-      projectDir = argv[++i];
-    else if (token === "--db-path" && argv[i + 1])
-      dbPath = argv[++i];
-    else if (token === "--timeout-ms" && argv[i + 1])
-      timeoutMs = Number(argv[++i]);
-    else if (token === "--json")
-      json = true;
-    else if (token === "--single-instance" && argv[i + 1])
-      singleInstance = argv[++i];
-    else if (token === "--no-trace")
-      trace = false;
-    else if (token === "--vars")
-      throw new Error("Missing value for --vars");
-    else if (token === "--template" || token === "--model" || token === "--thinking" || token === "--project-dir" || token === "--user-dir" || token === "--db-path" || token === "--timeout-ms" || token === "--single-instance") {
-      throw new Error(`Missing value for ${token}`);
-    }
-  }
-  if (!specialist)
-    throw new Error("Missing specialist name");
-  if (Number.isNaN(timeoutMs))
-    throw new Error("Invalid --timeout-ms value");
-  return { specialist, variables, template, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
-}
-function buildRequest(args) {
-  return {
-    specialist: args.specialist,
-    variables: args.variables,
-    template: args.template,
-    model_override: args.modelOverride,
-    thinking_level: args.thinking,
-    timeout_ms: args.timeoutMs,
-    trace: args.trace
-  };
-}
-function mapExitCode(result) {
-  if (result.success)
-    return 0;
-  switch (result.error_type) {
-    case "specialist_not_found":
-    case "specialist_load_error":
-      return 2;
-    case "template_variable_missing":
-      return 3;
-    case "auth":
-    case "quota":
-      return 4;
-    case "timeout":
-    case "network":
-      return 5;
-    case "invalid_json":
-      return 6;
-    case "output_too_large":
-      return 7;
-    default:
-      return 1;
-  }
-}
-function printResult(result, json) {
-  if (json) {
-    console.log(JSON.stringify(result));
-    return;
-  }
-  if (result.success) {
-    console.log(result.output);
-    return;
-  }
-  console.error(result.error);
-}
-function runUnderLock(lockPath, argv) {
-  const flock = spawnSync21("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
-    encoding: "utf-8",
-    stdio: "inherit"
-  });
-  if (flock.status === 0)
-    return 0;
-  if (flock.status === 1)
-    return 75;
-  return flock.status ?? 1;
-}
-async function run30(argv = process.argv.slice(3)) {
-  const args = parseArgs12(argv);
-  if (args.singleInstance && !process.env.SP_SCRIPT_NO_LOCK) {
-    process.exit(runUnderLock(args.singleInstance, argv));
-  }
-  const loader = new SpecialistLoader({ projectDir: args.projectDir });
-  const result = await runScriptSpecialist(buildRequest(args), { loader, projectDir: args.projectDir, observabilityDbPath: args.dbPath ?? args.projectDir });
-  printResult(result, args.json);
-  process.exit(mapExitCode(result));
-}
-var scriptCli;
-var init_script = __esm(() => {
-  init_loader();
-  init_script_runner();
-  scriptCli = { parseArgs: parseArgs12, mapExitCode };
-});
-
 // src/cli/help.ts
 var exports_help = {};
 __export(exports_help, {
-  run: () => run31
+  run: () => run30
 });
 function formatCommands(entries) {
   const width = Math.max(...entries.map(([cmd3]) => cmd3.length));
   return entries.map(([cmd3, desc]) => `  ${cmd3.padEnd(width)}   ${desc}`);
 }
-async function run31() {
+async function run30() {
   const lines = [
     "",
     "Specialists lets you run project-scoped specialist agents with a bead-first workflow.",
@@ -38034,10 +37891,8 @@ var init_help = __esm(() => {
     ["list", "List specialists; --live for interactive tmux session picker"],
     ["view", "Pretty-print specialist config with readable prompts; --section, --raw"],
     ["edit", "Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets"],
-    ["validate", "Validate specialist schema; --target=script adds compatGuard checks"],
+    ["validate", "Validate a specialist JSON config against the schema"],
     ["run", "Run a specialist; --json for NDJSON event stream, --raw for legacy text"],
-    ["serve", "HTTP wrapper for script-class specialists (POST /v1/generate); long-running daemon"],
-    ["script", "One-shot CLI peer to sp serve for cron/scripts; cron-friendly exit codes, --single-instance"],
     ["node", "Run and inspect NodeSupervisor nodes (run/status)"],
     ["epic", "Epic lifecycle management: list/status/resolve wave-bound chain groups"],
     ["feed", "Tail job events; use -f to follow all jobs"],
@@ -45571,7 +45426,7 @@ var next = process.argv[3];
 function wantsHelp() {
   return next === "--help" || next === "-h";
 }
-async function run32() {
+async function run31() {
   if (sub === "install") {
     if (wantsHelp()) {
       console.log([
@@ -45750,21 +45605,21 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists db <setup|backfill|vacuum|prune>",
+        "Usage: specialists db <setup|backfill|vacuum|prune> (legacy/migration tooling)",
         "",
-        "Provision the shared observability SQLite database (human-only).",
+        "Provision the shared observability SQLite database maintenance and migration (human-only).",
         "",
         "Commands:",
-        "  setup      Create and initialize the observability DB (one-time)",
-        "  init       Alias for setup",
-        "  backfill   Backfill specialist_jobs from .specialists/jobs/*/status.json",
+        "  [BOOTSTRAP] setup      Create and initialize the observability DB (one-time)",
+        "  [BOOTSTRAP] init       Alias for setup",
+        "  [MIGRATION] backfill   Backfill specialist_jobs from .specialists/jobs/*/status.json",
         "             Use --events to also replay events.jsonl",
-        "  vacuum     Run SQLite VACUUM (refuses when active jobs running/starting)",
-        "  prune      Prune old rows: requires --before <iso|duration>, dry-run by default",
+        "  [MIGRATION] vacuum     Run SQLite VACUUM (refuses when active jobs running/starting)",
+        "  [MIGRATION] prune      Prune old rows: requires --before <iso|duration>, dry-run by default",
         "             Use --apply to execute; --include-epics to also prune epic_runs",
         "",
         "Notes:",
-        "  - TTY required (blocked in agent/non-interactive sessions)",
+        "  - TTY required for legacy migration tooling (blocked in agent/non-interactive sessions)",
         "  - Resolves at git-root .specialists/db/ by default",
         "  - Uses $XDG_DATA_HOME/specialists when XDG_DATA_HOME is set",
         "",
@@ -45789,23 +45644,22 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists validate <name|path> [--target=<surface>] [--json]",
+        "Usage: specialists validate <name> [--json]",
         "",
-        "Validate a specialist config against the schema.",
-        "Use --target=script for pre-deploy script-runner compat checks.",
+        "Validate a specialist YAML file against the schema.",
         "",
         "What it checks:",
-        "  - Full schema: syntax and required fields",
-        "  - Script target: schema + compatGuard rules",
+        "  - YAML syntax is valid",
+        "  - Required fields are present (name, version, description, category, model)",
+        "  - Field values match expected formats (kebab-case names, semver versions)",
+        "  - Enum values are valid (permission_required, mode, beads_integration)",
         "",
         "Options:",
-        "  --target=<surface>  Validate for surface-specific rules; script is only supported value today",
-        "  --json              Output validation result as JSON",
+        "  --json   Output validation result as JSON",
         "",
         "Examples:",
         "  specialists validate my-specialist",
-        "  specialists validate ./docs/example.specialist.json --target=script",
-        "  specialists validate ./docs/example.specialist.json --target script --json",
+        "  specialists validate my-specialist --json",
         "",
         "Exit codes:",
         "  0 \u2014 validation passed",
@@ -46499,7 +46353,7 @@ async function run32() {
     if (wantsHelp()) {
       console.log([
         "",
-        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--project-dir <path>]",
+        "Usage: specialists serve [--port <n>] [--concurrency <n>] [--shutdown-grace-ms <n>] [--user-dir <path>]",
         "",
         "HTTP wrapper for script-class specialists.",
         "",
@@ -46512,25 +46366,6 @@ async function run32() {
       return;
     }
     const { run: handler } = await Promise.resolve().then(() => (init_serve(), exports_serve));
-    return handler(process.argv.slice(3));
-  }
-  if (sub === "script") {
-    if (wantsHelp()) {
-      console.log([
-        "",
-        "Usage: specialists script <name> [--vars key=value ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]",
-        "",
-        "One-shot script-class specialist runner for cron and host scripts.",
-        "",
-        "Outputs:",
-        "  default  assistant text only",
-        "  --json   full GenerateResponse JSON",
-        ""
-      ].join(`
-`));
-      return;
-    }
-    const { run: handler } = await Promise.resolve().then(() => (init_script(), exports_script));
     return handler(process.argv.slice(3));
   }
   if (sub === "help" || sub === "--help" || sub === "-h") {
@@ -46546,7 +46381,7 @@ Run 'specialists help' to see available commands.`);
   const server = new SpecialistsServer;
   await server.start();
 }
-run32().catch((error2) => {
+run31().catch((error2) => {
   logger.error(`Fatal error: ${error2}`);
   process.exit(1);
 });
