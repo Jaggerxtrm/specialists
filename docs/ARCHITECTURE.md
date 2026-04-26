@@ -259,7 +259,7 @@ Persistence is **JSON-first**:
 
 Dual-write behavior is intentionally split by durability role:
 
-1. Write canonical file artifact (`status.json`, `events.jsonl`, `result.txt`).
+1. Write legacy crash-recovery artifact (`status.json`, `events.jsonl`, `result.txt`).
 2. Best-effort mirror into SQLite.
 
 For coupled SQLite rows, writes are atomic inside a DB transaction:
@@ -267,7 +267,7 @@ For coupled SQLite rows, writes are atomic inside a DB transaction:
 - `upsertStatusWithEvent(...)` → status + event in one transaction
 - `upsertStatusWithEventAndResult(...)` → status + event + result in one transaction
 
-This yields: canonical durability from files, atomic relational consistency inside SQLite, and resilient operation when SQLite is unavailable.
+This yields: durable legacy fallback files, atomic relational consistency inside SQLite, and resilient operation when SQLite is unavailable.
 
 ### SQLite integration
 
@@ -278,7 +278,7 @@ Supervisor optionally uses `ObservabilitySqliteClient` for:
 - Result mirror (`upsertResult`) — quick result retrieval without reading `result.txt`
 - Transactional compound updates (`upsertStatusWithEvent*`) — single-commit relational state changes
 
-File-based storage remains authoritative and always available.
+`observability.db` is authoritative runtime store; `.specialists/jobs/*` files remain legacy/crash-recovery fallback and always available.
 
 ### Observability schema evolution (`schema_version` v1 → v4)
 
