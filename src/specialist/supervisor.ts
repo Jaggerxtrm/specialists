@@ -22,6 +22,7 @@ import { createReadStream } from 'node:fs';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import type { SpecialistRunner, RunOptions } from './runner.js';
 import { resolveJobsDir, resolveCurrentBranch } from './job-root.js';
+import { isJobFileOutputEnabled } from './job-file-output.js';
 import type { BeadsClient } from './beads.js';
 import {
   type TimelineEvent,
@@ -506,6 +507,7 @@ export class Supervisor {
   private disposePromise: Promise<void> | null = null;
   private pendingSqliteOperations = 0;
   private readonly pendingSqliteDrainResolvers = new Set<() => void>();
+  private readonly isJobFileOutputEnabled: boolean;
 
   constructor(private opts: SupervisorOptions) {
     this.sqliteClient = createObservabilitySqliteClient();
@@ -513,6 +515,7 @@ export class Supervisor {
     // the main checkout. Fall back to cwd-relative path when git is unavailable.
     const cwd = opts.runOptions?.workingDirectory ?? process.cwd();
     this.resolvedJobsDir = opts.jobsDir ?? resolveJobsDir(cwd);
+    this.isJobFileOutputEnabled = isJobFileOutputEnabled();
   }
 
   private createDisposedSqliteError(operation: string): Error {
@@ -697,6 +700,7 @@ export class Supervisor {
   }
 
   private writeStatusFileOnly(id: string, data: SupervisorStatus): void {
+    if (!this.isJobFileOutputEnabled) return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
@@ -708,42 +712,42 @@ export class Supervisor {
   private writeStatusFile(id: string, data: SupervisorStatus): void {
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     this.writeStatusFileOnly(id, normalizedStatus);
-    try {
-      this.withSqliteOperation('upsertStatus', (client) => {
-        client.upsertStatus(normalizedStatus);
+    const persisted = this.withSqliteOperation('upsertStatus', (client) => {
+      client.upsertStatus(normalizedStatus);
 
-        const chainId = resolveChainId(normalizedStatus);
-        if (!normalizedStatus.epic_id || !chainId) {
-          return;
-        }
+      const chainId = resolveChainId(normalizedStatus);
+      if (!normalizedStatus.epic_id || !chainId) {
+        return;
+      }
 
-        client.upsertEpicRun({
+      client.upsertEpicRun({
+        epic_id: normalizedStatus.epic_id,
+        status: 'open',
+        updated_at_ms: Date.now(),
+        status_json: JSON.stringify({
           epic_id: normalizedStatus.epic_id,
           status: 'open',
-          updated_at_ms: Date.now(),
-          status_json: JSON.stringify({
-            epic_id: normalizedStatus.epic_id,
-            status: 'open',
-            source: 'supervisor',
-            chain_id: chainId,
-            chain_root_bead_id: normalizedStatus.chain_root_bead_id ?? null,
-            chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
-          }),
-        });
-
-        client.upsertEpicChainMembership({
+          source: 'supervisor',
           chain_id: chainId,
-          epic_id: normalizedStatus.epic_id,
-          chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+          chain_root_bead_id: normalizedStatus.chain_root_bead_id ?? null,
           chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
-          updated_at_ms: Date.now(),
-        });
-
-        const readiness = loadEpicReadinessSummary(client, normalizedStatus.epic_id);
-        syncEpicStateFromReadiness(client, readiness);
+        }),
       });
-    } catch (error: unknown) {
-      console.warn(`[supervisor] SQLite upsertStatus failed: ${String(error)}`);
+
+      client.upsertEpicChainMembership({
+        chain_id: chainId,
+        epic_id: normalizedStatus.epic_id,
+        chain_root_bead_id: normalizedStatus.chain_root_bead_id,
+        chain_root_job_id: normalizedStatus.chain_root_job_id ?? normalizedStatus.id,
+        updated_at_ms: Date.now(),
+      });
+
+      const readiness = loadEpicReadinessSummary(client, normalizedStatus.epic_id);
+      syncEpicStateFromReadiness(client, readiness);
+    });
+
+    if (persisted === undefined) {
+      throw new Error('[supervisor] SQLite upsertStatus failed: database client unavailable');
     }
   }
 
@@ -905,8 +909,10 @@ export class Supervisor {
     };
     this.writeStatusFileOnly(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
-    // Persist a latest marker so other processes can discover the active job id immediately
-    writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
+    // Persist latest marker only when legacy file output enabled.
+    if (this.isJobFileOutputEnabled) {
+      writeFileSync(join(this.resolvedJobsDir, 'latest'), `${id}\n`, 'utf-8');
+    }
     this.opts.onJobStarted?.({ id });
 
     let statusSnapshot: SupervisorStatus = initialStatus;
@@ -926,8 +932,8 @@ export class Supervisor {
       setStatus({ metrics: runMetrics });
     };
 
-    // Keep events.jsonl fd open for the job lifetime
-    const eventsFd = openSync(this.eventsPath(id), 'a');
+    // Keep events.jsonl fd open for legacy file output mode only.
+    const eventsFd = this.isJobFileOutputEnabled ? openSync(this.eventsPath(id), 'a') : undefined;
     let nextTimelineSeq = 1;
     const assignTimelineSeq = (event: TimelineEvent): TimelineEvent => {
       if (typeof event.seq === 'number' && Number.isFinite(event.seq) && event.seq > 0) {
@@ -939,27 +945,22 @@ export class Supervisor {
 
     const appendTimelineEvent = (event: TimelineEvent): void => {
       const sequencedEvent = assignTimelineSeq(event);
-      try {
+      if (eventsFd !== undefined) {
         writeSync(eventsFd, JSON.stringify(sequencedEvent) + '\n');
-      } catch (err: any) {
-        // Log but don't crash — event logging is best-effort
-        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
 
-      try {
-        this.withSqliteOperation('appendEvent', (client) => client.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent));
-      } catch (error: unknown) {
-        console.warn(`[supervisor] SQLite appendEvent failed: ${String(error)}`);
+      const persisted = this.withSqliteOperation('appendEvent', (client) => {
+        client.appendEvent(id, runOptions.name, statusSnapshot.bead_id, sequencedEvent);
+      });
+      if (persisted === undefined) {
+        throw new Error('[supervisor] SQLite appendEvent failed: database client unavailable');
       }
     };
 
     const appendTimelineEventFileOnly = (event: TimelineEvent): TimelineEvent => {
       const sequencedEvent = assignTimelineSeq(event);
-      try {
+      if (eventsFd !== undefined) {
         writeSync(eventsFd, JSON.stringify(sequencedEvent) + '\n');
-      } catch (err: any) {
-        // Log but don't crash — event logging is best-effort
-        console.error(`[supervisor] Failed to write event: ${err?.message ?? err}`);
       }
       return sequencedEvent;
     };
@@ -985,10 +986,11 @@ export class Supervisor {
       runOptions.inputBeadId,
       statusSnapshot.startup_context,
     ));
-    try {
-      this.withSqliteOperation('upsertStatusWithEvent:run_start', (client) => client.upsertStatusWithEvent(statusSnapshot, runStartEvent));
-    } catch (error: unknown) {
-      console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during run start: ${String(error)}`);
+    const runStartPersisted = this.withSqliteOperation('upsertStatusWithEvent:run_start', (client) => {
+      client.upsertStatusWithEvent(statusSnapshot, runStartEvent);
+    });
+    if (runStartPersisted === undefined) {
+      throw new Error('[supervisor] SQLite upsertStatusWithEvent failed during run start: database client unavailable');
     }
 
     // Create a named FIFO for cross-process steering (e.g. `specialists steer <id> "msg"`)
@@ -1697,8 +1699,10 @@ export class Supervisor {
       );
 
       latestOutput = result.output;
-      mkdirSync(this.jobDir(id), { recursive: true });
-      writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
+      if (this.isJobFileOutputEnabled) {
+        mkdirSync(this.jobDir(id), { recursive: true });
+        writeFileSync(this.resultPath(id), latestOutput, 'utf-8');
+      }
 
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const finalResult = {
@@ -1814,8 +1818,8 @@ export class Supervisor {
           }
         : undefined;
 
-      try {
-        this.withSqliteOperation('upsertStatusWithEventAndResult:complete', (client) => client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
+      const completePersisted = this.withSqliteOperation('upsertStatusWithEventAndResult:complete', (client) => {
+        client.upsertStatusWithEventAndResult(statusSnapshot, createRunCompleteEvent('COMPLETE', elapsed, {
           model: finalResult.model,
           backend: finalResult.backend,
           bead_id: finalResult.beadId,
@@ -1826,9 +1830,10 @@ export class Supervisor {
           exit_reason: runMetrics.exit_reason,
           metrics: runMetrics,
           ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
-        }), latestOutput));
-      } catch (error: unknown) {
-        console.warn(`[supervisor] SQLite upsertStatusWithEventAndResult failed: ${String(error)}`);
+        }), latestOutput);
+      });
+      if (completePersisted === undefined) {
+        throw new Error('[supervisor] SQLite upsertStatusWithEventAndResult failed: database client unavailable');
       }
 
       if (isGitnexusAnalyzeRequired(finalResult.permissionRequired)) {
@@ -1892,10 +1897,11 @@ export class Supervisor {
         metrics: runMetrics,
         ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
       }));
-      try {
-        this.withSqliteOperation('upsertStatusWithEvent:error', (client) => client.upsertStatusWithEvent(statusSnapshot, runCompleteEvent));
-      } catch (error: unknown) {
-        console.warn(`[supervisor] SQLite upsertStatusWithEvent failed during error completion: ${String(error)}`);
+      const errorPersisted = this.withSqliteOperation('upsertStatusWithEvent:error', (client) => {
+        client.upsertStatusWithEvent(statusSnapshot, runCompleteEvent);
+      });
+      if (errorPersisted === undefined) {
+        throw new Error('[supervisor] SQLite upsertStatusWithEvent failed during error completion: database client unavailable');
       }
 
       appendResultToInputBead({
@@ -1921,8 +1927,10 @@ export class Supervisor {
       if (fifoFd !== undefined) { try { closeSync(fifoFd); } catch { /* ignore */ } fifoFd = undefined; }
       try { fifoReadStream?.destroy(); } catch { /* ignore */ }
       // Ensure events are flushed to disk before closing
-      try { fsyncSync(eventsFd); } catch { /* ignore */ }
-      closeSync(eventsFd);
+      if (eventsFd !== undefined) {
+        try { fsyncSync(eventsFd); } catch { /* ignore */ }
+        closeSync(eventsFd);
+      }
       // Remove the FIFO on job completion (best effort)
       try { if (existsSync(fifoPath)) rmSync(fifoPath); } catch { /* ignore */ }
       // Best-effort tmux cleanup for tmux-backed background runs
