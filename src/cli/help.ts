@@ -12,7 +12,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['list', 'List specialists; --live for interactive tmux session picker'],
   ['view', 'Pretty-print specialist config with readable prompts; --section, --raw'],
   ['edit', 'Edit specialist fields via dot-path: set/get/append/remove, --preset, --list-presets'],
-  ['validate', 'Validate a specialist JSON config against the schema'],
+  ['validate', 'Validate specialist schema; --target=script adds compatGuard checks'],
   ['run', 'Run a specialist; --json for NDJSON event stream, --raw for legacy text'],
   ['serve', 'HTTP wrapper for script-class specialists (POST /v1/generate); long-running daemon'],
   ['script', 'One-shot CLI peer to sp serve for cron/scripts; cron-friendly exit codes, --single-instance'],
