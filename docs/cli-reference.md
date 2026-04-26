@@ -878,7 +878,8 @@ specialists init --sync-defaults # human-only: refresh managed mirror
 
 What it sets up (always):
 - `.specialists/default/`, `.specialists/user/`
-- `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` runtime dirs (`observability.db` is canonical runtime store)
+- `.specialists/jobs/`, `.specialists/ready/`, `.specialists/db/` runtime dirs
+  - `.specialists/jobs/` remains legacy/operator mirror in normal runtime
 - `.gitignore` runtime/db entries
 - `AGENTS.md` Specialists section
 - `.mcp.json` `mcpServers.specialists`
@@ -1028,7 +1029,7 @@ specialists ps --all --json
 
 ### Data sources
 
-`ps` reads from SQLite first (via `ObservabilitySqliteClient.listStatuses()`) and falls back to scanning `status.json` files when SQLite is unavailable.
+`ps` reads from SQLite first (via `ObservabilitySqliteClient.listStatuses()`). Scanning `status.json` files is legacy/operator fallback only.
 
 ### Exit codes
 
@@ -1322,7 +1323,7 @@ Both `sp merge` and `sp epic merge` use a preview-based worthiness guard to prev
 
 - `.xtrm/reports/`
 - `.wolf/`
-- `.specialists/jobs/` (legacy fallback, migration, export)
+- `.specialists/jobs/` (legacy/operator mirror, not normal-runtime source of truth)
 
 **Blocking conditions**:
 

@@ -21,7 +21,8 @@ export function createFeedSpecialistTool(jobsDir: string) {
   return {
     name: 'feed_specialist' as const,
     description:
-      'Read cursor-paginated timeline events from a specialist job\'s events.jsonl. ' +
+      'Read cursor-paginated timeline events from DB-backed specialist job state. ' +
+      'Legacy file reads exist only for operator/debug fallback. ' +
       'Returns structured event objects (run_start, meta, tool, text, run_complete, etc.) ' +
       'with job metadata (status, specialist, model, bead_id). ' +
       'Poll incrementally: pass next_cursor from each response as cursor on the next call. ' +

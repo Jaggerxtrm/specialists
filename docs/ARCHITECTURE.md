@@ -243,7 +243,7 @@ Parses `git worktree list --porcelain` output into a `Map<branch, absolute-path>
 
 ### Durable artifacts (authoritative)
 
-Legacy file artifacts (`.specialists/jobs/<id>/`):
+For each run (`.specialists/jobs/<id>/` legacy/operator mirror):
 
 - `status.json` — mutable current state (`starting/running/waiting/done/error`, pid, last event timestamps, model/backend, worktree_path, branch, **`node_id`**)
 - `events.jsonl` — append-only canonical timeline stream (JSON-first source of truth)
@@ -253,13 +253,12 @@ Legacy file artifacts (`.specialists/jobs/<id>/`):
 
 Persistence is **JSON-first**:
 
-- `observability.db` is the canonical runtime store.
-- Files under `.specialists/jobs/<id>/` are crash-recovery fallback and migration/debug/export artifacts.
-- SQLite stores the same payloads (`status_json`, `event_json`) for fast listing/querying and node-level analytics.
+- SQLite is the canonical runtime store for listing/querying and node-level analytics.
+- Files under `.specialists/jobs/<id>/` are legacy/operator mirrors for recovery and debugging.
 
 Dual-write behavior is intentionally split by durability role:
 
-1. Write legacy crash-recovery artifact (`status.json`, `events.jsonl`, `result.txt`).
+1. Write canonical file artifact (`status.json`, `events.jsonl`, `result.txt`).
 2. Best-effort mirror into SQLite.
 
 For coupled SQLite rows, writes are atomic inside a DB transaction:
@@ -267,7 +266,7 @@ For coupled SQLite rows, writes are atomic inside a DB transaction:
 - `upsertStatusWithEvent(...)` → status + event in one transaction
 - `upsertStatusWithEventAndResult(...)` → status + event + result in one transaction
 
-This yields: durable legacy fallback files, atomic relational consistency inside SQLite, and resilient operation when SQLite is unavailable.
+This yields: canonical durability from files, atomic relational consistency inside SQLite, and resilient operation when SQLite is unavailable.
 
 ### SQLite integration
 
@@ -278,7 +277,7 @@ Supervisor optionally uses `ObservabilitySqliteClient` for:
 - Result mirror (`upsertResult`) — quick result retrieval without reading `result.txt`
 - Transactional compound updates (`upsertStatusWithEvent*`) — single-commit relational state changes
 
-`observability.db` is authoritative runtime store; `.specialists/jobs/*` files remain legacy/crash-recovery fallback and always available.
+File-based storage remains authoritative and always available.
 
 ### Observability schema evolution (`schema_version` v1 → v4)
 
@@ -690,7 +689,7 @@ function runAutoCommitCheckpoint(options: {
 }): { status: 'skipped' | 'success' | 'failed'; ... }
 ```
 
-Noise filtering: `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` are ignored.
+Noise filtering: `.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/` are ignored. `.specialists/jobs/` is legacy/operator-only.
 
 Timeline events: `auto_commit_success`, `auto_commit_skipped`, `auto_commit_failed`.
 

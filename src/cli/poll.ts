@@ -2,7 +2,8 @@
 /**
  * CLI command: specialists poll <job-id>
  *
- * Machine-readable job status polling. Reads from observability.db (primary) with fallback to .specialists/jobs/<id>/ files.
+ * Machine-readable job status polling.
+ * DB-backed in normal runtime; file reads remain legacy/operator-only.
  * Designed for programmatic consumption (Claude Code, scripts).
  *
  * Output (JSON mode):
@@ -25,13 +26,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJobEventsById } from '../specialist/timeline-query.js';
-import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
-import { detectJobOutputMode } from './status.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
 
 interface PollResult {
   job_id: string;
-  status: 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
+  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
   elapsed_ms: number;
   cursor: number;
   output_cursor: number;
@@ -46,10 +45,18 @@ interface PollResult {
   error?: string;
 }
 
-type JobStatus = Pick<
-  import('../specialist/supervisor.js').SupervisorStatus,
-  'id' | 'status' | 'current_event' | 'current_tool' | 'model' | 'backend' | 'bead_id' | 'error' | 'started_at_ms' | 'last_event_at_ms'
->;
+interface JobStatus {
+  id: string;
+  status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+  current_event?: string;
+  current_tool?: string;
+  model?: string;
+  backend?: string;
+  bead_id?: string;
+  error?: string;
+  started_at_ms: number;
+  last_event_at_ms?: number;
+}
 
 function parseArgs(argv: string[]): { jobId: string; cursor: number; outputCursor: number } {
   let jobId: string | undefined;
@@ -86,39 +93,21 @@ function parseArgs(argv: string[]): { jobId: string; cursor: number; outputCurso
 }
 
 function readJobState(jobsDir: string, jobId: string, cursor: number, outputCursor: number): PollResult {
-  const sqliteClient = createObservabilitySqliteClient();
   const jobDir = join(jobsDir, jobId);
 
+  const statusPath = join(jobDir, 'status.json');
   let status: JobStatus | null = null;
-  if (sqliteClient) {
-    try {
-      status = sqliteClient.readStatus(jobId);
-    } catch { /* ignore */ }
-  }
-  if (!status && detectJobOutputMode() === 'on') {
-    const statusPath = join(jobDir, 'status.json');
-    if (existsSync(statusPath)) {
-      try { status = JSON.parse(readFileSync(statusPath, 'utf-8')); } catch { /* ignore */ }
-    }
+  if (existsSync(statusPath)) {
+    try { status = JSON.parse(readFileSync(statusPath, 'utf-8')); } catch { /* ignore */ }
   }
 
+  const resultPath = join(jobDir, 'result.txt');
   let fullOutput = '';
-  if (sqliteClient) {
-    try {
-      fullOutput = sqliteClient.readResult(jobId) ?? '';
-    } catch { /* ignore */ }
-  }
-  if (!fullOutput && detectJobOutputMode() === 'on') {
-    const resultPath = join(jobDir, 'result.txt');
-    if (existsSync(resultPath)) {
-      try { fullOutput = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
-    }
+  if (existsSync(resultPath)) {
+    try { fullOutput = readFileSync(resultPath, 'utf-8'); } catch { /* ignore */ }
   }
 
-  const dbEvents = sqliteClient?.readEvents(jobId);
-  const events = (dbEvents && dbEvents.length > 0)
-    ? dbEvents
-    : (detectJobOutputMode() === 'on' ? readJobEventsById(jobsDir, jobId) : (dbEvents ?? []));
+  const events = readJobEventsById(jobsDir, jobId);
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
 

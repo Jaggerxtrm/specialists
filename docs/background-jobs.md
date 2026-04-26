@@ -20,7 +20,7 @@ domain:
 
 > `sp` is an alias for `specialists`.
 
-Every `specialists run` is Supervisor-backed and writes runtime state to `observability.db`; legacy files live under `.specialists/jobs/<job-id>/` for crash recovery.
+Every `specialists run` is DB-backed in normal runtime. `.specialists/jobs/<job-id>/` remains a legacy/operator mirror for recovery and debugging.
 
 ## Start a run
 
@@ -36,15 +36,13 @@ When `tmux` is installed:
 - use `specialists attach <job-id>` to attach directly to that session
 - use `specialists list --live` for an interactive tmux session picker
 
-When `tmux` is not installed, the CLI falls back to detached process mode and still writes normal Supervisor job artifacts.
+When `tmux` is not installed, the CLI falls back to detached process mode and still keeps DB state canonical; file mirrors are legacy/operator-only.
 
-Latest job id is also written to:
+Latest job id is surfaced by active-mode detection. Legacy file mirror, when enabled, may still write:
 
 ```text
 .specialists/jobs/latest
 ```
-
-Legacy convenience pointer only; observability.db stays canonical runtime store.
 
 ## Keep-alive sessions
 
@@ -123,9 +121,9 @@ specialists stop 49adda
 
 | File | Purpose |
 |---|---|
-| `status.json` | current state (`starting/running/waiting/done/error`), pid, model, bead_id, tmux_session? |
-| `events.jsonl` | append-only normalized timeline |
-| `result.txt` | final assistant output |
+| `status.json` | legacy/operator mirror of current state (`starting/running/waiting/done/error`), pid, model, bead_id, tmux_session? |
+| `events.jsonl` | legacy/operator mirror of append-only normalized timeline |
+| `result.txt` | legacy/operator mirror of final assistant output |
 | `steer.pipe` | FIFO for `steer` / `resume` messages (removed on completion) |
 
 Ready markers:

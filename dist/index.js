@@ -17479,15 +17479,6 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
-    if (spec.specialist.prompt.normalize_template) {
-      warnings.push("prompt.normalize_template is deprecated (Mercury compat) and will be ignored");
-    }
-    if (spec.specialist.execution.preferred_profile) {
-      warnings.push("execution.preferred_profile is deprecated (Agent Forge compat) and will be ignored");
-    }
-    if (spec.specialist.execution.approval_mode) {
-      warnings.push("execution.approval_mode is deprecated (Agent Forge compat) and will be ignored");
-    }
     if (!spec.specialist.execution.model.includes("/")) {
       warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
@@ -17511,7 +17502,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, CommunicationSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -17521,8 +17512,6 @@ var init_schema = __esm(() => {
     version: Semver,
     description: stringType(),
     category: stringType(),
-    author: stringType().optional(),
-    created: stringType().optional(),
     updated: stringType().optional(),
     tags: arrayType(stringType()).optional()
   }).passthrough();
@@ -17543,28 +17532,19 @@ var init_schema = __esm(() => {
     extensions: objectType({
       serena: booleanType().optional(),
       gitnexus: booleanType().optional()
-    }).passthrough().optional(),
-    preferred_profile: stringType().optional(),
-    approval_mode: stringType().optional()
+    }).passthrough().optional()
   }).passthrough();
   PromptSchema2 = objectType({
     system: stringType().optional(),
     task_template: stringType(),
-    normalize_template: stringType().optional(),
     output_schema: recordType(unknownType()).optional(),
-    examples: arrayType(unknownType()).optional(),
     skill_inherit: stringType().optional()
   }).passthrough();
   ScriptEntrySchema = objectType({
-    run: stringType().optional(),
-    path: stringType().optional(),
+    run: stringType(),
     phase: enumType(["pre", "post"]),
     inject_output: booleanType().default(false)
-  }).passthrough().transform((s) => ({
-    run: s.run ?? s.path ?? "",
-    phase: s.phase,
-    inject_output: s.inject_output
-  }));
+  }).passthrough();
   SkillsSchema = objectType({
     paths: arrayType(stringType()).optional(),
     scripts: arrayType(ScriptEntrySchema).optional()
@@ -17572,9 +17552,6 @@ var init_schema = __esm(() => {
   CapabilitiesSchema = objectType({
     required_tools: arrayType(stringType()).optional(),
     external_commands: arrayType(stringType()).optional()
-  }).passthrough().optional();
-  CommunicationSchema = objectType({
-    next_specialists: unionType([stringType(), arrayType(stringType())]).optional()
   }).passthrough().optional();
   ValidationSchema = objectType({
     files_to_watch: arrayType(stringType()).optional(),
@@ -17604,14 +17581,12 @@ var init_schema = __esm(() => {
       prompt: PromptSchema2,
       skills: SkillsSchema,
       capabilities: CapabilitiesSchema,
-      communication: CommunicationSchema,
       validation: ValidationSchema,
       stall_detection: StallDetectionSchema,
       mandatory_rules: MandatoryRulesSchema,
       output_file: stringType().optional(),
       beads_integration: enumType(["auto", "always", "never"]).default("auto"),
-      beads_write_notes: booleanType().default(true),
-      heartbeat: unknownType().optional()
+      beads_write_notes: booleanType().default(true)
     }).passthrough()
   }).passthrough();
 });
@@ -23427,29 +23402,18 @@ function startDetachedGitnexusAnalyze(cwd) {
   });
   child.unref();
 }
-function startDetachedStatusWatchdog(dbPath, statusPath, jobId, pid) {
+function startDetachedStatusWatchdog(statusPath, pid) {
   const watchdogScript = `
-const { existsSync, readFileSync, writeFileSync, renameSync } = require('node:fs');
+const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
 
-const dbPath = process.env.SPECIALISTS_OBSERVABILITY_DB_PATH;
 const statusPath = process.env.SPECIALISTS_STATUS_PATH;
-const jobId = process.env.SPECIALISTS_STATUS_JOB_ID;
 const pidRaw = process.env.SPECIALISTS_STATUS_PID;
 const intervalRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS;
-const staleAfterRaw = process.env.SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS;
 
 const targetPid = Number(pidRaw);
 const intervalMs = Number(intervalRaw);
-const staleAfterMs = Number(staleAfterRaw);
 
-if (!dbPath || !statusPath || !jobId || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0) {
-  process.exit(1);
-}
-
-let Database;
-try {
-  Database = require('bun:sqlite').Database;
-} catch {
+if (!statusPath || !Number.isFinite(targetPid) || targetPid <= 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
   process.exit(1);
 }
 
@@ -23462,34 +23426,40 @@ const isPidAlive = () => {
   }
 };
 
-const readJobStatus = () => {
-  const db = new Database(dbPath, { readonly: true, create: false });
-  try {
-    const row = db.query('SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1').get(jobId);
-    return row?.status_json ? JSON.parse(row.status_json) : null;
-  } finally {
-    db.close();
+const run = () => {
+  if (!existsSync(statusPath)) {
+    process.exit(0);
   }
-};
-
-const markError = (reason) => {
-  if (!existsSync(statusPath)) return;
 
   let status;
   try {
     status = JSON.parse(readFileSync(statusPath, 'utf-8'));
   } catch {
+    process.exit(0);
+  }
+
+  if (!status || typeof status !== 'object') {
+    process.exit(0);
+  }
+
+  if (status.status === 'done' || status.status === 'error') {
+    process.exit(0);
+  }
+
+  if (status.status !== 'running' && status.status !== 'starting') {
     return;
   }
 
-  if (!status || typeof status !== 'object') return;
-  if (status.status === 'done' || status.status === 'error') return;
+  if (isPidAlive()) {
+    return;
+  }
 
+  const now = Date.now();
   const updated = {
     ...status,
     status: 'error',
-    error: reason,
-    last_event_at_ms: Date.now(),
+    error: 'Supervisor process exited unexpectedly',
+    last_event_at_ms: now,
   };
 
   const tmpPath = statusPath + '.tmp';
@@ -23499,32 +23469,8 @@ const markError = (reason) => {
   } catch {
     // Best effort only.
   }
-};
 
-const run = () => {
-  const status = readJobStatus();
-  if (!status) {
-    if (!isPidAlive()) {
-      markError('Supervisor process exited unexpectedly');
-      process.exit(0);
-    }
-    return;
-  }
-
-  if (status.status === 'done' || status.status === 'error') {
-    process.exit(0);
-  }
-
-  const updatedAtMs = Number(status.updated_at_ms ?? status.last_event_at_ms ?? status.started_at_ms ?? 0);
-  if (Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs > staleAfterMs) {
-    markError('Supervisor status stale');
-    return;
-  }
-
-  if (!isPidAlive()) {
-    markError('Supervisor process exited unexpectedly');
-    process.exit(0);
-  }
+  process.exit(0);
 };
 
 setInterval(run, intervalMs);
@@ -23535,12 +23481,9 @@ run();
     stdio: "ignore",
     env: {
       ...process.env,
-      SPECIALISTS_OBSERVABILITY_DB_PATH: dbPath,
       SPECIALISTS_STATUS_PATH: statusPath,
-      SPECIALISTS_STATUS_JOB_ID: jobId,
       SPECIALISTS_STATUS_PID: String(pid),
-      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS),
-      SPECIALISTS_STATUS_WATCHDOG_STALE_AFTER_MS: String(STATUS_WATCHDOG_STALE_AFTER_MS)
+      SPECIALISTS_STATUS_WATCHDOG_INTERVAL_MS: String(STATUS_WATCHDOG_INTERVAL_MS)
     }
   });
   watchdog.unref();
@@ -23635,13 +23578,6 @@ class Supervisor {
   }
   resultPath(id) {
     return join8(this.jobDir(id), "result.txt");
-  }
-  observabilityDbPath() {
-    return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
-  }
-  shouldWriteJobFiles() {
-    const mode = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? "").trim().toLowerCase();
-    return mode === "" || mode === "on" || mode === "true" || mode === "1";
   }
   eventsPath(id) {
     return join8(this.jobDir(id), "events.jsonl");
@@ -23747,8 +23683,6 @@ class Supervisor {
     };
   }
   writeStatusFileOnly(id, data) {
-    if (!this.shouldWriteJobFiles())
-      return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
     mkdirSync3(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
@@ -23809,54 +23743,68 @@ class Supervisor {
     }
   }
   crashRecovery() {
+    if (!existsSync8(this.resolvedJobsDir))
+      return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection
     };
     const now = Date.now();
-    const jobs = this.sqliteClient?.listStatuses() ?? [];
-    for (const s of jobs) {
-      if (s.node_id)
+    for (const entry of readdirSync(this.resolvedJobsDir)) {
+      const statusPath = join8(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync8(statusPath))
         continue;
-      if (s.status === "running" || s.status === "starting") {
-        if (!s.pid)
-          continue;
-        let pidAlive = true;
-        try {
-          process.kill(s.pid, 0);
-        } catch {
-          pidAlive = false;
-        }
-        if (!pidAlive) {
-          this.updateJobStatus(s.id, "error", "Process crashed or was killed");
-          const current = this.readStatus(s.id);
-          if (current) {
-            this.writeStatusFile(s.id, {
-              ...current,
-              last_event_at_ms: now
-            });
+      try {
+        const s = JSON.parse(readFileSync6(statusPath, "utf-8"));
+        if (s.status === "running" || s.status === "starting") {
+          if (!s.pid)
+            continue;
+          let pidAlive = true;
+          try {
+            process.kill(s.pid, 0);
+          } catch {
+            pidAlive = false;
           }
-        } else if (s.status === "running") {
+          if (!pidAlive) {
+            const tmp = statusPath + ".tmp";
+            const updated = {
+              ...s,
+              status: "error",
+              error: "Process crashed or was killed",
+              last_event_at_ms: now
+            };
+            writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            renameSync(tmp, statusPath);
+          } else if (s.status === "running") {
+            const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
+            const silenceMs = now - lastEventAt;
+            if (silenceMs > thresholds.running_silence_error_ms) {
+              const tmp = statusPath + ".tmp";
+              const updated = {
+                ...s,
+                status: "error",
+                error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
+              };
+              writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              renameSync(tmp, statusPath);
+            }
+          }
+        } else if (s.status === "waiting") {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
-          if (silenceMs > thresholds.running_silence_error_ms) {
-            this.updateJobStatus(s.id, "error", `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`);
+          if (silenceMs > thresholds.waiting_stale_ms) {
+            const eventsPath = join8(this.resolvedJobsDir, entry, "events.jsonl");
+            const event = createStaleWarningEvent("waiting_stale", {
+              silence_ms: silenceMs,
+              threshold_ms: thresholds.waiting_stale_ms
+            });
+            try {
+              appendFileSync(eventsPath, JSON.stringify(event) + `
+`);
+            } catch {}
           }
         }
-      } else if (s.status === "waiting") {
-        const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
-        const silenceMs = now - lastEventAt;
-        if (silenceMs > thresholds.waiting_stale_ms) {
-          const event = createStaleWarningEvent("waiting_stale", {
-            silence_ms: silenceMs,
-            threshold_ms: thresholds.waiting_stale_ms
-          });
-          try {
-            appendFileSync(this.eventsPath(s.id), `${JSON.stringify(event)}
-`);
-          } catch {}
-        }
-      }
+      } catch {}
     }
   }
   async run() {
@@ -23916,8 +23864,8 @@ class Supervisor {
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
       startup_context: startupContext
     };
-    this.writeStatusFile(id, initialStatus);
-    const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
+    this.writeStatusFileOnly(id, initialStatus);
+    const statusWatchdogPid = startDetachedStatusWatchdog(this.statusPath(id), process.pid);
     writeFileSync3(join8(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     this.opts.onJobStarted?.({ id });
@@ -24745,12 +24693,11 @@ ${appendError}
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000;
 var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
   init_observability_sqlite();
-  init_observability_db();
   init_epic_lifecycle();
   init_epic_readiness();
   init_chain_identity();
@@ -24824,17 +24771,11 @@ function readJobStatus(statusPath) {
   }
 }
 function listLiveJobs(showDead) {
-  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join9(process.cwd(), ".specialists", "jobs");
-  const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
-  const sqliteJobs = sqliteClient?.listStatuses().map((status) => toLiveJob(status)).filter((job) => job !== null).filter((job) => showDead || !job.isDead) ?? [];
-  if (!fileOutputEnabled)
-    return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
-  if (sqliteJobs.length > 0)
-    return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
   if (!existsSync9(jobsDir))
     return [];
-  return readdirSync2(jobsDir).map((entry) => toLiveJob(readJobStatus(join9(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
+  const jobs = readdirSync2(jobsDir).map((entry) => toLiveJob(readJobStatus(join9(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
+  return jobs;
 }
 function formatLiveChoice(job) {
   const state = job.isDead ? "dead" : job.status;
@@ -24976,6 +24917,8 @@ async function run3() {
     throw err;
   }
   if (args.live) {
+    process.stderr.write(`Mode: live tmux session picker; active jobs are DB-backed and file scans are legacy/operator-only.
+`);
     await runLiveMode(Boolean(args.showDead));
     return;
   }
@@ -25020,7 +24963,6 @@ ${bold2(`Specialists (${specialists.length})`)}
 var dim2 = (s) => `\x1B[2m${s}\x1B[0m`, bold2 = (s) => `\x1B[1m${s}\x1B[0m`, cyan = (s) => `\x1B[36m${s}\x1B[0m`, green = (s) => `\x1B[32m${s}\x1B[0m`, yellow2 = (s) => `\x1B[33m${s}\x1B[0m`, blue = (s) => `\x1B[34m${s}\x1B[0m`, magenta = (s) => `\x1B[35m${s}\x1B[0m`, ArgParseError;
 var init_list = __esm(() => {
   init_loader();
-  init_observability_sqlite();
   init_supervisor();
   ArgParseError = class ArgParseError extends Error {
     constructor(message) {
@@ -25113,19 +25055,9 @@ function printPromptSection(prompt) {
   console.log();
   console.log(`${bold3("task_template")}:`);
   console.log(formatPromptValue(prompt.task_template));
-  if (prompt.normalize_template !== undefined) {
-    console.log();
-    console.log(`${bold3("normalize_template")}:`);
-    console.log(formatValue(prompt.normalize_template));
-  }
   if (prompt.skill_inherit !== undefined) {
     console.log();
     console.log(`${bold3("skill_inherit")}: ${formatValue(prompt.skill_inherit)}`);
-  }
-  if (prompt.examples !== undefined) {
-    console.log();
-    console.log(`${bold3("examples")}:`);
-    console.log(formatValue(prompt.examples));
   }
   if (prompt.output_schema !== undefined) {
     console.log();
@@ -33607,8 +33539,7 @@ var init_epic = __esm(() => {
 // src/cli/status.ts
 var exports_status = {};
 __export(exports_status, {
-  run: () => run14,
-  detectJobOutputMode: () => detectJobOutputMode
+  run: () => run14
 });
 import { spawnSync as spawnSync15 } from "child_process";
 import { existsSync as existsSync18, readFileSync as readFileSync16 } from "fs";
@@ -33666,9 +33597,6 @@ function statusColor(job) {
       return job.status;
   }
 }
-function detectJobOutputMode() {
-  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on" ? "on" : "off";
-}
 function parseStatusArgs(argv) {
   let jsonMode = false;
   let jobId;
@@ -33704,10 +33632,7 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
       return sqliteEvents.length;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}`, error2);
-  }
-  if (detectJobOutputMode() !== "on") {
-    return 0;
+    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -33741,10 +33666,7 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
         return snapshot;
     }
   } catch (error2) {
-    console.warn(`SQLite events read failed for job ${jobId}`, error2);
-  }
-  if (detectJobOutputMode() !== "on") {
-    return null;
+    console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
   const eventsFile = join19(jobsDir, jobId, "events.jsonl");
   if (!existsSync18(eventsFile))
@@ -33897,9 +33819,6 @@ async function run14() {
     }
     if (jsonMode) {
       const output2 = {
-        runtime: {
-          job_file_output: detectJobOutputMode()
-        },
         specialists: {
           count: allSpecialists.length,
           items: allSpecialists.map((s) => ({
@@ -35248,8 +35167,6 @@ function readJobEvents(jobDir) {
       return sqliteEvents;
     }
   } catch {}
-  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
-    return [];
   const eventsPath = join22(jobDir, "events.jsonl");
   if (!existsSync21(eventsPath))
     return [];
@@ -35269,23 +35186,6 @@ function readJobEventsById(jobsDir, jobId) {
   return readJobEvents(join22(jobsDir, jobId));
 }
 function readAllJobEvents(jobsDir) {
-  const sqliteClient = createObservabilitySqliteClient();
-  const statuses = sqliteClient?.listStatuses() ?? [];
-  if (statuses.length > 0 && sqliteClient) {
-    return statuses.flatMap((status) => {
-      const events = sqliteClient.readEvents(status.id);
-      if (events.length === 0)
-        return [];
-      return [{
-        jobId: status.id,
-        specialist: status.specialist ?? "unknown",
-        beadId: status.bead_id,
-        events
-      }];
-    });
-  }
-  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
-    return [];
   if (!existsSync21(jobsDir))
     return [];
   const batches = [];
@@ -35368,8 +35268,8 @@ function queryTimeline(jobsDir, filter = {}) {
   return filterTimelineEvents(merged, filter);
 }
 var init_timeline_query = __esm(() => {
-  init_observability_sqlite();
   init_timeline_events();
+  init_observability_sqlite();
 });
 
 // src/specialist/model-display.ts
@@ -36057,38 +35957,22 @@ function parseArgs10(argv) {
   return { jobId, cursor, outputCursor };
 }
 function readJobState(jobsDir, jobId, cursor, outputCursor) {
-  const sqliteClient = createObservabilitySqliteClient();
   const jobDir = join24(jobsDir, jobId);
+  const statusPath = join24(jobDir, "status.json");
   let status = null;
-  if (sqliteClient) {
+  if (existsSync23(statusPath)) {
     try {
-      status = sqliteClient.readStatus(jobId);
+      status = JSON.parse(readFileSync21(statusPath, "utf-8"));
     } catch {}
   }
-  if (!status && detectJobOutputMode() === "on") {
-    const statusPath = join24(jobDir, "status.json");
-    if (existsSync23(statusPath)) {
-      try {
-        status = JSON.parse(readFileSync21(statusPath, "utf-8"));
-      } catch {}
-    }
-  }
+  const resultPath = join24(jobDir, "result.txt");
   let fullOutput = "";
-  if (sqliteClient) {
+  if (existsSync23(resultPath)) {
     try {
-      fullOutput = sqliteClient.readResult(jobId) ?? "";
+      fullOutput = readFileSync21(resultPath, "utf-8");
     } catch {}
   }
-  if (!fullOutput && detectJobOutputMode() === "on") {
-    const resultPath = join24(jobDir, "result.txt");
-    if (existsSync23(resultPath)) {
-      try {
-        fullOutput = readFileSync21(resultPath, "utf-8");
-      } catch {}
-    }
-  }
-  const dbEvents = sqliteClient?.readEvents(jobId);
-  const events = dbEvents && dbEvents.length > 0 ? dbEvents : detectJobOutputMode() === "on" ? readJobEventsById(jobsDir, jobId) : dbEvents ?? [];
+  const events = readJobEventsById(jobsDir, jobId);
   const newEvents = events.slice(cursor);
   const nextCursor = events.length;
   const startedAt = status?.started_at_ms ?? Date.now();
@@ -36143,8 +36027,6 @@ async function run18() {
 }
 var init_poll = __esm(() => {
   init_timeline_query();
-  init_observability_sqlite();
-  init_status();
 });
 
 // src/cli/steer.ts
@@ -36282,9 +36164,6 @@ function readJobStatus2(jobDir) {
     return null;
   }
 }
-function getFileFallbackEnabled() {
-  return process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
-}
 function isTerminal2(status) {
   return TERMINAL_STATUSES3.has(status);
 }
@@ -36292,25 +36171,6 @@ function isActive(status) {
   return ACTIVE_STATUSES.has(status);
 }
 function collectWorktreeGcCandidates(jobsDir) {
-  const sqliteClient = createObservabilitySqliteClient();
-  const statuses = sqliteClient?.listStatuses() ?? [];
-  if (statuses.length > 0) {
-    return statuses.filter((status) => !isActive(status.status) && isTerminal2(status.status)).map((status) => {
-      const worktreePath = status.worktree_path;
-      if (!worktreePath)
-        return null;
-      if (!existsSync24(worktreePath))
-        return null;
-      return {
-        jobId: status.id,
-        worktreePath,
-        branch: status.branch,
-        jobStatus: status.status
-      };
-    }).filter((candidate) => candidate !== null);
-  }
-  if (!getFileFallbackEnabled())
-    return [];
   if (!existsSync24(jobsDir))
     return [];
   const candidates = [];
@@ -36363,7 +36223,6 @@ function pruneWorktrees(candidates) {
 }
 var TERMINAL_STATUSES3, ACTIVE_STATUSES;
 var init_worktree_gc = __esm(() => {
-  init_observability_sqlite();
   TERMINAL_STATUSES3 = new Set(["done", "error"]);
   ACTIVE_STATUSES = new Set(["starting", "running", "waiting"]);
 });
@@ -36461,12 +36320,6 @@ function containsProtectedSqliteArtifact(directoryPath) {
   }
   return false;
 }
-function getJobTimestamps(status) {
-  const typedStatus = status;
-  const createdAtMs = typedStatus.started_at_ms ?? typedStatus.created_at_ms ?? typedStatus.updated_at_ms ?? 0;
-  const completedAtMs = typedStatus.completed_at_ms ?? typedStatus.updated_at_ms ?? createdAtMs;
-  return { createdAtMs, completedAtMs };
-}
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
@@ -36484,58 +36337,32 @@ function readCompletedJobDirectory(baseDirectory, entry) {
   }
   if (!COMPLETED_STATUSES.has(statusData.status))
     return null;
-  const { createdAtMs, completedAtMs } = getJobTimestamps(statusData);
+  const directoryStats = statSync4(directoryPath);
   return {
     id: entry.name,
     directoryPath,
-    completedAtMs,
-    createdAtMs,
+    modifiedAtMs: directoryStats.mtimeMs,
+    startedAtMs: statusData.started_at_ms,
     sizeBytes: readDirectorySizeBytes(directoryPath)
   };
 }
-function collectCompletedJobDirectoriesFromDb(jobsDirectoryPath) {
-  const sqliteClient = createObservabilitySqliteClient();
-  const statuses = sqliteClient?.listStatuses() ?? [];
-  const completedJobs = statuses.filter((status) => COMPLETED_STATUSES.has(status.status)).map((status) => {
-    const directoryPath = join26(jobsDirectoryPath, status.id);
-    if (containsProtectedSqliteArtifact(directoryPath))
-      return null;
-    if (!existsSync25(directoryPath))
-      return null;
-    const { createdAtMs, completedAtMs } = getJobTimestamps(status);
-    return {
-      id: status.id,
-      directoryPath,
-      completedAtMs,
-      createdAtMs,
-      sizeBytes: readDirectorySizeBytes(directoryPath)
-    };
-  }).filter((job) => job !== null);
-  return completedJobs;
-}
 function collectCompletedJobDirectories(jobsDirectoryPath) {
-  const sqliteClient = createObservabilitySqliteClient();
-  const statuses = sqliteClient?.listStatuses() ?? [];
-  if (statuses.length > 0) {
-    return collectCompletedJobDirectoriesFromDb(jobsDirectoryPath);
-  }
-  if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
-    return [];
   const entries = readdirSync11(jobsDirectoryPath, { withFileTypes: true });
   const completedJobs = [];
   for (const entry of entries) {
     const completedJob = readCompletedJobDirectory(jobsDirectoryPath, entry);
-    if (completedJob)
+    if (completedJob) {
       completedJobs.push(completedJob);
+    }
   }
   return completedJobs;
 }
 function selectJobsToRemove(completedJobs, options) {
   const jobsByNewest = [...completedJobs].sort((left, right) => {
-    if (right.createdAtMs !== left.createdAtMs) {
-      return right.createdAtMs - left.createdAtMs;
+    if (right.startedAtMs !== left.startedAtMs) {
+      return right.startedAtMs - left.startedAtMs;
     }
-    return right.completedAtMs - left.completedAtMs;
+    return right.modifiedAtMs - left.modifiedAtMs;
   });
   if (options.keepRecentCount !== null) {
     return jobsByNewest.slice(options.keepRecentCount);
@@ -36545,7 +36372,7 @@ function selectJobsToRemove(completedJobs, options) {
   }
   const ttlDays = parseTtlDaysFromEnvironment();
   const cutoffMs = Date.now() - ttlDays * MS_PER_DAY;
-  return jobsByNewest.filter((job) => job.completedAtMs < cutoffMs);
+  return jobsByNewest.filter((job) => job.modifiedAtMs < cutoffMs);
 }
 function formatBytes2(bytes) {
   if (bytes < 1024)
@@ -36627,7 +36454,6 @@ async function run22() {
 var MS_PER_DAY = 86400000, DEFAULT_TTL_DAYS = 7, COMPLETED_STATUSES, PROTECTED_SQLITE_SUFFIXES;
 var init_clean = __esm(() => {
   init_job_root();
-  init_observability_sqlite();
   init_worktree_gc();
   COMPLETED_STATUSES = new Set(["done", "error"]);
   PROTECTED_SQLITE_SUFFIXES = [".db", ".db-wal", ".db-shm"];
@@ -36908,7 +36734,7 @@ function readStatus(statusPath, jobId) {
     return JSON.parse(readFileSync24(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
-      return null;
+      exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs in current mode.`);
     }
     const details = error2 instanceof Error ? error2.message : String(error2);
     exitWithError(`Failed to read status for job \`${jobId}\`: ${details}`);
@@ -36917,18 +36743,11 @@ function readStatus(statusPath, jobId) {
 async function run25() {
   const [jobId] = process.argv.slice(3);
   if (!jobId) {
-    exitWithError("Usage: specialists attach <job-id>");
+    exitWithError("Usage: specialists attach <job-id>  (normal runtime is DB-backed; job files are legacy/operator-only)");
   }
-  const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = join27(process.cwd(), ".specialists", "jobs");
   const statusPath = join27(jobsDir, jobId, "status.json");
-  const outputMode = detectJobOutputMode();
-  const dbStatus = sqliteClient?.readStatus(jobId) ?? null;
-  const fileStatus = dbStatus ? null : outputMode === "on" ? readStatus(statusPath, jobId) : null;
-  const status = dbStatus ?? fileStatus;
-  if (!status) {
-    exitWithError(`Job \`${jobId}\` not found.`);
-  }
+  const status = readStatus(statusPath, jobId);
   if (status.status === "done" || status.status === "error") {
     exitWithError(`Job \`${jobId}\` has already completed (status: ${status.status}). Use \`specialists result ${jobId}\` to read output.`);
   }
@@ -36946,10 +36765,7 @@ async function run25() {
     process.exit(1);
   }
 }
-var init_attach = __esm(() => {
-  init_observability_sqlite();
-  init_status();
-});
+var init_attach = () => {};
 
 // src/cli/quickstart.ts
 var exports_quickstart = {};
@@ -45737,14 +45553,14 @@ async function run32() {
         "  - specialist name",
         "  - model",
         "  - short description",
-        "  - permission_required + interactive mode",
+        "  - permission_required + interactive mode / active-mode detection",
         "  - version + optional thinking_level",
         "  - skills.paths and configured pre/post scripts",
         "",
         "Options:",
         "  --category <name>   Filter by category tag",
         "  --json              Output as JSON array",
-        "  --live              List running tmux-backed jobs and attach interactively",
+        "  --live              List running tmux-backed jobs; active jobs are DB-backed",
         "",
         "Examples:",
         "  specialists list",
@@ -46178,14 +45994,14 @@ async function run32() {
         "",
         "Usage: specialists status [options]",
         "",
-        "Show current runtime state.",
+        "Show current runtime state and active-mode status.",
         "",
         "Sections include:",
         "  - discovered specialists",
         "  - pi provider/runtime health",
         "  - beads availability",
         "  - MCP registration hints",
-        "  - active background jobs",
+        "  - active background jobs and mode detection",
         "",
         "Options:",
         "  --json   Output machine-readable JSON",
@@ -46284,10 +46100,10 @@ async function run32() {
         "Usage: specialists feed <job-id> [options]",
         "       specialists feed [--node <node-ref>] -f [--forever]",
         "",
-        "Read job events.",
+        "Read job events. DB-backed in normal runtime; file scans are legacy/operator-only.",
         "",
         "Modes:",
-        "  specialists feed <job-id>        Replay events for one job",
+        "  specialists feed <job-id>        Replay events for one job (DB-backed)",
         "  specialists feed <job-id> -f     Follow one job until completion",
         "  specialists feed -f              Follow all jobs globally",
         "",
@@ -46321,7 +46137,7 @@ async function run32() {
         "Usage: specialists poll <job-id> [--cursor N] [--json]",
         "",
         "Machine-readable job status polling for scripts and Claude Code.",
-        "Reads from .specialists/jobs/<id>/ files.",
+        "DB-backed in normal runtime; .specialists/jobs/<id>/ is legacy/operator-only.",
         "",
         "Output (JSON mode):",
         "  {",
@@ -46566,7 +46382,7 @@ async function run32() {
         "  specialists attach job_a1b2c3d4",
         '  specialists attach $(specialists run executor --background --prompt "...")',
         "",
-        "See also: specialists list --live   (interactive session picker)"
+        "See also: specialists list --live   (DB-backed active jobs; legacy file scans are operator-only)"
       ].join(`
 `) + `
 `);
