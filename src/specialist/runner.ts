@@ -899,7 +899,7 @@ export class SpecialistRunner {
 
     const preScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'pre') ?? [];
     const preResults = preScripts
-      .map(s => runScript(s.run ?? (s as any).path, runCwd))
+      .map(s => runScript(s.run ?? (s as unknown as { path?: string }).path, runCwd))
       .filter((_, i) => preScripts[i].inject_output);
     const preScriptOutput = formatScriptOutput(preResults);
 
@@ -948,6 +948,15 @@ ${mandatoryRulesBlock}`;
       }
     } catch (error) {
       console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
+    }
+
+    if (metadata.name === 'reviewer') {
+      try {
+        const diffContext = buildReviewerDiffContext(runCwd, variables);
+        renderedTask = `${renderedTask}${buildReviewerDiffInstruction(diffContext)}`;
+      } catch (error) {
+        console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error)}`);
+      }
     }
 
     const promptHash = createHash('sha256').update(renderedTask).digest('hex').slice(0, 16);
@@ -1148,7 +1157,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         onProgress?.(`  skills (--skill):\n${skillPaths.map(p => `    • ${p}`).join('\n')}\n`);
       }
       if (preScripts.length > 0) {
-        onProgress?.(`  pre scripts/commands:\n${preScripts.map(s => `    • ${(s.run ?? (s as any).path ?? '<missing>')}${s.inject_output ? ' → $pre_script_output' : ''}`).join('\n')}\n`);
+        onProgress?.(`  pre scripts/commands:\n${preScripts.map(s => `    • ${(s.run ?? (s as unknown as { path?: string }).path ?? '<missing>')}${s.inject_output ? ' → $pre_script_output' : ''}`).join('\n')}\n`);
       }
       onProgress?.(`${line}\n\n`);
     }

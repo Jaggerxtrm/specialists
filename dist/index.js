@@ -21521,6 +21521,9 @@ function resolveOutputContractSchema(responseFormat, outputType, outputSchema) {
   }
   return mergedSchema;
 }
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'''`)}'`;
+}
 function buildOutputContractInstruction(responseFormat, outputType, outputSchema) {
   if (responseFormat === "text")
     return "";
@@ -21544,6 +21547,141 @@ function buildOutputContractInstruction(responseFormat, outputType, outputSchema
 
 ${lines.join(`
 `)}`;
+}
+function readCommandOutput(cwd, command) {
+  try {
+    return execSync2(command, {
+      cwd,
+      encoding: "utf8",
+      timeout: 1e4,
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+function resolveDefaultBranch(cwd) {
+  const headRef = readCommandOutput(cwd, "git symbolic-ref refs/remotes/origin/HEAD");
+  if (headRef) {
+    return headRef.split("/").pop() ?? "main";
+  }
+  const remoteHead = readCommandOutput(cwd, "git remote show origin");
+  const match = remoteHead.match(/HEAD branch:\s*(.+)/);
+  return match?.[1]?.trim() || "main";
+}
+function readMergeBase(cwd) {
+  const baseBranch = resolveDefaultBranch(cwd);
+  return readCommandOutput(cwd, `git merge-base ${shellQuote(baseBranch)} HEAD`);
+}
+function extractInjectedFileDiff(hunks, file) {
+  const marker = `### ${file}
+`;
+  const start = hunks.indexOf(marker);
+  if (start < 0)
+    return "";
+  const rest = hunks.slice(start + marker.length);
+  const nextHeader = rest.indexOf(`
+
+### `);
+  return (nextHeader >= 0 ? rest.slice(0, nextHeader) : rest).trim();
+}
+function parseInjectedReviewerDiffContext(variables) {
+  const source = variables?.reviewer_diff_source?.trim();
+  const stat2 = variables?.reviewer_diff_stat?.trim();
+  const filesRaw = variables?.reviewer_diff_files?.trim();
+  const hunks = variables?.reviewer_diff_hunks?.trim();
+  if (!source || !filesRaw || !hunks)
+    return null;
+  const files = filesRaw.split(`
+`).map((line) => line.trim()).filter(Boolean);
+  if (files.length === 0)
+    return null;
+  return {
+    source,
+    stat: stat2 || "(no stat)",
+    files,
+    hunks
+  };
+}
+function getPatchSources(cwd, variables) {
+  const mergeBase = readMergeBase(cwd);
+  const injectedContext = parseInjectedReviewerDiffContext(variables);
+  return [
+    ...injectedContext ? [{
+      source: injectedContext.source,
+      stat: injectedContext.stat,
+      files: injectedContext.files,
+      diffForFile: (file) => extractInjectedFileDiff(injectedContext.hunks, file)
+    }] : [],
+    {
+      source: "unstaged diff",
+      stat: readCommandOutput(cwd, "git diff --stat"),
+      files: readCommandOutput(cwd, "git diff --name-only").split(`
+`).map((line) => line.trim()).filter(Boolean),
+      diffForFile: (file) => readCommandOutput(cwd, `git diff -- ${shellQuote(file)}`)
+    },
+    {
+      source: "staged diff",
+      stat: readCommandOutput(cwd, "git diff --cached --stat"),
+      files: readCommandOutput(cwd, "git diff --cached --name-only").split(`
+`).map((line) => line.trim()).filter(Boolean),
+      diffForFile: (file) => readCommandOutput(cwd, `git diff --cached -- ${shellQuote(file)}`)
+    },
+    {
+      source: "branch-vs-base diff",
+      stat: mergeBase ? readCommandOutput(cwd, `git diff --stat ${shellQuote(mergeBase)}..HEAD`) : "",
+      files: mergeBase ? readCommandOutput(cwd, `git diff --name-only ${shellQuote(mergeBase)}..HEAD`).split(`
+`).map((line) => line.trim()).filter(Boolean) : [],
+      diffForFile: (file) => mergeBase ? readCommandOutput(cwd, `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(file)}`) : ""
+    }
+  ];
+}
+function buildReviewerDiffContext(cwd, variables, maxFiles = 20) {
+  for (const source of getPatchSources(cwd, variables)) {
+    const files = source.files.slice(0, maxFiles);
+    if (files.length === 0)
+      continue;
+    const hunks = files.map((file) => {
+      const diff = source.diffForFile(file);
+      return diff ? `### ${file}
+${diff}` : `### ${file}
+(no hunks)`;
+    }).join(`
+
+`);
+    if (hunks.trim()) {
+      return {
+        source: source.source,
+        stat: source.stat,
+        files,
+        hunks
+      };
+    }
+  }
+  throw new Error("Reviewer startup blocked: no patch context found in injected diff, unstaged diff, staged diff, or branch-vs-base diff.");
+}
+function buildReviewerDiffInstruction(context) {
+  return `
+
+---
+## Reviewer Diff Context
+Review only patch below. Ignore unrelated files, repo-wide exploration, and filesystem hunting.
+If patch context is empty, stop and fail fast.
+
+Patch source:
+${context.source}
+
+Diff stat:
+${context.stat || "(no stat)"}
+
+Changed files:
+${context.files.map((file) => `- ${file}`).join(`
+`)}
+
+Diff hunks:
+${context.hunks}
+---
+`;
 }
 function tryParseJson(input) {
   try {
@@ -21748,6 +21886,14 @@ ${mandatoryRulesBlock}`;
       }
     } catch (error2) {
       console.warn(`[specialist runner] Skipping MANDATORY_RULES injection: ${String(error2)}`);
+    }
+    if (metadata.name === "reviewer") {
+      try {
+        const diffContext = buildReviewerDiffContext(runCwd, variables);
+        renderedTask = `${renderedTask}${buildReviewerDiffInstruction(diffContext)}`;
+      } catch (error2) {
+        console.warn(`[specialist runner] Reviewer diff context unavailable: ${String(error2)}`);
+      }
     }
     const promptHash = createHash2("sha256").update(renderedTask).digest("hex").slice(0, 16);
     await hooks.emit("post_render", invocationId, metadata.name, metadata.version, {
@@ -29259,7 +29405,7 @@ function formatFooterModel(backend, model) {
     return model;
   return model.startsWith(`${backend}/`) ? model : `${backend}/${model}`;
 }
-function shellQuote(value) {
+function shellQuote2(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 function extractReviewedJobIdOverride(prompt) {
@@ -29294,43 +29440,72 @@ function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
   };
   const MAX_TOTAL_HUNKS_CHARS = 12000;
   const MAX_FILE_DIFF_CHARS = 2000;
-  const stat2 = read("git diff --stat");
-  const files = read("git diff --name-only").split(`
+  const resolveMergeBase = () => {
+    const headRef = read("git symbolic-ref refs/remotes/origin/HEAD");
+    const baseBranch = headRef ? headRef.split("/").pop() ?? "main" : "main";
+    return read(`git merge-base ${shellQuote2(baseBranch)} HEAD`);
+  };
+  const mergeBase = resolveMergeBase();
+  const sources = [
+    {
+      label: "unstaged diff",
+      statCmd: "git diff --stat",
+      namesCmd: "git diff --name-only",
+      diffCmd: (f) => `git diff -- ${shellQuote2(f)}`
+    },
+    {
+      label: "staged diff",
+      statCmd: "git diff --cached --stat",
+      namesCmd: "git diff --cached --name-only",
+      diffCmd: (f) => `git diff --cached -- ${shellQuote2(f)}`
+    },
+    ...mergeBase ? [{
+      label: `branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`,
+      statCmd: `git diff --stat ${shellQuote2(mergeBase)}..HEAD`,
+      namesCmd: `git diff --name-only ${shellQuote2(mergeBase)}..HEAD`,
+      diffCmd: (f) => `git diff ${shellQuote2(mergeBase)}..HEAD -- ${shellQuote2(f)}`
+    }] : []
+  ];
+  for (const src of sources) {
+    const stat2 = read(src.statCmd);
+    const files = read(src.namesCmd).split(`
 `).map((line) => line.trim()).filter(Boolean).slice(0, maxFiles);
-  if (files.length === 0)
-    return {};
-  let remaining = MAX_TOTAL_HUNKS_CHARS;
-  const sections = [];
-  for (const file of files) {
-    if (remaining <= 0)
-      break;
-    const diff = read(`git diff -- ${shellQuote(file)}`);
-    const truncated = diff.length > MAX_FILE_DIFF_CHARS ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
+    if (files.length === 0)
+      continue;
+    let remaining = MAX_TOTAL_HUNKS_CHARS;
+    const sections = [];
+    for (const file of files) {
+      if (remaining <= 0)
+        break;
+      const diff = read(src.diffCmd(file));
+      const truncated = diff.length > MAX_FILE_DIFF_CHARS ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
 ... [truncated]` : diff;
-    const section = truncated ? `### ${file}
+      const section = truncated ? `### ${file}
 ${truncated}` : `### ${file}
 (no hunks)`;
-    if (section.length > remaining) {
-      sections.push(`${section.slice(0, remaining)}
+      if (section.length > remaining) {
+        sections.push(`${section.slice(0, remaining)}
 ... [truncated]`);
-      remaining = 0;
-      break;
+        remaining = 0;
+        break;
+      }
+      sections.push(section);
+      remaining -= section.length + 2;
     }
-    sections.push(section);
-    remaining -= section.length + 2;
-  }
-  const hunks = sections.join(`
+    const hunks = sections.join(`
 
 `);
-  if (!hunks.trim())
-    return {};
-  return {
-    reviewer_diff_source: "injected diff context",
-    reviewer_diff_stat: stat2 || "(no stat)",
-    reviewer_diff_files: files.join(`
+    if (!hunks.trim())
+      continue;
+    return {
+      reviewer_diff_source: `injected diff context (${src.label})`,
+      reviewer_diff_stat: stat2 || "(no stat)",
+      reviewer_diff_files: files.join(`
 `),
-    reviewer_diff_hunks: hunks
-  };
+      reviewer_diff_hunks: hunks
+    };
+  }
+  return {};
 }
 async function run13() {
   const args = await parseArgs6(process.argv.slice(3));
@@ -29364,7 +29539,7 @@ async function run13() {
     })();
     const cwd = process.cwd();
     const innerArgs = process.argv.slice(2).filter((a) => a !== "--background");
-    const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote).join(" ")}`;
+    const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote2).join(" ")}`;
     let childPid;
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
