@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 function captureTopLevelHelp(): string {
   const entry = join(process.cwd(), 'dist', 'index.js');
-  return execFileSync(process.execPath, [entry, 'help'], { encoding: 'utf-8' });
+  return execFileSync('bun', [entry, 'help'], { encoding: 'utf-8' });
 }
 
 describe('help CLI — run()', () => {
