@@ -22266,7 +22266,8 @@ ${outputContractWarnings.map((msg) => `  \u26A0 ${msg}`).join(`
       beadId,
       metrics: runMetrics,
       permissionRequired: execution.permission_required,
-      autoCommit: execution.auto_commit
+      autoCommit: execution.auto_commit,
+      outputType
     };
   }
   async startAsync(options, registry2) {
@@ -24844,6 +24845,7 @@ ${appendError}
         }
       }
       const completedAtMs = Date.now();
+      const enrichedRunMetrics = finalResult.outputType ? { ...runMetrics, output_type: finalResult.outputType } : runMetrics;
       statusSnapshot = {
         ...statusSnapshot,
         status: "done",
@@ -24852,7 +24854,8 @@ ${appendError}
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
-        metrics: runMetrics
+        metrics: enrichedRunMetrics,
+        ...finalResult.outputType ? { output_type: finalResult.outputType } : {}
       };
       this.writeStatusFileOnly(id, statusSnapshot);
       const gitnexusSummary = gitnexusAccumulator.tool_invocations > 0 ? {
@@ -24871,7 +24874,7 @@ ${appendError}
           finish_reason: runMetrics.finish_reason,
           tool_calls: [...toolCallNames],
           exit_reason: runMetrics.exit_reason,
-          metrics: runMetrics,
+          metrics: enrichedRunMetrics,
           ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
         }), latestOutput);
         return true;

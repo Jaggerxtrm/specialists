@@ -61,6 +61,7 @@ export interface RunResult {
   metrics?: SessionRunMetrics;
   permissionRequired?: 'READ_ONLY' | 'LOW' | 'MEDIUM' | 'HIGH';
   autoCommit?: 'never' | 'checkpoint_on_waiting' | 'checkpoint_on_terminal';
+  outputType?: string;
 }
 
 type SessionLike = Pick<PiAgentSession, 'start' | 'prompt' | 'waitForDone' | 'getLastOutput' | 'getState' | 'close' | 'kill' | 'meta' | 'steer' | 'resume'>
@@ -1278,7 +1279,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
 
       // Post-phase scripts/commands run locally after the pi session completes
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
-      for (const script of postScripts) runScript(script.run ?? (script as any).path, runCwd);
+      for (const script of postScripts) runScript(script.run ?? (script as unknown as { path?: string }).path, runCwd);
 
       circuitBreaker.recordSuccess(model);
     } catch (err: any) {
@@ -1345,6 +1346,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       metrics: runMetrics,
       permissionRequired: execution.permission_required,
       autoCommit: execution.auto_commit,
+      outputType,
     };
   }
 

@@ -242,6 +242,7 @@ export interface TimelineRunMetrics {
   tool_call_names?: string[];
   auto_compactions?: number;
   auto_retries?: number;
+  output_type?: string;
 }
 
 export interface TimelineEventRunComplete extends TimelineEventBase {

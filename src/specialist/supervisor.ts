@@ -68,6 +68,7 @@ export interface SupervisorStatus {
   current_tool?: string;
   model?: string;
   backend?: string;
+  output_type?: string;
   pid?: number;
   started_at_ms: number;
   elapsed_s?: number;
@@ -1894,6 +1895,9 @@ export class Supervisor {
         }
       }
       const completedAtMs = Date.now();
+      const enrichedRunMetrics = finalResult.outputType
+        ? { ...runMetrics, output_type: finalResult.outputType }
+        : runMetrics;
       statusSnapshot = {
         ...statusSnapshot,
         status: 'done',
@@ -1902,7 +1906,8 @@ export class Supervisor {
         model: finalResult.model,
         backend: finalResult.backend,
         bead_id: finalResult.beadId,
-        metrics: runMetrics,
+        metrics: enrichedRunMetrics,
+        ...(finalResult.outputType ? { output_type: finalResult.outputType } : {}),
       };
       this.writeStatusFileOnly(id, statusSnapshot);
 
@@ -1925,7 +1930,7 @@ export class Supervisor {
           finish_reason: runMetrics.finish_reason,
           tool_calls: [...toolCallNames],
           exit_reason: runMetrics.exit_reason,
-          metrics: runMetrics,
+          metrics: enrichedRunMetrics,
           ...(gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}),
         }), latestOutput);
         return true;
