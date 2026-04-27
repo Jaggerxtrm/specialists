@@ -27,7 +27,8 @@
     },
     "mandatory_rules": {
       "template_sets": [
-        "test-runner-execution-scope"
+        "test-runner-execution-scope",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

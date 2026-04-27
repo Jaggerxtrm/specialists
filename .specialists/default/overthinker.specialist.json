@@ -28,7 +28,8 @@
     },
     "mandatory_rules": {
       "template_sets": [
-        "overthinker-4phase"
+        "overthinker-4phase",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

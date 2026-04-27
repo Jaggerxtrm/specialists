@@ -29,7 +29,8 @@
     },
     "mandatory_rules": {
       "template_sets": [
-        "researcher-source-discipline"
+        "researcher-source-discipline",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

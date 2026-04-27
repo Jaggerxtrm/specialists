@@ -29,7 +29,8 @@
     "mandatory_rules": {
       "template_sets": [
         "reviewer-verdict-format",
-        "gitnexus-required"
+        "gitnexus-required",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

@@ -28,7 +28,8 @@
     "mandatory_rules": {
       "template_sets": [
         "explorer-readonly",
-        "gitnexus-required"
+        "gitnexus-required",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

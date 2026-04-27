@@ -83,6 +83,11 @@
     },
     "beads_integration": "auto",
     "stall_detection": {},
-    "beads_write_notes": true
+    "beads_write_notes": true,
+    "mandatory_rules": {
+      "template_sets": [
+        "serena-cheatsheet"
+      ]
+    }
   }
 }

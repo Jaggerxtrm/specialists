@@ -35,7 +35,8 @@
     "mandatory_rules": {
       "template_sets": [
         "debugger-trace-first",
-        "gitnexus-required"
+        "gitnexus-required",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {

@@ -31,7 +31,8 @@
       "template_sets": [
         "executor-delivery",
         "git-workflow-safe",
-        "gitnexus-required"
+        "gitnexus-required",
+        "serena-cheatsheet"
       ]
     },
     "prompt": {
