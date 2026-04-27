@@ -36398,6 +36398,8 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
   };
 }
 async function run18() {
+  process.stderr.write(`[DEPRECATED] 'specialists poll' is scheduled for removal. Use 'sp ps <id> --json' for status and 'sp feed <id>' for events.
+`);
   const { jobId, cursor, outputCursor } = parseArgs10(process.argv.slice(3));
   const jobsDir = join24(process.cwd(), ".specialists", "jobs");
   const jobDir = join24(jobsDir, jobId);
@@ -38400,7 +38402,7 @@ async function run31() {
     "  Tracked work (primary)",
     '    bd create "Task title" -t task -p 1 --json',
     "    specialists run <name> --bead <id> [--context-depth N]",
-    "    specialists poll <job-id> --json   # check status",
+    "    specialists ps <job-id> --json     # check status",
     '    bd close <id> --reason "Done"',
     "",
     "  Ad-hoc work",
@@ -38449,7 +38451,7 @@ async function run31() {
     "  specialists edit explorer --get specialist.execution.model",
     "  specialists run debugger --bead unitAI-123",
     '  specialists run codebase-explorer --prompt "Map the CLI architecture"',
-    "  specialists poll abc123 --json                  # check job status",
+    "  specialists ps abc123 --json                    # check job status",
     "  specialists feed -f                             # stream all job events",
     '  specialists steer <job-id> "focus only on supervisor.ts"',
     '  specialists resume <job-id> "now write the fix"',
@@ -38469,7 +38471,7 @@ async function run31() {
     "  specialists view --help        View specialist configs",
     "  specialists edit --help        Edit specialist fields (dot-path, presets)",
     "  specialists run --help         Run command details and flags",
-    "  specialists poll --help        Job status polling details",
+    "  specialists poll --help        [DEPRECATED] use sp ps + sp feed",
     "  specialists steer --help       Mid-run steering details",
     "  specialists resume --help      Multi-turn keep-alive details",
     "  specialists init --help        Bootstrap behavior and workflow injection",
@@ -46640,8 +46642,12 @@ async function run32() {
         "",
         "Usage: specialists poll <job-id> [--cursor N] [--json]",
         "",
+        "[DEPRECATED] Scheduled for removal. Use:",
+        "  sp ps <id> --json   for status",
+        "  sp feed <id>        for events",
+        "",
         "Machine-readable job status polling for scripts and Claude Code.",
-        "DB-backed in normal runtime; .specialists/jobs/<id>/ is legacy/operator-only.",
+        "Currently file-based; replacements above are DB-canonical.",
         "",
         "Output (JSON mode):",
         "  {",

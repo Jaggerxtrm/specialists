@@ -70,7 +70,8 @@ Run-time precedence:
 ```bash
 specialists feed 49adda --follow
 specialists feed -f
-specialists poll 49adda --json
+specialists ps 49adda --json
+# `specialists poll <id>` is deprecated — use `sp ps` + `sp feed` above.
 ```
 
 ## Read final output

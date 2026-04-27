@@ -114,7 +114,9 @@ sp feed --json --since 5m --limit 200
 - **Context warnings**: feed displays context utilization warnings at WARN/CRITICAL thresholds
 - **Startup context lines**: on `run_start` events with `startup_snapshot`, emits dimmed `↳ startup` summary (job, specialist, bead, worktree, branch, vars, skills); on `meta` events with `memory_injection`, emits `↳ memory` token accounting line (static, dynamic, gitnexus, total)
 
-### `poll` (machine snapshot + cursors)
+### `poll` (machine snapshot + cursors) — DEPRECATED
+
+> **DEPRECATED** — scheduled for removal. Use `sp ps <id> --json` for status and `sp feed <id>` for events. The current `poll` implementation is file-based and returns stale data under the v3.9.0 default-off mode.
 
 ```bash
 sp poll <job-id>
@@ -144,11 +146,11 @@ sp result <job-id> --wait --timeout 120
 - **SQLite-backed**: reads from `specialist_jobs.last_output` column when available
 - **Startup context block**: derives startup snapshot from `status.json.startup_context` merged with `run_start` event + `meta` memory_injection. Prepends `--- startup context ---` block in human mode; adds `startup_context` field in `--json` mode
 
-Use `result` when you want final plain text; use `feed`/`poll` when you want event history and incremental state.
+Use `result` when you want final plain text; use `feed` when you want event history and incremental state.
 
 ### Current tool staleness fix (April 2026)
 
-`sp ps` and `sp poll` expose `current_tool` to show which tool a job is executing. Prior to April 2026, this field was stale because:
+`sp ps` exposes `current_tool` to show which tool a job is executing. Prior to April 2026, this field was stale because:
 
 1. `current_tool` was set on `tool_execution_start` but never cleared on `tool_execution_end`
 2. `sp ps` read from `status.json` snapshot, not the live event stream

@@ -141,6 +141,7 @@ function readJobState(jobsDir: string, jobId: string, cursor: number, outputCurs
 }
 
 export async function run(): Promise<void> {
+  process.stderr.write("[DEPRECATED] 'specialists poll' is scheduled for removal. Use 'sp ps <id> --json' for status and 'sp feed <id>' for events.\n");
   const { jobId, cursor, outputCursor } = parseArgs(process.argv.slice(3));
   const jobsDir = join(process.cwd(), '.specialists', 'jobs');
   const jobDir = join(jobsDir, jobId);

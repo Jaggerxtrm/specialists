@@ -287,7 +287,9 @@ On `meta` events with `memory_injection`, feed emits a memory token accounting l
 
 ---
 
-## `specialists poll`
+## `specialists poll` *(deprecated)*
+
+> **DEPRECATED** — scheduled for removal. Use `sp ps <id> --json` for status and `sp feed <id>` for events. The current implementation is file-based and will return stale data when `SPECIALISTS_JOB_FILE_OUTPUT=off` (the default since v3.9.0).
 
 ### Synopsis
 
