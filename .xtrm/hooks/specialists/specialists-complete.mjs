@@ -6,6 +6,7 @@
 // Installed by: specialists install
 
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
@@ -25,33 +26,76 @@ if (markers.length === 0) process.exit(0);
 
 const banners = [];
 
-for (const jobId of markers) {
-  const markerPath = join(readyDir, jobId);
+function readDbMetadata(jobId) {
+  const poll = spawnSync('sp', ['poll', jobId, '--cursor', '999999999', '--json'], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 2000,
+    encoding: 'utf-8',
+  });
+
+  if (poll.error || poll.status !== 0 || !poll.stdout) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(poll.stdout);
+  } catch {
+    return null;
+  }
+
+  const specialist = parsed.specialist;
+  const elapsedMs = parsed.elapsed_ms;
+  const status = parsed.status;
+  const error = parsed.error;
+
+  if (specialist === undefined && elapsedMs === undefined && status === undefined && error === undefined) {
+    return null;
+  }
+
+  return { specialist, elapsed_ms: elapsedMs, status, error };
+}
+
+function readStatusJson(jobId) {
   const statusPath = join(cwd, '.specialists', 'jobs', jobId, 'status.json');
+  if (!existsSync(statusPath)) return null;
 
   try {
-    let specialist = jobId;
-    let elapsed = '';
-    let completionStatus = 'done';
-    let errorMessage = '';
+    return JSON.parse(readFileSync(statusPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
 
-    if (existsSync(statusPath)) {
-      const status = JSON.parse(readFileSync(statusPath, 'utf-8'));
-      specialist = status.specialist ?? jobId;
-      elapsed = status.elapsed_s !== undefined ? `, ${status.elapsed_s}s` : '';
-      completionStatus = status.status ?? 'done';
-      errorMessage = status.error ? ` — ${status.error}` : '';
-    }
+function buildBanner(jobId, metadata, hasStatusFile) {
+  const specialist = metadata?.specialist ?? jobId;
+  const elapsed = metadata?.elapsed_ms !== undefined ? `, ${Math.round(metadata.elapsed_ms / 1000)}s` : '';
+  const completionStatus = metadata?.status ?? 'done';
+  const errorMessage = metadata?.error ? ` — ${metadata.error}` : '';
 
-    if (completionStatus === 'error') {
-      banners.push(
-        `[Specialist '${specialist}' failed (job ${jobId}${elapsed}${errorMessage}). Run: specialists feed ${jobId} --follow]`
-      );
-    } else {
-      banners.push(
-        `[Specialist '${specialist}' completed (job ${jobId}${elapsed}). Run: specialists result ${jobId}]`
-      );
-    }
+  if (completionStatus === 'error') {
+    return `[Specialist ${specialist} failed (job ${jobId}${elapsed}${errorMessage}). Run: specialists feed ${jobId} --follow]`;
+  }
+
+  if (metadata) {
+    return `[Specialist ${specialist} completed (job ${jobId}${elapsed}). Run: specialists result ${jobId}]`;
+  }
+
+  if (hasStatusFile) {
+    return `[Specialist ${jobId} completed (job ${jobId}). Run: specialists result ${jobId}]`;
+  }
+
+  return `[Specialist job ${jobId} completed. Run: sp poll ${jobId}]`;
+}
+
+for (const jobId of markers) {
+  const markerPath = join(readyDir, jobId);
+
+  try {
+    const dbMetadata = readDbMetadata(jobId);
+    const status = dbMetadata ?? (process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on' ? readStatusJson(jobId) : null);
+    const hasStatusFile = process.env.SPECIALISTS_JOB_FILE_OUTPUT === 'on' && status !== null;
+
+    banners.push(buildBanner(jobId, status, hasStatusFile));
 
     // Delete marker so it only fires once
     unlinkSync(markerPath);

@@ -37,6 +37,7 @@ interface PollResult {
   output: string;
   output_delta: string;
   events: TimelineEvent[];
+  specialist?: string;
   current_event?: string;
   current_tool?: string;
   model?: string;
@@ -48,6 +49,7 @@ interface PollResult {
 interface JobStatus {
   id: string;
   status: 'starting' | 'running' | 'waiting' | 'done' | 'error';
+  specialist?: string;
   current_event?: string;
   current_tool?: string;
   model?: string;
@@ -136,6 +138,7 @@ function readJobState(jobsDir: string, jobId: string, cursor: number, outputCurs
     model: status?.model,
     backend: status?.backend,
     bead_id: status?.bead_id,
+    specialist: status?.specialist,
     error: status?.error,
   };
 }
