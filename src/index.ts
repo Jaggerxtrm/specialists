@@ -46,6 +46,11 @@ async function run() {
     return handler();
   }
 
+  if (sub === 'list-rules') {
+    const { run: handler } = await import('./cli/list-rules.js');
+    return handler();
+  }
+
   if (sub === 'list') {
     if (wantsHelp()) {
       console.log([

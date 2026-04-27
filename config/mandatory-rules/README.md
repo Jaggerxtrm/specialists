@@ -3,6 +3,10 @@
 Rule sets injected at the end of every specialist prompt at spawn time. Enforces
 behaviors the model must follow regardless of the specific task.
 
+> **Quick introspection:** `sp list-rules` prints the rule × specialist matrix.
+> Filter with `sp list-rules --rule <id>` or `sp list-rules --specialist <name>`,
+> machine output via `--json`.
+
 ## Layout (three tiers)
 
 The loader reads and unions indexes from three paths, in this precedence:
