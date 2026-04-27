@@ -183,6 +183,39 @@ Default prints the assistant text to stdout. `--json` prints the full `GenerateR
 
 `/v1/generate` is the only endpoint. Breaking changes ship under `/v2/...`. Image tags follow the npm package semver. Pin to `:vX.Y.Z` in production.
 
+## Programmatic Node import (`@jaggerxtrm/specialists/lib`)
+
+For Node services that want to invoke a script-class specialist without spawning `sp script` or HTTP-fetching `sp serve`, import directly:
+
+```ts
+import { runScript, SpecialistLoader, type ScriptGenerateRequest } from '@jaggerxtrm/specialists/lib';
+
+const loader = new SpecialistLoader(process.cwd());
+
+const result = await runScript(
+  {
+    specialist: 'mercury-atomic-summarizer',
+    variables: { article: 'BTC up 5% on inflows.' },
+  } satisfies ScriptGenerateRequest,
+  { loader, projectDir: process.cwd() },
+);
+
+if (result.success) {
+  console.log(result.output);
+  console.log(result.parsed_json);
+} else {
+  console.error(result.error_type, result.error);
+}
+```
+
+`runScript` is the same function `sp script` and `sp serve` use internally — same model selection, retries, timeout, and error taxonomy. Skip transport overhead when the consumer already runs in Node.
+
+Exports:
+
+- `runScript(req, options)` — script-class specialist invocation.
+- `SpecialistLoader` — same loader the CLI uses; pass to `runScript`.
+- Types: `ScriptGenerateRequest`, `ScriptGenerateResult`, `ScriptGenerateSuccess`, `ScriptGenerateFailure`, `ScriptSpecialistErrorType`, `ScriptRunnerOptions`, `Specialist`.
+
 ---
 
 The service is a transport, not a runtime. Everything underneath it is the specialists code that already works.
