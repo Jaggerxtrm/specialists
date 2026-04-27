@@ -23720,8 +23720,8 @@ function isPidAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return err?.code === "EPERM";
   }
 }
 function isJobDead(status) {

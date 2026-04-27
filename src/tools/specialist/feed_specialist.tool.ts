@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { readJobEventsById, isJobComplete } from '../../specialist/timeline-query.js';
 import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { formatSpecialistModel } from '../../specialist/model-display.js';
+import { isJobDead } from '../../specialist/supervisor.js';
 import { detectJobOutputMode } from '../../cli/status.js';
 
 export const feedSpecialistSchema = z.object({
@@ -45,6 +46,8 @@ export function createFeedSpecialistTool(jobsDir: string) {
       let model: string | undefined = statusRecord?.model;
       let bead_id: string | undefined = statusRecord?.bead_id;
       let metrics: Record<string, unknown> | undefined = statusRecord?.metrics as Record<string, unknown> | undefined;
+      let pid: number | undefined = statusRecord?.pid;
+      let tmux_session: string | undefined = statusRecord?.tmux_session;
       if (!statusRecord && detectJobOutputMode() === 'on' && existsSync(statusPath)) {
         try {
           const s = JSON.parse(readFileSync(statusPath, 'utf-8'));
@@ -55,10 +58,14 @@ export function createFeedSpecialistTool(jobsDir: string) {
           metrics = typeof s.metrics === 'object' && s.metrics !== null
             ? s.metrics as Record<string, unknown>
             : undefined;
+          pid = typeof s.pid === 'number' ? s.pid : undefined;
+          tmux_session = typeof s.tmux_session === 'string' ? s.tmux_session : undefined;
         } catch {
           // status.json unreadable — continue with defaults
         }
       }
+
+      const is_dead = isJobDead({ status: status as never, pid, tmux_session });
 
       const dbEvents = sqliteClient?.readEvents(job_id);
       const allEvents = (dbEvents && dbEvents.length > 0)
@@ -78,6 +85,7 @@ export function createFeedSpecialistTool(jobsDir: string) {
         specialist_model: formatSpecialistModel(specialist, model),
         ...(model !== undefined ? { model } : {}),
         status,
+        is_dead,
         ...(bead_id !== undefined ? { bead_id } : {}),
         ...(metrics !== undefined ? { metrics } : {}),
         events: sliced,

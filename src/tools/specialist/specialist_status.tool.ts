@@ -3,6 +3,9 @@ import { z } from 'zod';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 import { checkStaleness } from '../../specialist/loader.js';
 import type { CircuitBreaker } from '../../utils/circuitBreaker.js';
+import { createObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
+import { isJobDead } from '../../specialist/supervisor.js';
+import { detectJobOutputMode } from '../../cli/status.js';
 
 const BACKENDS = ['gemini', 'qwen', 'anthropic', 'openai'];
 
@@ -17,19 +20,29 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
       // Check staleness for each specialist concurrently
       const stalenessResults = await Promise.all(list.map(s => checkStaleness(s)));
 
-      // Include active background jobs from file-based job state
-      const { existsSync, readdirSync, readFileSync } = await import('node:fs');
-      const { join } = await import('node:path');
-      const jobsDir = join(process.cwd(), '.specialists', 'jobs');
-      const jobs: any[] = [];
-      if (existsSync(jobsDir)) {
-        for (const entry of readdirSync(jobsDir)) {
-          const statusPath = join(jobsDir, entry, 'status.json');
-          if (!existsSync(statusPath)) continue;
-          try { jobs.push(JSON.parse(readFileSync(statusPath, 'utf-8'))); } catch { /* skip */ }
+      // Include active background jobs — DB-first, file fallback only when file output is on.
+      const sqliteClient = createObservabilitySqliteClient();
+      let jobs: any[] = [];
+      try {
+        const dbStatuses = sqliteClient?.listStatuses() ?? [];
+        if (dbStatuses.length > 0) {
+          jobs = dbStatuses;
+        } else if (detectJobOutputMode() === 'on') {
+          const { existsSync, readdirSync, readFileSync } = await import('node:fs');
+          const { join } = await import('node:path');
+          const jobsDir = join(process.cwd(), '.specialists', 'jobs');
+          if (existsSync(jobsDir)) {
+            for (const entry of readdirSync(jobsDir)) {
+              const statusPath = join(jobsDir, entry, 'status.json');
+              if (!existsSync(statusPath)) continue;
+              try { jobs.push(JSON.parse(readFileSync(statusPath, 'utf-8'))); } catch { /* skip */ }
+            }
+          }
         }
-        jobs.sort((a, b) => b.started_at_ms - a.started_at_ms);
+      } finally {
+        sqliteClient?.close();
       }
+      jobs.sort((a, b) => (b.started_at_ms ?? 0) - (a.started_at_ms ?? 0));
 
       return {
         loaded_count: list.length,
@@ -45,6 +58,7 @@ export function createSpecialistStatusTool(loader: SpecialistLoader, circuitBrea
           id: j.id,
           specialist: j.specialist,
           status: j.status,
+          is_dead: isJobDead({ status: j.status, pid: j.pid, tmux_session: j.tmux_session }),
           elapsed_s: j.elapsed_s,
           current_event: j.current_event,
           bead_id: j.bead_id,
