@@ -468,44 +468,83 @@ function buildInjectedReviewerDiffVariables(cwd: string, maxFiles = 20): Record<
   const MAX_TOTAL_HUNKS_CHARS = 12_000;
   const MAX_FILE_DIFF_CHARS = 2_000;
 
-  const stat = read('git diff --stat');
-  const files = read('git diff --name-only')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, maxFiles);
+  const resolveMergeBase = (): string => {
+    const headRef = read('git symbolic-ref refs/remotes/origin/HEAD');
+    const baseBranch = headRef ? headRef.split('/').pop() ?? 'main' : 'main';
+    return read(`git merge-base ${shellQuote(baseBranch)} HEAD`);
+  };
 
-  if (files.length === 0) return {};
+  type Source = {
+    label: string;
+    statCmd: string;
+    namesCmd: string;
+    diffCmd: (file: string) => string;
+  };
 
-  let remaining = MAX_TOTAL_HUNKS_CHARS;
-  const sections: string[] = [];
-  for (const file of files) {
-    if (remaining <= 0) break;
-    const diff = read(`git diff -- ${shellQuote(file)}`);
-    const truncated = diff.length > MAX_FILE_DIFF_CHARS
-      ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
+  const mergeBase = resolveMergeBase();
+  const sources: Source[] = [
+    {
+      label: 'unstaged diff',
+      statCmd: 'git diff --stat',
+      namesCmd: 'git diff --name-only',
+      diffCmd: (f) => `git diff -- ${shellQuote(f)}`,
+    },
+    {
+      label: 'staged diff',
+      statCmd: 'git diff --cached --stat',
+      namesCmd: 'git diff --cached --name-only',
+      diffCmd: (f) => `git diff --cached -- ${shellQuote(f)}`,
+    },
+    ...(mergeBase ? [{
+      label: `branch-vs-base diff (${mergeBase.slice(0, 12)}..HEAD)`,
+      statCmd: `git diff --stat ${shellQuote(mergeBase)}..HEAD`,
+      namesCmd: `git diff --name-only ${shellQuote(mergeBase)}..HEAD`,
+      diffCmd: (f: string) => `git diff ${shellQuote(mergeBase)}..HEAD -- ${shellQuote(f)}`,
+    }] : []),
+  ];
+
+  for (const src of sources) {
+    const stat = read(src.statCmd);
+    const files = read(src.namesCmd)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, maxFiles);
+
+    if (files.length === 0) continue;
+
+    let remaining = MAX_TOTAL_HUNKS_CHARS;
+    const sections: string[] = [];
+    for (const file of files) {
+      if (remaining <= 0) break;
+      const diff = read(src.diffCmd(file));
+      const truncated = diff.length > MAX_FILE_DIFF_CHARS
+        ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}
 ... [truncated]`
-      : diff;
-    const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
-    if (section.length > remaining) {
-      sections.push(`${section.slice(0, remaining)}
+        : diff;
+      const section = truncated ? `### ${file}\n${truncated}` : `### ${file}\n(no hunks)`;
+      if (section.length > remaining) {
+        sections.push(`${section.slice(0, remaining)}
 ... [truncated]`);
-      remaining = 0;
-      break;
+        remaining = 0;
+        break;
+      }
+      sections.push(section);
+      remaining -= section.length + 2;
     }
-    sections.push(section);
-    remaining -= section.length + 2;
+
+    const hunks = sections.join('\n\n');
+    if (!hunks.trim()) continue;
+
+    return {
+      reviewer_diff_source: `injected diff context (${src.label})`,
+      reviewer_diff_stat: stat || '(no stat)',
+      reviewer_diff_files: files.join('\n'),
+      reviewer_diff_hunks: hunks,
+    };
   }
 
-  const hunks = sections.join('\n\n');
-  if (!hunks.trim()) return {};
-
-  return {
-    reviewer_diff_source: 'injected diff context',
-    reviewer_diff_stat: stat || '(no stat)',
-    reviewer_diff_files: files.join('\n'),
-    reviewer_diff_hunks: hunks,
-  };
+  return {};
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
