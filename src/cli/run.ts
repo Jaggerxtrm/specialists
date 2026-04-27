@@ -77,7 +77,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let noKeepAlive = false;
   let background = false;
   let outputMode: OutputMode = 'human';
-  let contextDepth = 1;
+  let contextDepth = 3;
   let worktree = false;
   let reuseJobId: string | undefined;
   let forceJob = false;

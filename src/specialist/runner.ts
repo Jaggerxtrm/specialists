@@ -815,7 +815,7 @@ export class SpecialistRunner {
       return options.prompt;
     }
 
-    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
+    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 3));
     const blockers = contextDepth > 0
       ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth)
       : [];

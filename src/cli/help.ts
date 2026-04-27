@@ -89,7 +89,7 @@ export async function run(): Promise<void> {
     '  Rules',
     '    --bead is for tracked work',
     '    --prompt is for quick untracked work',
-    '    --context-depth defaults to 1 with --bead',
+    '    --context-depth defaults to 3 with --bead',
     '    --no-beads does not disable bead reading',
     '',
   '  Output modes',

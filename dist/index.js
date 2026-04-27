@@ -21813,7 +21813,7 @@ class SpecialistRunner {
     if (!bead) {
       return options.prompt;
     }
-    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 1));
+    const contextDepth = Math.max(0, Math.trunc(options.contextDepth ?? 3));
     const blockers = contextDepth > 0 ? beadReader.getCompletedBlockers(options.inputBeadId, contextDepth) : [];
     const baseContext = buildBeadContext(bead, blockers);
     return `${baseContext}
@@ -29088,7 +29088,7 @@ async function parseArgs6(argv) {
   let noKeepAlive = false;
   let background = false;
   let outputMode = "human";
-  let contextDepth = 1;
+  let contextDepth = 3;
   let worktree = false;
   let reuseJobId;
   let forceJob = false;
@@ -38387,7 +38387,7 @@ async function run31() {
     "  Rules",
     "    --bead is for tracked work",
     "    --prompt is for quick untracked work",
-    "    --context-depth defaults to 1 with --bead",
+    "    --context-depth defaults to 3 with --bead",
     "    --no-beads does not disable bead reading",
     "",
     "  Output modes",
@@ -46338,7 +46338,7 @@ async function run32() {
         "Options:",
         "  --bead <id>          Use an existing bead as the prompt source",
         "  --prompt <text>      Ad-hoc prompt for untracked work",
-        "  --context-depth <n>  Dependency context depth when using --bead (default: 1)",
+        "  --context-depth <n>  Dependency context depth when using --bead (default: 3)",
         "  --no-beads           Do not create a new tracking bead (does not disable bead reading)",
         "  --no-bead-notes      Do not append completion notes to an external --bead",
         "  --model <model>      Override the configured model for this run",

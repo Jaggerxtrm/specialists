@@ -361,7 +361,7 @@ async function run() {
         'Options:',
         '  --bead <id>          Use an existing bead as the prompt source',
         '  --prompt <text>      Ad-hoc prompt for untracked work',
-        '  --context-depth <n>  Dependency context depth when using --bead (default: 1)',
+        '  --context-depth <n>  Dependency context depth when using --bead (default: 3)',
         '  --no-beads           Do not create a new tracking bead (does not disable bead reading)',
         '  --no-bead-notes      Do not append completion notes to an external --bead',
         '  --model <model>      Override the configured model for this run',
