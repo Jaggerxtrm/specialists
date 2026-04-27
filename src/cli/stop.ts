@@ -5,6 +5,7 @@ import { Supervisor } from '../specialist/supervisor.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
 import { hasRunCompleteEvent } from '../specialist/observability-sqlite.js';
 import { isProcessAlive } from '../specialist/process-liveness.js';
+import { BeadsClient } from '../specialist/beads.js';
 import { killTmuxSession } from './tmux-utils.js';
 
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
@@ -136,6 +137,15 @@ export async function run(): Promise<void> {
     if (tmuxSession) {
       killTmuxSession(tmuxSession);
       process.stdout.write(`${dim(`  tmux session ${tmuxSession} killed`)}\n`);
+    }
+
+    // Auto-close linked bead if still in_progress (unitAI-9truh).
+    if (status.bead_id) {
+      const finalStatus = supervisor.readStatus(jobId)?.status ?? 'cancelled';
+      const beads = new BeadsClient();
+      if (beads.closeBeadIfInProgress(status.bead_id, `Job ${jobId} stopped (${finalStatus})`)) {
+        process.stdout.write(`${dim(`  bead ${status.bead_id} auto-closed`)}\n`);
+      }
     }
   } finally {
     await supervisor.dispose();

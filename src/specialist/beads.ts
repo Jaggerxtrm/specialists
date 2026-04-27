@@ -20,6 +20,7 @@ export interface BeadRecord {
   description?: string;
   notes?: string;
   parent?: string;
+  status?: string;
   dependencies?: BeadDependency[];
 }
 
@@ -157,6 +158,20 @@ export class BeadsClient {
     if (!this.available || !id) return;
     const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
     spawnSync('bd', ['close', id, '-r', reason], { stdio: 'ignore' });
+  }
+
+  /**
+   * Close a bead only if it is currently open or in_progress.
+   * Idempotent: no-op when bead is already closed/deferred/blocked or unreadable.
+   * Used by supervisor terminal-state writes and `sp stop` to retire linked beads automatically (unitAI-9truh).
+   */
+  closeBeadIfInProgress(id: string, reason: string): boolean {
+    if (!this.available || !id) return false;
+    const bead = this.readBead(id);
+    if (!bead) return false;
+    if (bead.status !== 'open' && bead.status !== 'in_progress') return false;
+    const result = spawnSync('bd', ['close', id, '-r', reason], { stdio: 'ignore' });
+    return result.status === 0;
   }
 
   /** Append bead notes with specialist output or metadata. */

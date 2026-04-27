@@ -1882,9 +1882,15 @@ export class Supervisor {
       }
 
       if (finalResult.beadId) {
-        // Close owned beads after notes are written. Never close input beads — orchestrator owns lifecycle.
+        // Close owned beads with full COMPLETE/duration/model reason. Auto-close input beads
+        // when still in_progress so terminal DONE status retires them (unitAI-9truh).
         if (!inputBeadId) {
           this.opts.beadsClient?.closeBead(finalResult.beadId, 'COMPLETE', finalResult.durationMs, finalResult.model);
+        } else {
+          this.opts.beadsClient?.closeBeadIfInProgress(
+            finalResult.beadId,
+            `Specialist ${runOptions.name} completed (job ${id})`,
+          );
         }
       }
       const completedAtMs = Date.now();

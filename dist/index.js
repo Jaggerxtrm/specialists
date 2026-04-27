@@ -21306,6 +21306,17 @@ class BeadsClient {
     const reason = `${status}, ${Math.round(durationMs)}ms, ${model}`;
     spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
   }
+  closeBeadIfInProgress(id, reason) {
+    if (!this.available || !id)
+      return false;
+    const bead = this.readBead(id);
+    if (!bead)
+      return false;
+    if (bead.status !== "open" && bead.status !== "in_progress")
+      return false;
+    const result = spawnSync3("bd", ["close", id, "-r", reason], { stdio: "ignore" });
+    return result.status === 0;
+  }
   updateBeadNotes(id, notes) {
     if (!this.available || !id || !notes)
       return { ok: false, error: "beads unavailable or empty payload" };
@@ -24828,6 +24839,8 @@ ${appendError}
       if (finalResult.beadId) {
         if (!inputBeadId) {
           this.opts.beadsClient?.closeBead(finalResult.beadId, "COMPLETE", finalResult.durationMs, finalResult.model);
+        } else {
+          this.opts.beadsClient?.closeBeadIfInProgress(finalResult.beadId, `Specialist ${runOptions.name} completed (job ${id})`);
         }
       }
       const completedAtMs = Date.now();
@@ -37145,6 +37158,14 @@ async function run24() {
       process.stdout.write(`${dim11(`  tmux session ${tmuxSession} killed`)}
 `);
     }
+    if (status.bead_id) {
+      const finalStatus = supervisor.readStatus(jobId)?.status ?? "cancelled";
+      const beads = new BeadsClient;
+      if (beads.closeBeadIfInProgress(status.bead_id, `Job ${jobId} stopped (${finalStatus})`)) {
+        process.stdout.write(`${dim11(`  bead ${status.bead_id} auto-closed`)}
+`);
+      }
+    }
   } finally {
     await supervisor.dispose();
   }
@@ -37155,6 +37176,7 @@ var init_stop = __esm(() => {
   init_job_root();
   init_observability_sqlite();
   init_process_liveness();
+  init_beads();
   init_tmux_utils();
 });
 
