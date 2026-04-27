@@ -3,7 +3,6 @@
     "core-session-boundary"
   ],
   "default_template_sets": [
-    "git-workflow-safe",
-    "serena-cheatsheet"
+    "git-workflow-safe"
   ]
 }
