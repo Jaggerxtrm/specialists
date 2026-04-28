@@ -50,6 +50,7 @@ export interface ScriptRunnerOptions {
   fallbackModel?: string;
   observabilityDbPath?: string;
   onChild?: (child: ChildProcess) => void;
+  onAuditFailure?: (error: unknown) => void;
 }
 
 function hasUnsubstitutedVariables(template: string): string | null {
@@ -155,7 +156,7 @@ function extractPiErrorMessage(lines: string[]): string | null {
   return null;
 }
 
-function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number): void {
+function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number, onAuditFailure?: (error: unknown) => void): void {
   if (!client) return;
   const status = {
     id: traceId,
@@ -167,8 +168,12 @@ function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient
     last_event_at_ms: Date.now(),
     surface: 'script_specialist',
   } as unknown as SupervisorStatus;
-  client.upsertStatus(status);
-  client.upsertResult(traceId, output);
+  try {
+    client.upsertStatus(status);
+    client.upsertResult(traceId, output);
+  } catch (error: unknown) {
+    onAuditFailure?.(error);
+  }
 }
 
 function openObservabilityClient(options: ScriptRunnerOptions): ReturnType<typeof createObservabilitySqliteClient> {
@@ -230,7 +235,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const text = extractAssistantText(stdout.split(/\r?\n/));
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
-    if (input.trace !== false && observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs);
+    if (input.trace !== false && observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, options.onAuditFailure);
 
     if (outputTooLarge) {
       return { success: false, error: 'stdout exceeded 4MB cap', error_type: 'output_too_large', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };

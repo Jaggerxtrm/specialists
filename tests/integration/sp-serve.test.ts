@@ -63,6 +63,61 @@ afterEach(() => {
 });
 
 describe('sp serve', () => {
+  async function startServer(port: number, extraArgs: string[] = []): Promise<void> {
+    server = spawn('bun', ['src/index.ts', 'serve', '--port', String(port), '--user-dir', tempRoot, ...extraArgs], {
+      cwd: originalCwd,
+      env: { ...process.env, PATH: `${join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`, HOME: tempRoot },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('server start timeout')), 10_000);
+      server?.stdout?.on('data', (chunk) => {
+        if (String(chunk).includes('sp serve listening on')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      if (server) {
+        server.once('exit', (code) => {
+          clearTimeout(timer);
+          reject(new Error(`server exit ${code ?? 'unknown'}`));
+        });
+      }
+    });
+  }
+
+  it('healthz responds 200 regardless of readiness', async () => {
+    const port = 8124;
+    await startServer(port);
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(response.status).toBe(200);
+    const body = await response.json() as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+
+  it('readyz returns 503 pi_config_unreadable when no pi auth file', async () => {
+    const port = 8125;
+    await startServer(port);
+    const response = await fetch(`http://127.0.0.1:${port}/readyz`);
+    expect(response.status).toBe(503);
+    const body = await response.json() as { ready: boolean; reason: string; db_write_failures_total: number };
+    expect(body.ready).toBe(false);
+    expect(body.reason).toBe('pi_config_unreadable');
+    expect(body.db_write_failures_total).toBe(0);
+  });
+
+  it('readyz returns 200 ready when pi auth + db + spec all present', async () => {
+    mkdirSync(join(tempRoot, '.pi', 'agent'), { recursive: true });
+    writeFileSync(join(tempRoot, '.pi', 'agent', 'auth.json'), '{}');
+    const port = 8126;
+    await startServer(port);
+    // Hit /v1/generate first to materialize the DB file (server creates it on init).
+    const ready = await fetch(`http://127.0.0.1:${port}/readyz`);
+    expect(ready.status).toBe(200);
+    const body = await ready.json() as { ready: boolean };
+    expect(body.ready).toBe(true);
+  });
+
   it('serves generate and writes observability row', async () => {
     const port = 8123;
     server = spawn('bun', ['src/index.ts', 'serve', '--port', String(port), '--user-dir', tempRoot], {
@@ -79,10 +134,12 @@ describe('sp serve', () => {
           resolve();
         }
       });
-      server?.once('exit', (code) => {
-        clearTimeout(timer);
-        reject(new Error(`server exit ${code ?? 'unknown'}`));
-      });
+      if (server) {
+        server.once('exit', (code) => {
+          clearTimeout(timer);
+          reject(new Error(`server exit ${code ?? 'unknown'}`));
+        });
+      }
     });
 
     const response = await fetch(`http://127.0.0.1:${port}/v1/generate`, {

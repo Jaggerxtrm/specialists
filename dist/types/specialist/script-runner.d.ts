@@ -40,6 +40,7 @@ export interface ScriptRunnerOptions {
     fallbackModel?: string;
     observabilityDbPath?: string;
     onChild?: (child: ChildProcess) => void;
+    onAuditFailure?: (error: unknown) => void;
 }
 export declare function compatGuard(spec: Specialist): void;
 export declare function renderTaskTemplate(template: string, variables: Record<string, string>): string;

@@ -8949,7 +8949,7 @@ function extractPiErrorMessage(lines) {
   }
   return null;
 }
-function writeTraceRow(client, specialist, model, traceId, output, durationMs) {
+function writeTraceRow(client, specialist, model, traceId, output, durationMs, onAuditFailure) {
   if (!client)
     return;
   const status = {
@@ -8962,8 +8962,12 @@ function writeTraceRow(client, specialist, model, traceId, output, durationMs) {
     last_event_at_ms: Date.now(),
     surface: "script_specialist"
   };
-  client.upsertStatus(status);
-  client.upsertResult(traceId, output);
+  try {
+    client.upsertStatus(status);
+    client.upsertResult(traceId, output);
+  } catch (error) {
+    onAuditFailure?.(error);
+  }
 }
 function openObservabilityClient(options) {
   const dbPath = options.observabilityDbPath ?? options.projectDir;
@@ -9019,7 +9023,7 @@ async function runScriptSpecialist(input, options) {
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
     if (input.trace !== false && observability)
-      writeTraceRow(observability, input.specialist, model, traceId, text, durationMs);
+      writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, options.onAuditFailure);
     if (outputTooLarge) {
       return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }

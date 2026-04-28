@@ -27464,7 +27464,7 @@ function extractPiErrorMessage(lines) {
   }
   return null;
 }
-function writeTraceRow(client, specialist, model, traceId, output2, durationMs) {
+function writeTraceRow(client, specialist, model, traceId, output2, durationMs, onAuditFailure) {
   if (!client)
     return;
   const status = {
@@ -27477,8 +27477,12 @@ function writeTraceRow(client, specialist, model, traceId, output2, durationMs) 
     last_event_at_ms: Date.now(),
     surface: "script_specialist"
   };
-  client.upsertStatus(status);
-  client.upsertResult(traceId, output2);
+  try {
+    client.upsertStatus(status);
+    client.upsertResult(traceId, output2);
+  } catch (error2) {
+    onAuditFailure?.(error2);
+  }
 }
 function openObservabilityClient(options) {
   const dbPath = options.observabilityDbPath ?? options.projectDir;
@@ -27534,7 +27538,7 @@ async function runScriptSpecialist(input2, options) {
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
     if (input2.trace !== false && observability)
-      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs);
+      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs, options.onAuditFailure);
     if (outputTooLarge) {
       return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }
@@ -38445,10 +38449,78 @@ var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m
 var exports_serve = {};
 __export(exports_serve, {
   startServe: () => startServe,
-  run: () => run30
+  run: () => run30,
+  recordAuditFailure: () => recordAuditFailure,
+  evaluateReadiness: () => evaluateReadiness2,
+  createReadinessState: () => createReadinessState
 });
 import { createServer } from "http";
 import { once } from "events";
+import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
+import { existsSync as existsSync28 } from "fs";
+import { homedir as homedir3 } from "os";
+import { join as join30 } from "path";
+function createReadinessState() {
+  return { shuttingDown: false, auditFailures: [], dbWriteFailuresTotal: 0 };
+}
+function recordAuditFailure(state, now = Date.now()) {
+  state.auditFailures.push(now);
+  state.dbWriteFailuresTotal++;
+  pruneAuditFailures(state, now);
+}
+function pruneAuditFailures(state, now = Date.now()) {
+  const cutoff = now - AUDIT_WINDOW_MS;
+  while (state.auditFailures.length > 0 && state.auditFailures[0] < cutoff) {
+    state.auditFailures.shift();
+  }
+}
+async function checkUserDirSpecs(userDir) {
+  if (!existsSync28(userDir))
+    return "empty";
+  const entries = await readdir2(userDir).catch(() => []);
+  const specFiles = entries.filter((name) => name.endsWith(".specialist.json") || name.endsWith(".specialist.yaml"));
+  if (specFiles.length === 0)
+    return "empty";
+  let validCount = 0;
+  for (const file of specFiles) {
+    try {
+      const content = await readFile4(join30(userDir, file), "utf-8");
+      const json = file.endsWith(".json") ? content : null;
+      if (!json)
+        continue;
+      await parseSpecialist(json);
+      validCount++;
+    } catch {}
+  }
+  return validCount > 0 ? "ok" : "invalid";
+}
+async function evaluateReadiness2(opts) {
+  const now = opts.now ?? Date.now();
+  if (opts.state.shuttingDown)
+    return { ready: false, reason: "draining" };
+  pruneAuditFailures(opts.state, now);
+  if (opts.state.auditFailures.length > opts.auditFailureThreshold) {
+    return { ready: false, reason: "degraded:audit" };
+  }
+  const piConfigPath = opts.piConfigPath ?? join30(homedir3(), ".pi", "agent", "auth.json");
+  try {
+    await access(piConfigPath, constants.R_OK);
+  } catch {
+    return { ready: false, reason: "pi_config_unreadable" };
+  }
+  try {
+    await access(opts.dbPath, constants.W_OK);
+  } catch {
+    return { ready: false, reason: "db_not_writable" };
+  }
+  const userDir = join30(opts.projectDir, ".specialists", "user");
+  const userDirResult = await checkUserDirSpecs(userDir);
+  if (userDirResult === "empty")
+    return { ready: false, reason: "empty_user_dir" };
+  if (userDirResult === "invalid")
+    return { ready: false, reason: "invalid_spec_in_user_dir" };
+  return { ready: true };
+}
 function parseArgs12(argv) {
   let port = 8000;
   let concurrency = 4;
@@ -38456,6 +38528,7 @@ function parseArgs12(argv) {
   let shutdownGraceMs = 30000;
   let projectDir = process.cwd();
   let fallbackModel;
+  let auditFailureThreshold = 5;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--port" && argv[i + 1])
@@ -38470,8 +38543,10 @@ function parseArgs12(argv) {
       projectDir = argv[++i];
     else if (token === "--fallback-model" && argv[i + 1])
       fallbackModel = argv[++i];
+    else if (token === "--audit-failure-threshold" && argv[i + 1])
+      auditFailureThreshold = Number(argv[++i]);
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -38501,15 +38576,31 @@ async function startServe(argv = process.argv.slice(3)) {
   const dbLocation = resolveObservabilityDbLocation(args.projectDir);
   ensureObservabilityDbFile(dbLocation);
   const db = createObservabilitySqliteClient(args.projectDir);
+  const readinessState = createReadinessState();
   let active = 0;
-  let shuttingDown = false;
   const children = new Set;
   const server = createServer(async (req, res) => {
     if (req.url === "/healthz")
       return sendJson(res, 200, { ok: true });
+    if (req.url === "/readyz") {
+      const result = await evaluateReadiness2({
+        state: readinessState,
+        projectDir: args.projectDir,
+        dbPath: dbLocation.dbPath,
+        auditFailureThreshold: args.auditFailureThreshold
+      });
+      if (result.ready) {
+        return sendJson(res, 200, { ready: true, db_write_failures_total: readinessState.dbWriteFailuresTotal });
+      }
+      return sendJson(res, 503, {
+        ready: false,
+        reason: result.reason,
+        db_write_failures_total: readinessState.dbWriteFailuresTotal
+      });
+    }
     if (req.method !== "POST" || req.url !== "/v1/generate")
       return sendJson(res, 404, { success: false, error: "not_found", error_type: "internal" });
-    if (shuttingDown)
+    if (readinessState.shuttingDown)
       return sendJson(res, 503, { success: false, error: "shutting_down", error_type: "internal" });
     const entered = await waitForSlot(args.concurrency, args.queueTimeoutMs, () => active);
     if (!entered)
@@ -38526,10 +38617,16 @@ async function startServe(argv = process.argv.slice(3)) {
         }
         if (!isValidRequest(parsed))
           return sendJson(res, 400, { success: false, error: "malformed_request", error_type: "invalid_json" });
-        const result = await runScriptSpecialist(parsed, { loader, fallbackModel: args.fallbackModel, observabilityDbPath: args.projectDir, onChild: (child) => {
-          children.add(child);
-          child.once("exit", () => children.delete(child));
-        } });
+        const result = await runScriptSpecialist(parsed, {
+          loader,
+          fallbackModel: args.fallbackModel,
+          observabilityDbPath: args.projectDir,
+          onChild: (child) => {
+            children.add(child);
+            child.once("exit", () => children.delete(child));
+          },
+          onAuditFailure: () => recordAuditFailure(readinessState)
+        });
         return sendJson(res, 200, result);
       } finally {
         active--;
@@ -38539,7 +38636,7 @@ async function startServe(argv = process.argv.slice(3)) {
   });
   server.listen(args.port);
   process.on("SIGTERM", () => {
-    shuttingDown = true;
+    readinessState.shuttingDown = true;
     server.close();
     for (const child of children)
       child.kill("SIGTERM");
@@ -38555,16 +38652,18 @@ async function startServe(argv = process.argv.slice(3)) {
   });
   await once(server, "listening");
   console.log(`sp serve listening on ${args.port}`);
-  return { server, args, db };
+  return { server, args, db, readinessState };
 }
 async function run30(argv = process.argv.slice(3)) {
   await startServe(argv);
 }
+var AUDIT_WINDOW_MS = 60000;
 var init_serve = __esm(() => {
   init_loader();
   init_script_runner();
   init_observability_sqlite();
   init_observability_db();
+  init_schema();
 });
 
 // src/cli/script.ts
