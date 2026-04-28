@@ -10,6 +10,7 @@ import { runScriptSpecialist, type ScriptGenerateRequest } from '../specialist/s
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from '../specialist/observability-db.js';
 import { parseSpecialist } from '../specialist/schema.js';
+import { createUserDirWatcher } from './serve-hot-reload.js';
 
 interface ServeArgs {
   port: number;
@@ -22,6 +23,7 @@ interface ServeArgs {
   allowSkills: boolean;
   allowSkillsRoots: string[];
   allowLocalScripts: boolean;
+  reloadPollMs: number;
 }
 
 const AUDIT_WINDOW_MS = 60_000;
@@ -128,6 +130,7 @@ function parseArgs(argv: string[]): ServeArgs {
   let allowSkills = false;
   let allowSkillsRoots: string[] = [];
   let allowLocalScripts = false;
+  let reloadPollMs = 0;
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -141,9 +144,10 @@ function parseArgs(argv: string[]): ServeArgs {
     else if (token === '--allow-skills') allowSkills = true;
     else if (token === '--allow-skills-roots' && argv[i + 1]) allowSkillsRoots = argv[++i].split(':').filter(Boolean);
     else if (token === '--allow-local-scripts') allowLocalScripts = true;
+    else if (token === '--reload-poll-ms' && argv[i + 1]) reloadPollMs = Number(argv[++i]);
   }
 
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts, reloadPollMs };
 }
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
@@ -177,6 +181,8 @@ export async function startServe(argv: string[] = process.argv.slice(3)) {
   ensureObservabilityDbFile(dbLocation);
   const db = createObservabilitySqliteClient(args.projectDir);
   const readinessState = createReadinessState();
+  const userDir = join(args.projectDir, '.specialists', 'user');
+  const hotReload = createUserDirWatcher({ loader, userDir, pollMs: args.reloadPollMs });
   let active = 0;
   const children = new Set<ChildProcess>();
 
@@ -236,6 +242,7 @@ export async function startServe(argv: string[] = process.argv.slice(3)) {
   server.listen(args.port);
   process.on('SIGTERM', () => {
     readinessState.shuttingDown = true;
+    hotReload.stop();
     server.close();
     for (const child of children) child.kill('SIGTERM');
     void (async () => {

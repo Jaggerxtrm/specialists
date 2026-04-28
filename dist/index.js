@@ -38478,6 +38478,105 @@ async function run29() {
 }
 var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`;
 
+// src/cli/serve-hot-reload.ts
+import { existsSync as existsSync28, readdirSync as readdirSync14, statSync as statSync5, watch as fsWatch } from "fs";
+import { join as join30 } from "path";
+function specialistNameFromFile(file) {
+  const match = file.match(/^(.+)\.specialist\.(json|yaml)$/);
+  return match ? match[1] : null;
+}
+function snapshotMtimes(dir) {
+  const out = new Map;
+  if (!existsSync28(dir))
+    return out;
+  const entries = readdirSync14(dir).filter((name) => specialistNameFromFile(name) !== null);
+  for (const name of entries) {
+    try {
+      out.set(name, statSync5(join30(dir, name)).mtimeMs);
+    } catch {}
+  }
+  return out;
+}
+function diffMtimes(prev, next) {
+  const changed = [];
+  for (const [file, mtime] of next) {
+    const prior = prev.get(file);
+    if (prior === undefined || prior !== mtime)
+      changed.push(file);
+  }
+  for (const file of prev.keys()) {
+    if (!next.has(file))
+      changed.push(file);
+  }
+  return changed;
+}
+function createUserDirWatcher(opts) {
+  const debounceMs = opts.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+  const pendingChanges = new Set;
+  let debounceTimer = null;
+  const flush = () => {
+    debounceTimer = null;
+    const changedFiles = Array.from(pendingChanges);
+    pendingChanges.clear();
+    if (changedFiles.length === 0)
+      return;
+    const changedNames = changedFiles.map((f) => specialistNameFromFile(f)).filter((n) => Boolean(n));
+    if (changedNames.length === 0) {
+      opts.loader.invalidateCache();
+    } else {
+      for (const name of changedNames)
+        opts.loader.invalidateCache(name);
+    }
+    opts.onReload?.(changedNames);
+  };
+  const queue = (file) => {
+    if (file && specialistNameFromFile(file))
+      pendingChanges.add(file);
+    else
+      pendingChanges.add("");
+    if (debounceTimer)
+      clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(flush, debounceMs);
+  };
+  let watcher = null;
+  let pollHandle = null;
+  if (opts.pollMs && opts.pollMs > 0) {
+    let lastSnapshot = snapshotMtimes(opts.userDir);
+    pollHandle = setInterval(() => {
+      const next = snapshotMtimes(opts.userDir);
+      const changed = diffMtimes(lastSnapshot, next);
+      lastSnapshot = next;
+      for (const file of changed)
+        queue(file);
+    }, opts.pollMs);
+  } else if (existsSync28(opts.userDir)) {
+    try {
+      watcher = fsWatch(opts.userDir, { persistent: false }, (_eventType, filename) => {
+        queue(filename ? String(filename) : null);
+      });
+    } catch {}
+  }
+  return {
+    stop() {
+      if (debounceTimer)
+        clearTimeout(debounceTimer);
+      debounceTimer = null;
+      if (watcher) {
+        try {
+          watcher.close();
+        } catch {}
+        watcher = null;
+      }
+      if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+      }
+    }
+  };
+}
+var DEFAULT_DEBOUNCE_MS = 300;
+var init_serve_hot_reload = () => {};
+
 // src/cli/serve.ts
 var exports_serve = {};
 __export(exports_serve, {
@@ -38490,9 +38589,9 @@ __export(exports_serve, {
 import { createServer } from "http";
 import { once } from "events";
 import { access, readdir as readdir2, readFile as readFile4, constants } from "fs/promises";
-import { existsSync as existsSync28 } from "fs";
+import { existsSync as existsSync29 } from "fs";
 import { homedir as homedir3 } from "os";
-import { join as join30 } from "path";
+import { join as join31 } from "path";
 function createReadinessState() {
   return { shuttingDown: false, auditFailures: [], dbWriteFailuresTotal: 0 };
 }
@@ -38508,7 +38607,7 @@ function pruneAuditFailures(state, now = Date.now()) {
   }
 }
 async function checkUserDirSpecs(userDir) {
-  if (!existsSync28(userDir))
+  if (!existsSync29(userDir))
     return "empty";
   const entries = await readdir2(userDir).catch(() => []);
   const specFiles = entries.filter((name) => name.endsWith(".specialist.json") || name.endsWith(".specialist.yaml"));
@@ -38517,7 +38616,7 @@ async function checkUserDirSpecs(userDir) {
   let validCount = 0;
   for (const file of specFiles) {
     try {
-      const content = await readFile4(join30(userDir, file), "utf-8");
+      const content = await readFile4(join31(userDir, file), "utf-8");
       const json = file.endsWith(".json") ? content : null;
       if (!json)
         continue;
@@ -38535,7 +38634,7 @@ async function evaluateReadiness2(opts) {
   if (opts.state.auditFailures.length > opts.auditFailureThreshold) {
     return { ready: false, reason: "degraded:audit" };
   }
-  const piConfigPath = opts.piConfigPath ?? join30(homedir3(), ".pi", "agent", "auth.json");
+  const piConfigPath = opts.piConfigPath ?? join31(homedir3(), ".pi", "agent", "auth.json");
   try {
     await access(piConfigPath, constants.R_OK);
   } catch {
@@ -38546,7 +38645,7 @@ async function evaluateReadiness2(opts) {
   } catch {
     return { ready: false, reason: "db_not_writable" };
   }
-  const userDir = join30(opts.projectDir, ".specialists", "user");
+  const userDir = join31(opts.projectDir, ".specialists", "user");
   const userDirResult = await checkUserDirSpecs(userDir);
   if (userDirResult === "empty")
     return { ready: false, reason: "empty_user_dir" };
@@ -38565,6 +38664,7 @@ function parseArgs12(argv) {
   let allowSkills = false;
   let allowSkillsRoots = [];
   let allowLocalScripts = false;
+  let reloadPollMs = 0;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--port" && argv[i + 1])
@@ -38587,8 +38687,10 @@ function parseArgs12(argv) {
       allowSkillsRoots = argv[++i].split(":").filter(Boolean);
     else if (token === "--allow-local-scripts")
       allowLocalScripts = true;
+    else if (token === "--reload-poll-ms" && argv[i + 1])
+      reloadPollMs = Number(argv[++i]);
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts, reloadPollMs };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -38619,6 +38721,8 @@ async function startServe(argv = process.argv.slice(3)) {
   ensureObservabilityDbFile(dbLocation);
   const db = createObservabilitySqliteClient(args.projectDir);
   const readinessState = createReadinessState();
+  const userDir = join31(args.projectDir, ".specialists", "user");
+  const hotReload = createUserDirWatcher({ loader, userDir, pollMs: args.reloadPollMs });
   let active = 0;
   const children = new Set;
   const server = createServer(async (req, res) => {
@@ -38684,6 +38788,7 @@ async function startServe(argv = process.argv.slice(3)) {
   server.listen(args.port);
   process.on("SIGTERM", () => {
     readinessState.shuttingDown = true;
+    hotReload.stop();
     server.close();
     for (const child of children)
       child.kill("SIGTERM");
@@ -38711,6 +38816,7 @@ var init_serve = __esm(() => {
   init_observability_sqlite();
   init_observability_db();
   init_schema();
+  init_serve_hot_reload();
 });
 
 // src/cli/script.ts
