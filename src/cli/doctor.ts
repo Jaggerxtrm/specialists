@@ -46,6 +46,7 @@ const CONFIG_MANDATORY_RULES_DIR = join(CWD, 'config', 'mandatory-rules');
 const CONFIG_NODES_DIR = join(CWD, 'config', 'nodes');
 const SPECIALISTS_DIR = join(CWD, '.specialists');
 const DEFAULT_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'default');
+const USER_SPECIALISTS_DIR = join(SPECIALISTS_DIR, 'user');
 const HOOKS_DIR = join(CWD, '.xtrm', 'hooks', 'specialists');
 const CLAUDE_HOOKS_DIR = join(CLAUDE_DIR, 'hooks');
 const SETTINGS_FILE = join(CLAUDE_DIR, 'settings.json');
@@ -414,6 +415,53 @@ function checkManagedAssetMirrors(): boolean {
   return specialistsOk && rulesOk && nodesOk;
 }
 
+function checkUserOverlayDrift(): boolean {
+  section('User specialist overlays');
+  if (!existsSync(USER_SPECIALISTS_DIR)) {
+    ok('no user overlays present');
+    return true;
+  }
+  const overlays = readdirSync(USER_SPECIALISTS_DIR).filter((name) => name.endsWith('.specialist.json'));
+  if (overlays.length === 0) {
+    ok('no user overlays present');
+    return true;
+  }
+  let allOk = true;
+  for (const name of overlays) {
+    const userPath = join(USER_SPECIALISTS_DIR, name);
+    const defaultPath = join(DEFAULT_SPECIALISTS_DIR, name);
+    const userSpec = loadJson(userPath);
+    if (!userSpec) {
+      warn(`${name}: failed to parse — skipping drift check`);
+      continue;
+    }
+    if (!existsSync(defaultPath)) {
+      ok(`${name}: user-only overlay (no default to drift from)`);
+      continue;
+    }
+    const defaultSpec = loadJson(defaultPath);
+    if (!defaultSpec) {
+      warn(`${name}: default failed to parse — skipping drift check`);
+      continue;
+    }
+    const userInner = (userSpec.specialist ?? {}) as JsonRecord;
+    const defaultInner = (defaultSpec.specialist ?? {}) as JsonRecord;
+    const userRules = ((userInner.mandatory_rules ?? {}) as { template_sets?: unknown }).template_sets;
+    const defaultRules = ((defaultInner.mandatory_rules ?? {}) as { template_sets?: unknown }).template_sets;
+    const userSets = Array.isArray(userRules) ? userRules : [];
+    const defaultSets = Array.isArray(defaultRules) ? defaultRules : [];
+    const missingSets = defaultSets.filter((set) => !userSets.includes(set as string));
+    if (missingSets.length > 0) {
+      warn(`${name}: user overlay shadows default but is missing mandatory_rules.template_sets: [${missingSets.join(', ')}]`);
+      hint('user overlay silently disables these rules at runtime; either add them to the overlay or delete the overlay to fall back to default.');
+      allOk = false;
+    } else {
+      ok(`${name}: mandatory_rules in sync with default`);
+    }
+  }
+  return allOk;
+}
+
 function checkRuntimeDirs(): boolean {
   section('.specialists/ runtime directories');
   const rootDir = join(CWD, '.specialists');
@@ -666,10 +714,11 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   const mcpOk = checkMCP();
   const skillDriftOk = checkSkillDrift();
   const mirrorOk = checkManagedAssetMirrors();
+  const userOverlayOk = checkUserOverlayDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
 
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && mirrorOk && dirsOk && jobsOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk;
   console.log('');
   if (allOk) {
     console.log(`  ${green('✓')} ${bold('All checks passed')}  — specialists is healthy`);

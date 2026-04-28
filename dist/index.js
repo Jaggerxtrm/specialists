@@ -38100,6 +38100,52 @@ function checkManagedAssetMirrors() {
   const nodesOk = checkManagedMirror("nodes", CONFIG_NODES_DIR, join29(DEFAULT_SPECIALISTS_DIR, "nodes"), "specialists init --sync-defaults");
   return specialistsOk && rulesOk && nodesOk;
 }
+function checkUserOverlayDrift() {
+  section3("User specialist overlays");
+  if (!existsSync27(USER_SPECIALISTS_DIR)) {
+    ok3("no user overlays present");
+    return true;
+  }
+  const overlays = readdirSync13(USER_SPECIALISTS_DIR).filter((name) => name.endsWith(".specialist.json"));
+  if (overlays.length === 0) {
+    ok3("no user overlays present");
+    return true;
+  }
+  let allOk = true;
+  for (const name of overlays) {
+    const userPath = join29(USER_SPECIALISTS_DIR, name);
+    const defaultPath = join29(DEFAULT_SPECIALISTS_DIR, name);
+    const userSpec = loadJson2(userPath);
+    if (!userSpec) {
+      warn3(`${name}: failed to parse \u2014 skipping drift check`);
+      continue;
+    }
+    if (!existsSync27(defaultPath)) {
+      ok3(`${name}: user-only overlay (no default to drift from)`);
+      continue;
+    }
+    const defaultSpec = loadJson2(defaultPath);
+    if (!defaultSpec) {
+      warn3(`${name}: default failed to parse \u2014 skipping drift check`);
+      continue;
+    }
+    const userInner = userSpec.specialist ?? {};
+    const defaultInner = defaultSpec.specialist ?? {};
+    const userRules = (userInner.mandatory_rules ?? {}).template_sets;
+    const defaultRules = (defaultInner.mandatory_rules ?? {}).template_sets;
+    const userSets = Array.isArray(userRules) ? userRules : [];
+    const defaultSets = Array.isArray(defaultRules) ? defaultRules : [];
+    const missingSets = defaultSets.filter((set2) => !userSets.includes(set2));
+    if (missingSets.length > 0) {
+      warn3(`${name}: user overlay shadows default but is missing mandatory_rules.template_sets: [${missingSets.join(", ")}]`);
+      hint("user overlay silently disables these rules at runtime; either add them to the overlay or delete the overlay to fall back to default.");
+      allOk = false;
+    } else {
+      ok3(`${name}: mandatory_rules in sync with default`);
+    }
+  }
+  return allOk;
+}
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
   const rootDir = join29(CWD, ".specialists");
@@ -38329,9 +38375,10 @@ ${bold13("specialists doctor")}
   const mcpOk = checkMCP();
   const skillDriftOk = checkSkillDrift();
   const mirrorOk = checkManagedAssetMirrors();
+  const userOverlayOk = checkUserOverlayDrift();
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && mirrorOk && dirsOk && jobsOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk;
   console.log("");
   if (allOk) {
     console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
@@ -38341,7 +38388,7 @@ ${bold13("specialists doctor")}
   }
   console.log("");
 }
-var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, CONFIG_SPECIALISTS_DIR, CONFIG_MANDATORY_RULES_DIR, CONFIG_NODES_DIR, SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
+var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, ACTIVE_CLAUDE_SKILLS_DIR, ACTIVE_PI_SKILLS_DIR, CONFIG_SKILLS_DIR, CONFIG_SPECIALISTS_DIR, CONFIG_MANDATORY_RULES_DIR, CONFIG_NODES_DIR, SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, USER_SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   init_observability_sqlite();
   CWD = process.cwd();
@@ -38358,6 +38405,7 @@ var init_doctor = __esm(() => {
   CONFIG_NODES_DIR = join29(CWD, "config", "nodes");
   SPECIALISTS_DIR = join29(CWD, ".specialists");
   DEFAULT_SPECIALISTS_DIR = join29(SPECIALISTS_DIR, "default");
+  USER_SPECIALISTS_DIR = join29(SPECIALISTS_DIR, "user");
   HOOKS_DIR = join29(CWD, ".xtrm", "hooks", "specialists");
   CLAUDE_HOOKS_DIR = join29(CLAUDE_DIR, "hooks");
   SETTINGS_FILE = join29(CLAUDE_DIR, "settings.json");
