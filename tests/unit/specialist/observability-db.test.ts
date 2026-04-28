@@ -8,6 +8,7 @@ import type { ObservabilityDbLocation } from '../../../src/specialist/observabil
 describe('observability-db', () => {
   let tempDir: string;
   let tempDbLocation: ObservabilityDbLocation;
+  const ORIGINAL_XDG = process.env.XDG_DATA_HOME;
 
   beforeEach(() => {
     tempDir = join(tmpdir(), `test-obs-db-${crypto.randomUUID()}`);
@@ -23,6 +24,8 @@ describe('observability-db', () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    if (ORIGINAL_XDG === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = ORIGINAL_XDG;
   });
 
   describe('OBSERVABILITY_SCHEMA_VERSION', () => {
