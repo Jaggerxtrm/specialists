@@ -27361,12 +27361,13 @@ var init_db = __esm(() => {
 
 // src/specialist/script-runner.ts
 import { spawn as spawn3 } from "child_process";
-import { randomUUID } from "crypto";
+import { createHash as createHash3, randomUUID } from "crypto";
+import { readFileSync as readFileSync11 } from "fs";
 function hasUnsubstitutedVariables(template) {
   const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
   return match?.[1] ?? null;
 }
-function compatGuard(spec) {
+function compatGuard(spec, trust) {
   const execution = spec.specialist.execution;
   if (execution.interactive)
     throw new Error("interactive specialists are not allowed");
@@ -27374,8 +27375,38 @@ function compatGuard(spec) {
     throw new Error("worktree specialists are not allowed");
   if (execution.permission_required !== "READ_ONLY")
     throw new Error("permission_required must be READ_ONLY");
-  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
-    throw new Error("scripts not allowed");
+  const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
+  if (hasScripts && !trust?.allowLocalScripts) {
+    throw new Error("scripts not allowed (enable with --allow-local-scripts)");
+  }
+  const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
+  const hasSkillInherit = Boolean(spec.specialist.prompt.skill_inherit);
+  if ((hasPaths || hasSkillInherit) && !trust?.allowSkills) {
+    throw new Error("skills not allowed (enable with --allow-skills)");
+  }
+  if (hasPaths && trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+    const paths = spec.specialist.skills?.paths ?? [];
+    for (const path of paths) {
+      const allowed = trust.allowSkillsRoots.some((root) => path.startsWith(root));
+      if (!allowed) {
+        throw new Error(`skill path '${path}' not under any --allow-skills-roots entry`);
+      }
+    }
+  }
+}
+function computeSkillSources(spec) {
+  const paths = spec.specialist.skills?.paths ?? [];
+  const sources = [];
+  for (const path of paths) {
+    try {
+      const content = readFileSync11(path);
+      const sha256 = createHash3("sha256").update(content).digest("hex");
+      sources.push({ path, sha256 });
+    } catch {
+      sources.push({ path, sha256: "unreadable" });
+    }
+  }
+  return sources;
 }
 function renderTaskTemplate(template, variables) {
   const output2 = renderTemplate(template, variables);
@@ -27464,7 +27495,7 @@ function extractPiErrorMessage(lines) {
   }
   return null;
 }
-function writeTraceRow(client, specialist, model, traceId, output2, durationMs, onAuditFailure) {
+function writeTraceRow(client, specialist, model, traceId, output2, durationMs, skillSources, onAuditFailure) {
   if (!client)
     return;
   const status = {
@@ -27475,7 +27506,8 @@ function writeTraceRow(client, specialist, model, traceId, output2, durationMs, 
     started_at_ms: Date.now() - durationMs,
     elapsed_s: durationMs / 1000,
     last_event_at_ms: Date.now(),
-    surface: "script_specialist"
+    surface: "script_specialist",
+    ...skillSources && skillSources.length > 0 ? { skill_sources: skillSources } : {}
   };
   try {
     client.upsertStatus(status);
@@ -27493,7 +27525,8 @@ async function runScriptSpecialist(input2, options) {
   const startedAt = Date.now();
   try {
     const spec = await options.loader.get(input2.specialist);
-    compatGuard(spec);
+    compatGuard(spec, options.trust);
+    const skillSources = options.trust?.allowSkills ? computeSkillSources(spec) : undefined;
     const template = input2.template ?? spec.specialist.prompt.task_template;
     const prompt = renderTaskTemplate(template, input2.variables ?? {});
     const model = input2.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
@@ -27538,7 +27571,7 @@ async function runScriptSpecialist(input2, options) {
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
     if (input2.trace !== false && observability)
-      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs, options.onAuditFailure);
+      writeTraceRow(observability, input2.specialist, model, traceId, text, durationMs, skillSources, options.onAuditFailure);
     if (outputTooLarge) {
       return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input2.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }
@@ -27729,7 +27762,7 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run11
 });
-import { existsSync as existsSync14, mkdirSync as mkdirSync6, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync6, readFileSync as readFileSync12, writeFileSync as writeFileSync6 } from "fs";
 import { join as join13 } from "path";
 function loadPresets() {
   const paths = [
@@ -27739,7 +27772,7 @@ function loadPresets() {
   for (const p of paths) {
     if (existsSync14(p)) {
       try {
-        const data = JSON.parse(readFileSync11(p, "utf-8"));
+        const data = JSON.parse(readFileSync12(p, "utf-8"));
         return data;
       } catch {
         return {};
@@ -28085,7 +28118,7 @@ function getRawValue(args, resolvedPath) {
   if (!MULTILINE_FILE_PATHS.has(resolvedPath.normalizedPath)) {
     fail(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
   }
-  return readFileSync11(args.filePath, "utf-8");
+  return readFileSync12(args.filePath, "utf-8");
 }
 function getAtPath(root, segments) {
   let current = root;
@@ -28153,7 +28186,7 @@ ${bold9(`[dry-run] ${filePath}`)}
 }
 function readJsonFile2(filePath) {
   try {
-    const parsed = JSON.parse(readFileSync11(filePath, "utf-8"));
+    const parsed = JSON.parse(readFileSync12(filePath, "utf-8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       fail(`Error: specialist file must contain a JSON object (${filePath})`);
     }
@@ -28217,7 +28250,7 @@ async function run11() {
     }
     const targets2 = await resolveTargets(args);
     for (const target of targets2) {
-      const raw = readFileSync11(target.filePath, "utf-8");
+      const raw = readFileSync12(target.filePath, "utf-8");
       const doc2 = JSON.parse(raw);
       for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
         const resolved = resolvePath2(fieldPath);
@@ -28252,7 +28285,7 @@ async function run11() {
     fail("Error: no specialists found");
   }
   for (const target of targets) {
-    const raw = readFileSync11(target.filePath, "utf-8");
+    const raw = readFileSync12(target.filePath, "utf-8");
     let doc2;
     try {
       const parsed = JSON.parse(raw);
@@ -28507,7 +28540,7 @@ __export(exports_merge, {
   checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard,
   assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
-import { existsSync as existsSync16, readdirSync as readdirSync6, readFileSync as readFileSync12 } from "fs";
+import { existsSync as existsSync16, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "fs";
 import { spawnSync as spawnSync11 } from "child_process";
 import { join as join15 } from "path";
 function parseOptions(argv) {
@@ -28697,7 +28730,7 @@ function readAllJobStatuses() {
     const statusPath = join15(jobsDir, entry.name, "status.json");
     if (!existsSync16(statusPath))
       continue;
-    const parsed = readJson(readFileSync12(statusPath, "utf-8"));
+    const parsed = readJson(readFileSync13(statusPath, "utf-8"));
     if (!parsed || typeof parsed !== "object")
       continue;
     statuses.push(parsed);
@@ -29357,7 +29390,7 @@ __export(exports_run, {
   run: () => run14
 });
 import { join as join16 } from "path";
-import { readFileSync as readFileSync13 } from "fs";
+import { readFileSync as readFileSync14 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync3 } from "child_process";
 async function parseArgs7(argv) {
@@ -29636,7 +29669,7 @@ function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
   const drain = () => {
     let content;
     try {
-      content = readFileSync13(eventsPath, "utf-8");
+      content = readFileSync14(eventsPath, "utf-8");
     } catch {
       return;
     }
@@ -29819,7 +29852,7 @@ async function run14() {
     const latestPath = join16(jobsDir2, "latest");
     const oldLatest = (() => {
       try {
-        return readFileSync13(latestPath, "utf-8").trim();
+        return readFileSync14(latestPath, "utf-8").trim();
       } catch {
         return "";
       }
@@ -29847,7 +29880,7 @@ async function run14() {
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 100));
       try {
-        const current = readFileSync13(latestPath, "utf-8").trim();
+        const current = readFileSync14(latestPath, "utf-8").trim();
         if (current && current !== oldLatest) {
           jobId2 = current;
           break;
@@ -30104,7 +30137,7 @@ var init_node_resolve = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync17, readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync15, writeFileSync as writeFileSync7 } from "fs";
 import { join as join17 } from "path";
 
 class JobControl {
@@ -30183,7 +30216,7 @@ class JobControl {
     if (!existsSync17(resultPath))
       return null;
     try {
-      return readFileSync14(resultPath, "utf-8");
+      return readFileSync15(resultPath, "utf-8");
     } catch {
       return null;
     }
@@ -30372,13 +30405,13 @@ __export(exports_node_supervisor, {
   executeCompleteNodeAction: () => executeCompleteNodeAction,
   NodeSupervisor: () => NodeSupervisor
 });
-import { createHash as createHash3 } from "crypto";
+import { createHash as createHash4 } from "crypto";
 import { spawnSync as spawnSync12 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
   const value = salt ? `${salt}:${output2}` : output2;
-  return createHash3("sha256").update(value).digest("hex");
+  return createHash4("sha256").update(value).digest("hex");
 }
 function sleep2(ms) {
   return new Promise((resolve9) => setTimeout(resolve9, ms));
@@ -32294,7 +32327,7 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync18, readFileSync as readFileSync15, readdirSync as readdirSync7 } from "fs";
+import { existsSync as existsSync18, readFileSync as readFileSync16, readdirSync as readdirSync7 } from "fs";
 import { randomUUID as randomUUID2 } from "crypto";
 import { spawnSync as spawnSync13 } from "child_process";
 import { basename as basename5, join as join18, resolve as resolve9 } from "path";
@@ -32609,7 +32642,7 @@ async function handleNodeRun(args) {
       rawConfig = args.inlineJson;
     } else {
       const nodeConfigPath = resolveNodeConfigPath(process.cwd(), args.nodeConfigInput);
-      rawConfig = readFileSync15(nodeConfigPath.path, "utf-8");
+      rawConfig = readFileSync16(nodeConfigPath.path, "utf-8");
     }
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
@@ -33152,7 +33185,7 @@ var init_node = __esm(() => {
 });
 
 // src/specialist/epic-reconciler.ts
-import { mkdirSync as mkdirSync8, openSync as openSync2, readFileSync as readFileSync16, rmSync as rmSync2, writeFileSync as writeFileSync8 } from "fs";
+import { mkdirSync as mkdirSync8, openSync as openSync2, readFileSync as readFileSync17, rmSync as rmSync2, writeFileSync as writeFileSync8 } from "fs";
 import { join as join19 } from "path";
 function buildEpicLockPath(epicId) {
   const location = resolveObservabilityDbLocation();
@@ -33169,7 +33202,7 @@ function withEpicAdvisoryLock(epicId, action) {
   } catch {
     let holder = "unknown";
     try {
-      holder = readFileSync16(lockPath, "utf-8");
+      holder = readFileSync17(lockPath, "utf-8");
     } catch {
       holder = "unknown";
     }
@@ -34146,7 +34179,7 @@ __export(exports_status, {
   detectJobOutputMode: () => detectJobOutputMode
 });
 import { spawnSync as spawnSync15 } from "child_process";
-import { existsSync as existsSync19, readFileSync as readFileSync17 } from "fs";
+import { existsSync as existsSync19, readFileSync as readFileSync18 } from "fs";
 import { join as join20 } from "path";
 function ok2(msg) {
   console.log(`  ${green8("\u2713")} ${msg}`);
@@ -34247,7 +34280,7 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
   const eventsFile = join20(jobsDir, jobId, "events.jsonl");
   if (!existsSync19(eventsFile))
     return 0;
-  const raw = readFileSync17(eventsFile, "utf-8").trim();
+  const raw = readFileSync18(eventsFile, "utf-8").trim();
   if (!raw)
     return 0;
   return raw.split(`
@@ -34284,7 +34317,7 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
   const eventsFile = join20(jobsDir, jobId, "events.jsonl");
   if (!existsSync19(eventsFile))
     return null;
-  const lines = readFileSync17(eventsFile, "utf-8").split(`
+  const lines = readFileSync18(eventsFile, "utf-8").split(`
 `);
   for (let index = lines.length - 1;index >= 0; index -= 1) {
     const line = lines[index].trim();
@@ -34557,7 +34590,7 @@ __export(exports_ps, {
   run: () => run16
 });
 import { spawnSync as spawnSync16 } from "child_process";
-import { existsSync as existsSync20, readdirSync as readdirSync8, readFileSync as readFileSync18 } from "fs";
+import { existsSync as existsSync20, readdirSync as readdirSync8, readFileSync as readFileSync19 } from "fs";
 import { join as join21 } from "path";
 function parseArgs8(argv) {
   let nodeId;
@@ -34596,7 +34629,7 @@ function readStatusesFromFiles(jobsDir) {
     if (!existsSync20(statusPath))
       continue;
     try {
-      statuses.push(JSON.parse(readFileSync18(statusPath, "utf-8")));
+      statuses.push(JSON.parse(readFileSync19(statusPath, "utf-8")));
     } catch {}
   }
   return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
@@ -34606,7 +34639,7 @@ function readLastToolEventFromFile(jobsDir, jobId) {
   if (!existsSync20(eventsPath))
     return;
   try {
-    const lines = readFileSync18(eventsPath, "utf-8").split(`
+    const lines = readFileSync19(eventsPath, "utf-8").split(`
 `);
     for (let index = lines.length - 1;index >= 0; index -= 1) {
       const line = lines[index]?.trim();
@@ -35364,7 +35397,7 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run17
 });
-import { existsSync as existsSync21, readFileSync as readFileSync19 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync20 } from "fs";
 import { join as join22 } from "path";
 function parseArgs9(argv) {
   let jobId;
@@ -35458,7 +35491,7 @@ function readTimelineEventsForResult(sqliteClient, jobsDir, jobId) {
   const eventsPath = join22(jobsDir, jobId, "events.jsonl");
   if (!existsSync21(eventsPath))
     return [];
-  return readFileSync19(eventsPath, "utf-8").split(`
+  return readFileSync20(eventsPath, "utf-8").split(`
 `).map((line) => line.trim()).filter(Boolean).map((line) => parseTimelineEvent(line)).filter((event) => event !== null);
 }
 function deriveStartupSnapshot(status, events) {
@@ -35600,7 +35633,7 @@ async function run17() {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error2);
       }
       if (existsSync21(resultPath)) {
-        return readFileSync19(resultPath, "utf-8");
+        return readFileSync20(resultPath, "utf-8");
       }
       try {
         const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
@@ -35785,7 +35818,7 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync22, readdirSync as readdirSync9, readFileSync as readFileSync20 } from "fs";
+import { existsSync as existsSync22, readdirSync as readdirSync9, readFileSync as readFileSync21 } from "fs";
 import { basename as basename6, join as join23 } from "path";
 function readJobEvents(jobDir) {
   const jobId = basename6(jobDir);
@@ -35801,7 +35834,7 @@ function readJobEvents(jobDir) {
   const eventsPath = join23(jobDir, "events.jsonl");
   if (!existsSync22(eventsPath))
     return [];
-  const content = readFileSync20(eventsPath, "utf-8");
+  const content = readFileSync21(eventsPath, "utf-8");
   const lines = content.split(`
 `).filter(Boolean);
   const events = [];
@@ -35853,7 +35886,7 @@ function readAllJobEvents(jobsDir) {
     let beadId;
     if (existsSync22(statusPath)) {
       try {
-        const status = JSON.parse(readFileSync20(statusPath, "utf-8"));
+        const status = JSON.parse(readFileSync21(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
         beadId = status.bead_id;
       } catch {}
@@ -35952,7 +35985,7 @@ import {
   closeSync as closeSync2,
   existsSync as existsSync23,
   openSync as openSync3,
-  readFileSync as readFileSync21,
+  readFileSync as readFileSync22,
   readdirSync as readdirSync10,
   statSync as statSync3
 } from "fs";
@@ -36101,7 +36134,7 @@ function readFileFresh(filePath) {
   let fd = null;
   try {
     fd = openSync3(filePath, "r");
-    return readFileSync21(fd, "utf-8");
+    return readFileSync22(fd, "utf-8");
   } catch {
     return null;
   } finally {
@@ -36600,7 +36633,7 @@ var exports_poll = {};
 __export(exports_poll, {
   run: () => run19
 });
-import { existsSync as existsSync24, readFileSync as readFileSync22 } from "fs";
+import { existsSync as existsSync24, readFileSync as readFileSync23 } from "fs";
 import { join as join25 } from "path";
 function parseArgs11(argv) {
   let jobId;
@@ -36643,14 +36676,14 @@ function readJobState(jobsDir, jobId, cursor, outputCursor) {
   let status = null;
   if (existsSync24(statusPath)) {
     try {
-      status = JSON.parse(readFileSync22(statusPath, "utf-8"));
+      status = JSON.parse(readFileSync23(statusPath, "utf-8"));
     } catch {}
   }
   const resultPath = join25(jobDir, "result.txt");
   let fullOutput = "";
   if (existsSync24(resultPath)) {
     try {
-      fullOutput = readFileSync22(resultPath, "utf-8");
+      fullOutput = readFileSync23(resultPath, "utf-8");
     } catch {}
   }
   const events = readJobEventsById(jobsDir, jobId);
@@ -36834,7 +36867,7 @@ async function run22() {
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync25, readdirSync as readdirSync11, readFileSync as readFileSync23 } from "fs";
+import { existsSync as existsSync25, readdirSync as readdirSync11, readFileSync as readFileSync24 } from "fs";
 import { join as join26 } from "path";
 import { spawnSync as spawnSync17 } from "child_process";
 function readJobStatus2(jobDir) {
@@ -36842,7 +36875,7 @@ function readJobStatus2(jobDir) {
   if (!existsSync25(statusPath))
     return null;
   try {
-    return JSON.parse(readFileSync23(statusPath, "utf-8"));
+    return JSON.parse(readFileSync24(statusPath, "utf-8"));
   } catch {
     return null;
   }
@@ -36941,7 +36974,7 @@ __export(exports_clean, {
 import {
   existsSync as existsSync26,
   readdirSync as readdirSync12,
-  readFileSync as readFileSync24,
+  readFileSync as readFileSync25,
   rmSync as rmSync3,
   statSync as statSync4
 } from "fs";
@@ -37043,7 +37076,7 @@ function readCompletedJobDirectory(baseDirectory, entry) {
     return null;
   let statusData;
   try {
-    statusData = JSON.parse(readFileSync24(statusFilePath, "utf-8"));
+    statusData = JSON.parse(readFileSync25(statusFilePath, "utf-8"));
   } catch {
     return null;
   }
@@ -37471,7 +37504,7 @@ __export(exports_attach, {
   run: () => run26
 });
 import { execFileSync as execFileSync3, spawnSync as spawnSync19 } from "child_process";
-import { readFileSync as readFileSync25 } from "fs";
+import { readFileSync as readFileSync26 } from "fs";
 import { join as join28 } from "path";
 function exitWithError(message) {
   console.error(message);
@@ -37479,7 +37512,7 @@ function exitWithError(message) {
 }
 function readStatus(statusPath, jobId) {
   try {
-    return JSON.parse(readFileSync25(statusPath, "utf-8"));
+    return JSON.parse(readFileSync26(statusPath, "utf-8"));
   } catch (error2) {
     if (error2 && typeof error2 === "object" && "code" in error2 && error2.code === "ENOENT") {
       exitWithError(`Job \`${jobId}\` not found. Run \`specialists status\` to see active jobs in current mode.`);
@@ -37753,9 +37786,9 @@ __export(exports_doctor, {
   compareVersions: () => compareVersions,
   cleanupProcesses: () => cleanupProcesses
 });
-import { createHash as createHash4 } from "crypto";
+import { createHash as createHash5 } from "crypto";
 import { spawnSync as spawnSync20 } from "child_process";
-import { existsSync as existsSync27, lstatSync as lstatSync2, mkdirSync as mkdirSync9, readdirSync as readdirSync13, readFileSync as readFileSync26, readlinkSync as readlinkSync2, writeFileSync as writeFileSync11 } from "fs";
+import { existsSync as existsSync27, lstatSync as lstatSync2, mkdirSync as mkdirSync9, readdirSync as readdirSync13, readFileSync as readFileSync27, readlinkSync as readlinkSync2, writeFileSync as writeFileSync11 } from "fs";
 import { dirname as dirname7, join as join29, relative as relative2, resolve as resolve10 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
@@ -37788,7 +37821,7 @@ function loadJson2(path) {
   if (!existsSync27(path))
     return null;
   try {
-    return JSON.parse(readFileSync26(path, "utf8"));
+    return JSON.parse(readFileSync27(path, "utf8"));
   } catch {
     return null;
   }
@@ -37913,8 +37946,8 @@ function checkMCP() {
   return true;
 }
 function hashFile(path) {
-  const hash = createHash4("sha256");
-  hash.update(readFileSync26(path));
+  const hash = createHash5("sha256");
+  hash.update(readFileSync27(path));
   return hash.digest("hex");
 }
 function collectFileHashes(rootDir) {
@@ -38196,7 +38229,7 @@ function compareVersions(left, right) {
 }
 function setStatusError(statusPath) {
   try {
-    const raw = readFileSync26(statusPath, "utf8");
+    const raw = readFileSync27(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
     writeFileSync11(statusPath, `${JSON.stringify(status, null, 2)}
@@ -38254,7 +38287,7 @@ function cleanupProcesses(jobsDir, dryRun) {
     if (!existsSync27(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync26(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync27(statusPath, "utf8"));
       result.total += 1;
       if (status.status !== "running" && status.status !== "starting")
         continue;
@@ -38529,6 +38562,9 @@ function parseArgs12(argv) {
   let projectDir = process.cwd();
   let fallbackModel;
   let auditFailureThreshold = 5;
+  let allowSkills = false;
+  let allowSkillsRoots = [];
+  let allowLocalScripts = false;
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--port" && argv[i + 1])
@@ -38545,8 +38581,14 @@ function parseArgs12(argv) {
       fallbackModel = argv[++i];
     else if (token === "--audit-failure-threshold" && argv[i + 1])
       auditFailureThreshold = Number(argv[++i]);
+    else if (token === "--allow-skills")
+      allowSkills = true;
+    else if (token === "--allow-skills-roots" && argv[i + 1])
+      allowSkillsRoots = argv[++i].split(":").filter(Boolean);
+    else if (token === "--allow-local-scripts")
+      allowLocalScripts = true;
   }
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts };
 }
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -38625,7 +38667,12 @@ async function startServe(argv = process.argv.slice(3)) {
             children.add(child);
             child.once("exit", () => children.delete(child));
           },
-          onAuditFailure: () => recordAuditFailure(readinessState)
+          onAuditFailure: () => recordAuditFailure(readinessState),
+          trust: {
+            allowSkills: args.allowSkills,
+            allowSkillsRoots: args.allowSkillsRoots,
+            allowLocalScripts: args.allowLocalScripts
+          }
         });
         return sendJson(res, 200, result);
       } finally {

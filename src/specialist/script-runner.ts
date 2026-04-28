@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { SpecialistLoader } from './loader.js';
 import { renderTemplate } from './templateEngine.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
@@ -44,6 +45,17 @@ export interface ScriptGenerateFailure {
 
 export type ScriptGenerateResult = ScriptGenerateSuccess | ScriptGenerateFailure;
 
+export interface TrustOptions {
+  allowSkills?: boolean;
+  allowSkillsRoots?: string[];
+  allowLocalScripts?: boolean;
+}
+
+export interface SkillSource {
+  path: string;
+  sha256: string;
+}
+
 export interface ScriptRunnerOptions {
   loader: SpecialistLoader;
   projectDir?: string;
@@ -51,6 +63,7 @@ export interface ScriptRunnerOptions {
   observabilityDbPath?: string;
   onChild?: (child: ChildProcess) => void;
   onAuditFailure?: (error: unknown) => void;
+  trust?: TrustOptions;
 }
 
 function hasUnsubstitutedVariables(template: string): string | null {
@@ -58,12 +71,47 @@ function hasUnsubstitutedVariables(template: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function compatGuard(spec: Specialist): void {
+export function compatGuard(spec: Specialist, trust?: TrustOptions): void {
   const execution = spec.specialist.execution;
   if (execution.interactive) throw new Error('interactive specialists are not allowed');
   if (execution.requires_worktree) throw new Error('worktree specialists are not allowed');
   if (execution.permission_required !== 'READ_ONLY') throw new Error('permission_required must be READ_ONLY');
-  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0) throw new Error('scripts not allowed');
+
+  const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
+  if (hasScripts && !trust?.allowLocalScripts) {
+    throw new Error('scripts not allowed (enable with --allow-local-scripts)');
+  }
+
+  const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
+  const hasSkillInherit = Boolean(spec.specialist.prompt.skill_inherit);
+  if ((hasPaths || hasSkillInherit) && !trust?.allowSkills) {
+    throw new Error('skills not allowed (enable with --allow-skills)');
+  }
+
+  if (hasPaths && trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+    const paths = spec.specialist.skills?.paths ?? [];
+    for (const path of paths) {
+      const allowed = trust.allowSkillsRoots.some((root) => path.startsWith(root));
+      if (!allowed) {
+        throw new Error(`skill path '${path}' not under any --allow-skills-roots entry`);
+      }
+    }
+  }
+}
+
+export function computeSkillSources(spec: Specialist): SkillSource[] {
+  const paths = spec.specialist.skills?.paths ?? [];
+  const sources: SkillSource[] = [];
+  for (const path of paths) {
+    try {
+      const content = readFileSync(path);
+      const sha256 = createHash('sha256').update(content).digest('hex');
+      sources.push({ path, sha256 });
+    } catch {
+      sources.push({ path, sha256: 'unreadable' });
+    }
+  }
+  return sources;
 }
 
 export function renderTaskTemplate(template: string, variables: Record<string, string>): string {
@@ -156,7 +204,7 @@ function extractPiErrorMessage(lines: string[]): string | null {
   return null;
 }
 
-function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number, onAuditFailure?: (error: unknown) => void): void {
+function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number, skillSources: SkillSource[] | undefined, onAuditFailure?: (error: unknown) => void): void {
   if (!client) return;
   const status = {
     id: traceId,
@@ -167,6 +215,7 @@ function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient
     elapsed_s: durationMs / 1000,
     last_event_at_ms: Date.now(),
     surface: 'script_specialist',
+    ...(skillSources && skillSources.length > 0 ? { skill_sources: skillSources } : {}),
   } as unknown as SupervisorStatus;
   try {
     client.upsertStatus(status);
@@ -186,7 +235,8 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
   const startedAt = Date.now();
   try {
     const spec = await options.loader.get(input.specialist);
-    compatGuard(spec);
+    compatGuard(spec, options.trust);
+    const skillSources = options.trust?.allowSkills ? computeSkillSources(spec) : undefined;
 
     const template = input.template ?? spec.specialist.prompt.task_template;
     const prompt = renderTaskTemplate(template, input.variables ?? {});
@@ -235,7 +285,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const text = extractAssistantText(stdout.split(/\r?\n/));
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
-    if (input.trace !== false && observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, options.onAuditFailure);
+    if (input.trace !== false && observability) writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, skillSources, options.onAuditFailure);
 
     if (outputTooLarge) {
       return { success: false, error: 'stdout exceeded 4MB cap', error_type: 'output_too_large', meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };

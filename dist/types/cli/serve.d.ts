@@ -7,6 +7,9 @@ interface ServeArgs {
     projectDir: string;
     fallbackModel?: string;
     auditFailureThreshold: number;
+    allowSkills: boolean;
+    allowSkillsRoots: string[];
+    allowLocalScripts: boolean;
 }
 export type ReadinessReason = 'draining' | 'degraded:audit' | 'pi_config_unreadable' | 'db_not_writable' | 'empty_user_dir' | 'invalid_spec_in_user_dir';
 export interface ReadinessState {

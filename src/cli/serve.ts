@@ -19,6 +19,9 @@ interface ServeArgs {
   projectDir: string;
   fallbackModel?: string;
   auditFailureThreshold: number;
+  allowSkills: boolean;
+  allowSkillsRoots: string[];
+  allowLocalScripts: boolean;
 }
 
 const AUDIT_WINDOW_MS = 60_000;
@@ -122,6 +125,9 @@ function parseArgs(argv: string[]): ServeArgs {
   let projectDir = process.cwd();
   let fallbackModel: string | undefined;
   let auditFailureThreshold = 5;
+  let allowSkills = false;
+  let allowSkillsRoots: string[] = [];
+  let allowLocalScripts = false;
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -132,9 +138,12 @@ function parseArgs(argv: string[]): ServeArgs {
     else if ((token === '--project-dir' || token === '--user-dir') && argv[i + 1]) projectDir = argv[++i];
     else if (token === '--fallback-model' && argv[i + 1]) fallbackModel = argv[++i];
     else if (token === '--audit-failure-threshold' && argv[i + 1]) auditFailureThreshold = Number(argv[++i]);
+    else if (token === '--allow-skills') allowSkills = true;
+    else if (token === '--allow-skills-roots' && argv[i + 1]) allowSkillsRoots = argv[++i].split(':').filter(Boolean);
+    else if (token === '--allow-local-scripts') allowLocalScripts = true;
   }
 
-  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold };
+  return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, allowLocalScripts };
 }
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
@@ -210,6 +219,11 @@ export async function startServe(argv: string[] = process.argv.slice(3)) {
             child.once('exit', () => children.delete(child));
           },
           onAuditFailure: () => recordAuditFailure(readinessState),
+          trust: {
+            allowSkills: args.allowSkills,
+            allowSkillsRoots: args.allowSkillsRoots,
+            allowLocalScripts: args.allowLocalScripts,
+          },
         });
         return sendJson(res, 200, result);
       } finally {

@@ -6906,7 +6906,8 @@ var require_public_api = __commonJS((exports) => {
 
 // src/specialist/script-runner.ts
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync as readFileSync2 } from "node:fs";
 
 // src/specialist/templateEngine.ts
 function renderTemplate(template, variables) {
@@ -8851,7 +8852,7 @@ function hasUnsubstitutedVariables(template) {
   const match = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/);
   return match?.[1] ?? null;
 }
-function compatGuard(spec) {
+function compatGuard(spec, trust) {
   const execution = spec.specialist.execution;
   if (execution.interactive)
     throw new Error("interactive specialists are not allowed");
@@ -8859,8 +8860,38 @@ function compatGuard(spec) {
     throw new Error("worktree specialists are not allowed");
   if (execution.permission_required !== "READ_ONLY")
     throw new Error("permission_required must be READ_ONLY");
-  if ((spec.specialist.skills?.scripts?.length ?? 0) > 0)
-    throw new Error("scripts not allowed");
+  const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
+  if (hasScripts && !trust?.allowLocalScripts) {
+    throw new Error("scripts not allowed (enable with --allow-local-scripts)");
+  }
+  const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
+  const hasSkillInherit = Boolean(spec.specialist.prompt.skill_inherit);
+  if ((hasPaths || hasSkillInherit) && !trust?.allowSkills) {
+    throw new Error("skills not allowed (enable with --allow-skills)");
+  }
+  if (hasPaths && trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+    const paths = spec.specialist.skills?.paths ?? [];
+    for (const path of paths) {
+      const allowed = trust.allowSkillsRoots.some((root) => path.startsWith(root));
+      if (!allowed) {
+        throw new Error(`skill path '${path}' not under any --allow-skills-roots entry`);
+      }
+    }
+  }
+}
+function computeSkillSources(spec) {
+  const paths = spec.specialist.skills?.paths ?? [];
+  const sources = [];
+  for (const path of paths) {
+    try {
+      const content = readFileSync2(path);
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      sources.push({ path, sha256 });
+    } catch {
+      sources.push({ path, sha256: "unreadable" });
+    }
+  }
+  return sources;
 }
 function renderTaskTemplate(template, variables) {
   const output = renderTemplate(template, variables);
@@ -8949,7 +8980,7 @@ function extractPiErrorMessage(lines) {
   }
   return null;
 }
-function writeTraceRow(client, specialist, model, traceId, output, durationMs, onAuditFailure) {
+function writeTraceRow(client, specialist, model, traceId, output, durationMs, skillSources, onAuditFailure) {
   if (!client)
     return;
   const status = {
@@ -8960,7 +8991,8 @@ function writeTraceRow(client, specialist, model, traceId, output, durationMs, o
     started_at_ms: Date.now() - durationMs,
     elapsed_s: durationMs / 1000,
     last_event_at_ms: Date.now(),
-    surface: "script_specialist"
+    surface: "script_specialist",
+    ...skillSources && skillSources.length > 0 ? { skill_sources: skillSources } : {}
   };
   try {
     client.upsertStatus(status);
@@ -8978,7 +9010,8 @@ async function runScriptSpecialist(input, options) {
   const startedAt = Date.now();
   try {
     const spec = await options.loader.get(input.specialist);
-    compatGuard(spec);
+    compatGuard(spec, options.trust);
+    const skillSources = options.trust?.allowSkills ? computeSkillSources(spec) : undefined;
     const template = input.template ?? spec.specialist.prompt.task_template;
     const prompt = renderTaskTemplate(template, input.variables ?? {});
     const model = input.model_override ?? spec.specialist.execution.model ?? options.fallbackModel ?? "unknown";
@@ -9023,7 +9056,7 @@ async function runScriptSpecialist(input, options) {
     const durationMs = Date.now() - startedAt;
     const observability = openObservabilityClient(options);
     if (input.trace !== false && observability)
-      writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, options.onAuditFailure);
+      writeTraceRow(observability, input.specialist, model, traceId, text, durationMs, skillSources, options.onAuditFailure);
     if (outputTooLarge) {
       return { success: false, error: "stdout exceeded 4MB cap", error_type: "output_too_large", meta: { specialist: input.specialist, model, duration_ms: durationMs, trace_id: traceId } };
     }

@@ -34,6 +34,15 @@ export interface ScriptGenerateFailure {
     };
 }
 export type ScriptGenerateResult = ScriptGenerateSuccess | ScriptGenerateFailure;
+export interface TrustOptions {
+    allowSkills?: boolean;
+    allowSkillsRoots?: string[];
+    allowLocalScripts?: boolean;
+}
+export interface SkillSource {
+    path: string;
+    sha256: string;
+}
 export interface ScriptRunnerOptions {
     loader: SpecialistLoader;
     projectDir?: string;
@@ -41,8 +50,10 @@ export interface ScriptRunnerOptions {
     observabilityDbPath?: string;
     onChild?: (child: ChildProcess) => void;
     onAuditFailure?: (error: unknown) => void;
+    trust?: TrustOptions;
 }
-export declare function compatGuard(spec: Specialist): void;
+export declare function compatGuard(spec: Specialist, trust?: TrustOptions): void;
+export declare function computeSkillSources(spec: Specialist): SkillSource[];
 export declare function renderTaskTemplate(template: string, variables: Record<string, string>): string;
 export declare function runScriptSpecialist(input: ScriptGenerateRequest, options: ScriptRunnerOptions): Promise<ScriptGenerateResult>;
 //# sourceMappingURL=script-runner.d.ts.map
