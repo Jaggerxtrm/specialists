@@ -313,11 +313,28 @@ export async function run(): Promise<void> {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error);
       }
 
-      if (!existsSync(resultPath)) {
-        return null;
+      if (existsSync(resultPath)) {
+        return readFileSync(resultPath, 'utf-8');
       }
 
-      return readFileSync(resultPath, 'utf-8');
+      // Defensive fallback: if no result row has been persisted (e.g. older
+      // job that completed before upsertResult on initial-turn-to-waiting was
+      // wired, or a stopped job whose output only landed in the run_complete
+      // event payload), surface the latest run_complete output so operators
+      // can still inspect the last turn.
+      try {
+        const events = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          const event = events[i];
+          if (event.type === 'run_complete' && typeof event.output === 'string' && event.output.length > 0) {
+            return event.output;
+          }
+        }
+      } catch {
+        // ignore — fallback is best-effort
+      }
+
+      return null;
     };
 
   if (args.wait) {

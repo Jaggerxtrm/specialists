@@ -1818,6 +1818,15 @@ export class Supervisor {
         output: finalResult.output,
       });
 
+      // Persist result row on every turn boundary so `sp result` and stopped-job
+      // recovery can read the last completed output without depending on the
+      // file-output gate or keep-alive lifecycle.
+      try {
+        this.withSqliteOperation('upsertResult:initial_turn', (client) => client.upsertResult(id, finalResult.output));
+      } catch (error: unknown) {
+        console.warn(`[supervisor] SQLite upsertResult failed during initial turn: ${String(error)}`);
+      }
+
       const runCompletesAsWaiting = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output);
       applyAutoCommitCheckpoint(runCompletesAsWaiting ? 'waiting' : 'terminal', autoCommitPolicy);
 
@@ -1825,6 +1834,17 @@ export class Supervisor {
         if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
           await closeKeepAliveSession();
         } else {
+          // Inline bead-notes append on the waiting checkpoint so the input
+          // bead reflects the turn's output immediately. Mirrors handleResumeTurn.
+          appendResultToInputBead({
+            output: finalResult.output,
+            model: finalResult.model,
+            backend: finalResult.backend,
+            status: 'waiting',
+            promptHash: finalResult.promptHash,
+            durationMs: finalResult.durationMs,
+          });
+          skipFinalKeepAliveInputBeadAppend = true;
           setWaitingStatus({
             model: result.model,
             backend: result.backend,

@@ -8,7 +8,7 @@ description: >
   work without drift. Trigger for code review, debugging, implementation,
   planning, test generation, doc sync, multi-chain epics, and any question about
   specialist orchestration.
-version: 1.0
+version: 1.1
 ---
 
 # Specialists V2
@@ -17,6 +17,8 @@ You are the orchestrator. Your job is to specify the work, choose the right spec
 
 Use this skill for substantial work: codebase exploration, debugging, implementation, review, testing, documentation sync, planning, specialist authoring, and multi-chain orchestration. Do small deterministic edits directly when the scope is already clear and delegation would add ceremony.
 
+For one-shot synchronous specialist invocations from services or scripts (template + variables, READ_ONLY, JSON out), use `using-script-specialists` instead. That runtime (`sp script` / `sp serve`) is unrelated to bead-first orchestration.
+
 ## Hard Rules
 
 1. `--bead` is the prompt for tracked work.
@@ -24,14 +26,17 @@ Use this skill for substantial work: codebase exploration, debugging, implementa
 3. Never use `--prompt` to supplement tracked work. Update bead notes instead.
 4. Use explorer only when the implementation path is unknown.
 5. Use executor only after scope, constraints, and validation are clear enough to act.
-6. Edit-capable specialists use `--worktree` for the first implementation job.
-7. Reviewer gets its own bead and enters the executor workspace with `--job <exec-job>`.
-8. Use `--context-depth 2` for chained work unless there is a specific reason not to.
+6. Edit-capable specialists with `--bead` auto-provision a worktree. `--worktree` is still accepted for clarity but not required (the deprecated `--no-worktree` flag is gone).
+7. Reviewer gets its own bead and enters the executor workspace with `--job <exec-job>`. `--job` auto-resolves the bead if `--bead` is omitted.
+8. `--context-depth` defaults to 3 (parent task + predecessor + own bead). Override only when the chain needs less or more upstream context.
 9. Keep executor/debugger jobs alive through review so they can be resumed.
 10. Merge specialist branches with `sp merge` or `sp epic merge`, never manual `git merge`.
 11. Specialists must not perform destructive or irreversible actions.
 12. If a specialist fails, inspect feed/result and either steer, resume, rerun with a better bead, or report the blocker.
 13. Drive chains autonomously. Do not ask the operator to approve routine stage transitions. Escalate only on critical events (see Autonomous Drive section).
+14. Stale-base guard: dispatch refuses to provision a worktree when sibling epic chains have unmerged substantive commits. Override only with explicit `--force-stale-base` and a reason. Merge-time rebase happens automatically.
+15. Auto-checkpoint: executor and debugger commit substantive worktree changes on `waiting` by default (`auto_commit: checkpoint_on_waiting`). Noise paths (`.xtrm/`, `.wolf/`, `.specialists/jobs/`, `.beads/`) are filtered.
+16. Per-turn output appends to the input bead notes for **all** specialists on every `run_complete`, with `[WAITING — more output may follow]` or `[DONE]` headers. `bd show <bead-id>` is a valid path to read intermediate output.
 
 ## Autonomous Drive
 
@@ -72,7 +77,7 @@ Do not busy-loop `sp ps` in tight intervals. One sleep + one confirmation poll i
 
 ```bash
 # Dispatch
-JOB=$(sp run <specialist> --bead <bead-id> --context-depth 2 --background 2>&1 | tail -1)
+JOB=$(sp run <specialist> --bead <bead-id> --context-depth 3 --background 2>&1 | tail -1)
 
 # Sleep for median
 sleep 180
@@ -202,15 +207,17 @@ Daily commands:
 
 ```bash
 specialists list
+specialists list-rules                          # rule × specialist matrix
 specialists doctor
-specialists run <name> --bead <id> --context-depth 2 --background
-specialists run executor --worktree --bead <impl-bead> --context-depth 2 --background
-specialists run reviewer --bead <review-bead> --job <exec-job> --context-depth 2 --keep-alive --background
+specialists run <name> --bead <id> --background
+specialists run executor --bead <impl-bead> --background       # worktree auto-provisioned
+specialists run reviewer --bead <review-bead> --job <exec-job> --keep-alive --background
 specialists ps
 specialists ps <job-id>
 specialists feed <job-id>
 specialists feed -f
-specialists result <job-id>
+specialists result <job-id>                     # works on done/error/waiting
+specialists result <job-id> --wait --timeout 600
 specialists steer <job-id> "new direction"
 specialists resume <job-id> "next task"
 specialists stop <job-id>
@@ -226,17 +233,21 @@ sp epic merge <epic-id>
 sp end
 ```
 
-Avoid `specialists status --job` for normal monitoring; prefer `sp ps <job-id>`.
+`sp result <job-id>` returns the most recent completed turn for `waiting` jobs with a `Session is waiting for your input` footer — use it to inspect a keep-alive job before deciding whether to resume. For `running` jobs, `sp feed <job-id>` is the right tool; `sp poll` is deprecated. Avoid `specialists status --job` for normal monitoring; prefer `sp ps <job-id>`.
 
 ## Flag Semantics
 
 `--bead <id>` is the task prompt and tracked work identity.
 
-`--context-depth N` controls parent/ancestor bead context. Use `--context-depth 2` for chains so the specialist sees its own bead, predecessor output, and parent task context.
+`--context-depth N` controls parent/ancestor bead context. Default is **3** (own bead + predecessor + parent task). Lower it when the chain is shallow or the parent context is noisy.
 
-`--worktree` provisions a new isolated workspace and branch for edit-capable work. Use it for the first executor/debugger job that writes files.
+`--worktree` provisions a new isolated workspace and branch for edit-capable work. Optional when `--bead` is provided to an edit-capable specialist — a worktree is auto-provisioned. Pass `--worktree` explicitly only when you want it without a bead, or for emphasis. The deprecated `--no-worktree` flag is removed and now errors out.
 
-`--job <id>` reuses an existing job's workspace. Use it for reviewer and fix passes. The caller's own `--bead` remains authoritative; `--job` only selects the workspace.
+`--job <id>` reuses an existing job's workspace. Use it for reviewer and fix passes. If `--bead` is omitted, bead_id is inferred from the target job's status; explicit `--bead` always wins.
+
+`--force-job` overrides the concurrency lock that blocks edit-capable specialists from entering an owner workspace while it is `starting`/`running`. Use only when you accept the write race; prefer `sp stop` on dead jobs first.
+
+`--force-stale-base` bypasses the dispatch-time stale-base guard that blocks `--worktree` provisioning when sibling epic chains have unmerged substantive commits. Use only with a clear reason; the guard prevents merge-conflict cascades.
 
 `--epic <id>` explicitly associates a job with an epic. Use it for prep jobs whose parent is not the epic but should appear in epic status/readiness.
 
@@ -273,7 +284,7 @@ CONSTRAINTS: READ_ONLY; cite files/symbols.
 VALIDATION: Findings include recommended executor scope and risks.
 OUTPUT: Evidence-backed implementation plan."
 bd dep add <explore> <task>
-specialists run explorer --bead <explore> --context-depth 2 --background
+specialists run explorer --bead <explore> --context-depth 3 --background
 specialists result <explore-job>
 ```
 
@@ -289,7 +300,7 @@ CONSTRAINTS: Keep telemetry names stable; avoid broad refactor.
 VALIDATION: npm run lint, npx tsc --noEmit, targeted auth tests if available.
 OUTPUT: Diff summary, checks run, follow-up risks."
 bd dep add <impl> <explore-or-task>
-specialists run executor --worktree --bead <impl> --context-depth 2 --background
+specialists run executor --worktree --bead <impl> --context-depth 3 --background
 specialists result <exec-job>
 ```
 
@@ -305,7 +316,7 @@ CONSTRAINTS: Findings first with file/line references.
 VALIDATION: Inspect diff and available checks.
 OUTPUT: PASS/PARTIAL/FAIL verdict with required fixes."
 bd dep add <review> <impl>
-specialists run reviewer --bead <review> --job <exec-job> --context-depth 2 --keep-alive --background
+specialists run reviewer --bead <review> --job <exec-job> --context-depth 3 --keep-alive --background
 specialists result <review-job>
 ```
 
@@ -353,7 +364,7 @@ CONSTRAINTS: READ_ONLY; produce dependency plan.
 VALIDATION: Plan names file scopes and merge order.
 OUTPUT: Parallel track plan."
 bd dep add <plan> <epic>
-specialists run planner --bead <plan> --epic <epic> --context-depth 2 --background
+specialists run planner --bead <plan> --epic <epic> --context-depth 3 --background
 ```
 
 Create independent implementation beads only when write scopes are disjoint:
@@ -383,8 +394,8 @@ bd dep add <impl-docs> <plan>
 Run parallel executors only if scopes are disjoint:
 
 ```bash
-specialists run executor --worktree --bead <impl-cli> --context-depth 2 --background
-specialists run executor --worktree --bead <impl-docs> --context-depth 2 --background
+specialists run executor --worktree --bead <impl-cli> --context-depth 3 --background
+specialists run executor --worktree --bead <impl-docs> --context-depth 3 --background
 ```
 
 Review each chain with its own review bead and `--job`.
@@ -458,7 +469,7 @@ sp feed <job-id>
 sp result <job-id>
 ```
 
-Read results at every stage. For READ_ONLY specialists, output also appends to the input bead notes. If result is empty, inspect feed and rerun or switch specialists before relying on it.
+Read results at every stage. Every specialist (not just READ_ONLY) auto-appends per-turn output to the input bead notes on each `run_complete`, with `[WAITING]` or `[DONE]` headers — `bd show <bead-id>` shows the full handoff trail. `sp result <job-id>` works on `waiting` jobs and returns the most recent turn plus a "Session is waiting for your input" footer; use it to decide whether to resume. If result is empty, inspect feed and rerun or switch specialists before relying on it.
 
 Context percentage in `sp ps`/feed is an action signal:
 
@@ -550,7 +561,7 @@ Override with `--force-job` only when the caller explicitly accepts the write
 race (e.g. emergency fix into a stalled-but-not-terminal executor):
 
 ```bash
-sp run executor --bead <fix-bead> --job <stalled-exec-job> --force-job --context-depth 2 --background
+sp run executor --bead <fix-bead> --job <stalled-exec-job> --force-job --context-depth 3 --background
 ```
 
 Do not use `--force-job` as a routine unblock. Inspect `sp ps <job-id>` and

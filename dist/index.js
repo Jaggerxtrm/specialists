@@ -25034,12 +25034,26 @@ ${appendError}
         beadId: finalResult.beadId,
         output: finalResult.output
       });
+      try {
+        this.withSqliteOperation("upsertResult:initial_turn", (client) => client.upsertResult(id, finalResult.output));
+      } catch (error2) {
+        console.warn(`[supervisor] SQLite upsertResult failed during initial turn: ${String(error2)}`);
+      }
       const runCompletesAsWaiting = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output);
       applyAutoCommitCheckpoint(runCompletesAsWaiting ? "waiting" : "terminal", autoCommitPolicy);
       if (keepAliveSession) {
         if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
           await closeKeepAliveSession();
         } else {
+          appendResultToInputBead({
+            output: finalResult.output,
+            model: finalResult.model,
+            backend: finalResult.backend,
+            status: "waiting",
+            promptHash: finalResult.promptHash,
+            durationMs: finalResult.durationMs
+          });
+          skipFinalKeepAliveInputBeadAppend = true;
           setWaitingStatus({
             model: result.model,
             backend: result.backend,
@@ -35581,10 +35595,19 @@ async function run17() {
       } catch (error2) {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error2);
       }
-      if (!existsSync21(resultPath)) {
-        return null;
+      if (existsSync21(resultPath)) {
+        return readFileSync19(resultPath, "utf-8");
       }
-      return readFileSync19(resultPath, "utf-8");
+      try {
+        const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
+        for (let i = events2.length - 1;i >= 0; i -= 1) {
+          const event = events2[i];
+          if (event.type === "run_complete" && typeof event.output === "string" && event.output.length > 0) {
+            return event.output;
+          }
+        }
+      } catch {}
+      return null;
     };
     if (args.wait) {
       const startMs = Date.now();

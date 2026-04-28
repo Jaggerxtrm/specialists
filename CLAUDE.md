@@ -246,27 +246,33 @@ Specialist selection:
 | Root-cause investigation | `debugger` | Use for failures, traces, regressions. |
 | Planning or issue breakdown | `planner` | Produces scoped beads/dependencies. |
 | Tradeoff/design analysis | `overthinker` | Use before risky or ambiguous implementation. |
-| Implementation | `executor` | Use `--worktree`; runs lint/type gates, not full tests. |
+| Implementation | `executor` | `--bead` auto-provisions a worktree; runs lint/type gates, not full tests. |
 | Post-implementation review | `reviewer` | Use `--job <executor-job>` and own review bead. |
 | Test execution/interpretation | `test-runner` | Use after implementation/review. |
 | Documentation audit/sync | `sync-docs` | Use for doc drift and targeted sync. |
 | Specialist config authoring | `specialists-creator` | Use before editing specialist JSON. |
+| Service/script integration | (script-class) | Use `sp script` or `sp serve` — see `using-script-specialists` skill. Not bead-driven. |
 
 Core commands:
 
 ```bash
 specialists list
-specialists run <name> --bead <id> --context-depth 2 --background
-specialists run executor --worktree --bead <impl-bead> --context-depth 2 --background
-specialists run reviewer --bead <review-bead> --job <exec-job> --context-depth 2 --keep-alive --background
+specialists list-rules                            # rule × specialist matrix
+specialists run <name> --bead <id> --background   # --context-depth defaults to 3
+specialists run executor --bead <impl-bead> --background       # worktree auto-provisioned
+specialists run reviewer --bead <review-bead> --job <exec-job> --keep-alive --background
 specialists ps
 specialists feed <job-id>
-specialists result <job-id>
+specialists result <job-id>                       # works on waiting jobs (returns last turn + footer)
 specialists steer <job-id> "new direction"
 specialists resume <job-id> "next task"
 specialists stop <job-id>
 specialists doctor
 ```
+
+`sp poll` is deprecated — use `sp ps` for state and `sp feed` for streams. `--no-worktree` is removed; `--bead` on edit-capable specialists auto-provisions. Use `--force-stale-base` only when you accept overriding the sibling-chain unmerged-commits guard.
+
+For one-shot synchronous specialists from services/scripts (`sp script`, `sp serve`), see the `using-script-specialists` skill — separate runtime, READ_ONLY only, template-driven, no beads.
 
 ## Specialist Chain Pattern
 
@@ -283,10 +289,13 @@ Use a chain when implementation needs independent workspace isolation and review
 
 Invariants:
 
-- `--worktree` creates the workspace for edit-capable specialists.
-- `--job` reuses an existing job workspace; the caller's own `--bead` remains the prompt.
+- `--bead` on edit-capable specialists auto-provisions a worktree; pass `--worktree` explicitly only when you want it without a bead.
+- `--job` reuses an existing job workspace; bead_id auto-resolves from the target job if `--bead` is omitted.
 - `--worktree` and `--job` are mutually exclusive.
-- `--context-depth 2` is the default for chained work.
+- `--context-depth` default is 3 (own bead + predecessor + parent task).
+- Stale-base guard blocks worktree provisioning when sibling epic chains have unmerged substantive commits; merge-time rebase happens automatically. Override with `--force-stale-base` only with cause.
+- Executor and debugger auto-checkpoint substantive worktree changes on `waiting` (`auto_commit: checkpoint_on_waiting`); noise paths are filtered.
+- Per-turn output auto-appends to the input bead notes for **all** specialists with `[WAITING]`/`[DONE]` headers — `bd show <bead-id>` shows the full handoff.
 - Keep executor/debugger jobs alive through review so they can be resumed.
 - Do not manually `git merge` specialist branches.
 - Do not allow specialists to perform destructive or irreversible actions.
@@ -318,9 +327,12 @@ Rules:
 
 Core surfaces:
 
-- CLI: `specialists run|resume|steer|feed|result|status|ps|stop|list|init|edit|epic|end|doctor|merge`.
+- CLI (orchestration): `specialists run|resume|steer|feed|result|status|ps|stop|list|list-rules|init|edit|epic|end|doctor|merge`.
+- CLI (script-class): `specialists script|serve` — synchronous, READ_ONLY, template-driven (see `using-script-specialists`).
 - MCP: `use_specialist` only.
+- Library export: `/lib` subpath for Node consumers embedding the runner.
 - Job storage: `.specialists/jobs/<job-id>/{status.json,events.jsonl,result.txt,steer.pipe}`.
+- Observability DB: `.specialists/db/observability.db` (shared by `sp run` and `sp script`/`sp serve`).
 - Beads storage is separate from specialist job storage.
 
 Job lifecycle:
@@ -335,21 +347,27 @@ Important runtime behavior:
 - Runner builds prompt from bead context, parent context, completed blockers, mandatory rules, memory, and GitNexus cheatsheet when available.
 - `--bead` sets `bead-claim:<id>` for edit-gate access.
 - Supervisor writes status immediately and emits timeline events.
-- READ_ONLY specialist output auto-appends to the input bead notes.
+- Per-turn specialist output auto-appends to the input bead notes for **all** specialists on every `run_complete` (status-aware headers: `[WAITING]` / `[DONE]`).
+- Linked beads auto-close on terminal job status (with memory-ack still required by the close gate).
 - `steer` works for running jobs; `resume` works for waiting keep-alive jobs.
+- `sp result <job-id>` returns last completed turn for waiting jobs with a footer prompting `sp resume`. Use `--wait --timeout <s>` to block until terminal.
 - `sp stop` marks terminal status based on run completion evidence.
 
 ## Key Files
 
-- `src/cli/run.ts` — run command, `--bead`, `--epic`, output modes.
+- `src/cli/run.ts` — run command, `--bead`, `--epic`, `--force-stale-base`, output modes.
 - `src/cli/ps.ts` — job/worktree snapshot, context usage, epic grouping.
 - `src/cli/feed.ts` — event stream.
+- `src/cli/result.ts` — result reader (handles waiting/running/done).
+- `src/cli/list-rules.ts` — mandatory-rules × specialist matrix.
+- `src/cli/script.ts`, `src/cli/serve.ts` — script-class CLI/HTTP entry points.
 - `src/cli/stop.ts` — terminal status resolution.
 - `src/cli/epic.ts` — epic lifecycle and merge commands.
 - `src/cli/merge.ts` — standalone chain merge guard and gates.
 - `src/specialist/runner.ts` — execution, prompt construction, retry behavior.
+- `src/specialist/script-runner.ts` — script-class one-shot runner (compatGuard, template rendering).
 - `src/specialist/beads.ts` — bead prompt construction and context loading.
-- `src/specialist/supervisor.ts` — job lifecycle, FIFO, output append.
+- `src/specialist/supervisor.ts` — job lifecycle, FIFO, per-turn bead output append, auto-checkpoint.
 - `src/specialist/chain-identity.ts` — chain to epic linkage.
 - `src/specialist/epic-readiness.ts` — merge readiness checks.
 - `src/specialist/node-contract.ts` — node state machine and renderers.
