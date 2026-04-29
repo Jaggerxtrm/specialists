@@ -1,7 +1,9 @@
 ---
 title: pi/rpc Boundary
 description: Canonical ownership boundary between pi/rpc protocol surfaces and Specialists runtime adaptation.
-synced_at: a1e9f935
+synced_at: 4e7a6b4a
+version: 2
+updated: 2026-04-29
 ---
 
 # pi/rpc Boundary
@@ -38,7 +40,7 @@ Own this in Specialists runtime code:
 - `src/pi/session.ts` as adapter from canonical pi/rpc events into Specialists callbacks and lifecycle hooks
 - Mapping raw pi event stream into Specialists event labels (`message_start_assistant`, `turn_start`, `tool_execution_start`, etc.)
 - Runtime liveness/operational policy: stall watchdog, process lifecycle, kill/abort behavior, **test-aware stall timeout extension**
-- Supervisor durability model (`status.json`, `events.jsonl`, `result.txt`) and job lifecycle decisions
+- Supervisor durability model (DB-first: `specialist_results` table, with file output env-gated since 3.9) and job lifecycle decisions
 - Specialists timeline abstraction in `src/specialist/timeline-events.ts`
 
 Specialists may transform/aggregate events for its own APIs, but must not invent conflicting meanings for existing pi/rpc event names.
@@ -68,7 +70,7 @@ When deciding where a change belongs:
 The stall timeout mechanism is entirely Specialists-owned:
 
 - **Base timeout**: configured via `execution.stall_timeout_ms` in specialist YAML, passed to PiAgentSession
-- **Test-aware extension**: PiAgentSession detects test command patterns (vitest, bun test, jest, pytest) and extends the stall window to 300s during tool execution
+- **Test-aware extension**: PiAgentSession detects test command patterns (vitest, bun test, npm test, pnpm test, yarn test, jest, pytest) and extends the stall window to 300s during tool execution
 - **Session kills**: StallTimeoutError thrown by PiAgentSession when no activity is detected within the effective timeout
 - **Supervisor staleness**: Separate mechanism (running_silence_warn_ms, waiting_stale_ms) that emits timeline events but does not kill the session
 
@@ -100,10 +102,10 @@ The primary use case is blocking write tools (`edit`, `write`, `multiEdit`, `not
 
 1. Hooks `tool_call` events
 2. Extracts `path`/`file_path` argument from tool input
-3. Validates against the boundary (via `WORKTREE_BOUNDARY` env var)
+3. Validates against the boundary (via `SPECIALISTS_WORKTREE_BOUNDARY` env var)
 4. Returns `{ block: true, reason: '...' }` for out-of-bounds paths
 
-This enforcement happens entirely inside the Pi process — the Specialists Supervisor does not need to intercept or validate tool calls itself.
+The boundary path is passed to the extension via `SPECIALISTS_WORKTREE_BOUNDARY` env var. This enforcement happens entirely inside the Pi process — the Specialists Supervisor does not need to intercept or validate tool calls itself.
 
 ---
 
