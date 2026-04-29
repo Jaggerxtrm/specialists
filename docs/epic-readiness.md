@@ -1,3 +1,9 @@
+---
+version: 2
+updated: 2026-04-29
+synced_at: 4395795d
+---
+
 # Epic readiness evaluation
 
 This document defines the canonical readiness evaluator used by:
@@ -20,7 +26,8 @@ Readiness is computed from persisted SQLite state for one epic:
 
 For each chain:
 
-- `pending`: chain has active jobs (`starting|running|waiting`)
+- `failed` (dead-active): active jobs (`starting|running|waiting`) whose PIDs are no longer alive — evaluator detects zombie processes and immediately returns `failed` with `missing` verdict
+- `pending`: chain has active jobs (`starting|running|waiting`) with live PIDs
 - `blocked`:
   - no persisted chain jobs (migration/orphan case), or
   - no terminal reviewer verdict found, or
