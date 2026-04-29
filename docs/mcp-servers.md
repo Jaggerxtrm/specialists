@@ -2,9 +2,9 @@
 title: MCP Servers Configuration
 scope: mcp-servers
 category: reference
-version: 1.2.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.3.0
+updated: 2026-04-29
+synced_at: f52d3674
 description: Project-scoped MCP registration for Specialists.
 source_of_truth_for:
   - ".mcp.json"
@@ -28,30 +28,19 @@ Specialists exposes an MCP server for Claude Code integration.
 
 ## MCP tools
 
+The server exposes a single tool. For full tool contract, see [mcp-tools.md](mcp-tools.md).
+
 | Tool | Description |
 |---|---|
-| `specialist_init` | bootstrap guidance and specialist discovery |
-| `list_specialists` | discover specialists in the current project |
 | `use_specialist` | run a specialist synchronously |
-| `specialist_status` | health and background job summary |
-| `start_specialist` | async job start (`keep_alive` / `no_keep_alive` supported) |
-| `feed_specialist` | poll job status + delta events by ID |
-| `stop_specialist` | cancel a running job |
-| `run_parallel` | concurrent or pipeline specialist execution |
-| `steer_specialist` | send a mid-run message to a running job |
-| `resume_specialist` | resume a waiting keep-alive session with next-turn prompt |
+
+Orchestration, monitoring, steering, resume, and cancellation are CLI-only. See [cli-reference.md](cli-reference.md).
 
 ## Registration
 
 The MCP server is registered at **project scope** by `specialists init`.
 
-Command used internally:
-
-```bash
-claude mcp add --scope project specialists -- specialists
-```
-
-Resulting project configuration is stored in `.mcp.json`.
+Init writes `.mcp.json` directly (no `claude mcp add` shell-out).
 
 Typical entry:
 
