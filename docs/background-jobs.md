@@ -2,9 +2,9 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.5.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.6.0
+updated: 2026-04-29
+synced_at: 4395795d
 description: Supervisor-backed job model, keep-alive semantics, and monitoring commands.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -29,14 +29,14 @@ specialists run sync-docs --bead unitAI-26s
 # stderr: [job started: 49adda]
 ```
 
-`specialists run --background` was removed. Use foreground runs or shell backgrounding (`&`).
+`specialists run --background` spawns a detached child process that runs the full Supervisor-backed flow in its own process group. The parent prints the job id and exits immediately.
 
 When `tmux` is installed:
 - a named tmux session is created as `sp-<specialist>-<id>`
 - use `specialists attach <job-id>` to attach directly to that session
 - use `specialists list --live` for an interactive tmux session picker
 
-When `tmux` is not installed, the CLI falls back to detached process mode and still keeps DB state canonical; file mirrors are legacy/operator-only.
+When `tmux` is not installed, the CLI falls back to detached process mode (stdio ignored, spawned with `detached: true`) and still keeps DB state canonical; file mirrors are legacy/operator-only.
 
 Latest job id is surfaced by active-mode detection. Legacy file mirror, when enabled, may still write:
 
