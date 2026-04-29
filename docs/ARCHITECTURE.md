@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 3.3.0
-updated: 2026-04-19
-synced_at: d2ab473a
+version: 3.4.0
+updated: 2026-04-29
+synced_at: c0624e85
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -634,10 +634,12 @@ Supervisor post-run policy:
 - always persists bead ID in status when available
 - **Auto-append**: on every `run_complete` event, full specialist output is appended to the **input bead** (all specialists, not just READ_ONLY)
 - **Auto-commit**: if `auto_commit` policy is set, substantive worktree changes are checkpointed at waiting/terminal transitions
-- closes bead **only when runner owns it** (`!runOptions.inputBeadId`)
-- never closes orchestrator-provided input beads
+- **Owned beads**: closed with full reason (COMPLETE/duration/model) on terminal status
+- **Input beads**: auto-closed via `closeBeadIfInProgress()` on terminal status (DONE) — closes only if still `open` or `in_progress`, preserving existing reasons if already closed
 
-This prevents sub-bead/lifecycle conflicts and keeps orchestrator ownership explicit.
+Commit: `83b5986a` (unitAI-9truh)
+
+This eliminates stale `in_progress` drift without overwriting closed beads' reasons.
 
 ### Auto-append bead notes
 
@@ -763,7 +765,7 @@ This snapshot is persisted both in `status.json.startup_context` and in the `run
 | `compaction` (start/end) | Context compaction | `phase` |
 | `retry` | Auto-retry event | `phase` |
 | `stale_warning` | Stuck detection | `reason`, `silence_ms`, `threshold_ms`, `tool` |
-| `run_complete` | **THE canonical completion** | `status`, `elapsed_s`, `model`, `backend`, `bead_id`, `error`, `output`, `metrics`, `gitnexus_summary` |
+| `run_complete` | **THE canonical completion** | `status`, `elapsed_s`, `model`, `backend`, `bead_id`, `error`, `output`, `output_type`, `metrics`, `gitnexus_summary` |
 
 ### Completion semantic
 
@@ -779,6 +781,7 @@ Each `run_complete` event contains:
 - final status (`COMPLETE` | `ERROR` | `CANCELLED`)
 - elapsed time
 - model/backend
+- output type (from specialist execution config: codegen/analysis/review/synthesis/orchestration/workflow/research/custom)
 - error message if applicable
 - aggregated metrics (`token_usage`, `finish_reason`, `tool_calls`, `exit_reason`)
 - GitNexus summary if any `gitnexus_*` tools were invoked
