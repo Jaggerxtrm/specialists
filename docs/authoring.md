@@ -542,7 +542,7 @@ If you author a spec that needs these, file against `unitAI-3k6sa` and continue 
 
 ### Output validation
 
-`prompt.output_schema.required` is checked against `parsed_json` when `response_format: "json"`. Missing keys produce `error_type: "invalid_json"` with a message naming the field. Nested schema is currently warn-only; tracked in `unitAI-xutg2` (passthrough) and the deferred-strict-mode discussion in `docs/specialists-service-evaluation.md` §29.
+`prompt.output_schema.required` is checked against `parsed_json` when `response_format: "json"`. Missing keys produce `error_type: "invalid_json"` with a message naming the field. Nested schema is currently warn-only; tracked in `unitAI-xutg2` (passthrough) and the deferred-strict-mode discussion in `docs/design/specialists-service-evaluation.md` §29.
 
 ### Reference example
 
