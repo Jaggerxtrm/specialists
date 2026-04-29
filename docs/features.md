@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.4.1
+version: 2.4.2
 updated: 2026-04-29
-synced_at: 0050617c
+synced_at: b1493c9a
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -1088,28 +1088,29 @@ When a specialist runs with `--worktree`, the pi session enforces a **write-boun
 
 ### Intercepted tools
 
-| Tool | Intercepted? | Behavior on out-of-bounds path |
-|------|:-------------:|--------------------------------|
-| `edit` | ✓ Yes | Falls back to tmp-fs (temp dir, discarded) |
-| `write` | ✓ Yes | Falls back to tmp-fs |
-| `multiEdit` | ✓ Yes | Falls back to tmp-fs |
-| `notebookEdit` | ✓ Yes | Falls back to tmp-fs |
+| Tool | Intercepted? | Behavior on out-of-bounds absolute path |
+|------|:-------------:|------------------------------------------|
+| `edit` | ✓ Yes | Blocked with reason — tool call rejected |
+| `write` | ✓ Yes | Blocked with reason |
+| `multiEdit` | ✓ Yes | Blocked with reason |
+| `notebookEdit` | ✓ Yes | Blocked with reason |
 | `read` | ✗ No | Allowed (read-only, no corruption risk) |
 | `bash` | ✗ No | Allowed (command execution, not file write) |
 
 ### Boundary semantics
 
-- **Worktree root**: the `worktree_path` recorded in `status.json`
+- **Worktree root**: from `SPECIALISTS_WORKTREE_BOUNDARY` env var (set by the runner from `worktree_path` recorded in `status.json`)
 - **In-bounds path**: any path that resolves to a location under worktree root
-- **Out-of-bounds path**: any absolute path pointing outside worktree root, OR any relative path that escapes via `..` traversal
+- **Out-of-bounds path**: any absolute path resolving outside worktree root
+- **Relative paths**: not intercepted — they resolve against the specialist's cwd, which is the worktree root
 
-### Fallback behavior (tmp-fs)
+### Block behavior
 
-When a write tool attempts an out-of-bounds path:
-1. Tool call is NOT rejected (no error raised to the specialist)
-2. Write is redirected to a temporary location (tmp-fs)
-3. Temporary file is discarded after the session ends
-4. Specialist continues execution unaware of the redirection
+When a write tool is called with an out-of-bounds absolute path:
+1. The tool call is **blocked** before reaching the file system.
+2. The specialist receives a structured rejection: `{ block: true, reason: "Path '<X>' is outside worktree boundary ('<root>'). Use a relative path or a path within the worktree." }`.
+3. No file is created, no tmp-fs redirect, no silent success.
+4. The specialist sees the reason and is expected to retry with a worktree-relative path.
 
 This design prevents:
 - Specialists accidentally modifying main checkout files
@@ -1132,11 +1133,11 @@ Enforcement lives in pi session layer (not specialists code):
 - Applied at tool invocation boundary
 - Path resolution checks against declared `worktree_path`
 
-### Limitations (Phase 1)
+### Limitations
 
-- Bash commands can still write outside worktree (not intercepted)
-- Relative paths with `..` traversal may bypass if not normalized
-- tmp-fs fallback is silent — specialist doesn't know write was redirected
+- `Bash` commands are not intercepted — a `bash` tool call invoking `cp`, `mv`, or shell redirection can still write outside the worktree.
+- Relative paths are not checked — they resolve against the specialist's cwd. Escape via `..` traversal is possible if the specialist explicitly does so; in practice the worktree boundary catches the absolute-path failure mode that motivated this enforcement.
+- Only `path` and `file_path` input fields are inspected; tools with non-standard input keys are not covered.
 
 ---
 
