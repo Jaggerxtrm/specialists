@@ -2,9 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.4.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.5.0
+updated: 2026-04-29
+synced_at: 4e7a6b4a
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -24,7 +24,7 @@ domain:
 | [Force-refresh workflow instructions](#force-refresh-workflow-instructions) | If `AGENTS |
 | [Specialists Workflow](#specialists-workflow) | _no summary_ |
 | [Directory structure](#directory-structure) | Specialists live in ` |
-| [Verify bootstrap](#verify-bootstrap) | These commands are migration shims only: |
+| [Verify bootstrap](#verify-bootstrap) | Run `specialists status`, `doctor`, `list` to verify install. |
 | [Deprecated commands](#deprecated-commands) | These commands are migration shims only: |
 | [See also](#see-also) | - [workflow |
 <!-- END INDEX -->
@@ -82,7 +82,7 @@ Additional steps performed:
   - nodes (`nodes/*.node.json`)
 - migrates legacy nested specialist layouts (`default/specialists/*.specialist.json`) into flat `default/*.specialist.json`
 
-> **Do not run `--sync-defaults` from automated agents.** Agents that need MCP wiring should call plain `specialists init`.
+> **Do not run `--sync-defaults` from automated agents.** `specialists init` (plain or with flags) is human-only — agents must not invoke it. MCP wiring requires an interactive bootstrap performed by a human.
 
 ## Directory structure
 
