@@ -1,7 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { resolveJobsDir } from '../specialist/job-root.js';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { isEpicUnresolvedState, type EpicState } from '../specialist/epic-lifecycle.js';
 
@@ -284,24 +282,26 @@ export function checkEpicUnresolvedGuard(chainRootBeadId: string): EpicGuardResu
 }
 
 export function readAllJobStatuses(): JobStatusRecord[] {
-  const jobsDir = resolveJobsDir();
-  if (!existsSync(jobsDir)) return [];
+  // DB-first merge surface.
+  // resolveMergeTargets() uses this for `sp merge`.
+  // resolveMergeTargetsForBeadIds() uses this for `sp epic merge` via epic.ts:349 and `sp end` via end.ts:100.
+  // One migration here covers all merge surfaces.
+  // epic-readiness.ts:275 already reads via sqlite.listStatuses().
+  const sqliteClient = createObservabilitySqliteClient();
+  if (!sqliteClient) return [];
 
-  const entries = readdirSync(jobsDir, { withFileTypes: true });
-  const statuses: JobStatusRecord[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-
-    const statusPath = join(jobsDir, entry.name, 'status.json');
-    if (!existsSync(statusPath)) continue;
-
-    const parsed = readJson<JobStatusRecord>(readFileSync(statusPath, 'utf-8'));
-    if (!parsed || typeof parsed !== 'object') continue;
-    statuses.push(parsed);
+  try {
+    return sqliteClient.listStatuses().map((status) => ({
+      id: status.id,
+      bead_id: status.bead_id,
+      status: status.status,
+      branch: status.branch,
+      worktree_path: status.worktree_path,
+      started_at_ms: status.started_at_ms,
+    }));
+  } finally {
+    sqliteClient.close();
   }
-
-  return statuses;
 }
 
 export function selectNewestChainRootJob(beadId: string, statuses: readonly JobStatusRecord[]): ChainMergeTarget | null {
