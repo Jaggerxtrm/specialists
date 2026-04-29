@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.4.0
-updated: 2026-04-19
-synced_at: d2ab473a
+version: 2.4.1
+updated: 2026-04-29
+synced_at: 0050617c
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -114,23 +114,18 @@ sp feed --json --since 5m --limit 200
 - **Context warnings**: feed displays context utilization warnings at WARN/CRITICAL thresholds
 - **Startup context lines**: on `run_start` events with `startup_snapshot`, emits dimmed `↳ startup` summary (job, specialist, bead, worktree, branch, vars, skills); on `meta` events with `memory_injection`, emits `↳ memory` token accounting line (static, dynamic, gitnexus, total)
 
-### `poll` (machine snapshot + cursors) — DEPRECATED
+### `poll` (DEPRECATED — do not use)
 
-> **DEPRECATED** — scheduled for removal. Use `sp ps <id> --json` for status and `sp feed <id>` for events. The current `poll` implementation is file-based and returns stale data under the v3.9.0 default-off mode.
+> **DEPRECATED** — scheduled for removal. Use `sp ps <id> --json` for status and `sp feed <id>` for events.
 
-```bash
-sp poll <job-id>
-sp poll <job-id> --cursor 12 --output-cursor 340
-```
+`sp poll` is file-based (`status.json`) and returns stale data under the v3.9.0 SQLite-first default. It offers no advantage over `sp ps --json` (DB-canonical status) and `sp feed` (DB-canonical events).
 
-- Always returns a single JSON object
-- Includes:
-  - `status`, `elapsed_ms`, `current_event`, `current_tool`
-  - `events` delta since `cursor`
-  - `output_delta` since `output_cursor`
-  - next cursors (`cursor`, `output_cursor`)
-- Good for script-driven incremental polling
-- **SQLite-first**: reads from `specialist_events` table when available, falls back to `events.jsonl`
+**Replacements:**
+- Status snapshot: `sp ps <id> --json` — reads from SQLite, includes `current_tool`, `context_pct`, `chain_kind`
+- Event stream: `sp feed <id> --follow` — DB-first timeline with `--json` mode
+- Final output: `sp result <id>` — reads `last_output` column from SQLite
+
+Deprecation tracked in unitAI-kbxu7.
 
 ### `result` (final text)
 
