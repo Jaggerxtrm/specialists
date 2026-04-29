@@ -2,9 +2,9 @@
 title: Specialists Catalog
 scope: specialists-catalog
 category: overview
-version: 1.6.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.6.1
+updated: 2026-04-29
+synced_at: c21f3214
 description: Current project specialists and what each one is for.
 source_of_truth_for:
   - "config/specialists/*.specialist.json"
@@ -28,15 +28,14 @@ Mirror source is `config/specialists/*.specialist.json` during `specialists init
 | Name | Version | Primary model | Permission | Typical use |
 |---|---|---|---|---|
 | `debugger` | v2.0 | `openai-codex/gpt-5.3-codex` | HIGH | deep bug investigation, keep-alive, 4-phase debug-fix-verify workflow |
-| `executor` | v1.0 | `openai-codex/gpt-5.3-codex` | HIGH | production-quality implementation, strict type safety |
+| `executor` | v1.0 | `openai-codex/gpt-5.4-mini` | HIGH | production-quality implementation, strict type safety |
 | `explorer` | v1.1 | `zai/glm-5` | READ_ONLY | architecture/codebase mapping |
 | `memory-processor` | v1.1 | `dashscope/qwen3.5-plus` | MEDIUM | synthesize memories + commits |
 | `node-coordinator` | v1.3 | `openai-codex/gpt-5.4` | LOW | worktree lifecycle coordination |
 | `overthinker` | v1.0 | `openai-codex/gpt-5.4` | READ_ONLY | multi-phase deep reasoning |
-| `parallel-review` | v1.0 | `anthropic/claude-sonnet-4-6` | READ_ONLY | concurrent review passes |
 | `planner` | v1.1 | `openai-codex/gpt-5.4` | HIGH | task decomposition, phased bd issue board, test-planning per layer |
 | `researcher` | v1.1 | `dashscope/qwen3.5-plus` | MEDIUM | library docs lookup + GitHub code discovery, keep-alive |
-| `reviewer` | v1.0 | `openai-codex/gpt-5.3-codex` | READ_ONLY | post-run requirement compliance audit |
+| `reviewer` | v1.0 | `openai-codex/gpt-5.3-codex` | MEDIUM | post-run requirement compliance audit |
 | `specialists-creator` | v1.2 | `anthropic/claude-sonnet-4-6` | HIGH | create/fix specialist JSONs |
 | `sync-docs` | v2.0 | `dashscope/glm-5` | MEDIUM | documentation drift sync, 3-mode routing |
 | `test-runner` | v1.0 | `anthropic/claude-haiku-4-5` | LOW | test execution + summary |
@@ -58,7 +57,6 @@ All specialists now have GitNexus skills wired for code intelligence:
 | `memory-processor` | `documenting`, `using-xtrm` |
 | `node-coordinator` | `using-specialists` |
 | `overthinker` | `gitnexus-exploring`, `deepwiki`, `find-docs`, `github-search` |
-| `parallel-review` | `gitnexus-refactoring`, `gitnexus-impact-analysis`, `using-quality-gates`, `clean-code` |
 | `planner` | `planning`, `test-planning`, `gitnexus-exploring` |
 | `researcher` | `find-docs`, `deepwiki`, `github-search` |
 | `reviewer` | `using-quality-gates`, `clean-code`, `gitnexus-refactoring`, `gitnexus-impact-analysis` |
@@ -113,7 +111,7 @@ All specialists now have GitNexus skills wired for code intelligence:
 - **Skills**: `find-docs`, `deepwiki`, `github-search`
 
 ### reviewer v1.0
-- **Permission**: READ_ONLY
+- **Permission**: MEDIUM
 - **Purpose**: post-run compliance audit — resolves bead requirements, grades output 0-100
 - **Scoring**: coverage (0-70) + evidence quality (0-20) + traceability integrity (0-10)
 - **Skills**: `using-quality-gates`, `clean-code`, `gitnexus-refactoring`, `gitnexus-impact-analysis`
