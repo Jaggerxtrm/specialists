@@ -1,6 +1,24 @@
-# specialists-service install
+---
+title: Specialists Service Install
+scope: specialists-service-install
+category: deployment
+version: 2.0.0
+updated: 2026-04-29
+synced_at: c21f3214
+description: Install runbook for consumers who do not clone specialists source. Deployment steps, trust/readiness gates, hot-reload, common pitfalls.
+source_of_truth_for:
+  - Dockerfile
+  - docker/compose.example.yml
+cross_references:
+  - docs/specialists-service.md (HTTP contract, CLI flags, trust gates, hot-reload)
+  - docs/authoring.md (script-class schema)
+---
+
+# Specialists Service Install
 
 Install path for consumers who do **not** clone specialists source.
+
+For HTTP contract details, CLI flags (`--allow-skills`, `--allow-skills-roots`, `--allow-local-scripts`, `--reload-poll-ms`), trust gates, and hot-reload semantics, see the SSOT: **[docs/specialists-service.md](specialists-service.md)**.
 
 ## Prerequisites
 
@@ -84,6 +102,16 @@ No secret file needed. pi handles model auth from its own config.
 
 ## First request
 
+Before sending traffic, verify readiness:
+
+```bash
+curl -sS http://localhost:8000/readyz
+```
+
+Returns `200 {"ready":true}` when all checks pass, or `503` with a reason when degraded. Six failure reasons exist: `draining`, `degraded:audit`, `pi_config_unreadable`, `db_not_writable`, `empty_user_dir`, `invalid_spec_in_user_dir`. See [specialists-service.md](specialists-service.md#readiness) for full taxonomy.
+
+For trusted single-tenant deployments needing skill-driven specs, pass trust flags at container start: `--allow-skills`, `--allow-skills-roots=<sha256>`, `--allow-local-scripts`. Default is **deny all**. See [specialists-service.md](specialists-service.md#trust-flags).
+
 Send one generate request:
 
 ```bash
@@ -108,11 +136,13 @@ Expected shape:
 }
 ```
 
-Health check:
+Process health check:
 
 ```bash
 curl -sS http://localhost:8000/healthz
 ```
+
+`/healthz` is process-alive only. Use `/readyz` for operational readiness.
 
 ## Verify trace row
 
@@ -164,11 +194,15 @@ podman run -d --rm --name specialists \
 
 The compose template targets standard Docker; if you're on Fedora + rootless Podman, copy the above command form instead.
 
+## Hot-reload
+
+The watcher auto-reloads `.specialists/user/*.specialist.json` on change. Native `fs.watch` is default. For container environments without inotify, use `--reload-poll-ms=1000` for polling fallback. See [specialists-service.md](specialists-service.md#hot-reload).
+
 ## Upgrade story
 
 1. bump image tag in compose file
 2. restart container
-3. wait for `GET /healthz` to return `{ "ok": true }`
-4. let traffic resume after health gate passes
+3. wait for `GET /readyz` to return `{"ready":true}`
+4. let traffic resume after readiness gate passes
 
 Future work: multi-arch buildx, cosign, SBOM, and rollout automation.
