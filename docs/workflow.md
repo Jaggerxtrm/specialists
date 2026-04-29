@@ -2,9 +2,9 @@
 title: Bead-First Workflow
 scope: workflow
 category: guide
-version: 1.2.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.3.0
+updated: 2026-04-29
+synced_at: 5f1ba872
 description: Canonical tracked and ad-hoc workflow for Specialists.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -37,7 +37,7 @@ Key behavior for `--bead` runs:
 - Bead content is the prompt source.
 - Runner injects bead context variables (`$bead_context`, `$bead_id`).
 - Runner applies a bead-aware system override to prevent sub-bead creation.
-- Orchestrator owns the input bead lifecycle; runner does not auto-close input beads.
+- Supervisor auto-closes linked input bead on terminal status (DONE/cancelled).
 
 ## Ad-hoc work
 
@@ -49,11 +49,11 @@ Use this for quick untracked tasks.
 
 ## Async observation model
 
-`--background` was removed from `specialists run`.
+`--background` spawns a detached process via tmux. Use `sp attach <job>` to reconnect.
 
 Use:
-- CLI: run, then inspect with `feed`, `poll`, `result`
-- MCP: `start_specialist` + `feed_specialist`
+- CLI: run, then inspect with `feed`, `ps`, `result`
+- MCP: `use_specialist` (only exposed tool)
 - Shell backgrounding (`&`) when needed
 
 ## `--context-depth`
@@ -63,8 +63,8 @@ Use:
 | Value | Meaning |
 |---|---|
 | `0` | Disable dependency context injection |
-| `1` | Immediate completed blockers only (default) |
-| `2+` | Walk N levels up completed blockers |
+| `3` | Walk 3 levels up completed blockers (default) |
+| `N` | Walk N levels up completed blockers |
 
 ## `--no-beads`
 
