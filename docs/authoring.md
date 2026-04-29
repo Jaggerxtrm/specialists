@@ -2,9 +2,9 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.8.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.9.0
+updated: 2026-04-29
+synced_at: c21f3214
 description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
   - ".xtrm/skills/active/pi/specialists-creator/SKILL.md"
@@ -406,9 +406,17 @@ Append format:
 
 Specialists are discovered in priority order:
 
-1. Project: `<project-root>/specialists/*.specialist.json`
-2. User: `~/.agents/specialists/*.specialist.json`
-3. System: package-bundled specialists
+1. User (repo authoring layer): `<project-root>/.specialists/user/*.specialist.json`
+2. Default (repo-managed mirror): `<project-root>/.specialists/default/*.specialist.json`
+3. Package (upstream fallback): `<project-root>/config/specialists/*.specialist.json`
+
+Legacy paths (loaded but deprecated):
+- `<project-root>/specialists/`
+- `<project-root>/.claude/specialists/`
+- `<project-root>/.agent-forge/specialists/`
+- Nested paths like `.specialists/user/specialists/`
+
+> **User-scope CLI flag deprecated:** The `--user-dir` flag is now `--project-dir` (alias retained). User-scope discovery is project-local only; `~/.agents/specialists` is not scanned.
 
 Name files as `<metadata.name>.specialist.json`.
 
@@ -531,14 +539,32 @@ These run unchanged:
 - `prompt.system`, `prompt.output_schema`
 - `metadata.tags`, `metadata.updated`
 
-### Forbidden under v1 (deferred behind trust flags)
+### Trust flags (script-class security)
 
-Allowed by the schema but rejected by the service unless launched in a trusted-mode that does not yet exist (`unitAI-3k6sa`):
+By default, `compatGuard` rejects specs that would access host resources:
 
-- `skills.paths` — would inject host files into the prompt as `--skill` args
-- `prompt.skill_inherit` — same trust concern
+| Field | Default | Rejection reason |
+|-------|---------|------------------|
+| `skills.paths` | rejected | would inject host files into prompt |
+| `prompt.skill_inherit` | rejected | same trust concern |
+| `skills.scripts` | rejected | local shell hooks unavailable in service mode |
 
-If you author a spec that needs these, file against `unitAI-3k6sa` and continue using `sp run` until that bead lands.
+To permit these fields, launch `sp serve` with trust flags:
+
+```bash
+sp serve --allow-skills --allow-skills-roots /safe/path:/another/safe/path
+sp serve --allow-local-scripts
+```
+
+| Flag | Effect |
+|------|--------|
+| `--allow-skills` | Permits `skills.paths` and `prompt.skill_inherit` |
+| `--allow-skills-roots <p1>:<p2>:...` | Restricts permitted skill paths to entries under listed roots (requires `--allow-skills`) |
+| `--allow-local-scripts` | Permits `skills.scripts` |
+
+When `--allow-skills` is active, each skill path is resolved and hashed. The `status_json.skill_sources` field in the trace row contains `{path, sha256}` entries for audit. Unreadable files produce `sha256: 'unreadable'` rather than throwing.
+
+> **Default-reject is intentional:** Single-tenant deployments must opt-in. Multi-tenant authn is a non-goal for v1.
 
 ### Output validation
 
