@@ -2,9 +2,9 @@
 title: Worktree Isolation
 scope: worktrees
 category: reference
-version: 1.3.0
-updated: 2026-04-17
-synced_at: 50850982
+version: 1.4.0
+updated: 2026-04-29
+synced_at: 4395795d
 description: Technical reference for worktree-per-executor isolation — CLI flags, job registry, GC, and chained bead patterns.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -29,15 +29,18 @@ Each edit-permission specialist runs in an isolated git worktree (branch). This 
 ## CLI flags
 
 ```
-specialists run <name> [--worktree] [--job <id>]
+specialists run <name> [--worktree] [--job <id>] [--force-stale-base]
 ```
 
 | Flag | Semantics | Creates worktree? |
 |------|-----------|:-:|
 | `--worktree` | Explicitly provision a new isolated workspace; requires `--bead` | Yes |
 | `--job <id>` | Reuse the workspace of an existing job | No |
+| `--force-stale-base` | Bypass stale-base guard when provisioning worktree | Yes (if `--worktree`) |
 
 `--worktree` and `--job` are **mutually exclusive**. Specifying both exits with an error.
+
+`--force-stale-base` is only meaningful with `--worktree` — it forces provisioning even when sibling epic chains have unmerged substantive commits.
 
 ---
 
@@ -66,6 +69,21 @@ Provide --bead <id> for automatic worktree provisioning, or use --job <id> to re
 The process exits with code `1`.
 
 `READ_ONLY` specialists are **never** gated — the requirement only applies to edit-capable specialists with `requires_worktree=true`.
+
+### Stale-base guard
+
+When `--worktree` provisions a new worktree, the stale-base guard checks whether sibling chains in the same epic have unmerged substantive commits. If detected, dispatch is blocked:
+
+```
+Error: Epic 'unitAI-3f7b' has sibling chains with unmerged changes.
+  - impl-a: 2 substantive commits on 'feature/unitAI-impl-a-executor'
+  - impl-b: 3 substantive commits on 'feature/unitAI-impl-b-executor'
+Merge sibling chains first via 'sp epic merge unitAI-3f7b', or use --force-stale-base to bypass.
+```
+
+**Why this matters**: When parallel chains branch from the same base, Wave B's worktree lacks Wave A's merged changes. If Wave A merges first, Wave B's diff shows reversions. Rebase at merge-time resolves this, but starting from a stale base increases conflict risk.
+
+Use `--force-stale-base` to bypass when you knowingly accept merge complexity later.
 
 ### `--worktree`
 
@@ -237,6 +255,38 @@ Key invariants:
 - The executor's bead is never re-opened by the reviewer — lifecycle stays with the original claimer.
 
 For orchestration patterns that compose this loop, see `SKILL.md` and `workflow.md`.
+
+---
+
+## Auto-checkpoint behavior
+
+Specialists with `auto_commit: checkpoint_on_waiting` or `checkpoint_on_terminal` automatically commit substantive worktree changes at designated lifecycle points. This prevents lost work if a job crashes or is stopped mid-task.
+
+| Policy | When commits happen | Typical use |
+|--------|---------------------|-------------|
+| `never` | Never | Default — no auto-commit |
+| `checkpoint_on_waiting` | Each keep-alive turn entering `waiting` | Executors, debuggers — preserve partial work before review |
+| `checkpoint_on_terminal` | Terminal completion (`done`/`error`) | One-shot specialists — commit only at end |
+
+Default specialists with auto-checkpoint enabled:
+- **executor**: `checkpoint_on_waiting`
+- **debugger**: `checkpoint_on_waiting`
+
+Commit messages follow the pattern:
+```
+checkpoint(executor): unitAI-55d turn 1
+```
+
+Status metadata tracks checkpoints:
+```json
+{
+  "auto_commit_count": 3,
+  "last_auto_commit_sha": "a1b2c3d",
+  "last_auto_commit_at_ms": 1714020000000
+}
+```
+
+Auto-checkpoint runs silently — no user action required. The guard persists result + bead notes even on initial waiting turn (unitAI-8b812), ensuring no work is lost before the first checkpoint.
 
 ---
 
