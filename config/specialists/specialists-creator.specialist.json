@@ -16,9 +16,8 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "nano-gpt/minimax/minimax-m3:thinking",
-      "thinking_level": "high",
-      "fallback_model": "google-gemini-cli/gemini-3.1-pro-preview",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
       "response_format": "markdown",

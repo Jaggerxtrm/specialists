@@ -14,14 +14,14 @@
       ]
     },
     "execution": {
-      "model": "nano-gpt/minimax/minimax-m3:thinking",
-      "fallback_model": "google-gemini-cli/gemini-3-flash-preview",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 120000,
       "stall_timeout_ms": 120000,
       "response_format": "markdown",
       "output_type": "workflow",
       "permission_required": "READ_ONLY",
-      "thinking_level": "high",
+      "thinking_level": "low",
       "auto_commit": "never",
       "interactive": false,
       "max_retries": 0,

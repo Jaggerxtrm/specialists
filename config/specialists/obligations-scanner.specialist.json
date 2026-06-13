@@ -16,15 +16,15 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "nano-gpt/minimax/minimax-m3:thinking",
-      "fallback_model": "zai/glm-5-turbo",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 0,
       "stall_timeout_ms": 90000,
       "response_format": "markdown",
       "output_type": "review",
       "permission_required": "READ_ONLY",
       "interactive": true,
-      "thinking_level": "high",
+      "thinking_level": "low",
       "max_retries": 0,
       "extensions": {
         "serena": false
@@ -49,30 +49,80 @@
       "task_template": "Run an obligations marker scan for the following diff context:\n\n$prompt\n\nWorking directory: $cwd\n\nIf an executor or debugger job id is provided, inspect that job's worktree diff. If only a path is provided, run the scan there. Stay READ_ONLY, bounded (max 4 tool calls), and return the required output format including the JSON machine-readable block.",
       "output_schema": {
         "type": "object",
-        "required": ["verdict", "production_count", "test_count", "findings"],
+        "required": [
+          "verdict",
+          "production_count",
+          "test_count",
+          "findings"
+        ],
         "properties": {
           "verdict": {
-            "enum": ["CLEAN", "OBLIGATIONS_FOUND", "BLOCKED"]
+            "enum": [
+              "CLEAN",
+              "OBLIGATIONS_FOUND",
+              "BLOCKED"
+            ]
           },
-          "production_count": { "type": "number" },
-          "test_count": { "type": "number" },
+          "production_count": {
+            "type": "number"
+          },
+          "test_count": {
+            "type": "number"
+          },
           "findings": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["file", "line", "marker", "surface", "status"],
+              "required": [
+                "file",
+                "line",
+                "marker",
+                "surface",
+                "status"
+              ],
               "properties": {
-                "file": { "type": "string" },
-                "line": { "type": "number" },
-                "marker": { "enum": ["TODO", "FIXME", "HACK", "XXX", "TEMP", "WIP", "NOTE(release)"] },
-                "excerpt": { "type": "string" },
-                "surface": { "enum": ["production", "test"] },
-                "status": { "enum": ["UNTRACKED", "TRACKED", "N/A"] },
-                "tracked_bead_id": { "type": "string" }
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "number"
+                },
+                "marker": {
+                  "enum": [
+                    "TODO",
+                    "FIXME",
+                    "HACK",
+                    "XXX",
+                    "TEMP",
+                    "WIP",
+                    "NOTE(release)"
+                  ]
+                },
+                "excerpt": {
+                  "type": "string"
+                },
+                "surface": {
+                  "enum": [
+                    "production",
+                    "test"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "UNTRACKED",
+                    "TRACKED",
+                    "N/A"
+                  ]
+                },
+                "tracked_bead_id": {
+                  "type": "string"
+                }
               }
             }
           },
-          "blocked_reason": { "type": "string" }
+          "blocked_reason": {
+            "type": "string"
+          }
         }
       },
       "system_prompt_mode": "append"

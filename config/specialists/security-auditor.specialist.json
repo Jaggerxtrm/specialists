@@ -17,15 +17,15 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "nano-gpt/minimax/minimax-m3:thinking",
-      "fallback_model": "zai/glm-5.1",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
       "response_format": "markdown",
       "output_type": "review",
       "permission_required": "LOW",
       "interactive": true,
-      "thinking_level": "high",
+      "thinking_level": "low",
       "max_retries": 0,
       "bare": false
     },
