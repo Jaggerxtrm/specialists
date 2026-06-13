@@ -82,6 +82,12 @@
       "path": "config/specialists/planner.specialist.json"
     },
     {
+      "path": "config/specialists/quant-methodologist.specialist.json"
+    },
+    {
+      "path": "config/specialists/quant-researcher.specialist.json"
+    },
+    {
       "path": "config/specialists/researcher.specialist.json"
     },
     {

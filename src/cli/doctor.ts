@@ -7,6 +7,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { detectDriftUnderRoot } from '../specialist/drift-detector.js';
+import { SpecialistLoader } from '../specialist/loader.js';
 import { formatVersionCheckNudge, getVersionCheckResult, localVersion, readCachedVersionCheck } from './version-check.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -588,19 +589,117 @@ interface DoctorOptions {
   json: boolean;
   root?: string;
   drift: boolean;
+  specialists: boolean;
 }
 
 function parseDoctorArgs(argv: readonly string[]): DoctorOptions {
-  const opts: DoctorOptions = { json: false, drift: false };
+  const opts: DoctorOptions = { json: false, drift: false, specialists: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--json') { opts.json = true; continue; }
     if (token === '--check-drift' || token === '--drift') { opts.drift = true; continue; }
+    if (token === '--specialists' || token === '--check-specialists') { opts.specialists = true; continue; }
     if (token === '--root') { const value = argv[i + 1]; if (!value || value.startsWith('--')) throw new Error('--root requires a value'); opts.root = resolve(value); i += 1; continue; }
     if (token === '--help' || token === '-h') continue;
     throw new Error(`Unknown argument: ${token}`);
   }
   return opts;
+}
+
+/**
+ * Specialist override-layer health (KAN-90 / unitAI-1gtou.14).
+ *
+ * Reports:
+ *  - resolution of the global user-config path (~/.config/specialists/user.json or XDG)
+ *  - per-specialist model coverage after the full 4-layer merge
+ *  - blocked-field warnings emitted by the loader during merge
+ *
+ * Exit semantics:
+ *  - returns true (no problems) when no specialist has a missing model AND no
+ *    blocked-field strip warning fired.
+ *  - a fresh install without any global file is treated as a NOTICE (not a fail):
+ *    we tell the user to run `sp init --global`.
+ */
+async function checkSpecialistOverrides(): Promise<boolean> {
+  section('specialist overrides  (KAN-90 global user.json)');
+  let loader: SpecialistLoader;
+  try {
+    loader = new SpecialistLoader();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    fail(`could not construct SpecialistLoader: ${msg}`);
+    return false;
+  }
+
+  const globalLayer = loader.getGlobalLayerPath();
+  if (!globalLayer) {
+    warn('global user-config path could not be resolved (HOME and XDG_CONFIG_HOME both unset)');
+    fix('set HOME or XDG_CONFIG_HOME, then run: sp init --global');
+    return false;
+  }
+
+  if (globalLayer.exists) {
+    ok(`global user config: ${globalLayer.path}  ${dim(`(source: ${globalLayer.source})`)}`);
+  } else {
+    warn(`global user config NOT present at ${globalLayer.path}  ${dim(`(source: ${globalLayer.source})`)}`);
+    fix('sp init --global');
+  }
+
+  let summaries: Awaited<ReturnType<SpecialistLoader['list']>>;
+  try {
+    summaries = await loader.list();
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    fail(`SpecialistLoader.list() threw: ${msg}`);
+    return false;
+  }
+
+  const missing: string[] = [];
+  for (const summary of summaries) {
+    if (!summary.model || summary.model === '') missing.push(summary.name);
+  }
+
+  const total = summaries.length;
+  const present = total - missing.length;
+
+  if (missing.length === 0) {
+    ok(`${present}/${total} specialists have a model configured`);
+  } else if (!globalLayer.exists) {
+    // Fresh-install notice path: no global file yet, so missing models are expected.
+    warn(`${present}/${total} specialists have a model configured  ${dim('(global override file not created yet)')}`);
+    fix('sp init --global  →  sp edit --global  (set the model for each specialist you use)');
+  } else {
+    fail(`${present}/${total} specialists have a model configured`);
+    hint(`missing: ${missing.join(', ')}`);
+    fix(`sp edit --global <name>.execution.model <model-id>   (run once per missing specialist)`);
+  }
+
+  // Blocked-field warnings are populated as a side effect of list().
+  const warnings = loader.getBlockedFieldWarnings();
+  if (warnings.length === 0) {
+    ok('no blocked-field overrides detected');
+  } else {
+    const stripCount = warnings.filter(w => w.severity === 'strip').length;
+    const warnCount = warnings.filter(w => w.severity === 'warn').length;
+    if (stripCount > 0) {
+      fail(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
+      for (const w of warnings.filter(w => w.severity === 'strip')) {
+        hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim('(source: global, stripped)')}`);
+      }
+      fix(`remove blocked fields from ${globalLayer.path}`);
+    }
+    if (warnCount > 0) {
+      warn(`${warnCount} blocked-field overrides present in repo layers (v1: applied with warning)`);
+      for (const w of warnings.filter(w => w.severity === 'warn')) {
+        hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim(`(source: ${w.source})`)}`);
+      }
+    }
+  }
+
+  // Health = no missing-with-config + no strip warnings. Fresh install (no file) is a notice, not a fail.
+  const stripFailures = warnings.filter(w => w.severity === 'strip').length;
+  const missingFailures = globalLayer.exists ? missing.length : 0;
+  return stripFailures === 0 && missingFailures === 0;
 }
 
 function renderDriftTable(root: string, json = false): void {
@@ -844,6 +943,15 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
     return;
   }
 
+  if (opts.specialists) {
+    // KAN-90 / unitAI-1gtou.14: focused override-layer health view.
+    console.log(`\n${bold('specialists doctor --specialists')}\n`);
+    const overridesOk = await checkSpecialistOverrides();
+    console.log('');
+    process.exitCode = overridesOk ? 0 : 1;
+    return;
+  }
+
   if (subcommand && subcommand !== '--help' && subcommand !== '-h' && !subcommand.startsWith('--')) {
     console.error(`Unknown doctor subcommand: '${subcommand}'`);
     process.exit(1);
@@ -863,8 +971,9 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
   const fragmentsOk = checkClaudeMdFragments();
+  const overridesOk = await checkSpecialistOverrides();
 
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk;
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log('');
   if (allOk) {
     console.log(`  ${green('✓')} ${bold('All checks passed')}  — specialists is healthy`);
