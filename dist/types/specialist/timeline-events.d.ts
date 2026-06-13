@@ -346,11 +346,38 @@ export interface TimelineEventApiError extends TimelineEventBase {
     source: 'rpc' | 'stderr';
     error_message: string;
 }
+export interface TimelineEventEvidenceRef {
+    evidence_kind: 'diff' | 'commit' | 'pr';
+    evidence_ref?: string;
+    evidence_url?: string;
+    evidence_state?: string;
+    base_ref?: string;
+    base_sha?: string;
+    head_sha?: string;
+    pr_id?: string | number;
+    pr_url?: string;
+    pr_state?: string;
+    trace_id?: string;
+    span_id?: string;
+    parent_span_id?: string;
+    diff?: {
+        changed_files: Array<{
+            path: string;
+            added_lines: number;
+            removed_lines: number;
+        }>;
+        hunks?: string;
+        hunks_artifact_ref?: string;
+        hunks_inline?: boolean;
+        hunks_truncated?: boolean;
+    };
+}
 export interface TimelineEventAutoCommit extends TimelineEventBase {
     type: 'auto_commit_success' | 'auto_commit_skipped' | 'auto_commit_failed';
     reason?: string;
     commit_sha?: string;
     committed_files?: string[];
+    evidence?: TimelineEventEvidenceRef[];
 }
 export interface TimelineEventControlSignal extends TimelineEventBase {
     type: 'control_signal';
@@ -405,6 +432,15 @@ export declare const TIMELINE_EVENT_TYPES: {
     readonly AUTO_COMMIT_SUCCESS: "auto_commit_success";
     readonly AUTO_COMMIT_SKIPPED: "auto_commit_skipped";
     readonly AUTO_COMMIT_FAILED: "auto_commit_failed";
+    readonly COMMAND_COMPLETED: "command_completed";
+    readonly COMMAND_FAILED: "command_failed";
+    readonly REVIEW_VERDICT_PASS: "review_verdict_pass";
+    readonly REVIEW_VERDICT_PARTIAL: "review_verdict_partial";
+    readonly REVIEW_VERDICT_FAIL: "review_verdict_fail";
+    readonly REVIEW_VERDICT_WAIVED: "review_verdict_waived";
+    readonly CHAIN_READY_FOR_REVIEW: "chain_ready_for_review";
+    readonly CHAIN_FINALIZED: "chain_finalized";
+    readonly WORKTREE_MERGED: "worktree_merged";
     readonly CONTROL_SIGNAL: "control_signal";
     readonly DONE: "done";
     readonly AGENT_END: "agent_end";
@@ -513,6 +549,7 @@ export declare function createRunCompleteEvent(status: 'COMPLETE' | 'ERROR' | 'C
     tool_calls?: string[];
     exit_reason?: string;
     metrics?: TimelineRunMetrics;
+    evidence?: TimelineEventEvidenceRef[];
     gitnexus_summary?: {
         files_touched: string[];
         symbols_analyzed: string[];
@@ -525,7 +562,35 @@ export declare function createAutoCommitEvent(status: 'success' | 'skipped' | 'f
     reason?: string;
     commit_sha?: string;
     committed_files?: string[];
+    evidence?: TimelineEventEvidenceRef[];
 }): TimelineEventAutoCommit;
+export declare function createCommandEvent(status: 'completed' | 'failed', options: {
+    command_kind: string;
+    duration_ms?: number;
+    command?: string;
+    args?: string[];
+    exit_code?: number;
+    stderr?: string;
+    redacted?: boolean;
+}): TimelineEventBase & {
+    type: 'command_completed' | 'command_failed';
+    command_kind: string;
+    duration_ms?: number;
+    command?: string;
+    args?: string[];
+    exit_code?: number;
+    stderr?: string;
+    redacted?: boolean;
+};
+export declare function createReviewVerdictEvent(verdict: 'pass' | 'partial' | 'fail' | 'waived', body?: Record<string, unknown>): TimelineEventBase & {
+    type: string;
+};
+export declare function createChainEvent(type: 'chain_ready_for_review' | 'chain_finalized', body?: Record<string, unknown>): TimelineEventBase & {
+    type: string;
+};
+export declare function createWorktreeMergedEvent(body?: Record<string, unknown>): TimelineEventBase & {
+    type: 'worktree_merged';
+};
 /**
  * Parse a timeline event from an events.jsonl line.
  * Returns null for malformed or unknown event types.

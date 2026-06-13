@@ -183,11 +183,14 @@ async function run() {
         '  --sync-skills      Re-sync skills only (.xtrm/default + active symlinks).',
         '                     Skips full init flow.',
         '  --no-xtrm-check    Skip .xtrm/ + xt CLI prerequisite checks (CI/testing).',
+        '  --global           Generate/extend the global ~/.config/specialists/user.json',
+        '                     override layer instead of bootstrapping a project.',
         '',
         'Examples:',
         '  specialists init                  # full bootstrap',
         '  specialists init --sync-defaults  # sync canonical specialists',
         '  specialists init --sync-skills    # re-sync skills only',
+        '  specialists init --global         # seed global user overrides',
         '',
         'Notes:',
         '  setup and install are deprecated; use specialists init.',
@@ -204,8 +207,9 @@ async function run() {
     const syncDefaults = process.argv.includes('--sync-defaults');
     const syncSkills = process.argv.includes('--sync-skills');
     const noXtrmCheck = process.argv.includes('--no-xtrm-check');
+    const globalFlag = process.argv.includes('--global');
     const { run: handler } = await import('./cli/init.js');
-    return handler({ syncDefaults, syncSkills, noXtrmCheck });
+    return handler({ syncDefaults, syncSkills, noXtrmCheck, global: globalFlag });
   }
 
   if (sub === 'memory') {
@@ -315,18 +319,22 @@ async function run() {
         '       specialists edit --all --set <dot.path> <value> [options]',
         '       specialists edit --all',
         '       specialists edit <name> --preset <preset> [--dry-run]',
+        '       specialists edit --global [name.field value]',
+        '       specialists edit --global --get name.execution.model',
+        '       specialists edit --global --set name.execution.model <value>',
         '       specialists edit --list-presets',
         '',
         'Edit specialist YAML fields via schema-validated dot-paths.',
         '',
         'Options:',
+        '  --global                 Edit ~/.config/specialists/user.json override layer',
         '  --append                 Append value(s) to array field',
         '  --remove                 Remove value(s) from array field',
         '  --file <path>            Read value from file (prompt.system/task_template)',
         '  --preset <name>          Apply a preset (bundle of field values)',
         '  --list-presets            Show available presets',
         '  --dry-run                Preview change without writing',
-        '  --scope <default|user>   Disambiguate duplicate names across scopes',
+        '  --scope <default|user>   Disambiguate duplicate names across scopes (excludes --global)',
         '  --all                    Target all specialists (or open all in $EDITOR when used alone)',
         '',
         'Backwards-compat aliases:',
