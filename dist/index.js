@@ -20585,8 +20585,9 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
-    if (!spec.specialist.execution.model.includes("/")) {
-      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    const declaredModel = spec.specialist.execution.model;
+    if (declaredModel && !declaredModel.includes("/")) {
+      warnings.push(`Model "${declaredModel}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
   }
   return { valid: errors5.length === 0, errors: errors5, warnings };
@@ -20608,7 +20609,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema, OVERRIDE_ALLOWED_EXECUTION_FIELDS, OVERRIDE_ALLOWED_TOP_FIELDS, BLOCKED_OVERRIDE_FIELDS;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -20623,8 +20624,8 @@ var init_schema = __esm(() => {
   }).passthrough();
   ExecutionSchema = objectType({
     mode: enumType(["tool", "skill", "auto"]).default("auto"),
-    model: stringType(),
-    fallback_model: stringType().optional(),
+    model: stringType().nullable(),
+    fallback_model: stringType().nullable().optional(),
     timeout_ms: numberType().default(120000),
     stall_timeout_ms: numberType().optional(),
     max_retries: numberType().int().min(0).default(0),
@@ -20701,6 +20702,24 @@ var init_schema = __esm(() => {
       beads_write_notes: booleanType().default(true)
     }).passthrough()
   }).passthrough();
+  OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
+    "model",
+    "fallback_model",
+    "timeout_ms",
+    "stall_timeout_ms",
+    "thinking_level",
+    "max_retries"
+  ];
+  OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes"];
+  BLOCKED_OVERRIDE_FIELDS = [
+    "execution.permission_required",
+    "execution.auto_commit",
+    "prompt.system",
+    "prompt.output_schema",
+    "skills.scripts",
+    "mandatory_rules",
+    "capabilities"
+  ];
 });
 
 // src/specialist/canonical-asset-resolver.ts
@@ -20718,10 +20737,143 @@ function resolveCanonicalAssetDir(relativePath) {
 }
 var init_canonical_asset_resolver = () => {};
 
+// src/specialist/global-config.ts
+import { existsSync as existsSync4, readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3 } from "fs";
+import { dirname as dirname3, join as join4 } from "path";
+import { homedir } from "os";
+function getGlobalUserConfigPath() {
+  const home = process.env.HOME?.trim() || homedir();
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdgConfigHome) {
+    const xdgPath = join4(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync4(xdgPath), source: "xdg" };
+  }
+  const configHomePath = join4(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync4(configHomePath)) {
+    return { path: configHomePath, exists: true, source: "config-home" };
+  }
+  const legacyPath = join4(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync4(legacyPath)) {
+    return { path: legacyPath, exists: true, source: "legacy" };
+  }
+  return { path: configHomePath, exists: false, source: "config-home" };
+}
+function buildSpecialistOverrideTemplate() {
+  return {
+    execution: {
+      model: null,
+      fallback_model: null,
+      timeout_ms: null,
+      stall_timeout_ms: null,
+      thinking_level: null,
+      max_retries: null
+    },
+    beads_write_notes: null,
+    skills: { paths: [] }
+  };
+}
+function buildGlobalUserConfigTemplate(specialistNames) {
+  const template = {};
+  for (const name of specialistNames) {
+    template[name] = buildSpecialistOverrideTemplate();
+  }
+  return template;
+}
+function fillMissingDefaults(target, defaults) {
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    if (!(key in target)) {
+      target[key] = structuredClone(defaultValue);
+      continue;
+    }
+    const currentValue = target[key];
+    if (currentValue !== null && typeof currentValue === "object" && !Array.isArray(currentValue) && defaultValue !== null && typeof defaultValue === "object" && !Array.isArray(defaultValue)) {
+      fillMissingDefaults(currentValue, defaultValue);
+    }
+  }
+  return target;
+}
+function mergeGlobalUserConfig(existing, template) {
+  const merged = {};
+  const added = [];
+  const extended = [];
+  const removed = [];
+  for (const [name, rawExisting] of Object.entries(existing)) {
+    const templateOverride = template[name];
+    if (templateOverride) {
+      const normalized = fillMissingDefaults(rawExisting && typeof rawExisting === "object" ? { ...rawExisting } : {}, templateOverride);
+      merged[name] = normalized;
+      extended.push(name);
+    } else {
+      merged[name] = rawExisting;
+      removed.push(name);
+    }
+  }
+  for (const [name, override] of Object.entries(template)) {
+    if (!(name in existing)) {
+      merged[name] = override;
+      added.push(name);
+    }
+  }
+  return { config: merged, added, extended, removed };
+}
+function validateGlobalUserConfig(jsonContent) {
+  let raw;
+  try {
+    raw = JSON.parse(jsonContent);
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return {
+      valid: false,
+      errors: [{ path: "json", message: `JSON parse error: ${message}` }]
+    };
+  }
+  const result = GlobalUserConfigSchema.safeParse(raw);
+  if (result.success) {
+    return { valid: true, errors: [] };
+  }
+  const errors5 = result.error.issues.map((issue2) => ({
+    path: issue2.path.map((p) => typeof p === "number" ? `[${p}]` : p).join("."),
+    message: issue2.message
+  }));
+  return { valid: false, errors: errors5 };
+}
+function readGlobalUserConfig(location) {
+  if (!location.exists)
+    return null;
+  const content = readFileSync3(location.path, "utf-8");
+  return JSON.parse(content);
+}
+function writeGlobalUserConfig(location, config2) {
+  mkdirSync3(dirname3(location.path), { recursive: true });
+  writeFileSync2(location.path, `${JSON.stringify(config2, null, 2)}
+`, "utf-8");
+}
+var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", OverrideExecutionSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
+var init_global_config = __esm(() => {
+  init_zod();
+  OverrideExecutionSchema = objectType({
+    model: stringType().nullable(),
+    fallback_model: stringType().nullable(),
+    timeout_ms: numberType().nullable(),
+    stall_timeout_ms: numberType().nullable(),
+    thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
+    max_retries: numberType().int().min(0).nullable()
+  }).strict();
+  OverrideSkillsSchema = objectType({
+    paths: arrayType(stringType())
+  }).strict();
+  GlobalSpecialistOverrideSchema = objectType({
+    execution: OverrideExecutionSchema,
+    beads_write_notes: booleanType().nullable(),
+    skills: OverrideSkillsSchema
+  }).strict();
+  GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
+});
+
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "fs/promises";
-import { basename, join as join4 } from "path";
-import { existsSync as existsSync4 } from "fs";
+import { basename, join as join5 } from "path";
+import { existsSync as existsSync5 } from "fs";
 async function checkStaleness(summary) {
   if (!summary.filestoWatch?.length || !summary.updated)
     return "OK";
@@ -20743,23 +20895,24 @@ async function checkStaleness(summary) {
 
 class SpecialistLoader {
   cache = new Map;
+  blockedFieldWarnings = new Map;
   projectDir;
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
   }
   getScanDirs() {
     const dirs = [
-      { path: join4(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join4(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join4(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
-      { path: join4(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
-      { path: join4(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join5(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join5(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join5(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
+      { path: join5(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
+      { path: join5(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" },
-      { path: join4(this.projectDir, "specialists"), scope: "default", source: "legacy" },
-      { path: join4(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
-      { path: join4(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
+      { path: join5(this.projectDir, "specialists"), scope: "default", source: "legacy" },
+      { path: join5(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
+      { path: join5(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
     ];
-    return dirs.filter((d) => d.path && existsSync4(d.path));
+    return dirs.filter((d) => d.path && existsSync5(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -20767,15 +20920,155 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join4(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync4(jsonPath)) {
+    const jsonPath = join5(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync5(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join4(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync4(yamlPath)) {
+    const yamlPath = join5(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync5(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
+  }
+  findLayerHits(name) {
+    const hits = [];
+    const seenScopes = new Set;
+    for (const dir of this.getScanDirs()) {
+      const resolved = this.resolveSpecialistPath(dir.path, name);
+      if (!resolved)
+        continue;
+      if (seenScopes.has(dir.scope))
+        continue;
+      seenScopes.add(dir.scope);
+      hits.push({ dir, resolved });
+    }
+    return hits.reverse();
+  }
+  applyOverrideFields(name, base, override, source) {
+    const warnings = [];
+    const baseSpec = base.specialist;
+    const overrideSpec = override.specialist ?? override;
+    for (const dottedPath of BLOCKED_OVERRIDE_FIELDS) {
+      const value = readDottedPath(overrideSpec, dottedPath);
+      if (value === undefined)
+        continue;
+      warnings.push({
+        specialist: name,
+        field: dottedPath,
+        source,
+        severity: source === "global" ? "strip" : "warn",
+        value
+      });
+    }
+    const overrideExecution = overrideSpec.execution ?? {};
+    const baseExecution = baseSpec.execution ?? {};
+    for (const field of OVERRIDE_ALLOWED_EXECUTION_FIELDS) {
+      if (!(field in overrideExecution))
+        continue;
+      const overrideValue = overrideExecution[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseExecution[field] = overrideValue;
+    }
+    baseSpec.execution = baseExecution;
+    for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
+      if (!(field in overrideSpec))
+        continue;
+      const overrideValue = overrideSpec[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseSpec[field] = overrideValue;
+    }
+    const overrideSkills = overrideSpec.skills ?? {};
+    const overridePaths = Array.isArray(overrideSkills.paths) ? overrideSkills.paths : null;
+    if (overridePaths && overridePaths.length) {
+      const baseSkills = baseSpec.skills ?? {};
+      const basePaths = Array.isArray(baseSkills.paths) ? baseSkills.paths : [];
+      const seen = new Set;
+      const merged = [];
+      for (const p of [...basePaths, ...overridePaths]) {
+        if (seen.has(p))
+          continue;
+        seen.add(p);
+        merged.push(p);
+      }
+      baseSkills.paths = merged;
+      baseSpec.skills = baseSkills;
+    }
+    return warnings;
+  }
+  async buildMergedSpec(name) {
+    const hits = this.findLayerHits(name);
+    if (hits.length === 0)
+      return null;
+    const baseHit = hits[0];
+    const baseContent = await readFile(baseHit.resolved.filePath, "utf-8");
+    const base = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
+    if (baseHit.resolved.deprecatedYaml) {
+      process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${baseHit.resolved.filePath}. Please migrate to .specialist.json
+`);
+    }
+    const warnings = [];
+    for (const hit of hits.slice(1)) {
+      const content = await readFile(hit.resolved.filePath, "utf-8");
+      let overrideRaw;
+      try {
+        overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`[specialists] skipping override ${hit.resolved.filePath}: ${msg}
+`);
+        continue;
+      }
+      if (hit.resolved.deprecatedYaml) {
+        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${hit.resolved.filePath}. Please migrate to .specialist.json
+`);
+      }
+      const layerSource = hit.dir.scope === "user" ? "user" : "default";
+      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, layerSource));
+    }
+    const top = hits[hits.length - 1];
+    const globalLocation = getGlobalUserConfigPath();
+    const globalConfig2 = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+    const globalOverride = globalConfig2?.[name];
+    if (globalOverride) {
+      const rebuiltBase = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
+      const rebuiltWarnings = [];
+      rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, { specialist: globalOverride }, "global"));
+      for (const hit of hits.slice(1)) {
+        const content = await readFile(hit.resolved.filePath, "utf-8");
+        let overrideRaw;
+        try {
+          overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
+        } catch {
+          continue;
+        }
+        const layerSource = hit.dir.scope === "user" ? "user" : "default";
+        rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, overrideRaw, layerSource));
+      }
+      resolveSkillsPaths(rebuiltBase, baseHit.dir.path);
+      return {
+        spec: rebuiltBase,
+        topLayer: {
+          scope: top.dir.scope,
+          source: top.dir.source,
+          filePath: top.resolved.filePath,
+          deprecatedYaml: top.resolved.deprecatedYaml
+        },
+        warnings: rebuiltWarnings
+      };
+    }
+    resolveSkillsPaths(base, baseHit.dir.path);
+    return {
+      spec: base,
+      topLayer: {
+        scope: top.dir.scope,
+        source: top.dir.source,
+        filePath: top.resolved.filePath,
+        deprecatedYaml: top.resolved.deprecatedYaml
+      },
+      warnings
+    };
   }
   async list(category) {
     const results = [];
@@ -20786,45 +21079,41 @@ class SpecialistLoader {
         const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, "");
         if (seen.has(specialistName))
           continue;
-        const resolved = this.resolveSpecialistPath(dir.path, specialistName);
-        if (!resolved)
-          continue;
         try {
-          const content = await readFile(resolved.filePath, "utf-8");
-          const spec = await parseSpecialist(this.toJson(content, resolved.deprecatedYaml));
-          const { name, description, category: cat, version: version2, updated } = spec.specialist.metadata;
+          const merged = await this.buildMergedSpec(specialistName);
+          if (!merged)
+            continue;
+          const { name, description, category: cat, version: version2, updated } = merged.spec.specialist.metadata;
           if (seen.has(name))
             continue;
           if (category && cat !== category)
             continue;
-          if (resolved.deprecatedYaml) {
-            process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolved.filePath}. Please migrate to .specialist.json
-`);
-          }
           seen.add(name);
+          if (merged.warnings.length)
+            this.blockedFieldWarnings.set(name, merged.warnings);
           results.push({
             name,
             description,
             category: cat,
             version: version2,
-            model: spec.specialist.execution.model,
-            permission_required: spec.specialist.execution.permission_required,
-            interactive: spec.specialist.execution.interactive,
-            thinking_level: spec.specialist.execution.thinking_level,
-            skills: spec.specialist.skills?.paths ?? [],
-            scripts: spec.specialist.skills?.scripts ?? [],
-            mandatoryRuleTemplateSets: spec.specialist.mandatory_rules?.template_sets ?? [],
-            scope: dir.scope,
-            source: dir.source,
-            filePath: resolved.filePath,
+            model: merged.spec.specialist.execution.model ?? "",
+            permission_required: merged.spec.specialist.execution.permission_required,
+            interactive: merged.spec.specialist.execution.interactive,
+            thinking_level: merged.spec.specialist.execution.thinking_level,
+            skills: merged.spec.specialist.skills?.paths ?? [],
+            scripts: merged.spec.specialist.skills?.scripts ?? [],
+            mandatoryRuleTemplateSets: merged.spec.specialist.mandatory_rules?.template_sets ?? [],
+            scope: merged.topLayer.scope,
+            source: merged.topLayer.source,
+            filePath: merged.topLayer.filePath,
             updated,
-            filestoWatch: spec.specialist.validation?.files_to_watch,
-            staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
-            stallDetection: spec.specialist.stall_detection ?? undefined
+            filestoWatch: merged.spec.specialist.validation?.files_to_watch,
+            staleThresholdDays: merged.spec.specialist.validation?.stale_threshold_days,
+            stallDetection: merged.spec.specialist.stall_detection ?? undefined
           });
         } catch (e) {
           const reason = e instanceof Error ? e.message : String(e);
-          process.stderr.write(`[specialists] skipping ${resolved.filePath}: ${reason}
+          process.stderr.write(`[specialists] skipping ${file} (${specialistName}): ${reason}
 `);
         }
       }
@@ -20834,44 +21123,80 @@ class SpecialistLoader {
   async get(name) {
     if (this.cache.has(name))
       return this.cache.get(name);
-    for (const dir of this.getScanDirs()) {
-      const resolvedPath = this.resolveSpecialistPath(dir.path, name);
-      if (!resolvedPath)
-        continue;
-      const content = await readFile(resolvedPath.filePath, "utf-8");
-      const spec = await parseSpecialist(this.toJson(content, resolvedPath.deprecatedYaml));
-      if (resolvedPath.deprecatedYaml) {
-        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolvedPath.filePath}. Please migrate to .specialist.json
-`);
-      }
-      const rawPaths = spec.specialist.skills?.paths;
-      if (rawPaths?.length) {
-        const fileDir = dir.path;
-        const resolved = rawPaths.map((p) => {
-          if (p.startsWith("~/"))
-            return join4(process.env.HOME || "", p.slice(2));
-          if (p.startsWith("./"))
-            return join4(fileDir, p.slice(2));
-          return p;
-        });
-        spec.specialist.skills.paths = resolved;
-      }
-      this.cache.set(name, spec);
-      return spec;
+    const merged = await this.buildMergedSpec(name);
+    if (!merged)
+      throw new Error(`Specialist not found: ${name}`);
+    if (merged.warnings.length)
+      this.blockedFieldWarnings.set(name, merged.warnings);
+    const model = merged.spec.specialist.execution.model;
+    if (model === null || model === undefined || model === "") {
+      throw new SpecialistMissingModelError(name);
     }
-    throw new Error(`Specialist not found: ${name}`);
+    this.cache.set(name, merged.spec);
+    return merged.spec;
+  }
+  getBlockedFieldWarnings(name) {
+    if (name)
+      return this.blockedFieldWarnings.get(name) ?? [];
+    const all = [];
+    for (const warnings of this.blockedFieldWarnings.values())
+      all.push(...warnings);
+    return all;
+  }
+  getGlobalLayerPath() {
+    try {
+      return getGlobalUserConfigPath();
+    } catch {
+      return null;
+    }
   }
   invalidateCache(name) {
-    if (name)
+    if (name) {
       this.cache.delete(name);
-    else
+      this.blockedFieldWarnings.delete(name);
+    } else {
       this.cache.clear();
+      this.blockedFieldWarnings.clear();
+    }
   }
 }
+function readDottedPath(obj, dotted) {
+  const parts = dotted.split(".");
+  let cur = obj;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object")
+      return;
+    cur = cur[part];
+  }
+  return cur;
+}
+function resolveSkillsPaths(spec, fileDir) {
+  const rawPaths = spec.specialist.skills?.paths;
+  if (!rawPaths?.length)
+    return;
+  const resolved = rawPaths.map((p) => {
+    if (p.startsWith("~/"))
+      return join5(process.env.HOME || "", p.slice(2));
+    if (p.startsWith("./"))
+      return join5(fileDir, p.slice(2));
+    return p;
+  });
+  spec.specialist.skills.paths = resolved;
+}
+var SpecialistMissingModelError;
 var init_loader = __esm(() => {
   init_dist();
   init_schema();
   init_canonical_asset_resolver();
+  init_global_config();
+  SpecialistMissingModelError = class SpecialistMissingModelError extends Error {
+    specialistName;
+    constructor(specialistName) {
+      super(`specialist '${specialistName}' has no model configured. ` + `Run: sp edit --global ${specialistName}.execution.model <model-id> ` + `(or 'sp init --global' to create the global user config file first).`);
+      this.specialistName = specialistName;
+      this.name = "SpecialistMissingModelError";
+    }
+  };
 });
 
 // src/specialist/job-file-output.ts
@@ -21110,15 +21435,15 @@ var init_tool_catalog = __esm(() => {
 // src/pi/session.ts
 import { createHash } from "crypto";
 import { spawn } from "child_process";
-import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "fs";
-import { homedir, tmpdir } from "os";
-import { isAbsolute, resolve as resolve2, sep as sep2, join as join5, dirname as dirname3 } from "path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "fs";
+import { homedir as homedir2, tmpdir } from "os";
+import { isAbsolute, resolve as resolve2, sep as sep2, join as join6, dirname as dirname4 } from "path";
 function loadSharedToolCatalogIndex() {
   if (cachedToolCatalogIndex)
     return cachedToolCatalogIndex;
   const overridePath = resolve2(process.cwd(), ".specialists", "catalog", "index.json");
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync3(overridePath, "utf8"));
+    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync4(overridePath, "utf8"));
     return cachedToolCatalogIndex;
   } catch {
     try {
@@ -21126,7 +21451,7 @@ function loadSharedToolCatalogIndex() {
       if (!canonicalDir)
         return;
       const canonicalPath = resolve2(canonicalDir, "index.json");
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync3(canonicalPath, "utf8"));
+      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync4(canonicalPath, "utf8"));
       return cachedToolCatalogIndex;
     } catch {
       return;
@@ -21135,7 +21460,7 @@ function loadSharedToolCatalogIndex() {
 }
 function probeExtensionHealth(packageName) {
   const globalDir = resolveGlobalNodeModulesDir();
-  if (globalDir && existsSync5(join5(globalDir, packageName, "package.json"))) {
+  if (globalDir && existsSync6(join6(globalDir, packageName, "package.json"))) {
     return "loaded_healthy";
   }
   return "not_installed";
@@ -21162,12 +21487,12 @@ function resolvePermissionTools(options) {
 function resolveGlobalNodeModulesDir() {
   const candidates = [
     process.env.PI_NPM_GLOBAL_DIR,
-    process.env.NPM_CONFIG_PREFIX ? join5(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
-    process.env.npm_config_prefix ? join5(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
-    process.env.NVM_BIN ? join5(dirname3(process.env.NVM_BIN), "lib", "node_modules") : undefined,
-    join5(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
+    process.env.NPM_CONFIG_PREFIX ? join6(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
+    process.env.npm_config_prefix ? join6(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join6(dirname4(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    join6(homedir2(), ".nvm/versions/node", process.version, "lib", "node_modules")
   ].filter((candidate) => Boolean(candidate));
-  return candidates.find((candidate) => existsSync5(candidate));
+  return candidates.find((candidate) => existsSync6(candidate));
 }
 function asNumber(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -21375,16 +21700,16 @@ function isTestCommand(command) {
 }
 function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
   const boundaryHash = createHash("sha256").update(resolve2(worktreeBoundary)).digest("hex").slice(0, 16);
-  const extensionsDir = join5(tmpdir(), "specialists-pi-extensions");
+  const extensionsDir = join6(tmpdir(), "specialists-pi-extensions");
   try {
-    mkdirSync3(extensionsDir, { recursive: true });
+    mkdirSync4(extensionsDir, { recursive: true });
   } catch (err) {
     process.stderr.write(`[worktree-boundary] WARN: could not create extensions directory at ${extensionsDir}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
 `);
     return null;
   }
-  const extensionPath = join5(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
-  if (existsSync5(extensionPath))
+  const extensionPath = join6(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync6(extensionPath))
     return extensionPath;
   const extensionSource = `
 import { isAbsolute, resolve } from 'node:path';
@@ -21423,7 +21748,7 @@ export default function(pi) {
 }
 `.trimStart();
   try {
-    writeFileSync2(extensionPath, extensionSource, "utf-8");
+    writeFileSync3(extensionPath, extensionSource, "utf-8");
   } catch (err) {
     process.stderr.write(`[worktree-boundary] WARN: could not write extension file at ${extensionPath}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
 `);
@@ -21501,32 +21826,32 @@ class PiAgentSession {
     for (const skillPath of this.options.skillPaths ?? []) {
       args.push("--skill", skillPath);
     }
-    const piExtDir = join5(homedir(), ".pi", "agent", "extensions");
+    const piExtDir = join6(homedir2(), ".pi", "agent", "extensions");
     const permLevel = (this.options.permissionLevel ?? "").toUpperCase();
     if (permLevel !== "READ_ONLY") {
-      const qgPath = join5(piExtDir, "quality-gates");
-      if (existsSync5(qgPath))
+      const qgPath = join6(piExtDir, "quality-gates");
+      if (existsSync6(qgPath))
         args.push("-e", qgPath);
     }
-    const ssPath = join5(piExtDir, "service-skills");
-    if (existsSync5(ssPath))
+    const ssPath = join6(piExtDir, "service-skills");
+    if (existsSync6(ssPath))
       args.push("-e", ssPath);
-    const cavemanPath = join5(piExtDir, "caveman");
-    if (existsSync5(cavemanPath))
+    const cavemanPath = join6(piExtDir, "caveman");
+    if (existsSync6(cavemanPath))
       args.push("-e", cavemanPath);
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {
       const gitnexusPackageName = "pi-gitnexus";
       if (!excludedExtensions.has(gitnexusPackageName)) {
-        const gitnexusPath = join5(npmGlobalDir, gitnexusPackageName);
-        if (existsSync5(gitnexusPath))
+        const gitnexusPath = join6(npmGlobalDir, gitnexusPackageName);
+        if (existsSync6(gitnexusPath))
           args.push("-e", gitnexusPath);
       }
       const serenaPackageName = "pi-serena-tools";
       if (!excludedExtensions.has(serenaPackageName)) {
-        const serenaPath = join5(npmGlobalDir, serenaPackageName);
-        if (existsSync5(serenaPath))
+        const serenaPath = join6(npmGlobalDir, serenaPackageName);
+        if (existsSync6(serenaPath))
           args.push("-e", serenaPath);
       }
     }
@@ -21544,8 +21869,8 @@ class PiAgentSession {
     const sessionCwd = resolve2(this.options.cwd ?? process.cwd());
     let serenaPoolPort = null;
     if (npmGlobalDir && !excludedExtensions.has("pi-serena-tools")) {
-      const serenaPoolPath = join5(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
-      if (existsSync5(serenaPoolPath)) {
+      const serenaPoolPath = join6(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
+      if (existsSync6(serenaPoolPath)) {
         try {
           const mod = await import(serenaPoolPath);
           if (typeof mod.ensureSerenaForRoot === "function") {
@@ -22407,10 +22732,10 @@ var init_memory_retrieval = __esm(() => {
 });
 
 // src/specialist/mandatory-rules.ts
-import { existsSync as existsSync6, readFileSync as readFileSync4 } from "fs";
+import { existsSync as existsSync7, readFileSync as readFileSync5 } from "fs";
 import { resolve as resolve3 } from "path";
 function readJsonFile(filePath) {
-  return JSON.parse(readFileSync4(filePath, "utf8"));
+  return JSON.parse(readFileSync5(filePath, "utf8"));
 }
 function mergeIndex(base, overlay) {
   const dedupe = (values) => values ? Array.from(new Set(values)) : undefined;
@@ -22435,10 +22760,10 @@ function loadMandatoryRulesIndex(cwd) {
   const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
   const tiers = [];
   for (const path of tierPaths) {
-    if (existsSync6(path))
+    if (existsSync7(path))
       tiers.push(readJsonFile(path));
   }
-  if (tiers.length === 0 && packageLiveIndexPath && existsSync6(packageLiveIndexPath)) {
+  if (tiers.length === 0 && packageLiveIndexPath && existsSync7(packageLiveIndexPath)) {
     tiers.push(readJsonFile(packageLiveIndexPath));
   }
   if (tiers.length === 0) {
@@ -22540,10 +22865,10 @@ function readMandatoryRuleSet(cwd, id) {
     resolve3(cwd, `config/mandatory-rules/${id}.md`),
     ...packageCanonicalDir ? [resolve3(packageCanonicalDir, `${id}.md`)] : []
   ];
-  const filePath = candidates.find((path) => existsSync6(path));
+  const filePath = candidates.find((path) => existsSync7(path));
   if (!filePath)
     return null;
-  const content = readFileSync4(filePath, "utf8");
+  const content = readFileSync5(filePath, "utf8");
   const rules = parseMandatoryRulesFrontmatter(content, id);
   if (rules.length > 0)
     return { id, rules };
@@ -22818,9 +23143,9 @@ __export(exports_runner, {
 });
 import { createHash as createHash2 } from "crypto";
 import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync5 } from "fs";
+import { existsSync as existsSync8, readFileSync as readFileSync6 } from "fs";
 import { basename as basename2, resolve as resolve4 } from "path";
-import { homedir as homedir2 } from "os";
+import { homedir as homedir3 } from "os";
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
@@ -22884,7 +23209,7 @@ ${blocks}
 </pre_flight_context>`;
 }
 function resolvePath(p) {
-  return p.startsWith("~/") ? resolve4(homedir2(), p.slice(2)) : resolve4(p);
+  return p.startsWith("~/") ? resolve4(homedir3(), p.slice(2)) : resolve4(p);
 }
 function commandExists(cmd) {
   const result = spawnSync4("which", [cmd], { stdio: "ignore" });
@@ -22892,7 +23217,7 @@ function commandExists(cmd) {
 }
 function validateShebang(filePath, errors5) {
   try {
-    const head = readFileSync5(filePath, "utf-8").slice(0, 120);
+    const head = readFileSync6(filePath, "utf-8").slice(0, 120);
     if (!head.startsWith("#!"))
       return;
     const shebang = head.split(`
@@ -22922,7 +23247,7 @@ function validateBeforeRun(spec, permissionLevel) {
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync7(abs))
+    if (!existsSync8(abs))
       warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
   }
   for (const script of spec.specialist.skills?.scripts ?? []) {
@@ -22932,7 +23257,7 @@ function validateBeforeRun(spec, permissionLevel) {
     const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
     if (isFilePath) {
       const abs = resolvePath(run);
-      if (!existsSync7(abs)) {
+      if (!existsSync8(abs)) {
         errors5.push(`  \u2717 skills.scripts: script not found: ${run}`);
       } else {
         validateShebang(abs, errors5);
@@ -23324,8 +23649,10 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
     const start = Date.now();
     const spec = await loader.get(options.name);
     const { metadata, execution, prompt, output_file } = spec.specialist;
-    const primaryModel = options.backendOverride ?? execution.model;
-    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
+    const executionModel = execution.model;
+    const executionFallbackModel = execution.fallback_model ?? null;
+    const primaryModel = options.backendOverride ?? executionModel;
+    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : executionFallbackModel ?? primaryModel;
     const fallbackUsed = model !== primaryModel;
     await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
       variables_keys: Object.keys(options.variables ?? {}),
@@ -23458,7 +23785,7 @@ Respond like smart caveman. Cut all filler, keep technical substance.
     if (!execution.bare) {
       try {
         const gitnexusMetaPath = resolve4(runCwd, ".gitnexus/meta.json");
-        if (existsSync7(gitnexusMetaPath)) {
+        if (existsSync8(gitnexusMetaPath)) {
           agentsMd += `
 
 ---
@@ -23512,7 +23839,7 @@ ${memoryInjection.block}
         }
         try {
           const gitnexusMetaPath = resolve4(runCwd, ".gitnexus/meta.json");
-          if (existsSync7(gitnexusMetaPath)) {
+          if (existsSync8(gitnexusMetaPath)) {
             const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
             const summaries = [];
             for (const symbol of symbolCandidates) {
@@ -24043,7 +24370,7 @@ var init_runner = __esm(() => {
 
 // src/specialist/hooks.ts
 import { appendFile, mkdir } from "fs/promises";
-import { dirname as dirname4 } from "path";
+import { dirname as dirname5 } from "path";
 
 class HookEmitter {
   tracePath;
@@ -24051,7 +24378,7 @@ class HookEmitter {
   ready;
   constructor(options) {
     this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname4(options.tracePath), { recursive: true }).then(() => {});
+    this.ready = mkdir(dirname5(options.tracePath), { recursive: true }).then(() => {});
   }
   async emit(hook, invocationId, specialistName, specialistVersion, payload) {
     await this.ready;
@@ -24105,17 +24432,17 @@ __export(exports_version, {
 });
 import { createRequire } from "module";
 import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname5, join as join7 } from "path";
-import { existsSync as existsSync8 } from "fs";
+import { dirname as dirname6, join as join8 } from "path";
+import { existsSync as existsSync9 } from "fs";
 async function run2() {
   const req = createRequire(import.meta.url);
-  const here = dirname5(fileURLToPath2(import.meta.url));
-  const bundlePkgPath = join7(here, "..", "package.json");
-  const sourcePkgPath = join7(here, "..", "..", "package.json");
+  const here = dirname6(fileURLToPath2(import.meta.url));
+  const bundlePkgPath = join8(here, "..", "package.json");
+  const sourcePkgPath = join8(here, "..", "..", "package.json");
   let pkg;
-  if (existsSync8(bundlePkgPath)) {
+  if (existsSync9(bundlePkgPath)) {
     pkg = req("../package.json");
-  } else if (existsSync8(sourcePkgPath)) {
+  } else if (existsSync9(sourcePkgPath)) {
     pkg = req("../../package.json");
   } else {
     console.error("Cannot find package.json");
@@ -24130,8 +24457,8 @@ var exports_list_rules = {};
 __export(exports_list_rules, {
   run: () => run3
 });
-import { existsSync as existsSync9, readFileSync as readFileSync6, readdirSync } from "fs";
-import { resolve as resolve5, join as join8, basename as basename3 } from "path";
+import { existsSync as existsSync10, readFileSync as readFileSync7, readdirSync } from "fs";
+import { resolve as resolve5, join as join9, basename as basename3 } from "path";
 function resolvePackageDir(asset) {
   return resolveCanonicalAssetDir(asset) ?? null;
 }
@@ -24139,7 +24466,7 @@ function discoverRuleSets(cwd) {
   const seen = new Map;
   for (const { rel, tier } of RULE_TIERS) {
     const dir = rel === "__package__/mandatory-rules" ? resolvePackageDir("mandatory-rules") : resolve5(cwd, rel);
-    if (!dir || !existsSync9(dir))
+    if (!dir || !existsSync10(dir))
       continue;
     let files;
     try {
@@ -24152,7 +24479,7 @@ function discoverRuleSets(cwd) {
         continue;
       const id = file.replace(/\.md$/, "");
       if (!seen.has(id))
-        seen.set(id, { id, source_path: join8(dir, file), source_tier: tier });
+        seen.set(id, { id, source_path: join9(dir, file), source_tier: tier });
     }
   }
   return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -24161,7 +24488,7 @@ function discoverSpecialists(cwd) {
   const seen = new Map;
   for (const { rel, tier } of SPEC_TIERS) {
     const dir = rel === "__package__/specialists" ? resolvePackageDir("specialists") : resolve5(cwd, rel);
-    if (!dir || !existsSync9(dir))
+    if (!dir || !existsSync10(dir))
       continue;
     let files;
     try {
@@ -24175,9 +24502,9 @@ function discoverSpecialists(cwd) {
       const name = file.replace(/\.specialist\.json$/, "");
       if (seen.has(name))
         continue;
-      const path = join8(dir, file);
+      const path = join9(dir, file);
       try {
-        const parsed = JSON.parse(readFileSync6(path, "utf-8"));
+        const parsed = JSON.parse(readFileSync7(path, "utf-8"));
         const spec = parsed?.specialist;
         if (!spec)
           continue;
@@ -24290,7 +24617,7 @@ async function run3() {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
   for (const spec of specs) {
-    const parsed = JSON.parse(readFileSync6(spec.source_path, "utf-8"));
+    const parsed = JSON.parse(readFileSync7(spec.source_path, "utf-8"));
     const sets = parsed?.specialist?.mandatory_rules?.template_sets ?? [];
     spec.applied_rules = appliedRulesForSpec(spec, sets, required2, defaults);
   }
@@ -24753,8 +25080,8 @@ var init_timeline_events = __esm(() => {
 });
 
 // src/specialist/git-diff-evidence.ts
-import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync3 } from "fs";
-import { join as join9 } from "path";
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "fs";
+import { join as join10 } from "path";
 function redactGitDiffHunks(hunks) {
   return hunks.replace(PEM_BLOCK_RE, "[REDACTED-PEM]").replace(JWT_RE, "[REDACTED-JWT]").replace(URL_CREDS_RE, "[REDACTED-URL-CREDS]://").replace(ENV_SECRET_RE, "[REDACTED]").replace(AUTH_HEADER_RE, "[REDACTED]").replace(TOKEN_RE, "[REDACTED-TOKEN]").replace(EMAIL_RE, "[REDACTED-EMAIL]");
 }
@@ -24762,10 +25089,10 @@ function willHunksBeInline(hunks) {
   return redactGitDiffHunks(hunks).length <= INLINE_HUNKS_LIMIT;
 }
 function writeGitDiffHunksArtifact(jobDir, artifactName, hunks) {
-  const artifactPath = join9(jobDir, "artifacts");
-  mkdirSync4(artifactPath, { recursive: true });
-  const filePath = join9(artifactPath, artifactName);
-  writeFileSync3(filePath, redactGitDiffHunks(hunks), "utf-8");
+  const artifactPath = join10(jobDir, "artifacts");
+  mkdirSync5(artifactPath, { recursive: true });
+  const filePath = join10(artifactPath, artifactName);
+  writeFileSync4(filePath, redactGitDiffHunks(hunks), "utf-8");
   return `artifact://git-diff/${artifactName}`;
 }
 function parseGitNumstat(output) {
@@ -24898,7 +25225,7 @@ var init_epic_lifecycle = __esm(() => {
 });
 
 // src/specialist/process-liveness.ts
-import { readFileSync as readFileSync7 } from "fs";
+import { readFileSync as readFileSync8 } from "fs";
 function isValidPid(pid) {
   return Number.isInteger(pid) && pid > 0;
 }
@@ -24912,7 +25239,7 @@ function isAliveBySignal(pid) {
 }
 function parseBootTimeMs() {
   try {
-    const procStat = readFileSync7("/proc/stat", "utf-8");
+    const procStat = readFileSync8("/proc/stat", "utf-8");
     const bootLine = procStat.split(`
 `).find((line) => line.startsWith("btime "));
     if (!bootLine)
@@ -24927,7 +25254,7 @@ function parseBootTimeMs() {
 }
 function parseProcessStartTimeMs(pid) {
   try {
-    const statRaw = readFileSync7(`/proc/${pid}/stat`, "utf-8");
+    const statRaw = readFileSync8(`/proc/${pid}/stat`, "utf-8");
     const closeParenIndex = statRaw.lastIndexOf(")");
     if (closeParenIndex < 0)
       return;
@@ -25289,19 +25616,19 @@ function parsePorcelainStatus(stdout) {
 import {
   appendFileSync,
   closeSync,
-  existsSync as existsSync10,
+  existsSync as existsSync11,
   fsyncSync,
-  mkdirSync as mkdirSync5,
+  mkdirSync as mkdirSync6,
   openSync,
   readdirSync as readdirSync2,
-  readFileSync as readFileSync8,
+  readFileSync as readFileSync9,
   renameSync,
   rmSync,
   statSync as statSync2,
-  writeFileSync as writeFileSync4,
+  writeFileSync as writeFileSync5,
   writeSync
 } from "fs";
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
 import { spawn as spawn2, spawnSync as spawnSync6, execFileSync } from "child_process";
@@ -25519,8 +25846,8 @@ function runAutoCommitCheckpoint(options) {
 }
 function gitnexusHasEmbeddings(cwd) {
   try {
-    const metaPath = join10(cwd, ".gitnexus", "meta.json");
-    const raw = readFileSync8(metaPath, "utf-8");
+    const metaPath = join11(cwd, ".gitnexus", "meta.json");
+    const raw = readFileSync9(metaPath, "utf-8");
     const meta = JSON.parse(raw);
     return typeof meta.stats?.embeddings === "number" && meta.stats.embeddings > 0;
   } catch {
@@ -25752,26 +26079,26 @@ class Supervisor {
     await this.disposePromise;
   }
   jobDir(id) {
-    return join10(this.resolvedJobsDir, id);
+    return join11(this.resolvedJobsDir, id);
   }
   statusPath(id) {
-    return join10(this.jobDir(id), "status.json");
+    return join11(this.jobDir(id), "status.json");
   }
   resultPath(id) {
-    return join10(this.jobDir(id), "result.txt");
+    return join11(this.jobDir(id), "result.txt");
   }
   observabilityDbPath() {
     return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
   }
   eventsPath(id) {
-    return join10(this.jobDir(id), "events.jsonl");
+    return join11(this.jobDir(id), "events.jsonl");
   }
   readyDir() {
-    return join10(this.resolvedJobsDir, "..", "ready");
+    return join11(this.resolvedJobsDir, "..", "ready");
   }
   writeReadyMarker(id) {
-    mkdirSync5(this.readyDir(), { recursive: true });
-    writeFileSync4(join10(this.readyDir(), id), "", "utf-8");
+    mkdirSync6(this.readyDir(), { recursive: true });
+    writeFileSync5(join11(this.readyDir(), id), "", "utf-8");
   }
   withComputedLiveness(status) {
     return {
@@ -25811,7 +26138,7 @@ class Supervisor {
       this.writeStatusFileOnly(id, recoveredStatus);
       if (this.isJobFileOutputEnabled) {
         const eventsPath = this.eventsPath(id);
-        mkdirSync5(this.jobDir(id), { recursive: true });
+        mkdirSync6(this.jobDir(id), { recursive: true });
         appendFileSync(eventsPath, JSON.stringify(runCompleteEvent) + `
 `, "utf-8");
       }
@@ -25832,10 +26159,10 @@ class Supervisor {
       }
     }
     const path = this.statusPath(id);
-    if (!existsSync10(path))
+    if (!existsSync11(path))
       return null;
     try {
-      const status = JSON.parse(readFileSync8(path, "utf-8"));
+      const status = JSON.parse(readFileSync9(path, "utf-8"));
       return this.reconcileDeadStatus(id, status);
     } catch {
       return null;
@@ -25877,10 +26204,10 @@ class Supervisor {
       }
     }
     const path = this.resultPath(id);
-    if (!existsSync10(path))
+    if (!existsSync11(path))
       return null;
     try {
-      return readFileSync8(path, "utf-8");
+      return readFileSync9(path, "utf-8");
     } catch {
       return null;
     }
@@ -25892,7 +26219,7 @@ class Supervisor {
     if (currentStatus.status !== "waiting")
       return currentStatus;
     if (currentStatus.fifo_path) {
-      writeFileSync4(currentStatus.fifo_path, JSON.stringify({ type: "close" }) + `
+      writeFileSync5(currentStatus.fifo_path, JSON.stringify({ type: "close" }) + `
 `, { flag: "a" });
     }
     const finalized = this.updateJobStatus(id, "done");
@@ -25901,7 +26228,7 @@ class Supervisor {
     this.aggregateJobMetricsBestEffort(id);
     if (finalized.bead_id && this.opts.beadsClient) {
       const outputPath = this.resultPath(id);
-      const output = existsSync10(outputPath) ? readFileSync8(outputPath, "utf-8") || this.readResult(id) || "" : this.readResult(id) || "";
+      const output = existsSync11(outputPath) ? readFileSync9(outputPath, "utf-8") || this.readResult(id) || "" : this.readResult(id) || "";
       if (output.trim()) {
         this.opts.beadsClient.updateBeadNotes(finalized.bead_id, formatHandoffBlock({
           output,
@@ -25984,15 +26311,15 @@ class Supervisor {
         console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error2)}`);
       }
     }
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return [];
     const jobs = [];
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const path = join10(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync10(path))
+      const path = join11(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync11(path))
         continue;
       try {
-        const status = JSON.parse(readFileSync8(path, "utf-8"));
+        const status = JSON.parse(readFileSync9(path, "utf-8"));
         jobs.push(this.withComputedLiveness(status));
       } catch {}
     }
@@ -26027,10 +26354,10 @@ class Supervisor {
     if (!this.isJobFileOutputEnabled)
       return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
-    mkdirSync5(this.jobDir(id), { recursive: true });
+    mkdirSync6(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + ".tmp";
-    writeFileSync4(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
+    writeFileSync5(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
     renameSync(tmp, path);
   }
   writeStatusFile(id, data, options = {}) {
@@ -26079,11 +26406,11 @@ class Supervisor {
     }
   }
   gc() {
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return;
     const cutoff = Date.now() - JOB_TTL_DAYS * 86400000;
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const dir = join10(this.resolvedJobsDir, entry);
+      const dir = join11(this.resolvedJobsDir, entry);
       try {
         const stat2 = statSync2(dir);
         if (!stat2.isDirectory())
@@ -26094,7 +26421,7 @@ class Supervisor {
     }
   }
   crashRecovery() {
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
@@ -26117,7 +26444,7 @@ class Supervisor {
             error: "orphaned (parent supervisor died)",
             last_event_at_ms: now
           };
-          writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
+          writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
           renameSync(tmp, this.statusPath(status.id));
           continue;
         }
@@ -26125,7 +26452,7 @@ class Supervisor {
           const lastEventAt = status.last_event_at_ms ?? status.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join10(this.resolvedJobsDir, status.id, "events.jsonl");
+            const eventsPath = join11(this.resolvedJobsDir, status.id, "events.jsonl");
             const event = createStaleWarningEvent("waiting_stale", {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms
@@ -26140,11 +26467,11 @@ class Supervisor {
       return;
     }
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const statusPath = join10(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync10(statusPath))
+      const statusPath = join11(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync11(statusPath))
         continue;
       try {
-        const s = JSON.parse(readFileSync8(statusPath, "utf-8"));
+        const s = JSON.parse(readFileSync9(statusPath, "utf-8"));
         if (s.status === "running" || s.status === "starting") {
           if (!s.pid)
             continue;
@@ -26156,7 +26483,7 @@ class Supervisor {
               error: "orphaned (parent supervisor died)",
               last_event_at_ms: now
             };
-            writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
             renameSync(tmp, statusPath);
           } else if (s.status === "running") {
             const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
@@ -26168,7 +26495,7 @@ class Supervisor {
                 status: "error",
                 error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
               };
-              writeFileSync4(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
               renameSync(tmp, statusPath);
             }
           }
@@ -26176,7 +26503,7 @@ class Supervisor {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join10(this.resolvedJobsDir, entry, "events.jsonl");
+            const eventsPath = join11(this.resolvedJobsDir, entry, "events.jsonl");
             const event = createStaleWarningEvent("waiting_stale", {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms
@@ -26197,8 +26524,8 @@ class Supervisor {
     const id = crypto.randomUUID().slice(0, 6);
     const dir = this.jobDir(id);
     const startedAtMs = Date.now();
-    mkdirSync5(dir, { recursive: true });
-    mkdirSync5(this.readyDir(), { recursive: true });
+    mkdirSync6(dir, { recursive: true });
+    mkdirSync6(this.readyDir(), { recursive: true });
     const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
     const variablesKeys = Object.keys(runOptions.variables ?? {});
     const activatedSkills = (runOptions.variables?.activated_skills ?? runOptions.variables?.skills_activated ?? "").split(",").map((skill) => skill.trim()).filter((skill) => skill.length > 0);
@@ -26250,7 +26577,7 @@ class Supervisor {
     this.writeStatusFile(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
     if (this.isJobFileOutputEnabled) {
-      writeFileSync4(join10(this.resolvedJobsDir, "latest"), `${id}
+      writeFileSync5(join11(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     }
     this.opts.onJobStarted?.({ id });
@@ -26337,7 +26664,7 @@ class Supervisor {
         throw new Error("[supervisor] SQLite upsertStatusWithEvent failed during run start: database client unavailable");
       }
     }
-    const fifoPath = join10(dir, "steer.pipe");
+    const fifoPath = join11(dir, "steer.pipe");
     try {
       execFileSync("mkfifo", [fifoPath]);
       setStatus({ fifo_path: fifoPath });
@@ -26503,7 +26830,7 @@ ${appendError}
       if (outputFile) {
         try {
           if (notesMode === "final-only") {
-            writeFileSync4(outputFile, rendered, "utf-8");
+            writeFileSync5(outputFile, rendered, "utf-8");
           } else {
             appendFileSync(outputFile, rendered, "utf-8");
           }
@@ -26609,8 +26936,8 @@ ${appendError}
         const output = await resumeFn(task);
         latestOutput = output;
         if (this.isJobFileOutputEnabled) {
-          mkdirSync5(this.jobDir(id), { recursive: true });
-          writeFileSync4(this.resultPath(id), lastTurnSummaryTextContent || output, "utf-8");
+          mkdirSync6(this.jobDir(id), { recursive: true });
+          writeFileSync5(this.resultPath(id), lastTurnSummaryTextContent || output, "utf-8");
         }
         try {
           this.withSqliteOperation("upsertResult:resume_turn", (client) => client.upsertResult(id, output));
@@ -26952,7 +27279,7 @@ ${appendError}
         setStatus({ bead_id: beadId });
       }, (fn) => {
         steerFn = fn;
-        if (!existsSync10(fifoPath))
+        if (!existsSync11(fifoPath))
           return;
         fifoFd = openSync(fifoPath, "r+");
         fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: false });
@@ -27062,8 +27389,8 @@ ${appendError}
       });
       latestOutput = result.output;
       if (this.isJobFileOutputEnabled) {
-        mkdirSync5(this.jobDir(id), { recursive: true });
-        writeFileSync4(this.resultPath(id), lastTurnSummaryTextContent || latestOutput, "utf-8");
+        mkdirSync6(this.jobDir(id), { recursive: true });
+        writeFileSync5(this.resultPath(id), lastTurnSummaryTextContent || latestOutput, "utf-8");
       }
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const finalResult = {
@@ -27317,7 +27644,7 @@ ${appendError}
         closeSync(eventsFd);
       }
       try {
-        if (existsSync10(fifoPath))
+        if (existsSync11(fifoPath))
           rmSync(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
@@ -27364,8 +27691,8 @@ var init_supervisor = __esm(() => {
 
 // src/cli/version-check.ts
 import { spawnSync as spawnSync7 } from "child_process";
-import { existsSync as existsSync11, mkdirSync as mkdirSync6, readFileSync as readFileSync9, writeFileSync as writeFileSync5 } from "fs";
-import { dirname as dirname6, join as join11 } from "path";
+import { existsSync as existsSync12, mkdirSync as mkdirSync7, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "fs";
+import { dirname as dirname7, join as join12 } from "path";
 import { createRequire as createRequire2 } from "module";
 function readBundledPackageVersion(requireFn = require2) {
   for (const candidate of ["../package.json", "../../package.json"]) {
@@ -27387,10 +27714,10 @@ function shouldRunVersionCheck() {
   return true;
 }
 function readCache() {
-  if (!existsSync11(CACHE_PATH))
+  if (!existsSync12(CACHE_PATH))
     return null;
   try {
-    return JSON.parse(readFileSync9(CACHE_PATH, "utf8"));
+    return JSON.parse(readFileSync10(CACHE_PATH, "utf8"));
   } catch {
     return null;
   }
@@ -27399,8 +27726,8 @@ function readCachedVersionCheck() {
   return readCache();
 }
 function writeCache(cache) {
-  mkdirSync6(dirname6(CACHE_PATH), { recursive: true });
-  writeFileSync5(CACHE_PATH, `${JSON.stringify(cache, null, 2)}
+  mkdirSync7(dirname7(CACHE_PATH), { recursive: true });
+  writeFileSync6(CACHE_PATH, `${JSON.stringify(cache, null, 2)}
 `, "utf8");
 }
 function isFresh(cache) {
@@ -27491,7 +27818,7 @@ var init_version_check = __esm(() => {
   require2 = createRequire2(import.meta.url);
   packageVersion = readBundledPackageVersion();
   localVersion = packageVersion;
-  CACHE_PATH = join11(process.cwd(), ".specialists", "version-check.json");
+  CACHE_PATH = join12(process.cwd(), ".specialists", "version-check.json");
   CACHE_MAX_AGE_MS2 = 6 * 60 * 60 * 1000;
 });
 
@@ -27505,8 +27832,8 @@ __export(exports_list, {
   ArgParseError: () => ArgParseError
 });
 import { spawnSync as spawnSync8 } from "child_process";
-import { existsSync as existsSync12, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "fs";
-import { join as join12 } from "path";
+import { existsSync as existsSync13, readdirSync as readdirSync3, readFileSync as readFileSync11 } from "fs";
+import { join as join13 } from "path";
 import readline from "readline";
 function loadRuntimeStatsBySpecialist(full) {
   if (!full)
@@ -27587,23 +27914,23 @@ function toLiveJob(status) {
 }
 function readJobStatus(statusPath) {
   try {
-    return JSON.parse(readFileSync10(statusPath, "utf-8"));
+    return JSON.parse(readFileSync11(statusPath, "utf-8"));
   } catch {
     return null;
   }
 }
 function listLiveJobs(showDead) {
   const sqliteClient = createObservabilitySqliteClient();
-  const jobsDir = join12(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
   const sqliteJobs = sqliteClient?.listStatuses().map((status) => toLiveJob(status)).filter((job) => job !== null).filter((job) => showDead || !job.isDead) ?? [];
   if (!fileOutputEnabled)
     return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
   if (sqliteJobs.length > 0)
     return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
-  if (!existsSync12(jobsDir))
+  if (!existsSync13(jobsDir))
     return [];
-  return readdirSync3(jobsDir).map((entry) => toLiveJob(readJobStatus(join12(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
+  return readdirSync3(jobsDir).map((entry) => toLiveJob(readJobStatus(join13(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
 }
 function formatLiveChoice(job) {
   const state = job.isDead ? "dead" : job.status;
@@ -28199,139 +28526,6 @@ ${bold4(`Models on pi`)}  ${dim4(`(${total} total)`)}
 var bold4 = (s) => `\x1B[1m${s}\x1B[0m`, dim4 = (s) => `\x1B[2m${s}\x1B[0m`, cyan3 = (s) => `\x1B[36m${s}\x1B[0m`, yellow4 = (s) => `\x1B[33m${s}\x1B[0m`, green3 = (s) => `\x1B[32m${s}\x1B[0m`;
 var init_models = __esm(() => {
   init_loader();
-});
-
-// src/specialist/global-config.ts
-import { existsSync as existsSync13, readFileSync as readFileSync11, writeFileSync as writeFileSync6, mkdirSync as mkdirSync7 } from "fs";
-import { dirname as dirname7, join as join13 } from "path";
-import { homedir as homedir3 } from "os";
-function getGlobalUserConfigPath() {
-  const home = process.env.HOME?.trim() || homedir3();
-  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
-  if (xdgConfigHome) {
-    const xdgPath = join13(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-    return { path: xdgPath, exists: existsSync13(xdgPath), source: "xdg" };
-  }
-  const configHomePath = join13(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-  if (existsSync13(configHomePath)) {
-    return { path: configHomePath, exists: true, source: "config-home" };
-  }
-  const legacyPath = join13(home, ".specialists", CONFIG_FILENAME);
-  if (existsSync13(legacyPath)) {
-    return { path: legacyPath, exists: true, source: "legacy" };
-  }
-  return { path: configHomePath, exists: false, source: "config-home" };
-}
-function buildSpecialistOverrideTemplate() {
-  return {
-    execution: {
-      model: null,
-      fallback_model: null,
-      timeout_ms: null,
-      stall_timeout_ms: null,
-      thinking_level: null,
-      max_retries: null
-    },
-    beads_write_notes: null,
-    skills: { paths: [] }
-  };
-}
-function buildGlobalUserConfigTemplate(specialistNames) {
-  const template = {};
-  for (const name of specialistNames) {
-    template[name] = buildSpecialistOverrideTemplate();
-  }
-  return template;
-}
-function fillMissingDefaults(target, defaults) {
-  for (const [key, defaultValue] of Object.entries(defaults)) {
-    if (!(key in target)) {
-      target[key] = structuredClone(defaultValue);
-      continue;
-    }
-    const currentValue = target[key];
-    if (currentValue !== null && typeof currentValue === "object" && !Array.isArray(currentValue) && defaultValue !== null && typeof defaultValue === "object" && !Array.isArray(defaultValue)) {
-      fillMissingDefaults(currentValue, defaultValue);
-    }
-  }
-  return target;
-}
-function mergeGlobalUserConfig(existing, template) {
-  const merged = {};
-  const added = [];
-  const extended = [];
-  const removed = [];
-  for (const [name, rawExisting] of Object.entries(existing)) {
-    const templateOverride = template[name];
-    if (templateOverride) {
-      const normalized = fillMissingDefaults(rawExisting && typeof rawExisting === "object" ? { ...rawExisting } : {}, templateOverride);
-      merged[name] = normalized;
-      extended.push(name);
-    } else {
-      merged[name] = rawExisting;
-      removed.push(name);
-    }
-  }
-  for (const [name, override] of Object.entries(template)) {
-    if (!(name in existing)) {
-      merged[name] = override;
-      added.push(name);
-    }
-  }
-  return { config: merged, added, extended, removed };
-}
-function validateGlobalUserConfig(jsonContent) {
-  let raw;
-  try {
-    raw = JSON.parse(jsonContent);
-  } catch (error2) {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    return {
-      valid: false,
-      errors: [{ path: "json", message: `JSON parse error: ${message}` }]
-    };
-  }
-  const result = GlobalUserConfigSchema.safeParse(raw);
-  if (result.success) {
-    return { valid: true, errors: [] };
-  }
-  const errors5 = result.error.issues.map((issue2) => ({
-    path: issue2.path.map((p) => typeof p === "number" ? `[${p}]` : p).join("."),
-    message: issue2.message
-  }));
-  return { valid: false, errors: errors5 };
-}
-function readGlobalUserConfig(location) {
-  if (!location.exists)
-    return null;
-  const content = readFileSync11(location.path, "utf-8");
-  return JSON.parse(content);
-}
-function writeGlobalUserConfig(location, config2) {
-  mkdirSync7(dirname7(location.path), { recursive: true });
-  writeFileSync6(location.path, `${JSON.stringify(config2, null, 2)}
-`, "utf-8");
-}
-var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", OverrideExecutionSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
-var init_global_config = __esm(() => {
-  init_zod();
-  OverrideExecutionSchema = objectType({
-    model: stringType().nullable(),
-    fallback_model: stringType().nullable(),
-    timeout_ms: numberType().nullable(),
-    stall_timeout_ms: numberType().nullable(),
-    thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
-    max_retries: numberType().int().min(0).nullable()
-  }).strict();
-  OverrideSkillsSchema = objectType({
-    paths: arrayType(stringType())
-  }).strict();
-  GlobalSpecialistOverrideSchema = objectType({
-    execution: OverrideExecutionSchema,
-    beads_write_notes: booleanType().nullable(),
-    skills: OverrideSkillsSchema
-  }).strict();
-  GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
 });
 
 // src/cli/init.ts
@@ -64098,7 +64292,7 @@ class StdioServerTransport {
 // src/server.ts
 init_zod();
 import { randomUUID } from "crypto";
-import { join as join6 } from "path";
+import { join as join7 } from "path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -64281,7 +64475,7 @@ class SpecialistsServer {
   constructor() {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
-    const hooks = new HookEmitter({ tracePath: join6(process.cwd(), ".specialists", "trace.jsonl") });
+    const hooks = new HookEmitter({ tracePath: join7(process.cwd(), ".specialists", "trace.jsonl") });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     this.tools = [createUseSpecialistTool(runner)];

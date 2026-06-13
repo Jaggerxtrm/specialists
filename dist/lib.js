@@ -10322,8 +10322,8 @@ function isRetryableModelFailure(stderr, text) {
 }
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join as join3 } from "node:path";
-import { existsSync as existsSync3 } from "node:fs";
+import { basename, join as join4 } from "node:path";
+import { existsSync as existsSync4 } from "node:fs";
 
 // ../../../node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -14195,8 +14195,8 @@ var MetadataSchema = objectType({
 }).passthrough();
 var ExecutionSchema = objectType({
   mode: enumType(["tool", "skill", "auto"]).default("auto"),
-  model: stringType(),
-  fallback_model: stringType().optional(),
+  model: stringType().nullable(),
+  fallback_model: stringType().nullable().optional(),
   timeout_ms: numberType().default(120000),
   stall_timeout_ms: numberType().optional(),
   max_retries: numberType().int().min(0).default(0),
@@ -14273,6 +14273,24 @@ var SpecialistSchema = objectType({
     beads_write_notes: booleanType().default(true)
   }).passthrough()
 }).passthrough();
+var OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
+  "model",
+  "fallback_model",
+  "timeout_ms",
+  "stall_timeout_ms",
+  "thinking_level",
+  "max_retries"
+];
+var OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes"];
+var BLOCKED_OVERRIDE_FIELDS = [
+  "execution.permission_required",
+  "execution.auto_commit",
+  "prompt.system",
+  "prompt.output_schema",
+  "skills.scripts",
+  "mandatory_rules",
+  "capabilities"
+];
 function formatPath(path) {
   return path.map((p) => typeof p === "number" ? `[${p}]` : p).join(".");
 }
@@ -14333,8 +14351,9 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
-    if (!spec.specialist.execution.model.includes("/")) {
-      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    const declaredModel = spec.specialist.execution.model;
+    if (declaredModel && !declaredModel.includes("/")) {
+      warnings.push(`Model "${declaredModel}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
   }
   return { valid: errors2.length === 0, errors: errors2, warnings };
@@ -14371,26 +14390,82 @@ function resolveCanonicalAssetDir(relativePath) {
   return null;
 }
 
+// src/specialist/global-config.ts
+import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync, mkdirSync as mkdirSync2 } from "node:fs";
+import { dirname as dirname2, join as join3 } from "node:path";
+import { homedir } from "node:os";
+var CONFIG_FILENAME = "user.json";
+var SPECIALISTS_SUBDIR = "specialists";
+function getGlobalUserConfigPath() {
+  const home = process.env.HOME?.trim() || homedir();
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdgConfigHome) {
+    const xdgPath = join3(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync3(xdgPath), source: "xdg" };
+  }
+  const configHomePath = join3(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync3(configHomePath)) {
+    return { path: configHomePath, exists: true, source: "config-home" };
+  }
+  const legacyPath = join3(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync3(legacyPath)) {
+    return { path: legacyPath, exists: true, source: "legacy" };
+  }
+  return { path: configHomePath, exists: false, source: "config-home" };
+}
+var OverrideExecutionSchema = objectType({
+  model: stringType().nullable(),
+  fallback_model: stringType().nullable(),
+  timeout_ms: numberType().nullable(),
+  stall_timeout_ms: numberType().nullable(),
+  thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
+  max_retries: numberType().int().min(0).nullable()
+}).strict();
+var OverrideSkillsSchema = objectType({
+  paths: arrayType(stringType())
+}).strict();
+var GlobalSpecialistOverrideSchema = objectType({
+  execution: OverrideExecutionSchema,
+  beads_write_notes: booleanType().nullable(),
+  skills: OverrideSkillsSchema
+}).strict();
+var GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
+function readGlobalUserConfig(location) {
+  if (!location.exists)
+    return null;
+  const content = readFileSync3(location.path, "utf-8");
+  return JSON.parse(content);
+}
+
 // src/specialist/loader.ts
+class SpecialistMissingModelError extends Error {
+  specialistName;
+  constructor(specialistName) {
+    super(`specialist '${specialistName}' has no model configured. ` + `Run: sp edit --global ${specialistName}.execution.model <model-id> ` + `(or 'sp init --global' to create the global user config file first).`);
+    this.specialistName = specialistName;
+    this.name = "SpecialistMissingModelError";
+  }
+}
 class SpecialistLoader {
   cache = new Map;
+  blockedFieldWarnings = new Map;
   projectDir;
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
   }
   getScanDirs() {
     const dirs = [
-      { path: join3(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join3(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join3(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
-      { path: join3(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
-      { path: join3(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join4(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join4(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join4(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
+      { path: join4(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
+      { path: join4(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" },
-      { path: join3(this.projectDir, "specialists"), scope: "default", source: "legacy" },
-      { path: join3(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
-      { path: join3(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
+      { path: join4(this.projectDir, "specialists"), scope: "default", source: "legacy" },
+      { path: join4(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
+      { path: join4(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
     ];
-    return dirs.filter((d) => d.path && existsSync3(d.path));
+    return dirs.filter((d) => d.path && existsSync4(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -14398,15 +14473,155 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join3(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync3(jsonPath)) {
+    const jsonPath = join4(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync4(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join3(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync3(yamlPath)) {
+    const yamlPath = join4(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync4(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
+  }
+  findLayerHits(name) {
+    const hits = [];
+    const seenScopes = new Set;
+    for (const dir of this.getScanDirs()) {
+      const resolved = this.resolveSpecialistPath(dir.path, name);
+      if (!resolved)
+        continue;
+      if (seenScopes.has(dir.scope))
+        continue;
+      seenScopes.add(dir.scope);
+      hits.push({ dir, resolved });
+    }
+    return hits.reverse();
+  }
+  applyOverrideFields(name, base, override, source) {
+    const warnings = [];
+    const baseSpec = base.specialist;
+    const overrideSpec = override.specialist ?? override;
+    for (const dottedPath of BLOCKED_OVERRIDE_FIELDS) {
+      const value = readDottedPath(overrideSpec, dottedPath);
+      if (value === undefined)
+        continue;
+      warnings.push({
+        specialist: name,
+        field: dottedPath,
+        source,
+        severity: source === "global" ? "strip" : "warn",
+        value
+      });
+    }
+    const overrideExecution = overrideSpec.execution ?? {};
+    const baseExecution = baseSpec.execution ?? {};
+    for (const field of OVERRIDE_ALLOWED_EXECUTION_FIELDS) {
+      if (!(field in overrideExecution))
+        continue;
+      const overrideValue = overrideExecution[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseExecution[field] = overrideValue;
+    }
+    baseSpec.execution = baseExecution;
+    for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
+      if (!(field in overrideSpec))
+        continue;
+      const overrideValue = overrideSpec[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseSpec[field] = overrideValue;
+    }
+    const overrideSkills = overrideSpec.skills ?? {};
+    const overridePaths = Array.isArray(overrideSkills.paths) ? overrideSkills.paths : null;
+    if (overridePaths && overridePaths.length) {
+      const baseSkills = baseSpec.skills ?? {};
+      const basePaths = Array.isArray(baseSkills.paths) ? baseSkills.paths : [];
+      const seen = new Set;
+      const merged = [];
+      for (const p of [...basePaths, ...overridePaths]) {
+        if (seen.has(p))
+          continue;
+        seen.add(p);
+        merged.push(p);
+      }
+      baseSkills.paths = merged;
+      baseSpec.skills = baseSkills;
+    }
+    return warnings;
+  }
+  async buildMergedSpec(name) {
+    const hits = this.findLayerHits(name);
+    if (hits.length === 0)
+      return null;
+    const baseHit = hits[0];
+    const baseContent = await readFile(baseHit.resolved.filePath, "utf-8");
+    const base = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
+    if (baseHit.resolved.deprecatedYaml) {
+      process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${baseHit.resolved.filePath}. Please migrate to .specialist.json
+`);
+    }
+    const warnings = [];
+    for (const hit of hits.slice(1)) {
+      const content = await readFile(hit.resolved.filePath, "utf-8");
+      let overrideRaw;
+      try {
+        overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`[specialists] skipping override ${hit.resolved.filePath}: ${msg}
+`);
+        continue;
+      }
+      if (hit.resolved.deprecatedYaml) {
+        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${hit.resolved.filePath}. Please migrate to .specialist.json
+`);
+      }
+      const layerSource = hit.dir.scope === "user" ? "user" : "default";
+      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, layerSource));
+    }
+    const top = hits[hits.length - 1];
+    const globalLocation = getGlobalUserConfigPath();
+    const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+    const globalOverride = globalConfig?.[name];
+    if (globalOverride) {
+      const rebuiltBase = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
+      const rebuiltWarnings = [];
+      rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, { specialist: globalOverride }, "global"));
+      for (const hit of hits.slice(1)) {
+        const content = await readFile(hit.resolved.filePath, "utf-8");
+        let overrideRaw;
+        try {
+          overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
+        } catch {
+          continue;
+        }
+        const layerSource = hit.dir.scope === "user" ? "user" : "default";
+        rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, overrideRaw, layerSource));
+      }
+      resolveSkillsPaths(rebuiltBase, baseHit.dir.path);
+      return {
+        spec: rebuiltBase,
+        topLayer: {
+          scope: top.dir.scope,
+          source: top.dir.source,
+          filePath: top.resolved.filePath,
+          deprecatedYaml: top.resolved.deprecatedYaml
+        },
+        warnings: rebuiltWarnings
+      };
+    }
+    resolveSkillsPaths(base, baseHit.dir.path);
+    return {
+      spec: base,
+      topLayer: {
+        scope: top.dir.scope,
+        source: top.dir.source,
+        filePath: top.resolved.filePath,
+        deprecatedYaml: top.resolved.deprecatedYaml
+      },
+      warnings
+    };
   }
   async list(category) {
     const results = [];
@@ -14417,45 +14632,41 @@ class SpecialistLoader {
         const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, "");
         if (seen.has(specialistName))
           continue;
-        const resolved = this.resolveSpecialistPath(dir.path, specialistName);
-        if (!resolved)
-          continue;
         try {
-          const content = await readFile(resolved.filePath, "utf-8");
-          const spec = await parseSpecialist(this.toJson(content, resolved.deprecatedYaml));
-          const { name, description, category: cat, version, updated } = spec.specialist.metadata;
+          const merged = await this.buildMergedSpec(specialistName);
+          if (!merged)
+            continue;
+          const { name, description, category: cat, version, updated } = merged.spec.specialist.metadata;
           if (seen.has(name))
             continue;
           if (category && cat !== category)
             continue;
-          if (resolved.deprecatedYaml) {
-            process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolved.filePath}. Please migrate to .specialist.json
-`);
-          }
           seen.add(name);
+          if (merged.warnings.length)
+            this.blockedFieldWarnings.set(name, merged.warnings);
           results.push({
             name,
             description,
             category: cat,
             version,
-            model: spec.specialist.execution.model,
-            permission_required: spec.specialist.execution.permission_required,
-            interactive: spec.specialist.execution.interactive,
-            thinking_level: spec.specialist.execution.thinking_level,
-            skills: spec.specialist.skills?.paths ?? [],
-            scripts: spec.specialist.skills?.scripts ?? [],
-            mandatoryRuleTemplateSets: spec.specialist.mandatory_rules?.template_sets ?? [],
-            scope: dir.scope,
-            source: dir.source,
-            filePath: resolved.filePath,
+            model: merged.spec.specialist.execution.model ?? "",
+            permission_required: merged.spec.specialist.execution.permission_required,
+            interactive: merged.spec.specialist.execution.interactive,
+            thinking_level: merged.spec.specialist.execution.thinking_level,
+            skills: merged.spec.specialist.skills?.paths ?? [],
+            scripts: merged.spec.specialist.skills?.scripts ?? [],
+            mandatoryRuleTemplateSets: merged.spec.specialist.mandatory_rules?.template_sets ?? [],
+            scope: merged.topLayer.scope,
+            source: merged.topLayer.source,
+            filePath: merged.topLayer.filePath,
             updated,
-            filestoWatch: spec.specialist.validation?.files_to_watch,
-            staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
-            stallDetection: spec.specialist.stall_detection ?? undefined
+            filestoWatch: merged.spec.specialist.validation?.files_to_watch,
+            staleThresholdDays: merged.spec.specialist.validation?.stale_threshold_days,
+            stallDetection: merged.spec.specialist.stall_detection ?? undefined
           });
         } catch (e) {
           const reason = e instanceof Error ? e.message : String(e);
-          process.stderr.write(`[specialists] skipping ${resolved.filePath}: ${reason}
+          process.stderr.write(`[specialists] skipping ${file} (${specialistName}): ${reason}
 `);
         }
       }
@@ -14465,39 +14676,65 @@ class SpecialistLoader {
   async get(name) {
     if (this.cache.has(name))
       return this.cache.get(name);
-    for (const dir of this.getScanDirs()) {
-      const resolvedPath = this.resolveSpecialistPath(dir.path, name);
-      if (!resolvedPath)
-        continue;
-      const content = await readFile(resolvedPath.filePath, "utf-8");
-      const spec = await parseSpecialist(this.toJson(content, resolvedPath.deprecatedYaml));
-      if (resolvedPath.deprecatedYaml) {
-        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolvedPath.filePath}. Please migrate to .specialist.json
-`);
-      }
-      const rawPaths = spec.specialist.skills?.paths;
-      if (rawPaths?.length) {
-        const fileDir = dir.path;
-        const resolved = rawPaths.map((p) => {
-          if (p.startsWith("~/"))
-            return join3(process.env.HOME || "", p.slice(2));
-          if (p.startsWith("./"))
-            return join3(fileDir, p.slice(2));
-          return p;
-        });
-        spec.specialist.skills.paths = resolved;
-      }
-      this.cache.set(name, spec);
-      return spec;
+    const merged = await this.buildMergedSpec(name);
+    if (!merged)
+      throw new Error(`Specialist not found: ${name}`);
+    if (merged.warnings.length)
+      this.blockedFieldWarnings.set(name, merged.warnings);
+    const model = merged.spec.specialist.execution.model;
+    if (model === null || model === undefined || model === "") {
+      throw new SpecialistMissingModelError(name);
     }
-    throw new Error(`Specialist not found: ${name}`);
+    this.cache.set(name, merged.spec);
+    return merged.spec;
+  }
+  getBlockedFieldWarnings(name) {
+    if (name)
+      return this.blockedFieldWarnings.get(name) ?? [];
+    const all = [];
+    for (const warnings of this.blockedFieldWarnings.values())
+      all.push(...warnings);
+    return all;
+  }
+  getGlobalLayerPath() {
+    try {
+      return getGlobalUserConfigPath();
+    } catch {
+      return null;
+    }
   }
   invalidateCache(name) {
-    if (name)
+    if (name) {
       this.cache.delete(name);
-    else
+      this.blockedFieldWarnings.delete(name);
+    } else {
       this.cache.clear();
+      this.blockedFieldWarnings.clear();
+    }
   }
+}
+function readDottedPath(obj, dotted) {
+  const parts = dotted.split(".");
+  let cur = obj;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object")
+      return;
+    cur = cur[part];
+  }
+  return cur;
+}
+function resolveSkillsPaths(spec, fileDir) {
+  const rawPaths = spec.specialist.skills?.paths;
+  if (!rawPaths?.length)
+    return;
+  const resolved = rawPaths.map((p) => {
+    if (p.startsWith("~/"))
+      return join4(process.env.HOME || "", p.slice(2));
+    if (p.startsWith("./"))
+      return join4(fileDir, p.slice(2));
+    return p;
+  });
+  spec.specialist.skills.paths = resolved;
 }
 export {
   runScriptSpecialist as runScript,

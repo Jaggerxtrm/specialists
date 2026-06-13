@@ -15,8 +15,8 @@ const MetadataSchema = z.object({
 
 const ExecutionSchema = z.object({
   mode: z.enum(['tool', 'skill', 'auto']).default('auto'),
-  model: z.string(),
-  fallback_model: z.string().optional(),
+  model: z.string().nullable(),
+  fallback_model: z.string().nullable().optional(),
   timeout_ms: z.number().default(120_000),
   stall_timeout_ms: z.number().optional(),
   max_retries: z.number().int().min(0).default(0),
@@ -135,6 +135,53 @@ export const SpecialistSchema = z.object({
 export type Specialist = z.infer<typeof SpecialistSchema>;
 export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
 
+// ── Layered field-merge contract ──────────────────────────────────────────────
+// Drives the SpecialistLoader 4-layer merge (package base + global + default + user).
+// Allowed fields may be overridden by any non-package layer; blocked fields are
+// taken from the package base only (global layer strips them, repo layers warn).
+
+/** Execution sub-fields an override layer may set. */
+export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
+  'model',
+  'fallback_model',
+  'timeout_ms',
+  'stall_timeout_ms',
+  'thinking_level',
+  'max_retries',
+] as const;
+
+/** Top-level specialist fields an override layer may set. */
+export const OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes'] as const;
+
+/**
+ * Fields an override layer may NOT change. Dotted paths are schema-accurate.
+ * `skills.paths` is exempt (append+dedup); `skills.scripts` is blocked.
+ */
+export const BLOCKED_OVERRIDE_FIELDS = [
+  'execution.permission_required',
+  'execution.auto_commit',
+  'prompt.system',
+  'prompt.output_schema',
+  'skills.scripts',
+  'mandatory_rules',
+  'capabilities',
+] as const;
+
+export type BlockedFieldSeverity = 'strip' | 'warn';
+
+/**
+ * Recorded when an override layer attempts to set a blocked field.
+ * - `strip` (global layer): value removed, NOT applied.
+ * - `warn` (repo layer, v1): value applied but flagged for the doctor command.
+ */
+export interface BlockedFieldWarning {
+  specialist: string;
+  field: string;
+  source: 'global' | 'default' | 'user';
+  severity: BlockedFieldSeverity;
+  value: unknown;
+}
+
 export interface ValidationError {
   path: string;
   message: string;
@@ -228,9 +275,10 @@ export async function validateSpecialist(jsonContent: string): Promise<Validatio
     // Additional semantic validations (warnings, not errors)
     const spec = result.data;
 
-    // Check for common mistakes
-    if (!spec.specialist.execution.model.includes('/')) {
-      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    // Check for common mistakes. model is nullable post-C1; only warn when set.
+    const declaredModel = spec.specialist.execution.model;
+    if (declaredModel && !declaredModel.includes('/')) {
+      warnings.push(`Model "${declaredModel}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
   }
   
