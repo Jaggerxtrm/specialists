@@ -940,12 +940,16 @@ export class SpecialistRunner {
 
     const spec = await loader.get(options.name);
     const { metadata, execution, prompt, output_file } = spec.specialist;
+    // loader.get() hard-fails on null execution.model via SpecialistMissingModelError
+    // before reaching here, so the cast is sound at runtime. tsc cannot prove it.
+    const executionModel = execution.model as string;
+    const executionFallbackModel = (execution.fallback_model ?? null) as string | null;
 
     // Backend resolution: override → primary → fallback
-    const primaryModel = options.backendOverride ?? execution.model;
+    const primaryModel = options.backendOverride ?? executionModel;
     const model = circuitBreaker.isAvailable(primaryModel)
       ? primaryModel
-      : (execution.fallback_model ?? primaryModel);
+      : (executionFallbackModel ?? primaryModel);
     const fallbackUsed = model !== primaryModel;
 
     await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {

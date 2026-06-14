@@ -1,5 +1,6 @@
 type BunDb = any;
 import type { TimelineEvent, TimelineEventTool } from './timeline-events.js';
+import { type ForensicEvent } from './forensic-events.js';
 import type { SupervisorStatus } from './supervisor.js';
 import type { EpicChainRecord, EpicRunRecord } from './epic-lifecycle.js';
 import type { PersistedChainIdentity } from './chain-identity.js';
@@ -194,6 +195,7 @@ export interface ObservabilitySqliteClient {
     upsertStatusWithEvent(status: SupervisorStatus, event: TimelineEvent): void;
     upsertStatusWithEventAndResult(status: SupervisorStatus, event: TimelineEvent, output: string): void;
     appendEvent(jobId: string, specialist: string, beadId: string | undefined, event: TimelineEvent): void;
+    appendForensicEvent(jobId: string, specialist: string, beadId: string | undefined, forensicEvent: ForensicEvent): void;
     claimJobStart(status: SupervisorStatus, event: TimelineEvent): {
         ok: true;
     } | {

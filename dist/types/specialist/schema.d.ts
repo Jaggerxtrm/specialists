@@ -25,8 +25,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -68,8 +68,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -111,8 +111,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -372,8 +372,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -415,8 +415,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -458,8 +458,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -719,8 +719,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -762,8 +762,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -805,8 +805,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1068,8 +1068,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1111,8 +1111,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1154,8 +1154,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1415,8 +1415,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1458,8 +1458,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1501,8 +1501,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1762,8 +1762,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1805,8 +1805,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -1848,8 +1848,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2111,8 +2111,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2154,8 +2154,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2197,8 +2197,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2458,8 +2458,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2501,8 +2501,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2544,8 +2544,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2805,8 +2805,8 @@ export declare const SpecialistSchema: z.ZodObject<{
         }, z.ZodTypeAny, "passthrough">>;
         execution: z.ZodObject<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2848,8 +2848,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -2891,8 +2891,8 @@ export declare const SpecialistSchema: z.ZodObject<{
             expected_output_keys: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
             mode: z.ZodDefault<z.ZodEnum<["tool", "skill", "auto"]>>;
-            model: z.ZodString;
-            fallback_model: z.ZodOptional<z.ZodString>;
+            model: z.ZodNullable<z.ZodString>;
+            fallback_model: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             timeout_ms: z.ZodDefault<z.ZodNumber>;
             stall_timeout_ms: z.ZodOptional<z.ZodNumber>;
             max_retries: z.ZodDefault<z.ZodNumber>;
@@ -3135,6 +3135,28 @@ export type ScriptEntry = {
     phase: 'pre' | 'post';
     inject_output: boolean;
 };
+/** Execution sub-fields an override layer may set. */
+export declare const OVERRIDE_ALLOWED_EXECUTION_FIELDS: readonly ["model", "fallback_model", "timeout_ms", "stall_timeout_ms", "thinking_level", "max_retries"];
+/** Top-level specialist fields an override layer may set. */
+export declare const OVERRIDE_ALLOWED_TOP_FIELDS: readonly ["beads_write_notes"];
+/**
+ * Fields an override layer may NOT change. Dotted paths are schema-accurate.
+ * `skills.paths` is exempt (append+dedup); `skills.scripts` is blocked.
+ */
+export declare const BLOCKED_OVERRIDE_FIELDS: readonly ["execution.permission_required", "execution.auto_commit", "prompt.system", "prompt.output_schema", "skills.scripts", "mandatory_rules", "capabilities"];
+export type BlockedFieldSeverity = 'strip' | 'warn';
+/**
+ * Recorded when an override layer attempts to set a blocked field.
+ * - `strip` (global layer): value removed, NOT applied.
+ * - `warn` (repo layer, v1): value applied but flagged for the doctor command.
+ */
+export interface BlockedFieldWarning {
+    specialist: string;
+    field: string;
+    source: 'global' | 'default' | 'user';
+    severity: BlockedFieldSeverity;
+    value: unknown;
+}
 export interface ValidationError {
     path: string;
     message: string;

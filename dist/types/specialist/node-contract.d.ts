@@ -31,24 +31,24 @@ export declare const memberSpawnSchema: z.ZodObject<{
     isolated: z.ZodDefault<z.ZodBoolean>;
     retry_of: z.ZodDefault<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
+    bead_id: string;
+    role: string;
     scope: {
         paths: string[];
         mutates: boolean;
     };
-    role: string;
-    bead_id: string;
     member_key: string;
     depends_on: string[];
     failure_policy: "blocking" | "non_blocking";
     isolated: boolean;
     retry_of: string | null;
 }, {
+    bead_id: string;
+    role: string;
     scope: {
         paths: string[];
         mutates: boolean;
     };
-    role: string;
-    bead_id: string;
     member_key: string;
     failure_policy: "blocking" | "non_blocking";
     depends_on?: string[] | undefined;
@@ -78,24 +78,24 @@ export declare const phaseSchema: z.ZodObject<{
         isolated: z.ZodDefault<z.ZodBoolean>;
         retry_of: z.ZodDefault<z.ZodNullable<z.ZodString>>;
     }, "strip", z.ZodTypeAny, {
+        bead_id: string;
+        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
-        role: string;
-        bead_id: string;
         member_key: string;
         depends_on: string[];
         failure_policy: "blocking" | "non_blocking";
         isolated: boolean;
         retry_of: string | null;
     }, {
+        bead_id: string;
+        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
-        role: string;
-        bead_id: string;
         member_key: string;
         failure_policy: "blocking" | "non_blocking";
         depends_on?: string[] | undefined;
@@ -107,12 +107,12 @@ export declare const phaseSchema: z.ZodObject<{
     phase_kind: "review" | "custom" | "impl" | "explore" | "design" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members: {
+        bead_id: string;
+        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
-        role: string;
-        bead_id: string;
         member_key: string;
         depends_on: string[];
         failure_policy: "blocking" | "non_blocking";
@@ -124,12 +124,12 @@ export declare const phaseSchema: z.ZodObject<{
     phase_kind: "review" | "custom" | "impl" | "explore" | "design" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members?: {
+        bead_id: string;
+        role: string;
         scope: {
             paths: string[];
             mutates: boolean;
         };
-        role: string;
-        bead_id: string;
         member_key: string;
         failure_policy: "blocking" | "non_blocking";
         depends_on?: string[] | undefined;
@@ -146,16 +146,16 @@ export declare const createBeadActionSchema: z.ZodObject<{
     parent_bead_id: z.ZodOptional<z.ZodString>;
     depends_on: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
-    description: string;
     type: "create_bead";
+    description: string;
     title: string;
     priority: number;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
-    description: string;
     type: "create_bead";
+    description: string;
     title: string;
     priority: number;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
@@ -207,16 +207,16 @@ export declare const coordinatorActionSchema: z.ZodDiscriminatedUnion<"type", [z
     parent_bead_id: z.ZodOptional<z.ZodString>;
     depends_on: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
-    description: string;
     type: "create_bead";
+    description: string;
     title: string;
     priority: number;
     depends_on: string[];
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";
     parent_bead_id?: string | undefined;
 }, {
-    description: string;
     type: "create_bead";
+    description: string;
     title: string;
     priority: number;
     bead_type: "task" | "decision" | "epic" | "bug" | "feature" | "chore";

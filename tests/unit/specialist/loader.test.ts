@@ -95,16 +95,6 @@ describe('SpecialistLoader', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('discovers specialists in .specialists/default/', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'my-spec.specialist.json'), MINIMAL_YAML('my-spec'));
-    const list = await loader.list();
-    expect(list.find((entry) => entry.name === 'my-spec')?.scope).toBe('default');
-    expect(list.find((entry) => entry.name === 'my-spec')?.source).toBe('default-mirror');
-    expect(list.find((entry) => entry.name === 'my-spec')?.mandatoryRuleTemplateSets).toEqual([]);
-  });
-
   it('discovers specialists in .specialists/user/', async () => {
     const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
@@ -112,33 +102,29 @@ describe('SpecialistLoader', () => {
     const list = await loader.list();
     expect(list.find((entry) => entry.name === 'my-spec')?.scope).toBe('user');
     expect(list.find((entry) => entry.name === 'my-spec')?.source).toBe('user');
+    expect(list.find((entry) => entry.name === 'my-spec')?.mandatoryRuleTemplateSets).toEqual([]);
   });
 
-  it('discovers specialists in legacy nested directories for backward compatibility', async () => {
-    const legacyDefaultDir = join(tempDir, '.specialists', 'default', 'specialists');
+  // KAN-90: .specialists/default/ was retired by commit 31a6421c. The loader walks
+  // package canonical → ~/.config/specialists/user.json → .specialists/user/, and
+  // .specialists/default/ files are no longer authoritative. Stale mirrors are
+  // detected by drift-detector and pruned by `sp prune-stale-defaults`.
+  it('ignores .specialists/default/ (retired mirror, not part of the 3-layer merge)', async () => {
+    const defaultDir = join(tempDir, '.specialists', 'default');
+    await mkdir(defaultDir, { recursive: true });
+    await writeFile(join(defaultDir, 'default-only.specialist.json'), MINIMAL_YAML('default-only'));
+    const list = await loader.list();
+    expect(list.find(s => s.name === 'default-only')).toBeUndefined();
+  });
+
+  it('discovers specialists in legacy nested .specialists/user/specialists/ for backward compatibility', async () => {
     const legacyUserDir = join(tempDir, '.specialists', 'user', 'specialists');
-    await mkdir(legacyDefaultDir, { recursive: true });
     await mkdir(legacyUserDir, { recursive: true });
-    await writeFile(join(legacyDefaultDir, 'legacy-default.specialist.json'), MINIMAL_YAML('legacy-default'));
     await writeFile(join(legacyUserDir, 'legacy-user.specialist.json'), MINIMAL_YAML('legacy-user'));
 
     const list = await loader.list();
 
-    expect(list.find(s => s.name === 'legacy-default')?.scope).toBe('default');
     expect(list.find(s => s.name === 'legacy-user')?.scope).toBe('user');
-  });
-
-  it('user specialists override default specialists with same name', async () => {
-    const defaultDir = join(tempDir, '.specialists', 'default');
-    const userDir = join(tempDir, '.specialists', 'user');
-    await mkdir(defaultDir, { recursive: true });
-    await mkdir(userDir, { recursive: true });
-    await writeFile(join(defaultDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
-    await writeFile(join(userDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
-    const list = await loader.list();
-    expect(list.filter(s => s.name === 'shared')).toHaveLength(1); // deduped
-    expect(list.find(s => s.name === 'shared')!.scope).toBe('user'); // user wins
-    expect(list.find(s => s.name === 'shared')!.source).toBe('user');
   });
 
   it('falls back to package-live specialists when repo has no .specialists/* dirs', async () => {
@@ -149,7 +135,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('loads and caches a specialist by name', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'my-spec.specialist.json'), MINIMAL_YAML('my-spec'));
     const spec = await loader.get('my-spec');
@@ -163,7 +149,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('warns to stderr and skips invalid YAML instead of silently dropping', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'bad.specialist.json'), 'not: valid: specialist: yaml: at all');
     await writeFile(join(dir, 'good.specialist.json'), MINIMAL_YAML('good'));
@@ -186,7 +172,7 @@ describe('SpecialistLoader', () => {
   // --- Other functionality ---
 
   it('filters list() by category', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'arch.specialist.json'), CATEGORIZED_YAML('arch', 'architecture'));
     await writeFile(join(dir, 'tester.specialist.json'), CATEGORIZED_YAML('tester', 'testing'));
@@ -195,7 +181,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('list() returns all specialists when category filter matches none', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'arch.specialist.json'), CATEGORIZED_YAML('arch', 'architecture'));
     const list = await loader.list('nonexistent-category');
@@ -203,7 +189,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('ignores files that do not end with .specialist.json', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'readme.md'), '# not a specialist');
     await writeFile(join(dir, 'config.yaml'), 'key: value');
@@ -213,7 +199,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('invalidateCache() by name removes only that entry', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'spec-a.specialist.json'), MINIMAL_YAML('spec-a'));
     await writeFile(join(dir, 'spec-b.specialist.json'), MINIMAL_YAML('spec-b'));
@@ -231,7 +217,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('invalidateCache() without name clears all cached entries', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'spec-a.specialist.json'), MINIMAL_YAML('spec-a'));
     await writeFile(join(dir, 'spec-b.specialist.json'), MINIMAL_YAML('spec-b'));
@@ -249,7 +235,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() resolves ~/ prefixed skill paths to absolute home-relative paths', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, 'skills-spec.specialist.json'),
@@ -263,7 +249,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() resolves ./ prefixed skill paths relative to the specialist file directory', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, 'skills-spec.specialist.json'),
@@ -277,7 +263,7 @@ describe('SpecialistLoader', () => {
   });
 
   it('get() leaves absolute skill paths unchanged', async () => {
-    const dir = join(tempDir, '.specialists', 'default');
+    const dir = join(tempDir, '.specialists', 'user');
     await mkdir(dir, { recursive: true });
     const absPath = '/usr/local/share/skills/my-skill.md';
     await writeFile(
@@ -290,16 +276,13 @@ describe('SpecialistLoader', () => {
     expect(paths![0]).toBe(absPath);
   });
 
-  it('prefers user over default over package fallback for same name', async () => {
+  it('prefers user over package fallback for same name (KAN-90 three-layer contract)', async () => {
     const packageDir = join(tempDir, 'config', 'specialists');
-    const defaultDir = join(tempDir, '.specialists', 'default');
     const userDir = join(tempDir, '.specialists', 'user');
     await mkdir(packageDir, { recursive: true });
-    await mkdir(defaultDir, { recursive: true });
     await mkdir(userDir, { recursive: true });
 
     await writeFile(join(packageDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
-    await writeFile(join(defaultDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
     await writeFile(join(userDir, 'shared.specialist.json'), MINIMAL_YAML('shared'));
 
     const list = await loader.list();
@@ -353,6 +336,11 @@ describe('checkStaleness', () => {
     category: 'test',
     version: '1.0.0',
     model: 'gemini',
+    permission_required: 'READ_ONLY',
+    interactive: false,
+    skills: [],
+    scripts: [],
+    mandatoryRuleTemplateSets: [],
     scope: 'default',
     source: 'default-mirror',
     filePath: '/fake/path',
@@ -466,7 +454,7 @@ describe('SpecialistLoader — stall_detection YAML parsing', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'loader-stall-test-'));
-    specsDir = join(tempDir, 'specialists');
+    specsDir = join(tempDir, '.specialists', 'user');
     await mkdir(specsDir, { recursive: true });
     loader = new SpecialistLoader({ projectDir: tempDir });
   });
@@ -571,3 +559,202 @@ describe('SpecialistLoader — stall_detection YAML parsing', () => {
     expect(spec!.stallDetection?.tool_duration_warn_ms).toBeUndefined();
   });
 });
+
+// ── KAN-90: global override layer + null-model hard fail ────────────────────
+// Cross-ref: bead unitAI-xr45u / KAN-90 / design unitAI-o328h.
+//
+// These tests cover the 3-layer field-merge contract:
+//   package canonical  →  ~/.config/specialists/user.json  →  .specialists/user
+//
+// The global layer is sparse and only contributes override-allowed fields.
+// Blocked fields in the global layer are stripped + recorded as warnings.
+// A null model after the full merge throws SpecialistMissingModelError from get().
+
+describe('KAN-90 — global override layer + null-model hard fail', () => {
+  let tmpProject: string;
+  let tmpHome: string;
+  let originalHome: string | undefined;
+  let originalXdg: string | undefined;
+  let loader: SpecialistLoader;
+
+  const BASE_SPEC = (overrides: Record<string, unknown> = {}) => JSON.stringify({
+    specialist: {
+      metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+      execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY', ...overrides },
+      prompt: { task_template: 'Do $prompt' },
+    },
+  });
+
+  beforeEach(async () => {
+    tmpProject = await mkdtemp(join(tmpdir(), 'kan90-proj-'));
+    tmpHome = await mkdtemp(join(tmpdir(), 'kan90-home-'));
+    originalHome = process.env.HOME;
+    originalXdg = process.env.XDG_CONFIG_HOME;
+    process.env.HOME = tmpHome;
+    delete process.env.XDG_CONFIG_HOME;
+    loader = new SpecialistLoader({ projectDir: tmpProject });
+    // The package layer for the loader's projectDir is config/specialists/. Mock it inside the tmp project.
+    await mkdir(join(tmpProject, 'config', 'specialists'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    process.env.HOME = originalHome;
+    if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalXdg;
+    await rm(tmpProject, { recursive: true, force: true });
+    await rm(tmpHome, { recursive: true, force: true });
+  });
+
+  async function writeGlobalUserJson(content: Record<string, unknown>): Promise<void> {
+    const dir = join(tmpHome, '.config', 'specialists');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'user.json'), JSON.stringify(content));
+  }
+
+  it('package model passes through when no override layers exist', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('pkg/base-model');
+  });
+
+  it('global user.json overrides the package model', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { execution: { model: 'global/glm-5.1' } },
+    });
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('global/glm-5.1');
+  });
+
+  it('repo .specialists/user wins over the global layer (field-level)', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({ demo: { execution: { model: 'global/glm-5.1' } } });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      BASE_SPEC({ model: 'user/repo-model' }),
+    );
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('user/repo-model');
+  });
+
+  it('global layer can fill missing fields without touching base identity (timeout_ms)', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ timeout_ms: 5000 }),
+    );
+    await writeGlobalUserJson({
+      demo: { execution: { timeout_ms: 99999 } },
+    });
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.timeout_ms).toBe(99999);
+    expect(spec.specialist.execution.model).toBe('pkg/base-model'); // identity unchanged
+  });
+
+  it('null model in package + no global override throws SpecialistMissingModelError', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ model: null }),
+    );
+    await expect(loader.get('demo')).rejects.toThrow(/no model configured/);
+  });
+
+  it('null model in package + global override resolves cleanly', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ model: null }),
+    );
+    await writeGlobalUserJson({ demo: { execution: { model: 'global/glm-5.1' } } });
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('global/glm-5.1');
+  });
+
+  it('list() does NOT throw on null-model specialists; returns model as empty string', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      BASE_SPEC({ model: null }),
+    );
+    const list = await loader.list();
+    const demo = list.find(s => s.name === 'demo');
+    expect(demo).toBeDefined();
+    expect(demo!.model).toBe('');
+  });
+
+  it('global layer with a blocked field records a "strip"-severity warning', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: {
+        execution: { model: 'global/glm-5.1', permission_required: 'HIGH' },
+      },
+    });
+    const spec = await loader.get('demo');
+    // Blocked field NOT applied.
+    expect(spec.specialist.execution.permission_required).toBe('READ_ONLY');
+    // Allowed field applied.
+    expect(spec.specialist.execution.model).toBe('global/glm-5.1');
+    // Warning emitted.
+    const warnings = loader.getBlockedFieldWarnings('demo');
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0].severity).toBe('strip');
+    expect(warnings[0].source).toBe('global');
+    expect(warnings[0].field).toBe('execution.permission_required');
+  });
+
+  it('XDG_CONFIG_HOME wins over ~/.config/specialists', async () => {
+    process.env.XDG_CONFIG_HOME = join(tmpHome, 'xdg');
+    const xdgDir = join(process.env.XDG_CONFIG_HOME, 'specialists');
+    await mkdir(xdgDir, { recursive: true });
+    await writeFile(
+      join(xdgDir, 'user.json'),
+      JSON.stringify({ demo: { execution: { model: 'xdg/win' } } }),
+    );
+    // Also write a ~/.config copy to confirm xdg takes priority.
+    await writeGlobalUserJson({ demo: { execution: { model: 'config-home/loser' } } });
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+
+    const path = loader.getGlobalLayerPath();
+    expect(path?.source).toBe('xdg');
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('xdg/win');
+  });
+
+  it('legacy ~/.specialists/user.json is consulted when no XDG and no config-home', async () => {
+    const legacyDir = join(tmpHome, '.specialists');
+    await mkdir(legacyDir, { recursive: true });
+    await writeFile(
+      join(legacyDir, 'user.json'),
+      JSON.stringify({ demo: { execution: { model: 'legacy/win' } } }),
+    );
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    const path = loader.getGlobalLayerPath();
+    expect(path?.source).toBe('legacy');
+    const spec = await loader.get('demo');
+    expect(spec.specialist.execution.model).toBe('legacy/win');
+  });
+
+  it('skills.paths append+dedup across package + global + repo layers', async () => {
+    const SPEC_WITH_PATHS = (model: string, paths: string[]) => JSON.stringify({
+      specialist: {
+        metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+        execution: { model },
+        prompt: { task_template: 'Do $prompt' },
+        skills: { paths },
+      },
+    });
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      SPEC_WITH_PATHS('pkg/m', ['/a', '/b']),
+    );
+    await writeGlobalUserJson({
+      demo: { execution: { model: 'pkg/m' }, skills: { paths: ['/b', '/c'] } },
+    });
+    await mkdir(join(tmpProject, '.specialists', 'user'), { recursive: true });
+    await writeFile(
+      join(tmpProject, '.specialists', 'user', 'demo.specialist.json'),
+      SPEC_WITH_PATHS('pkg/m', ['/c', '/d']),
+    );
+    const spec = await loader.get('demo');
+    expect(spec.specialist.skills?.paths).toEqual(['/a', '/b', '/c', '/d']);
+  });
+});
+

@@ -10566,6 +10566,2992 @@ var require_dist = __commonJS((exports, module) => {
   exports.default = formatsPlugin;
 });
 
+// node_modules/zod/index.js
+var init_zod = __esm(() => {
+  init_external();
+  init_external();
+});
+
+// src/specialist/forensic-events.ts
+function redactForensicValue(value, path = "body") {
+  const fields = new Set;
+  const rules = new Set;
+  function visit(input, currentPath) {
+    if (Array.isArray(input))
+      return input.map((item, index) => visit(item, `${currentPath}[${index}]`));
+    if (input && typeof input === "object") {
+      const output = {};
+      for (const [key, nested] of Object.entries(input)) {
+        const nextPath = `${currentPath}.${key}`;
+        if (isSensitiveField(key)) {
+          output[key] = REDACTED;
+          fields.add(nextPath);
+          rules.add(REDACTION_RULES.sensitiveField);
+          continue;
+        }
+        output[key] = visit(nested, nextPath);
+      }
+      return output;
+    }
+    if (typeof input === "string" && SECRET_VALUE_RE.test(input)) {
+      fields.add(currentPath);
+      rules.add(REDACTION_RULES.secretPattern);
+      return input.replace(SECRET_VALUE_RE, REDACTED);
+    }
+    return input;
+  }
+  return {
+    value: visit(value, path),
+    fields: Array.from(fields).sort(),
+    rules: Array.from(rules).sort()
+  };
+}
+function isSensitiveField(key) {
+  if (NON_SENSITIVE_TELEMETRY_BODY_FIELDS.has(key))
+    return false;
+  return SENSITIVE_FIELD_RE.test(key);
+}
+function mergeRedaction(explicit, result) {
+  const fields = [...new Set([...explicit?.fields ?? [], ...result.fields])].sort();
+  const rules = [...new Set([...explicit?.rules ?? [], ...result.rules])].sort();
+  const status = explicit?.status === "unknown" ? "unknown" : explicit?.status === "redacted" || fields.length > 0 ? "redacted" : "clean";
+  return {
+    status,
+    ...fields.length > 0 ? { fields } : {},
+    ...rules.length > 0 ? { rules } : {}
+  };
+}
+function createForensicEvent(options) {
+  const tUnixMs = options.t_unix_ms ?? Date.now();
+  const redactionResult = redactForensicValue(options.body ?? {}, "body");
+  const explicitRedaction = options.redaction;
+  const event = {
+    schema_version: FORENSIC_SCHEMA_VERSION,
+    timestamp: options.timestamp ?? new Date(tUnixMs).toISOString(),
+    t_unix_ms: tUnixMs,
+    severity: options.severity ?? "info",
+    event_family: options.event_family,
+    event_name: options.event_name,
+    event_version: options.event_version ?? 1,
+    resource: normalizeResource(options.resource),
+    correlation: options.correlation ?? {},
+    body: redactionResult.value,
+    redaction: mergeRedaction(explicitRedaction, redactionResult)
+  };
+  if (options.seq !== undefined)
+    event.seq = options.seq;
+  if (options.trace)
+    event.trace = options.trace;
+  if (options.otel)
+    event.otel = options.otel;
+  if (options.links)
+    event.links = options.links;
+  if (options.diagnostics)
+    event.diagnostics = options.diagnostics;
+  assertKnownTopLevelFields(event);
+  return event;
+}
+function normalizeResource(resource) {
+  const normalized = { ...resource };
+  const legacySpecialist = normalized.specialist;
+  if (!normalized.participant_kind && typeof legacySpecialist === "string") {
+    normalized.participant_kind = "specialist";
+  }
+  if (!normalized.participant_role && typeof legacySpecialist === "string") {
+    normalized.participant_role = legacySpecialist;
+  }
+  delete normalized.specialist;
+  return normalized;
+}
+function deriveParticipantId(input) {
+  const kind = input.participant_kind ?? "specialist";
+  if (kind === "specialist" && input.chain_id)
+    return `${input.chain_id}::${input.participant_role}`;
+  if (kind === "orchestrator" && input.session_uuid)
+    return `orch::${input.session_uuid}`;
+  if (kind === "pulse_emitter" && input.container_id)
+    return `${input.container_id}::emitter::${input.participant_role}`;
+  if (kind === "node_member" && input.node_id)
+    return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
+  if (kind === "adapter" && input.adapter_id)
+    return input.adapter_id;
+  return;
+}
+function assertKnownTopLevelFields(event) {
+  for (const key of Object.keys(event)) {
+    if (!ALLOWED_TOP_LEVEL_FIELDS.has(key)) {
+      throw new Error(`Unknown forensic event top-level field: ${key}`);
+    }
+  }
+}
+function assertNoForbiddenLabels(labels) {
+  const forbidden = Object.keys(labels).filter((key) => FORBIDDEN_PROMETHEUS_LABELS.has(key));
+  if (forbidden.length > 0) {
+    throw new Error(`Forbidden telemetry label(s): ${forbidden.join(", ")}`);
+  }
+}
+function pickAllowedLabels(source, allowlist = DEFAULT_LABEL_ALLOWLIST) {
+  const labels = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!allowlist.has(key) || value === undefined || value === null)
+      continue;
+    labels[key] = String(value);
+  }
+  assertNoForbiddenLabels(labels);
+  return labels;
+}
+function forensicEventFromTimelineEvent(event, context) {
+  const participantRole = context.specialist;
+  const participantKind = context.nodeId ? "node_member" : "specialist";
+  const participantId = deriveParticipantId({
+    participant_kind: participantKind,
+    participant_role: participantRole,
+    chain_id: context.chainId,
+    node_id: context.nodeId
+  });
+  return createForensicEvent({
+    event_family: familyForTimelineType(event.type),
+    event_name: eventNameForTimelineEvent(event),
+    severity: severityForTimelineEvent(event),
+    resource: {
+      service_namespace: "xtrm",
+      service_name: "specialists",
+      service_component: context.serviceComponent ?? "runtime",
+      deployment_environment: "local",
+      repo: context.repo ?? "unknown",
+      participant_kind: participantKind,
+      participant_role: participantRole,
+      model_provider: context.backend,
+      model: context.model,
+      chain_kind: context.chainKind
+    },
+    correlation: {
+      participant_id: participantId,
+      job_id: context.jobId,
+      bead_id: context.beadId,
+      node_id: context.nodeId,
+      chain_id: context.chainId,
+      chain_root_job_id: context.chainRootJobId,
+      chain_root_bead_id: context.chainRootBeadId,
+      epic_id: context.epicId,
+      session_id: context.sessionId ?? stringField(event, "session_id"),
+      conversation_id: context.conversationId ?? stringField(event, "conversation_id"),
+      trace_id: context.traceId ?? stringField(event, "trace_id") ?? metaStringField(event, "trace_id"),
+      span_id: context.spanId ?? stringField(event, "span_id") ?? metaStringField(event, "span_id"),
+      parent_span_id: context.parentSpanId ?? stringField(event, "parent_span_id") ?? metaStringField(event, "parent_span_id"),
+      mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
+      jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
+      tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
+      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
+    },
+    body: bodyForTimelineEvent(event),
+    otel: otelForTimelineEvent(event),
+    redaction: { status: redactionStatusForTimelineEvent(event) },
+    t_unix_ms: event.t,
+    seq: event.seq
+  });
+}
+function stringField(source, key) {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function metaStringField(source, key) {
+  const meta = source._meta;
+  if (!meta || typeof meta !== "object")
+    return;
+  return stringField(meta, key);
+}
+function numberField(source, key) {
+  const value = Number(source[key]);
+  return Number.isFinite(value) ? value : undefined;
+}
+function booleanField(source, key) {
+  const value = source[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+function bodyForTimelineEvent(event) {
+  if (event.type === "mcp") {
+    return {
+      legacy_timeline_event: event,
+      mcp_server: stringField(event, "mcp_server") ?? stringField(event, "server") ?? "unknown",
+      mcp_method: stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call",
+      tool_name: stringField(event, "tool_name") ?? stringField(event, "tool"),
+      network_transport: stringField(event, "network_transport") ?? stringField(event, "transport"),
+      duration_ms: numberField(event, "duration_ms"),
+      error_type: stringField(event, "error_type"),
+      status_code: stringField(event, "status_code"),
+      duplicate_span_suppressed: booleanField(event, "duplicate_span_suppressed"),
+      trace_carrier: metaStringField(event, "trace_carrier") ?? (event._meta && typeof event._meta === "object" ? "_meta" : undefined)
+    };
+  }
+  if (event.type === "token_usage") {
+    return {
+      legacy_timeline_event: event,
+      input_tokens: numberField(event, "input_tokens") ?? numberField(event, "input"),
+      output_tokens: numberField(event, "output_tokens") ?? numberField(event, "output"),
+      cache_read_tokens: numberField(event, "cache_read_tokens") ?? numberField(event, "cache_read"),
+      cache_creation_tokens: numberField(event, "cache_creation_tokens") ?? numberField(event, "cache_creation"),
+      reasoning_tokens: numberField(event, "reasoning_tokens") ?? numberField(event, "reasoning") ?? numberField(event, "thinking_tokens"),
+      tool_tokens: numberField(event, "tool_tokens") ?? numberField(event, "tool") ?? numberField(event, "tool_use_tokens"),
+      total_tokens: numberField(event, "total_tokens") ?? numberField(event, "total"),
+      usage_source: stringField(event, "usage_source") ?? stringField(event, "source") ?? "runtime_event"
+    };
+  }
+  if (event.type === "run_complete") {
+    return {
+      legacy_timeline_event: event,
+      status: stringField(event, "status"),
+      output: stringField(event, "output"),
+      error: stringField(event, "error"),
+      commit_sha: stringField(event, "commit_sha"),
+      evidence_refs: evidenceRefsForTimelineEvent(event)
+    };
+  }
+  if (event.type === "auto_commit_success" || event.type === "auto_commit_skipped" || event.type === "auto_commit_failed") {
+    const committedFiles = Array.isArray(event.committed_files) ? event.committed_files.filter((file) => typeof file === "string") : [];
+    return {
+      legacy_timeline_event: event,
+      evidence_kind: event.type === "auto_commit_success" ? "commit" : "report",
+      result: event.type === "auto_commit_success" ? "success" : event.type === "auto_commit_failed" ? "error" : "skipped",
+      commit_sha: stringField(event, "commit_sha"),
+      changed_paths_count: committedFiles.length,
+      changed_paths: committedFiles,
+      evidence_refs: evidenceRefsForTimelineEvent(event),
+      reason: stringField(event, "reason")
+    };
+  }
+  if (event.type === "command_completed" || event.type === "command_failed") {
+    return {
+      legacy_timeline_event: event,
+      command_kind: stringField(event, "command_kind") ?? "unknown",
+      duration_ms: numberField(event, "duration_ms"),
+      status: event.type === "command_completed" ? "success" : "error",
+      command: stringField(event, "command"),
+      args: Array.isArray(event.args) ? event.args.filter((arg) => typeof arg === "string") : undefined,
+      exit_code: numberField(event, "exit_code"),
+      stderr: stringField(event, "stderr"),
+      redacted: booleanField(event, "redacted")
+    };
+  }
+  if (event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived") {
+    return {
+      legacy_timeline_event: event,
+      verdict: event.type.replace("review_verdict_", ""),
+      chain_template: stringField(event, "chain_template"),
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      terminal_state: stringField(event, "terminal_state"),
+      result: stringField(event, "result")
+    };
+  }
+  if (event.type === "chain_ready_for_review" || event.type === "chain_finalized") {
+    return {
+      legacy_timeline_event: event,
+      chain_template: stringField(event, "chain_template"),
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      terminal_state: stringField(event, "terminal_state"),
+      result: stringField(event, "result")
+    };
+  }
+  if (event.type === "worktree_merged") {
+    return {
+      legacy_timeline_event: event,
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      merge_ref: stringField(event, "merge_ref"),
+      source_ref: stringField(event, "source_ref"),
+      target_ref: stringField(event, "target_ref"),
+      result: stringField(event, "result")
+    };
+  }
+  return { legacy_timeline_event: event };
+}
+function evidenceRefsForTimelineEvent(event) {
+  if (!Array.isArray(event.evidence))
+    return;
+  const refs = event.evidence.filter((entry) => !!entry && typeof entry === "object" && !Array.isArray(entry));
+  return refs.length > 0 ? refs : undefined;
+}
+function otelForTimelineEvent(event) {
+  if (event.type !== "mcp")
+    return;
+  const method = stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call";
+  return {
+    "mcp.method.name": method,
+    "mcp.session.id": stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
+    "jsonrpc.request.id": stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
+    "network.transport": stringField(event, "network_transport") ?? stringField(event, "transport"),
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.name": stringField(event, "tool_name") ?? stringField(event, "tool")
+  };
+}
+function familyForTimelineType(type) {
+  if (type === "run_start" || type === "run_complete" || type === "status_change" || type === "payload_breakdown")
+    return "job";
+  if (type === "mcp")
+    return "mcp";
+  if (type === "tool")
+    return "tool";
+  if (type === "turn" || type === "turn_summary" || type === "message" || type === "text" || type === "thinking")
+    return "turn";
+  if (type === "token_usage" || type === "finish_reason" || type === "model_change" || type === "meta")
+    return "model";
+  if (type === "control_signal")
+    return "control";
+  if (type === "retry")
+    return "retry";
+  if (type === "compaction")
+    return "compaction";
+  if (type === "error" || type === "extension_error")
+    return "error";
+  if (type === "auto_commit_success" || type === "auto_commit_skipped" || type === "auto_commit_failed")
+    return "git";
+  if (type === "command_completed" || type === "command_failed")
+    return "command";
+  if (type === "review_verdict_pass" || type === "review_verdict_partial" || type === "review_verdict_fail" || type === "review_verdict_waived")
+    return "review";
+  if (type === "chain_ready_for_review" || type === "chain_finalized")
+    return "chain";
+  if (type === "worktree_merged")
+    return "worktree";
+  if (type === "stale_warning")
+    return "process_health";
+  return "job";
+}
+function eventNameForTimelineEvent(event) {
+  if (event.type === "run_start")
+    return "job.started";
+  if (event.type === "run_complete") {
+    if (event.status === "ERROR")
+      return "job.failed";
+    if (event.status === "CANCELLED")
+      return "job.cancelled";
+    return "job.completed";
+  }
+  if (event.type === "status_change")
+    return "job.status_changed";
+  if (event.type === "mcp")
+    return mcpEventNameForTimelineEvent(event);
+  if (event.type === "tool") {
+    if (event.phase === "start")
+      return "tool.call.started";
+    if (event.is_error)
+      return "tool.call.failed";
+    return "tool.call.completed";
+  }
+  if (event.type === "turn_summary")
+    return "turn.summarized";
+  if (event.type === "token_usage")
+    return "model.token_usage.recorded";
+  if (event.type === "finish_reason")
+    return "model.finish_reason.recorded";
+  if (event.type === "model_change")
+    return "model.changed";
+  if (event.type === "control_signal")
+    return `control.${String(event.action ?? "signal")}.recorded`;
+  if (event.type === "retry")
+    return `retry.${String(event.phase ?? "recorded")}`;
+  if (event.type === "compaction")
+    return `compaction.${String(event.phase ?? "recorded")}`;
+  if (event.type === "extension_error")
+    return "error.extension";
+  if (event.type === "error")
+    return "error.rpc";
+  if (event.type === "auto_commit_success")
+    return "git.auto_commit.succeeded";
+  if (event.type === "auto_commit_skipped")
+    return "git.auto_commit.skipped";
+  if (event.type === "auto_commit_failed")
+    return "git.auto_commit.failed";
+  if (event.type === "command_completed")
+    return "command.completed";
+  if (event.type === "command_failed")
+    return "command.failed";
+  if (event.type === "review_verdict_pass")
+    return "review.verdict.pass";
+  if (event.type === "review_verdict_partial")
+    return "review.verdict.partial";
+  if (event.type === "review_verdict_fail")
+    return "review.verdict.fail";
+  if (event.type === "review_verdict_waived")
+    return "review.verdict.waived";
+  if (event.type === "chain_ready_for_review")
+    return "chain.ready_for_review";
+  if (event.type === "chain_finalized")
+    return "chain.finalized";
+  if (event.type === "worktree_merged")
+    return "worktree.merged";
+  if (event.type === "stale_warning")
+    return "process_health.stale_detected";
+  return `${familyForTimelineType(event.type)}.${event.type}`;
+}
+function mcpEventNameForTimelineEvent(event) {
+  const explicit = stringField(event, "event_name");
+  if (explicit?.startsWith("mcp."))
+    return explicit;
+  const action = stringField(event, "action") ?? stringField(event, "phase") ?? stringField(event, "status");
+  if (action === "connected")
+    return "mcp.connected";
+  if (action === "disconnected")
+    return "mcp.disconnected";
+  if (action === "auth_failed")
+    return "mcp.auth.failed";
+  if (action === "rate_limited")
+    return "mcp.rate_limited";
+  if (action === "latency_observed")
+    return "mcp.latency.observed";
+  if (action === "start" || action === "started")
+    return "mcp.call.started";
+  if (event.is_error || action === "failed" || action === "error")
+    return "mcp.call.failed";
+  return "mcp.call.completed";
+}
+function severityForTimelineEvent(event) {
+  if (event.type === "error" || event.type === "extension_error" || event.type === "auto_commit_failed" || event.type === "command_failed")
+    return "error";
+  if (event.type === "mcp" && (event.is_error || mcpEventNameForTimelineEvent(event).endsWith(".failed") || mcpEventNameForTimelineEvent(event) === "mcp.auth.failed"))
+    return "error";
+  if (event.type === "mcp" && mcpEventNameForTimelineEvent(event) === "mcp.rate_limited")
+    return "warn";
+  if (event.type === "stale_warning" || event.type === "control_signal")
+    return "warn";
+  if (event.type === "run_complete" && event.status === "ERROR")
+    return "error";
+  if (event.type === "tool" && event.is_error)
+    return "error";
+  return "info";
+}
+function redactionStatusForTimelineEvent(event) {
+  if (event.type === "tool" || event.type === "turn_summary" || event.type === "run_complete" || event.type === "command_completed" || event.type === "command_failed" || event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived" || event.type === "chain_ready_for_review" || event.type === "chain_finalized" || event.type === "worktree_merged")
+    return "redacted";
+  return "clean";
+}
+var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1", FORBIDDEN_PROMETHEUS_LABELS, DEFAULT_LABEL_ALLOWLIST, ALLOWED_TOP_LEVEL_FIELDS, REDACTED = "[REDACTED]", REDACTION_RULES, SENSITIVE_FIELD_RE, SECRET_VALUE_RE, NON_SENSITIVE_TELEMETRY_BODY_FIELDS;
+var init_forensic_events = __esm(() => {
+  FORBIDDEN_PROMETHEUS_LABELS = new Set([
+    "participant_id",
+    "job_id",
+    "bead_id",
+    "issue_id",
+    "container_id",
+    "chain_id",
+    "chain_root_job_id",
+    "chain_root_bead_id",
+    "epic_id",
+    "node_id",
+    "pulse_id",
+    "turn_id",
+    "tool_call_id",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "session_id",
+    "conversation_id",
+    "mcp_session_id",
+    "jsonrpc_request_id",
+    "eval_id",
+    "policy_decision_id",
+    "identity_request_id",
+    "commit_sha",
+    "raw_path",
+    "raw_command",
+    "raw_error",
+    "raw_diff",
+    "raw_url",
+    "prompt",
+    "model_output",
+    "user_id",
+    "email",
+    "token",
+    "credential"
+  ]);
+  DEFAULT_LABEL_ALLOWLIST = new Set([
+    "service_namespace",
+    "service_name",
+    "service_component",
+    "deployment_environment",
+    "repo",
+    "participant_kind",
+    "participant_role",
+    "event_family",
+    "severity",
+    "state",
+    "status",
+    "result",
+    "model_provider",
+    "model",
+    "tool_name",
+    "mcp_server",
+    "mcp_method",
+    "error_type",
+    "drift_tier",
+    "pulse_kind",
+    "policy_kind",
+    "action_kind",
+    "resource_kind",
+    "credential_kind",
+    "eval_kind",
+    "chain_template",
+    "gate_kind",
+    "verdict",
+    "severity_level",
+    "direction",
+    "reason",
+    "process_kind",
+    "evidence_kind",
+    "target",
+    "highest_risk"
+  ]);
+  ALLOWED_TOP_LEVEL_FIELDS = new Set([
+    "schema_version",
+    "timestamp",
+    "t_unix_ms",
+    "seq",
+    "severity",
+    "event_family",
+    "event_name",
+    "event_version",
+    "resource",
+    "correlation",
+    "body",
+    "redaction",
+    "trace",
+    "otel",
+    "links",
+    "diagnostics"
+  ]);
+  REDACTION_RULES = {
+    sensitiveField: "sensitive-field-name",
+    secretPattern: "secret-pattern"
+  };
+  SENSITIVE_FIELD_RE = /(^|_)(password|secret|credential|api_?key|access_?token|refresh_?token|auth_?token|bearer|email|prompt|model_?output|raw_?command|raw_?url|raw_?error|stderr|stdout|args|arguments|input|output|content)$/i;
+  SECRET_VALUE_RE = /(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|xox[baprs]-[a-z0-9-]{12,}|bearer\s+[a-z0-9._-]{12,})/i;
+  NON_SENSITIVE_TELEMETRY_BODY_FIELDS = new Set([
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "reasoning_tokens",
+    "tool_tokens",
+    "total_tokens",
+    "usage_source",
+    "credential_kind",
+    "policy_kind",
+    "action_kind",
+    "resource_kind",
+    "eval_kind",
+    "target_kind",
+    "scope_kind",
+    "provider",
+    "ttl_seconds",
+    "retryable",
+    "result",
+    "score",
+    "threshold",
+    "scale",
+    "severity",
+    "reason_code",
+    "mismatch_kind"
+  ]);
+});
+
+// src/specialist/observability-db.ts
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
+import { join, sep } from "path";
+function resolveGitRootFrom(cwd) {
+  const commonDirResult = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (commonDirResult.status === 0) {
+    const commonDir = commonDirResult.stdout.trim();
+    if (commonDir.length > 0 && commonDir.endsWith(`${sep}.git`)) {
+      return commonDir.slice(0, -4);
+    }
+  }
+  const fallbackResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (fallbackResult.status !== 0)
+    return cwd;
+  const gitRoot = fallbackResult.stdout.trim();
+  return gitRoot.length > 0 ? gitRoot : cwd;
+}
+function resolveDbDirectory(gitRoot) {
+  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
+  if (xdgDataHome) {
+    return { directory: join(xdgDataHome, "specialists"), source: "xdg-data-home" };
+  }
+  return {
+    directory: join(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    source: "git-root"
+  };
+}
+function resolveObservabilityDbLocation(cwd = process.cwd()) {
+  const gitRoot = resolveGitRootFrom(cwd);
+  const resolved = resolveDbDirectory(gitRoot);
+  const dbPath = join(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  return {
+    gitRoot,
+    dbDirectory: resolved.directory,
+    dbPath,
+    dbWalPath: `${dbPath}-wal`,
+    dbShmPath: `${dbPath}-shm`,
+    source: resolved.source
+  };
+}
+function ensureObservabilityDbFile(location) {
+  mkdirSync(location.dbDirectory, { recursive: true });
+  const alreadyExists = existsSync(location.dbPath);
+  if (!alreadyExists) {
+    writeFileSync(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+  }
+  chmodSync(location.dbPath, 420);
+  return { created: !alreadyExists };
+}
+function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
+  const gitignorePath = join(gitRoot, ".gitignore");
+  const requiredEntries = [
+    ".specialists/db/*.db",
+    ".specialists/db/*.db-wal",
+    ".specialists/db/*.db-shm"
+  ];
+  const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+  const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
+  if (missingEntries.length === 0) {
+    return { changed: false };
+  }
+  const needsLeadingNewline = existing.length > 0 && !existing.endsWith(`
+`);
+  const prefix = needsLeadingNewline ? `
+` : "";
+  const sectionHeader = existing.includes("# Specialists observability database") ? "" : `# Specialists observability database
+`;
+  const block = `${prefix}${sectionHeader}${missingEntries.join(`
+`)}
+`;
+  writeFileSync(gitignorePath, `${existing}${block}`, "utf-8");
+  return { changed: true };
+}
+function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
+  const jobsDirPrefix = `${join(gitRoot, ".specialists", "jobs")}${sep}`;
+  return pathToCheck.startsWith(jobsDirPrefix);
+}
+var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
+var init_observability_db = __esm(() => {
+  DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
+});
+
+// src/specialist/job-root.ts
+import { spawnSync as spawnSync2 } from "child_process";
+import { dirname, join as join2, resolve } from "path";
+function resolveCommonGitRoot(cwd) {
+  const result = spawnSync2("git", ["rev-parse", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const gitCommonDir = result.stdout?.trim();
+  if (!gitCommonDir)
+    return;
+  return dirname(resolve(cwd, gitCommonDir));
+}
+function resolveJobsDir(cwd = process.cwd()) {
+  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
+  return join2(commonRoot, ".specialists", "jobs");
+}
+function resolveCurrentBranch(cwd = process.cwd()) {
+  const result = spawnSync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (result.status !== 0)
+    return;
+  const branch = result.stdout?.trim();
+  return branch && branch !== "HEAD" ? branch : undefined;
+}
+var init_job_root = () => {};
+
+// src/specialist/observability-sqlite.ts
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, statSync } from "fs";
+import { dirname as dirname2, join as join3 } from "path";
+function loadBunDatabase() {
+  if (_probed)
+    return _BunDatabase;
+  _probed = true;
+  try {
+    _BunDatabase = __require("bun:sqlite").Database;
+  } catch {
+    _BunDatabase = null;
+  }
+  return _BunDatabase;
+}
+function calculateRetryDelay(attempt) {
+  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
+  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
+}
+function withRetry(operation, context) {
+  let lastError;
+  for (let attempt = 0;attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return operation();
+    } catch (error2) {
+      lastError = error2 instanceof Error ? error2 : new Error(String(error2));
+      if (lastError.message.includes("Cannot use a closed database")) {
+        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
+      }
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
+        break;
+      }
+      const delayMs = calculateRetryDelay(attempt);
+      Bun.sleepSync(delayMs);
+    }
+  }
+  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? "unknown error"}`);
+}
+function parseJournalMode(mode) {
+  if (!mode)
+    return null;
+  return mode.toLowerCase();
+}
+function enforceWalMode(db) {
+  const result = db.query("PRAGMA journal_mode=WAL").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? "null"})`);
+  }
+}
+function verifyWalMode(db) {
+  const result = db.query("PRAGMA journal_mode").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
+  }
+}
+function migrateToV2(db) {
+  const hasV2 = db.query("SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1").get();
+  if (hasV2) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      status_json     TEXT NOT NULL,
+      bead_id         TEXT,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT,
+      startup_payload_json TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v2
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        status_json,
+        JSON_EXTRACT(status_json, '$.bead_id'),
+        updated_at_ms,
+        last_output,
+        startup_payload_json
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (2, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV3(db) {
+  const hasV3 = db.query("SELECT 1 FROM schema_version WHERE version = 3 LIMIT 1").get();
+  if (hasV3) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL");
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC)");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v3 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      bead_id         TEXT,
+      node_id         TEXT,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT,
+      startup_payload_json TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v3
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        bead_id,
+        NULL,
+        COALESCE(JSON_EXTRACT(status_json, '$.status'), 'starting'),
+        status_json,
+        updated_at_ms,
+        last_output,
+        startup_payload_json
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v3 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (3, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV11(db) {
+  const hasV11 = db.query("SELECT 1 FROM schema_version WHERE version = 11 LIMIT 1").get();
+  if (hasV11) {
+    const metricsColumns = new Set(db.query("PRAGMA table_info(specialist_job_metrics)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+    for (const column of [
+      { name: "active_runtime_ms", definition: "INTEGER" },
+      { name: "waiting_ms", definition: "INTEGER" }
+    ]) {
+      if (!metricsColumns.has(column.name)) {
+        db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
+      }
+    }
+    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC)");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_job_metrics (
+      job_id TEXT PRIMARY KEY,
+      specialist TEXT NOT NULL,
+      model TEXT,
+      status TEXT NOT NULL,
+      chain_kind TEXT,
+      chain_id TEXT,
+      bead_id TEXT,
+      node_id TEXT,
+      epic_id TEXT,
+      started_at_ms INTEGER,
+      completed_at_ms INTEGER,
+      elapsed_ms INTEGER,
+      active_runtime_ms INTEGER,
+      waiting_ms INTEGER,
+      total_turns INTEGER NOT NULL DEFAULT 0,
+      total_tools INTEGER NOT NULL DEFAULT 0,
+      tool_call_counts_json TEXT NOT NULL,
+      token_trajectory_json TEXT NOT NULL,
+      context_trajectory_json TEXT NOT NULL,
+      stall_gaps_json TEXT NOT NULL,
+      run_complete_json TEXT,
+      updated_at_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (11, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV12(db) {
+  const hasV12 = db.query("SELECT 1 FROM schema_version WHERE version = 12 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_forensic_events (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id             TEXT NOT NULL,
+      seq                INTEGER NOT NULL,
+      t                  INTEGER NOT NULL,
+      schema_version     TEXT NOT NULL,
+      event_family       TEXT NOT NULL,
+      event_name         TEXT NOT NULL,
+      participant_kind   TEXT,
+      participant_role   TEXT,
+      participant_id     TEXT,
+      redaction_status   TEXT NOT NULL,
+      event_json         TEXT NOT NULL
+    );
+  `);
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_forensic_events_job_seq ON specialist_forensic_events(job_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_t ON specialist_forensic_events(job_id, t, seq, id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_family ON specialist_forensic_events(event_family, event_name, t)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_participant ON specialist_forensic_events(participant_kind, participant_role, t)");
+  if (hasV12)
+    return;
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (12, strftime('%s', 'now') * 1000);
+  `);
+}
+function parseJsonRecord(input) {
+  if (!input)
+    return {};
+  try {
+    const parsed = JSON.parse(input);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function stringifyJson(value) {
+  return JSON.stringify(value);
+}
+function migrateToV4(db) {
+  const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
+  if (hasV4) {
+    db.run("CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)");
+    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL");
+    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)");
+    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)");
+    db.run("CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL");
+    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_memory_run_entry ON node_memory(node_run_id, entry_id) WHERE entry_id IS NOT NULL");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS node_runs (
+      id                 TEXT PRIMARY KEY,
+      node_name          TEXT NOT NULL,
+      status             TEXT NOT NULL,
+      coordinator_job_id TEXT,
+      started_at_ms      INTEGER,
+      updated_at_ms      INTEGER NOT NULL,
+      waiting_on         TEXT,
+      error              TEXT,
+      memory_namespace   TEXT,
+      status_json        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status);
+
+    CREATE TABLE IF NOT EXISTS node_members (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      member_id    TEXT NOT NULL,
+      job_id       TEXT,
+      specialist   TEXT NOT NULL,
+      model        TEXT,
+      role         TEXT,
+      status       TEXT NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      generation   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id);
+
+    CREATE TABLE IF NOT EXISTS node_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
+    CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
+
+    CREATE TABLE IF NOT EXISTS node_memory (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id      TEXT NOT NULL,
+      namespace        TEXT,
+      entry_type       TEXT,
+      entry_id         TEXT,
+      summary          TEXT,
+      source_member_id TEXT,
+      confidence       REAL,
+      provenance_json  TEXT,
+      created_at_ms    INTEGER,
+      updated_at_ms    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL;
+
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (4, strftime('%s', 'now') * 1000);
+  `);
+}
+function initSchema(db) {
+  enforceWalMode(db);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version     INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (1, strftime('%s', 'now') * 1000);
+
+    -- Ensure specialist_jobs exists with at least the base columns so the
+    -- migration INSERT below can always SELECT from it.
+    CREATE TABLE IF NOT EXISTS specialist_jobs (
+      job_id       TEXT PRIMARY KEY,
+      specialist   TEXT NOT NULL,
+      status_json  TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS specialist_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
+      specialist   TEXT NOT NULL,
+      bead_id      TEXT,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL
+    );
+    -- seq-dependent indexes are created/maintained by migrateToV6 to handle
+    -- existing DBs where specialist_events was created without the seq column.
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_type ON specialist_events(type);
+
+    CREATE TABLE IF NOT EXISTS specialist_results (
+      job_id        TEXT PRIMARY KEY,
+      output        TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  const missingSpecialistJobsColumns = [
+    { name: "worktree_column", definition: "TEXT" },
+    { name: "bead_id", definition: "TEXT" },
+    { name: "node_id", definition: "TEXT" },
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_id", definition: "TEXT" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" },
+    { name: "status", definition: "TEXT NOT NULL DEFAULT 'starting'" },
+    { name: "last_output", definition: "TEXT" },
+    { name: "startup_payload_json", definition: "TEXT" }
+  ].filter(({ name }) => !specialistJobsColumns.has(name));
+  for (const missingColumn of missingSpecialistJobsColumns) {
+    db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
+  }
+  const shouldRebuildSpecialistJobs = missingSpecialistJobsColumns.length > 0;
+  if (shouldRebuildSpecialistJobs) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS specialist_jobs_new (
+        job_id          TEXT PRIMARY KEY,
+        specialist      TEXT NOT NULL,
+        worktree_column TEXT,
+        bead_id         TEXT,
+        node_id         TEXT,
+        chain_kind      TEXT NOT NULL DEFAULT 'prep',
+        chain_id        TEXT,
+        chain_root_job_id TEXT,
+        chain_root_bead_id TEXT,
+        epic_id         TEXT,
+        status          TEXT NOT NULL,
+        status_json     TEXT NOT NULL,
+        updated_at_ms   INTEGER NOT NULL,
+        last_output     TEXT,
+        startup_payload_json TEXT
+      );
+      INSERT OR IGNORE INTO specialist_jobs_new
+        SELECT
+          job_id,
+          specialist,
+          worktree_column,
+          bead_id,
+          node_id,
+          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
+          chain_id,
+          COALESCE(chain_root_job_id, chain_id),
+          chain_root_bead_id,
+          epic_id,
+          COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
+          status_json,
+          updated_at_ms,
+          last_output,
+          startup_payload_json
+        FROM specialist_jobs;
+      DROP TABLE IF EXISTS specialist_jobs;
+      ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
+    `);
+  }
+  migrateToV2(db);
+  migrateToV3(db);
+  migrateToV4(db);
+  migrateToV5(db);
+  migrateToV6(db);
+  migrateToV7(db);
+  migrateToV8(db);
+  migrateToV9(db);
+  migrateToV10(db);
+  migrateToV11(db);
+  migrateToV12(db);
+  verifyWalMode(db);
+}
+function migrateToV5(db) {
+  const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
+  if (!hasV5) {
+    const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+    if (!nodeMemberColumns.has("generation")) {
+      db.run("ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0");
+    }
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (5, strftime('%s', 'now') * 1000);
+    `);
+  }
+}
+function migrateToV6(db) {
+  const hasV6 = db.query("SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1").get();
+  if (hasV6) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+    return;
+  }
+  const specialistEventColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!specialistEventColumns.has("seq")) {
+    db.run("ALTER TABLE specialist_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE specialist_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM specialist_events prior
+      WHERE prior.job_id = specialist_events.job_id
+        AND prior.id <= specialist_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+  const nodeEventColumns = new Set(db.query("PRAGMA table_info(node_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!nodeEventColumns.has("seq")) {
+    db.run("ALTER TABLE node_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE node_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM node_events prior
+      WHERE prior.node_run_id = node_events.node_run_id
+        AND prior.id <= node_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (6, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV7(db) {
+  const hasV7 = db.query("SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1").get();
+  const nodeRunColumns = new Set(db.query("PRAGMA table_info(node_runs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "pr_number", definition: "INTEGER" },
+    { name: "pr_url", definition: "TEXT" },
+    { name: "pr_head_sha", definition: "TEXT" },
+    { name: "gate_results", definition: "TEXT" },
+    { name: "completion_strategy", definition: "TEXT" }
+  ]) {
+    if (!nodeRunColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "worktree_path", definition: "TEXT" },
+    { name: "parent_member_id", definition: "TEXT" },
+    { name: "replaced_member_id", definition: "TEXT" },
+    { name: "phase_id", definition: "TEXT" }
+  ]) {
+    if (!nodeMemberColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  if (hasV7) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (7, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV8(db) {
+  const hasV8 = db.query("SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL");
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_bead_specialist ON specialist_jobs(bead_id, specialist) WHERE bead_id IS NOT NULL AND status IN ('starting', 'running')");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_runs (
+      epic_id         TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_chain_membership (
+      chain_id            TEXT PRIMARY KEY,
+      epic_id             TEXT NOT NULL,
+      chain_root_bead_id  TEXT,
+      chain_root_job_id   TEXT,
+      updated_at_ms       INTEGER NOT NULL
+    );
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL");
+  if (hasV8) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (8, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV9(db) {
+  const hasV9 = db.query("SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_kind = CASE
+      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
+      ELSE 'prep'
+    END
+    WHERE chain_kind IS NULL OR chain_kind = ''
+  `);
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
+    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL");
+  if (hasV9) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (9, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV10(db) {
+  const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+  if (hasV10) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (10, strftime('%s', 'now') * 1000);
+  `);
+}
+function defaultIsPidAlive(pid) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function claimJobStartWithStore(store, status, event, options = {}) {
+  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+  const nowMs = options.nowMs ?? Date.now;
+  const staleAgeMs = options.staleClaimAgeMs ?? STALE_CLAIM_AGE_MS;
+  return withRetry(() => store.transaction(() => {
+    const existing = store.findActiveJob(status.bead_id ?? null, status.specialist);
+    if (existing?.job_id && existing.job_id !== status.id) {
+      const updatedAtMs = existing.updated_at_ms ?? 0;
+      const isStale = updatedAtMs > 0 && nowMs() - updatedAtMs > staleAgeMs && !isPidAlive(existing.pid);
+      if (isStale && store.cancelStaleClaim) {
+        store.cancelStaleClaim(existing.job_id);
+      } else {
+        return { ok: false, existingJobId: existing.job_id, existingStatus: existing.status ?? "starting" };
+      }
+    }
+    store.writeStatusRow(status);
+    store.writeEventRow(status.id, status.specialist, status.bead_id, event);
+    return { ok: true };
+  }), "claimJobStart");
+}
+
+class SqliteClient {
+  db;
+  dbPath;
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    const Ctor = loadBunDatabase();
+    this.db = new Ctor(dbPath);
+    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    this.db.run("PRAGMA journal_mode=WAL");
+  }
+  writeStatusRow(status, lastOutput) {
+    const statusJson = JSON.stringify(status);
+    this.db.run(`
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        specialist = excluded.specialist,
+        worktree_column = excluded.worktree_column,
+        bead_id = excluded.bead_id,
+        node_id = excluded.node_id,
+        chain_kind = excluded.chain_kind,
+        chain_id = excluded.chain_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        epic_id = excluded.epic_id,
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms,
+        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
+        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
+    `, [
+      status.id,
+      status.specialist,
+      status.worktree_path ?? null,
+      status.bead_id ?? null,
+      status.node_id ?? null,
+      status.chain_kind ?? (status.chain_id ? "chain" : "prep"),
+      status.chain_id ?? null,
+      status.chain_root_job_id ?? null,
+      status.chain_root_bead_id ?? null,
+      status.epic_id ?? null,
+      status.status,
+      statusJson,
+      Date.now(),
+      lastOutput ?? null,
+      status.startup_payload_json ?? null
+    ]);
+  }
+  writeEpicRunRow(epic) {
+    this.db.run(`
+      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(epic_id) DO UPDATE SET
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
+  }
+  writeEpicChainMembershipRow(chain) {
+    this.db.run(`
+      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chain_id) DO UPDATE SET
+        epic_id = excluded.epic_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [
+      chain.chain_id,
+      chain.epic_id,
+      chain.chain_root_bead_id ?? null,
+      chain.chain_root_job_id ?? null,
+      chain.updated_at_ms
+    ]);
+  }
+  getNextSpecialistEventSeq(jobId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
+    return row?.next_seq ?? 1;
+  }
+  getNextNodeEventSeq(nodeRunId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
+    return row?.next_seq ?? 1;
+  }
+  writeEventRow(jobId, specialist, beadId, event) {
+    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const sequencedEvent = { ...event, seq };
+    const eventJson = JSON.stringify(sequencedEvent);
+    this.db.run(`
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
+    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
+  }
+  writeForensicEventRow(jobId, specialist, beadId, event) {
+    const context = this.readForensicContext(jobId);
+    const forensicEvent = forensicEventFromTimelineEvent(event, {
+      jobId,
+      specialist,
+      beadId: context.beadId ?? beadId,
+      nodeId: context.nodeId,
+      repo: context.repo,
+      serviceComponent: "runtime",
+      model: context.model,
+      backend: context.backend,
+      chainKind: context.chainKind,
+      chainId: context.chainId,
+      chainRootJobId: context.chainRootJobId,
+      chainRootBeadId: context.chainRootBeadId,
+      epicId: context.epicId,
+      sessionId: context.sessionId,
+      conversationId: context.conversationId,
+      traceId: context.traceId,
+      spanId: context.spanId,
+      parentSpanId: context.parentSpanId
+    });
+    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
+  }
+  readForensicContext(jobId) {
+    const row = this.db.query(`
+      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
+      FROM specialist_jobs
+      WHERE job_id = ?
+      LIMIT 1
+    `).get(jobId);
+    const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
+    return {
+      beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
+      nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
+      repo: typeof statusJson.repo === "string" ? statusJson.repo : undefined,
+      model: typeof statusJson.model === "string" ? statusJson.model : undefined,
+      backend: typeof statusJson.backend === "string" ? statusJson.backend : undefined,
+      chainKind: typeof row?.chain_kind === "string" ? row.chain_kind : undefined,
+      chainId: typeof row?.chain_id === "string" ? row.chain_id : undefined,
+      chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
+      chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
+      epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
+      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
+      conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
+      traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
+      spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
+      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
+    };
+  }
+  insertForensicEventRow(jobId, seq, forensicEvent) {
+    this.db.run(`
+      INSERT OR REPLACE INTO specialist_forensic_events (
+        job_id, seq, t, schema_version, event_family, event_name,
+        participant_kind, participant_role, participant_id, redaction_status, event_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      jobId,
+      seq,
+      forensicEvent.t_unix_ms,
+      forensicEvent.schema_version,
+      forensicEvent.event_family,
+      forensicEvent.event_name,
+      forensicEvent.resource.participant_kind ?? null,
+      forensicEvent.resource.participant_role ?? null,
+      typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
+      forensicEvent.redaction.status,
+      JSON.stringify(forensicEvent)
+    ]);
+  }
+  findActiveJob(beadId, specialist) {
+    return this.db.query(`
+      SELECT
+        job_id,
+        status,
+        updated_at_ms,
+        CAST(JSON_EXTRACT(status_json, '$.pid') AS INTEGER) AS pid
+      FROM specialist_jobs
+      WHERE bead_id = ?
+        AND specialist = ?
+        AND status IN ('starting', 'running', 'waiting')
+      ORDER BY updated_at_ms DESC
+      LIMIT 1
+    `).get(beadId, specialist);
+  }
+  claimJobStart(status, event) {
+    return claimJobStartWithStore({
+      transaction: (callback) => this.db.transaction(callback)(),
+      findActiveJob: (beadId, specialist) => this.findActiveJob(beadId, specialist),
+      writeStatusRow: (nextStatus) => this.writeStatusRow(nextStatus),
+      writeEventRow: (jobId, specialist, beadId, nextEvent) => this.writeEventRow(jobId, specialist, beadId, nextEvent),
+      cancelStaleClaim: (jobId) => {
+        const nowMs = Date.now();
+        this.db.run(`
+            UPDATE specialist_jobs
+            SET status = 'cancelled',
+                status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', 'orphan-claim-stale')),
+                updated_at_ms = ?
+            WHERE job_id = ?
+          `, [nowMs, jobId]);
+      }
+    }, status, event);
+  }
+  writeResultRow(jobId, output) {
+    this.db.run(`
+      INSERT INTO specialist_results (job_id, output, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        output = excluded.output,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [jobId, output, Date.now()]);
+  }
+  writeNodeRunRow(nodeRun) {
+    this.db.run(`
+      INSERT INTO node_runs (
+        id,
+        node_name,
+        status,
+        coordinator_job_id,
+        started_at_ms,
+        updated_at_ms,
+        waiting_on,
+        error,
+        memory_namespace,
+        status_json,
+        pr_number,
+        pr_url,
+        pr_head_sha,
+        gate_results,
+        completion_strategy
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        node_name = excluded.node_name,
+        status = excluded.status,
+        coordinator_job_id = excluded.coordinator_job_id,
+        started_at_ms = excluded.started_at_ms,
+        updated_at_ms = excluded.updated_at_ms,
+        waiting_on = excluded.waiting_on,
+        error = excluded.error,
+        memory_namespace = excluded.memory_namespace,
+        status_json = excluded.status_json,
+        pr_number = excluded.pr_number,
+        pr_url = excluded.pr_url,
+        pr_head_sha = excluded.pr_head_sha,
+        gate_results = excluded.gate_results,
+        completion_strategy = excluded.completion_strategy;
+    `, [
+      nodeRun.id,
+      nodeRun.node_name,
+      nodeRun.status,
+      nodeRun.coordinator_job_id ?? null,
+      nodeRun.started_at_ms ?? null,
+      nodeRun.updated_at_ms,
+      nodeRun.waiting_on ?? null,
+      nodeRun.error ?? null,
+      nodeRun.memory_namespace ?? null,
+      nodeRun.status_json,
+      nodeRun.pr_number ?? null,
+      nodeRun.pr_url ?? null,
+      nodeRun.pr_head_sha ?? null,
+      nodeRun.gate_results ?? null,
+      nodeRun.completion_strategy ?? null
+    ]);
+  }
+  writeNodeMemberRow(member) {
+    this.db.run(`
+      INSERT INTO node_members (
+        node_run_id,
+        member_id,
+        job_id,
+        specialist,
+        model,
+        role,
+        status,
+        enabled,
+        generation,
+        worktree_path,
+        parent_member_id,
+        replaced_member_id,
+        phase_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(node_run_id, member_id) DO UPDATE SET
+        job_id = excluded.job_id,
+        specialist = excluded.specialist,
+        model = excluded.model,
+        role = excluded.role,
+        status = excluded.status,
+        enabled = excluded.enabled,
+        generation = excluded.generation,
+        worktree_path = excluded.worktree_path,
+        parent_member_id = excluded.parent_member_id,
+        replaced_member_id = excluded.replaced_member_id,
+        phase_id = excluded.phase_id;
+    `, [
+      member.node_run_id,
+      member.member_id,
+      member.job_id ?? null,
+      member.specialist,
+      member.model ?? null,
+      member.role ?? null,
+      member.status,
+      member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
+      member.generation ?? 0,
+      member.worktree_path ?? null,
+      member.parent_member_id ?? null,
+      member.replaced_member_id ?? null,
+      member.phase_id ?? null
+    ]);
+  }
+  writeNodeEventRow(nodeRunId, t, type, eventJson) {
+    const seq = this.getNextNodeEventSeq(nodeRunId);
+    const payload = typeof eventJson === "object" && eventJson !== null ? { ...eventJson, seq } : { value: eventJson, seq };
+    this.db.run(`
+      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?)
+    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
+  }
+  writeNodeMemoryRow(entry) {
+    const now = Date.now();
+    const createdAtMs = entry.created_at_ms ?? now;
+    const updatedAtMs = entry.updated_at_ms ?? now;
+    if (entry.entry_id) {
+      this.db.run(`
+        INSERT INTO node_memory (
+          node_run_id,
+          namespace,
+          entry_type,
+          entry_id,
+          summary,
+          source_member_id,
+          confidence,
+          provenance_json,
+          created_at_ms,
+          updated_at_ms
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(node_run_id, entry_id) DO UPDATE SET
+          namespace = excluded.namespace,
+          entry_type = excluded.entry_type,
+          summary = excluded.summary,
+          source_member_id = excluded.source_member_id,
+          confidence = excluded.confidence,
+          provenance_json = excluded.provenance_json,
+          created_at_ms = excluded.created_at_ms,
+          updated_at_ms = excluded.updated_at_ms
+      `, [
+        entry.node_run_id,
+        entry.namespace ?? null,
+        entry.entry_type ?? null,
+        entry.entry_id,
+        entry.summary ?? null,
+        entry.source_member_id ?? null,
+        entry.confidence ?? null,
+        entry.provenance_json ?? null,
+        createdAtMs,
+        updatedAtMs
+      ]);
+      return;
+    }
+    this.db.run(`
+      INSERT INTO node_memory (
+        node_run_id,
+        namespace,
+        entry_type,
+        entry_id,
+        summary,
+        source_member_id,
+        confidence,
+        provenance_json,
+        created_at_ms,
+        updated_at_ms
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      entry.node_run_id,
+      entry.namespace ?? null,
+      entry.entry_type ?? null,
+      null,
+      entry.summary ?? null,
+      entry.source_member_id ?? null,
+      entry.confidence ?? null,
+      entry.provenance_json ?? null,
+      createdAtMs,
+      updatedAtMs
+    ]);
+  }
+  upsertStatus(status) {
+    withRetry(() => {
+      this.writeStatusRow(status);
+    }, "upsertStatus");
+  }
+  markSpecialistJobCancelled(jobId, reason) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        const nowMs = Date.now();
+        this.db.run(`
+          UPDATE specialist_jobs
+          SET status = 'cancelled',
+              status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', ?)),
+              updated_at_ms = ?
+          WHERE job_id = ?
+        `, [reason, nowMs, jobId]);
+      });
+      transaction();
+    }, "markSpecialistJobCancelled");
+  }
+  upsertEpicRun(epic) {
+    withRetry(() => {
+      this.writeEpicRunRow(epic);
+    }, "upsertEpicRun");
+  }
+  upsertEpicChainMembership(chain) {
+    withRetry(() => {
+      this.writeEpicChainMembershipRow(chain);
+    }, "upsertEpicChainMembership");
+  }
+  upsertStatusWithEvent(status, event) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+      });
+      transaction();
+    }, "upsertStatusWithEvent");
+  }
+  upsertStatusWithEventAndResult(status, event, output) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, output);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeResultRow(status.id, output);
+      });
+      transaction();
+    }, "upsertStatusWithEventAndResult");
+  }
+  appendEvent(jobId, specialist, beadId, event) {
+    withRetry(() => {
+      this.writeEventRow(jobId, specialist, beadId, event);
+    }, "appendEvent");
+  }
+  appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
+    withRetry(() => {
+      const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
+      this.insertForensicEventRow(jobId, seq, forensicEvent);
+    }, "appendForensicEvent");
+  }
+  upsertResult(jobId, output) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeResultRow(jobId, output);
+        this.db.run(`
+          UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
+        `, [output, jobId]);
+      });
+      transaction();
+    }, "upsertResult");
+  }
+  bootstrapNode(nodeRunId, nodeName, memoryNamespace) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        const now = Date.now();
+        this.writeNodeRunRow({
+          id: nodeRunId,
+          node_name: nodeName,
+          status: "created",
+          started_at_ms: now,
+          updated_at_ms: now,
+          memory_namespace: memoryNamespace,
+          status_json: JSON.stringify({ status: "created" })
+        });
+        this.writeNodeEventRow(nodeRunId, now, "node_created", { node_run_id: nodeRunId, node_name: nodeName });
+        this.writeNodeEventRow(nodeRunId, now + 1, "node_started", { node_run_id: nodeRunId, node_name: nodeName });
+      });
+      transaction();
+    }, "bootstrapNode");
+  }
+  upsertNodeRun(nodeRun) {
+    withRetry(() => {
+      this.writeNodeRunRow(nodeRun);
+    }, "upsertNodeRun");
+  }
+  upsertNodeMember(member) {
+    withRetry(() => {
+      this.writeNodeMemberRow(member);
+    }, "upsertNodeMember");
+  }
+  appendNodeEvent(nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+    }, "appendNodeEvent");
+  }
+  upsertNodeMemory(entry) {
+    withRetry(() => {
+      this.writeNodeMemoryRow(entry);
+    }, "upsertNodeMemory");
+  }
+  upsertNodeRunWithEvent(nodeRun, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeRunRow(nodeRun);
+        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeRunWithEvent");
+  }
+  upsertNodeMemberWithEvent(member, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemberRow(member);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemberWithEvent");
+  }
+  upsertNodeMemoryWithEvent(entry, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemoryRow(entry);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemoryWithEvent");
+  }
+  readNodeRun(nodeRunId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT * FROM node_runs WHERE id = ? LIMIT 1").get(nodeRunId);
+      if (!row)
+        return null;
+      return {
+        ...row,
+        status: row.status
+      };
+    }, "readNodeRun");
+  }
+  listNodeRuns(filter) {
+    return withRetry(() => {
+      const query = filter?.status ? "SELECT * FROM node_runs WHERE status = ? ORDER BY updated_at_ms DESC" : "SELECT * FROM node_runs ORDER BY updated_at_ms DESC";
+      const rows = filter?.status ? this.db.query(query).all(filter.status) : this.db.query(query).all();
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRuns");
+  }
+  listNodeRunsByRef(partialRef, statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+          AND (id LIKE ? OR node_name LIKE ?)
+        ORDER BY updated_at_ms DESC
+      `;
+      const prefix = `${partialRef}%`;
+      const rows = this.db.query(query).all(...statuses, prefix, prefix);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByRef");
+  }
+  listNodeRunsByStatuses(statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `;
+      const rows = this.db.query(query).all(...statuses);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByStatuses");
+  }
+  readNodeMembers(nodeRunId) {
+    return withRetry(() => {
+      const rows = this.db.query("SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC").all(nodeRunId);
+      return rows.map((row) => ({
+        node_run_id: row.node_run_id,
+        member_id: row.member_id,
+        job_id: row.job_id ?? undefined,
+        specialist: row.specialist,
+        model: row.model ?? undefined,
+        role: row.role ?? undefined,
+        status: row.status,
+        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
+        generation: row.generation ?? 0,
+        worktree_path: row.worktree_path ?? undefined,
+        parent_member_id: row.parent_member_id ?? undefined,
+        replaced_member_id: row.replaced_member_id ?? undefined,
+        phase_id: row.phase_id ?? undefined
+      }));
+    }, "readNodeMembers");
+  }
+  readNodeEvents(nodeRunId, opts) {
+    return withRetry(() => {
+      const whereClauses = ["node_run_id = ?"];
+      const params = [nodeRunId];
+      if (opts?.type) {
+        whereClauses.push("type = ?");
+        params.push(opts.type);
+      }
+      let query = `
+        SELECT id, seq, t, type, event_json
+        FROM node_events
+        WHERE ${whereClauses.join(" AND ")}
+        ORDER BY seq ASC, id ASC
+      `;
+      if (opts?.limit !== undefined) {
+        query += " LIMIT ?";
+        params.push(opts.limit);
+      }
+      return this.db.query(query).all(...params);
+    }, "readNodeEvents");
+  }
+  readNodeMemory(nodeRunId, opts) {
+    return withRetry(() => {
+      const whereClauses = ["node_run_id = ?"];
+      const params = [nodeRunId];
+      if (opts?.namespace) {
+        whereClauses.push("namespace = ?");
+        params.push(opts.namespace);
+      }
+      if (opts?.entry_type) {
+        whereClauses.push("entry_type = ?");
+        params.push(opts.entry_type);
+      }
+      const query = `
+        SELECT *
+        FROM node_memory
+        WHERE ${whereClauses.join(" AND ")}
+        ORDER BY created_at_ms ASC
+      `;
+      return this.db.query(query).all(...params);
+    }, "readNodeMemory");
+  }
+  queryMemberContextHealth(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT json_extract(event_json, '$.context_pct') AS context_pct
+        FROM specialist_events
+        WHERE job_id = ? AND type = 'turn_summary'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1
+      `).get(jobId);
+      if (!row || row.context_pct === null || row.context_pct === undefined) {
+        return null;
+      }
+      const contextPct = typeof row.context_pct === "number" ? row.context_pct : Number(row.context_pct);
+      return Number.isFinite(contextPct) ? contextPct : null;
+    }, "queryMemberContextHealth");
+  }
+  readStatus(jobId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
+      if (!row?.status_json)
+        return null;
+      return JSON.parse(row.status_json);
+    }, "readStatus");
+  }
+  listStatuses() {
+    return withRetry(() => {
+      const rows = this.db.query("SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC").all();
+      const statuses = [];
+      for (const row of rows) {
+        if (!row.status_json)
+          continue;
+        try {
+          statuses.push(JSON.parse(row.status_json));
+        } catch {}
+      }
+      return statuses;
+    }, "listStatuses");
+  }
+  removeJobs(jobIds) {
+    return withRetry(() => {
+      if (jobIds.length === 0)
+        return 0;
+      const placeholders = jobIds.map(() => "?").join(", ");
+      const result = this.db.query(`DELETE FROM specialist_jobs WHERE job_id IN (${placeholders})`).run(...jobIds);
+      return result.changes ?? 0;
+    }, "removeJobs");
+  }
+  readEpicRun(epicId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1").get(epicId);
+      return row ?? null;
+    }, "readEpicRun");
+  }
+  listEpicRuns() {
+    return withRetry(() => {
+      return this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC").all();
+    }, "listEpicRuns");
+  }
+  resolveEpicByChainId(chainId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1").get(chainId);
+      return row ?? null;
+    }, "resolveEpicByChainId");
+  }
+  resolveEpicByChainRootBeadId(chainRootBeadId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1").get(chainRootBeadId);
+      return row ?? null;
+    }, "resolveEpicByChainRootBeadId");
+  }
+  listEpicChains(epicId) {
+    return withRetry(() => {
+      return this.db.query(`
+        SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms
+        FROM epic_chain_membership
+        WHERE epic_id = ?
+        ORDER BY updated_at_ms DESC
+      `).all(epicId);
+    }, "listEpicChains");
+  }
+  deleteEpicChainMembership(epicId, chainIds) {
+    if (chainIds.length === 0)
+      return [];
+    return withRetry(() => {
+      const existing = new Set(this.db.query("SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?").all(epicId).map((row) => row.chain_id));
+      const removable = chainIds.filter((chainId) => existing.has(chainId));
+      if (removable.length === 0)
+        return [];
+      const placeholders = removable.map(() => "?").join(", ");
+      this.db.query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`).run(epicId, ...removable);
+      return removable;
+    }, "deleteEpicChainMembership");
+  }
+  listReferencedChainRootJobIds() {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT DISTINCT chain_root_job_id
+        FROM epic_chain_membership
+        WHERE chain_root_job_id IS NOT NULL AND chain_root_job_id != ''
+      `).all();
+      return rows.map((row) => row.chain_root_job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listReferencedChainRootJobIds");
+  }
+  listEpicChainsWithLatestJob(epicId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked_jobs AS (
+          SELECT
+            jobs.chain_id AS chain_id,
+            membership.epic_id AS epic_id,
+            membership.chain_root_bead_id AS chain_root_bead_id,
+            membership.chain_root_job_id AS chain_root_job_id,
+            jobs.job_id AS job_id,
+            jobs.status AS status,
+            json_extract(jobs.status_json, '$.branch') AS branch,
+            jobs.updated_at_ms AS updated_at_ms,
+            ROW_NUMBER() OVER (
+              PARTITION BY jobs.chain_id
+              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
+            ) AS row_rank
+          FROM epic_chain_membership membership
+          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+          WHERE membership.epic_id = ?
+            AND jobs.chain_kind = 'chain'
+        )
+        SELECT
+          chain_id,
+          epic_id,
+          chain_root_bead_id,
+          chain_root_job_id,
+          job_id,
+          status,
+          branch,
+          updated_at_ms
+        FROM ranked_jobs
+        WHERE row_rank = 1
+        ORDER BY updated_at_ms DESC, job_id DESC
+      `).all(epicId);
+      return rows.map((row) => ({
+        chain_id: row.chain_id,
+        epic_id: row.epic_id,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        job_id: row.job_id,
+        status: row.status ?? undefined,
+        branch: row.branch ?? undefined,
+        updated_at_ms: row.updated_at_ms
+      }));
+    }, "listEpicChainsWithLatestJob");
+  }
+  readChainIdentity(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
+        FROM specialist_jobs
+        WHERE job_id = ?
+        LIMIT 1
+      `).get(jobId);
+      if (!row?.chain_kind || row.chain_kind.trim().length === 0) {
+        return { chain_kind: "prep" };
+      }
+      return {
+        chain_kind: row.chain_kind === "chain" ? "chain" : "prep",
+        chain_id: row.chain_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined
+      };
+    }, "readChainIdentity");
+  }
+  listChainJobIds(chainId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE chain_id = ?
+        ORDER BY updated_at_ms ASC
+      `).all(chainId);
+      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listChainJobIds");
+  }
+  listLiveJobsForBead(beadId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE bead_id = ?
+          AND status IN ('starting', 'running', 'waiting')
+        ORDER BY updated_at_ms ASC
+      `).all(beadId);
+      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listLiveJobsForBead");
+  }
+  resolveChainEpicLinkByJobId(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT
+          jobs.chain_id AS chain_id,
+          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
+          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
+          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
+        WHERE jobs.job_id = ?
+          AND jobs.chain_kind = 'chain'
+          AND jobs.chain_id IS NOT NULL
+        LIMIT 1
+      `).get(jobId);
+      return row ?? null;
+    }, "resolveChainEpicLinkByJobId");
+  }
+  readEvents(jobId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ?
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId);
+      const events = [];
+      for (const row of rows) {
+        if (!row.event_json)
+          continue;
+        try {
+          const parsed = JSON.parse(row.event_json);
+          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
+        } catch {}
+      }
+      return events;
+    }, "readEvents");
+  }
+  readEventsAfterSeq(jobId, afterSeq) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND seq > ?
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId, afterSeq);
+      const events = [];
+      for (const row of rows) {
+        if (!row.event_json)
+          continue;
+        try {
+          const parsed = JSON.parse(row.event_json);
+          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
+        } catch {}
+      }
+      return events;
+    }, "readEventsAfterSeq");
+  }
+  readForensicEvents(filters = {}) {
+    return withRetry(() => {
+      const clauses = [];
+      const params = [];
+      if (filters.jobId) {
+        clauses.push("job_id = ?");
+        params.push(filters.jobId);
+      }
+      if (filters.sinceMs !== undefined) {
+        clauses.push("t >= ?");
+        params.push(filters.sinceMs);
+      }
+      if (filters.eventFamily) {
+        clauses.push("event_family = ?");
+        params.push(filters.eventFamily);
+      }
+      if (filters.eventName) {
+        clauses.push("event_name = ?");
+        params.push(filters.eventName);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const limit = Math.max(1, Math.min(filters.limit ?? 1000, 1e4));
+      return this.db.query(`
+        SELECT id, job_id, seq, t, schema_version, event_family, event_name,
+               participant_kind, participant_role, participant_id, redaction_status, event_json
+        FROM specialist_forensic_events
+        ${where}
+        ORDER BY t ASC, seq ASC, id ASC
+        LIMIT ?
+      `).all(...params, limit);
+    }, "readForensicEvents");
+  }
+  readLatestToolEvent(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND type = 'tool'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1;
+      `).get(jobId);
+      if (!row?.event_json)
+        return null;
+      try {
+        const parsed = JSON.parse(row.event_json);
+        if (parsed.type !== "tool")
+          return null;
+        return typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq };
+      } catch {
+        return null;
+      }
+    }, "readLatestToolEvent");
+  }
+  getLastActivityTimestampMs(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT MAX(t) AS last_activity_ms
+        FROM specialist_events
+        WHERE job_id = ? AND type IN ('tool', 'think')
+      `).get(jobId);
+      return typeof row?.last_activity_ms === "number" ? row.last_activity_ms : null;
+    }, "getLastActivityTimestampMs");
+  }
+  aggregateJobMetrics(jobId) {
+    return withRetry(() => {
+      const jobRow = this.db.query(`
+        SELECT job_id, specialist, status, chain_kind, chain_id, bead_id, node_id, epic_id, updated_at_ms, startup_payload_json
+        FROM specialist_jobs
+        WHERE job_id = ?
+      `).get(jobId);
+      if (!jobRow)
+        return null;
+      const events = this.readEvents(jobId);
+      const toolCallCounts = {};
+      const tokenTrajectory = [];
+      const contextTrajectory = [];
+      const stallGaps = [];
+      let totalTools = 0;
+      let totalTurns = 0;
+      let startedAtMs = null;
+      let completedAtMs = null;
+      let runCompleteJson = null;
+      let model = null;
+      let elapsedMs = null;
+      let activeRuntimeMs = 0;
+      let waitingMs = 0;
+      let phase = null;
+      let phaseStartedAtMs = null;
+      const closePhase = (endAtMs) => {
+        if (phase === null || phaseStartedAtMs === null || endAtMs < phaseStartedAtMs)
+          return;
+        const durationMs = endAtMs - phaseStartedAtMs;
+        if (phase === "running") {
+          activeRuntimeMs += durationMs;
+        } else {
+          waitingMs += durationMs;
+        }
+      };
+      for (const event of events) {
+        startedAtMs = startedAtMs === null ? event.t : Math.min(startedAtMs, event.t);
+        if (event.type === "tool") {
+          totalTools += 1;
+          toolCallCounts[event.tool] = (toolCallCounts[event.tool] ?? 0) + 1;
+          continue;
+        }
+        if (event.type === "turn_summary") {
+          totalTurns += 1;
+          if (event.token_usage)
+            tokenTrajectory.push({ turn_index: event.turn_index, t: event.t, token_usage: event.token_usage });
+          if (event.context_pct !== undefined)
+            contextTrajectory.push({ turn_index: event.turn_index, t: event.t, context_pct: event.context_pct });
+          continue;
+        }
+        if (event.type === "token_usage") {
+          tokenTrajectory.push({ t: event.t, source: event.source, token_usage: event.token_usage });
+          continue;
+        }
+        if (event.type === "run_start") {
+          phase = "running";
+          phaseStartedAtMs = event.t;
+          continue;
+        }
+        if (event.type === "status_change") {
+          if (event.status === "running" || event.status === "waiting") {
+            closePhase(event.t);
+            phase = event.status;
+            phaseStartedAtMs = event.t;
+            continue;
+          }
+          if (event.status === "done" || event.status === "error" || event.status === "cancelled") {
+            closePhase(event.t);
+            phase = null;
+            phaseStartedAtMs = null;
+          }
+          continue;
+        }
+        if (event.type === "run_complete") {
+          closePhase(event.t);
+          completedAtMs = event.t;
+          runCompleteJson = JSON.stringify(event);
+          model = event.model ?? model;
+          elapsedMs = Math.round(event.elapsed_s * 1000);
+          phase = null;
+          phaseStartedAtMs = null;
+          continue;
+        }
+        if (event.type === "stale_warning" && event.reason === "tool_duration") {
+          stallGaps.push({ t: event.t, tool: event.tool ?? null, silence_ms: event.silence_ms, threshold_ms: event.threshold_ms });
+        }
+      }
+      if (startedAtMs !== null && completedAtMs === null) {
+        completedAtMs = events.length > 0 ? events[events.length - 1].t : startedAtMs;
+      }
+      if (elapsedMs === null && startedAtMs !== null && completedAtMs !== null) {
+        elapsedMs = Math.max(0, completedAtMs - startedAtMs);
+      }
+      const record3 = {
+        job_id: jobRow.job_id,
+        specialist: jobRow.specialist,
+        model,
+        status: jobRow.status,
+        chain_kind: jobRow.chain_kind ?? null,
+        chain_id: jobRow.chain_id ?? null,
+        bead_id: jobRow.bead_id ?? null,
+        node_id: jobRow.node_id ?? null,
+        epic_id: jobRow.epic_id ?? null,
+        started_at_ms: startedAtMs,
+        completed_at_ms: completedAtMs,
+        elapsed_ms: elapsedMs,
+        active_runtime_ms: activeRuntimeMs,
+        waiting_ms: waitingMs,
+        total_turns: totalTurns,
+        total_tools: totalTools,
+        tool_call_counts_json: stringifyJson(toolCallCounts),
+        token_trajectory_json: stringifyJson(tokenTrajectory),
+        context_trajectory_json: stringifyJson(contextTrajectory),
+        stall_gaps_json: stringifyJson(stallGaps),
+        run_complete_json: runCompleteJson,
+        startup_payload_json: jobRow.startup_payload_json ?? null,
+        updated_at_ms: jobRow.updated_at_ms
+      };
+      this.db.run(`
+        INSERT INTO specialist_job_metrics (
+          job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
+          started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
+          tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
+          run_complete_json, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          specialist = excluded.specialist,
+          model = excluded.model,
+          status = excluded.status,
+          chain_kind = excluded.chain_kind,
+          chain_id = excluded.chain_id,
+          bead_id = excluded.bead_id,
+          node_id = excluded.node_id,
+          epic_id = excluded.epic_id,
+          started_at_ms = excluded.started_at_ms,
+          completed_at_ms = excluded.completed_at_ms,
+          elapsed_ms = excluded.elapsed_ms,
+          active_runtime_ms = excluded.active_runtime_ms,
+          waiting_ms = excluded.waiting_ms,
+          total_turns = excluded.total_turns,
+          total_tools = excluded.total_tools,
+          tool_call_counts_json = excluded.tool_call_counts_json,
+          token_trajectory_json = excluded.token_trajectory_json,
+          context_trajectory_json = excluded.context_trajectory_json,
+          stall_gaps_json = excluded.stall_gaps_json,
+          run_complete_json = excluded.run_complete_json,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [
+        record3.job_id,
+        record3.specialist,
+        record3.model,
+        record3.status,
+        record3.chain_kind,
+        record3.chain_id,
+        record3.bead_id,
+        record3.node_id,
+        record3.epic_id,
+        record3.started_at_ms,
+        record3.completed_at_ms,
+        record3.elapsed_ms,
+        record3.active_runtime_ms,
+        record3.waiting_ms,
+        record3.total_turns,
+        record3.total_tools,
+        record3.tool_call_counts_json,
+        record3.token_trajectory_json,
+        record3.context_trajectory_json,
+        record3.stall_gaps_json,
+        record3.run_complete_json,
+        record3.updated_at_ms
+      ]);
+      return record3;
+    }, "aggregateJobMetrics");
+  }
+  listJobMetrics(filters) {
+    return withRetry(() => {
+      const clauses = [];
+      const params = [];
+      if (filters?.spec) {
+        clauses.push("specialist = ?");
+        params.push(filters.spec);
+      }
+      if (filters?.model) {
+        clauses.push("model LIKE ?");
+        params.push(filters.model.replace(/\*/g, "%"));
+      }
+      if (filters?.sinceMs !== undefined) {
+        clauses.push("updated_at_ms >= ?");
+        params.push(filters.sinceMs);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      return this.db.query(`SELECT * FROM specialist_job_metrics ${where} ORDER BY updated_at_ms DESC, job_id DESC`).all(...params);
+    }, "listJobMetrics");
+  }
+  listElapsedMsBySpecialist(sinceMs, limitPerSpecialist = 200) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked AS (
+          SELECT specialist, elapsed_ms,
+                 ROW_NUMBER() OVER (PARTITION BY specialist ORDER BY updated_at_ms DESC) AS rn
+          FROM specialist_job_metrics
+          WHERE status = 'completed' AND updated_at_ms >= ? AND elapsed_ms IS NOT NULL
+        )
+        SELECT specialist, elapsed_ms
+        FROM ranked
+        WHERE rn <= ?
+        ORDER BY specialist, rn
+      `).all(sinceMs, limitPerSpecialist);
+      const bySpecialist = {};
+      for (const row of rows) {
+        if (!row.specialist || typeof row.elapsed_ms !== "number" || !Number.isFinite(row.elapsed_ms))
+          continue;
+        (bySpecialist[row.specialist] ??= []).push(row.elapsed_ms);
+      }
+      return bySpecialist;
+    }, "listElapsedMsBySpecialist");
+  }
+  readResult(jobId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
+      return row?.output ?? null;
+    }, "readResult");
+  }
+  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        const upsertMemory = this.db.query(`
+          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
+          VALUES (?, ?, ?)
+          ON CONFLICT(memory_key) DO UPDATE SET
+            memory_value = excluded.memory_value,
+            updated_at_ms = excluded.updated_at_ms
+        `);
+        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
+        const seen = new Set;
+        for (const memory of memories) {
+          if (!memory.key || seen.has(memory.key))
+            continue;
+          seen.add(memory.key);
+          upsertMemory.run(memory.key, memory.value, syncedAtMs);
+          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
+        }
+        if (seen.size > 0) {
+          const placeholders = [...seen].map(() => "?").join(", ");
+          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
+        } else {
+          this.db.run("DELETE FROM memories_cache");
+        }
+        this.db.query(`
+          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
+          VALUES (1, ?, ?)
+          ON CONFLICT(singleton_key) DO UPDATE SET
+            last_sync_at_ms = excluded.last_sync_at_ms,
+            memory_count = excluded.memory_count
+        `).run(syncedAtMs, seen.size);
+      });
+      transaction();
+    }, "syncMemoriesCache");
+  }
+  getMemoriesCacheState() {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT last_sync_at_ms, memory_count
+        FROM memories_cache_meta
+        WHERE singleton_key = 1
+        LIMIT 1
+      `).get();
+      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
+        return null;
+      }
+      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
+    }, "getMemoriesCacheState");
+  }
+  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
+    return withRetry(() => {
+      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
+      if (cleanedKeywords.length === 0)
+        return [];
+      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
+      const rows = this.db.query(`
+        SELECT
+          cache.memory_key,
+          cache.memory_value,
+          bm25(memories_fts) AS bm25_score,
+          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
+          cache.access_count
+        FROM memories_fts
+        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
+        WHERE memories_fts MATCH ?
+        ORDER BY bm25_score ASC
+        LIMIT ?
+      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
+      const ranked = rows.map((row) => {
+        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
+        const bm25Norm = 1 / (1 + Math.max(0, bm25));
+        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
+        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
+        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
+        return {
+          key: row.memory_key,
+          value: row.memory_value,
+          bm25,
+          recency,
+          accessFrequency,
+          score
+        };
+      });
+      ranked.sort((left, right) => right.score - left.score);
+      const selected = ranked.slice(0, Math.max(1, limit));
+      if (selected.length === 0)
+        return [];
+      const accessStmt = this.db.query(`
+        UPDATE memories_cache
+        SET access_count = access_count + 1,
+            last_accessed_at_ms = ?
+        WHERE memory_key = ?
+      `);
+      for (const memory of selected) {
+        accessStmt.run(nowMs, memory.key);
+      }
+      return selected;
+    }, "queryRelevantMemories");
+  }
+  invalidateMemoriesCache() {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        this.db.run("DELETE FROM memories_cache");
+        this.db.run("DELETE FROM memories_cache_meta");
+      });
+      transaction();
+    }, "invalidateMemoriesCache");
+  }
+  hasActiveJobs(statuses = ["running", "starting"]) {
+    return this.listActiveJobs(statuses).length > 0;
+  }
+  listActiveJobs(statuses = ["running", "starting"]) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      return this.db.query(`
+        SELECT job_id, specialist, status
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `).all(...statuses);
+    }, "listActiveJobs");
+  }
+  getDatabaseSizeBytes() {
+    try {
+      return statSync(this.dbPath).size;
+    } catch {
+      return 0;
+    }
+  }
+  vacuumDatabase() {
+    return withRetry(() => {
+      const beforeBytes = this.getDatabaseSizeBytes();
+      this.db.run("VACUUM");
+      const afterBytes = this.getDatabaseSizeBytes();
+      return { beforeBytes, afterBytes };
+    }, "vacuumDatabase");
+  }
+  pruneObservabilityData(options) {
+    return withRetry(() => {
+      const nowMs = options.nowMs ?? Date.now();
+      const eventsRetentionMs = options.eventsRetentionMs ?? 30 * 24 * 60 * 60 * 1000;
+      const eventsCutoffMs = nowMs - eventsRetentionMs;
+      const terminalStatuses = ["done", "error", "stopped"];
+      const activeStatuses = ["running", "starting", "waiting"];
+      const skippedActiveChainJobs = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND stale.chain_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM specialist_jobs active
+            WHERE active.chain_id = stale.chain_id
+              AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
+      const resultCandidates = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_results results
+        LEFT JOIN specialist_jobs jobs ON jobs.job_id = results.job_id
+        WHERE results.updated_at_ms < ?
+          AND (
+            jobs.job_id IS NULL
+            OR jobs.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `).get(options.beforeMs, ...activeStatuses)?.count ?? 0;
+      const jobCandidates = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND (
+            stale.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = stale.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
+      const extractCandidates = options.skipExtract ? 0 : this.db.query(`
+          SELECT COUNT(DISTINCT job_id) AS count
+          FROM specialist_events
+          WHERE t < ?
+        `).get(eventsCutoffMs)?.count ?? 0;
+      const eventsCandidates = this.db.query("SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?").get(eventsCutoffMs)?.count ?? 0;
+      const epicCandidates = options.includeEpics ? this.db.query(`
+          SELECT COUNT(*) AS count
+          FROM epic_runs epic
+          WHERE epic.updated_at_ms < ?
+            AND epic.status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic.epic_id
+            )
+        `).get(options.beforeMs)?.count ?? 0 : 0;
+      if (!options.apply) {
+        return {
+          dryRun: true,
+          beforeMs: options.beforeMs,
+          eventsCutoffMs,
+          includeEpics: options.includeEpics,
+          deletedEvents: eventsCandidates,
+          deletedResults: resultCandidates,
+          deletedJobs: jobCandidates,
+          deletedEpicRuns: epicCandidates,
+          skippedActiveChainJobs,
+          extractedJobs: extractCandidates
+        };
+      }
+      let extractedJobs = 0;
+      if (!options.skipExtract) {
+        const jobsToExtract = this.db.query(`
+          SELECT DISTINCT stale.job_id
+          FROM specialist_events stale
+          WHERE stale.t < ?
+        `).all(eventsCutoffMs);
+        for (const row of jobsToExtract) {
+          if (!row.job_id)
+            continue;
+          const metrics = this.aggregateJobMetrics(row.job_id);
+          if (!metrics) {
+            throw new Error(`Failed to aggregate metrics for job ${row.job_id}`);
+          }
+          extractedJobs += 1;
+        }
+      }
+      const deleteResults = this.db.query(`
+        DELETE FROM specialist_results
+        WHERE updated_at_ms < ?
+          AND (
+            job_id NOT IN (SELECT job_id FROM specialist_jobs WHERE chain_id IS NOT NULL)
+            OR job_id IN (
+              SELECT jobs.job_id
+              FROM specialist_jobs jobs
+              WHERE jobs.chain_id IS NULL
+                 OR NOT EXISTS (
+                    SELECT 1
+                    FROM specialist_jobs active
+                    WHERE active.chain_id = jobs.chain_id
+                      AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+                 )
+            )
+          )
+      `);
+      const deletedResults = deleteResults.run(options.beforeMs, ...activeStatuses).changes ?? 0;
+      const deleteEvents = this.db.query("DELETE FROM specialist_events WHERE t < ?");
+      const deletedEvents = deleteEvents.run(eventsCutoffMs).changes ?? 0;
+      const deleteJobs = this.db.query(`
+        DELETE FROM specialist_jobs
+        WHERE updated_at_ms < ?
+          AND status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND (
+            chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = specialist_jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `);
+      const deletedJobs = deleteJobs.run(options.beforeMs, ...terminalStatuses, ...activeStatuses).changes ?? 0;
+      let deletedEpicRuns = 0;
+      if (options.includeEpics) {
+        const deleteEpics = this.db.query(`
+          DELETE FROM epic_runs
+          WHERE updated_at_ms < ?
+            AND status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic_runs.epic_id
+            )
+        `);
+        deletedEpicRuns = deleteEpics.run(options.beforeMs).changes ?? 0;
+      }
+      return {
+        dryRun: false,
+        beforeMs: options.beforeMs,
+        eventsCutoffMs,
+        includeEpics: options.includeEpics,
+        deletedEvents,
+        deletedResults,
+        deletedJobs,
+        deletedEpicRuns,
+        skippedActiveChainJobs,
+        extractedJobs
+      };
+    }, "pruneObservabilityData");
+  }
+  scanOrphans() {
+    return withRetry(() => {
+      const findings = [];
+      const chainMembershipWithoutJobs = this.db.query(`
+        SELECT membership.chain_id, membership.epic_id
+        FROM epic_chain_membership membership
+        LEFT JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+        WHERE jobs.job_id IS NULL
+      `).all();
+      for (const row of chainMembershipWithoutJobs) {
+        findings.push({
+          kind: "orphan",
+          code: "chain_membership_without_jobs",
+          message: `chain ${row.chain_id} has epic membership but no jobs`,
+          details: { chain_id: row.chain_id, epic_id: row.epic_id }
+        });
+      }
+      const epicsWithoutChains = this.db.query(`
+        SELECT epic.epic_id, epic.status
+        FROM epic_runs epic
+        LEFT JOIN epic_chain_membership membership ON membership.epic_id = epic.epic_id
+        WHERE membership.chain_id IS NULL
+      `).all();
+      for (const row of epicsWithoutChains) {
+        findings.push({
+          kind: "orphan",
+          code: "epic_without_chains",
+          message: `epic ${row.epic_id} has no chain membership`,
+          details: { epic_id: row.epic_id, status: row.status }
+        });
+      }
+      const jobEpicWithoutMembership = this.db.query(`
+        SELECT jobs.job_id, jobs.epic_id, jobs.chain_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership
+          ON membership.chain_id = jobs.chain_id
+         AND membership.epic_id = jobs.epic_id
+        WHERE jobs.epic_id IS NOT NULL
+          AND (jobs.chain_id IS NULL OR membership.chain_id IS NULL)
+      `).all();
+      for (const row of jobEpicWithoutMembership) {
+        findings.push({
+          kind: "integrity-violation",
+          code: "job_epic_without_membership",
+          message: `job ${row.job_id} references epic without chain membership link`,
+          details: { job_id: row.job_id, epic_id: row.epic_id, chain_id: row.chain_id ?? null }
+        });
+      }
+      const worktreeRows = this.db.query(`
+        SELECT DISTINCT job_id, worktree_column
+        FROM specialist_jobs
+        WHERE worktree_column IS NOT NULL AND worktree_column != ''
+      `).all();
+      for (const row of worktreeRows) {
+        if (existsSync2(row.worktree_column))
+          continue;
+        findings.push({
+          kind: "stale-pointer",
+          code: "worktree_missing_on_disk",
+          message: `job ${row.job_id} points to missing worktree path`,
+          details: { job_id: row.job_id, worktree_path: row.worktree_column }
+        });
+      }
+      return findings;
+    }, "scanOrphans");
+  }
+  close() {
+    this.db.close();
+  }
+}
+function hasRunCompleteEvent(jobId, cwd = process.cwd()) {
+  const sqliteClient = createObservabilitySqliteClient(cwd);
+  try {
+    if (sqliteClient) {
+      const events = sqliteClient.readEvents(jobId);
+      return events.some((event) => event.type === "run_complete");
+    }
+  } finally {
+    sqliteClient?.close();
+  }
+  const eventsPath = join3(resolveJobsDir(cwd), jobId, "events.jsonl");
+  if (!existsSync2(eventsPath))
+    return false;
+  try {
+    const lines = readFileSync2(eventsPath, "utf-8").split(`
+`).map((line) => line.trim()).filter((line) => line.length > 0);
+    for (const line of lines) {
+      const event = JSON.parse(line);
+      if (event.type === "run_complete")
+        return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+function openObservabilitySqliteClient(dbPath) {
+  if (!loadBunDatabase())
+    return null;
+  try {
+    const Ctor = loadBunDatabase();
+    const initDb = new Ctor(dbPath);
+    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    initSchema(initDb);
+    initDb.close();
+    return new SqliteClient(dbPath);
+  } catch {
+    return null;
+  }
+}
+function createObservabilitySqliteClient(cwd = process.cwd()) {
+  const location = resolveObservabilityDbLocation(cwd);
+  if (!existsSync2(location.dbPath))
+    return null;
+  return openObservabilitySqliteClient(location.dbPath);
+}
+function createObservabilitySqliteClientAtPath(dbPath) {
+  mkdirSync2(dirname2(dbPath), { recursive: true });
+  return openObservabilitySqliteClient(dbPath);
+}
+var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTEMPTS = 5, BASE_RETRY_DELAY_MS = 50, STALE_CLAIM_AGE_MS = 60000;
+var init_observability_sqlite = __esm(() => {
+  init_observability_db();
+  init_job_root();
+  init_forensic_events();
+});
+
 // node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS((exports) => {
   var ALIAS = Symbol.for("yaml.alias");
@@ -14244,10 +17230,10 @@ var require_resolve_block_map = __commonJS((exports) => {
     let offset = bm.offset;
     let commentEnd = null;
     for (const collItem of bm.items) {
-      const { start, key, sep, value } = collItem;
+      const { start, key, sep: sep2, value } = collItem;
       const keyProps = resolveProps.resolveProps(start, {
         indicator: "explicit-key-ind",
-        next: key ?? sep?.[0],
+        next: key ?? sep2?.[0],
         offset,
         onError,
         parentIndent: bm.indent,
@@ -14261,7 +17247,7 @@ var require_resolve_block_map = __commonJS((exports) => {
           else if ("indent" in key && key.indent !== bm.indent)
             onError(offset, "BAD_INDENT", startColMsg);
         }
-        if (!keyProps.anchor && !keyProps.tag && !sep) {
+        if (!keyProps.anchor && !keyProps.tag && !sep2) {
           commentEnd = keyProps.end;
           if (keyProps.comment) {
             if (map2.comment)
@@ -14286,7 +17272,7 @@ var require_resolve_block_map = __commonJS((exports) => {
       ctx.atKey = false;
       if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
         onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-      const valueProps = resolveProps.resolveProps(sep ?? [], {
+      const valueProps = resolveProps.resolveProps(sep2 ?? [], {
         indicator: "map-value-ind",
         next: value,
         offset: keyNode.range[2],
@@ -14302,7 +17288,7 @@ var require_resolve_block_map = __commonJS((exports) => {
           if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
             onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
         }
-        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
+        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
         if (ctx.schema.compat)
           utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
         offset = valueNode.range[2];
@@ -14388,7 +17374,7 @@ var require_resolve_end = __commonJS((exports) => {
     let comment = "";
     if (end) {
       let hasSpace = false;
-      let sep = "";
+      let sep2 = "";
       for (const token of end) {
         const { source, type } = token;
         switch (type) {
@@ -14402,13 +17388,13 @@ var require_resolve_end = __commonJS((exports) => {
             if (!comment)
               comment = cb;
             else
-              comment += sep + cb;
-            sep = "";
+              comment += sep2 + cb;
+            sep2 = "";
             break;
           }
           case "newline":
             if (comment)
-              sep += source;
+              sep2 += source;
             hasSpace = true;
             break;
           default:
@@ -14448,18 +17434,18 @@ var require_resolve_flow_collection = __commonJS((exports) => {
     let offset = fc.offset + fc.start.source.length;
     for (let i = 0;i < fc.items.length; ++i) {
       const collItem = fc.items[i];
-      const { start, key, sep, value } = collItem;
+      const { start, key, sep: sep2, value } = collItem;
       const props = resolveProps.resolveProps(start, {
         flow: fcName,
         indicator: "explicit-key-ind",
-        next: key ?? sep?.[0],
+        next: key ?? sep2?.[0],
         offset,
         onError,
         parentIndent: fc.indent,
         startOnNewline: false
       });
       if (!props.found) {
-        if (!props.anchor && !props.tag && !sep && !value) {
+        if (!props.anchor && !props.tag && !sep2 && !value) {
           if (i === 0 && props.comma)
             onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
           else if (i < fc.items.length - 1)
@@ -14511,8 +17497,8 @@ var require_resolve_flow_collection = __commonJS((exports) => {
           }
         }
       }
-      if (!isMap && !sep && !props.found) {
-        const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
+      if (!isMap && !sep2 && !props.found) {
+        const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
         coll.items.push(valueNode);
         offset = valueNode.range[2];
         if (isBlock(value))
@@ -14524,7 +17510,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
         if (isBlock(key))
           onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
         ctx.atKey = false;
-        const valueProps = resolveProps.resolveProps(sep ?? [], {
+        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
           flow: fcName,
           indicator: "map-value-ind",
           next: value,
@@ -14535,8 +17521,8 @@ var require_resolve_flow_collection = __commonJS((exports) => {
         });
         if (valueProps.found) {
           if (!isMap && !props.found && ctx.options.strict) {
-            if (sep)
-              for (const st of sep) {
+            if (sep2)
+              for (const st of sep2) {
                 if (st === valueProps.found)
                   break;
                 if (st.type === "newline") {
@@ -14553,7 +17539,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
           else
             onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
         }
-        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep, null, valueProps, onError) : null;
+        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
         if (valueNode) {
           if (isBlock(value))
             onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -14730,7 +17716,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
         chompStart = i + 1;
     }
     let value = "";
-    let sep = "";
+    let sep2 = "";
     let prevMoreIndented = false;
     for (let i = 0;i < contentStart; ++i)
       value += lines[i][0].slice(trimIndent) + `
@@ -14748,33 +17734,33 @@ var require_resolve_block_scalar = __commonJS((exports) => {
         indent = "";
       }
       if (type === Scalar.Scalar.BLOCK_LITERAL) {
-        value += sep + indent.slice(trimIndent) + content;
-        sep = `
+        value += sep2 + indent.slice(trimIndent) + content;
+        sep2 = `
 `;
       } else if (indent.length > trimIndent || content[0] === "\t") {
-        if (sep === " ")
-          sep = `
+        if (sep2 === " ")
+          sep2 = `
 `;
-        else if (!prevMoreIndented && sep === `
+        else if (!prevMoreIndented && sep2 === `
 `)
-          sep = `
+          sep2 = `
 
 `;
-        value += sep + indent.slice(trimIndent) + content;
-        sep = `
+        value += sep2 + indent.slice(trimIndent) + content;
+        sep2 = `
 `;
         prevMoreIndented = true;
       } else if (content === "") {
-        if (sep === `
+        if (sep2 === `
 `)
           value += `
 `;
         else
-          sep = `
+          sep2 = `
 `;
       } else {
-        value += sep + content;
-        sep = " ";
+        value += sep2 + content;
+        sep2 = " ";
         prevMoreIndented = false;
       }
     }
@@ -14955,27 +17941,27 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
     if (!match)
       return source;
     let res = match[1];
-    let sep = " ";
+    let sep2 = " ";
     let pos = first.lastIndex;
     line.lastIndex = pos;
     while (match = line.exec(source)) {
       if (match[1] === "") {
-        if (sep === `
+        if (sep2 === `
 `)
-          res += sep;
+          res += sep2;
         else
-          sep = `
+          sep2 = `
 `;
       } else {
-        res += sep + match[1];
-        sep = " ";
+        res += sep2 + match[1];
+        sep2 = " ";
       }
       pos = line.lastIndex;
     }
     const last = /[ \t]*(.*)/sy;
     last.lastIndex = pos;
     match = last.exec(source);
-    return res + sep + (match?.[1] ?? "");
+    return res + sep2 + (match?.[1] ?? "");
   }
   function doubleQuotedValue(source, onError) {
     let res = "";
@@ -15756,14 +18742,14 @@ var require_cst_stringify = __commonJS((exports) => {
       }
     }
   }
-  function stringifyItem({ start, key, sep, value }) {
+  function stringifyItem({ start, key, sep: sep2, value }) {
     let res = "";
     for (const st of start)
       res += st.source;
     if (key)
       res += stringifyToken(key);
-    if (sep)
-      for (const st of sep)
+    if (sep2)
+      for (const st of sep2)
         res += st.source;
     if (value)
       res += stringifyToken(value);
@@ -16911,18 +19897,18 @@ var require_parser = __commonJS((exports) => {
       if (this.type === "map-value-ind") {
         const prev = getPrevProps(this.peek(2));
         const start = getFirstKeyStartProps(prev);
-        let sep;
+        let sep2;
         if (scalar.end) {
-          sep = scalar.end;
-          sep.push(this.sourceToken);
+          sep2 = scalar.end;
+          sep2.push(this.sourceToken);
           delete scalar.end;
         } else
-          sep = [this.sourceToken];
+          sep2 = [this.sourceToken];
         const map2 = {
           type: "block-map",
           offset: scalar.offset,
           indent: scalar.indent,
-          items: [{ start, key: scalar, sep }]
+          items: [{ start, key: scalar, sep: sep2 }]
         };
         this.onKeyLine = true;
         this.stack[this.stack.length - 1] = map2;
@@ -17076,15 +20062,15 @@ var require_parser = __commonJS((exports) => {
               } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                 const start2 = getFirstKeyStartProps(it.start);
                 const key = it.key;
-                const sep = it.sep;
-                sep.push(this.sourceToken);
+                const sep2 = it.sep;
+                sep2.push(this.sourceToken);
                 delete it.key;
                 delete it.sep;
                 this.stack.push({
                   type: "block-map",
                   offset: this.offset,
                   indent: this.indent,
-                  items: [{ start: start2, key, sep }]
+                  items: [{ start: start2, key, sep: sep2 }]
                 });
               } else if (start.length > 0) {
                 it.sep = it.sep.concat(start, this.sourceToken);
@@ -17278,13 +20264,13 @@ var require_parser = __commonJS((exports) => {
           const prev = getPrevProps(parent);
           const start = getFirstKeyStartProps(prev);
           fixFlowSeqItems(fc);
-          const sep = fc.end.splice(1, fc.end.length);
-          sep.push(this.sourceToken);
+          const sep2 = fc.end.splice(1, fc.end.length);
+          sep2.push(this.sourceToken);
           const map2 = {
             type: "block-map",
             offset: fc.offset,
             indent: fc.indent,
-            items: [{ start, key: fc, sep }]
+            items: [{ start, key: fc, sep: sep2 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map2;
@@ -17556,12 +20542,6 @@ var init_dist = __esm(() => {
   $visitAsync = visit.visitAsync;
 });
 
-// node_modules/zod/index.js
-var init_zod = __esm(() => {
-  init_external();
-  init_external();
-});
-
 // src/specialist/schema.ts
 function formatPath(path) {
   return path.map((p) => typeof p === "number" ? `[${p}]` : p).join(".");
@@ -17623,8 +20603,9 @@ async function validateSpecialist(jsonContent) {
     }
   } else {
     const spec = result.data;
-    if (!spec.specialist.execution.model.includes("/")) {
-      warnings.push(`Model "${spec.specialist.execution.model}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
+    const declaredModel = spec.specialist.execution.model;
+    if (declaredModel && !declaredModel.includes("/")) {
+      warnings.push(`Model "${declaredModel}" doesn't include a provider prefix. Expected format: "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`);
     }
   }
   return { valid: errors5.length === 0, errors: errors5, warnings };
@@ -17646,7 +20627,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema, OVERRIDE_ALLOWED_EXECUTION_FIELDS, OVERRIDE_ALLOWED_TOP_FIELDS, BLOCKED_OVERRIDE_FIELDS;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -17661,8 +20642,8 @@ var init_schema = __esm(() => {
   }).passthrough();
   ExecutionSchema = objectType({
     mode: enumType(["tool", "skill", "auto"]).default("auto"),
-    model: stringType(),
-    fallback_model: stringType().optional(),
+    model: stringType().nullable(),
+    fallback_model: stringType().nullable().optional(),
     timeout_ms: numberType().default(120000),
     stall_timeout_ms: numberType().optional(),
     max_retries: numberType().int().min(0).default(0),
@@ -17739,27 +20720,178 @@ var init_schema = __esm(() => {
       beads_write_notes: booleanType().default(true)
     }).passthrough()
   }).passthrough();
+  OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
+    "model",
+    "fallback_model",
+    "timeout_ms",
+    "stall_timeout_ms",
+    "thinking_level",
+    "max_retries"
+  ];
+  OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes"];
+  BLOCKED_OVERRIDE_FIELDS = [
+    "execution.permission_required",
+    "execution.auto_commit",
+    "prompt.system",
+    "prompt.output_schema",
+    "skills.scripts",
+    "mandatory_rules",
+    "capabilities"
+  ];
 });
 
 // src/specialist/canonical-asset-resolver.ts
-import { existsSync } from "fs";
+import { existsSync as existsSync3 } from "fs";
 import { fileURLToPath } from "url";
 function resolveCanonicalAssetDir(relativePath) {
   const configPath = `config/${relativePath}`;
   let resolved = fileURLToPath(new URL(`../${configPath}`, import.meta.url));
-  if (existsSync(resolved))
+  if (existsSync3(resolved))
     return resolved;
   resolved = fileURLToPath(new URL(`../../${configPath}`, import.meta.url));
-  if (existsSync(resolved))
+  if (existsSync3(resolved))
     return resolved;
   return null;
 }
 var init_canonical_asset_resolver = () => {};
 
+// src/specialist/global-config.ts
+import { existsSync as existsSync4, readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3 } from "fs";
+import { dirname as dirname3, join as join4 } from "path";
+import { homedir } from "os";
+function getGlobalUserConfigPath() {
+  const home = process.env.HOME?.trim() || homedir();
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  if (xdgConfigHome) {
+    const xdgPath = join4(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync4(xdgPath), source: "xdg" };
+  }
+  const configHomePath = join4(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync4(configHomePath)) {
+    return { path: configHomePath, exists: true, source: "config-home" };
+  }
+  const legacyPath = join4(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync4(legacyPath)) {
+    return { path: legacyPath, exists: true, source: "legacy" };
+  }
+  return { path: configHomePath, exists: false, source: "config-home" };
+}
+function buildSpecialistOverrideTemplate() {
+  return {
+    execution: {
+      model: null,
+      fallback_model: null,
+      timeout_ms: null,
+      stall_timeout_ms: null,
+      thinking_level: null,
+      max_retries: null
+    },
+    beads_write_notes: null,
+    skills: { paths: [] }
+  };
+}
+function buildGlobalUserConfigTemplate(specialistNames) {
+  const template = {};
+  for (const name of specialistNames) {
+    template[name] = buildSpecialistOverrideTemplate();
+  }
+  return template;
+}
+function fillMissingDefaults(target, defaults) {
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    if (!(key in target)) {
+      target[key] = structuredClone(defaultValue);
+      continue;
+    }
+    const currentValue = target[key];
+    if (currentValue !== null && typeof currentValue === "object" && !Array.isArray(currentValue) && defaultValue !== null && typeof defaultValue === "object" && !Array.isArray(defaultValue)) {
+      fillMissingDefaults(currentValue, defaultValue);
+    }
+  }
+  return target;
+}
+function mergeGlobalUserConfig(existing, template) {
+  const merged = {};
+  const added = [];
+  const extended = [];
+  const removed = [];
+  for (const [name, rawExisting] of Object.entries(existing)) {
+    const templateOverride = template[name];
+    if (templateOverride) {
+      const normalized = fillMissingDefaults(rawExisting && typeof rawExisting === "object" ? { ...rawExisting } : {}, templateOverride);
+      merged[name] = normalized;
+      extended.push(name);
+    } else {
+      merged[name] = rawExisting;
+      removed.push(name);
+    }
+  }
+  for (const [name, override] of Object.entries(template)) {
+    if (!(name in existing)) {
+      merged[name] = override;
+      added.push(name);
+    }
+  }
+  return { config: merged, added, extended, removed };
+}
+function validateGlobalUserConfig(jsonContent) {
+  let raw;
+  try {
+    raw = JSON.parse(jsonContent);
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return {
+      valid: false,
+      errors: [{ path: "json", message: `JSON parse error: ${message}` }]
+    };
+  }
+  const result = GlobalUserConfigSchema.safeParse(raw);
+  if (result.success) {
+    return { valid: true, errors: [] };
+  }
+  const errors5 = result.error.issues.map((issue2) => ({
+    path: issue2.path.map((p) => typeof p === "number" ? `[${p}]` : p).join("."),
+    message: issue2.message
+  }));
+  return { valid: false, errors: errors5 };
+}
+function readGlobalUserConfig(location) {
+  if (!location.exists)
+    return null;
+  const content = readFileSync3(location.path, "utf-8");
+  return JSON.parse(content);
+}
+function writeGlobalUserConfig(location, config2) {
+  mkdirSync3(dirname3(location.path), { recursive: true });
+  writeFileSync2(location.path, `${JSON.stringify(config2, null, 2)}
+`, "utf-8");
+}
+var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", OverrideExecutionSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
+var init_global_config = __esm(() => {
+  init_zod();
+  OverrideExecutionSchema = objectType({
+    model: stringType().nullable(),
+    fallback_model: stringType().nullable(),
+    timeout_ms: numberType().nullable(),
+    stall_timeout_ms: numberType().nullable(),
+    thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
+    max_retries: numberType().int().min(0).nullable()
+  }).strict();
+  OverrideSkillsSchema = objectType({
+    paths: arrayType(stringType())
+  }).strict();
+  GlobalSpecialistOverrideSchema = objectType({
+    execution: OverrideExecutionSchema,
+    beads_write_notes: booleanType().nullable(),
+    skills: OverrideSkillsSchema
+  }).strict();
+  GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
+});
+
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "fs/promises";
-import { basename, join } from "path";
-import { existsSync as existsSync2 } from "fs";
+import { basename, join as join5 } from "path";
+import { existsSync as existsSync5 } from "fs";
 async function checkStaleness(summary) {
   if (!summary.filestoWatch?.length || !summary.updated)
     return "OK";
@@ -17781,23 +20913,19 @@ async function checkStaleness(summary) {
 
 class SpecialistLoader {
   cache = new Map;
+  blockedFieldWarnings = new Map;
   projectDir;
   constructor(options = {}) {
     this.projectDir = options.projectDir ?? process.cwd();
   }
   getScanDirs() {
     const dirs = [
-      { path: join(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
-      { path: join(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
-      { path: join(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
-      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" },
-      { path: join(this.projectDir, "specialists"), scope: "default", source: "legacy" },
-      { path: join(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
-      { path: join(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
+      { path: join5(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join5(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join5(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
-    return dirs.filter((d) => d.path && existsSync2(d.path));
+    return dirs.filter((d) => d.path && existsSync5(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -17805,15 +20933,130 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync2(jsonPath)) {
+    const jsonPath = join5(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync5(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync2(yamlPath)) {
+    const yamlPath = join5(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync5(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
+  }
+  findLayerHits(name) {
+    const hits = [];
+    const seenScopes = new Set;
+    for (const dir of this.getScanDirs()) {
+      const resolved = this.resolveSpecialistPath(dir.path, name);
+      if (!resolved)
+        continue;
+      if (seenScopes.has(dir.scope))
+        continue;
+      seenScopes.add(dir.scope);
+      hits.push({ dir, resolved });
+    }
+    return hits.reverse();
+  }
+  applyOverrideFields(name, base, override, source) {
+    const warnings = [];
+    const baseSpec = base.specialist;
+    const overrideSpec = override.specialist ?? override;
+    for (const dottedPath of BLOCKED_OVERRIDE_FIELDS) {
+      const value = readDottedPath(overrideSpec, dottedPath);
+      if (value === undefined)
+        continue;
+      warnings.push({
+        specialist: name,
+        field: dottedPath,
+        source,
+        severity: source === "global" ? "strip" : "warn",
+        value
+      });
+    }
+    const overrideExecution = overrideSpec.execution ?? {};
+    const baseExecution = baseSpec.execution ?? {};
+    for (const field of OVERRIDE_ALLOWED_EXECUTION_FIELDS) {
+      if (!(field in overrideExecution))
+        continue;
+      const overrideValue = overrideExecution[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseExecution[field] = overrideValue;
+    }
+    baseSpec.execution = baseExecution;
+    for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
+      if (!(field in overrideSpec))
+        continue;
+      const overrideValue = overrideSpec[field];
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      baseSpec[field] = overrideValue;
+    }
+    const overrideSkills = overrideSpec.skills ?? {};
+    const overridePaths = Array.isArray(overrideSkills.paths) ? overrideSkills.paths : null;
+    if (overridePaths && overridePaths.length) {
+      const baseSkills = baseSpec.skills ?? {};
+      const basePaths = Array.isArray(baseSkills.paths) ? baseSkills.paths : [];
+      const seen = new Set;
+      const merged = [];
+      for (const p of [...basePaths, ...overridePaths]) {
+        if (seen.has(p))
+          continue;
+        seen.add(p);
+        merged.push(p);
+      }
+      baseSkills.paths = merged;
+      baseSpec.skills = baseSkills;
+    }
+    return warnings;
+  }
+  async buildMergedSpec(name) {
+    const hits = this.findLayerHits(name);
+    if (hits.length === 0)
+      return null;
+    const baseHit = hits[0];
+    const baseContent = await readFile(baseHit.resolved.filePath, "utf-8");
+    const base = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
+    if (baseHit.resolved.deprecatedYaml) {
+      process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${baseHit.resolved.filePath}. Please migrate to .specialist.json
+`);
+    }
+    const warnings = [];
+    const globalLocation = getGlobalUserConfigPath();
+    const globalConfig2 = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+    const globalOverride = globalConfig2?.[name];
+    if (globalOverride) {
+      warnings.push(...this.applyOverrideFields(name, base, { specialist: globalOverride }, "global"));
+    }
+    for (const hit of hits.slice(1)) {
+      const content = await readFile(hit.resolved.filePath, "utf-8");
+      let overrideRaw;
+      try {
+        overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`[specialists] skipping override ${hit.resolved.filePath}: ${msg}
+`);
+        continue;
+      }
+      if (hit.resolved.deprecatedYaml) {
+        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${hit.resolved.filePath}. Please migrate to .specialist.json
+`);
+      }
+      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, "user"));
+    }
+    const top = hits[hits.length - 1];
+    resolveSkillsPaths(base, baseHit.dir.path);
+    return {
+      spec: base,
+      topLayer: {
+        scope: top.dir.scope,
+        source: top.dir.source,
+        filePath: top.resolved.filePath,
+        deprecatedYaml: top.resolved.deprecatedYaml
+      },
+      warnings
+    };
   }
   async list(category) {
     const results = [];
@@ -17824,45 +21067,41 @@ class SpecialistLoader {
         const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, "");
         if (seen.has(specialistName))
           continue;
-        const resolved = this.resolveSpecialistPath(dir.path, specialistName);
-        if (!resolved)
-          continue;
         try {
-          const content = await readFile(resolved.filePath, "utf-8");
-          const spec = await parseSpecialist(this.toJson(content, resolved.deprecatedYaml));
-          const { name, description, category: cat, version: version2, updated } = spec.specialist.metadata;
+          const merged = await this.buildMergedSpec(specialistName);
+          if (!merged)
+            continue;
+          const { name, description, category: cat, version: version2, updated } = merged.spec.specialist.metadata;
           if (seen.has(name))
             continue;
           if (category && cat !== category)
             continue;
-          if (resolved.deprecatedYaml) {
-            process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolved.filePath}. Please migrate to .specialist.json
-`);
-          }
           seen.add(name);
+          if (merged.warnings.length)
+            this.blockedFieldWarnings.set(name, merged.warnings);
           results.push({
             name,
             description,
             category: cat,
             version: version2,
-            model: spec.specialist.execution.model,
-            permission_required: spec.specialist.execution.permission_required,
-            interactive: spec.specialist.execution.interactive,
-            thinking_level: spec.specialist.execution.thinking_level,
-            skills: spec.specialist.skills?.paths ?? [],
-            scripts: spec.specialist.skills?.scripts ?? [],
-            mandatoryRuleTemplateSets: spec.specialist.mandatory_rules?.template_sets ?? [],
-            scope: dir.scope,
-            source: dir.source,
-            filePath: resolved.filePath,
+            model: merged.spec.specialist.execution.model ?? "",
+            permission_required: merged.spec.specialist.execution.permission_required,
+            interactive: merged.spec.specialist.execution.interactive,
+            thinking_level: merged.spec.specialist.execution.thinking_level,
+            skills: merged.spec.specialist.skills?.paths ?? [],
+            scripts: merged.spec.specialist.skills?.scripts ?? [],
+            mandatoryRuleTemplateSets: merged.spec.specialist.mandatory_rules?.template_sets ?? [],
+            scope: merged.topLayer.scope,
+            source: merged.topLayer.source,
+            filePath: merged.topLayer.filePath,
             updated,
-            filestoWatch: spec.specialist.validation?.files_to_watch,
-            staleThresholdDays: spec.specialist.validation?.stale_threshold_days,
-            stallDetection: spec.specialist.stall_detection ?? undefined
+            filestoWatch: merged.spec.specialist.validation?.files_to_watch,
+            staleThresholdDays: merged.spec.specialist.validation?.stale_threshold_days,
+            stallDetection: merged.spec.specialist.stall_detection ?? undefined
           });
         } catch (e) {
           const reason = e instanceof Error ? e.message : String(e);
-          process.stderr.write(`[specialists] skipping ${resolved.filePath}: ${reason}
+          process.stderr.write(`[specialists] skipping ${file} (${specialistName}): ${reason}
 `);
         }
       }
@@ -17872,44 +21111,85 @@ class SpecialistLoader {
   async get(name) {
     if (this.cache.has(name))
       return this.cache.get(name);
-    for (const dir of this.getScanDirs()) {
-      const resolvedPath = this.resolveSpecialistPath(dir.path, name);
-      if (!resolvedPath)
-        continue;
-      const content = await readFile(resolvedPath.filePath, "utf-8");
-      const spec = await parseSpecialist(this.toJson(content, resolvedPath.deprecatedYaml));
-      if (resolvedPath.deprecatedYaml) {
-        process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${resolvedPath.filePath}. Please migrate to .specialist.json
-`);
-      }
-      const rawPaths = spec.specialist.skills?.paths;
-      if (rawPaths?.length) {
-        const fileDir = dir.path;
-        const resolved = rawPaths.map((p) => {
-          if (p.startsWith("~/"))
-            return join(process.env.HOME || "", p.slice(2));
-          if (p.startsWith("./"))
-            return join(fileDir, p.slice(2));
-          return p;
-        });
-        spec.specialist.skills.paths = resolved;
-      }
-      this.cache.set(name, spec);
-      return spec;
+    const merged = await this.buildMergedSpec(name);
+    if (!merged)
+      throw new Error(`Specialist not found: ${name}`);
+    if (merged.warnings.length)
+      this.blockedFieldWarnings.set(name, merged.warnings);
+    const model = merged.spec.specialist.execution.model;
+    if (model === null || model === undefined || model === "") {
+      throw new SpecialistMissingModelError(name);
     }
-    throw new Error(`Specialist not found: ${name}`);
+    this.cache.set(name, merged.spec);
+    return merged.spec;
+  }
+  getBlockedFieldWarnings(name) {
+    if (name)
+      return this.blockedFieldWarnings.get(name) ?? [];
+    const all = [];
+    for (const warnings of this.blockedFieldWarnings.values())
+      all.push(...warnings);
+    return all;
+  }
+  getGlobalLayerPath() {
+    try {
+      return getGlobalUserConfigPath();
+    } catch {
+      return null;
+    }
   }
   invalidateCache(name) {
-    if (name)
+    if (name) {
       this.cache.delete(name);
-    else
+      this.blockedFieldWarnings.delete(name);
+    } else {
       this.cache.clear();
+      this.blockedFieldWarnings.clear();
+    }
   }
 }
+function readDottedPath(obj, dotted) {
+  const parts = dotted.split(".");
+  let cur = obj;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object")
+      return;
+    if (PROTOTYPE_POLLUTION_KEYS.has(part))
+      return;
+    if (!Object.prototype.hasOwnProperty.call(cur, part))
+      return;
+    cur = cur[part];
+  }
+  return cur;
+}
+function resolveSkillsPaths(spec, fileDir) {
+  const rawPaths = spec.specialist.skills?.paths;
+  if (!rawPaths?.length)
+    return;
+  const resolved = rawPaths.map((p) => {
+    if (p.startsWith("~/"))
+      return join5(process.env.HOME || "", p.slice(2));
+    if (p.startsWith("./"))
+      return join5(fileDir, p.slice(2));
+    return p;
+  });
+  spec.specialist.skills.paths = resolved;
+}
+var SpecialistMissingModelError, PROTOTYPE_POLLUTION_KEYS;
 var init_loader = __esm(() => {
   init_dist();
   init_schema();
   init_canonical_asset_resolver();
+  init_global_config();
+  SpecialistMissingModelError = class SpecialistMissingModelError extends Error {
+    specialistName;
+    constructor(specialistName) {
+      super(`specialist '${specialistName}' has no model configured. ` + `Run: sp edit --global ${specialistName}.execution.model <model-id> ` + `(or 'sp init --global' to create the global user config file first).`);
+      this.specialistName = specialistName;
+      this.name = "SpecialistMissingModelError";
+    }
+  };
+  PROTOTYPE_POLLUTION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 });
 
 // src/specialist/job-file-output.ts
@@ -18148,23 +21428,23 @@ var init_tool_catalog = __esm(() => {
 // src/pi/session.ts
 import { createHash } from "crypto";
 import { spawn } from "child_process";
-import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir, tmpdir } from "os";
-import { isAbsolute, resolve, sep, join as join2, dirname } from "path";
+import { existsSync as existsSync6, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "fs";
+import { homedir as homedir2, tmpdir } from "os";
+import { isAbsolute, resolve as resolve2, sep as sep2, join as join6, dirname as dirname4 } from "path";
 function loadSharedToolCatalogIndex() {
   if (cachedToolCatalogIndex)
     return cachedToolCatalogIndex;
-  const overridePath = resolve(process.cwd(), ".specialists", "catalog", "index.json");
+  const overridePath = resolve2(process.cwd(), ".specialists", "catalog", "index.json");
   try {
-    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, "utf8"));
+    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync4(overridePath, "utf8"));
     return cachedToolCatalogIndex;
   } catch {
     try {
       const canonicalDir = resolveCanonicalAssetDir("catalog");
       if (!canonicalDir)
         return;
-      const canonicalPath = resolve(canonicalDir, "index.json");
-      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, "utf8"));
+      const canonicalPath = resolve2(canonicalDir, "index.json");
+      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync4(canonicalPath, "utf8"));
       return cachedToolCatalogIndex;
     } catch {
       return;
@@ -18173,7 +21453,7 @@ function loadSharedToolCatalogIndex() {
 }
 function probeExtensionHealth(packageName) {
   const globalDir = resolveGlobalNodeModulesDir();
-  if (globalDir && existsSync3(join2(globalDir, packageName, "package.json"))) {
+  if (globalDir && existsSync6(join6(globalDir, packageName, "package.json"))) {
     return "loaded_healthy";
   }
   return "not_installed";
@@ -18200,12 +21480,12 @@ function resolvePermissionTools(options) {
 function resolveGlobalNodeModulesDir() {
   const candidates = [
     process.env.PI_NPM_GLOBAL_DIR,
-    process.env.NPM_CONFIG_PREFIX ? join2(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
-    process.env.npm_config_prefix ? join2(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
-    process.env.NVM_BIN ? join2(dirname(process.env.NVM_BIN), "lib", "node_modules") : undefined,
-    join2(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
+    process.env.NPM_CONFIG_PREFIX ? join6(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
+    process.env.npm_config_prefix ? join6(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join6(dirname4(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    join6(homedir2(), ".nvm/versions/node", process.version, "lib", "node_modules")
   ].filter((candidate) => Boolean(candidate));
-  return candidates.find((candidate) => existsSync3(candidate));
+  return candidates.find((candidate) => existsSync6(candidate));
 }
 function asNumber(value) {
   if (typeof value === "number" && Number.isFinite(value))
@@ -18412,17 +21692,17 @@ function isTestCommand(command) {
   return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
 }
 function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
-  const boundaryHash = createHash("sha256").update(resolve(worktreeBoundary)).digest("hex").slice(0, 16);
-  const extensionsDir = join2(tmpdir(), "specialists-pi-extensions");
+  const boundaryHash = createHash("sha256").update(resolve2(worktreeBoundary)).digest("hex").slice(0, 16);
+  const extensionsDir = join6(tmpdir(), "specialists-pi-extensions");
   try {
-    mkdirSync(extensionsDir, { recursive: true });
+    mkdirSync4(extensionsDir, { recursive: true });
   } catch (err) {
     process.stderr.write(`[worktree-boundary] WARN: could not create extensions directory at ${extensionsDir}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
 `);
     return null;
   }
-  const extensionPath = join2(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
-  if (existsSync3(extensionPath))
+  const extensionPath = join6(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync6(extensionPath))
     return extensionPath;
   const extensionSource = `
 import { isAbsolute, resolve } from 'node:path';
@@ -18461,7 +21741,7 @@ export default function(pi) {
 }
 `.trimStart();
   try {
-    writeFileSync(extensionPath, extensionSource, "utf-8");
+    writeFileSync3(extensionPath, extensionSource, "utf-8");
   } catch (err) {
     process.stderr.write(`[worktree-boundary] WARN: could not write extension file at ${extensionPath}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
 `);
@@ -18539,32 +21819,32 @@ class PiAgentSession {
     for (const skillPath of this.options.skillPaths ?? []) {
       args.push("--skill", skillPath);
     }
-    const piExtDir = join2(homedir(), ".pi", "agent", "extensions");
+    const piExtDir = join6(homedir2(), ".pi", "agent", "extensions");
     const permLevel = (this.options.permissionLevel ?? "").toUpperCase();
     if (permLevel !== "READ_ONLY") {
-      const qgPath = join2(piExtDir, "quality-gates");
-      if (existsSync3(qgPath))
+      const qgPath = join6(piExtDir, "quality-gates");
+      if (existsSync6(qgPath))
         args.push("-e", qgPath);
     }
-    const ssPath = join2(piExtDir, "service-skills");
-    if (existsSync3(ssPath))
+    const ssPath = join6(piExtDir, "service-skills");
+    if (existsSync6(ssPath))
       args.push("-e", ssPath);
-    const cavemanPath = join2(piExtDir, "caveman");
-    if (existsSync3(cavemanPath))
+    const cavemanPath = join6(piExtDir, "caveman");
+    if (existsSync6(cavemanPath))
       args.push("-e", cavemanPath);
     const npmGlobalDir = resolveGlobalNodeModulesDir();
     const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
     if (npmGlobalDir) {
       const gitnexusPackageName = "pi-gitnexus";
       if (!excludedExtensions.has(gitnexusPackageName)) {
-        const gitnexusPath = join2(npmGlobalDir, gitnexusPackageName);
-        if (existsSync3(gitnexusPath))
+        const gitnexusPath = join6(npmGlobalDir, gitnexusPackageName);
+        if (existsSync6(gitnexusPath))
           args.push("-e", gitnexusPath);
       }
       const serenaPackageName = "pi-serena-tools";
       if (!excludedExtensions.has(serenaPackageName)) {
-        const serenaPath = join2(npmGlobalDir, serenaPackageName);
-        if (existsSync3(serenaPath))
+        const serenaPath = join6(npmGlobalDir, serenaPackageName);
+        if (existsSync6(serenaPath))
           args.push("-e", serenaPath);
       }
     }
@@ -18572,18 +21852,18 @@ class PiAgentSession {
       const systemPromptFlag = this.options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
       args.push(systemPromptFlag, this.options.systemPrompt);
     }
-    const worktreeBoundary = this.options.worktreeBoundary ? resolve(this.options.worktreeBoundary) : undefined;
+    const worktreeBoundary = this.options.worktreeBoundary ? resolve2(this.options.worktreeBoundary) : undefined;
     if (worktreeBoundary) {
       const boundaryExtPath = getWorktreeBoundaryExtensionPath(worktreeBoundary);
       if (boundaryExtPath) {
         args.push("-e", boundaryExtPath);
       }
     }
-    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
+    const sessionCwd = resolve2(this.options.cwd ?? process.cwd());
     let serenaPoolPort = null;
     if (npmGlobalDir && !excludedExtensions.has("pi-serena-tools")) {
-      const serenaPoolPath = join2(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
-      if (existsSync3(serenaPoolPath)) {
+      const serenaPoolPath = join6(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
+      if (existsSync6(serenaPoolPath)) {
         try {
           const mod = await import(serenaPoolPath);
           if (typeof mod.ensureSerenaForRoot === "function") {
@@ -18606,8 +21886,8 @@ class PiAgentSession {
       env: worktreeBoundary ? { ...baseEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : baseEnv,
       detached: true
     });
-    const donePromise = new Promise((resolve2, reject) => {
-      this._doneResolve = resolve2;
+    const donePromise = new Promise((resolve3, reject) => {
+      this._doneResolve = resolve3;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -18954,7 +22234,7 @@ class PiAgentSession {
     }
   }
   sendCommand(cmd, timeoutMs = 30000) {
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       if (!this.proc?.stdin) {
         reject(new Error("No stdin available"));
         return;
@@ -18964,7 +22244,7 @@ class PiAgentSession {
         this._pendingRequests.delete(id);
         reject(new Error(`RPC timeout: no response for command id=${id} after ${timeoutMs}ms`));
       }, timeoutMs);
-      this._pendingRequests.set(id, { resolve: resolve2, reject, timer });
+      this._pendingRequests.set(id, { resolve: resolve3, reject, timer });
       this.proc.stdin.write(JSON.stringify({ ...cmd, id }) + `
 `, (err) => {
         if (err) {
@@ -19030,15 +22310,15 @@ class PiAgentSession {
     this.proc?.stdin?.end();
     if (this.proc) {
       const proc = this.proc;
-      await new Promise((resolve2) => {
-        proc.on("close", () => resolve2());
+      await new Promise((resolve3) => {
+        proc.on("close", () => resolve3());
         setTimeout(() => {
           if (proc.exitCode === null && proc.pid != null) {
             try {
               process.kill(-proc.pid, "SIGKILL");
             } catch {}
           }
-          resolve2();
+          resolve3();
         }, 8000);
       });
     }
@@ -19093,8 +22373,8 @@ class PiAgentSession {
       throw new Error("Session is not active");
     }
     this._agentEndReceived = false;
-    const donePromise = new Promise((resolve2, reject) => {
-      this._doneResolve = resolve2;
+    const donePromise = new Promise((resolve3, reject) => {
+      this._doneResolve = resolve3;
       this._doneReject = reject;
     });
     donePromise.catch(() => {});
@@ -19218,2895 +22498,6 @@ var init_circuitBreaker = __esm(() => {
 function stripJsonFences(text) {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
-
-// src/specialist/observability-db.ts
-import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
-import { spawnSync } from "child_process";
-import { join as join3, sep as sep2 } from "path";
-function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (commonDirResult.status === 0) {
-    const commonDir = commonDirResult.stdout.trim();
-    if (commonDir.length > 0 && commonDir.endsWith(`${sep2}.git`)) {
-      return commonDir.slice(0, -4);
-    }
-  }
-  const fallbackResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (fallbackResult.status !== 0)
-    return cwd;
-  const gitRoot = fallbackResult.stdout.trim();
-  return gitRoot.length > 0 ? gitRoot : cwd;
-}
-function resolveDbDirectory(gitRoot) {
-  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
-  if (xdgDataHome) {
-    return { directory: join3(xdgDataHome, "specialists"), source: "xdg-data-home" };
-  }
-  return {
-    directory: join3(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
-    source: "git-root"
-  };
-}
-function resolveObservabilityDbLocation(cwd = process.cwd()) {
-  const gitRoot = resolveGitRootFrom(cwd);
-  const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join3(resolved.directory, OBSERVABILITY_DB_FILENAME);
-  return {
-    gitRoot,
-    dbDirectory: resolved.directory,
-    dbPath,
-    dbWalPath: `${dbPath}-wal`,
-    dbShmPath: `${dbPath}-shm`,
-    source: resolved.source
-  };
-}
-function ensureObservabilityDbFile(location) {
-  mkdirSync2(location.dbDirectory, { recursive: true });
-  const alreadyExists = existsSync4(location.dbPath);
-  if (!alreadyExists) {
-    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
-  }
-  chmodSync(location.dbPath, 420);
-  return { created: !alreadyExists };
-}
-function ensureGitignoreHasObservabilityDbEntries(gitRoot) {
-  const gitignorePath = join3(gitRoot, ".gitignore");
-  const requiredEntries = [
-    ".specialists/db/*.db",
-    ".specialists/db/*.db-wal",
-    ".specialists/db/*.db-shm"
-  ];
-  const existing = existsSync4(gitignorePath) ? readFileSync2(gitignorePath, "utf-8") : "";
-  const existingLines = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
-  const missingEntries = requiredEntries.filter((entry) => !existingLines.has(entry));
-  if (missingEntries.length === 0) {
-    return { changed: false };
-  }
-  const needsLeadingNewline = existing.length > 0 && !existing.endsWith(`
-`);
-  const prefix = needsLeadingNewline ? `
-` : "";
-  const sectionHeader = existing.includes("# Specialists observability database") ? "" : `# Specialists observability database
-`;
-  const block = `${prefix}${sectionHeader}${missingEntries.join(`
-`)}
-`;
-  writeFileSync2(gitignorePath, `${existing}${block}`, "utf-8");
-  return { changed: true };
-}
-function isPathInsideJobsDirectory(pathToCheck, gitRoot) {
-  const jobsDirPrefix = `${join3(gitRoot, ".specialists", "jobs")}${sep2}`;
-  return pathToCheck.startsWith(jobsDirPrefix);
-}
-var OBSERVABILITY_DB_FILENAME = "observability.db", DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT;
-var init_observability_db = __esm(() => {
-  DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
-});
-
-// src/specialist/job-root.ts
-import { spawnSync as spawnSync2 } from "child_process";
-import { dirname as dirname2, join as join4, resolve as resolve2 } from "path";
-function resolveCommonGitRoot(cwd) {
-  const result = spawnSync2("git", ["rev-parse", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const gitCommonDir = result.stdout?.trim();
-  if (!gitCommonDir)
-    return;
-  return dirname2(resolve2(cwd, gitCommonDir));
-}
-function resolveJobsDir(cwd = process.cwd()) {
-  const commonRoot = resolveCommonGitRoot(cwd) ?? cwd;
-  return join4(commonRoot, ".specialists", "jobs");
-}
-function resolveCurrentBranch(cwd = process.cwd()) {
-  const result = spawnSync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (result.status !== 0)
-    return;
-  const branch = result.stdout?.trim();
-  return branch && branch !== "HEAD" ? branch : undefined;
-}
-var init_job_root = () => {};
-
-// src/specialist/forensic-events.ts
-function redactForensicValue(value, path = "body") {
-  const fields = new Set;
-  const rules = new Set;
-  function visit2(input, currentPath) {
-    if (Array.isArray(input))
-      return input.map((item, index) => visit2(item, `${currentPath}[${index}]`));
-    if (input && typeof input === "object") {
-      const output = {};
-      for (const [key, nested] of Object.entries(input)) {
-        const nextPath = `${currentPath}.${key}`;
-        if (isSensitiveField(key)) {
-          output[key] = REDACTED;
-          fields.add(nextPath);
-          rules.add(REDACTION_RULES.sensitiveField);
-          continue;
-        }
-        output[key] = visit2(nested, nextPath);
-      }
-      return output;
-    }
-    if (typeof input === "string" && SECRET_VALUE_RE.test(input)) {
-      fields.add(currentPath);
-      rules.add(REDACTION_RULES.secretPattern);
-      return input.replace(SECRET_VALUE_RE, REDACTED);
-    }
-    return input;
-  }
-  return {
-    value: visit2(value, path),
-    fields: Array.from(fields).sort(),
-    rules: Array.from(rules).sort()
-  };
-}
-function isSensitiveField(key) {
-  if (NON_SENSITIVE_TELEMETRY_BODY_FIELDS.has(key))
-    return false;
-  return SENSITIVE_FIELD_RE.test(key);
-}
-function mergeRedaction(explicit, result) {
-  const fields = [...new Set([...explicit?.fields ?? [], ...result.fields])].sort();
-  const rules = [...new Set([...explicit?.rules ?? [], ...result.rules])].sort();
-  const status = explicit?.status === "unknown" ? "unknown" : explicit?.status === "redacted" || fields.length > 0 ? "redacted" : "clean";
-  return {
-    status,
-    ...fields.length > 0 ? { fields } : {},
-    ...rules.length > 0 ? { rules } : {}
-  };
-}
-function createForensicEvent(options) {
-  const tUnixMs = options.t_unix_ms ?? Date.now();
-  const redactionResult = redactForensicValue(options.body ?? {}, "body");
-  const explicitRedaction = options.redaction;
-  const event = {
-    schema_version: FORENSIC_SCHEMA_VERSION,
-    timestamp: options.timestamp ?? new Date(tUnixMs).toISOString(),
-    t_unix_ms: tUnixMs,
-    severity: options.severity ?? "info",
-    event_family: options.event_family,
-    event_name: options.event_name,
-    event_version: options.event_version ?? 1,
-    resource: normalizeResource(options.resource),
-    correlation: options.correlation ?? {},
-    body: redactionResult.value,
-    redaction: mergeRedaction(explicitRedaction, redactionResult)
-  };
-  if (options.seq !== undefined)
-    event.seq = options.seq;
-  if (options.trace)
-    event.trace = options.trace;
-  if (options.otel)
-    event.otel = options.otel;
-  if (options.links)
-    event.links = options.links;
-  if (options.diagnostics)
-    event.diagnostics = options.diagnostics;
-  assertKnownTopLevelFields(event);
-  return event;
-}
-function normalizeResource(resource) {
-  const normalized = { ...resource };
-  const legacySpecialist = normalized.specialist;
-  if (!normalized.participant_kind && typeof legacySpecialist === "string") {
-    normalized.participant_kind = "specialist";
-  }
-  if (!normalized.participant_role && typeof legacySpecialist === "string") {
-    normalized.participant_role = legacySpecialist;
-  }
-  delete normalized.specialist;
-  return normalized;
-}
-function deriveParticipantId(input) {
-  const kind = input.participant_kind ?? "specialist";
-  if (kind === "specialist" && input.chain_id)
-    return `${input.chain_id}::${input.participant_role}`;
-  if (kind === "orchestrator" && input.session_uuid)
-    return `orch::${input.session_uuid}`;
-  if (kind === "pulse_emitter" && input.container_id)
-    return `${input.container_id}::emitter::${input.participant_role}`;
-  if (kind === "node_member" && input.node_id)
-    return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
-  if (kind === "adapter" && input.adapter_id)
-    return input.adapter_id;
-  return;
-}
-function assertKnownTopLevelFields(event) {
-  for (const key of Object.keys(event)) {
-    if (!ALLOWED_TOP_LEVEL_FIELDS.has(key)) {
-      throw new Error(`Unknown forensic event top-level field: ${key}`);
-    }
-  }
-}
-function assertNoForbiddenLabels(labels) {
-  const forbidden = Object.keys(labels).filter((key) => FORBIDDEN_PROMETHEUS_LABELS.has(key));
-  if (forbidden.length > 0) {
-    throw new Error(`Forbidden telemetry label(s): ${forbidden.join(", ")}`);
-  }
-}
-function pickAllowedLabels(source, allowlist = DEFAULT_LABEL_ALLOWLIST) {
-  const labels = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!allowlist.has(key) || value === undefined || value === null)
-      continue;
-    labels[key] = String(value);
-  }
-  assertNoForbiddenLabels(labels);
-  return labels;
-}
-function forensicEventFromTimelineEvent(event, context) {
-  const participantRole = context.specialist;
-  const participantKind = context.nodeId ? "node_member" : "specialist";
-  const participantId = deriveParticipantId({
-    participant_kind: participantKind,
-    participant_role: participantRole,
-    chain_id: context.chainId,
-    node_id: context.nodeId
-  });
-  return createForensicEvent({
-    event_family: familyForTimelineType(event.type),
-    event_name: eventNameForTimelineEvent(event),
-    severity: severityForTimelineEvent(event),
-    resource: {
-      service_namespace: "xtrm",
-      service_name: "specialists",
-      service_component: context.serviceComponent ?? "runtime",
-      deployment_environment: "local",
-      repo: context.repo ?? "unknown",
-      participant_kind: participantKind,
-      participant_role: participantRole,
-      model_provider: context.backend,
-      model: context.model,
-      chain_kind: context.chainKind
-    },
-    correlation: {
-      participant_id: participantId,
-      job_id: context.jobId,
-      bead_id: context.beadId,
-      node_id: context.nodeId,
-      chain_id: context.chainId,
-      chain_root_job_id: context.chainRootJobId,
-      chain_root_bead_id: context.chainRootBeadId,
-      epic_id: context.epicId,
-      session_id: context.sessionId ?? stringField(event, "session_id"),
-      conversation_id: context.conversationId ?? stringField(event, "conversation_id"),
-      trace_id: context.traceId ?? stringField(event, "trace_id") ?? metaStringField(event, "trace_id"),
-      span_id: context.spanId ?? stringField(event, "span_id") ?? metaStringField(event, "span_id"),
-      parent_span_id: context.parentSpanId ?? stringField(event, "parent_span_id") ?? metaStringField(event, "parent_span_id"),
-      mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
-      jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
-      tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
-      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
-    },
-    body: bodyForTimelineEvent(event),
-    otel: otelForTimelineEvent(event),
-    redaction: { status: redactionStatusForTimelineEvent(event) },
-    t_unix_ms: event.t,
-    seq: event.seq
-  });
-}
-function stringField(source, key) {
-  const value = source[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-function metaStringField(source, key) {
-  const meta = source._meta;
-  if (!meta || typeof meta !== "object")
-    return;
-  return stringField(meta, key);
-}
-function numberField(source, key) {
-  const value = Number(source[key]);
-  return Number.isFinite(value) ? value : undefined;
-}
-function booleanField(source, key) {
-  const value = source[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-function bodyForTimelineEvent(event) {
-  if (event.type === "mcp") {
-    return {
-      legacy_timeline_event: event,
-      mcp_server: stringField(event, "mcp_server") ?? stringField(event, "server") ?? "unknown",
-      mcp_method: stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call",
-      tool_name: stringField(event, "tool_name") ?? stringField(event, "tool"),
-      network_transport: stringField(event, "network_transport") ?? stringField(event, "transport"),
-      duration_ms: numberField(event, "duration_ms"),
-      error_type: stringField(event, "error_type"),
-      status_code: stringField(event, "status_code"),
-      duplicate_span_suppressed: booleanField(event, "duplicate_span_suppressed"),
-      trace_carrier: metaStringField(event, "trace_carrier") ?? (event._meta && typeof event._meta === "object" ? "_meta" : undefined)
-    };
-  }
-  if (event.type === "token_usage") {
-    return {
-      legacy_timeline_event: event,
-      input_tokens: numberField(event, "input_tokens") ?? numberField(event, "input"),
-      output_tokens: numberField(event, "output_tokens") ?? numberField(event, "output"),
-      cache_read_tokens: numberField(event, "cache_read_tokens") ?? numberField(event, "cache_read"),
-      cache_creation_tokens: numberField(event, "cache_creation_tokens") ?? numberField(event, "cache_creation"),
-      reasoning_tokens: numberField(event, "reasoning_tokens") ?? numberField(event, "reasoning") ?? numberField(event, "thinking_tokens"),
-      tool_tokens: numberField(event, "tool_tokens") ?? numberField(event, "tool") ?? numberField(event, "tool_use_tokens"),
-      total_tokens: numberField(event, "total_tokens") ?? numberField(event, "total"),
-      usage_source: stringField(event, "usage_source") ?? stringField(event, "source") ?? "runtime_event"
-    };
-  }
-  if (event.type === "auto_commit_success" || event.type === "auto_commit_skipped" || event.type === "auto_commit_failed") {
-    const committedFiles = Array.isArray(event.committed_files) ? event.committed_files.filter((file) => typeof file === "string") : [];
-    return {
-      legacy_timeline_event: event,
-      evidence_kind: event.type === "auto_commit_success" ? "commit" : "report",
-      result: event.type === "auto_commit_success" ? "success" : event.type === "auto_commit_failed" ? "error" : "skipped",
-      commit_sha: stringField(event, "commit_sha"),
-      changed_paths_count: committedFiles.length,
-      changed_paths: committedFiles,
-      reason: stringField(event, "reason")
-    };
-  }
-  return { legacy_timeline_event: event };
-}
-function otelForTimelineEvent(event) {
-  if (event.type !== "mcp")
-    return;
-  const method = stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call";
-  return {
-    "mcp.method.name": method,
-    "mcp.session.id": stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
-    "jsonrpc.request.id": stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
-    "network.transport": stringField(event, "network_transport") ?? stringField(event, "transport"),
-    "gen_ai.operation.name": "execute_tool",
-    "gen_ai.tool.name": stringField(event, "tool_name") ?? stringField(event, "tool")
-  };
-}
-function familyForTimelineType(type) {
-  if (type === "run_start" || type === "run_complete" || type === "status_change" || type === "payload_breakdown")
-    return "job";
-  if (type === "mcp")
-    return "mcp";
-  if (type === "tool")
-    return "tool";
-  if (type === "turn" || type === "turn_summary" || type === "message" || type === "text" || type === "thinking")
-    return "turn";
-  if (type === "token_usage" || type === "finish_reason" || type === "model_change" || type === "meta")
-    return "model";
-  if (type === "control_signal")
-    return "control";
-  if (type === "retry")
-    return "retry";
-  if (type === "compaction")
-    return "compaction";
-  if (type === "error" || type === "extension_error")
-    return "error";
-  if (type === "auto_commit_success" || type === "auto_commit_skipped" || type === "auto_commit_failed")
-    return "git";
-  if (type === "stale_warning")
-    return "process_health";
-  return "job";
-}
-function eventNameForTimelineEvent(event) {
-  if (event.type === "run_start")
-    return "job.started";
-  if (event.type === "run_complete") {
-    if (event.status === "ERROR")
-      return "job.failed";
-    if (event.status === "CANCELLED")
-      return "job.cancelled";
-    return "job.completed";
-  }
-  if (event.type === "status_change")
-    return "job.status_changed";
-  if (event.type === "mcp")
-    return mcpEventNameForTimelineEvent(event);
-  if (event.type === "tool") {
-    if (event.phase === "start")
-      return "tool.call.started";
-    if (event.is_error)
-      return "tool.call.failed";
-    return "tool.call.completed";
-  }
-  if (event.type === "turn_summary")
-    return "turn.summarized";
-  if (event.type === "token_usage")
-    return "model.token_usage.recorded";
-  if (event.type === "finish_reason")
-    return "model.finish_reason.recorded";
-  if (event.type === "model_change")
-    return "model.changed";
-  if (event.type === "control_signal")
-    return `control.${String(event.action ?? "signal")}.recorded`;
-  if (event.type === "retry")
-    return `retry.${String(event.phase ?? "recorded")}`;
-  if (event.type === "compaction")
-    return `compaction.${String(event.phase ?? "recorded")}`;
-  if (event.type === "extension_error")
-    return "error.extension";
-  if (event.type === "error")
-    return "error.rpc";
-  if (event.type === "auto_commit_success")
-    return "git.auto_commit.succeeded";
-  if (event.type === "auto_commit_skipped")
-    return "git.auto_commit.skipped";
-  if (event.type === "auto_commit_failed")
-    return "git.auto_commit.failed";
-  if (event.type === "stale_warning")
-    return "process_health.stale_detected";
-  return `${familyForTimelineType(event.type)}.${event.type}`;
-}
-function mcpEventNameForTimelineEvent(event) {
-  const explicit = stringField(event, "event_name");
-  if (explicit?.startsWith("mcp."))
-    return explicit;
-  const action = stringField(event, "action") ?? stringField(event, "phase") ?? stringField(event, "status");
-  if (action === "connected")
-    return "mcp.connected";
-  if (action === "disconnected")
-    return "mcp.disconnected";
-  if (action === "auth_failed")
-    return "mcp.auth.failed";
-  if (action === "rate_limited")
-    return "mcp.rate_limited";
-  if (action === "latency_observed")
-    return "mcp.latency.observed";
-  if (action === "start" || action === "started")
-    return "mcp.call.started";
-  if (event.is_error || action === "failed" || action === "error")
-    return "mcp.call.failed";
-  return "mcp.call.completed";
-}
-function severityForTimelineEvent(event) {
-  if (event.type === "error" || event.type === "extension_error" || event.type === "auto_commit_failed")
-    return "error";
-  if (event.type === "mcp" && (event.is_error || mcpEventNameForTimelineEvent(event).endsWith(".failed") || mcpEventNameForTimelineEvent(event) === "mcp.auth.failed"))
-    return "error";
-  if (event.type === "mcp" && mcpEventNameForTimelineEvent(event) === "mcp.rate_limited")
-    return "warn";
-  if (event.type === "stale_warning" || event.type === "control_signal")
-    return "warn";
-  if (event.type === "run_complete" && event.status === "ERROR")
-    return "error";
-  if (event.type === "tool" && event.is_error)
-    return "error";
-  return "info";
-}
-function redactionStatusForTimelineEvent(event) {
-  if (event.type === "tool" || event.type === "turn_summary" || event.type === "run_complete")
-    return "redacted";
-  return "clean";
-}
-var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1", FORBIDDEN_PROMETHEUS_LABELS, DEFAULT_LABEL_ALLOWLIST, ALLOWED_TOP_LEVEL_FIELDS, REDACTED = "[REDACTED]", REDACTION_RULES, SENSITIVE_FIELD_RE, SECRET_VALUE_RE, NON_SENSITIVE_TELEMETRY_BODY_FIELDS;
-var init_forensic_events = __esm(() => {
-  FORBIDDEN_PROMETHEUS_LABELS = new Set([
-    "participant_id",
-    "job_id",
-    "bead_id",
-    "issue_id",
-    "container_id",
-    "chain_id",
-    "chain_root_job_id",
-    "chain_root_bead_id",
-    "epic_id",
-    "node_id",
-    "pulse_id",
-    "turn_id",
-    "tool_call_id",
-    "trace_id",
-    "span_id",
-    "parent_span_id",
-    "session_id",
-    "conversation_id",
-    "mcp_session_id",
-    "jsonrpc_request_id",
-    "eval_id",
-    "policy_decision_id",
-    "identity_request_id",
-    "commit_sha",
-    "raw_path",
-    "raw_command",
-    "raw_error",
-    "raw_diff",
-    "raw_url",
-    "prompt",
-    "model_output",
-    "user_id",
-    "email",
-    "token",
-    "credential"
-  ]);
-  DEFAULT_LABEL_ALLOWLIST = new Set([
-    "service_namespace",
-    "service_name",
-    "service_component",
-    "deployment_environment",
-    "repo",
-    "participant_kind",
-    "participant_role",
-    "event_family",
-    "severity",
-    "state",
-    "status",
-    "result",
-    "model_provider",
-    "model",
-    "tool_name",
-    "mcp_server",
-    "mcp_method",
-    "error_type",
-    "drift_tier",
-    "pulse_kind",
-    "policy_kind",
-    "action_kind",
-    "resource_kind",
-    "credential_kind",
-    "eval_kind",
-    "chain_template",
-    "gate_kind",
-    "verdict",
-    "severity_level",
-    "direction",
-    "reason",
-    "process_kind",
-    "evidence_kind",
-    "target",
-    "highest_risk"
-  ]);
-  ALLOWED_TOP_LEVEL_FIELDS = new Set([
-    "schema_version",
-    "timestamp",
-    "t_unix_ms",
-    "seq",
-    "severity",
-    "event_family",
-    "event_name",
-    "event_version",
-    "resource",
-    "correlation",
-    "body",
-    "redaction",
-    "trace",
-    "otel",
-    "links",
-    "diagnostics"
-  ]);
-  REDACTION_RULES = {
-    sensitiveField: "sensitive-field-name",
-    secretPattern: "secret-pattern"
-  };
-  SENSITIVE_FIELD_RE = /(^|_)(password|secret|credential|api_?key|access_?token|refresh_?token|auth_?token|bearer|email|prompt|model_?output|raw_?command|raw_?url|raw_?error|stderr|stdout|args|arguments|input|output|content)$/i;
-  SECRET_VALUE_RE = /(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|xox[baprs]-[a-z0-9-]{12,}|bearer\s+[a-z0-9._-]{12,})/i;
-  NON_SENSITIVE_TELEMETRY_BODY_FIELDS = new Set([
-    "input_tokens",
-    "output_tokens",
-    "cache_read_tokens",
-    "cache_creation_tokens",
-    "reasoning_tokens",
-    "tool_tokens",
-    "total_tokens",
-    "usage_source",
-    "credential_kind",
-    "policy_kind",
-    "action_kind",
-    "resource_kind",
-    "eval_kind",
-    "target_kind",
-    "scope_kind",
-    "provider",
-    "ttl_seconds",
-    "retryable",
-    "result",
-    "score",
-    "threshold",
-    "scale",
-    "severity",
-    "reason_code",
-    "mismatch_kind"
-  ]);
-});
-
-// src/specialist/observability-sqlite.ts
-import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "fs";
-import { dirname as dirname3, join as join5 } from "path";
-function loadBunDatabase() {
-  if (_probed)
-    return _BunDatabase;
-  _probed = true;
-  try {
-    _BunDatabase = __require("bun:sqlite").Database;
-  } catch {
-    _BunDatabase = null;
-  }
-  return _BunDatabase;
-}
-function calculateRetryDelay(attempt) {
-  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
-  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
-  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
-}
-function withRetry(operation, context) {
-  let lastError;
-  for (let attempt = 0;attempt < MAX_RETRY_ATTEMPTS; attempt++) {
-    try {
-      return operation();
-    } catch (error2) {
-      lastError = error2 instanceof Error ? error2 : new Error(String(error2));
-      if (lastError.message.includes("Cannot use a closed database")) {
-        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
-      }
-      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
-      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
-        break;
-      }
-      const delayMs = calculateRetryDelay(attempt);
-      Bun.sleepSync(delayMs);
-    }
-  }
-  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? "unknown error"}`);
-}
-function parseJournalMode(mode) {
-  if (!mode)
-    return null;
-  return mode.toLowerCase();
-}
-function enforceWalMode(db) {
-  const result = db.query("PRAGMA journal_mode=WAL").get();
-  const mode = parseJournalMode(result?.journal_mode);
-  if (mode !== "wal") {
-    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? "null"})`);
-  }
-}
-function verifyWalMode(db) {
-  const result = db.query("PRAGMA journal_mode").get();
-  const mode = parseJournalMode(result?.journal_mode);
-  if (mode !== "wal") {
-    throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
-  }
-}
-function migrateToV2(db) {
-  const hasV2 = db.query("SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1").get();
-  if (hasV2) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
-      job_id          TEXT PRIMARY KEY,
-      specialist      TEXT NOT NULL,
-      worktree_column TEXT,
-      status_json     TEXT NOT NULL,
-      bead_id         TEXT,
-      updated_at_ms   INTEGER NOT NULL,
-      last_output     TEXT,
-      startup_payload_json TEXT
-    );
-    INSERT OR IGNORE INTO specialist_jobs_v2
-      SELECT
-        job_id,
-        specialist,
-        worktree_column,
-        status_json,
-        JSON_EXTRACT(status_json, '$.bead_id'),
-        updated_at_ms,
-        last_output,
-        startup_payload_json
-      FROM specialist_jobs;
-    DROP TABLE IF EXISTS specialist_jobs;
-    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
-    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (2, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV3(db) {
-  const hasV3 = db.query("SELECT 1 FROM schema_version WHERE version = 3 LIMIT 1").get();
-  if (hasV3) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL");
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC)");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_jobs_v3 (
-      job_id          TEXT PRIMARY KEY,
-      specialist      TEXT NOT NULL,
-      worktree_column TEXT,
-      bead_id         TEXT,
-      node_id         TEXT,
-      status          TEXT NOT NULL,
-      status_json     TEXT NOT NULL,
-      updated_at_ms   INTEGER NOT NULL,
-      last_output     TEXT,
-      startup_payload_json TEXT
-    );
-    INSERT OR IGNORE INTO specialist_jobs_v3
-      SELECT
-        job_id,
-        specialist,
-        worktree_column,
-        bead_id,
-        NULL,
-        COALESCE(JSON_EXTRACT(status_json, '$.status'), 'starting'),
-        status_json,
-        updated_at_ms,
-        last_output,
-        startup_payload_json
-      FROM specialist_jobs;
-    DROP TABLE IF EXISTS specialist_jobs;
-    ALTER TABLE specialist_jobs_v3 RENAME TO specialist_jobs;
-    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status);
-    CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC);
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (3, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV11(db) {
-  const hasV11 = db.query("SELECT 1 FROM schema_version WHERE version = 11 LIMIT 1").get();
-  if (hasV11) {
-    const metricsColumns = new Set(db.query("PRAGMA table_info(specialist_job_metrics)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-    for (const column of [
-      { name: "active_runtime_ms", definition: "INTEGER" },
-      { name: "waiting_ms", definition: "INTEGER" }
-    ]) {
-      if (!metricsColumns.has(column.name)) {
-        db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
-      }
-    }
-    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC)");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_job_metrics (
-      job_id TEXT PRIMARY KEY,
-      specialist TEXT NOT NULL,
-      model TEXT,
-      status TEXT NOT NULL,
-      chain_kind TEXT,
-      chain_id TEXT,
-      bead_id TEXT,
-      node_id TEXT,
-      epic_id TEXT,
-      started_at_ms INTEGER,
-      completed_at_ms INTEGER,
-      elapsed_ms INTEGER,
-      active_runtime_ms INTEGER,
-      waiting_ms INTEGER,
-      total_turns INTEGER NOT NULL DEFAULT 0,
-      total_tools INTEGER NOT NULL DEFAULT 0,
-      tool_call_counts_json TEXT NOT NULL,
-      token_trajectory_json TEXT NOT NULL,
-      context_trajectory_json TEXT NOT NULL,
-      stall_gaps_json TEXT NOT NULL,
-      run_complete_json TEXT,
-      updated_at_ms INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
-    CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC);
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (11, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV12(db) {
-  const hasV12 = db.query("SELECT 1 FROM schema_version WHERE version = 12 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_forensic_events (
-      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id             TEXT NOT NULL,
-      seq                INTEGER NOT NULL,
-      t                  INTEGER NOT NULL,
-      schema_version     TEXT NOT NULL,
-      event_family       TEXT NOT NULL,
-      event_name         TEXT NOT NULL,
-      participant_kind   TEXT,
-      participant_role   TEXT,
-      participant_id     TEXT,
-      redaction_status   TEXT NOT NULL,
-      event_json         TEXT NOT NULL
-    );
-  `);
-  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_forensic_events_job_seq ON specialist_forensic_events(job_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_t ON specialist_forensic_events(job_id, t, seq, id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_family ON specialist_forensic_events(event_family, event_name, t)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_participant ON specialist_forensic_events(participant_kind, participant_role, t)");
-  if (hasV12)
-    return;
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (12, strftime('%s', 'now') * 1000);
-  `);
-}
-function parseJsonRecord(input) {
-  if (!input)
-    return {};
-  try {
-    const parsed = JSON.parse(input);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-function stringifyJson(value) {
-  return JSON.stringify(value);
-}
-function migrateToV4(db) {
-  const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
-  if (hasV4) {
-    db.run("CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)");
-    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL");
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)");
-    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)");
-    db.run("CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL");
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_memory_run_entry ON node_memory(node_run_id, entry_id) WHERE entry_id IS NOT NULL");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS node_runs (
-      id                 TEXT PRIMARY KEY,
-      node_name          TEXT NOT NULL,
-      status             TEXT NOT NULL,
-      coordinator_job_id TEXT,
-      started_at_ms      INTEGER,
-      updated_at_ms      INTEGER NOT NULL,
-      waiting_on         TEXT,
-      error              TEXT,
-      memory_namespace   TEXT,
-      status_json        TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status);
-
-    CREATE TABLE IF NOT EXISTS node_members (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id  TEXT NOT NULL,
-      member_id    TEXT NOT NULL,
-      job_id       TEXT,
-      specialist   TEXT NOT NULL,
-      model        TEXT,
-      role         TEXT,
-      status       TEXT NOT NULL,
-      enabled      INTEGER NOT NULL DEFAULT 1,
-      generation   INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
-    CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id);
-
-    CREATE TABLE IF NOT EXISTS node_events (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id  TEXT NOT NULL,
-      seq          INTEGER NOT NULL,
-      t            INTEGER NOT NULL,
-      type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
-    CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
-
-    CREATE TABLE IF NOT EXISTS node_memory (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id      TEXT NOT NULL,
-      namespace        TEXT,
-      entry_type       TEXT,
-      entry_id         TEXT,
-      summary          TEXT,
-      source_member_id TEXT,
-      confidence       REAL,
-      provenance_json  TEXT,
-      created_at_ms    INTEGER,
-      updated_at_ms    INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id);
-    CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL;
-
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (4, strftime('%s', 'now') * 1000);
-  `);
-}
-function initSchema(db) {
-  enforceWalMode(db);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS schema_version (
-      version     INTEGER PRIMARY KEY,
-      applied_at_ms INTEGER NOT NULL
-    );
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (1, strftime('%s', 'now') * 1000);
-
-    -- Ensure specialist_jobs exists with at least the base columns so the
-    -- migration INSERT below can always SELECT from it.
-    CREATE TABLE IF NOT EXISTS specialist_jobs (
-      job_id       TEXT PRIMARY KEY,
-      specialist   TEXT NOT NULL,
-      status_json  TEXT NOT NULL,
-      updated_at_ms INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS specialist_events (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id       TEXT NOT NULL,
-      seq          INTEGER NOT NULL,
-      specialist   TEXT NOT NULL,
-      bead_id      TEXT,
-      t            INTEGER NOT NULL,
-      type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL
-    );
-    -- seq-dependent indexes are created/maintained by migrateToV6 to handle
-    -- existing DBs where specialist_events was created without the seq column.
-    CREATE INDEX IF NOT EXISTS idx_specialist_events_type ON specialist_events(type);
-
-    CREATE TABLE IF NOT EXISTS specialist_results (
-      job_id        TEXT PRIMARY KEY,
-      output        TEXT NOT NULL,
-      updated_at_ms INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  const missingSpecialistJobsColumns = [
-    { name: "worktree_column", definition: "TEXT" },
-    { name: "bead_id", definition: "TEXT" },
-    { name: "node_id", definition: "TEXT" },
-    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
-    { name: "chain_id", definition: "TEXT" },
-    { name: "chain_root_job_id", definition: "TEXT" },
-    { name: "chain_root_bead_id", definition: "TEXT" },
-    { name: "epic_id", definition: "TEXT" },
-    { name: "status", definition: "TEXT NOT NULL DEFAULT 'starting'" },
-    { name: "last_output", definition: "TEXT" },
-    { name: "startup_payload_json", definition: "TEXT" }
-  ].filter(({ name }) => !specialistJobsColumns.has(name));
-  for (const missingColumn of missingSpecialistJobsColumns) {
-    db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
-  }
-  const shouldRebuildSpecialistJobs = missingSpecialistJobsColumns.length > 0;
-  if (shouldRebuildSpecialistJobs) {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS specialist_jobs_new (
-        job_id          TEXT PRIMARY KEY,
-        specialist      TEXT NOT NULL,
-        worktree_column TEXT,
-        bead_id         TEXT,
-        node_id         TEXT,
-        chain_kind      TEXT NOT NULL DEFAULT 'prep',
-        chain_id        TEXT,
-        chain_root_job_id TEXT,
-        chain_root_bead_id TEXT,
-        epic_id         TEXT,
-        status          TEXT NOT NULL,
-        status_json     TEXT NOT NULL,
-        updated_at_ms   INTEGER NOT NULL,
-        last_output     TEXT,
-        startup_payload_json TEXT
-      );
-      INSERT OR IGNORE INTO specialist_jobs_new
-        SELECT
-          job_id,
-          specialist,
-          worktree_column,
-          bead_id,
-          node_id,
-          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
-          chain_id,
-          COALESCE(chain_root_job_id, chain_id),
-          chain_root_bead_id,
-          epic_id,
-          COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
-          status_json,
-          updated_at_ms,
-          last_output,
-          startup_payload_json
-        FROM specialist_jobs;
-      DROP TABLE IF EXISTS specialist_jobs;
-      ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
-    `);
-  }
-  migrateToV2(db);
-  migrateToV3(db);
-  migrateToV4(db);
-  migrateToV5(db);
-  migrateToV6(db);
-  migrateToV7(db);
-  migrateToV8(db);
-  migrateToV9(db);
-  migrateToV10(db);
-  migrateToV11(db);
-  migrateToV12(db);
-  verifyWalMode(db);
-}
-function migrateToV5(db) {
-  const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
-  if (!hasV5) {
-    const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-    if (!nodeMemberColumns.has("generation")) {
-      db.run("ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0");
-    }
-    db.run(`
-      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-        VALUES (5, strftime('%s', 'now') * 1000);
-    `);
-  }
-}
-function migrateToV6(db) {
-  const hasV6 = db.query("SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1").get();
-  if (hasV6) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
-    return;
-  }
-  const specialistEventColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  if (!specialistEventColumns.has("seq")) {
-    db.run("ALTER TABLE specialist_events ADD COLUMN seq INTEGER");
-  }
-  db.run(`
-    UPDATE specialist_events
-    SET seq = (
-      SELECT COUNT(*)
-      FROM specialist_events prior
-      WHERE prior.job_id = specialist_events.job_id
-        AND prior.id <= specialist_events.id
-    )
-    WHERE seq IS NULL OR seq <= 0
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
-  const nodeEventColumns = new Set(db.query("PRAGMA table_info(node_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  if (!nodeEventColumns.has("seq")) {
-    db.run("ALTER TABLE node_events ADD COLUMN seq INTEGER");
-  }
-  db.run(`
-    UPDATE node_events
-    SET seq = (
-      SELECT COUNT(*)
-      FROM node_events prior
-      WHERE prior.node_run_id = node_events.node_run_id
-        AND prior.id <= node_events.id
-    )
-    WHERE seq IS NULL OR seq <= 0
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (6, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV7(db) {
-  const hasV7 = db.query("SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1").get();
-  const nodeRunColumns = new Set(db.query("PRAGMA table_info(node_runs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "pr_number", definition: "INTEGER" },
-    { name: "pr_url", definition: "TEXT" },
-    { name: "pr_head_sha", definition: "TEXT" },
-    { name: "gate_results", definition: "TEXT" },
-    { name: "completion_strategy", definition: "TEXT" }
-  ]) {
-    if (!nodeRunColumns.has(column.name)) {
-      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "worktree_path", definition: "TEXT" },
-    { name: "parent_member_id", definition: "TEXT" },
-    { name: "replaced_member_id", definition: "TEXT" },
-    { name: "phase_id", definition: "TEXT" }
-  ]) {
-    if (!nodeMemberColumns.has(column.name)) {
-      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  if (hasV7) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (7, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV8(db) {
-  const hasV8 = db.query("SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1").get();
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "chain_id", definition: "TEXT" },
-    { name: "epic_id", definition: "TEXT" }
-  ]) {
-    if (!specialistJobsColumns.has(column.name)) {
-      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL");
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL");
-  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_bead_specialist ON specialist_jobs(bead_id, specialist) WHERE bead_id IS NOT NULL AND status IN ('starting', 'running')");
-  db.run(`
-    CREATE TABLE IF NOT EXISTS epic_runs (
-      epic_id         TEXT PRIMARY KEY,
-      status          TEXT NOT NULL,
-      status_json     TEXT NOT NULL,
-      updated_at_ms   INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS epic_chain_membership (
-      chain_id            TEXT PRIMARY KEY,
-      epic_id             TEXT NOT NULL,
-      chain_root_bead_id  TEXT,
-      chain_root_job_id   TEXT,
-      updated_at_ms       INTEGER NOT NULL
-    );
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL");
-  if (hasV8) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (8, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV9(db) {
-  const hasV9 = db.query("SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1").get();
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
-    { name: "chain_root_job_id", definition: "TEXT" },
-    { name: "chain_root_bead_id", definition: "TEXT" }
-  ]) {
-    if (!specialistJobsColumns.has(column.name)) {
-      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  db.run(`
-    UPDATE specialist_jobs
-    SET chain_kind = CASE
-      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
-      ELSE 'prep'
-    END
-    WHERE chain_kind IS NULL OR chain_kind = ''
-  `);
-  db.run(`
-    UPDATE specialist_jobs
-    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
-    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL");
-  if (hasV9) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (9, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV10(db) {
-  const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
-  if (hasV10) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (10, strftime('%s', 'now') * 1000);
-  `);
-}
-function defaultIsPidAlive(pid) {
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
-    return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function claimJobStartWithStore(store, status, event, options = {}) {
-  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
-  const nowMs = options.nowMs ?? Date.now;
-  const staleAgeMs = options.staleClaimAgeMs ?? STALE_CLAIM_AGE_MS;
-  return withRetry(() => store.transaction(() => {
-    const existing = store.findActiveJob(status.bead_id ?? null, status.specialist);
-    if (existing?.job_id && existing.job_id !== status.id) {
-      const updatedAtMs = existing.updated_at_ms ?? 0;
-      const isStale = updatedAtMs > 0 && nowMs() - updatedAtMs > staleAgeMs && !isPidAlive(existing.pid);
-      if (isStale && store.cancelStaleClaim) {
-        store.cancelStaleClaim(existing.job_id);
-      } else {
-        return { ok: false, existingJobId: existing.job_id, existingStatus: existing.status ?? "starting" };
-      }
-    }
-    store.writeStatusRow(status);
-    store.writeEventRow(status.id, status.specialist, status.bead_id, event);
-    return { ok: true };
-  }), "claimJobStart");
-}
-
-class SqliteClient {
-  db;
-  dbPath;
-  constructor(dbPath) {
-    this.dbPath = dbPath;
-    const Ctor = loadBunDatabase();
-    this.db = new Ctor(dbPath);
-    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
-    this.db.run("PRAGMA journal_mode=WAL");
-  }
-  writeStatusRow(status, lastOutput) {
-    const statusJson = JSON.stringify(status);
-    this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(job_id) DO UPDATE SET
-        specialist = excluded.specialist,
-        worktree_column = excluded.worktree_column,
-        bead_id = excluded.bead_id,
-        node_id = excluded.node_id,
-        chain_kind = excluded.chain_kind,
-        chain_id = excluded.chain_id,
-        chain_root_job_id = excluded.chain_root_job_id,
-        chain_root_bead_id = excluded.chain_root_bead_id,
-        epic_id = excluded.epic_id,
-        status = excluded.status,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms,
-        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
-        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
-    `, [
-      status.id,
-      status.specialist,
-      status.worktree_path ?? null,
-      status.bead_id ?? null,
-      status.node_id ?? null,
-      status.chain_kind ?? (status.chain_id ? "chain" : "prep"),
-      status.chain_id ?? null,
-      status.chain_root_job_id ?? null,
-      status.chain_root_bead_id ?? null,
-      status.epic_id ?? null,
-      status.status,
-      statusJson,
-      Date.now(),
-      lastOutput ?? null,
-      status.startup_payload_json ?? null
-    ]);
-  }
-  writeEpicRunRow(epic) {
-    this.db.run(`
-      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(epic_id) DO UPDATE SET
-        status = excluded.status,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
-  }
-  writeEpicChainMembershipRow(chain) {
-    this.db.run(`
-      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(chain_id) DO UPDATE SET
-        epic_id = excluded.epic_id,
-        chain_root_bead_id = excluded.chain_root_bead_id,
-        chain_root_job_id = excluded.chain_root_job_id,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [
-      chain.chain_id,
-      chain.epic_id,
-      chain.chain_root_bead_id ?? null,
-      chain.chain_root_job_id ?? null,
-      chain.updated_at_ms
-    ]);
-  }
-  getNextSpecialistEventSeq(jobId) {
-    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
-    return row?.next_seq ?? 1;
-  }
-  getNextNodeEventSeq(nodeRunId) {
-    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
-    return row?.next_seq ?? 1;
-  }
-  writeEventRow(jobId, specialist, beadId, event) {
-    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
-    const sequencedEvent = { ...event, seq };
-    const eventJson = JSON.stringify(sequencedEvent);
-    this.db.run(`
-      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
-    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
-  }
-  writeForensicEventRow(jobId, specialist, beadId, event) {
-    const context = this.readForensicContext(jobId);
-    const forensicEvent = forensicEventFromTimelineEvent(event, {
-      jobId,
-      specialist,
-      beadId: context.beadId ?? beadId,
-      nodeId: context.nodeId,
-      repo: context.repo,
-      serviceComponent: "runtime",
-      model: context.model,
-      backend: context.backend,
-      chainKind: context.chainKind,
-      chainId: context.chainId,
-      chainRootJobId: context.chainRootJobId,
-      chainRootBeadId: context.chainRootBeadId,
-      epicId: context.epicId,
-      sessionId: context.sessionId,
-      conversationId: context.conversationId,
-      traceId: context.traceId,
-      spanId: context.spanId,
-      parentSpanId: context.parentSpanId
-    });
-    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
-  }
-  readForensicContext(jobId) {
-    const row = this.db.query(`
-      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
-      FROM specialist_jobs
-      WHERE job_id = ?
-      LIMIT 1
-    `).get(jobId);
-    const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
-    return {
-      beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
-      nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
-      repo: typeof statusJson.repo === "string" ? statusJson.repo : undefined,
-      model: typeof statusJson.model === "string" ? statusJson.model : undefined,
-      backend: typeof statusJson.backend === "string" ? statusJson.backend : undefined,
-      chainKind: typeof row?.chain_kind === "string" ? row.chain_kind : undefined,
-      chainId: typeof row?.chain_id === "string" ? row.chain_id : undefined,
-      chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
-      chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
-      epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
-      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
-      conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
-      traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
-      spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
-      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
-    };
-  }
-  insertForensicEventRow(jobId, seq, forensicEvent) {
-    this.db.run(`
-      INSERT OR REPLACE INTO specialist_forensic_events (
-        job_id, seq, t, schema_version, event_family, event_name,
-        participant_kind, participant_role, participant_id, redaction_status, event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      jobId,
-      seq,
-      forensicEvent.t_unix_ms,
-      forensicEvent.schema_version,
-      forensicEvent.event_family,
-      forensicEvent.event_name,
-      forensicEvent.resource.participant_kind ?? null,
-      forensicEvent.resource.participant_role ?? null,
-      typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
-      forensicEvent.redaction.status,
-      JSON.stringify(forensicEvent)
-    ]);
-  }
-  findActiveJob(beadId, specialist) {
-    return this.db.query(`
-      SELECT
-        job_id,
-        status,
-        updated_at_ms,
-        CAST(JSON_EXTRACT(status_json, '$.pid') AS INTEGER) AS pid
-      FROM specialist_jobs
-      WHERE bead_id = ?
-        AND specialist = ?
-        AND status IN ('starting', 'running', 'waiting')
-      ORDER BY updated_at_ms DESC
-      LIMIT 1
-    `).get(beadId, specialist);
-  }
-  claimJobStart(status, event) {
-    return claimJobStartWithStore({
-      transaction: (callback) => this.db.transaction(callback)(),
-      findActiveJob: (beadId, specialist) => this.findActiveJob(beadId, specialist),
-      writeStatusRow: (nextStatus) => this.writeStatusRow(nextStatus),
-      writeEventRow: (jobId, specialist, beadId, nextEvent) => this.writeEventRow(jobId, specialist, beadId, nextEvent),
-      cancelStaleClaim: (jobId) => {
-        const nowMs = Date.now();
-        this.db.run(`
-            UPDATE specialist_jobs
-            SET status = 'cancelled',
-                status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', 'orphan-claim-stale')),
-                updated_at_ms = ?
-            WHERE job_id = ?
-          `, [nowMs, jobId]);
-      }
-    }, status, event);
-  }
-  writeResultRow(jobId, output) {
-    this.db.run(`
-      INSERT INTO specialist_results (job_id, output, updated_at_ms)
-      VALUES (?, ?, ?)
-      ON CONFLICT(job_id) DO UPDATE SET
-        output = excluded.output,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [jobId, output, Date.now()]);
-  }
-  writeNodeRunRow(nodeRun) {
-    this.db.run(`
-      INSERT INTO node_runs (
-        id,
-        node_name,
-        status,
-        coordinator_job_id,
-        started_at_ms,
-        updated_at_ms,
-        waiting_on,
-        error,
-        memory_namespace,
-        status_json,
-        pr_number,
-        pr_url,
-        pr_head_sha,
-        gate_results,
-        completion_strategy
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        node_name = excluded.node_name,
-        status = excluded.status,
-        coordinator_job_id = excluded.coordinator_job_id,
-        started_at_ms = excluded.started_at_ms,
-        updated_at_ms = excluded.updated_at_ms,
-        waiting_on = excluded.waiting_on,
-        error = excluded.error,
-        memory_namespace = excluded.memory_namespace,
-        status_json = excluded.status_json,
-        pr_number = excluded.pr_number,
-        pr_url = excluded.pr_url,
-        pr_head_sha = excluded.pr_head_sha,
-        gate_results = excluded.gate_results,
-        completion_strategy = excluded.completion_strategy;
-    `, [
-      nodeRun.id,
-      nodeRun.node_name,
-      nodeRun.status,
-      nodeRun.coordinator_job_id ?? null,
-      nodeRun.started_at_ms ?? null,
-      nodeRun.updated_at_ms,
-      nodeRun.waiting_on ?? null,
-      nodeRun.error ?? null,
-      nodeRun.memory_namespace ?? null,
-      nodeRun.status_json,
-      nodeRun.pr_number ?? null,
-      nodeRun.pr_url ?? null,
-      nodeRun.pr_head_sha ?? null,
-      nodeRun.gate_results ?? null,
-      nodeRun.completion_strategy ?? null
-    ]);
-  }
-  writeNodeMemberRow(member) {
-    this.db.run(`
-      INSERT INTO node_members (
-        node_run_id,
-        member_id,
-        job_id,
-        specialist,
-        model,
-        role,
-        status,
-        enabled,
-        generation,
-        worktree_path,
-        parent_member_id,
-        replaced_member_id,
-        phase_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(node_run_id, member_id) DO UPDATE SET
-        job_id = excluded.job_id,
-        specialist = excluded.specialist,
-        model = excluded.model,
-        role = excluded.role,
-        status = excluded.status,
-        enabled = excluded.enabled,
-        generation = excluded.generation,
-        worktree_path = excluded.worktree_path,
-        parent_member_id = excluded.parent_member_id,
-        replaced_member_id = excluded.replaced_member_id,
-        phase_id = excluded.phase_id;
-    `, [
-      member.node_run_id,
-      member.member_id,
-      member.job_id ?? null,
-      member.specialist,
-      member.model ?? null,
-      member.role ?? null,
-      member.status,
-      member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
-      member.generation ?? 0,
-      member.worktree_path ?? null,
-      member.parent_member_id ?? null,
-      member.replaced_member_id ?? null,
-      member.phase_id ?? null
-    ]);
-  }
-  writeNodeEventRow(nodeRunId, t, type, eventJson) {
-    const seq = this.getNextNodeEventSeq(nodeRunId);
-    const payload = typeof eventJson === "object" && eventJson !== null ? { ...eventJson, seq } : { value: eventJson, seq };
-    this.db.run(`
-      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?)
-    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
-  }
-  writeNodeMemoryRow(entry) {
-    const now = Date.now();
-    const createdAtMs = entry.created_at_ms ?? now;
-    const updatedAtMs = entry.updated_at_ms ?? now;
-    if (entry.entry_id) {
-      this.db.run(`
-        INSERT INTO node_memory (
-          node_run_id,
-          namespace,
-          entry_type,
-          entry_id,
-          summary,
-          source_member_id,
-          confidence,
-          provenance_json,
-          created_at_ms,
-          updated_at_ms
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(node_run_id, entry_id) DO UPDATE SET
-          namespace = excluded.namespace,
-          entry_type = excluded.entry_type,
-          summary = excluded.summary,
-          source_member_id = excluded.source_member_id,
-          confidence = excluded.confidence,
-          provenance_json = excluded.provenance_json,
-          created_at_ms = excluded.created_at_ms,
-          updated_at_ms = excluded.updated_at_ms
-      `, [
-        entry.node_run_id,
-        entry.namespace ?? null,
-        entry.entry_type ?? null,
-        entry.entry_id,
-        entry.summary ?? null,
-        entry.source_member_id ?? null,
-        entry.confidence ?? null,
-        entry.provenance_json ?? null,
-        createdAtMs,
-        updatedAtMs
-      ]);
-      return;
-    }
-    this.db.run(`
-      INSERT INTO node_memory (
-        node_run_id,
-        namespace,
-        entry_type,
-        entry_id,
-        summary,
-        source_member_id,
-        confidence,
-        provenance_json,
-        created_at_ms,
-        updated_at_ms
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      entry.node_run_id,
-      entry.namespace ?? null,
-      entry.entry_type ?? null,
-      null,
-      entry.summary ?? null,
-      entry.source_member_id ?? null,
-      entry.confidence ?? null,
-      entry.provenance_json ?? null,
-      createdAtMs,
-      updatedAtMs
-    ]);
-  }
-  upsertStatus(status) {
-    withRetry(() => {
-      this.writeStatusRow(status);
-    }, "upsertStatus");
-  }
-  markSpecialistJobCancelled(jobId, reason) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        const nowMs = Date.now();
-        this.db.run(`
-          UPDATE specialist_jobs
-          SET status = 'cancelled',
-              status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', ?)),
-              updated_at_ms = ?
-          WHERE job_id = ?
-        `, [reason, nowMs, jobId]);
-      });
-      transaction();
-    }, "markSpecialistJobCancelled");
-  }
-  upsertEpicRun(epic) {
-    withRetry(() => {
-      this.writeEpicRunRow(epic);
-    }, "upsertEpicRun");
-  }
-  upsertEpicChainMembership(chain) {
-    withRetry(() => {
-      this.writeEpicChainMembershipRow(chain);
-    }, "upsertEpicChainMembership");
-  }
-  upsertStatusWithEvent(status, event) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
-      });
-      transaction();
-    }, "upsertStatusWithEvent");
-  }
-  upsertStatusWithEventAndResult(status, event, output) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
-        this.writeResultRow(status.id, output);
-      });
-      transaction();
-    }, "upsertStatusWithEventAndResult");
-  }
-  appendEvent(jobId, specialist, beadId, event) {
-    withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
-    }, "appendEvent");
-  }
-  upsertResult(jobId, output) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeResultRow(jobId, output);
-        this.db.run(`
-          UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
-        `, [output, jobId]);
-      });
-      transaction();
-    }, "upsertResult");
-  }
-  bootstrapNode(nodeRunId, nodeName, memoryNamespace) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        const now = Date.now();
-        this.writeNodeRunRow({
-          id: nodeRunId,
-          node_name: nodeName,
-          status: "created",
-          started_at_ms: now,
-          updated_at_ms: now,
-          memory_namespace: memoryNamespace,
-          status_json: JSON.stringify({ status: "created" })
-        });
-        this.writeNodeEventRow(nodeRunId, now, "node_created", { node_run_id: nodeRunId, node_name: nodeName });
-        this.writeNodeEventRow(nodeRunId, now + 1, "node_started", { node_run_id: nodeRunId, node_name: nodeName });
-      });
-      transaction();
-    }, "bootstrapNode");
-  }
-  upsertNodeRun(nodeRun) {
-    withRetry(() => {
-      this.writeNodeRunRow(nodeRun);
-    }, "upsertNodeRun");
-  }
-  upsertNodeMember(member) {
-    withRetry(() => {
-      this.writeNodeMemberRow(member);
-    }, "upsertNodeMember");
-  }
-  appendNodeEvent(nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-    }, "appendNodeEvent");
-  }
-  upsertNodeMemory(entry) {
-    withRetry(() => {
-      this.writeNodeMemoryRow(entry);
-    }, "upsertNodeMemory");
-  }
-  upsertNodeRunWithEvent(nodeRun, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeRunRow(nodeRun);
-        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeRunWithEvent");
-  }
-  upsertNodeMemberWithEvent(member, nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeMemberRow(member);
-        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeMemberWithEvent");
-  }
-  upsertNodeMemoryWithEvent(entry, nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeMemoryRow(entry);
-        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeMemoryWithEvent");
-  }
-  readNodeRun(nodeRunId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT * FROM node_runs WHERE id = ? LIMIT 1").get(nodeRunId);
-      if (!row)
-        return null;
-      return {
-        ...row,
-        status: row.status
-      };
-    }, "readNodeRun");
-  }
-  listNodeRuns(filter) {
-    return withRetry(() => {
-      const query = filter?.status ? "SELECT * FROM node_runs WHERE status = ? ORDER BY updated_at_ms DESC" : "SELECT * FROM node_runs ORDER BY updated_at_ms DESC";
-      const rows = filter?.status ? this.db.query(query).all(filter.status) : this.db.query(query).all();
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRuns");
-  }
-  listNodeRunsByRef(partialRef, statuses) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      const query = `
-        SELECT *
-        FROM node_runs
-        WHERE status IN (${placeholders})
-          AND (id LIKE ? OR node_name LIKE ?)
-        ORDER BY updated_at_ms DESC
-      `;
-      const prefix = `${partialRef}%`;
-      const rows = this.db.query(query).all(...statuses, prefix, prefix);
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRunsByRef");
-  }
-  listNodeRunsByStatuses(statuses) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      const query = `
-        SELECT *
-        FROM node_runs
-        WHERE status IN (${placeholders})
-        ORDER BY updated_at_ms DESC
-      `;
-      const rows = this.db.query(query).all(...statuses);
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRunsByStatuses");
-  }
-  readNodeMembers(nodeRunId) {
-    return withRetry(() => {
-      const rows = this.db.query("SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC").all(nodeRunId);
-      return rows.map((row) => ({
-        node_run_id: row.node_run_id,
-        member_id: row.member_id,
-        job_id: row.job_id ?? undefined,
-        specialist: row.specialist,
-        model: row.model ?? undefined,
-        role: row.role ?? undefined,
-        status: row.status,
-        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
-        generation: row.generation ?? 0,
-        worktree_path: row.worktree_path ?? undefined,
-        parent_member_id: row.parent_member_id ?? undefined,
-        replaced_member_id: row.replaced_member_id ?? undefined,
-        phase_id: row.phase_id ?? undefined
-      }));
-    }, "readNodeMembers");
-  }
-  readNodeEvents(nodeRunId, opts) {
-    return withRetry(() => {
-      const whereClauses = ["node_run_id = ?"];
-      const params = [nodeRunId];
-      if (opts?.type) {
-        whereClauses.push("type = ?");
-        params.push(opts.type);
-      }
-      let query = `
-        SELECT id, seq, t, type, event_json
-        FROM node_events
-        WHERE ${whereClauses.join(" AND ")}
-        ORDER BY seq ASC, id ASC
-      `;
-      if (opts?.limit !== undefined) {
-        query += " LIMIT ?";
-        params.push(opts.limit);
-      }
-      return this.db.query(query).all(...params);
-    }, "readNodeEvents");
-  }
-  readNodeMemory(nodeRunId, opts) {
-    return withRetry(() => {
-      const whereClauses = ["node_run_id = ?"];
-      const params = [nodeRunId];
-      if (opts?.namespace) {
-        whereClauses.push("namespace = ?");
-        params.push(opts.namespace);
-      }
-      if (opts?.entry_type) {
-        whereClauses.push("entry_type = ?");
-        params.push(opts.entry_type);
-      }
-      const query = `
-        SELECT *
-        FROM node_memory
-        WHERE ${whereClauses.join(" AND ")}
-        ORDER BY created_at_ms ASC
-      `;
-      return this.db.query(query).all(...params);
-    }, "readNodeMemory");
-  }
-  queryMemberContextHealth(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT json_extract(event_json, '$.context_pct') AS context_pct
-        FROM specialist_events
-        WHERE job_id = ? AND type = 'turn_summary'
-        ORDER BY seq DESC, id DESC
-        LIMIT 1
-      `).get(jobId);
-      if (!row || row.context_pct === null || row.context_pct === undefined) {
-        return null;
-      }
-      const contextPct = typeof row.context_pct === "number" ? row.context_pct : Number(row.context_pct);
-      return Number.isFinite(contextPct) ? contextPct : null;
-    }, "queryMemberContextHealth");
-  }
-  readStatus(jobId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
-      if (!row?.status_json)
-        return null;
-      return JSON.parse(row.status_json);
-    }, "readStatus");
-  }
-  listStatuses() {
-    return withRetry(() => {
-      const rows = this.db.query("SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC").all();
-      const statuses = [];
-      for (const row of rows) {
-        if (!row.status_json)
-          continue;
-        try {
-          statuses.push(JSON.parse(row.status_json));
-        } catch {}
-      }
-      return statuses;
-    }, "listStatuses");
-  }
-  removeJobs(jobIds) {
-    return withRetry(() => {
-      if (jobIds.length === 0)
-        return 0;
-      const placeholders = jobIds.map(() => "?").join(", ");
-      const result = this.db.query(`DELETE FROM specialist_jobs WHERE job_id IN (${placeholders})`).run(...jobIds);
-      return result.changes ?? 0;
-    }, "removeJobs");
-  }
-  readEpicRun(epicId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1").get(epicId);
-      return row ?? null;
-    }, "readEpicRun");
-  }
-  listEpicRuns() {
-    return withRetry(() => {
-      return this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC").all();
-    }, "listEpicRuns");
-  }
-  resolveEpicByChainId(chainId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1").get(chainId);
-      return row ?? null;
-    }, "resolveEpicByChainId");
-  }
-  resolveEpicByChainRootBeadId(chainRootBeadId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1").get(chainRootBeadId);
-      return row ?? null;
-    }, "resolveEpicByChainRootBeadId");
-  }
-  listEpicChains(epicId) {
-    return withRetry(() => {
-      return this.db.query(`
-        SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms
-        FROM epic_chain_membership
-        WHERE epic_id = ?
-        ORDER BY updated_at_ms DESC
-      `).all(epicId);
-    }, "listEpicChains");
-  }
-  deleteEpicChainMembership(epicId, chainIds) {
-    if (chainIds.length === 0)
-      return [];
-    return withRetry(() => {
-      const existing = new Set(this.db.query("SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?").all(epicId).map((row) => row.chain_id));
-      const removable = chainIds.filter((chainId) => existing.has(chainId));
-      if (removable.length === 0)
-        return [];
-      const placeholders = removable.map(() => "?").join(", ");
-      this.db.query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`).run(epicId, ...removable);
-      return removable;
-    }, "deleteEpicChainMembership");
-  }
-  listReferencedChainRootJobIds() {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT DISTINCT chain_root_job_id
-        FROM epic_chain_membership
-        WHERE chain_root_job_id IS NOT NULL AND chain_root_job_id != ''
-      `).all();
-      return rows.map((row) => row.chain_root_job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listReferencedChainRootJobIds");
-  }
-  listEpicChainsWithLatestJob(epicId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        WITH ranked_jobs AS (
-          SELECT
-            jobs.chain_id AS chain_id,
-            membership.epic_id AS epic_id,
-            membership.chain_root_bead_id AS chain_root_bead_id,
-            membership.chain_root_job_id AS chain_root_job_id,
-            jobs.job_id AS job_id,
-            jobs.status AS status,
-            json_extract(jobs.status_json, '$.branch') AS branch,
-            jobs.updated_at_ms AS updated_at_ms,
-            ROW_NUMBER() OVER (
-              PARTITION BY jobs.chain_id
-              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
-            ) AS row_rank
-          FROM epic_chain_membership membership
-          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
-          WHERE membership.epic_id = ?
-            AND jobs.chain_kind = 'chain'
-        )
-        SELECT
-          chain_id,
-          epic_id,
-          chain_root_bead_id,
-          chain_root_job_id,
-          job_id,
-          status,
-          branch,
-          updated_at_ms
-        FROM ranked_jobs
-        WHERE row_rank = 1
-        ORDER BY updated_at_ms DESC, job_id DESC
-      `).all(epicId);
-      return rows.map((row) => ({
-        chain_id: row.chain_id,
-        epic_id: row.epic_id,
-        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
-        chain_root_job_id: row.chain_root_job_id ?? undefined,
-        job_id: row.job_id,
-        status: row.status ?? undefined,
-        branch: row.branch ?? undefined,
-        updated_at_ms: row.updated_at_ms
-      }));
-    }, "listEpicChainsWithLatestJob");
-  }
-  readChainIdentity(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
-        FROM specialist_jobs
-        WHERE job_id = ?
-        LIMIT 1
-      `).get(jobId);
-      if (!row?.chain_kind || row.chain_kind.trim().length === 0) {
-        return { chain_kind: "prep" };
-      }
-      return {
-        chain_kind: row.chain_kind === "chain" ? "chain" : "prep",
-        chain_id: row.chain_id ?? undefined,
-        chain_root_job_id: row.chain_root_job_id ?? undefined,
-        chain_root_bead_id: row.chain_root_bead_id ?? undefined
-      };
-    }, "readChainIdentity");
-  }
-  listChainJobIds(chainId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT job_id
-        FROM specialist_jobs
-        WHERE chain_id = ?
-        ORDER BY updated_at_ms ASC
-      `).all(chainId);
-      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listChainJobIds");
-  }
-  listLiveJobsForBead(beadId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT job_id
-        FROM specialist_jobs
-        WHERE bead_id = ?
-          AND status IN ('starting', 'running', 'waiting')
-        ORDER BY updated_at_ms ASC
-      `).all(beadId);
-      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listLiveJobsForBead");
-  }
-  resolveChainEpicLinkByJobId(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT
-          jobs.chain_id AS chain_id,
-          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
-          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
-          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
-        FROM specialist_jobs jobs
-        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
-        WHERE jobs.job_id = ?
-          AND jobs.chain_kind = 'chain'
-          AND jobs.chain_id IS NOT NULL
-        LIMIT 1
-      `).get(jobId);
-      return row ?? null;
-    }, "resolveChainEpicLinkByJobId");
-  }
-  readEvents(jobId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ?
-        ORDER BY seq ASC, id ASC;
-      `).all(jobId);
-      const events = [];
-      for (const row of rows) {
-        if (!row.event_json)
-          continue;
-        try {
-          const parsed = JSON.parse(row.event_json);
-          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
-        } catch {}
-      }
-      return events;
-    }, "readEvents");
-  }
-  readEventsAfterSeq(jobId, afterSeq) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ? AND seq > ?
-        ORDER BY seq ASC, id ASC;
-      `).all(jobId, afterSeq);
-      const events = [];
-      for (const row of rows) {
-        if (!row.event_json)
-          continue;
-        try {
-          const parsed = JSON.parse(row.event_json);
-          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
-        } catch {}
-      }
-      return events;
-    }, "readEventsAfterSeq");
-  }
-  readForensicEvents(filters = {}) {
-    return withRetry(() => {
-      const clauses = [];
-      const params = [];
-      if (filters.jobId) {
-        clauses.push("job_id = ?");
-        params.push(filters.jobId);
-      }
-      if (filters.sinceMs !== undefined) {
-        clauses.push("t >= ?");
-        params.push(filters.sinceMs);
-      }
-      if (filters.eventFamily) {
-        clauses.push("event_family = ?");
-        params.push(filters.eventFamily);
-      }
-      if (filters.eventName) {
-        clauses.push("event_name = ?");
-        params.push(filters.eventName);
-      }
-      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-      const limit = Math.max(1, Math.min(filters.limit ?? 1000, 1e4));
-      return this.db.query(`
-        SELECT id, job_id, seq, t, schema_version, event_family, event_name,
-               participant_kind, participant_role, participant_id, redaction_status, event_json
-        FROM specialist_forensic_events
-        ${where}
-        ORDER BY t ASC, seq ASC, id ASC
-        LIMIT ?
-      `).all(...params, limit);
-    }, "readForensicEvents");
-  }
-  readLatestToolEvent(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ? AND type = 'tool'
-        ORDER BY seq DESC, id DESC
-        LIMIT 1;
-      `).get(jobId);
-      if (!row?.event_json)
-        return null;
-      try {
-        const parsed = JSON.parse(row.event_json);
-        if (parsed.type !== "tool")
-          return null;
-        return typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq };
-      } catch {
-        return null;
-      }
-    }, "readLatestToolEvent");
-  }
-  getLastActivityTimestampMs(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT MAX(t) AS last_activity_ms
-        FROM specialist_events
-        WHERE job_id = ? AND type IN ('tool', 'think')
-      `).get(jobId);
-      return typeof row?.last_activity_ms === "number" ? row.last_activity_ms : null;
-    }, "getLastActivityTimestampMs");
-  }
-  aggregateJobMetrics(jobId) {
-    return withRetry(() => {
-      const jobRow = this.db.query(`
-        SELECT job_id, specialist, status, chain_kind, chain_id, bead_id, node_id, epic_id, updated_at_ms, startup_payload_json
-        FROM specialist_jobs
-        WHERE job_id = ?
-      `).get(jobId);
-      if (!jobRow)
-        return null;
-      const events = this.readEvents(jobId);
-      const toolCallCounts = {};
-      const tokenTrajectory = [];
-      const contextTrajectory = [];
-      const stallGaps = [];
-      let totalTools = 0;
-      let totalTurns = 0;
-      let startedAtMs = null;
-      let completedAtMs = null;
-      let runCompleteJson = null;
-      let model = null;
-      let elapsedMs = null;
-      let activeRuntimeMs = 0;
-      let waitingMs = 0;
-      let phase = null;
-      let phaseStartedAtMs = null;
-      const closePhase = (endAtMs) => {
-        if (phase === null || phaseStartedAtMs === null || endAtMs < phaseStartedAtMs)
-          return;
-        const durationMs = endAtMs - phaseStartedAtMs;
-        if (phase === "running") {
-          activeRuntimeMs += durationMs;
-        } else {
-          waitingMs += durationMs;
-        }
-      };
-      for (const event of events) {
-        startedAtMs = startedAtMs === null ? event.t : Math.min(startedAtMs, event.t);
-        if (event.type === "tool") {
-          totalTools += 1;
-          toolCallCounts[event.tool] = (toolCallCounts[event.tool] ?? 0) + 1;
-          continue;
-        }
-        if (event.type === "turn_summary") {
-          totalTurns += 1;
-          if (event.token_usage)
-            tokenTrajectory.push({ turn_index: event.turn_index, t: event.t, token_usage: event.token_usage });
-          if (event.context_pct !== undefined)
-            contextTrajectory.push({ turn_index: event.turn_index, t: event.t, context_pct: event.context_pct });
-          continue;
-        }
-        if (event.type === "token_usage") {
-          tokenTrajectory.push({ t: event.t, source: event.source, token_usage: event.token_usage });
-          continue;
-        }
-        if (event.type === "run_start") {
-          phase = "running";
-          phaseStartedAtMs = event.t;
-          continue;
-        }
-        if (event.type === "status_change") {
-          if (event.status === "running" || event.status === "waiting") {
-            closePhase(event.t);
-            phase = event.status;
-            phaseStartedAtMs = event.t;
-            continue;
-          }
-          if (event.status === "done" || event.status === "error" || event.status === "cancelled") {
-            closePhase(event.t);
-            phase = null;
-            phaseStartedAtMs = null;
-          }
-          continue;
-        }
-        if (event.type === "run_complete") {
-          closePhase(event.t);
-          completedAtMs = event.t;
-          runCompleteJson = JSON.stringify(event);
-          model = event.model ?? model;
-          elapsedMs = Math.round(event.elapsed_s * 1000);
-          phase = null;
-          phaseStartedAtMs = null;
-          continue;
-        }
-        if (event.type === "stale_warning" && event.reason === "tool_duration") {
-          stallGaps.push({ t: event.t, tool: event.tool ?? null, silence_ms: event.silence_ms, threshold_ms: event.threshold_ms });
-        }
-      }
-      if (startedAtMs !== null && completedAtMs === null) {
-        completedAtMs = events.length > 0 ? events[events.length - 1].t : startedAtMs;
-      }
-      if (elapsedMs === null && startedAtMs !== null && completedAtMs !== null) {
-        elapsedMs = Math.max(0, completedAtMs - startedAtMs);
-      }
-      const record3 = {
-        job_id: jobRow.job_id,
-        specialist: jobRow.specialist,
-        model,
-        status: jobRow.status,
-        chain_kind: jobRow.chain_kind ?? null,
-        chain_id: jobRow.chain_id ?? null,
-        bead_id: jobRow.bead_id ?? null,
-        node_id: jobRow.node_id ?? null,
-        epic_id: jobRow.epic_id ?? null,
-        started_at_ms: startedAtMs,
-        completed_at_ms: completedAtMs,
-        elapsed_ms: elapsedMs,
-        active_runtime_ms: activeRuntimeMs,
-        waiting_ms: waitingMs,
-        total_turns: totalTurns,
-        total_tools: totalTools,
-        tool_call_counts_json: stringifyJson(toolCallCounts),
-        token_trajectory_json: stringifyJson(tokenTrajectory),
-        context_trajectory_json: stringifyJson(contextTrajectory),
-        stall_gaps_json: stringifyJson(stallGaps),
-        run_complete_json: runCompleteJson,
-        startup_payload_json: jobRow.startup_payload_json ?? null,
-        updated_at_ms: jobRow.updated_at_ms
-      };
-      this.db.run(`
-        INSERT INTO specialist_job_metrics (
-          job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
-          started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
-          tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
-          run_complete_json, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          specialist = excluded.specialist,
-          model = excluded.model,
-          status = excluded.status,
-          chain_kind = excluded.chain_kind,
-          chain_id = excluded.chain_id,
-          bead_id = excluded.bead_id,
-          node_id = excluded.node_id,
-          epic_id = excluded.epic_id,
-          started_at_ms = excluded.started_at_ms,
-          completed_at_ms = excluded.completed_at_ms,
-          elapsed_ms = excluded.elapsed_ms,
-          active_runtime_ms = excluded.active_runtime_ms,
-          waiting_ms = excluded.waiting_ms,
-          total_turns = excluded.total_turns,
-          total_tools = excluded.total_tools,
-          tool_call_counts_json = excluded.tool_call_counts_json,
-          token_trajectory_json = excluded.token_trajectory_json,
-          context_trajectory_json = excluded.context_trajectory_json,
-          stall_gaps_json = excluded.stall_gaps_json,
-          run_complete_json = excluded.run_complete_json,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [
-        record3.job_id,
-        record3.specialist,
-        record3.model,
-        record3.status,
-        record3.chain_kind,
-        record3.chain_id,
-        record3.bead_id,
-        record3.node_id,
-        record3.epic_id,
-        record3.started_at_ms,
-        record3.completed_at_ms,
-        record3.elapsed_ms,
-        record3.active_runtime_ms,
-        record3.waiting_ms,
-        record3.total_turns,
-        record3.total_tools,
-        record3.tool_call_counts_json,
-        record3.token_trajectory_json,
-        record3.context_trajectory_json,
-        record3.stall_gaps_json,
-        record3.run_complete_json,
-        record3.updated_at_ms
-      ]);
-      return record3;
-    }, "aggregateJobMetrics");
-  }
-  listJobMetrics(filters) {
-    return withRetry(() => {
-      const clauses = [];
-      const params = [];
-      if (filters?.spec) {
-        clauses.push("specialist = ?");
-        params.push(filters.spec);
-      }
-      if (filters?.model) {
-        clauses.push("model LIKE ?");
-        params.push(filters.model.replace(/\*/g, "%"));
-      }
-      if (filters?.sinceMs !== undefined) {
-        clauses.push("updated_at_ms >= ?");
-        params.push(filters.sinceMs);
-      }
-      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-      return this.db.query(`SELECT * FROM specialist_job_metrics ${where} ORDER BY updated_at_ms DESC, job_id DESC`).all(...params);
-    }, "listJobMetrics");
-  }
-  listElapsedMsBySpecialist(sinceMs, limitPerSpecialist = 200) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        WITH ranked AS (
-          SELECT specialist, elapsed_ms,
-                 ROW_NUMBER() OVER (PARTITION BY specialist ORDER BY updated_at_ms DESC) AS rn
-          FROM specialist_job_metrics
-          WHERE status = 'completed' AND updated_at_ms >= ? AND elapsed_ms IS NOT NULL
-        )
-        SELECT specialist, elapsed_ms
-        FROM ranked
-        WHERE rn <= ?
-        ORDER BY specialist, rn
-      `).all(sinceMs, limitPerSpecialist);
-      const bySpecialist = {};
-      for (const row of rows) {
-        if (!row.specialist || typeof row.elapsed_ms !== "number" || !Number.isFinite(row.elapsed_ms))
-          continue;
-        (bySpecialist[row.specialist] ??= []).push(row.elapsed_ms);
-      }
-      return bySpecialist;
-    }, "listElapsedMsBySpecialist");
-  }
-  readResult(jobId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
-      return row?.output ?? null;
-    }, "readResult");
-  }
-  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        const upsertMemory = this.db.query(`
-          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
-          VALUES (?, ?, ?)
-          ON CONFLICT(memory_key) DO UPDATE SET
-            memory_value = excluded.memory_value,
-            updated_at_ms = excluded.updated_at_ms
-        `);
-        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
-        const seen = new Set;
-        for (const memory of memories) {
-          if (!memory.key || seen.has(memory.key))
-            continue;
-          seen.add(memory.key);
-          upsertMemory.run(memory.key, memory.value, syncedAtMs);
-          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
-        }
-        if (seen.size > 0) {
-          const placeholders = [...seen].map(() => "?").join(", ");
-          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
-        } else {
-          this.db.run("DELETE FROM memories_cache");
-        }
-        this.db.query(`
-          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
-          VALUES (1, ?, ?)
-          ON CONFLICT(singleton_key) DO UPDATE SET
-            last_sync_at_ms = excluded.last_sync_at_ms,
-            memory_count = excluded.memory_count
-        `).run(syncedAtMs, seen.size);
-      });
-      transaction();
-    }, "syncMemoriesCache");
-  }
-  getMemoriesCacheState() {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT last_sync_at_ms, memory_count
-        FROM memories_cache_meta
-        WHERE singleton_key = 1
-        LIMIT 1
-      `).get();
-      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
-        return null;
-      }
-      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
-    }, "getMemoriesCacheState");
-  }
-  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
-    return withRetry(() => {
-      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
-      if (cleanedKeywords.length === 0)
-        return [];
-      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
-      const rows = this.db.query(`
-        SELECT
-          cache.memory_key,
-          cache.memory_value,
-          bm25(memories_fts) AS bm25_score,
-          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
-          cache.access_count
-        FROM memories_fts
-        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
-        WHERE memories_fts MATCH ?
-        ORDER BY bm25_score ASC
-        LIMIT ?
-      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
-      const ranked = rows.map((row) => {
-        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
-        const bm25Norm = 1 / (1 + Math.max(0, bm25));
-        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
-        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
-        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
-        return {
-          key: row.memory_key,
-          value: row.memory_value,
-          bm25,
-          recency,
-          accessFrequency,
-          score
-        };
-      });
-      ranked.sort((left, right) => right.score - left.score);
-      const selected = ranked.slice(0, Math.max(1, limit));
-      if (selected.length === 0)
-        return [];
-      const accessStmt = this.db.query(`
-        UPDATE memories_cache
-        SET access_count = access_count + 1,
-            last_accessed_at_ms = ?
-        WHERE memory_key = ?
-      `);
-      for (const memory of selected) {
-        accessStmt.run(nowMs, memory.key);
-      }
-      return selected;
-    }, "queryRelevantMemories");
-  }
-  invalidateMemoriesCache() {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        this.db.run("DELETE FROM memories_cache");
-        this.db.run("DELETE FROM memories_cache_meta");
-      });
-      transaction();
-    }, "invalidateMemoriesCache");
-  }
-  hasActiveJobs(statuses = ["running", "starting"]) {
-    return this.listActiveJobs(statuses).length > 0;
-  }
-  listActiveJobs(statuses = ["running", "starting"]) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      return this.db.query(`
-        SELECT job_id, specialist, status
-        FROM specialist_jobs
-        WHERE status IN (${placeholders})
-        ORDER BY updated_at_ms DESC
-      `).all(...statuses);
-    }, "listActiveJobs");
-  }
-  getDatabaseSizeBytes() {
-    try {
-      return statSync(this.dbPath).size;
-    } catch {
-      return 0;
-    }
-  }
-  vacuumDatabase() {
-    return withRetry(() => {
-      const beforeBytes = this.getDatabaseSizeBytes();
-      this.db.run("VACUUM");
-      const afterBytes = this.getDatabaseSizeBytes();
-      return { beforeBytes, afterBytes };
-    }, "vacuumDatabase");
-  }
-  pruneObservabilityData(options) {
-    return withRetry(() => {
-      const nowMs = options.nowMs ?? Date.now();
-      const eventsRetentionMs = options.eventsRetentionMs ?? 30 * 24 * 60 * 60 * 1000;
-      const eventsCutoffMs = nowMs - eventsRetentionMs;
-      const terminalStatuses = ["done", "error", "stopped"];
-      const activeStatuses = ["running", "starting", "waiting"];
-      const skippedActiveChainJobs = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_jobs stale
-        WHERE stale.updated_at_ms < ?
-          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND stale.chain_id IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM specialist_jobs active
-            WHERE active.chain_id = stale.chain_id
-              AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-          )
-      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
-      const resultCandidates = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_results results
-        LEFT JOIN specialist_jobs jobs ON jobs.job_id = results.job_id
-        WHERE results.updated_at_ms < ?
-          AND (
-            jobs.job_id IS NULL
-            OR jobs.chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = jobs.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `).get(options.beforeMs, ...activeStatuses)?.count ?? 0;
-      const jobCandidates = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_jobs stale
-        WHERE stale.updated_at_ms < ?
-          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND (
-            stale.chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = stale.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
-      const extractCandidates = options.skipExtract ? 0 : this.db.query(`
-          SELECT COUNT(DISTINCT job_id) AS count
-          FROM specialist_events
-          WHERE t < ?
-        `).get(eventsCutoffMs)?.count ?? 0;
-      const eventsCandidates = this.db.query("SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?").get(eventsCutoffMs)?.count ?? 0;
-      const epicCandidates = options.includeEpics ? this.db.query(`
-          SELECT COUNT(*) AS count
-          FROM epic_runs epic
-          WHERE epic.updated_at_ms < ?
-            AND epic.status IN ('merged', 'failed', 'abandoned')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM epic_chain_membership membership
-              WHERE membership.epic_id = epic.epic_id
-            )
-        `).get(options.beforeMs)?.count ?? 0 : 0;
-      if (!options.apply) {
-        return {
-          dryRun: true,
-          beforeMs: options.beforeMs,
-          eventsCutoffMs,
-          includeEpics: options.includeEpics,
-          deletedEvents: eventsCandidates,
-          deletedResults: resultCandidates,
-          deletedJobs: jobCandidates,
-          deletedEpicRuns: epicCandidates,
-          skippedActiveChainJobs,
-          extractedJobs: extractCandidates
-        };
-      }
-      let extractedJobs = 0;
-      if (!options.skipExtract) {
-        const jobsToExtract = this.db.query(`
-          SELECT DISTINCT stale.job_id
-          FROM specialist_events stale
-          WHERE stale.t < ?
-        `).all(eventsCutoffMs);
-        for (const row of jobsToExtract) {
-          if (!row.job_id)
-            continue;
-          const metrics = this.aggregateJobMetrics(row.job_id);
-          if (!metrics) {
-            throw new Error(`Failed to aggregate metrics for job ${row.job_id}`);
-          }
-          extractedJobs += 1;
-        }
-      }
-      const deleteResults = this.db.query(`
-        DELETE FROM specialist_results
-        WHERE updated_at_ms < ?
-          AND (
-            job_id NOT IN (SELECT job_id FROM specialist_jobs WHERE chain_id IS NOT NULL)
-            OR job_id IN (
-              SELECT jobs.job_id
-              FROM specialist_jobs jobs
-              WHERE jobs.chain_id IS NULL
-                 OR NOT EXISTS (
-                    SELECT 1
-                    FROM specialist_jobs active
-                    WHERE active.chain_id = jobs.chain_id
-                      AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-                 )
-            )
-          )
-      `);
-      const deletedResults = deleteResults.run(options.beforeMs, ...activeStatuses).changes ?? 0;
-      const deleteEvents = this.db.query("DELETE FROM specialist_events WHERE t < ?");
-      const deletedEvents = deleteEvents.run(eventsCutoffMs).changes ?? 0;
-      const deleteJobs = this.db.query(`
-        DELETE FROM specialist_jobs
-        WHERE updated_at_ms < ?
-          AND status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND (
-            chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = specialist_jobs.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `);
-      const deletedJobs = deleteJobs.run(options.beforeMs, ...terminalStatuses, ...activeStatuses).changes ?? 0;
-      let deletedEpicRuns = 0;
-      if (options.includeEpics) {
-        const deleteEpics = this.db.query(`
-          DELETE FROM epic_runs
-          WHERE updated_at_ms < ?
-            AND status IN ('merged', 'failed', 'abandoned')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM epic_chain_membership membership
-              WHERE membership.epic_id = epic_runs.epic_id
-            )
-        `);
-        deletedEpicRuns = deleteEpics.run(options.beforeMs).changes ?? 0;
-      }
-      return {
-        dryRun: false,
-        beforeMs: options.beforeMs,
-        eventsCutoffMs,
-        includeEpics: options.includeEpics,
-        deletedEvents,
-        deletedResults,
-        deletedJobs,
-        deletedEpicRuns,
-        skippedActiveChainJobs,
-        extractedJobs
-      };
-    }, "pruneObservabilityData");
-  }
-  scanOrphans() {
-    return withRetry(() => {
-      const findings = [];
-      const chainMembershipWithoutJobs = this.db.query(`
-        SELECT membership.chain_id, membership.epic_id
-        FROM epic_chain_membership membership
-        LEFT JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
-        WHERE jobs.job_id IS NULL
-      `).all();
-      for (const row of chainMembershipWithoutJobs) {
-        findings.push({
-          kind: "orphan",
-          code: "chain_membership_without_jobs",
-          message: `chain ${row.chain_id} has epic membership but no jobs`,
-          details: { chain_id: row.chain_id, epic_id: row.epic_id }
-        });
-      }
-      const epicsWithoutChains = this.db.query(`
-        SELECT epic.epic_id, epic.status
-        FROM epic_runs epic
-        LEFT JOIN epic_chain_membership membership ON membership.epic_id = epic.epic_id
-        WHERE membership.chain_id IS NULL
-      `).all();
-      for (const row of epicsWithoutChains) {
-        findings.push({
-          kind: "orphan",
-          code: "epic_without_chains",
-          message: `epic ${row.epic_id} has no chain membership`,
-          details: { epic_id: row.epic_id, status: row.status }
-        });
-      }
-      const jobEpicWithoutMembership = this.db.query(`
-        SELECT jobs.job_id, jobs.epic_id, jobs.chain_id
-        FROM specialist_jobs jobs
-        LEFT JOIN epic_chain_membership membership
-          ON membership.chain_id = jobs.chain_id
-         AND membership.epic_id = jobs.epic_id
-        WHERE jobs.epic_id IS NOT NULL
-          AND (jobs.chain_id IS NULL OR membership.chain_id IS NULL)
-      `).all();
-      for (const row of jobEpicWithoutMembership) {
-        findings.push({
-          kind: "integrity-violation",
-          code: "job_epic_without_membership",
-          message: `job ${row.job_id} references epic without chain membership link`,
-          details: { job_id: row.job_id, epic_id: row.epic_id, chain_id: row.chain_id ?? null }
-        });
-      }
-      const worktreeRows = this.db.query(`
-        SELECT DISTINCT job_id, worktree_column
-        FROM specialist_jobs
-        WHERE worktree_column IS NOT NULL AND worktree_column != ''
-      `).all();
-      for (const row of worktreeRows) {
-        if (existsSync5(row.worktree_column))
-          continue;
-        findings.push({
-          kind: "stale-pointer",
-          code: "worktree_missing_on_disk",
-          message: `job ${row.job_id} points to missing worktree path`,
-          details: { job_id: row.job_id, worktree_path: row.worktree_column }
-        });
-      }
-      return findings;
-    }, "scanOrphans");
-  }
-  close() {
-    this.db.close();
-  }
-}
-function hasRunCompleteEvent(jobId, cwd = process.cwd()) {
-  const sqliteClient = createObservabilitySqliteClient(cwd);
-  try {
-    if (sqliteClient) {
-      const events = sqliteClient.readEvents(jobId);
-      return events.some((event) => event.type === "run_complete");
-    }
-  } finally {
-    sqliteClient?.close();
-  }
-  const eventsPath = join5(resolveJobsDir(cwd), jobId, "events.jsonl");
-  if (!existsSync5(eventsPath))
-    return false;
-  try {
-    const lines = readFileSync3(eventsPath, "utf-8").split(`
-`).map((line) => line.trim()).filter((line) => line.length > 0);
-    for (const line of lines) {
-      const event = JSON.parse(line);
-      if (event.type === "run_complete")
-        return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-function openObservabilitySqliteClient(dbPath) {
-  if (!loadBunDatabase())
-    return null;
-  try {
-    const Ctor = loadBunDatabase();
-    const initDb = new Ctor(dbPath);
-    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
-    initSchema(initDb);
-    initDb.close();
-    return new SqliteClient(dbPath);
-  } catch {
-    return null;
-  }
-}
-function createObservabilitySqliteClient(cwd = process.cwd()) {
-  const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync5(location.dbPath))
-    return null;
-  return openObservabilitySqliteClient(location.dbPath);
-}
-function createObservabilitySqliteClientAtPath(dbPath) {
-  mkdirSync3(dirname3(dbPath), { recursive: true });
-  return openObservabilitySqliteClient(dbPath);
-}
-var _BunDatabase = null, _probed = false, BUSY_TIMEOUT_MS = 5000, MAX_RETRY_ATTEMPTS = 5, BASE_RETRY_DELAY_MS = 50, STALE_CLAIM_AGE_MS = 60000;
-var init_observability_sqlite = __esm(() => {
-  init_observability_db();
-  init_job_root();
-  init_forensic_events();
-});
 
 // src/specialist/memory-retrieval.ts
 import { execSync } from "child_process";
@@ -22334,10 +22725,10 @@ var init_memory_retrieval = __esm(() => {
 });
 
 // src/specialist/mandatory-rules.ts
-import { existsSync as existsSync6, readFileSync as readFileSync4 } from "fs";
+import { existsSync as existsSync7, readFileSync as readFileSync5 } from "fs";
 import { resolve as resolve3 } from "path";
 function readJsonFile(filePath) {
-  return JSON.parse(readFileSync4(filePath, "utf8"));
+  return JSON.parse(readFileSync5(filePath, "utf8"));
 }
 function mergeIndex(base, overlay) {
   const dedupe = (values) => values ? Array.from(new Set(values)) : undefined;
@@ -22362,10 +22753,10 @@ function loadMandatoryRulesIndex(cwd) {
   const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
   const tiers = [];
   for (const path of tierPaths) {
-    if (existsSync6(path))
+    if (existsSync7(path))
       tiers.push(readJsonFile(path));
   }
-  if (tiers.length === 0 && packageLiveIndexPath && existsSync6(packageLiveIndexPath)) {
+  if (tiers.length === 0 && packageLiveIndexPath && existsSync7(packageLiveIndexPath)) {
     tiers.push(readJsonFile(packageLiveIndexPath));
   }
   if (tiers.length === 0) {
@@ -22467,10 +22858,10 @@ function readMandatoryRuleSet(cwd, id) {
     resolve3(cwd, `config/mandatory-rules/${id}.md`),
     ...packageCanonicalDir ? [resolve3(packageCanonicalDir, `${id}.md`)] : []
   ];
-  const filePath = candidates.find((path) => existsSync6(path));
+  const filePath = candidates.find((path) => existsSync7(path));
   if (!filePath)
     return null;
-  const content = readFileSync4(filePath, "utf8");
+  const content = readFileSync5(filePath, "utf8");
   const rules = parseMandatoryRulesFrontmatter(content, id);
   if (rules.length > 0)
     return { id, rules };
@@ -22745,9 +23136,9 @@ __export(exports_runner, {
 });
 import { createHash as createHash2 } from "crypto";
 import { execSync as execSync2, spawnSync as spawnSync4 } from "child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync5 } from "fs";
+import { existsSync as existsSync8, readFileSync as readFileSync6 } from "fs";
 import { basename as basename2, resolve as resolve4 } from "path";
-import { homedir as homedir2 } from "os";
+import { homedir as homedir3 } from "os";
 function runScript(command, cwd) {
   const run = (command ?? "").trim();
   if (!run) {
@@ -22811,7 +23202,7 @@ ${blocks}
 </pre_flight_context>`;
 }
 function resolvePath(p) {
-  return p.startsWith("~/") ? resolve4(homedir2(), p.slice(2)) : resolve4(p);
+  return p.startsWith("~/") ? resolve4(homedir3(), p.slice(2)) : resolve4(p);
 }
 function commandExists(cmd) {
   const result = spawnSync4("which", [cmd], { stdio: "ignore" });
@@ -22819,7 +23210,7 @@ function commandExists(cmd) {
 }
 function validateShebang(filePath, errors5) {
   try {
-    const head = readFileSync5(filePath, "utf-8").slice(0, 120);
+    const head = readFileSync6(filePath, "utf-8").slice(0, 120);
     if (!head.startsWith("#!"))
       return;
     const shebang = head.split(`
@@ -22849,7 +23240,7 @@ function validateBeforeRun(spec, permissionLevel) {
   const warnings = [];
   for (const p of spec.specialist.skills?.paths ?? []) {
     const abs = resolvePath(p);
-    if (!existsSync7(abs))
+    if (!existsSync8(abs))
       warnings.push(`  \u26A0 skills.paths: file not found: ${p}`);
   }
   for (const script of spec.specialist.skills?.scripts ?? []) {
@@ -22859,7 +23250,7 @@ function validateBeforeRun(spec, permissionLevel) {
     const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
     if (isFilePath) {
       const abs = resolvePath(run);
-      if (!existsSync7(abs)) {
+      if (!existsSync8(abs)) {
         errors5.push(`  \u2717 skills.scripts: script not found: ${run}`);
       } else {
         validateShebang(abs, errors5);
@@ -23251,8 +23642,10 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
     const start = Date.now();
     const spec = await loader.get(options.name);
     const { metadata, execution, prompt, output_file } = spec.specialist;
-    const primaryModel = options.backendOverride ?? execution.model;
-    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : execution.fallback_model ?? primaryModel;
+    const executionModel = execution.model;
+    const executionFallbackModel = execution.fallback_model ?? null;
+    const primaryModel = options.backendOverride ?? executionModel;
+    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : executionFallbackModel ?? primaryModel;
     const fallbackUsed = model !== primaryModel;
     await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
       variables_keys: Object.keys(options.variables ?? {}),
@@ -23385,7 +23778,7 @@ Respond like smart caveman. Cut all filler, keep technical substance.
     if (!execution.bare) {
       try {
         const gitnexusMetaPath = resolve4(runCwd, ".gitnexus/meta.json");
-        if (existsSync7(gitnexusMetaPath)) {
+        if (existsSync8(gitnexusMetaPath)) {
           agentsMd += `
 
 ---
@@ -23439,7 +23832,7 @@ ${memoryInjection.block}
         }
         try {
           const gitnexusMetaPath = resolve4(runCwd, ".gitnexus/meta.json");
-          if (existsSync7(gitnexusMetaPath)) {
+          if (existsSync8(gitnexusMetaPath)) {
             const symbolCandidates = (beadForMemory.title.match(/\b(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b/g) ?? []).slice(0, 2);
             const summaries = [];
             for (const symbol of symbolCandidates) {
@@ -23970,7 +24363,7 @@ var init_runner = __esm(() => {
 
 // src/specialist/hooks.ts
 import { appendFile, mkdir } from "fs/promises";
-import { dirname as dirname4 } from "path";
+import { dirname as dirname5 } from "path";
 
 class HookEmitter {
   tracePath;
@@ -23978,7 +24371,7 @@ class HookEmitter {
   ready;
   constructor(options) {
     this.tracePath = options.tracePath;
-    this.ready = mkdir(dirname4(options.tracePath), { recursive: true }).then(() => {});
+    this.ready = mkdir(dirname5(options.tracePath), { recursive: true }).then(() => {});
   }
   async emit(hook, invocationId, specialistName, specialistVersion, payload) {
     await this.ready;
@@ -24032,17 +24425,17 @@ __export(exports_version, {
 });
 import { createRequire } from "module";
 import { fileURLToPath as fileURLToPath2 } from "url";
-import { dirname as dirname5, join as join7 } from "path";
-import { existsSync as existsSync8 } from "fs";
+import { dirname as dirname6, join as join8 } from "path";
+import { existsSync as existsSync9 } from "fs";
 async function run2() {
   const req = createRequire(import.meta.url);
-  const here = dirname5(fileURLToPath2(import.meta.url));
-  const bundlePkgPath = join7(here, "..", "package.json");
-  const sourcePkgPath = join7(here, "..", "..", "package.json");
+  const here = dirname6(fileURLToPath2(import.meta.url));
+  const bundlePkgPath = join8(here, "..", "package.json");
+  const sourcePkgPath = join8(here, "..", "..", "package.json");
   let pkg;
-  if (existsSync8(bundlePkgPath)) {
+  if (existsSync9(bundlePkgPath)) {
     pkg = req("../package.json");
-  } else if (existsSync8(sourcePkgPath)) {
+  } else if (existsSync9(sourcePkgPath)) {
     pkg = req("../../package.json");
   } else {
     console.error("Cannot find package.json");
@@ -24057,8 +24450,8 @@ var exports_list_rules = {};
 __export(exports_list_rules, {
   run: () => run3
 });
-import { existsSync as existsSync9, readFileSync as readFileSync6, readdirSync } from "fs";
-import { resolve as resolve5, join as join8, basename as basename3 } from "path";
+import { existsSync as existsSync10, readFileSync as readFileSync7, readdirSync } from "fs";
+import { resolve as resolve5, join as join9, basename as basename3 } from "path";
 function resolvePackageDir(asset) {
   return resolveCanonicalAssetDir(asset) ?? null;
 }
@@ -24066,7 +24459,7 @@ function discoverRuleSets(cwd) {
   const seen = new Map;
   for (const { rel, tier } of RULE_TIERS) {
     const dir = rel === "__package__/mandatory-rules" ? resolvePackageDir("mandatory-rules") : resolve5(cwd, rel);
-    if (!dir || !existsSync9(dir))
+    if (!dir || !existsSync10(dir))
       continue;
     let files;
     try {
@@ -24079,7 +24472,7 @@ function discoverRuleSets(cwd) {
         continue;
       const id = file.replace(/\.md$/, "");
       if (!seen.has(id))
-        seen.set(id, { id, source_path: join8(dir, file), source_tier: tier });
+        seen.set(id, { id, source_path: join9(dir, file), source_tier: tier });
     }
   }
   return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -24088,7 +24481,7 @@ function discoverSpecialists(cwd) {
   const seen = new Map;
   for (const { rel, tier } of SPEC_TIERS) {
     const dir = rel === "__package__/specialists" ? resolvePackageDir("specialists") : resolve5(cwd, rel);
-    if (!dir || !existsSync9(dir))
+    if (!dir || !existsSync10(dir))
       continue;
     let files;
     try {
@@ -24102,9 +24495,9 @@ function discoverSpecialists(cwd) {
       const name = file.replace(/\.specialist\.json$/, "");
       if (seen.has(name))
         continue;
-      const path = join8(dir, file);
+      const path = join9(dir, file);
       try {
-        const parsed = JSON.parse(readFileSync6(path, "utf-8"));
+        const parsed = JSON.parse(readFileSync7(path, "utf-8"));
         const spec = parsed?.specialist;
         if (!spec)
           continue;
@@ -24217,7 +24610,7 @@ async function run3() {
   const rules = discoverRuleSets(cwd);
   const specs = discoverSpecialists(cwd);
   for (const spec of specs) {
-    const parsed = JSON.parse(readFileSync6(spec.source_path, "utf-8"));
+    const parsed = JSON.parse(readFileSync7(spec.source_path, "utf-8"));
     const sets = parsed?.specialist?.mandatory_rules?.template_sets ?? [];
     spec.applied_rules = appliedRulesForSpec(spec, sets, required2, defaults);
   }
@@ -24586,8 +24979,18 @@ function createAutoCommitEvent(status, options) {
     type,
     ...options?.reason ? { reason: options.reason } : {},
     ...options?.commit_sha ? { commit_sha: options.commit_sha } : {},
-    ...options?.committed_files ? { committed_files: options.committed_files } : {}
+    ...options?.committed_files ? { committed_files: options.committed_files } : {},
+    ...options?.evidence ? { evidence: options.evidence } : {}
   };
+}
+function createCommandEvent(status, options) {
+  return { t: Date.now(), type: status === "completed" ? TIMELINE_EVENT_TYPES.COMMAND_COMPLETED : TIMELINE_EVENT_TYPES.COMMAND_FAILED, ...options };
+}
+function createReviewVerdictEvent(verdict, body = {}) {
+  return { t: Date.now(), type: "review_verdict_" + verdict, ...body };
+}
+function createChainEvent(type, body = {}) {
+  return { t: Date.now(), type, ...body };
 }
 function parseTimelineEvent(line) {
   try {
@@ -24654,10 +25057,76 @@ var init_timeline_events = __esm(() => {
     AUTO_COMMIT_SUCCESS: "auto_commit_success",
     AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
     AUTO_COMMIT_FAILED: "auto_commit_failed",
+    COMMAND_COMPLETED: "command_completed",
+    COMMAND_FAILED: "command_failed",
+    REVIEW_VERDICT_PASS: "review_verdict_pass",
+    REVIEW_VERDICT_PARTIAL: "review_verdict_partial",
+    REVIEW_VERDICT_FAIL: "review_verdict_fail",
+    REVIEW_VERDICT_WAIVED: "review_verdict_waived",
+    CHAIN_READY_FOR_REVIEW: "chain_ready_for_review",
+    CHAIN_FINALIZED: "chain_finalized",
+    WORKTREE_MERGED: "worktree_merged",
     CONTROL_SIGNAL: "control_signal",
     DONE: "done",
     AGENT_END: "agent_end"
   };
+});
+
+// src/specialist/git-diff-evidence.ts
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "fs";
+import { join as join10 } from "path";
+function redactGitDiffHunks(hunks) {
+  return hunks.replace(PEM_BLOCK_RE, "[REDACTED-PEM]").replace(JWT_RE, "[REDACTED-JWT]").replace(URL_CREDS_RE, "[REDACTED-URL-CREDS]://").replace(ENV_SECRET_RE, "[REDACTED]").replace(AUTH_HEADER_RE, "[REDACTED]").replace(TOKEN_RE, "[REDACTED-TOKEN]").replace(EMAIL_RE, "[REDACTED-EMAIL]");
+}
+function willHunksBeInline(hunks) {
+  return redactGitDiffHunks(hunks).length <= INLINE_HUNKS_LIMIT;
+}
+function writeGitDiffHunksArtifact(jobDir, artifactName, hunks) {
+  const artifactPath = join10(jobDir, "artifacts");
+  mkdirSync5(artifactPath, { recursive: true });
+  const filePath = join10(artifactPath, artifactName);
+  writeFileSync4(filePath, redactGitDiffHunks(hunks), "utf-8");
+  return `artifact://git-diff/${artifactName}`;
+}
+function parseGitNumstat(output) {
+  return output.trim().split(`
+`).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [addedRaw, removedRaw, ...pathParts] = line.split(/\s+/);
+    const path = pathParts.join(" ");
+    return {
+      path,
+      added_lines: parseGitCount(addedRaw),
+      removed_lines: parseGitCount(removedRaw)
+    };
+  }).filter((entry) => entry.path.length > 0);
+}
+function buildGitDiffEvidence(options) {
+  const hunks = options.hunks_output?.trim();
+  const redactedHunks = hunks ? redactGitDiffHunks(hunks) : undefined;
+  const inline = redactedHunks !== undefined && redactedHunks.length <= INLINE_HUNKS_LIMIT;
+  return {
+    ...options.base_ref ? { base_ref: options.base_ref } : {},
+    ...options.base_sha ? { base_sha: options.base_sha } : {},
+    ...options.head_sha ? { head_sha: options.head_sha } : {},
+    changed_files: parseGitNumstat(options.numstat_output),
+    ...redactedHunks ? inline ? { hunks: redactedHunks, hunks_inline: true } : { hunks_artifact_ref: options.artifact_ref ?? "artifact://git-diff-hunks", hunks_truncated: true } : {}
+  };
+}
+function parseGitCount(value) {
+  if (!value || value === "-")
+    return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+var INLINE_HUNKS_LIMIT = 4000, TOKEN_RE, ENV_SECRET_RE, PEM_BLOCK_RE, AUTH_HEADER_RE, URL_CREDS_RE, JWT_RE, EMAIL_RE;
+var init_git_diff_evidence = __esm(() => {
+  TOKEN_RE = /\b(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|ghs_[a-z0-9_]{12,}|xox[baprs]-[a-z0-9-]{12,}|AIza[0-9A-Za-z_-]{35,}|ya29\.[0-9A-Za-z_-]{40,})/ig;
+  ENV_SECRET_RE = /(?<![a-z0-9_])[a-z0-9_]{0,40}(?:password|passwd|secret|api_?key|auth_?token|access_?token|refresh_?token|private_?key|credential|client_?secret|db_?pass|database_?pass|[a-z0-9]{1,20}_(?:key|token|secret))[a-z0-9_]{0,40}\s*[=:]\s*\S+/ig;
+  PEM_BLOCK_RE = /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE|PUBLIC KEY|ENCRYPTED)[A-Z ]*-----[\s\S]*?-----END [A-Z ]*(?:PRIVATE KEY|CERTIFICATE|PUBLIC KEY|ENCRYPTED)[A-Z ]*-----/ig;
+  AUTH_HEADER_RE = /\b(authorization|cookie)\s*:[^\n]+/ig;
+  URL_CREDS_RE = /https?:\/\/[^/:@\s]+:[^/@\s]+@/ig;
+  JWT_RE = /\bey[a-z0-9_-]{10,}\.ey[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\b/ig;
+  EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/ig;
 });
 
 // src/specialist/epic-lifecycle.ts
@@ -24749,7 +25218,7 @@ var init_epic_lifecycle = __esm(() => {
 });
 
 // src/specialist/process-liveness.ts
-import { readFileSync as readFileSync7 } from "fs";
+import { readFileSync as readFileSync8 } from "fs";
 function isValidPid(pid) {
   return Number.isInteger(pid) && pid > 0;
 }
@@ -24763,7 +25232,7 @@ function isAliveBySignal(pid) {
 }
 function parseBootTimeMs() {
   try {
-    const procStat = readFileSync7("/proc/stat", "utf-8");
+    const procStat = readFileSync8("/proc/stat", "utf-8");
     const bootLine = procStat.split(`
 `).find((line) => line.startsWith("btime "));
     if (!bootLine)
@@ -24778,7 +25247,7 @@ function parseBootTimeMs() {
 }
 function parseProcessStartTimeMs(pid) {
   try {
-    const statRaw = readFileSync7(`/proc/${pid}/stat`, "utf-8");
+    const statRaw = readFileSync8(`/proc/${pid}/stat`, "utf-8");
     const closeParenIndex = statRaw.lastIndexOf(")");
     if (closeParenIndex < 0)
       return;
@@ -25057,6 +25526,7 @@ var init_epic_readiness = __esm(() => {
 });
 
 // src/specialist/chain-identity.ts
+import { randomUUID as randomUUID2 } from "crypto";
 function derivePersistedChainIdentity(status, chainRootSnapshot) {
   const isChainJob = Boolean(status.worktree_path || status.worktree_owner_job_id || status.chain_id || status.chain_root_job_id);
   if (!isChainJob) {
@@ -25069,7 +25539,10 @@ function derivePersistedChainIdentity(status, chainRootSnapshot) {
     chain_kind: "chain",
     chain_id: chainId,
     chain_root_job_id: chainRootJobId,
-    chain_root_bead_id: chainRootBeadId
+    chain_root_bead_id: chainRootBeadId,
+    trace_id: status.trace_id ?? chainRootSnapshot?.trace_id ?? randomUUID2(),
+    span_id: status.span_id ?? chainRootSnapshot?.span_id,
+    parent_span_id: status.parent_span_id ?? chainRootSnapshot?.parent_span_id
   };
 }
 var init_chain_identity = () => {};
@@ -25136,19 +25609,19 @@ function parsePorcelainStatus(stdout) {
 import {
   appendFileSync,
   closeSync,
-  existsSync as existsSync10,
+  existsSync as existsSync11,
   fsyncSync,
-  mkdirSync as mkdirSync4,
+  mkdirSync as mkdirSync6,
   openSync,
   readdirSync as readdirSync2,
-  readFileSync as readFileSync8,
+  readFileSync as readFileSync9,
   renameSync,
   rmSync,
   statSync as statSync2,
-  writeFileSync as writeFileSync3,
+  writeFileSync as writeFileSync5,
   writeSync
 } from "fs";
-import { join as join9 } from "path";
+import { join as join11 } from "path";
 import { createInterface } from "readline";
 import { createReadStream } from "fs";
 import { spawn as spawn2, spawnSync as spawnSync6, execFileSync } from "child_process";
@@ -25208,6 +25681,13 @@ function getContextHealth(contextPct) {
   if (contextPct <= 80)
     return "WARN";
   return "CRITICAL";
+}
+function parseReviewVerdict(output) {
+  const match = output.match(REVIEW_VERDICT_REGEX);
+  if (!match?.[1])
+    return;
+  const verdict = match[1].toLowerCase();
+  return verdict === "pass" || verdict === "partial" || verdict === "fail" || verdict === "waived" ? verdict : undefined;
 }
 function calculateContextUtilization(contextInputTokens, model) {
   const contextWindow = getModelContextWindow(model);
@@ -25293,7 +25773,7 @@ function buildAutoCommitMessage(specialist, beadId, turnNumber) {
   return `checkpoint(${specialist}): ${beadLabel} turn ${turnNumber}`;
 }
 function runAutoCommitCheckpoint(options) {
-  const { autoCommitPolicy, target, worktreePath, specialist, beadId, turnNumber } = options;
+  const { autoCommitPolicy, target, worktreePath, specialist, beadId, turnNumber, emitCommandEvent } = options;
   if (!worktreePath)
     return { status: "skipped", reason: "no_worktree" };
   if (!autoCommitPolicy || autoCommitPolicy === "never")
@@ -25309,30 +25789,43 @@ function runAutoCommitCheckpoint(options) {
     if (substantiveFiles.length === 0) {
       return { status: "skipped", reason: "no_substantive_changes" };
     }
+    const addStart = Date.now();
     const addResult = spawnSync6("git", ["add", "--", ...substantiveFiles], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
+    const addDuration = Date.now() - addStart;
     if (addResult.status !== 0) {
+      emitCommandEvent?.("failed", { command_kind: "git", duration_ms: addDuration, command: "git", args: ["add", "--", ...substantiveFiles], exit_code: typeof addResult.status === "number" ? addResult.status : undefined, stderr: (addResult.stderr ?? addResult.stdout ?? "git add failed").trim(), redacted: true });
       return { status: "failed", reason: (addResult.stderr ?? addResult.stdout ?? "git add failed").trim() };
     }
-    const commitResult = spawnSync6("git", ["commit", "-m", buildAutoCommitMessage(specialist, beadId, turnNumber)], {
+    emitCommandEvent?.("completed", { command_kind: "git", duration_ms: addDuration, command: "git", args: ["add", "--", ...substantiveFiles], exit_code: 0, redacted: true });
+    const commitMessage = buildAutoCommitMessage(specialist, beadId, turnNumber);
+    const commitStart = Date.now();
+    const commitResult = spawnSync6("git", ["commit", "-m", commitMessage], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
+    const commitDuration = Date.now() - commitStart;
     if (commitResult.status !== 0) {
+      emitCommandEvent?.("failed", { command_kind: "git", duration_ms: commitDuration, command: "git", args: ["commit", "-m", commitMessage], exit_code: typeof commitResult.status === "number" ? commitResult.status : undefined, stderr: (commitResult.stderr ?? commitResult.stdout ?? "git commit failed").trim(), redacted: true });
       return { status: "failed", reason: (commitResult.stderr ?? commitResult.stdout ?? "git commit failed").trim() };
     }
+    emitCommandEvent?.("completed", { command_kind: "git", duration_ms: commitDuration, command: "git", args: ["commit", "-m", commitMessage], exit_code: 0, redacted: true });
+    const shaStart = Date.now();
     const shaResult = spawnSync6("git", ["rev-parse", "HEAD"], {
       cwd: worktreePath,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
+    const shaDuration = Date.now() - shaStart;
     if (shaResult.status !== 0) {
+      emitCommandEvent?.("failed", { command_kind: "git", duration_ms: shaDuration, command: "git", args: ["rev-parse", "HEAD"], exit_code: typeof shaResult.status === "number" ? shaResult.status : undefined, stderr: (shaResult.stderr ?? shaResult.stdout ?? "git rev-parse failed").trim(), redacted: true });
       return { status: "failed", reason: (shaResult.stderr ?? shaResult.stdout ?? "git rev-parse failed").trim() };
     }
+    emitCommandEvent?.("completed", { command_kind: "git", duration_ms: shaDuration, command: "git", args: ["rev-parse", "HEAD"], exit_code: 0, redacted: true });
     return {
       status: "success",
       sha: (shaResult.stdout ?? "").trim(),
@@ -25340,13 +25833,14 @@ function runAutoCommitCheckpoint(options) {
       committedAtMs: Date.now()
     };
   } catch (error2) {
+    emitCommandEvent?.("failed", { command_kind: "git", command: "git", args: ["status", "--porcelain"], redacted: true, stderr: String(error2) });
     return { status: "failed", reason: String(error2) };
   }
 }
 function gitnexusHasEmbeddings(cwd) {
   try {
-    const metaPath = join9(cwd, ".gitnexus", "meta.json");
-    const raw = readFileSync8(metaPath, "utf-8");
+    const metaPath = join11(cwd, ".gitnexus", "meta.json");
+    const raw = readFileSync9(metaPath, "utf-8");
     const meta = JSON.parse(raw);
     return typeof meta.stats?.embeddings === "number" && meta.stats.embeddings > 0;
   } catch {
@@ -25578,26 +26072,26 @@ class Supervisor {
     await this.disposePromise;
   }
   jobDir(id) {
-    return join9(this.resolvedJobsDir, id);
+    return join11(this.resolvedJobsDir, id);
   }
   statusPath(id) {
-    return join9(this.jobDir(id), "status.json");
+    return join11(this.jobDir(id), "status.json");
   }
   resultPath(id) {
-    return join9(this.jobDir(id), "result.txt");
+    return join11(this.jobDir(id), "result.txt");
   }
   observabilityDbPath() {
     return resolveObservabilityDbLocation(this.opts.runOptions?.workingDirectory ?? process.cwd()).dbPath;
   }
   eventsPath(id) {
-    return join9(this.jobDir(id), "events.jsonl");
+    return join11(this.jobDir(id), "events.jsonl");
   }
   readyDir() {
-    return join9(this.resolvedJobsDir, "..", "ready");
+    return join11(this.resolvedJobsDir, "..", "ready");
   }
   writeReadyMarker(id) {
-    mkdirSync4(this.readyDir(), { recursive: true });
-    writeFileSync3(join9(this.readyDir(), id), "", "utf-8");
+    mkdirSync6(this.readyDir(), { recursive: true });
+    writeFileSync5(join11(this.readyDir(), id), "", "utf-8");
   }
   withComputedLiveness(status) {
     return {
@@ -25637,7 +26131,7 @@ class Supervisor {
       this.writeStatusFileOnly(id, recoveredStatus);
       if (this.isJobFileOutputEnabled) {
         const eventsPath = this.eventsPath(id);
-        mkdirSync4(this.jobDir(id), { recursive: true });
+        mkdirSync6(this.jobDir(id), { recursive: true });
         appendFileSync(eventsPath, JSON.stringify(runCompleteEvent) + `
 `, "utf-8");
       }
@@ -25658,10 +26152,10 @@ class Supervisor {
       }
     }
     const path = this.statusPath(id);
-    if (!existsSync10(path))
+    if (!existsSync11(path))
       return null;
     try {
-      const status = JSON.parse(readFileSync8(path, "utf-8"));
+      const status = JSON.parse(readFileSync9(path, "utf-8"));
       return this.reconcileDeadStatus(id, status);
     } catch {
       return null;
@@ -25703,10 +26197,10 @@ class Supervisor {
       }
     }
     const path = this.resultPath(id);
-    if (!existsSync10(path))
+    if (!existsSync11(path))
       return null;
     try {
-      return readFileSync8(path, "utf-8");
+      return readFileSync9(path, "utf-8");
     } catch {
       return null;
     }
@@ -25718,7 +26212,7 @@ class Supervisor {
     if (currentStatus.status !== "waiting")
       return currentStatus;
     if (currentStatus.fifo_path) {
-      writeFileSync3(currentStatus.fifo_path, JSON.stringify({ type: "close" }) + `
+      writeFileSync5(currentStatus.fifo_path, JSON.stringify({ type: "close" }) + `
 `, { flag: "a" });
     }
     const finalized = this.updateJobStatus(id, "done");
@@ -25727,7 +26221,7 @@ class Supervisor {
     this.aggregateJobMetricsBestEffort(id);
     if (finalized.bead_id && this.opts.beadsClient) {
       const outputPath = this.resultPath(id);
-      const output = existsSync10(outputPath) ? readFileSync8(outputPath, "utf-8") || this.readResult(id) || "" : this.readResult(id) || "";
+      const output = existsSync11(outputPath) ? readFileSync9(outputPath, "utf-8") || this.readResult(id) || "" : this.readResult(id) || "";
       if (output.trim()) {
         this.opts.beadsClient.updateBeadNotes(finalized.bead_id, formatHandoffBlock({
           output,
@@ -25765,6 +26259,11 @@ class Supervisor {
     if (this.isDisposed)
       return;
     this.appendEventBestEffort(jobId, "appendEvent", createControlSignalEvent(action, options));
+  }
+  emitTimelineEvent(jobId, event) {
+    if (this.isDisposed)
+      return;
+    this.appendEventBestEffort(jobId, "appendEvent", event);
   }
   updateJobStatus(id, status, error2) {
     const currentStatus = this.readStatus(id);
@@ -25805,15 +26304,15 @@ class Supervisor {
         console.warn(`[supervisor] SQLite listStatuses failed, falling back to file state: ${String(error2)}`);
       }
     }
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return [];
     const jobs = [];
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const path = join9(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync10(path))
+      const path = join11(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync11(path))
         continue;
       try {
-        const status = JSON.parse(readFileSync8(path, "utf-8"));
+        const status = JSON.parse(readFileSync9(path, "utf-8"));
         jobs.push(this.withComputedLiveness(status));
       } catch {}
     }
@@ -25835,6 +26334,9 @@ class Supervisor {
     return {
       ...status,
       worktree_owner_job_id: identity2.chain_root_job_id,
+      trace_id: identity2.trace_id,
+      span_id: identity2.span_id,
+      parent_span_id: identity2.parent_span_id,
       chain_kind: "chain",
       chain_id: identity2.chain_id,
       chain_root_job_id: identity2.chain_root_job_id,
@@ -25845,10 +26347,10 @@ class Supervisor {
     if (!this.isJobFileOutputEnabled)
       return;
     const normalizedStatus = this.withStatusLineageDefaults(id, data);
-    mkdirSync4(this.jobDir(id), { recursive: true });
+    mkdirSync6(this.jobDir(id), { recursive: true });
     const path = this.statusPath(id);
     const tmp = path + ".tmp";
-    writeFileSync3(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
+    writeFileSync5(tmp, JSON.stringify(normalizedStatus, null, 2), "utf-8");
     renameSync(tmp, path);
   }
   writeStatusFile(id, data, options = {}) {
@@ -25897,11 +26399,11 @@ class Supervisor {
     }
   }
   gc() {
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return;
     const cutoff = Date.now() - JOB_TTL_DAYS * 86400000;
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const dir = join9(this.resolvedJobsDir, entry);
+      const dir = join11(this.resolvedJobsDir, entry);
       try {
         const stat2 = statSync2(dir);
         if (!stat2.isDirectory())
@@ -25912,7 +26414,7 @@ class Supervisor {
     }
   }
   crashRecovery() {
-    if (!existsSync10(this.resolvedJobsDir))
+    if (!existsSync11(this.resolvedJobsDir))
       return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
@@ -25935,7 +26437,7 @@ class Supervisor {
             error: "orphaned (parent supervisor died)",
             last_event_at_ms: now
           };
-          writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+          writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
           renameSync(tmp, this.statusPath(status.id));
           continue;
         }
@@ -25943,7 +26445,7 @@ class Supervisor {
           const lastEventAt = status.last_event_at_ms ?? status.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join9(this.resolvedJobsDir, status.id, "events.jsonl");
+            const eventsPath = join11(this.resolvedJobsDir, status.id, "events.jsonl");
             const event = createStaleWarningEvent("waiting_stale", {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms
@@ -25958,11 +26460,11 @@ class Supervisor {
       return;
     }
     for (const entry of readdirSync2(this.resolvedJobsDir)) {
-      const statusPath = join9(this.resolvedJobsDir, entry, "status.json");
-      if (!existsSync10(statusPath))
+      const statusPath = join11(this.resolvedJobsDir, entry, "status.json");
+      if (!existsSync11(statusPath))
         continue;
       try {
-        const s = JSON.parse(readFileSync8(statusPath, "utf-8"));
+        const s = JSON.parse(readFileSync9(statusPath, "utf-8"));
         if (s.status === "running" || s.status === "starting") {
           if (!s.pid)
             continue;
@@ -25974,7 +26476,7 @@ class Supervisor {
               error: "orphaned (parent supervisor died)",
               last_event_at_ms: now
             };
-            writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+            writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
             renameSync(tmp, statusPath);
           } else if (s.status === "running") {
             const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
@@ -25986,7 +26488,7 @@ class Supervisor {
                 status: "error",
                 error: `No activity for ${Math.round(silenceMs / 1000)}s (threshold: ${thresholds.running_silence_error_ms / 1000}s)`
               };
-              writeFileSync3(tmp, JSON.stringify(updated, null, 2), "utf-8");
+              writeFileSync5(tmp, JSON.stringify(updated, null, 2), "utf-8");
               renameSync(tmp, statusPath);
             }
           }
@@ -25994,7 +26496,7 @@ class Supervisor {
           const lastEventAt = s.last_event_at_ms ?? s.started_at_ms;
           const silenceMs = now - lastEventAt;
           if (silenceMs > thresholds.waiting_stale_ms) {
-            const eventsPath = join9(this.resolvedJobsDir, entry, "events.jsonl");
+            const eventsPath = join11(this.resolvedJobsDir, entry, "events.jsonl");
             const event = createStaleWarningEvent("waiting_stale", {
               silence_ms: silenceMs,
               threshold_ms: thresholds.waiting_stale_ms
@@ -26015,8 +26517,8 @@ class Supervisor {
     const id = crypto.randomUUID().slice(0, 6);
     const dir = this.jobDir(id);
     const startedAtMs = Date.now();
-    mkdirSync4(dir, { recursive: true });
-    mkdirSync4(this.readyDir(), { recursive: true });
+    mkdirSync6(dir, { recursive: true });
+    mkdirSync6(this.readyDir(), { recursive: true });
     const nodeId = runOptions.variables?.node_id ?? runOptions.variables?.SPECIALISTS_NODE_ID;
     const variablesKeys = Object.keys(runOptions.variables ?? {});
     const activatedSkills = (runOptions.variables?.activated_skills ?? runOptions.variables?.skills_activated ?? "").split(",").map((skill) => skill.trim()).filter((skill) => skill.length > 0);
@@ -26068,7 +26570,7 @@ class Supervisor {
     this.writeStatusFile(id, initialStatus);
     const statusWatchdogPid = startDetachedStatusWatchdog(this.observabilityDbPath(), this.statusPath(id), id, process.pid);
     if (this.isJobFileOutputEnabled) {
-      writeFileSync3(join9(this.resolvedJobsDir, "latest"), `${id}
+      writeFileSync5(join11(this.resolvedJobsDir, "latest"), `${id}
 `, "utf-8");
     }
     this.opts.onJobStarted?.({ id });
@@ -26155,7 +26657,7 @@ class Supervisor {
         throw new Error("[supervisor] SQLite upsertStatusWithEvent failed during run start: database client unavailable");
       }
     }
-    const fifoPath = join9(dir, "steer.pipe");
+    const fifoPath = join11(dir, "steer.pipe");
     try {
       execFileSync("mkfifo", [fifoPath]);
       setStatus({ fifo_path: fifoPath });
@@ -26219,7 +26721,30 @@ class Supervisor {
         tool_calls: [...toolCallNames],
         exit_reason: runMetrics.exit_reason,
         metrics: runMetrics,
+        evidence: latestEvidenceRefs,
         ...gitnexusSummary ? { gitnexus_summary: gitnexusSummary } : {}
+      }));
+    };
+    const emitReviewVerdictTimelineEvent = (output, context) => {
+      const verdict = parseReviewVerdict(output);
+      if (!verdict)
+        return;
+      const terminalState = verdict === "pass" ? "merge_ready" : "reviewed";
+      if (verdict === "pass" && context.chainId) {
+        appendTimelineEvent(createChainEvent("chain_ready_for_review", {
+          chain_id: context.chainId,
+          chain_template: context.chainTemplate,
+          changed_paths_count: context.changedPathsCount,
+          terminal_state: terminalState,
+          result: verdict
+        }));
+      }
+      appendTimelineEvent(createReviewVerdictEvent(verdict, {
+        chain_id: context.chainId,
+        chain_template: context.chainTemplate,
+        changed_paths_count: context.changedPathsCount,
+        terminal_state: terminalState,
+        result: verdict
       }));
     };
     const shouldAutoCloseReadOnlyKeepAlive = (output) => isReadOnlySpecialist && TERMINAL_COMPLIANCE_VERDICT_REGEX.test(output);
@@ -26230,6 +26755,20 @@ class Supervisor {
     let lastTurnSummaryTextContent = "";
     let lastTurnSummaryIndex = 0;
     let skipFinalKeepAliveInputBeadAppend = false;
+    let latestEvidenceRefs;
+    const getObservedPrEvidenceRef = (worktreePath) => {
+      const result = spawnSync6("gh", ["pr", "view", "--json", "number,url,state"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      if (result.status !== 0)
+        return;
+      try {
+        const parsed = JSON.parse((result.stdout ?? "").trim());
+        if (!parsed?.url)
+          return;
+        return { pr_id: parsed.number, pr_url: parsed.url, pr_state: parsed.state };
+      } catch {
+        return;
+      }
+    };
     let lastGitnexusAnalyzedSha;
     const triggerGitnexusAnalyzeIfNeeded = (sha, source) => {
       if (!isGitnexusAnalyzeRequired(runOptions.permissionRequired))
@@ -26284,7 +26823,7 @@ ${appendError}
       if (outputFile) {
         try {
           if (notesMode === "final-only") {
-            writeFileSync3(outputFile, rendered, "utf-8");
+            writeFileSync5(outputFile, rendered, "utf-8");
           } else {
             appendFileSync(outputFile, rendered, "utf-8");
           }
@@ -26293,6 +26832,47 @@ ${appendError}
       return true;
     };
     const appendResultToInputBead = (params) => writeUnifiedHandoff(params);
+    const buildAutoCommitEvidenceRefs = (jobId, worktreePath, commitSha) => {
+      const baseShaResult = spawnSync6("git", ["rev-parse", commitSha + "^"], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const baseSha = baseShaResult.status === 0 ? (baseShaResult.stdout ?? "").trim() : undefined;
+      const baseRef = baseSha ? commitSha + "^" : undefined;
+      const range = baseSha ? baseSha + ".." + commitSha : commitSha + "^.." + commitSha;
+      const numstatResult = spawnSync6("git", ["diff", "--numstat", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const hunksResult = spawnSync6("git", ["diff", "--unified=0", "--no-ext-diff", "--no-renames", range], { cwd: worktreePath, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+      const hunksOutput = (hunksResult.stdout ?? "").trim();
+      const artifactRef = hunksOutput && !willHunksBeInline(hunksOutput) ? writeGitDiffHunksArtifact(this.jobDir(jobId), "git-diff-" + commitSha.slice(0, 12) + ".patch", hunksOutput) : undefined;
+      const diff = buildGitDiffEvidence({
+        base_ref: baseRef,
+        base_sha: baseSha,
+        head_sha: commitSha,
+        numstat_output: (numstatResult.stdout ?? "").trim(),
+        hunks_output: hunksOutput,
+        artifact_ref: artifactRef
+      });
+      const traceFields = {
+        ...statusSnapshot.trace_id ? { trace_id: statusSnapshot.trace_id } : {},
+        ...statusSnapshot.span_id ? { span_id: statusSnapshot.span_id } : {},
+        ...statusSnapshot.parent_span_id ? { parent_span_id: statusSnapshot.parent_span_id } : {}
+      };
+      const evidenceRefs = [
+        {
+          evidence_kind: "diff",
+          evidence_ref: "git:" + commitSha.slice(0, 12),
+          evidence_state: diff.hunks_inline ? "inline" : "artifact",
+          base_ref: diff.base_ref,
+          base_sha: diff.base_sha,
+          head_sha: diff.head_sha,
+          ...traceFields,
+          diff
+        },
+        { evidence_kind: "commit", evidence_ref: commitSha, evidence_state: "complete", ...traceFields }
+      ];
+      const prEvidence = getObservedPrEvidenceRef(worktreePath);
+      if (prEvidence) {
+        evidenceRefs.push({ evidence_kind: "pr", evidence_ref: prEvidence.pr_id ? "pr:" + prEvidence.pr_id : prEvidence.pr_url, evidence_url: prEvidence.pr_url, evidence_state: prEvidence.pr_state, pr_id: prEvidence.pr_id, pr_url: prEvidence.pr_url, pr_state: prEvidence.pr_state, ...traceFields });
+      }
+      return evidenceRefs;
+    };
     const applyAutoCommitCheckpoint = (target, autoCommitPolicy2) => {
       const autoCommitResult = runAutoCommitCheckpoint({
         autoCommitPolicy: autoCommitPolicy2,
@@ -26300,7 +26880,10 @@ ${appendError}
         worktreePath: statusSnapshot.worktree_path,
         specialist: runOptions.name,
         beadId: statusSnapshot.bead_id,
-        turnNumber: Math.max(1, runMetrics.turns ?? 1)
+        turnNumber: Math.max(1, runMetrics.turns ?? 1),
+        emitCommandEvent: (status, commandEvent) => {
+          appendTimelineEvent(createCommandEvent(status, commandEvent));
+        }
       });
       if (autoCommitResult.status === "skipped") {
         appendTimelineEvent(createAutoCommitEvent("skipped", { reason: autoCommitResult.reason }));
@@ -26317,9 +26900,11 @@ ${appendError}
         last_auto_commit_sha: autoCommitResult.sha,
         last_auto_commit_at_ms: autoCommitResult.committedAtMs
       });
+      latestEvidenceRefs = buildAutoCommitEvidenceRefs(id, statusSnapshot.worktree_path ?? process.cwd(), autoCommitResult.sha);
       appendTimelineEvent(createAutoCommitEvent("success", {
         commit_sha: autoCommitResult.sha,
-        committed_files: autoCommitResult.files
+        committed_files: autoCommitResult.files,
+        evidence: latestEvidenceRefs
       }));
       triggerGitnexusAnalyzeIfNeeded(autoCommitResult.sha, "checkpoint");
     };
@@ -26344,8 +26929,8 @@ ${appendError}
         const output = await resumeFn(task);
         latestOutput = output;
         if (this.isJobFileOutputEnabled) {
-          mkdirSync4(this.jobDir(id), { recursive: true });
-          writeFileSync3(this.resultPath(id), lastTurnSummaryTextContent || output, "utf-8");
+          mkdirSync6(this.jobDir(id), { recursive: true });
+          writeFileSync5(this.resultPath(id), lastTurnSummaryTextContent || output, "utf-8");
         }
         try {
           this.withSqliteOperation("upsertResult:resume_turn", (client) => client.upsertResult(id, output));
@@ -26360,6 +26945,12 @@ ${appendError}
         });
         const passFinalize = shouldAutoFinalizeKeepAlive(output);
         const readOnlyClose = shouldAutoCloseReadOnlyKeepAlive(output);
+        if (passFinalize || readOnlyClose || parseReviewVerdict(output)) {
+          emitReviewVerdictTimelineEvent(output, {
+            chainId: statusSnapshot.chain_id,
+            chainTemplate: statusSnapshot.startup_context?.branch
+          });
+        }
         const isWaitingTurn = !readOnlyClose && !passFinalize;
         applyAutoCommitCheckpoint(isWaitingTurn ? "waiting" : "terminal", autoCommitPolicy);
         writeUnifiedHandoff({
@@ -26681,7 +27272,7 @@ ${appendError}
         setStatus({ bead_id: beadId });
       }, (fn) => {
         steerFn = fn;
-        if (!existsSync10(fifoPath))
+        if (!existsSync11(fifoPath))
           return;
         fifoFd = openSync(fifoPath, "r+");
         fifoReadStream = createReadStream("", { fd: fifoFd, autoClose: false });
@@ -26791,8 +27382,8 @@ ${appendError}
       });
       latestOutput = result.output;
       if (this.isJobFileOutputEnabled) {
-        mkdirSync4(this.jobDir(id), { recursive: true });
-        writeFileSync3(this.resultPath(id), lastTurnSummaryTextContent || latestOutput, "utf-8");
+        mkdirSync6(this.jobDir(id), { recursive: true });
+        writeFileSync5(this.resultPath(id), lastTurnSummaryTextContent || latestOutput, "utf-8");
       }
       const elapsed = Math.round((Date.now() - startedAtMs) / 1000);
       const finalResult = {
@@ -26821,6 +27412,12 @@ ${appendError}
       const runCompletesAsWaiting = keepAliveSession && !shouldAutoCloseReadOnlyKeepAlive(finalResult.output);
       applyAutoCommitCheckpoint(runCompletesAsWaiting ? "waiting" : "terminal", autoCommitPolicy);
       if (keepAliveSession) {
+        if (parseReviewVerdict(finalResult.output)) {
+          emitReviewVerdictTimelineEvent(finalResult.output, {
+            chainId: statusSnapshot.chain_id,
+            chainTemplate: statusSnapshot.startup_context?.branch
+          });
+        }
         if (shouldAutoCloseReadOnlyKeepAlive(finalResult.output)) {
           await closeKeepAliveSession();
         } else if (shouldAutoFinalizeKeepAlive(finalResult.output)) {
@@ -27040,7 +27637,7 @@ ${appendError}
         closeSync(eventsFd);
       }
       try {
-        if (existsSync10(fifoPath))
+        if (existsSync11(fifoPath))
           rmSync(fifoPath);
       } catch {}
       if (statusSnapshot.tmux_session) {
@@ -27050,10 +27647,11 @@ ${appendError}
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
 var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
+  init_git_diff_evidence();
   init_observability_sqlite();
   init_observability_db();
   init_epic_lifecycle();
@@ -27078,15 +27676,16 @@ var init_supervisor = __esm(() => {
     { matcher: (model) => model.includes("qwen3.5") || model.includes("glm-5"), windowTokens: 128000 },
     { matcher: (model) => model.includes("claude"), windowTokens: 200000 }
   ];
-  TERMINAL_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict:\s*\**\s*(PASS|PARTIAL|FAIL)\s*\**/i;
+  TERMINAL_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict:\s*\**\s*(PASS|PARTIAL|FAIL|WAIVED)\s*\**/i;
   PASS_COMPLIANCE_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict:\s*\**\s*PASS\s*\**/i;
+  REVIEW_VERDICT_REGEX = /## Compliance Verdict[\s\S]*?- Verdict:\s*\**\s*(PASS|PARTIAL|FAIL|WAIVED)\s*\**/i;
   AUTO_COMMIT_NOISE_PREFIXES = [".xtrm/", ".wolf/", ".specialists/jobs/", ".beads/", ".pi/"];
 });
 
 // src/cli/version-check.ts
 import { spawnSync as spawnSync7 } from "child_process";
-import { existsSync as existsSync11, mkdirSync as mkdirSync5, readFileSync as readFileSync9, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname6, join as join10 } from "path";
+import { existsSync as existsSync12, mkdirSync as mkdirSync7, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "fs";
+import { dirname as dirname7, join as join12 } from "path";
 import { createRequire as createRequire2 } from "module";
 function readBundledPackageVersion(requireFn = require2) {
   for (const candidate of ["../package.json", "../../package.json"]) {
@@ -27108,10 +27707,10 @@ function shouldRunVersionCheck() {
   return true;
 }
 function readCache() {
-  if (!existsSync11(CACHE_PATH))
+  if (!existsSync12(CACHE_PATH))
     return null;
   try {
-    return JSON.parse(readFileSync9(CACHE_PATH, "utf8"));
+    return JSON.parse(readFileSync10(CACHE_PATH, "utf8"));
   } catch {
     return null;
   }
@@ -27120,8 +27719,8 @@ function readCachedVersionCheck() {
   return readCache();
 }
 function writeCache(cache) {
-  mkdirSync5(dirname6(CACHE_PATH), { recursive: true });
-  writeFileSync4(CACHE_PATH, `${JSON.stringify(cache, null, 2)}
+  mkdirSync7(dirname7(CACHE_PATH), { recursive: true });
+  writeFileSync6(CACHE_PATH, `${JSON.stringify(cache, null, 2)}
 `, "utf8");
 }
 function isFresh(cache) {
@@ -27212,7 +27811,7 @@ var init_version_check = __esm(() => {
   require2 = createRequire2(import.meta.url);
   packageVersion = readBundledPackageVersion();
   localVersion = packageVersion;
-  CACHE_PATH = join10(process.cwd(), ".specialists", "version-check.json");
+  CACHE_PATH = join12(process.cwd(), ".specialists", "version-check.json");
   CACHE_MAX_AGE_MS2 = 6 * 60 * 60 * 1000;
 });
 
@@ -27226,8 +27825,8 @@ __export(exports_list, {
   ArgParseError: () => ArgParseError
 });
 import { spawnSync as spawnSync8 } from "child_process";
-import { existsSync as existsSync12, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "fs";
-import { join as join11 } from "path";
+import { existsSync as existsSync13, readdirSync as readdirSync3, readFileSync as readFileSync11 } from "fs";
+import { join as join13 } from "path";
 import readline from "readline";
 function loadRuntimeStatsBySpecialist(full) {
   if (!full)
@@ -27308,23 +27907,23 @@ function toLiveJob(status) {
 }
 function readJobStatus(statusPath) {
   try {
-    return JSON.parse(readFileSync10(statusPath, "utf-8"));
+    return JSON.parse(readFileSync11(statusPath, "utf-8"));
   } catch {
     return null;
   }
 }
 function listLiveJobs(showDead) {
   const sqliteClient = createObservabilitySqliteClient();
-  const jobsDir = join11(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join13(process.cwd(), ".specialists", "jobs");
   const fileOutputEnabled = process.env.SPECIALISTS_JOB_FILE_OUTPUT === "on";
   const sqliteJobs = sqliteClient?.listStatuses().map((status) => toLiveJob(status)).filter((job) => job !== null).filter((job) => showDead || !job.isDead) ?? [];
   if (!fileOutputEnabled)
     return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
   if (sqliteJobs.length > 0)
     return sqliteJobs.sort((a, b) => b.startedAtMs - a.startedAtMs);
-  if (!existsSync12(jobsDir))
+  if (!existsSync13(jobsDir))
     return [];
-  return readdirSync3(jobsDir).map((entry) => toLiveJob(readJobStatus(join11(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
+  return readdirSync3(jobsDir).map((entry) => toLiveJob(readJobStatus(join13(jobsDir, entry, "status.json")))).filter((job) => job !== null).filter((job) => showDead || !job.isDead).sort((a, b) => b.startedAtMs - a.startedAtMs);
 }
 function formatLiveChoice(job) {
   const state = job.isDead ? "dead" : job.status;
@@ -27925,11 +28524,12 @@ var init_models = __esm(() => {
 // src/cli/init.ts
 var exports_init = {};
 __export(exports_init, {
+  runGlobal: () => runGlobal,
   run: () => run7
 });
-import { copyFileSync, cpSync, existsSync as existsSync13, lstatSync, mkdirSync as mkdirSync6, readdirSync as readdirSync4, readFileSync as readFileSync11, readlinkSync, renameSync as renameSync2, symlinkSync, unlinkSync, writeFileSync as writeFileSync5 } from "fs";
+import { copyFileSync, cpSync, existsSync as existsSync14, lstatSync, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync12, readlinkSync, renameSync as renameSync2, symlinkSync, unlinkSync, writeFileSync as writeFileSync7 } from "fs";
 import { spawnSync as spawnSync10 } from "child_process";
-import { basename as basename4, dirname as dirname7, join as join12, relative, resolve as resolve6 } from "path";
+import { basename as basename4, dirname as dirname8, join as join14, relative, resolve as resolve6 } from "path";
 function ok(msg) {
   console.log(`  ${green4("\u2713")} ${msg}`);
 }
@@ -27943,7 +28543,7 @@ function isInstalled(bin) {
   return spawnSync10("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function assertXtrmPrerequisites(cwd) {
-  const hasXtrmDir = existsSync13(join12(cwd, ".xtrm"));
+  const hasXtrmDir = existsSync14(join14(cwd, ".xtrm"));
   const hasXtCli = isInstalled("xt");
   if (hasXtrmDir && hasXtCli)
     return;
@@ -27977,25 +28577,25 @@ function warnMissingOptionalPrerequisites() {
   }
 }
 function loadJson(path, fallback) {
-  if (!existsSync13(path))
+  if (!existsSync14(path))
     return structuredClone(fallback);
   try {
-    return JSON.parse(readFileSync11(path, "utf-8"));
+    return JSON.parse(readFileSync12(path, "utf-8"));
   } catch {
     return structuredClone(fallback);
   }
 }
 function saveJson(path, value) {
-  writeFileSync5(path, JSON.stringify(value, null, 2) + `
+  writeFileSync7(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
 function migrateLegacySpecialists(cwd, scope) {
-  const sourceDir = join12(cwd, ".specialists", scope, "specialists");
-  if (!existsSync13(sourceDir))
+  const sourceDir = join14(cwd, ".specialists", scope, "specialists");
+  if (!existsSync14(sourceDir))
     return;
-  const targetDir = join12(cwd, ".specialists", scope);
-  if (!existsSync13(targetDir)) {
-    mkdirSync6(targetDir, { recursive: true });
+  const targetDir = join14(cwd, ".specialists", scope);
+  if (!existsSync14(targetDir)) {
+    mkdirSync8(targetDir, { recursive: true });
   }
   const files = readdirSync4(sourceDir).filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.json"));
   if (files.length === 0)
@@ -28003,9 +28603,9 @@ function migrateLegacySpecialists(cwd, scope) {
   let moved = 0;
   let skipped = 0;
   for (const file of files) {
-    const src = join12(sourceDir, file);
-    const dest = join12(targetDir, file);
-    if (existsSync13(dest)) {
+    const src = join14(sourceDir, file);
+    const dest = join14(targetDir, file);
+    if (existsSync14(dest)) {
       skipped++;
       continue;
     }
@@ -28025,21 +28625,21 @@ function copyCanonicalSpecialists(cwd) {
     skip("no canonical specialists found in package");
     return;
   }
-  const targetDir = join12(cwd, ".specialists", "default");
+  const targetDir = join14(cwd, ".specialists", "default");
   const files = readdirSync4(sourceDir).filter((f) => f.endsWith(".specialist.json"));
   if (files.length === 0) {
     skip("no specialist files found in package");
     return;
   }
-  if (!existsSync13(targetDir)) {
-    mkdirSync6(targetDir, { recursive: true });
+  if (!existsSync14(targetDir)) {
+    mkdirSync8(targetDir, { recursive: true });
   }
   let copied = 0;
   let refreshed = 0;
   for (const file of files) {
-    const src = join12(sourceDir, file);
-    const dest = join12(targetDir, file);
-    if (existsSync13(dest)) {
+    const src = join14(sourceDir, file);
+    const dest = join14(targetDir, file);
+    if (existsSync14(dest)) {
       copyFileSync(src, dest);
       refreshed++;
     } else {
@@ -28060,21 +28660,21 @@ function copyCanonicalMandatoryRules(cwd) {
     skip("no canonical mandatory-rules found in package");
     return;
   }
-  const targetDir = join12(cwd, ".specialists", "default", "mandatory-rules");
+  const targetDir = join14(cwd, ".specialists", "default", "mandatory-rules");
   const files = readdirSync4(sourceDir).filter((f) => f.endsWith(".md") || f.endsWith(".json"));
   if (files.length === 0) {
     skip("no mandatory-rules files found in package");
     return;
   }
-  if (!existsSync13(targetDir)) {
-    mkdirSync6(targetDir, { recursive: true });
+  if (!existsSync14(targetDir)) {
+    mkdirSync8(targetDir, { recursive: true });
   }
   let copied = 0;
   let refreshed = 0;
   for (const file of files) {
-    const src = join12(sourceDir, file);
-    const dest = join12(targetDir, file);
-    if (existsSync13(dest)) {
+    const src = join14(sourceDir, file);
+    const dest = join14(targetDir, file);
+    if (existsSync14(dest)) {
       copyFileSync(src, dest);
       refreshed++;
     } else {
@@ -28095,21 +28695,21 @@ function copyCanonicalNodeConfigs(cwd) {
     skip("no canonical node configs found in package");
     return;
   }
-  const targetDir = join12(cwd, ".specialists", "default", "nodes");
+  const targetDir = join14(cwd, ".specialists", "default", "nodes");
   const files = readdirSync4(sourceDir).filter((f) => f.endsWith(".node.json"));
   if (files.length === 0) {
     skip("no node config files found in package");
     return;
   }
-  if (!existsSync13(targetDir)) {
-    mkdirSync6(targetDir, { recursive: true });
+  if (!existsSync14(targetDir)) {
+    mkdirSync8(targetDir, { recursive: true });
   }
   let copied = 0;
   let refreshed = 0;
   for (const file of files) {
-    const src = join12(sourceDir, file);
-    const dest = join12(targetDir, file);
-    if (existsSync13(dest)) {
+    const src = join14(sourceDir, file);
+    const dest = join14(targetDir, file);
+    if (existsSync14(dest)) {
       copyFileSync(src, dest);
       refreshed++;
     } else {
@@ -28130,33 +28730,33 @@ function installProjectHooks(cwd) {
     skip("no canonical hooks found in package");
     return;
   }
-  const xtrmHooksDir = join12(cwd, ".xtrm", "hooks");
-  const targetDir = join12(xtrmHooksDir, "specialists");
-  const claudeHooksDir = join12(cwd, ".claude", "hooks");
+  const xtrmHooksDir = join14(cwd, ".xtrm", "hooks");
+  const targetDir = join14(xtrmHooksDir, "specialists");
+  const claudeHooksDir = join14(cwd, ".claude", "hooks");
   const hooks = readdirSync4(sourceDir).filter((f) => f.endsWith(".mjs"));
   if (hooks.length === 0) {
     skip("no hook files found in package");
     return;
   }
-  mkdirSync6(targetDir, { recursive: true });
-  mkdirSync6(claudeHooksDir, { recursive: true });
+  mkdirSync8(targetDir, { recursive: true });
+  mkdirSync8(claudeHooksDir, { recursive: true });
   let copied = 0;
   let skippedCopies = 0;
   let linked = 0;
   let rewiredLinks = 0;
   let skippedLinks = 0;
   for (const file of hooks) {
-    const src = join12(sourceDir, file);
-    const xtrmDest = join12(targetDir, file);
-    if (existsSync13(xtrmDest)) {
+    const src = join14(sourceDir, file);
+    const xtrmDest = join14(targetDir, file);
+    if (existsSync14(xtrmDest)) {
       skippedCopies++;
     } else {
       copyFileSync(src, xtrmDest);
       copied++;
     }
-    const claudeHookPath = join12(claudeHooksDir, file);
+    const claudeHookPath = join14(claudeHooksDir, file);
     const relativeTarget = `../../.xtrm/hooks/specialists/${file}`;
-    if (existsSync13(claudeHookPath)) {
+    if (existsSync14(claudeHookPath)) {
       const stats = lstatSync(claudeHookPath);
       if (!stats.isSymbolicLink()) {
         unlinkSync(claudeHookPath);
@@ -28164,7 +28764,7 @@ function installProjectHooks(cwd) {
         rewiredLinks++;
         continue;
       }
-      const currentTarget = resolve6(dirname7(claudeHookPath), readlinkSync(claudeHookPath));
+      const currentTarget = resolve6(dirname8(claudeHookPath), readlinkSync(claudeHookPath));
       if (currentTarget !== xtrmDest) {
         unlinkSync(claudeHookPath);
         symlinkSync(relativeTarget, claudeHookPath);
@@ -28189,10 +28789,10 @@ function installProjectHooks(cwd) {
     skip(`${skippedLinks} hook${skippedLinks === 1 ? "" : "s"} already present in .claude/hooks/ (left unchanged)`);
 }
 function ensureProjectHookWiring(cwd) {
-  const settingsPath = join12(cwd, ".claude", "settings.json");
-  const settingsDir = join12(cwd, ".claude");
-  if (!existsSync13(settingsDir)) {
-    mkdirSync6(settingsDir, { recursive: true });
+  const settingsPath = join14(cwd, ".claude", "settings.json");
+  const settingsDir = join14(cwd, ".claude");
+  if (!existsSync14(settingsDir)) {
+    mkdirSync8(settingsDir, { recursive: true });
   }
   const settings = loadJson(settingsPath, {});
   if (!settings.hooks || typeof settings.hooks !== "object") {
@@ -28227,11 +28827,11 @@ function ensureProjectHookWiring(cwd) {
   }
 }
 function ensureRootSymlink(rootPath, expectedTargetPath) {
-  if (!existsSync13(rootPath)) {
-    mkdirSync6(dirname7(rootPath), { recursive: true });
-    const relTarget = relative(dirname7(rootPath), expectedTargetPath);
+  if (!existsSync14(rootPath)) {
+    mkdirSync8(dirname8(rootPath), { recursive: true });
+    const relTarget = relative(dirname8(rootPath), expectedTargetPath);
     symlinkSync(relTarget, rootPath);
-    ok(`created ${basename4(dirname7(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
+    ok(`created ${basename4(dirname8(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
     return;
   }
   const stats = lstatSync(rootPath);
@@ -28239,7 +28839,7 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
     throw new Error(`${rootPath} must be a symlink to ${expectedTargetPath}. Aborting.`);
   }
   const linkTarget = readlinkSync(rootPath);
-  const resolvedTarget = resolve6(dirname7(rootPath), linkTarget);
+  const resolvedTarget = resolve6(dirname8(rootPath), linkTarget);
   const resolvedExpected = resolve6(expectedTargetPath);
   if (resolvedTarget === resolvedExpected) {
     return;
@@ -28250,9 +28850,9 @@ function ensureRootSymlink(rootPath, expectedTargetPath) {
   ];
   if (legacyTargets.includes(resolvedTarget)) {
     unlinkSync(rootPath);
-    const relTarget = relative(dirname7(rootPath), expectedTargetPath);
+    const relTarget = relative(dirname8(rootPath), expectedTargetPath);
     symlinkSync(relTarget, rootPath);
-    ok(`rewired ${basename4(dirname7(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
+    ok(`rewired ${basename4(dirname8(rootPath))}/${basename4(rootPath)} \u2192 ${relTarget}`);
     return;
   }
   throw new Error(`${rootPath} points to ${linkTarget}, expected ${expectedTargetPath}. Aborting.`);
@@ -28273,14 +28873,14 @@ function ensureActiveSkillSymlink(defaultSkillPath, activeLinkPath) {
   if (!stats.isSymbolicLink()) {
     throw new Error(`${activeLinkPath} already exists and is not a symlink.`);
   }
-  const currentTarget = resolve6(dirname7(activeLinkPath), readlinkSync(activeLinkPath));
+  const currentTarget = resolve6(dirname8(activeLinkPath), readlinkSync(activeLinkPath));
   if (currentTarget !== resolve6(defaultSkillPath)) {
     throw new Error(`${activeLinkPath} points to an unexpected target.`);
   }
 }
 function installProjectSkills(cwd, syncSkills) {
-  const xtrmRoot = join12(cwd, ".xtrm");
-  if (!existsSync13(xtrmRoot)) {
+  const xtrmRoot = join14(cwd, ".xtrm");
+  if (!existsSync14(xtrmRoot)) {
     throw new Error(".xtrm/ is missing. Install xtrm first, then run specialists init.");
   }
   const sourceDir = resolveCanonicalAssetDir("skills");
@@ -28293,18 +28893,18 @@ function installProjectSkills(cwd, syncSkills) {
     skip("no skill directories found in package");
     return;
   }
-  const defaultRoot = join12(cwd, ".xtrm", "skills", "default");
-  const activeRoot = join12(cwd, ".xtrm", "skills", "active");
-  mkdirSync6(defaultRoot, { recursive: true });
-  mkdirSync6(activeRoot, { recursive: true });
-  ensureRootSymlink(join12(cwd, ".claude", "skills"), activeRoot);
-  ensureRootSymlink(join12(cwd, ".pi", "skills"), activeRoot);
+  const defaultRoot = join14(cwd, ".xtrm", "skills", "default");
+  const activeRoot = join14(cwd, ".xtrm", "skills", "active");
+  mkdirSync8(defaultRoot, { recursive: true });
+  mkdirSync8(activeRoot, { recursive: true });
+  ensureRootSymlink(join14(cwd, ".claude", "skills"), activeRoot);
+  ensureRootSymlink(join14(cwd, ".pi", "skills"), activeRoot);
   let copied = 0;
   let refreshed = 0;
   for (const skill of skills) {
-    const src = join12(sourceDir, skill);
-    const defaultSkillPath = join12(defaultRoot, skill);
-    if (existsSync13(defaultSkillPath)) {
+    const src = join14(sourceDir, skill);
+    const defaultSkillPath = join14(defaultRoot, skill);
+    if (existsSync14(defaultSkillPath)) {
       if (syncSkills) {
         cpSync(src, defaultSkillPath, { recursive: true, force: true });
         refreshed++;
@@ -28313,7 +28913,7 @@ function installProjectSkills(cwd, syncSkills) {
       cpSync(src, defaultSkillPath, { recursive: true });
       copied++;
     }
-    ensureActiveSkillSymlink(defaultSkillPath, join12(activeRoot, skill));
+    ensureActiveSkillSymlink(defaultSkillPath, join14(activeRoot, skill));
   }
   if (copied > 0)
     ok(`copied ${copied} skill${copied === 1 ? "" : "s"} to .xtrm/skills/default/`);
@@ -28322,12 +28922,12 @@ function installProjectSkills(cwd, syncSkills) {
   ok("verified active skill symlinks in .xtrm/skills/active/");
 }
 function createSpecialistsDirs(cwd) {
-  const defaultDir = join12(cwd, ".specialists", "default");
-  const userDir = join12(cwd, ".specialists", "user");
+  const defaultDir = join14(cwd, ".specialists", "default");
+  const userDir = join14(cwd, ".specialists", "user");
   let created = 0;
   for (const dir of [defaultDir, userDir]) {
-    if (!existsSync13(dir)) {
-      mkdirSync6(dir, { recursive: true });
+    if (!existsSync14(dir)) {
+      mkdirSync8(dir, { recursive: true });
       created++;
     }
   }
@@ -28337,13 +28937,13 @@ function createSpecialistsDirs(cwd) {
 }
 function createRuntimeDirs(cwd) {
   const runtimeDirs = [
-    join12(cwd, ".specialists", "jobs"),
-    join12(cwd, ".specialists", "ready")
+    join14(cwd, ".specialists", "jobs"),
+    join14(cwd, ".specialists", "ready")
   ];
   let created = 0;
   for (const dir of runtimeDirs) {
-    if (!existsSync13(dir)) {
-      mkdirSync6(dir, { recursive: true });
+    if (!existsSync14(dir)) {
+      mkdirSync8(dir, { recursive: true });
       created++;
     }
   }
@@ -28352,7 +28952,7 @@ function createRuntimeDirs(cwd) {
   }
 }
 function ensureProjectMcp(cwd) {
-  const mcpPath = join12(cwd, MCP_FILE);
+  const mcpPath = join14(cwd, MCP_FILE);
   const mcp = loadJson(mcpPath, { mcpServers: {} });
   mcp.mcpServers ??= {};
   const existing = mcp.mcpServers[MCP_SERVER_NAME];
@@ -28365,8 +28965,8 @@ function ensureProjectMcp(cwd) {
   ok("registered specialists in project .mcp.json");
 }
 function ensureGitignore(cwd) {
-  const gitignorePath = join12(cwd, ".gitignore");
-  const existing = existsSync13(gitignorePath) ? readFileSync11(gitignorePath, "utf-8") : "";
+  const gitignorePath = join14(cwd, ".gitignore");
+  const existing = existsSync14(gitignorePath) ? readFileSync12(gitignorePath, "utf-8") : "";
   let added = 0;
   const lines = existing.split(`
 `);
@@ -28377,7 +28977,7 @@ function ensureGitignore(cwd) {
     }
   }
   if (added > 0) {
-    writeFileSync5(gitignorePath, lines.join(`
+    writeFileSync7(gitignorePath, lines.join(`
 `) + `
 `, "utf-8");
     ok("added .specialists/jobs/ and .specialists/ready/ to .gitignore");
@@ -28391,7 +28991,7 @@ function ensureObservabilityDb(cwd) {
     skip("observability DB path resolves inside jobs directory \u2014 skipped");
     return;
   }
-  const alreadyExists = existsSync13(location.dbPath);
+  const alreadyExists = existsSync14(location.dbPath);
   if (alreadyExists) {
     skip("observability database already exists (not touched)");
     return;
@@ -28421,13 +29021,13 @@ function extractSpecialistsBlockSpan(existing) {
   return { start, end: endMarkerIndex + endMarker.length };
 }
 function ensureAgentsMd(cwd) {
-  const agentsPath = join12(cwd, "AGENTS.md");
-  if (!existsSync13(agentsPath)) {
-    writeFileSync5(agentsPath, AGENTS_BLOCK, "utf-8");
+  const agentsPath = join14(cwd, "AGENTS.md");
+  if (!existsSync14(agentsPath)) {
+    writeFileSync7(agentsPath, AGENTS_BLOCK, "utf-8");
     ok("created AGENTS.md with Specialists section");
     return;
   }
-  const existing = readFileSync11(agentsPath, "utf-8");
+  const existing = readFileSync12(agentsPath, "utf-8");
   const span = extractSpecialistsBlockSpan(existing);
   if (span) {
     const next = existing.slice(0, span.start) + AGENTS_BLOCK + existing.slice(span.end);
@@ -28435,7 +29035,7 @@ function ensureAgentsMd(cwd) {
       skip("AGENTS.md already has Specialists section");
       return;
     }
-    writeFileSync5(agentsPath, next, "utf-8");
+    writeFileSync7(agentsPath, next, "utf-8");
     ok("updated Specialists section in AGENTS.md");
     return;
   }
@@ -28447,20 +29047,20 @@ function ensureAgentsMd(cwd) {
 
 ` + AGENTS_BLOCK + (nextH2Index < existing.length ? `
 ` + existing.slice(nextH2Index) : "");
-    writeFileSync5(agentsPath, next, "utf-8");
+    writeFileSync7(agentsPath, next, "utf-8");
     ok("migrated Specialists section in AGENTS.md");
     return;
   }
-  writeFileSync5(agentsPath, existing.trimEnd() + `
+  writeFileSync7(agentsPath, existing.trimEnd() + `
 
 ` + AGENTS_BLOCK, "utf-8");
   ok("appended Specialists section to AGENTS.md");
 }
 function readJsonObject(path) {
-  if (!existsSync13(path))
+  if (!existsSync14(path))
     return {};
   try {
-    return JSON.parse(readFileSync11(path, "utf-8"));
+    return JSON.parse(readFileSync12(path, "utf-8"));
   } catch {
     return {};
   }
@@ -28487,15 +29087,15 @@ function hasHookCommand(settings, eventName, command) {
 }
 function validateInitPostconditions(cwd) {
   const warnings = [];
-  const xtrmHooksDir = join12(cwd, ".xtrm", "hooks", "specialists");
-  const xtrmHookFiles = existsSync13(xtrmHooksDir) ? readdirSync4(xtrmHooksDir).filter((file) => file.endsWith(".mjs")) : [];
+  const xtrmHooksDir = join14(cwd, ".xtrm", "hooks", "specialists");
+  const xtrmHookFiles = existsSync14(xtrmHooksDir) ? readdirSync4(xtrmHooksDir).filter((file) => file.endsWith(".mjs")) : [];
   if (xtrmHookFiles.length === 0) {
     warnings.push(".xtrm/hooks/specialists/ is missing or has no .mjs hooks");
   }
-  const claudeHooksDir = join12(cwd, ".claude", "hooks");
+  const claudeHooksDir = join14(cwd, ".claude", "hooks");
   for (const hookFile of xtrmHookFiles) {
-    const claudeHookPath = join12(claudeHooksDir, hookFile);
-    if (!existsSync13(claudeHookPath)) {
+    const claudeHookPath = join14(claudeHooksDir, hookFile);
+    if (!existsSync14(claudeHookPath)) {
       warnings.push(`.claude/hooks/${hookFile} is missing`);
       continue;
     }
@@ -28505,12 +29105,12 @@ function validateInitPostconditions(cwd) {
       continue;
     }
     const expectedTarget = resolve6(xtrmHooksDir, hookFile);
-    const resolvedTarget = resolve6(dirname7(claudeHookPath), readlinkSync(claudeHookPath));
+    const resolvedTarget = resolve6(dirname8(claudeHookPath), readlinkSync(claudeHookPath));
     if (resolvedTarget !== expectedTarget) {
       warnings.push(`.claude/hooks/${hookFile} points to unexpected target`);
     }
   }
-  const settings = readJsonObject(join12(cwd, ".claude", "settings.json"));
+  const settings = readJsonObject(join14(cwd, ".claude", "settings.json"));
   const requiredHookWiring = [
     { event: "UserPromptSubmit", command: "node .claude/hooks/specialists-complete.mjs" },
     { event: "PostToolUse", command: "node .claude/hooks/specialists-complete.mjs" },
@@ -28522,35 +29122,35 @@ function validateInitPostconditions(cwd) {
       warnings.push(`.claude/settings.json missing hook wiring: ${hook.event} -> ${hook.command}`);
     }
   }
-  const mcp = readJsonObject(join12(cwd, ".mcp.json"));
+  const mcp = readJsonObject(join14(cwd, ".mcp.json"));
   const mcpServers = mcp.mcpServers;
   const specialistsServer = mcpServers && typeof mcpServers === "object" ? mcpServers.specialists : undefined;
   if (!specialistsServer || typeof specialistsServer !== "object") {
     warnings.push(".mcp.json missing mcpServers.specialists registration");
   }
-  const runtimeDirs = [join12(cwd, ".specialists", "jobs"), join12(cwd, ".specialists", "ready")];
+  const runtimeDirs = [join14(cwd, ".specialists", "jobs"), join14(cwd, ".specialists", "ready")];
   for (const runtimeDir of runtimeDirs) {
-    if (!existsSync13(runtimeDir)) {
+    if (!existsSync14(runtimeDir)) {
       warnings.push(`${relative(cwd, runtimeDir)} is missing`);
     }
   }
-  const defaultSkillsRoot = join12(cwd, ".xtrm", "skills", "default");
-  const defaultSkills = existsSync13(defaultSkillsRoot) ? readdirSync4(defaultSkillsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()) : [];
+  const defaultSkillsRoot = join14(cwd, ".xtrm", "skills", "default");
+  const defaultSkills = existsSync14(defaultSkillsRoot) ? readdirSync4(defaultSkillsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()) : [];
   if (defaultSkills.length === 0) {
     warnings.push(".xtrm/skills/default/ is missing or has no skill directories");
   }
   const rootSymlinks = [
     {
-      linkPath: join12(cwd, ".claude", "skills"),
-      expectedTarget: join12(cwd, ".xtrm", "skills", "active")
+      linkPath: join14(cwd, ".claude", "skills"),
+      expectedTarget: join14(cwd, ".xtrm", "skills", "active")
     },
     {
-      linkPath: join12(cwd, ".pi", "skills"),
-      expectedTarget: join12(cwd, ".xtrm", "skills", "active")
+      linkPath: join14(cwd, ".pi", "skills"),
+      expectedTarget: join14(cwd, ".xtrm", "skills", "active")
     }
   ];
   for (const symlink of rootSymlinks) {
-    if (!existsSync13(symlink.linkPath)) {
+    if (!existsSync14(symlink.linkPath)) {
       warnings.push(`${relative(cwd, symlink.linkPath)} is missing`);
       continue;
     }
@@ -28559,14 +29159,55 @@ function validateInitPostconditions(cwd) {
       warnings.push(`${relative(cwd, symlink.linkPath)} is not a symlink`);
       continue;
     }
-    const resolvedTarget = resolve6(dirname7(symlink.linkPath), readlinkSync(symlink.linkPath));
+    const resolvedTarget = resolve6(dirname8(symlink.linkPath), readlinkSync(symlink.linkPath));
     if (resolvedTarget !== resolve6(symlink.expectedTarget)) {
       warnings.push(`${relative(cwd, symlink.linkPath)} points to an unexpected target`);
     }
   }
   return warnings;
 }
+async function runGlobal() {
+  console.log(`
+${bold5("specialists init --global")}
+`);
+  const loader = new SpecialistLoader;
+  const specialists = await loader.list();
+  const shippedNames = specialists.map((spec) => spec.name).sort();
+  const template = buildGlobalUserConfigTemplate(shippedNames);
+  const location = getGlobalUserConfigPath();
+  const existing = readGlobalUserConfig(location);
+  if (existing) {
+    const result = mergeGlobalUserConfig(existing, template);
+    writeGlobalUserConfig(location, result.config);
+    ok(`using global config at ${location.path} (${location.source})`);
+    if (result.added.length > 0) {
+      ok(`added ${result.added.length} new specialist${result.added.length === 1 ? "" : "s"}: ${result.added.join(", ")}`);
+    } else {
+      skip("no new specialists to add");
+    }
+    if (result.extended.length > 0) {
+      ok(`preserved ${result.extended.length} existing specialist${result.extended.length === 1 ? "" : "s"} (user values kept)`);
+    }
+    for (const removedName of result.removed) {
+      warn(`${removedName} is no longer shipped but kept in file (remove manually if unwanted)`);
+    }
+  } else {
+    writeGlobalUserConfig(location, template);
+    ok(`created global config at ${location.path} (${location.source})`);
+    ok(`seeded ${shippedNames.length} specialist${shippedNames.length === 1 ? "" : "s"} with inherit defaults`);
+  }
+  console.log(`
+${bold5("Done!")}
+`);
+  console.log(`  ${dim5("Edit override fields with:")}`);
+  console.log(`  ${yellow5("specialists edit --global <name>.execution.model <value>")}`);
+  console.log(`  ${yellow5("specialists edit --global")} ${dim5("# open in $EDITOR")}
+`);
+}
 async function run7(opts = {}) {
+  if (opts.global) {
+    return runGlobal();
+  }
   const cwd = process.cwd();
   const forceInit = process.env.SPECIALISTS_INIT_FORCE === "1";
   const inAgentSession = !forceInit && (!process.stdin.isTTY || !!process.env.SPECIALISTS_TMUX_SESSION || !!process.env.SPECIALISTS_JOB_ID || !!process.env.PI_SESSION_ID || !!process.env.PI_RPC_SOCKET);
@@ -28651,6 +29292,8 @@ var init_init = __esm(() => {
   init_observability_sqlite();
   init_memory_retrieval();
   init_canonical_asset_resolver();
+  init_loader();
+  init_global_config();
   AGENTS_BLOCK = `
 <!-- specialists:start -->
 ## Specialists
@@ -28739,8 +29382,8 @@ var exports_db = {};
 __export(exports_db, {
   run: () => run9
 });
-import { existsSync as existsSync14, mkdirSync as mkdirSync7, readdirSync as readdirSync5, readFileSync as readFileSync12, writeFileSync as writeFileSync6 } from "fs";
-import { dirname as dirname8, join as join13, resolve as resolve7 } from "path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync9, readdirSync as readdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync8 } from "fs";
+import { dirname as dirname9, join as join15, resolve as resolve7 } from "path";
 function formatBytes(bytes) {
   if (bytes < 1024)
     return `${bytes} B`;
@@ -29003,8 +29646,8 @@ function parseStatsOptions(argv) {
   return { spec, model, sinceMs, format, withPayload };
 }
 function parseStatusFile(jobDirectoryPath, fallbackJobId) {
-  const statusPath = join13(jobDirectoryPath, "status.json");
-  const statusRaw = readFileSync12(statusPath, "utf-8");
+  const statusPath = join15(jobDirectoryPath, "status.json");
+  const statusRaw = readFileSync13(statusPath, "utf-8");
   const parsed = JSON.parse(statusRaw);
   const jobId = typeof parsed.id === "string" && parsed.id.length > 0 ? parsed.id : fallbackJobId;
   const specialist = typeof parsed.specialist === "string" && parsed.specialist.length > 0 ? parsed.specialist : "unknown";
@@ -29019,9 +29662,9 @@ function parseStatusFile(jobDirectoryPath, fallbackJobId) {
   };
 }
 function replayEvents(eventsPath, sqliteClient, status) {
-  if (!existsSync14(eventsPath))
+  if (!existsSync15(eventsPath))
     return 0;
-  const rawContent = readFileSync12(eventsPath, "utf-8");
+  const rawContent = readFileSync13(eventsPath, "utf-8");
   const lines = rawContent.split(`
 `).map((line) => line.trim()).filter((line) => line.length > 0);
   let importedEvents = 0;
@@ -29047,7 +29690,7 @@ function runBackfill(options) {
   };
   try {
     const jobsDirectoryPath = resolveJobsDir(process.cwd());
-    if (!existsSync14(jobsDirectoryPath)) {
+    if (!existsSync15(jobsDirectoryPath)) {
       console.log("No jobs directory found. Nothing to backfill.");
       return;
     }
@@ -29055,9 +29698,9 @@ function runBackfill(options) {
     for (const jobEntry of jobEntries) {
       if (!jobEntry.isDirectory())
         continue;
-      const jobDirectoryPath = join13(jobsDirectoryPath, jobEntry.name);
-      const statusPath = join13(jobDirectoryPath, "status.json");
-      if (!existsSync14(statusPath))
+      const jobDirectoryPath = join15(jobsDirectoryPath, jobEntry.name);
+      const statusPath = join15(jobDirectoryPath, "status.json");
+      if (!existsSync15(statusPath))
         continue;
       try {
         const status = parseStatusFile(jobDirectoryPath, jobEntry.name);
@@ -29097,7 +29740,7 @@ function runBackfill(options) {
         }
         summary.jobsBackfilled += 1;
         if (options.importEvents) {
-          const eventsPath = join13(jobDirectoryPath, "events.jsonl");
+          const eventsPath = join15(jobDirectoryPath, "events.jsonl");
           summary.eventsImported += replayEvents(eventsPath, sqliteClient, status);
         }
       } catch {
@@ -29397,11 +30040,11 @@ function runBenchmarkExport(options) {
       });
     }
     rows.sort((a, b) => a.task_id.localeCompare(b.task_id) || a.executor_job_id.localeCompare(b.executor_job_id));
-    const outputDirectory = dirname8(options.outputPath);
-    mkdirSync7(outputDirectory, { recursive: true });
+    const outputDirectory = dirname9(options.outputPath);
+    mkdirSync9(outputDirectory, { recursive: true });
     const jsonl = rows.map((row) => JSON.stringify(row)).join(`
 `);
-    writeFileSync6(options.outputPath, rows.length > 0 ? `${jsonl}
+    writeFileSync8(options.outputPath, rows.length > 0 ? `${jsonl}
 ` : "", "utf-8");
     console.log(`
 ${bold7("specialists db benchmark-export")}
@@ -29487,8 +30130,8 @@ var init_db = __esm(() => {
 
 // src/specialist/script-runner.ts
 import { spawn as spawn3 } from "child_process";
-import { createHash as createHash3, randomUUID } from "crypto";
-import { readFileSync as readFileSync13 } from "fs";
+import { createHash as createHash3, randomUUID as randomUUID3 } from "crypto";
+import { readFileSync as readFileSync14 } from "fs";
 import { isAbsolute as isAbsolute2, relative as relative2, resolve as resolve8 } from "path";
 function isPathWithinRoot(candidatePath, rootPath) {
   const candidate = resolve8(candidatePath);
@@ -29554,7 +30197,7 @@ function computeSkillSources(spec) {
   const sources = [];
   for (const { path, source } of entries) {
     try {
-      const content = readFileSync13(path);
+      const content = readFileSync14(path);
       const sha256 = createHash3("sha256").update(content).digest("hex");
       sources.push({ path, sha256, source });
     } catch {
@@ -29741,7 +30384,7 @@ function detectTemplateFieldMisuse(template, specPrompt) {
   return template;
 }
 async function runScriptSpecialist(input2, options) {
-  const traceId = randomUUID();
+  const traceId = randomUUID3();
   const startedAt = Date.now();
   try {
     const resolvedSpecialist = resolveScriptSpecialistName(input2.specialist);
@@ -30000,7 +30643,7 @@ __export(exports_validate, {
   ArgParseError: () => ArgParseError3
 });
 import { readFile as readFile3 } from "fs/promises";
-import { existsSync as existsSync15 } from "fs";
+import { existsSync as existsSync16 } from "fs";
 function parseArgs5(argv) {
   const value = argv[0];
   if (!value || value.startsWith("--")) {
@@ -30075,7 +30718,7 @@ async function run10() {
     }
     process.exit(1);
   }
-  if (!existsSync15(summary.filePath)) {
+  if (!existsSync16(summary.filePath)) {
     const message = `Failed to read file: ${summary.filePath}`;
     if (args.json) {
       console.log(JSON.stringify({ valid: false, errors: [{ path: "file", message, code: "read_error" }] }));
@@ -30142,17 +30785,18 @@ var exports_edit = {};
 __export(exports_edit, {
   run: () => run11
 });
-import { existsSync as existsSync16, mkdirSync as mkdirSync8, readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "fs";
-import { join as join14 } from "path";
+import { existsSync as existsSync17, mkdirSync as mkdirSync10, readFileSync as readFileSync15, writeFileSync as writeFileSync9 } from "fs";
+import { spawnSync as spawnSync11 } from "child_process";
+import { join as join16 } from "path";
 function loadPresets() {
   const paths = [
-    join14(process.cwd(), "config", "presets.json"),
-    join14(process.cwd(), "config", "specialists", "presets.json")
+    join16(process.cwd(), "config", "presets.json"),
+    join16(process.cwd(), "config", "specialists", "presets.json")
   ];
   for (const p of paths) {
-    if (existsSync16(p)) {
+    if (existsSync17(p)) {
       try {
-        const data = JSON.parse(readFileSync14(p, "utf-8"));
+        const data = JSON.parse(readFileSync15(p, "utf-8"));
         return data;
       } catch {
         return {};
@@ -30172,16 +30816,21 @@ function usage() {
     "  specialists edit --all --set <dot.path> <value> [options]",
     "  specialists edit --all --get <dot.path>",
     "  specialists edit <name> --preset <preset> [--dry-run]",
+    "  specialists edit --global [<name>.<field.path> <value>]",
+    "  specialists edit --global --get <name>.<field.path>",
+    "  specialists edit --global --set <name>.<field.path> <value>",
+    "  specialists edit --global                       # open in $EDITOR",
     "  specialists edit --list-presets",
     "",
     "Options:",
+    "  --global              Edit ~/.config/specialists/user.json override layer",
     "  --append              Append value(s) to array field",
     "  --remove              Remove value(s) from array field",
     "  --file <path>         Read value from file (prompt.system/task_template)",
     "  --preset <name>       Apply a preset (bundle of field values)",
     "  --list-presets         Show available presets",
     "  --dry-run             Preview the change without writing",
-    "  --scope <scope>       default | user",
+    "  --scope <scope>       default | user (mutually exclusive with --global)",
     "  --name <specialist>   Alias for positional <name> (compat)",
     "",
     `Legacy aliases (compat): ${aliasList}`
@@ -30194,7 +30843,7 @@ function fail(message) {
 }
 function parseArgs6(argv) {
   if (argv.includes("--list-presets")) {
-    return { all: false, dryRun: false, action: "list-presets" };
+    return { all: false, dryRun: false, action: "list-presets", global: false };
   }
   let name;
   let all = false;
@@ -30207,6 +30856,7 @@ function parseArgs6(argv) {
   let pendingArrayOp;
   let preset;
   let forkFrom;
+  let global = false;
   const positional = [];
   for (let i = 0;i < argv.length; i++) {
     const token = argv[i];
@@ -30222,20 +30872,34 @@ function parseArgs6(argv) {
       all = true;
       continue;
     }
+    if (token === "--global") {
+      if (scope !== undefined) {
+        fail(`Error: --global cannot be combined with --scope
+
+${usage()}`);
+      }
+      global = true;
+      continue;
+    }
+    if (token === "--scope") {
+      if (global) {
+        fail(`Error: --scope cannot be combined with --global
+
+${usage()}`);
+      }
+      const rawScope = argv[++i];
+      if (rawScope !== "default" && rawScope !== "user") {
+        fail(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
+      }
+      scope = rawScope;
+      continue;
+    }
     if (token === "--append") {
       pendingArrayOp = "append";
       continue;
     }
     if (token === "--remove") {
       pendingArrayOp = "remove";
-      continue;
-    }
-    if (token === "--scope") {
-      const rawScope = argv[++i];
-      if (rawScope !== "default" && rawScope !== "user") {
-        fail(`Error: --scope must be "default" or "user", got: "${rawScope ?? ""}"`);
-      }
-      scope = rawScope;
       continue;
     }
     if (token === "--name") {
@@ -30337,13 +31001,37 @@ ${usage()}`);
 
 ${usage()}`);
   }
+  if (global) {
+    if (all)
+      fail("Error: --global cannot be combined with --all");
+    if (preset)
+      fail("Error: --global cannot be combined with --preset");
+    if (forkFrom)
+      fail("Error: --global cannot be combined with --fork-from");
+    if (filePath)
+      fail("Error: --global cannot be combined with --file");
+    if (pendingArrayOp)
+      fail("Error: --global does not support --append/--remove");
+    if (!path) {
+      return { all: false, dryRun, action: "set", global };
+    }
+    if (action === "get") {
+      return { all: false, dryRun, action, path, value, global };
+    }
+    if (value === undefined || value === "") {
+      fail(`Error: missing value
+
+${usage()}`);
+    }
+    return { all: false, dryRun, action, path, value, global };
+  }
   if (!all && !name) {
     fail(`Error: missing specialist name. Use <name> or --all
 
 ${usage()}`);
   }
   if (action === "preset") {
-    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
+    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
   }
   if (!path) {
     fail(`Error: missing dot-path
@@ -30358,10 +31046,10 @@ ${usage()}`);
   if (action === "get" && (pendingArrayOp || filePath)) {
     fail("Error: --get cannot be combined with --append/--remove/--file");
   }
-  if (filePath && !existsSync16(filePath)) {
+  if (filePath && !existsSync17(filePath)) {
     fail(`Error: file not found: ${filePath}`);
   }
-  return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
+  return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
 }
 function unwrapSchema(schema) {
   let current = schema;
@@ -30498,7 +31186,7 @@ function getRawValue(args, resolvedPath) {
   if (!MULTILINE_FILE_PATHS.has(resolvedPath.normalizedPath)) {
     fail(`Error: --file is only supported for: ${Array.from(MULTILINE_FILE_PATHS).join(", ")}`);
   }
-  return readFileSync14(args.filePath, "utf-8");
+  return readFileSync15(args.filePath, "utf-8");
 }
 function getAtPath(root, segments) {
   let current = root;
@@ -30566,7 +31254,7 @@ ${bold9(`[dry-run] ${filePath}`)}
 }
 function readJsonFile2(filePath) {
   try {
-    const parsed = JSON.parse(readFileSync14(filePath, "utf-8"));
+    const parsed = JSON.parse(readFileSync15(filePath, "utf-8"));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       fail(`Error: specialist file must contain a JSON object (${filePath})`);
     }
@@ -30579,14 +31267,14 @@ function readJsonFile2(filePath) {
 function createUserFork(source, targetName) {
   if (source.scope === "user")
     return source;
-  const targetDir = join14(process.cwd(), ".specialists", "user");
-  mkdirSync8(targetDir, { recursive: true });
-  const targetFile = join14(targetDir, `${targetName}.specialist.json`);
+  const targetDir = join16(process.cwd(), ".specialists", "user");
+  mkdirSync10(targetDir, { recursive: true });
+  const targetFile = join16(targetDir, `${targetName}.specialist.json`);
   const doc2 = readJsonFile2(source.filePath);
   doc2.specialist = doc2.specialist ?? {};
   doc2.specialist.metadata = doc2.specialist.metadata ?? {};
   doc2.specialist.metadata.name = targetName;
-  writeFileSync7(targetFile, `${JSON.stringify(doc2, null, 2)}
+  writeFileSync9(targetFile, `${JSON.stringify(doc2, null, 2)}
 `, "utf-8");
   return { ...source, name: targetName, scope: "user", source: "user", filePath: targetFile };
 }
@@ -30614,8 +31302,126 @@ async function resolveTargets(args) {
   }
   return [match];
 }
+function resolveGlobalPath(rawPath) {
+  const segments = rawPath.split(".").map((part) => part.trim()).filter(Boolean);
+  if (segments.length < 2) {
+    fail(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
+  }
+  const [specialistName, ...fieldSegments] = segments;
+  let schema = GlobalSpecialistOverrideSchema;
+  for (const segment of fieldSegments) {
+    const unwrapped = unwrapSchema(schema);
+    if (!(unwrapped instanceof ZodObject)) {
+      fail(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
+    }
+    const shape = unwrapped.shape;
+    if (!(segment in shape)) {
+      fail(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(", ")}`);
+    }
+    schema = shape[segment];
+  }
+  return {
+    specialistName,
+    fieldSegments,
+    schema: unwrapSchema(schema)
+  };
+}
+function coerceGlobalValue(schema, rawValue) {
+  if (rawValue === "null")
+    return null;
+  const unwrapped = unwrapSchema(schema);
+  if (unwrapped instanceof ZodNumber) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      fail(`Error: value must be a number, got: ${rawValue}`);
+    }
+    return parsed;
+  }
+  if (unwrapped instanceof ZodBoolean) {
+    return parseBoolean(rawValue);
+  }
+  if (unwrapped instanceof ZodEnum) {
+    if (!unwrapped.options.includes(rawValue)) {
+      fail(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(", ")}`);
+    }
+    return rawValue;
+  }
+  if (unwrapped instanceof ZodArray) {
+    return parseArray(rawValue, unwrapped.element);
+  }
+  if (unwrapped instanceof ZodString) {
+    return rawValue;
+  }
+  return rawValue;
+}
+function openInEditor(filePath) {
+  const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || "vi";
+  const result = spawnSync11(editor, [filePath], { stdio: "inherit" });
+  if (result.error) {
+    fail(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    fail(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
+  }
+}
+async function runGlobalEdit(args) {
+  const location = getGlobalUserConfigPath();
+  if (!args.path) {
+    if (!location.exists) {
+      fail(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+    }
+    openInEditor(location.path);
+    const content = readFileSync15(location.path, "utf-8");
+    const validation2 = validateGlobalUserConfig(content);
+    if (!validation2.valid) {
+      const errorList = validation2.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
+`);
+      fail(`Error: global config failed validation after $EDITOR exit:
+${errorList}
+  Fix the file and re-run.`);
+    }
+    console.log(`${green7("\u2713")} validated global config at ${location.path}`);
+    return;
+  }
+  const resolvedPath = resolveGlobalPath(args.path);
+  const existing = readGlobalUserConfig(location);
+  if (existing === null) {
+    fail(`Error: global config not found at ${location.path}. Run ${yellow8("specialists init --global")} first.`);
+  }
+  const specialistOverride = existing[resolvedPath.specialistName];
+  if (specialistOverride === undefined) {
+    const available = Object.keys(existing).sort().join(", ");
+    fail(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || "none"}`);
+  }
+  if (args.action === "get") {
+    const value = getAtPath(specialistOverride, resolvedPath.fieldSegments);
+    console.log(`${yellow8(resolvedPath.specialistName)}.${resolvedPath.fieldSegments.join(".")}: ${formatOutputValue(value)}`);
+    return;
+  }
+  const nextValue = coerceGlobalValue(resolvedPath.schema, args.value);
+  setAtPath(specialistOverride, resolvedPath.fieldSegments, nextValue);
+  const updatedJson = `${JSON.stringify(existing, null, 2)}
+`;
+  const validation = validateGlobalUserConfig(updatedJson);
+  if (!validation.valid) {
+    const errorList = validation.errors.map((e) => `  \u2022 ${e.path}: ${e.message}`).join(`
+`);
+    fail(`Error: change would make the global config invalid:
+${errorList}`);
+  }
+  if (args.dryRun) {
+    printDryRun(location.path, `${JSON.stringify(readGlobalUserConfig(location), null, 2)}
+`, updatedJson);
+    return;
+  }
+  writeFileSync9(location.path, updatedJson, "utf-8");
+  console.log(`${green7("\u2713")} ${bold9(resolvedPath.specialistName)}.${yellow8(resolvedPath.fieldSegments.join("."))} = ${formatOutputValue(nextValue)}` + dim7(` (${location.path})`));
+}
 async function run11() {
   const args = parseArgs6(process.argv.slice(3));
+  if (args.global) {
+    return runGlobalEdit(args);
+  }
   if (args.action === "list-presets") {
     const presets = loadPresets();
     const entries = Object.entries(presets);
@@ -30640,7 +31446,7 @@ async function run11() {
     }
     const targets2 = await resolveTargets(args);
     for (const target of targets2) {
-      const raw = readFileSync14(target.filePath, "utf-8");
+      const raw = readFileSync15(target.filePath, "utf-8");
       const doc2 = JSON.parse(raw);
       for (const [fieldPath, fieldValue] of Object.entries(preset.fields)) {
         const resolved = resolvePath2(fieldPath);
@@ -30654,7 +31460,7 @@ async function run11() {
         printDryRun(target.filePath, raw, updated);
         continue;
       }
-      writeFileSync7(target.filePath, updated, "utf-8");
+      writeFileSync9(target.filePath, updated, "utf-8");
       const fieldList = Object.keys(preset.fields).map((f) => yellow8(f)).join(", ");
       console.log(`${green7("\u2713")} ${bold9(target.name)}: applied preset ${bold9(args.preset)} (${fieldList})`);
     }
@@ -30675,7 +31481,7 @@ async function run11() {
     fail("Error: no specialists found");
   }
   for (const target of targets) {
-    const raw = readFileSync14(target.filePath, "utf-8");
+    const raw = readFileSync15(target.filePath, "utf-8");
     let doc2;
     try {
       const parsed = JSON.parse(raw);
@@ -30699,7 +31505,7 @@ async function run11() {
       printDryRun(target.filePath, raw, updated);
       continue;
     }
-    writeFileSync7(target.filePath, updated, "utf-8");
+    writeFileSync9(target.filePath, updated, "utf-8");
     console.log(`${green7("\u2713")} ${bold9(target.name)}: ${yellow8(resolvedPath.normalizedPath)} = ${formatOutputValue(nextValue)}` + dim7(` (${target.filePath})`));
   }
 }
@@ -30708,6 +31514,7 @@ var init_edit = __esm(() => {
   init_zod();
   init_loader();
   init_schema();
+  init_global_config();
   LEGACY_FIELD_ALIASES = {
     model: "specialist.execution.model",
     "fallback-model": "specialist.execution.fallback_model",
@@ -30734,7 +31541,7 @@ var init_edit = __esm(() => {
 import { readFile as readFile4 } from "fs/promises";
 import { createRequire as createRequire3 } from "module";
 import { execSync as execSync3 } from "child_process";
-import { join as join15 } from "path";
+import { join as join17 } from "path";
 function globalNodeModules() {
   if (cachedGlobalNodeModules !== undefined)
     return cachedGlobalNodeModules;
@@ -30827,7 +31634,7 @@ function probeHealth(catalog) {
   return classifyExtensionProbe(catalog, { installedVersion, entrypointExists });
 }
 async function loadResolvedConfigReport(args) {
-  const manifest = readJsonFile3(join15(args.projectDir, "config", "specialists", `${args.specialistName}.specialist.json`));
+  const manifest = readJsonFile3(join17(args.projectDir, "config", "specialists", `${args.specialistName}.specialist.json`));
   const index = loadToolCatalogIndex(await readFile4(args.catalogsPath, "utf-8"));
   const catalogs = index.catalogs;
   const probes = catalogs.map(probeHealth);
@@ -30898,9 +31705,9 @@ var exports_config = {};
 __export(exports_config, {
   run: () => run12
 });
-import { readFileSync as readFileSync15 } from "fs";
-import { spawnSync as spawnSync11 } from "child_process";
-import { dirname as dirname9, join as join16 } from "path";
+import { readFileSync as readFileSync16 } from "fs";
+import { spawnSync as spawnSync12 } from "child_process";
+import { dirname as dirname10, join as join18 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 function usage2() {
   return [
@@ -30923,31 +31730,31 @@ function fail2(message) {
 }
 function readPackageVersion(packageJsonPath) {
   try {
-    const pkg = JSON.parse(readFileSync15(packageJsonPath, "utf-8"));
+    const pkg = JSON.parse(readFileSync16(packageJsonPath, "utf-8"));
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
     return;
   }
 }
 function isInsideGitWorktree(projectDir) {
-  const result = spawnSync11("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync12("git", ["rev-parse", "--is-inside-work-tree"], { cwd: projectDir, encoding: "utf-8" });
   return result.status === 0 && result.stdout.trim() === "true";
 }
 function getGitCommonDir(projectDir) {
-  const result = spawnSync11("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync12("git", ["rev-parse", "--git-common-dir"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
 }
 function getGitTopLevel(projectDir) {
-  const result = spawnSync11("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
+  const result = spawnSync12("git", ["rev-parse", "--show-toplevel"], { cwd: projectDir, encoding: "utf-8" });
   if (result.status !== 0)
     return;
   return result.stdout.trim() || undefined;
 }
 function getRuntimePackageVersion() {
-  const runtimeDir = dirname9(fileURLToPath3(import.meta.url));
-  const packageJsonPath = runtimeDir.includes("/dist/") ? join16(runtimeDir, "..", "package.json") : join16(runtimeDir, "..", "..", "package.json");
+  const runtimeDir = dirname10(fileURLToPath3(import.meta.url));
+  const packageJsonPath = runtimeDir.includes("/dist/") ? join18(runtimeDir, "..", "package.json") : join18(runtimeDir, "..", "..", "package.json");
   return readPackageVersion(packageJsonPath);
 }
 function shouldWarnAboutSourceMode(projectDir) {
@@ -30957,7 +31764,7 @@ function shouldWarnAboutSourceMode(projectDir) {
   const commonDir = getGitCommonDir(projectDir);
   if (!topLevel || !commonDir || topLevel === commonDir)
     return false;
-  const packageVersion2 = readPackageVersion(join16(projectDir, "package.json"));
+  const packageVersion2 = readPackageVersion(join18(projectDir, "package.json"));
   const runtimeVersion = getRuntimePackageVersion();
   return Boolean(packageVersion2 && runtimeVersion && packageVersion2 !== runtimeVersion);
 }
@@ -31038,12 +31845,12 @@ ${usage2()}`);
 ${usage2()}`);
   }
   const projectDir = process.cwd();
-  const catalogsPath = join16(projectDir, ".specialists", "catalog", "index.json");
+  const catalogsPath = join18(projectDir, ".specialists", "catalog", "index.json");
   if (!flags.has("--from-source") && shouldWarnAboutSourceMode(projectDir)) {
     console.error(yellow9("\u26A0 hint: use --from-source for worktree-source resolver review"));
   }
   if (flags.has("--from-source") && !import.meta.url.includes("/src/")) {
-    const result = spawnSync11("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
+    const result = spawnSync12("bunx", ["tsx", "src/index.ts", "config", "show", specialistName, "--resolved"], {
       cwd: projectDir,
       encoding: "utf-8",
       stdio: "pipe"
@@ -31086,7 +31893,7 @@ var init_config = __esm(() => {
 
 // src/specialist/launch.ts
 import { execSync as execSync4 } from "child_process";
-import { writeFileSync as writeFileSync8 } from "fs";
+import { writeFileSync as writeFileSync10 } from "fs";
 async function launchSpecialist(opts) {
   let stopTailer;
   const runner = new SpecialistRunner({
@@ -31129,7 +31936,7 @@ async function launchSpecialist(opts) {
       const handoffPath = process.env.SPECIALISTS_BG_JOB_ID_PATH;
       if (handoffPath) {
         try {
-          writeFileSync8(handoffPath, `${id}
+          writeFileSync10(handoffPath, `${id}
 `, "utf-8");
         } catch {}
       }
@@ -31292,8 +32099,8 @@ function fuzzyFilter(items, query, getText) {
 // node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 import { spawn as spawn4 } from "child_process";
 import { readdirSync as readdirSync6, statSync as statSync3 } from "fs";
-import { homedir as homedir3 } from "os";
-import { basename as basename5, dirname as dirname10, join as join17 } from "path";
+import { homedir as homedir4 } from "os";
+import { basename as basename5, dirname as dirname11, join as join19 } from "path";
 function toDisplayPath(value) {
   return value.replace(/\\/g, "/");
 }
@@ -31637,10 +32444,10 @@ class CombinedAutocompleteProvider {
   }
   expandHomePath(path) {
     if (path.startsWith("~/")) {
-      const expandedPath = join17(homedir3(), path.slice(2));
+      const expandedPath = join19(homedir4(), path.slice(2));
       return path.endsWith("/") && !expandedPath.endsWith("/") ? `${expandedPath}/` : expandedPath;
     } else if (path === "~") {
-      return homedir3();
+      return homedir4();
     }
     return path;
   }
@@ -31658,7 +32465,7 @@ class CombinedAutocompleteProvider {
     } else if (displayBase.startsWith("/")) {
       baseDir = displayBase;
     } else {
-      baseDir = join17(this.basePath, displayBase);
+      baseDir = join19(this.basePath, displayBase);
     }
     try {
       if (!statSync3(baseDir).isDirectory()) {
@@ -31690,23 +32497,23 @@ class CombinedAutocompleteProvider {
         if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
           searchDir = expandedPrefix;
         } else {
-          searchDir = join17(this.basePath, expandedPrefix);
+          searchDir = join19(this.basePath, expandedPrefix);
         }
         searchPrefix = "";
       } else if (rawPrefix.endsWith("/")) {
         if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
           searchDir = expandedPrefix;
         } else {
-          searchDir = join17(this.basePath, expandedPrefix);
+          searchDir = join19(this.basePath, expandedPrefix);
         }
         searchPrefix = "";
       } else {
-        const dir = dirname10(expandedPrefix);
+        const dir = dirname11(expandedPrefix);
         const file = basename5(expandedPrefix);
         if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
           searchDir = dir;
         } else {
-          searchDir = join17(this.basePath, dir);
+          searchDir = join19(this.basePath, dir);
         }
         searchPrefix = file;
       }
@@ -31719,7 +32526,7 @@ class CombinedAutocompleteProvider {
         let isDirectory = entry.isDirectory();
         if (!isDirectory && entry.isSymbolicLink()) {
           try {
-            const fullPath = join17(searchDir, entry.name);
+            const fullPath = join19(searchDir, entry.name);
             isDirectory = statSync3(fullPath).isDirectory();
           } catch {}
         }
@@ -31731,17 +32538,17 @@ class CombinedAutocompleteProvider {
         } else if (displayPrefix.includes("/") || displayPrefix.includes("\\")) {
           if (displayPrefix.startsWith("~/")) {
             const homeRelativeDir = displayPrefix.slice(2);
-            const dir = dirname10(homeRelativeDir);
-            relativePath = `~/${dir === "." ? name : join17(dir, name)}`;
+            const dir = dirname11(homeRelativeDir);
+            relativePath = `~/${dir === "." ? name : join19(dir, name)}`;
           } else if (displayPrefix.startsWith("/")) {
-            const dir = dirname10(displayPrefix);
+            const dir = dirname11(displayPrefix);
             if (dir === "/") {
               relativePath = `/${name}`;
             } else {
               relativePath = `${dir}/${name}`;
             }
           } else {
-            relativePath = join17(dirname10(displayPrefix), name);
+            relativePath = join19(dirname11(displayPrefix), name);
             if (displayPrefix.startsWith("./") && !relativePath.startsWith("./")) {
               relativePath = `./${relativePath}`;
             }
@@ -41015,28 +41822,28 @@ var init_feed = __esm(() => {
 });
 
 // src/specialist/status-load.ts
-import { existsSync as existsSync17, readdirSync as readdirSync7, readFileSync as readFileSync16 } from "fs";
-import { join as join20 } from "path";
+import { existsSync as existsSync18, readdirSync as readdirSync7, readFileSync as readFileSync17 } from "fs";
+import { join as join22 } from "path";
 function readStatusesFromFiles(jobsDir) {
-  if (!existsSync17(jobsDir))
+  if (!existsSync18(jobsDir))
     return [];
   const statuses = [];
   for (const entry of readdirSync7(jobsDir)) {
-    const statusPath = join20(jobsDir, entry, "status.json");
-    if (!existsSync17(statusPath))
+    const statusPath = join22(jobsDir, entry, "status.json");
+    if (!existsSync18(statusPath))
       continue;
     try {
-      statuses.push(JSON.parse(readFileSync16(statusPath, "utf-8")));
+      statuses.push(JSON.parse(readFileSync17(statusPath, "utf-8")));
     } catch {}
   }
   return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
 }
 function readLastToolEventFromFile(jobsDir, jobId) {
-  const eventsPath = join20(jobsDir, jobId, "events.jsonl");
-  if (!existsSync17(eventsPath))
+  const eventsPath = join22(jobsDir, jobId, "events.jsonl");
+  if (!existsSync18(eventsPath))
     return;
   try {
-    const lines = readFileSync16(eventsPath, "utf-8").split(`
+    const lines = readFileSync17(eventsPath, "utf-8").split(`
 `);
     for (let index = lines.length - 1;index >= 0; index -= 1) {
       const line = lines[index]?.trim();
@@ -41770,6 +42577,20 @@ async function finalizeJob(chainMemberId, opts = {}) {
     const reviewerPass = findReviewerPassInChain(supervisor, chainId);
     if (!reviewerPass)
       throw new Error(`No reviewer with PASS compliance verdict found in chain ${chainId}.`);
+    supervisor.emitTimelineEvent(chainMemberId, createChainEvent("chain_ready_for_review", {
+      chain_id: chainId,
+      chain_template: status.branch ?? status.startup_context?.branch ?? "unknown",
+      reviewer_job_id: reviewerPass.reviewerJobId,
+      terminal_state: "merge_ready",
+      result: "pass"
+    }));
+    supervisor.emitTimelineEvent(chainMemberId, createReviewVerdictEvent("pass", {
+      chain_id: chainId,
+      chain_template: status.branch ?? status.startup_context?.branch ?? "unknown",
+      reviewer_job_id: reviewerPass.reviewerJobId,
+      terminal_state: "merge_ready",
+      result: "pass"
+    }));
     const finalized = [];
     const skipped = [];
     for (const id of supervisor.listChainJobIds(chainId)) {
@@ -41790,6 +42611,12 @@ async function finalizeJob(chainMemberId, opts = {}) {
     }
     if (finalized.length === 0)
       throw new Error(`No waiting keep-alive jobs to finalize in chain ${chainId}.`);
+    supervisor.emitTimelineEvent(chainMemberId, createChainEvent("chain_finalized", {
+      chain_id: chainId,
+      chain_template: status.branch ?? status.startup_context?.branch ?? "unknown",
+      terminal_state: "merged",
+      result: "success"
+    }));
     process.stdout.write(`${green10("\u2713")} Finalized chain ${chainId} (reviewer PASS: ${reviewerPass.reviewerJobId})
 `);
     for (const id of finalized)
@@ -41805,6 +42632,7 @@ async function finalizeJob(chainMemberId, opts = {}) {
 var green10 = (s) => `\x1B[32m${s}\x1B[0m`, red3 = (s) => `\x1B[31m${s}\x1B[0m`, dim10 = (s) => `\x1B[2m${s}\x1B[0m`, PASS_COMPLIANCE_VERDICT_REGEX2;
 var init_control2 = __esm(() => {
   init_supervisor();
+  init_timeline_events();
   init_observability_sqlite();
   init_process_liveness();
   init_beads();
@@ -41863,8 +42691,8 @@ __export(exports_chat, {
   formatChatShow: () => formatChatShow,
   createCleanup: () => createCleanup
 });
-import { spawnSync as spawnSync12 } from "child_process";
-import { appendFileSync as appendFileSync4, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "fs";
+import { spawnSync as spawnSync13 } from "child_process";
+import { appendFileSync as appendFileSync4, readFileSync as readFileSync18, writeFileSync as writeFileSync12 } from "fs";
 function dbg(msg, extra) {
   if (!DEBUG_LOG_PATH)
     return;
@@ -42069,7 +42897,7 @@ function buildPrompt(args) {
 }
 function createEphemeralBead(prompt) {
   const title = buildEphemeralBeadTitle(prompt);
-  const result = spawnSync12("bd", ["create", title, "-t", "task", "-p3", "--json"], {
+  const result = spawnSync13("bd", ["create", title, "-t", "task", "-p3", "--json"], {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -42117,7 +42945,7 @@ function startChatEventTailer(options2) {
   const readFileEvents = () => {
     let content = "";
     try {
-      content = readFileSync17(eventsPath, "utf8");
+      content = readFileSync18(eventsPath, "utf8");
     } catch {
       return [];
     }
@@ -42308,7 +43136,7 @@ function formatChatStartupContextLine(event) {
 }
 function readChatJobStatus(jobsDir, jobId) {
   try {
-    const status = JSON.parse(readFileSync17(`${jobsDir}/${jobId}/status.json`, "utf8"));
+    const status = JSON.parse(readFileSync18(`${jobsDir}/${jobId}/status.json`, "utf8"));
     return { model: status.model, contextPct: status.metrics?.context_pct };
   } catch {
     return {};
@@ -42433,7 +43261,7 @@ async function sendChatJobMessage(deps, type, text) {
     if (!status?.fifo_path)
       throw new Error(`Job ${deps.getJobId()} has no steer pipe`);
     const payload = type === "resume" ? { type: "resume", task: text } : { type: "steer", message: text };
-    writeFileSync10(status.fifo_path, `${JSON.stringify(payload)}
+    writeFileSync12(status.fifo_path, `${JSON.stringify(payload)}
 `, { flag: "a" });
     return `${type} sent to ${deps.getJobId()}`;
   });
@@ -42509,16 +43337,16 @@ var init_chat = __esm(() => {
   })();
   if (DEBUG_LOG_PATH) {
     try {
-      writeFileSync10(DEBUG_LOG_PATH, `# sp chat debug log started ${new Date().toISOString()}
+      writeFileSync12(DEBUG_LOG_PATH, `# sp chat debug log started ${new Date().toISOString()}
 `);
     } catch {}
   }
 });
 
 // src/specialist/worktree.ts
-import { existsSync as existsSync18, symlinkSync as symlinkSync2, mkdirSync as mkdirSync10, rmSync as rmSync2 } from "fs";
-import { join as join21, resolve as resolve9 } from "path";
-import { spawnSync as spawnSync13, execFileSync as execFileSync2 } from "child_process";
+import { existsSync as existsSync19, symlinkSync as symlinkSync2, mkdirSync as mkdirSync12, rmSync as rmSync2 } from "fs";
+import { join as join23, resolve as resolve9 } from "path";
+import { spawnSync as spawnSync14, execFileSync as execFileSync2 } from "child_process";
 function deriveBranchName(beadId, specialistName) {
   return `feature/${beadId}-${slugify(specialistName)}`;
 }
@@ -42532,7 +43360,7 @@ function resolveCommonRoot(cwd) {
   return resolveCommonGitRoot(cwd) ?? cwd;
 }
 function listWorktrees(cwd = process.cwd()) {
-  const result = spawnSync13("git", ["worktree", "list", "--porcelain"], {
+  const result = spawnSync14("git", ["worktree", "list", "--porcelain"], {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -42552,13 +43380,13 @@ function provisionWorktree(options2) {
   if (existingPath) {
     return { branch, worktreePath: resolve9(existingPath), reused: true };
   }
-  const worktreeBase = options2.worktreeBase ?? join21(commonRoot, ".worktrees", options2.beadId);
+  const worktreeBase = options2.worktreeBase ?? join23(commonRoot, ".worktrees", options2.beadId);
   const worktreeName = deriveWorktreeName(options2.beadId, options2.specialistName);
-  const worktreePath = resolve9(join21(worktreeBase, worktreeName));
+  const worktreePath = resolve9(join23(worktreeBase, worktreeName));
   createWorktreeViaBd(worktreePath, branch, commonRoot);
   normalizeParentHooksPath(commonRoot);
   try {
-    rmSync2(join21(worktreePath, ".beads"), { recursive: true, force: true });
+    rmSync2(join23(worktreePath, ".beads"), { recursive: true, force: true });
     markBeadsSkipWorktree(worktreePath);
   } catch {}
   symlinkPiNpmCache(commonRoot, worktreePath);
@@ -42566,7 +43394,7 @@ function provisionWorktree(options2) {
 }
 function normalizeParentHooksPath(mainRepoRoot) {
   try {
-    const result = spawnSync13("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
+    const result = spawnSync14("git", ["-C", mainRepoRoot, "config", "--get", "core.hooksPath"], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -42579,13 +43407,13 @@ function normalizeParentHooksPath(mainRepoRoot) {
       return;
     if (current !== ".beads/hooks" && current !== "./.beads/hooks")
       return;
-    const absolute = join21(mainRepoRoot, ".beads", "hooks");
-    spawnSync13("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
+    const absolute = join23(mainRepoRoot, ".beads", "hooks");
+    spawnSync14("git", ["-C", mainRepoRoot, "config", "core.hooksPath", absolute], { stdio: "pipe" });
   } catch {}
 }
 function markBeadsSkipWorktree(worktreePath) {
   try {
-    const trackedResult = spawnSync13("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
+    const trackedResult = spawnSync14("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -42595,7 +43423,7 @@ function markBeadsSkipWorktree(worktreePath) {
     const trackedPaths = (trackedResult.stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (trackedPaths.length === 0)
       return;
-    spawnSync13("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
+    spawnSync14("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...trackedPaths], {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf8"
@@ -42603,12 +43431,12 @@ function markBeadsSkipWorktree(worktreePath) {
   } catch {}
 }
 function symlinkPiNpmCache(commonRoot, worktreePath) {
-  const source = join21(commonRoot, ".pi", "npm");
-  const target = join21(worktreePath, ".pi", "npm");
-  if (!existsSync18(source) || existsSync18(target))
+  const source = join23(commonRoot, ".pi", "npm");
+  const target = join23(worktreePath, ".pi", "npm");
+  if (!existsSync19(source) || existsSync19(target))
     return;
   try {
-    mkdirSync10(join21(worktreePath, ".pi"), { recursive: true });
+    mkdirSync12(join23(worktreePath, ".pi"), { recursive: true });
     symlinkSync2(source, target);
   } catch {}
 }
@@ -42648,24 +43476,24 @@ var init_worktree = __esm(() => {
 });
 
 // src/specialist/epic-reconciler.ts
-import { mkdirSync as mkdirSync11, openSync as openSync2, readFileSync as readFileSync18, rmSync as rmSync3, writeFileSync as writeFileSync11 } from "fs";
-import { join as join22 } from "path";
+import { mkdirSync as mkdirSync13, openSync as openSync2, readFileSync as readFileSync19, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "fs";
+import { join as join24 } from "path";
 function buildEpicLockPath(epicId) {
   const location = resolveObservabilityDbLocation();
-  const lockDir = join22(location.dbDirectory, "locks");
-  mkdirSync11(lockDir, { recursive: true });
-  return join22(lockDir, `epic-${epicId}.lock`);
+  const lockDir = join24(location.dbDirectory, "locks");
+  mkdirSync13(lockDir, { recursive: true });
+  return join24(lockDir, `epic-${epicId}.lock`);
 }
 function withEpicAdvisoryLock(epicId, action) {
   const lockPath = buildEpicLockPath(epicId);
   let lockFd = null;
   try {
     lockFd = openSync2(lockPath, "wx");
-    writeFileSync11(lockPath, JSON.stringify({ epic_id: epicId, pid: process.pid, created_at_ms: Date.now() }));
+    writeFileSync13(lockPath, JSON.stringify({ epic_id: epicId, pid: process.pid, created_at_ms: Date.now() }));
   } catch {
     let holder = "unknown";
     try {
-      holder = readFileSync18(lockPath, "utf-8");
+      holder = readFileSync19(lockPath, "utf-8");
     } catch {
       holder = "unknown";
     }
@@ -42882,9 +43710,9 @@ __export(exports_merge, {
   checkEpicUnresolvedGuard: () => checkEpicUnresolvedGuard,
   assertMainRepoCleanForMerge: () => assertMainRepoCleanForMerge
 });
-import { spawnSync as spawnSync14 } from "child_process";
-import { existsSync as existsSync19, readFileSync as readFileSync19, readdirSync as readdirSync8 } from "fs";
-import { join as join23 } from "path";
+import { spawnSync as spawnSync15 } from "child_process";
+import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync8 } from "fs";
+import { join as join25 } from "path";
 function parseOptions(argv) {
   let target = "";
   let rebuild = false;
@@ -42921,7 +43749,7 @@ function parseOptions(argv) {
   return { target, rebuild, targetBranch: targetBranch ? validateTargetBranchRef(targetBranch) : undefined };
 }
 function runCommand(command, args, cwd = process.cwd()) {
-  return spawnSync14(command, args, {
+  return spawnSync15(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -43123,16 +43951,16 @@ function readAllJobStatuses() {
       sqliteClient.close();
     }
   }
-  const jobsDir = join23(process.cwd(), ".specialists", "jobs");
-  if (!existsSync19(jobsDir))
+  const jobsDir = join25(process.cwd(), ".specialists", "jobs");
+  if (!existsSync20(jobsDir))
     return [];
   const statuses = [];
   for (const jobId of readdirSync8(jobsDir)) {
-    const statusFile = join23(jobsDir, jobId, "status.json");
-    if (!existsSync19(statusFile))
+    const statusFile = join25(jobsDir, jobId, "status.json");
+    if (!existsSync20(statusFile))
       continue;
     try {
-      const raw = JSON.parse(readFileSync19(statusFile, "utf-8"));
+      const raw = JSON.parse(readFileSync20(statusFile, "utf-8"));
       if (raw.id) {
         statuses.push(raw);
       }
@@ -43498,7 +44326,7 @@ ${conflicts.map((file) => `- ${file}`).join(`
   throw new Error(`Merge conflict while merging '${branch}'.${context}`);
 }
 function runTypecheckGate(cwd = process.cwd()) {
-  const hasTypeScriptConfig = existsSync19(join23(cwd, "tsconfig.json")) || readdirSync8(cwd).some((entry) => entry.startsWith("tsconfig") && entry.endsWith(".json"));
+  const hasTypeScriptConfig = existsSync20(join25(cwd, "tsconfig.json")) || readdirSync8(cwd).some((entry) => entry.startsWith("tsconfig") && entry.endsWith(".json"));
   if (!hasTypeScriptConfig) {
     console.log("TypeScript gate: skipped (no tsconfig)");
     return;
@@ -43694,10 +44522,11 @@ var init_merge = __esm(() => {
 var exports_run = {};
 __export(exports_run, {
   run: () => run15,
+  buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables
 });
-import { join as join24 } from "path";
-import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync9, statSync as statSync5 } from "fs";
+import { join as join26 } from "path";
+import { existsSync as existsSync21, readFileSync as readFileSync21, readdirSync as readdirSync9, statSync as statSync5 } from "fs";
 import { randomBytes } from "crypto";
 import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
 async function parseArgs8(argv) {
@@ -43892,7 +44721,7 @@ function resolveNewestJobIdFromDb(cwd, jobsDir, specialist, previousLatest, minS
     const newest = sqliteClient.listStatuses().filter((status) => {
       if (status.specialist !== specialist || status.id === previousLatest || status.started_at_ms < minStartedAtMs)
         return false;
-      return existsSync20(join24(jobsDir, status.id, "status.json"));
+      return existsSync21(join26(jobsDir, status.id, "status.json"));
     }).sort((left, right) => right.started_at_ms - left.started_at_ms || left.id.localeCompare(right.id))[0];
     return newest?.id ?? "";
   } catch {
@@ -43904,8 +44733,8 @@ function resolveNewestJobIdFromDb(cwd, jobsDir, specialist, previousLatest, minS
 function resolveNewestJobIdFromJobsDir(jobsDir, previousLatest, minMtimeMs) {
   try {
     const entries = readdirSync9(jobsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^[a-f0-9]{6}$/.test(entry.name) && entry.name !== previousLatest).map((entry) => {
-      const dirPath = join24(jobsDir, entry.name);
-      const statusPath = join24(dirPath, "status.json");
+      const dirPath = join26(jobsDir, entry.name);
+      const statusPath = join26(dirPath, "status.json");
       const stats = statSync5(dirPath);
       const statusStats = statSync5(statusPath);
       return {
@@ -44016,13 +44845,13 @@ function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) 
   return {};
 }
 function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
-  const eventsPath = join24(jobsDir, jobId, "events.jsonl");
-  const statusPath = join24(jobsDir, jobId, "status.json");
+  const eventsPath = join26(jobsDir, jobId, "events.jsonl");
+  const statusPath = join26(jobsDir, jobId, "status.json");
   let linesRead = 0;
   let activeInlinePhase = null;
   const readPayloadBreakdown = () => {
     try {
-      const statusRaw = readFileSync20(statusPath, "utf-8");
+      const statusRaw = readFileSync21(statusPath, "utf-8");
       const status = JSON.parse(statusRaw);
       return status.startup_payload_json ? JSON.parse(status.startup_payload_json) : undefined;
     } catch {
@@ -44032,7 +44861,7 @@ function startEventTailer(jobId, jobsDir, mode, specialist, beadId) {
   const drain = () => {
     let content;
     try {
-      content = readFileSync20(eventsPath, "utf-8");
+      content = readFileSync21(eventsPath, "utf-8");
     } catch {
       return;
     }
@@ -44109,7 +44938,7 @@ function buildReusedWorktreeAwarenessBlock(options2) {
   ].join(`
 `);
 }
-function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
+function buildInjectedDiffContext(cwd, maxFiles = 20) {
   const read = (command) => {
     try {
       return execSync5(command, {
@@ -44182,14 +45011,45 @@ ${truncated}` : `### ${file}
     if (!hunks.trim())
       continue;
     return {
-      reviewer_diff_source: `injected diff context (${src.label})`,
-      reviewer_diff_stat: stat2 || "(no stat)",
-      reviewer_diff_files: files.join(`
+      source: `injected diff context (${src.label})`,
+      stat: stat2 || "(no stat)",
+      files: files.join(`
 `),
-      reviewer_diff_hunks: hunks
+      hunks
     };
   }
-  return {};
+  return null;
+}
+function buildInjectedReviewerDiffVariables(cwd, maxFiles = 20) {
+  const context = buildInjectedDiffContext(cwd, maxFiles);
+  if (!context)
+    return {};
+  return {
+    reviewer_diff_source: context.source,
+    reviewer_diff_stat: context.stat,
+    reviewer_diff_files: context.files,
+    reviewer_diff_hunks: context.hunks
+  };
+}
+function buildInjectedWriterDiffVariables(cwd, maxFiles = 20) {
+  const context = buildInjectedDiffContext(cwd, maxFiles);
+  if (!context)
+    return {};
+  return {
+    writer_diff: [
+      `Source: ${context.source}`,
+      "",
+      "Changed files:",
+      context.files,
+      "",
+      "Diff stat:",
+      context.stat,
+      "",
+      "Diff hunks:",
+      context.hunks
+    ].join(`
+`)
+  };
 }
 async function run15() {
   const args = await parseArgs8(process.argv.slice(3));
@@ -44233,10 +45093,10 @@ async function run15() {
   }
   if (args.background) {
     const jobsDir2 = resolveJobsDir();
-    const latestPath = join24(jobsDir2, "latest");
+    const latestPath = join26(jobsDir2, "latest");
     const oldLatest = (() => {
       try {
-        return readFileSync20(latestPath, "utf-8").trim();
+        return readFileSync21(latestPath, "utf-8").trim();
       } catch {
         return "";
       }
@@ -44253,7 +45113,7 @@ async function run15() {
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
       const sessionName = buildSessionName(args.name, suffix);
-      handoffPath = join24(jobsDir2, `.bg-job-id-${sessionName}`);
+      handoffPath = join26(jobsDir2, `.bg-job-id-${sessionName}`);
       createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath });
     } else {
       const child = cpSpawn(process.execPath, [process.argv[1], ...innerArgs], {
@@ -44287,7 +45147,7 @@ async function run15() {
         childExitPromise
       ]);
       try {
-        const current = readFileSync20(latestPath, "utf-8").trim();
+        const current = readFileSync21(latestPath, "utf-8").trim();
         if (current && current !== oldLatest) {
           jobId = current;
           break;
@@ -44295,7 +45155,7 @@ async function run15() {
       } catch {}
       if (!jobId && handoffPath) {
         try {
-          const handoff = readFileSync20(handoffPath, "utf-8").trim();
+          const handoff = readFileSync21(handoffPath, "utf-8").trim();
           if (/^[a-f0-9]{6}$/.test(handoff)) {
             jobId = handoff;
             break;
@@ -44326,7 +45186,7 @@ async function run15() {
     process.exit(0);
   }
   const circuitBreaker = new CircuitBreaker;
-  const hooks = new HookEmitter({ tracePath: join24(process.cwd(), ".specialists", "trace.jsonl") });
+  const hooks = new HookEmitter({ tracePath: join26(process.cwd(), ".specialists", "trace.jsonl") });
   const beadsClient = args.noBeads ? undefined : new BeadsClient;
   const beadReader = beadsClient ?? new BeadsClient;
   let prompt = args.prompt;
@@ -44372,11 +45232,13 @@ async function run15() {
   if (args.reuseJobId) {
     const reviewedJobId = extractReviewedJobIdOverride(prompt) ?? args.reuseJobId;
     const injectedReviewerDiffVariables = workingDirectory && args.name === "reviewer" ? buildInjectedReviewerDiffVariables(workingDirectory) : {};
+    const injectedWriterDiffVariables = workingDirectory && args.name === "seconder" ? buildInjectedWriterDiffVariables(workingDirectory) : {};
     variables = {
       ...variables ?? {},
       reviewed_job_id: reviewedJobId,
       reused_worktree_awareness: buildReusedWorktreeAwarenessBlock({ reusedFromJobId: args.reuseJobId, worktreeOwnerJobId }),
-      ...injectedReviewerDiffVariables
+      ...injectedReviewerDiffVariables,
+      ...injectedWriterDiffVariables
     };
   }
   if (!prompt && !effectiveBeadId) {
@@ -44473,8 +45335,8 @@ var init_node_resolve = __esm(() => {
 });
 
 // src/specialist/job-control.ts
-import { existsSync as existsSync21, readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "fs";
-import { join as join25 } from "path";
+import { existsSync as existsSync22, readFileSync as readFileSync22, writeFileSync as writeFileSync15 } from "fs";
+import { join as join27 } from "path";
 
 class JobControl {
   supervisor;
@@ -44549,10 +45411,10 @@ class JobControl {
         return sqliteResult;
     } catch {}
     const resultPath = this.resultPath(jobId);
-    if (!existsSync21(resultPath))
+    if (!existsSync22(resultPath))
       return null;
     try {
-      return readFileSync21(resultPath, "utf-8");
+      return readFileSync22(resultPath, "utf-8");
     } catch {
       return null;
     }
@@ -44585,10 +45447,10 @@ class JobControl {
     }
     const jsonLine = `${JSON.stringify(payload)}
 `;
-    writeFileSync13(status.fifo_path, jsonLine, { flag: "a" });
+    writeFileSync15(status.fifo_path, jsonLine, { flag: "a" });
   }
   resultPath(jobId) {
-    return join25(this.jobsDir, jobId, "result.txt");
+    return join27(this.jobsDir, jobId, "result.txt");
   }
 }
 var TERMINAL_STATUSES2, INITIAL_BACKOFF_MS = 100, MAX_BACKOFF_MS = 2000;
@@ -44742,7 +45604,7 @@ __export(exports_node_supervisor, {
   NodeSupervisor: () => NodeSupervisor
 });
 import { createHash as createHash4 } from "crypto";
-import { spawnSync as spawnSync15 } from "child_process";
+import { spawnSync as spawnSync16 } from "child_process";
 function hashOutput(output2, salt) {
   if (!output2)
     return null;
@@ -44787,7 +45649,7 @@ function parseCreatedBeadId(stdout) {
   return match[1];
 }
 function runCommandOrThrow(command, args, cwd = process.cwd()) {
-  const result = spawnSync15(command, args, {
+  const result = spawnSync16(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -45856,7 +46718,7 @@ class NodeSupervisor {
     if (!this.opts.sourceBeadId)
       return;
     const notes = this.buildCompletionSummary(options2);
-    const result = spawnSync15("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
+    const result = spawnSync16("bd", ["update", this.opts.sourceBeadId, "--notes", notes], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -45869,7 +46731,7 @@ class NodeSupervisor {
     }
   }
   runCommand(command, args, cwd) {
-    const result = spawnSync15(command, args, {
+    const result = spawnSync16(command, args, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -46069,8 +46931,8 @@ class NodeSupervisor {
     }
   }
   runFinalQualityGates(cwd) {
-    const lintPass = spawnSync15("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
-    const tscPass = spawnSync15("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const lintPass = spawnSync16("npm", ["run", "lint"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
+    const tscPass = spawnSync16("npx", ["tsc", "--noEmit"], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).status === 0;
     return {
       lint: lintPass ? "pass" : "fail",
       tsc: tscPass ? "pass" : "fail"
@@ -46116,9 +46978,11 @@ class NodeSupervisor {
         };
         this.persistNodeEvent("executeCompleteNodeAction.pr_created", "pr_created", {
           node_id: this.opts.nodeId,
+          pr_id: prMetadata.pr_number ?? null,
           pr_number: prMetadata.pr_number ?? null,
           pr_url: prMetadata.pr_url ?? null,
           pr_head_sha: prMetadata.pr_head_sha ?? null,
+          pr_state: hasFailingGate && action.force_draft_pr ? "draft" : "open",
           base_branch: this.opts.baseBranch ?? NODE_BASE_BRANCH_DEFAULT,
           head_branch: currentBranch,
           draft: Boolean(hasFailingGate && action.force_draft_pr),
@@ -46149,7 +47013,7 @@ class NodeSupervisor {
     this.persistNodeEvent("executeCompleteNodeAction.node_completed", "node_completed", {
       node_id: this.opts.nodeId,
       final_state: this.status,
-      pr_metadata: prMetadata,
+      pr_metadata: { ...prMetadata, pr_state: hasFailingGate && action.force_draft_pr ? "draft" : "open" },
       gate_results: gateResults,
       summary_bead_id: this.opts.sourceBeadId ?? null
     });
@@ -46663,9 +47527,9 @@ var exports_node = {};
 __export(exports_node, {
   handleNodeCommand: () => handleNodeCommand
 });
-import { existsSync as existsSync22, readFileSync as readFileSync22, readdirSync as readdirSync10 } from "fs";
-import { randomUUID as randomUUID2 } from "crypto";
-import { basename as basename6, join as join26, resolve as resolve10 } from "path";
+import { existsSync as existsSync23, readFileSync as readFileSync23, readdirSync as readdirSync10 } from "fs";
+import { randomUUID as randomUUID4 } from "crypto";
+import { basename as basename6, join as join28, resolve as resolve10 } from "path";
 function parseNodeArgs(argv) {
   const command = argv[0];
   const supportedCommands = new Set(["run", "list", "promote", "members", "memory", "stop", "spawn-member", "create-bead", "complete", "wait-phase"]);
@@ -46855,11 +47719,11 @@ function discoverNodeConfigs(cwd) {
   const discoveredByName = new Map;
   for (const directory of NODE_DISCOVERY_DIRS) {
     const absoluteDir = resolve10(cwd, directory.path);
-    if (!existsSync22(absoluteDir))
+    if (!existsSync23(absoluteDir))
       continue;
     const files = readdirSync10(absoluteDir).filter((fileName) => fileName.endsWith(NODE_CONFIG_SUFFIX));
     for (const fileName of files) {
-      const path3 = join26(absoluteDir, fileName);
+      const path3 = join28(absoluteDir, fileName);
       const name = toNodeName(fileName);
       if (discoveredByName.has(name))
         continue;
@@ -46877,7 +47741,7 @@ function getNodeDiscoverySummary() {
 }
 function resolveNodeConfigPath(cwd, input2) {
   const explicitPath = resolve10(cwd, input2);
-  if (existsSync22(explicitPath)) {
+  if (existsSync23(explicitPath)) {
     return { name: toNodeName(explicitPath), path: explicitPath, source: "repo" };
   }
   const normalizedName = input2.endsWith(NODE_CONFIG_SUFFIX) ? input2.slice(0, -NODE_CONFIG_SUFFIX.length) : input2;
@@ -46977,16 +47841,16 @@ async function handleNodeRun(args) {
       rawConfig = args.inlineJson;
     } else {
       const nodeConfigPath = resolveNodeConfigPath(process.cwd(), args.nodeConfigInput);
-      rawConfig = readFileSync22(nodeConfigPath.path, "utf-8");
+      rawConfig = readFileSync23(nodeConfigPath.path, "utf-8");
     }
     const config2 = parseNodeConfig(rawConfig);
     const loader = new SpecialistLoader;
     const runner = new SpecialistRunner({
       loader,
-      hooks: new HookEmitter({ tracePath: join26(process.cwd(), ".specialists", "trace.jsonl") }),
+      hooks: new HookEmitter({ tracePath: join28(process.cwd(), ".specialists", "trace.jsonl") }),
       circuitBreaker: new CircuitBreaker
     });
-    const nodeId = `${config2.name}-${randomUUID2().slice(0, 8)}`;
+    const nodeId = `${config2.name}-${randomUUID4().slice(0, 8)}`;
     const effectiveContextDepth = args.contextDepth ?? config2.defaultContextDepth;
     const { NodeSupervisor: NodeSupervisor2 } = await Promise.resolve().then(() => (init_node_supervisor(), exports_node_supervisor));
     let beadContext;
@@ -47344,7 +48208,7 @@ async function createNodeActionRunnerDependencies() {
   const loader = new SpecialistLoader;
   const runner = new SpecialistRunner({
     loader,
-    hooks: new HookEmitter({ tracePath: join26(process.cwd(), ".specialists", "trace.jsonl") }),
+    hooks: new HookEmitter({ tracePath: join28(process.cwd(), ".specialists", "trace.jsonl") }),
     circuitBreaker: new CircuitBreaker
   });
   return { loader, runner };
@@ -47526,9 +48390,9 @@ __export(exports_epic, {
   handleEpicCommand: () => handleEpicCommand,
   handleEpicAbandonCommand: () => handleEpicAbandonCommand
 });
-import { spawnSync as spawnSync16 } from "child_process";
+import { spawnSync as spawnSync17 } from "child_process";
 function runCommand2(command, args, cwd = process.cwd()) {
-  return spawnSync16(command, args, {
+  return spawnSync17(command, args, {
     cwd,
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -47811,6 +48675,30 @@ function mergeEpicChains(context, rebuild, pr, targetBranch) {
     targetBranch
   });
 }
+function emitEpicForensicEvent(epicId, eventFamily, eventName, body, correlation) {
+  const sqlite = createObservabilitySqliteClient();
+  if (!sqlite)
+    return;
+  try {
+    sqlite.appendForensicEvent(epicId, "specialist", undefined, createForensicEvent({
+      event_family: eventFamily,
+      event_name: eventName,
+      resource: {
+        service_namespace: "xtrm",
+        service_name: "specialists",
+        service_component: "epic",
+        deployment_environment: "development",
+        repo: "specialists",
+        participant_kind: "specialist",
+        participant_role: "epic"
+      },
+      correlation: { epic_id: epicId, ...correlation },
+      body
+    }));
+  } finally {
+    sqlite.close();
+  }
+}
 function printEpicMergeSummary(result, rebuild, pr) {
   console.log("");
   console.log(`Epic ${result.epicId}: ${result.fromState} \u2192 ${result.toState}`);
@@ -47918,6 +48806,17 @@ async function handleEpicMergeCommand(argv) {
   let currentState;
   try {
     currentState = validateEpicMergeReadiness(context);
+    for (const chain of context.chainTargets) {
+      emitEpicForensicEvent(context.epicId, "chain", "chain.ready_for_review", {
+        chain_template: `epic-${context.epicId}`,
+        terminal_state: "merge_ready",
+        result: "pass"
+      }, {
+        job_id: chain.jobId,
+        bead_id: chain.beadId,
+        chain_root_job_id: chain.jobId
+      });
+    }
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);
     if (options2.json) {
@@ -47938,6 +48837,19 @@ async function handleEpicMergeCommand(argv) {
     pullRequestUrl = publicationResult.pullRequestUrl;
     toState = options2.pr ? currentState : transitionEpicState(currentState, "merged");
     updateEpicState(context.epicId, currentState, toState);
+    for (const [index, chain] of mergedChains.entries()) {
+      const chainTarget = context.chainTargets[index];
+      emitEpicForensicEvent(context.epicId, "worktree", "worktree.merged", {
+        changed_paths_count: chain.changedFiles.length,
+        merge_ref: chain.branch,
+        source_ref: chain.branch,
+        target_ref: options2.targetBranch ?? "main",
+        result: "success"
+      }, {
+        job_id: chainTarget?.jobId ?? context.epicId,
+        bead_id: chain.beadId
+      });
+    }
   } catch (error2) {
     mergeError = error2 instanceof Error ? error2.message : String(error2);
     toState = transitionEpicState(currentState, "failed");
@@ -48193,6 +49105,7 @@ var RUNNING_STATUSES;
 var init_epic = __esm(() => {
   init_epic_lifecycle();
   init_epic_reconciler();
+  init_forensic_events();
   init_observability_sqlite();
   init_merge();
   RUNNING_STATUSES = new Set(["starting", "running", "waiting", "degraded"]);
@@ -48204,9 +49117,9 @@ __export(exports_status, {
   run: () => run16,
   detectJobOutputMode: () => detectJobOutputMode
 });
-import { spawnSync as spawnSync17 } from "child_process";
-import { existsSync as existsSync23, readFileSync as readFileSync23 } from "fs";
-import { join as join27 } from "path";
+import { spawnSync as spawnSync18 } from "child_process";
+import { existsSync as existsSync24, readFileSync as readFileSync24 } from "fs";
+import { join as join29 } from "path";
 function ok2(msg) {
   console.log(`  ${green9("\u2713")} ${msg}`);
 }
@@ -48225,7 +49138,7 @@ function section(label) {
 ${bold11(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function cmd(bin, args) {
-  const r = spawnSync17(bin, args, {
+  const r = spawnSync18(bin, args, {
     encoding: "utf8",
     stdio: "pipe",
     timeout: 5000
@@ -48233,7 +49146,7 @@ function cmd(bin, args) {
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled2(bin) {
-  return spawnSync17("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync18("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function formatElapsed2(s) {
   if (s.elapsed_s === undefined)
@@ -48303,10 +49216,10 @@ function countJobEvents(sqliteClient, jobsDir, jobId) {
   if (detectJobOutputMode() !== "on") {
     return 0;
   }
-  const eventsFile = join27(jobsDir, jobId, "events.jsonl");
-  if (!existsSync23(eventsFile))
+  const eventsFile = join29(jobsDir, jobId, "events.jsonl");
+  if (!existsSync24(eventsFile))
     return 0;
-  const raw = readFileSync23(eventsFile, "utf-8").trim();
+  const raw = readFileSync24(eventsFile, "utf-8").trim();
   if (!raw)
     return 0;
   return raw.split(`
@@ -48340,10 +49253,10 @@ function getLatestContextSnapshot(sqliteClient, jobsDir, jobId) {
   if (detectJobOutputMode() !== "on") {
     return null;
   }
-  const eventsFile = join27(jobsDir, jobId, "events.jsonl");
-  if (!existsSync23(eventsFile))
+  const eventsFile = join29(jobsDir, jobId, "events.jsonl");
+  if (!existsSync24(eventsFile))
     return null;
-  const lines = readFileSync23(eventsFile, "utf-8").split(`
+  const lines = readFileSync24(eventsFile, "utf-8").split(`
 `);
   for (let index = lines.length - 1;index >= 0; index -= 1) {
     const line = lines[index].trim();
@@ -48441,12 +49354,12 @@ async function run16() {
 `).slice(1).map((line) => line.split(/\s+/)[0]).filter(Boolean)) : new Set;
     const bdInstalled = isInstalled2("bd");
     const bdVersion = bdInstalled ? cmd("bd", ["--version"]) : null;
-    const beadsPresent = existsSync23(join27(process.cwd(), ".beads"));
+    const beadsPresent = existsSync24(join29(process.cwd(), ".beads"));
     const specialistsBin = cmd("which", ["specialists"]);
     const jobsDir = resolveJobsDir();
     const jobFileOutputMode = detectJobFileOutputMode();
     let jobs = [];
-    if (existsSync23(jobsDir)) {
+    if (existsSync24(jobsDir)) {
       supervisor = new Supervisor({
         runner: null,
         runOptions: null,
@@ -48613,8 +49526,8 @@ var init_status2 = __esm(() => {
 });
 
 // src/specialist/process-health.ts
-import { existsSync as existsSync24, readdirSync as readdirSync11, readFileSync as readFileSync24, readlinkSync as readlinkSync2 } from "fs";
-import { join as join28 } from "path";
+import { existsSync as existsSync25, readdirSync as readdirSync11, readFileSync as readFileSync25, readlinkSync as readlinkSync2 } from "fs";
+import { join as join30 } from "path";
 function parseThreshold(raw, fallback) {
   if (!raw)
     return fallback;
@@ -48630,7 +49543,7 @@ function getProcessHealthThresholds(env = process.env) {
 }
 function readMemAvailableBytes(meminfoPath) {
   try {
-    const content = readFileSync24(meminfoPath, "utf-8");
+    const content = readFileSync25(meminfoPath, "utf-8");
     const match = /^MemAvailable:\s+(\d+)\s+kB$/m.exec(content);
     if (!match)
       return 0;
@@ -48641,14 +49554,14 @@ function readMemAvailableBytes(meminfoPath) {
 }
 function readProcStringOrNull(path3) {
   try {
-    return readFileSync24(path3, "utf-8");
+    return readFileSync25(path3, "utf-8");
   } catch {
     return null;
   }
 }
 function readProcCwdOrNull(pid, procRoot) {
   try {
-    return readlinkSync2(join28(procRoot, String(pid), "cwd"));
+    return readlinkSync2(join30(procRoot, String(pid), "cwd"));
   } catch {
     return null;
   }
@@ -48668,7 +49581,7 @@ function parseStat(stat2) {
 }
 function readProcUptimeSecondsOrNull(procRoot) {
   try {
-    const match = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/.exec(readFileSync24(join28(procRoot, "uptime"), "utf-8").trim());
+    const match = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/.exec(readFileSync25(join30(procRoot, "uptime"), "utf-8").trim());
     if (!match)
       return null;
     return Number(match[1]);
@@ -48677,7 +49590,7 @@ function readProcUptimeSecondsOrNull(procRoot) {
   }
 }
 function readProcessLiveness(pid, procRoot) {
-  if (!existsSync24(join28(procRoot, String(pid))))
+  if (!existsSync25(join30(procRoot, String(pid))))
     return "dead";
   try {
     process.kill(pid, 0);
@@ -48689,19 +49602,19 @@ function readProcessLiveness(pid, procRoot) {
   }
 }
 function readProcessSnapshot(pid, procRoot, uptimeSeconds) {
-  const basePath = join28(procRoot, String(pid));
-  const cmdlineRaw = readProcStringOrNull(join28(basePath, "cmdline"));
+  const basePath = join30(procRoot, String(pid));
+  const cmdlineRaw = readProcStringOrNull(join30(basePath, "cmdline"));
   if (!cmdlineRaw)
     return null;
   const cmdline = cmdlineRaw.replace(/\0/g, " ").trim();
   if (!cmdline)
     return null;
-  const comm = (readProcStringOrNull(join28(basePath, "comm")) ?? "").trim();
-  const stat2 = readProcStringOrNull(join28(basePath, "stat"));
+  const comm = (readProcStringOrNull(join30(basePath, "comm")) ?? "").trim();
+  const stat2 = readProcStringOrNull(join30(basePath, "stat"));
   const parsedStat = stat2 ? parseStat(stat2) : null;
   if (!parsedStat)
     return null;
-  const status = readProcStringOrNull(join28(basePath, "status")) ?? "";
+  const status = readProcStringOrNull(join30(basePath, "status")) ?? "";
   const rssMatch = /VmRSS:\s+(\d+)\s+kB/m.exec(status);
   const rssBytes = rssMatch ? Number(rssMatch[1]) * 1024 : 0;
   const cwd = readProcCwdOrNull(pid, procRoot);
@@ -48711,7 +49624,7 @@ function readProcessSnapshot(pid, procRoot, uptimeSeconds) {
   return { pid, ppid: parsedStat.ppid, cmdline, comm, cwd, rssBytes, cpuPct, ageSeconds };
 }
 function listPids(procRoot) {
-  if (!existsSync24(procRoot))
+  if (!existsSync25(procRoot))
     return [];
   const pids = [];
   for (const entry of readdirSync11(procRoot, { withFileTypes: true })) {
@@ -48915,9 +49828,9 @@ function collectStaleSpecialistJobs(options2 = {}) {
         candidates.push({ jobId: status.id, pid, beadId: status.bead_id ?? null, specialist: status.specialist, cwd: null, ageMs, reason: "dead-pid" });
         continue;
       }
-      const basePath = join28(procRoot, String(pid));
-      const cmdlineRaw = readProcStringOrNull(join28(basePath, "cmdline"));
-      const statRaw = readProcStringOrNull(join28(basePath, "stat"));
+      const basePath = join30(procRoot, String(pid));
+      const cmdlineRaw = readProcStringOrNull(join30(basePath, "cmdline"));
+      const statRaw = readProcStringOrNull(join30(basePath, "stat"));
       const parsedStat = statRaw ? parseStat(statRaw) : null;
       if (status.status === "waiting" && parsedStat?.ppid === 1 && cmdlineRaw && isSpecialistRunCommand(cmdlineRaw.replace(/\0/g, " "))) {
         candidates.push({ jobId: status.id, pid, beadId: status.bead_id ?? null, specialist: status.specialist, cwd: readProcCwdOrNull(pid, procRoot), ageMs, reason: "orphaned-keep-alive" });
@@ -48949,11 +49862,11 @@ var exports_ps = {};
 __export(exports_ps, {
   run: () => run17
 });
-import { spawnSync as spawnSync18 } from "child_process";
+import { spawnSync as spawnSync19 } from "child_process";
 function loadBeadIdsForCurrentUser() {
   const ids = new Set;
   try {
-    const result = spawnSync18("bd", ["query", "assignee=me", "--json"], {
+    const result = spawnSync19("bd", ["query", "assignee=me", "--json"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 5000
@@ -49320,7 +50233,7 @@ function formatPayloadStats(payloadJson) {
   }
 }
 function getBeadTitleFromBd(beadId) {
-  const result = spawnSync18("bd", ["show", beadId, "--json"], {
+  const result = spawnSync19("bd", ["show", beadId, "--json"], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 1500
@@ -49980,8 +50893,8 @@ var exports_result = {};
 __export(exports_result, {
   run: () => run18
 });
-import { existsSync as existsSync25, readFileSync as readFileSync25 } from "fs";
-import { join as join29 } from "path";
+import { existsSync as existsSync26, readFileSync as readFileSync26 } from "fs";
+import { join as join31 } from "path";
 function parseArgs10(argv) {
   let jobId;
   let nodeId;
@@ -50071,10 +50984,10 @@ function readTimelineEventsForResult(sqliteClient, jobsDir, jobId) {
       return sqliteClient.readEvents(jobId);
     } catch {}
   }
-  const eventsPath = join29(jobsDir, jobId, "events.jsonl");
-  if (!existsSync25(eventsPath))
+  const eventsPath = join31(jobsDir, jobId, "events.jsonl");
+  if (!existsSync26(eventsPath))
     return [];
-  return readFileSync25(eventsPath, "utf-8").split(`
+  return readFileSync26(eventsPath, "utf-8").split(`
 `).map((line) => line.trim()).filter(Boolean).map((line) => parseTimelineEvent(line)).filter((event) => event !== null);
 }
 function deriveStartupSnapshot(status, events) {
@@ -50217,7 +51130,7 @@ async function run18() {
       error: error2
     }, null, 2));
   };
-  const jobsDir = join29(process.cwd(), ".specialists", "jobs");
+  const jobsDir = join31(process.cwd(), ".specialists", "jobs");
   const supervisor = new Supervisor({ runner: null, runOptions: null, jobsDir });
   const sqliteClient = createObservabilitySqliteClient();
   const emitHumanResult = (output2, status, startupContext, trailingFooter) => {
@@ -50249,7 +51162,7 @@ async function run18() {
       const resolvedNodeId = args.nodeId ? resolveNodeRefWithClient(args.nodeId, sqliteClient) : resolveSingleActiveNodeRef(sqliteClient);
       return resolveJobIdFromNodeMember(sqliteClient, resolvedNodeId, args.memberKey);
     })();
-    const resultPath = join29(jobsDir, jobId, "result.txt");
+    const resultPath = join31(jobsDir, jobId, "result.txt");
     const readResultOutput = () => {
       try {
         const sqliteResult = sqliteClient?.readResult(jobId) ?? null;
@@ -50258,8 +51171,8 @@ async function run18() {
       } catch (error2) {
         console.warn(`SQLite result read failed for job ${jobId}; falling back to result.txt`, error2);
       }
-      if (existsSync25(resultPath)) {
-        return readFileSync25(resultPath, "utf-8");
+      if (existsSync26(resultPath)) {
+        return readFileSync26(resultPath, "utf-8");
       }
       try {
         const events2 = readTimelineEventsForResult(sqliteClient, jobsDir, jobId);
@@ -50477,8 +51390,8 @@ var init_result = __esm(() => {
 });
 
 // src/specialist/timeline-query.ts
-import { existsSync as existsSync26, readdirSync as readdirSync12, readFileSync as readFileSync26 } from "fs";
-import { basename as basename8, join as join30 } from "path";
+import { existsSync as existsSync27, readdirSync as readdirSync12, readFileSync as readFileSync27 } from "fs";
+import { basename as basename8, join as join32 } from "path";
 function readJobEvents(jobDir) {
   const jobId = basename8(jobDir);
   try {
@@ -50490,10 +51403,10 @@ function readJobEvents(jobDir) {
   } catch {}
   if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
     return [];
-  const eventsPath = join30(jobDir, "events.jsonl");
-  if (!existsSync26(eventsPath))
+  const eventsPath = join32(jobDir, "events.jsonl");
+  if (!existsSync27(eventsPath))
     return [];
-  const content = readFileSync26(eventsPath, "utf-8");
+  const content = readFileSync27(eventsPath, "utf-8");
   const lines = content.split(`
 `).filter(Boolean);
   const events = [];
@@ -50537,12 +51450,12 @@ function readAllJobEvents(jobsDir, jobId) {
   } catch {}
   if (process.env.SPECIALISTS_JOB_FILE_OUTPUT !== "on")
     return [];
-  if (!existsSync26(jobsDir))
+  if (!existsSync27(jobsDir))
     return [];
   const batches = [];
   const entries = readdirSync12(jobsDir);
   for (const entry of entries) {
-    const jobDir = join30(jobsDir, entry);
+    const jobDir = join32(jobsDir, entry);
     try {
       const stat2 = __require("fs").statSync(jobDir);
       if (!stat2.isDirectory())
@@ -50551,12 +51464,12 @@ function readAllJobEvents(jobsDir, jobId) {
       continue;
     }
     const jobId2 = entry;
-    const statusPath = join30(jobDir, "status.json");
+    const statusPath = join32(jobDir, "status.json");
     let specialist = "unknown";
     let beadId;
-    if (existsSync26(statusPath)) {
+    if (existsSync27(statusPath)) {
       try {
-        const status = JSON.parse(readFileSync26(statusPath, "utf-8"));
+        const status = JSON.parse(readFileSync27(statusPath, "utf-8"));
         specialist = status.specialist ?? "unknown";
         beadId = status.bead_id;
       } catch {}
@@ -50625,13 +51538,13 @@ __export(exports_feed, {
 });
 import {
   closeSync as closeSync2,
-  existsSync as existsSync27,
+  existsSync as existsSync28,
   openSync as openSync3,
-  readFileSync as readFileSync27,
+  readFileSync as readFileSync28,
   readdirSync as readdirSync13,
   statSync as statSync6
 } from "fs";
-import { join as join31 } from "path";
+import { join as join33 } from "path";
 function getHumanEventKey(event) {
   switch (event.type) {
     case "meta":
@@ -50793,7 +51706,7 @@ function readFileFresh(filePath) {
   let fd = null;
   try {
     fd = openSync3(filePath, "r");
-    return readFileSync27(fd, "utf-8");
+    return readFileSync28(fd, "utf-8");
   } catch {
     return null;
   } finally {
@@ -50810,7 +51723,7 @@ function readStatusJson(sqliteClient, jobsDir, jobId) {
   } catch (error2) {
     console.warn(`SQLite status read failed for job ${jobId}; falling back to status.json`, error2);
   }
-  const statusPath = join31(jobsDir, jobId, "status.json");
+  const statusPath = join33(jobsDir, jobId, "status.json");
   const raw = readFileFresh(statusPath);
   if (!raw)
     return null;
@@ -51045,11 +51958,11 @@ function filterMergedEventsByNode(sqliteClient, jobsDir, merged, nodeId) {
   });
 }
 function listMatchingJobIds(sqliteClient, jobsDir, options2) {
-  if (!existsSync27(jobsDir))
+  if (!existsSync28(jobsDir))
     return [];
   const jobIds = [];
   for (const entry of readdirSync13(jobsDir)) {
-    const jobDir = join31(jobsDir, entry);
+    const jobDir = join33(jobsDir, entry);
     try {
       if (!statSync6(jobDir).isDirectory())
         continue;
@@ -51086,7 +51999,7 @@ function readJobEventsFresh(sqliteClient, jobsDir, jobId) {
   } catch (error2) {
     console.warn(`SQLite events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
-  const eventsPath = join31(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join33(jobsDir, jobId, "events.jsonl");
   const content = readFileFresh(eventsPath);
   if (!content)
     return [];
@@ -51110,7 +52023,7 @@ function readJobEventsIncremental(sqliteClient, jobsDir, jobId, afterSeq, fileCa
   } catch (error2) {
     console.warn(`SQLite incremental events read failed for job ${jobId}; falling back to events.jsonl`, error2);
   }
-  const eventsPath = join31(jobsDir, jobId, "events.jsonl");
+  const eventsPath = join33(jobsDir, jobId, "events.jsonl");
   let stats;
   try {
     stats = statSync6(eventsPath);
@@ -51284,8 +52197,8 @@ async function run19() {
   const options2 = parseArgs11(process.argv.slice(3));
   const sqliteClient = createObservabilitySqliteClient();
   try {
-    const jobsDir = join31(process.cwd(), ".specialists", "jobs");
-    if (!existsSync27(jobsDir)) {
+    const jobsDir = join33(process.cwd(), ".specialists", "jobs");
+    if (!existsSync28(jobsDir)) {
       if (options2.jobId && sqliteClient) {
         console.log(dim9(`job ${options2.jobId} not found in .specialists/db/observability.db`));
       } else {
@@ -52214,8 +53127,8 @@ var exports_log = {};
 __export(exports_log, {
   run: () => run22
 });
-import { existsSync as existsSync28, readdirSync as readdirSync14, statSync as statSync7 } from "fs";
-import { basename as basename10, join as join32 } from "path";
+import { existsSync as existsSync29, readdirSync as readdirSync14, statSync as statSync7 } from "fs";
+import { basename as basename10, join as join34 } from "path";
 function parseSince4(value) {
   if (value.includes("T") || value.includes("-"))
     return new Date(value).getTime();
@@ -52290,7 +53203,7 @@ function parseArgs14(argv) {
 }
 function discoverDbTargets(cwd, repoFilter) {
   const cwdLocation = resolveObservabilityDbLocation(cwd);
-  if (existsSync28(cwdLocation.dbPath)) {
+  if (existsSync29(cwdLocation.dbPath)) {
     const repo = basename10(cwdLocation.gitRoot);
     if (!repoFilter || repo === repoFilter) {
       return [{ repo, root: cwdLocation.gitRoot, dbPath: cwdLocation.dbPath, source: "cwd" }];
@@ -52305,15 +53218,15 @@ function discoverDbTargets(cwd, repoFilter) {
     return [];
   }
   for (const entry of entries) {
-    const root = join32(cwd, entry);
+    const root = join34(cwd, entry);
     try {
       if (!statSync7(root).isDirectory())
         continue;
     } catch {
       continue;
     }
-    const dbPath = join32(root, ".specialists", "db", "observability.db");
-    if (!existsSync28(dbPath))
+    const dbPath = join34(root, ".specialists", "db", "observability.db");
+    if (!existsSync29(dbPath))
       continue;
     if (repoFilter && entry !== repoFilter)
       continue;
@@ -52712,7 +53625,7 @@ var exports_steer = {};
 __export(exports_steer, {
   run: () => run23
 });
-import { writeFileSync as writeFileSync14 } from "fs";
+import { writeFileSync as writeFileSync16 } from "fs";
 async function run23() {
   const jobId = process.argv[3];
   const message = process.argv[4];
@@ -52743,7 +53656,7 @@ async function run23() {
     try {
       const payload = JSON.stringify({ type: "steer", message }) + `
 `;
-      writeFileSync14(status.fifo_path, payload, { flag: "a" });
+      writeFileSync16(status.fifo_path, payload, { flag: "a" });
       supervisor.emitControlEvent(jobId, "steer_sent", {
         source: "cli",
         previous_status: status.status,
@@ -52772,7 +53685,7 @@ var exports_resume = {};
 __export(exports_resume, {
   run: () => run24
 });
-import { writeFileSync as writeFileSync15 } from "fs";
+import { writeFileSync as writeFileSync17 } from "fs";
 async function run24() {
   const jobId = process.argv[3];
   const task = process.argv[4];
@@ -52803,7 +53716,7 @@ async function run24() {
     const payload = JSON.stringify({ type: "resume", task }) + `
 `;
     try {
-      writeFileSync15(status.fifo_path, payload, { flag: "a" });
+      writeFileSync17(status.fifo_path, payload, { flag: "a" });
     } catch (err) {
       process.stderr.write(`${red6("Error:")} Failed to write to steer pipe: ${err?.message}
 `);
@@ -52847,15 +53760,15 @@ async function run25() {
 }
 
 // src/specialist/worktree-gc.ts
-import { existsSync as existsSync29, readdirSync as readdirSync15, readFileSync as readFileSync28 } from "fs";
-import { join as join33 } from "path";
-import { spawnSync as spawnSync19 } from "child_process";
+import { existsSync as existsSync30, readdirSync as readdirSync15, readFileSync as readFileSync29 } from "fs";
+import { join as join35 } from "path";
+import { spawnSync as spawnSync20 } from "child_process";
 function readJobStatus2(jobDir) {
-  const statusPath = join33(jobDir, "status.json");
-  if (!existsSync29(statusPath))
+  const statusPath = join35(jobDir, "status.json");
+  if (!existsSync30(statusPath))
     return null;
   try {
-    return JSON.parse(readFileSync28(statusPath, "utf-8"));
+    return JSON.parse(readFileSync29(statusPath, "utf-8"));
   } catch {
     return null;
   }
@@ -52877,7 +53790,7 @@ function collectWorktreeGcCandidates(jobsDir) {
       const worktreePath = status.worktree_path;
       if (!worktreePath)
         return null;
-      if (!existsSync29(worktreePath))
+      if (!existsSync30(worktreePath))
         return null;
       return {
         jobId: status.id,
@@ -52889,13 +53802,13 @@ function collectWorktreeGcCandidates(jobsDir) {
   }
   if (!getFileFallbackEnabled())
     return [];
-  if (!existsSync29(jobsDir))
+  if (!existsSync30(jobsDir))
     return [];
   const candidates = [];
   for (const entry of readdirSync15(jobsDir, { withFileTypes: true })) {
     if (!entry.isDirectory())
       continue;
-    const status = readJobStatus2(join33(jobsDir, entry.name));
+    const status = readJobStatus2(join35(jobsDir, entry.name));
     if (!status)
       continue;
     if (isActive(status.status))
@@ -52905,7 +53818,7 @@ function collectWorktreeGcCandidates(jobsDir) {
     const { worktree_path: worktreePath, branch } = status;
     if (!worktreePath)
       continue;
-    if (!existsSync29(worktreePath))
+    if (!existsSync30(worktreePath))
       continue;
     candidates.push({
       jobId: status.id,
@@ -52917,7 +53830,7 @@ function collectWorktreeGcCandidates(jobsDir) {
   return candidates;
 }
 function removeWorktreeDirectory(worktreePath) {
-  const result = spawnSync19("git", ["worktree", "remove", "--force", worktreePath], {
+  const result = spawnSync20("git", ["worktree", "remove", "--force", worktreePath], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -52951,8 +53864,8 @@ var exports_clean = {};
 __export(exports_clean, {
   run: () => run26
 });
-import { existsSync as existsSync30, readFileSync as readFileSync29, readdirSync as readdirSync16, rmSync as rmSync4, statSync as statSync8 } from "fs";
-import { join as join34 } from "path";
+import { existsSync as existsSync31, readFileSync as readFileSync30, readdirSync as readdirSync16, rmSync as rmSync4, statSync as statSync8 } from "fs";
+import { join as join36 } from "path";
 function parseDuration2(raw) {
   const match = /^(\d+)(ms|s|m|h|d)$/i.exec(raw.trim());
   if (!match)
@@ -53107,7 +54020,7 @@ function parseOptions2(argv) {
 function readDirectorySizeBytes(directoryPath) {
   let totalBytes = 0;
   for (const entry of readdirSync16(directoryPath, { withFileTypes: true })) {
-    const entryPath = join34(directoryPath, entry.name);
+    const entryPath = join36(directoryPath, entry.name);
     const stats = statSync8(entryPath);
     totalBytes += stats.isDirectory() ? readDirectorySizeBytes(entryPath) : stats.size;
   }
@@ -53115,7 +54028,7 @@ function readDirectorySizeBytes(directoryPath) {
 }
 function containsProtectedSqliteArtifact(directoryPath) {
   for (const entry of readdirSync16(directoryPath, { withFileTypes: true })) {
-    const entryPath = join34(directoryPath, entry.name);
+    const entryPath = join36(directoryPath, entry.name);
     if (entry.isDirectory()) {
       if (containsProtectedSqliteArtifact(entryPath))
         return true;
@@ -53136,15 +54049,15 @@ function getJobTimestamps(status) {
 function readCompletedJobDirectory(baseDirectory, entry) {
   if (!entry.isDirectory())
     return null;
-  const directoryPath = join34(baseDirectory, entry.name);
+  const directoryPath = join36(baseDirectory, entry.name);
   if (containsProtectedSqliteArtifact(directoryPath))
     return null;
-  const statusFilePath = join34(directoryPath, "status.json");
-  if (!existsSync30(statusFilePath))
+  const statusFilePath = join36(directoryPath, "status.json");
+  if (!existsSync31(statusFilePath))
     return null;
   let statusData;
   try {
-    statusData = JSON.parse(readFileSync29(statusFilePath, "utf-8"));
+    statusData = JSON.parse(readFileSync30(statusFilePath, "utf-8"));
   } catch {
     return null;
   }
@@ -53158,8 +54071,8 @@ function collectCompletedJobs(jobsDirectoryPath) {
   const statuses = sqliteClient?.listStatuses() ?? [];
   if (statuses.length > 0) {
     return statuses.filter((status) => COMPLETED_STATUSES.has(status.status)).map((status) => {
-      const directoryPath = join34(jobsDirectoryPath, status.id);
-      if (!existsSync30(directoryPath) || containsProtectedSqliteArtifact(directoryPath))
+      const directoryPath = join36(jobsDirectoryPath, status.id);
+      if (!existsSync31(directoryPath) || containsProtectedSqliteArtifact(directoryPath))
         return null;
       const { createdAtMs, completedAtMs } = getJobTimestamps(status);
       return { id: status.id, directoryPath, completedAtMs, createdAtMs, sizeBytes: readDirectorySizeBytes(directoryPath) };
@@ -53489,7 +54402,7 @@ async function run26() {
     console.log(`Hid ${hiddenCount} terminal row(s) from default ps.`);
     return;
   }
-  if (!existsSync30(jobsDirectoryPath)) {
+  if (!existsSync31(jobsDirectoryPath)) {
     console.log("No jobs directory found.");
     return;
   }
@@ -53544,7 +54457,7 @@ var exports_end = {};
 __export(exports_end, {
   run: () => run27
 });
-import { spawnSync as spawnSync20 } from "child_process";
+import { spawnSync as spawnSync21 } from "child_process";
 function parseOptions3(argv) {
   let beadId;
   let epicId;
@@ -53579,7 +54492,7 @@ function parseOptions3(argv) {
   return { beadId, epicId, rebuild, pr };
 }
 function runCommand3(command, args) {
-  const result = spawnSync20(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync21(command, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   return {
     status: result.status,
     stdout: result.stdout ?? "",
@@ -54011,15 +54924,15 @@ var init_attach = __esm(() => {
 });
 
 // src/specialist/drift-detector.ts
-import { existsSync as existsSync31, readFileSync as readFileSync30, readdirSync as readdirSync17, rmSync as rmSync5 } from "fs";
-import { join as join35, resolve as resolve11, relative as relative3 } from "path";
+import { existsSync as existsSync32, readFileSync as readFileSync31, readdirSync as readdirSync17, rmSync as rmSync5 } from "fs";
+import { join as join37, resolve as resolve11, relative as relative3 } from "path";
 function listFiles(root) {
-  if (!existsSync31(root))
+  if (!existsSync32(root))
     return [];
   const out = [];
   const visit2 = (dir) => {
     for (const entry of readdirSync17(dir, { withFileTypes: true })) {
-      const full = join35(dir, entry.name);
+      const full = join37(dir, entry.name);
       if (entry.isDirectory()) {
         visit2(full);
         continue;
@@ -54054,14 +54967,14 @@ function detectDriftForRepo(repoRoot) {
       { scope: "user", dir: resolve11(repoRoot, ".specialists/user") }
     ];
     for (const { scope, dir } of scopes) {
-      if (!existsSync31(dir))
+      if (!existsSync32(dir))
         continue;
       for (const file of listFiles(dir)) {
         const rel = relPath(file, dir);
-        const canonicalPath = join35(asset.canonicalDir, rel);
-        if (!existsSync31(canonicalPath))
+        const canonicalPath = join37(asset.canonicalDir, rel);
+        if (!existsSync32(canonicalPath))
           continue;
-        const bytesEqual = readFileSync30(file).equals(readFileSync30(canonicalPath));
+        const bytesEqual = readFileSync31(file).equals(readFileSync31(canonicalPath));
         findings.push(makeFinding(repoRoot, asset.kind, scope, file, canonicalPath, bytesEqual));
       }
     }
@@ -54085,7 +54998,7 @@ function detectDriftUnderRoot(root) {
         continue;
       if (entry.name === "node_modules" || entry.name === ".git")
         continue;
-      visit2(join35(dir, entry.name));
+      visit2(join37(dir, entry.name));
     }
   };
   visit2(resolve11(root));
@@ -54441,9 +55354,9 @@ __export(exports_doctor, {
   cleanupProcesses: () => cleanupProcesses
 });
 import { createHash as createHash5 } from "crypto";
-import { spawnSync as spawnSync21 } from "child_process";
-import { existsSync as existsSync32, lstatSync as lstatSync2, mkdirSync as mkdirSync12, readdirSync as readdirSync18, readFileSync as readFileSync31, readlinkSync as readlinkSync3, writeFileSync as writeFileSync16 } from "fs";
-import { dirname as dirname13, join as join36, relative as relative4, resolve as resolve13 } from "path";
+import { spawnSync as spawnSync22 } from "child_process";
+import { existsSync as existsSync33, lstatSync as lstatSync2, mkdirSync as mkdirSync14, readdirSync as readdirSync18, readFileSync as readFileSync32, readlinkSync as readlinkSync3, writeFileSync as writeFileSync18 } from "fs";
+import { dirname as dirname14, join as join38, relative as relative4, resolve as resolve13 } from "path";
 function ok3(msg) {
   console.log(`  ${green14("\u2713")} ${msg}`);
 }
@@ -54465,17 +55378,17 @@ function section3(label) {
 ${bold13(`\u2500\u2500 ${label} ${line}`)}`);
 }
 function sp(bin, args) {
-  const r = spawnSync21(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
+  const r = spawnSync22(bin, args, { encoding: "utf8", stdio: "pipe", timeout: 5000 });
   return { ok: r.status === 0 && !r.error, stdout: (r.stdout ?? "").trim() };
 }
 function isInstalled3(bin) {
-  return spawnSync21("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
+  return spawnSync22("which", [bin], { encoding: "utf8", timeout: 2000 }).status === 0;
 }
 function loadJson2(path3) {
-  if (!existsSync32(path3))
+  if (!existsSync33(path3))
     return null;
   try {
-    return JSON.parse(readFileSync31(path3, "utf8"));
+    return JSON.parse(readFileSync32(path3, "utf8"));
   } catch {
     return null;
   }
@@ -54518,7 +55431,7 @@ function checkBd() {
     return false;
   }
   ok3(`bd installed  ${dim14(sp("bd", ["--version"]).stdout || "")}`);
-  if (existsSync32(join36(CWD, ".beads")))
+  if (existsSync33(join38(CWD, ".beads")))
     ok3(".beads/ present in project");
   else
     warn3(".beads/ not found in project");
@@ -54538,18 +55451,18 @@ function checkHooks() {
   section3("Claude Code hooks  (2 expected)");
   let allPresent = true;
   for (const name of HOOK_NAMES) {
-    const canonicalPath = join36(HOOKS_DIR, name);
-    if (!existsSync32(canonicalPath)) {
+    const canonicalPath = join38(HOOKS_DIR, name);
+    if (!existsSync33(canonicalPath)) {
       fail4(`${relative4(CWD, canonicalPath)}  ${red7("missing")}`);
       fix("specialists init");
       allPresent = false;
     } else {
       ok3(relative4(CWD, canonicalPath));
     }
-    const claudeHookPath = join36(CLAUDE_HOOKS_DIR, name);
+    const claudeHookPath = join38(CLAUDE_HOOKS_DIR, name);
     const symlinkState = isSymlinkTo(claudeHookPath, canonicalPath);
     if (symlinkState.ok) {
-      ok3(`${relative4(CWD, claudeHookPath)} -> ${relative4(dirname13(claudeHookPath), canonicalPath)}`);
+      ok3(`${relative4(CWD, claudeHookPath)} -> ${relative4(dirname14(claudeHookPath), canonicalPath)}`);
       continue;
     }
     allPresent = false;
@@ -54621,14 +55534,14 @@ function checkVersion() {
 }
 function hashFile(path3) {
   const hash = createHash5("sha256");
-  hash.update(readFileSync31(path3));
+  hash.update(readFileSync32(path3));
   return hash.digest("hex");
 }
 function collectFileHashes(rootDir) {
   const hashes = new Map;
   const visit2 = (dir) => {
     for (const entry of readdirSync18(dir, { withFileTypes: true })) {
-      const fullPath = join36(dir, entry.name);
+      const fullPath = join38(dir, entry.name);
       if (entry.isDirectory()) {
         visit2(fullPath);
         continue;
@@ -54639,12 +55552,12 @@ function collectFileHashes(rootDir) {
       hashes.set(relPath2, hashFile(fullPath));
     }
   };
-  if (existsSync32(rootDir))
+  if (existsSync33(rootDir))
     visit2(rootDir);
   return hashes;
 }
 function isSymlinkTo(linkPath, expectedTargetPath) {
-  if (!existsSync32(linkPath))
+  if (!existsSync33(linkPath))
     return { ok: false, reason: "missing" };
   let stats;
   try {
@@ -54656,7 +55569,7 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
     return { ok: false, reason: "not-symlink" };
   try {
     const rawTarget = readlinkSync3(linkPath);
-    const resolvedTarget = resolve13(dirname13(linkPath), rawTarget);
+    const resolvedTarget = resolve13(dirname14(linkPath), rawTarget);
     const resolvedExpected = resolve13(expectedTargetPath);
     if (resolvedTarget !== resolvedExpected) {
       return { ok: false, reason: "wrong-target", target: rawTarget };
@@ -54667,7 +55580,7 @@ function isSymlinkTo(linkPath, expectedTargetPath) {
   }
 }
 function resolvePackageAssetDir(relativePath) {
-  return resolveCanonicalAssetDir(relativePath) ?? (existsSync32(join36(CWD, "config", relativePath)) ? join36(CWD, "config", relativePath) : null);
+  return resolveCanonicalAssetDir(relativePath) ?? (existsSync33(join38(CWD, "config", relativePath)) ? join38(CWD, "config", relativePath) : null);
 }
 function checkSkillDrift() {
   section3("Category A  package-live skill sync");
@@ -54677,7 +55590,7 @@ function checkSkillDrift() {
     fix("restore config/skills/ or install package assets");
     return false;
   }
-  if (!existsSync32(XTRM_DEFAULT_SKILLS_DIR)) {
+  if (!existsSync33(XTRM_DEFAULT_SKILLS_DIR)) {
     fail4(".xtrm/skills/default/ missing");
     fix("specialists init --sync-skills");
     return false;
@@ -54720,8 +55633,8 @@ function checkSkillDrift() {
   const defaultSkills = readdirSync18(XTRM_DEFAULT_SKILLS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   let linksOk = true;
   for (const skillName of defaultSkills) {
-    const activeLinkPath = join36(XTRM_ACTIVE_SKILLS_DIR, skillName);
-    const expectedTarget = join36(XTRM_DEFAULT_SKILLS_DIR, skillName);
+    const activeLinkPath = join38(XTRM_ACTIVE_SKILLS_DIR, skillName);
+    const expectedTarget = join38(XTRM_DEFAULT_SKILLS_DIR, skillName);
     const state = isSymlinkTo(activeLinkPath, expectedTarget);
     if (state.ok)
       continue;
@@ -54739,11 +55652,11 @@ function checkSkillDrift() {
     fix("specialists init --sync-skills");
   }
   const legacyActiveRoots = [
-    { scope: "claude", root: join36(XTRM_ACTIVE_SKILLS_DIR, "claude") },
-    { scope: "pi", root: join36(XTRM_ACTIVE_SKILLS_DIR, "pi") }
+    { scope: "claude", root: join38(XTRM_ACTIVE_SKILLS_DIR, "claude") },
+    { scope: "pi", root: join38(XTRM_ACTIVE_SKILLS_DIR, "pi") }
   ];
   for (const { root } of legacyActiveRoots) {
-    if (!existsSync32(root))
+    if (!existsSync33(root))
       continue;
     if (isSymlinkTo(root, XTRM_ACTIVE_SKILLS_DIR).ok)
       continue;
@@ -54756,14 +55669,14 @@ function checkSkillDrift() {
     fix("specialists init --sync-skills");
   }
   const skillRootChecks = [
-    { root: join36(CLAUDE_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR },
-    { root: join36(PI_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR }
+    { root: join38(CLAUDE_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR },
+    { root: join38(PI_DIR, "skills"), expected: XTRM_ACTIVE_SKILLS_DIR }
   ];
   let rootLinksOk = true;
   for (const check2 of skillRootChecks) {
     const state = isSymlinkTo(check2.root, check2.expected);
     if (state.ok) {
-      ok3(`${relative4(CWD, check2.root)} -> ${relative4(dirname13(check2.root), check2.expected)}`);
+      ok3(`${relative4(CWD, check2.root)} -> ${relative4(dirname14(check2.root), check2.expected)}`);
       continue;
     }
     rootLinksOk = false;
@@ -54789,7 +55702,7 @@ function checkManagedMirror(label, canonicalRelativePath, mirrorDir, fixHint) {
     fix(fixHint);
     return false;
   }
-  if (!existsSync32(mirrorDir)) {
+  if (!existsSync33(mirrorDir)) {
     fail4(`${label} mirror missing: ${relative4(CWD, mirrorDir)}`);
     fix(fixHint);
     return false;
@@ -54821,13 +55734,13 @@ function checkManagedMirror(label, canonicalRelativePath, mirrorDir, fixHint) {
 function checkManagedAssetMirrors() {
   section3("Category B  xtrm-managed asset mirrors");
   const specialistsOk = checkManagedMirror("specialists", "specialists", DEFAULT_SPECIALISTS_DIR, "sp prune-stale-defaults --apply");
-  const rulesOk = checkManagedMirror("mandatory-rules", "mandatory-rules", join36(DEFAULT_SPECIALISTS_DIR, "mandatory-rules"), "sp prune-stale-defaults --apply");
-  const nodesOk = checkManagedMirror("nodes", "nodes", join36(DEFAULT_SPECIALISTS_DIR, "nodes"), "sp prune-stale-defaults --apply");
+  const rulesOk = checkManagedMirror("mandatory-rules", "mandatory-rules", join38(DEFAULT_SPECIALISTS_DIR, "mandatory-rules"), "sp prune-stale-defaults --apply");
+  const nodesOk = checkManagedMirror("nodes", "nodes", join38(DEFAULT_SPECIALISTS_DIR, "nodes"), "sp prune-stale-defaults --apply");
   return specialistsOk && rulesOk && nodesOk;
 }
 function checkUserOverlayDrift() {
   section3("User specialist overlays");
-  if (!existsSync32(USER_SPECIALISTS_DIR)) {
+  if (!existsSync33(USER_SPECIALISTS_DIR)) {
     ok3("no user overlays present");
     return true;
   }
@@ -54838,14 +55751,14 @@ function checkUserOverlayDrift() {
   }
   let allOk = true;
   for (const name of overlays) {
-    const userPath = join36(USER_SPECIALISTS_DIR, name);
-    const defaultPath = join36(DEFAULT_SPECIALISTS_DIR, name);
+    const userPath = join38(USER_SPECIALISTS_DIR, name);
+    const defaultPath = join38(DEFAULT_SPECIALISTS_DIR, name);
     const userSpec = loadJson2(userPath);
     if (!userSpec) {
       warn3(`${name}: failed to parse \u2014 skipping drift check`);
       continue;
     }
-    if (!existsSync32(defaultPath)) {
+    if (!existsSync33(defaultPath)) {
       ok3(`${name}: user-only overlay (no default to drift from)`);
       continue;
     }
@@ -54873,20 +55786,20 @@ function checkUserOverlayDrift() {
 }
 function checkRuntimeDirs() {
   section3(".specialists/ runtime directories");
-  const rootDir = join36(CWD, ".specialists");
-  const jobsDir = join36(rootDir, "jobs");
-  const readyDir = join36(rootDir, "ready");
+  const rootDir = join38(CWD, ".specialists");
+  const jobsDir = join38(rootDir, "jobs");
+  const readyDir = join38(rootDir, "ready");
   let allOk = true;
-  if (!existsSync32(rootDir)) {
+  if (!existsSync33(rootDir)) {
     warn3(".specialists/ not found in current project");
     fix("specialists init");
     allOk = false;
   } else {
     ok3(".specialists/ present");
     for (const [subDir, label] of [[jobsDir, "jobs"], [readyDir, "ready"]]) {
-      if (!existsSync32(subDir)) {
+      if (!existsSync33(subDir)) {
         warn3(`.specialists/${label}/ missing \u2014 auto-creating`);
-        mkdirSync12(subDir, { recursive: true });
+        mkdirSync14(subDir, { recursive: true });
         ok3(`.specialists/${label}/ created`);
       } else {
         ok3(`.specialists/${label}/ present`);
@@ -54898,8 +55811,8 @@ function checkRuntimeDirs() {
 function checkClaudeMdFragments() {
   section3("CLAUDE.md fragments");
   const projectRoot = process.cwd();
-  const claudeMd = join36(projectRoot, "CLAUDE.md");
-  if (!existsSync32(claudeMd)) {
+  const claudeMd = join38(projectRoot, "CLAUDE.md");
+  if (!existsSync33(claudeMd)) {
     warn3("No CLAUDE.md in project root \u2014 skipping fragment check");
     return true;
   }
@@ -54908,7 +55821,7 @@ function checkClaudeMdFragments() {
     hint("install xtrm-tools to enable: xt claude-sync --check");
     return true;
   }
-  const result = spawnSync21("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
+  const result = spawnSync22("xt", ["claude-sync", "--check", "--json", "--cwd", projectRoot], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -54953,7 +55866,7 @@ function checkClaudeMdFragments() {
   return allOk;
 }
 function parseDoctorArgs(argv) {
-  const opts = { json: false, drift: false };
+  const opts = { json: false, drift: false, specialists: false };
   for (let i = 0;i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--json") {
@@ -54962,6 +55875,10 @@ function parseDoctorArgs(argv) {
     }
     if (token === "--check-drift" || token === "--drift") {
       opts.drift = true;
+      continue;
+    }
+    if (token === "--specialists" || token === "--check-specialists") {
+      opts.specialists = true;
       continue;
     }
     if (token === "--root") {
@@ -54977,6 +55894,77 @@ function parseDoctorArgs(argv) {
     throw new Error(`Unknown argument: ${token}`);
   }
   return opts;
+}
+async function checkSpecialistOverrides() {
+  section3("specialist overrides  (KAN-90 global user.json)");
+  let loader;
+  try {
+    loader = new SpecialistLoader;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    fail4(`could not construct SpecialistLoader: ${msg}`);
+    return false;
+  }
+  const globalLayer = loader.getGlobalLayerPath();
+  if (!globalLayer) {
+    warn3("global user-config path could not be resolved (HOME and XDG_CONFIG_HOME both unset)");
+    fix("set HOME or XDG_CONFIG_HOME, then run: sp init --global");
+    return false;
+  }
+  if (globalLayer.exists) {
+    ok3(`global user config: ${globalLayer.path}  ${dim14(`(source: ${globalLayer.source})`)}`);
+  } else {
+    warn3(`global user config NOT present at ${globalLayer.path}  ${dim14(`(source: ${globalLayer.source})`)}`);
+    fix("sp init --global");
+  }
+  let summaries;
+  try {
+    summaries = await loader.list();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    fail4(`SpecialistLoader.list() threw: ${msg}`);
+    return false;
+  }
+  const missing = [];
+  for (const summary of summaries) {
+    if (!summary.model || summary.model === "")
+      missing.push(summary.name);
+  }
+  const total = summaries.length;
+  const present = total - missing.length;
+  if (missing.length === 0) {
+    ok3(`${present}/${total} specialists have a model configured`);
+  } else if (!globalLayer.exists) {
+    warn3(`${present}/${total} specialists have a model configured  ${dim14("(global override file not created yet)")}`);
+    fix("sp init --global  \u2192  sp edit --global  (set the model for each specialist you use)");
+  } else {
+    fail4(`${present}/${total} specialists have a model configured`);
+    hint(`missing: ${missing.join(", ")}`);
+    fix(`sp edit --global <name>.execution.model <model-id>   (run once per missing specialist)`);
+  }
+  const warnings = loader.getBlockedFieldWarnings();
+  if (warnings.length === 0) {
+    ok3("no blocked-field overrides detected");
+  } else {
+    const stripCount = warnings.filter((w) => w.severity === "strip").length;
+    const warnCount = warnings.filter((w) => w.severity === "warn").length;
+    if (stripCount > 0) {
+      fail4(`${stripCount} blocked-field overrides STRIPPED from the global layer`);
+      for (const w of warnings.filter((w2) => w2.severity === "strip")) {
+        hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim14("(source: global, stripped)")}`);
+      }
+      fix(`remove blocked fields from ${globalLayer.path}`);
+    }
+    if (warnCount > 0) {
+      warn3(`${warnCount} blocked-field overrides present in repo layers (v1: applied with warning)`);
+      for (const w of warnings.filter((w2) => w2.severity === "warn")) {
+        hint(`${w.specialist}: ${w.field} = ${JSON.stringify(w.value)}  ${dim14(`(source: ${w.source})`)}`);
+      }
+    }
+  }
+  const stripFailures = warnings.filter((w) => w.severity === "strip").length;
+  const missingFailures = globalLayer.exists ? missing.length : 0;
+  return stripFailures === 0 && missingFailures === 0;
 }
 function renderDriftTable(root, json = false) {
   const report = detectDriftUnderRoot(root);
@@ -55025,10 +56013,10 @@ function compareVersions2(left, right) {
 }
 function setStatusError(statusPath) {
   try {
-    const raw = readFileSync31(statusPath, "utf8");
+    const raw = readFileSync32(statusPath, "utf8");
     const status = JSON.parse(raw);
     status.status = "error";
-    writeFileSync16(statusPath, `${JSON.stringify(status, null, 2)}
+    writeFileSync18(statusPath, `${JSON.stringify(status, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -55079,11 +56067,11 @@ function cleanupProcesses(jobsDir, dryRun) {
     zombieJobIds: []
   };
   for (const jobId of entries) {
-    const statusPath = join36(jobsDir, jobId, "status.json");
-    if (!existsSync32(statusPath))
+    const statusPath = join38(jobsDir, jobId, "status.json");
+    if (!existsSync33(statusPath))
       continue;
     try {
-      const status = JSON.parse(readFileSync31(statusPath, "utf8"));
+      const status = JSON.parse(readFileSync32(statusPath, "utf8"));
       result.total += 1;
       if (status.status !== "running" && status.status !== "starting")
         continue;
@@ -55168,8 +56156,8 @@ function resolveWatchdogMode() {
 function checkZombieJobs() {
   section3("Background jobs");
   hint(`watchdog mode: ${resolveWatchdogMode()}`);
-  const jobsDir = join36(CWD, ".specialists", "jobs");
-  if (!existsSync32(jobsDir)) {
+  const jobsDir = join38(CWD, ".specialists", "jobs");
+  if (!existsSync33(jobsDir)) {
     hint("No .specialists/jobs/ \u2014 skipping");
     return true;
   }
@@ -55198,6 +56186,15 @@ async function run34(argv = process.argv.slice(3)) {
     renderDriftTable(opts.root ?? process.cwd(), opts.json);
     return;
   }
+  if (opts.specialists) {
+    console.log(`
+${bold13("specialists doctor --specialists")}
+`);
+    const overridesOk2 = await checkSpecialistOverrides();
+    console.log("");
+    process.exitCode = overridesOk2 ? 0 : 1;
+    return;
+  }
   if (subcommand && subcommand !== "--help" && subcommand !== "-h" && !subcommand.startsWith("--")) {
     console.error(`Unknown doctor subcommand: '${subcommand}'`);
     process.exit(1);
@@ -55218,7 +56215,8 @@ ${bold13("specialists doctor")}
   const dirsOk = checkRuntimeDirs();
   const jobsOk = checkZombieJobs();
   const fragmentsOk = checkClaudeMdFragments();
-  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk;
+  const overridesOk = await checkSpecialistOverrides();
+  const allOk = piOk && spOk && bdOk && xtOk && hooksOk && mcpOk && versionOk && skillDriftOk && mirrorOk && userOverlayOk && dirsOk && jobsOk && fragmentsOk && overridesOk;
   console.log("");
   if (allOk) {
     console.log(`  ${green14("\u2713")} ${bold13("All checks passed")}  \u2014 specialists is healthy`);
@@ -55233,20 +56231,21 @@ var init_doctor = __esm(() => {
   init_observability_sqlite();
   init_canonical_asset_resolver();
   init_drift_detector();
+  init_loader();
   init_version_check();
   CWD = process.cwd();
-  CLAUDE_DIR = join36(CWD, ".claude");
-  PI_DIR = join36(CWD, ".pi");
-  XTRM_SKILLS_DIR = join36(CWD, ".xtrm", "skills");
-  XTRM_DEFAULT_SKILLS_DIR = join36(XTRM_SKILLS_DIR, "default");
-  XTRM_ACTIVE_SKILLS_DIR = join36(XTRM_SKILLS_DIR, "active");
-  SPECIALISTS_DIR = join36(CWD, ".specialists");
-  DEFAULT_SPECIALISTS_DIR = join36(SPECIALISTS_DIR, "default");
-  USER_SPECIALISTS_DIR = join36(SPECIALISTS_DIR, "user");
-  HOOKS_DIR = join36(CWD, ".xtrm", "hooks", "specialists");
-  CLAUDE_HOOKS_DIR = join36(CLAUDE_DIR, "hooks");
-  SETTINGS_FILE = join36(CLAUDE_DIR, "settings.json");
-  MCP_FILE2 = join36(CWD, ".mcp.json");
+  CLAUDE_DIR = join38(CWD, ".claude");
+  PI_DIR = join38(CWD, ".pi");
+  XTRM_SKILLS_DIR = join38(CWD, ".xtrm", "skills");
+  XTRM_DEFAULT_SKILLS_DIR = join38(XTRM_SKILLS_DIR, "default");
+  XTRM_ACTIVE_SKILLS_DIR = join38(XTRM_SKILLS_DIR, "active");
+  SPECIALISTS_DIR = join38(CWD, ".specialists");
+  DEFAULT_SPECIALISTS_DIR = join38(SPECIALISTS_DIR, "default");
+  USER_SPECIALISTS_DIR = join38(SPECIALISTS_DIR, "user");
+  HOOKS_DIR = join38(CWD, ".xtrm", "hooks", "specialists");
+  CLAUDE_HOOKS_DIR = join38(CLAUDE_DIR, "hooks");
+  SETTINGS_FILE = join38(CLAUDE_DIR, "settings.json");
+  MCP_FILE2 = join38(CWD, ".mcp.json");
   HOOK_NAMES = [
     "specialists-complete.mjs",
     "specialists-session-start.mjs"
@@ -55279,20 +56278,20 @@ async function run35() {
 var bold14 = (s) => `\x1B[1m${s}\x1B[0m`, yellow13 = (s) => `\x1B[33m${s}\x1B[0m`, dim15 = (s) => `\x1B[2m${s}\x1B[0m`;
 
 // src/cli/serve-hot-reload.ts
-import { existsSync as existsSync33, readdirSync as readdirSync19, statSync as statSync9, watch as fsWatch } from "fs";
-import { join as join37 } from "path";
+import { existsSync as existsSync34, readdirSync as readdirSync19, statSync as statSync9, watch as fsWatch } from "fs";
+import { join as join39 } from "path";
 function specialistNameFromFile(file) {
   const match = file.match(/^(.+)\.specialist\.(json|yaml)$/);
   return match ? match[1] : null;
 }
 function snapshotMtimes(dir) {
   const out = new Map;
-  if (!existsSync33(dir))
+  if (!existsSync34(dir))
     return out;
   const entries = readdirSync19(dir).filter((name) => specialistNameFromFile(name) !== null);
   for (const name of entries) {
     try {
-      out.set(name, statSync9(join37(dir, name)).mtimeMs);
+      out.set(name, statSync9(join39(dir, name)).mtimeMs);
     } catch {}
   }
   return out;
@@ -55349,7 +56348,7 @@ function createUserDirWatcher(opts) {
       for (const file of changed)
         queue(file);
     }, opts.pollMs);
-  } else if (existsSync33(opts.userDir)) {
+  } else if (existsSync34(opts.userDir)) {
     try {
       watcher = fsWatch(opts.userDir, { persistent: false }, (_eventType, filename) => {
         queue(filename ? String(filename) : null);
@@ -55388,13 +56387,13 @@ __export(exports_serve, {
   checkPiHelpForFlags: () => checkPiHelpForFlags
 });
 import { createServer } from "http";
-import { randomUUID as randomUUID3 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 import { once } from "events";
-import { spawnSync as spawnSync22 } from "child_process";
+import { spawnSync as spawnSync23 } from "child_process";
 import { access, readdir as readdir2, readFile as readFile5, constants } from "fs/promises";
-import { existsSync as existsSync34 } from "fs";
-import { homedir as homedir5 } from "os";
-import { join as join38 } from "path";
+import { existsSync as existsSync35 } from "fs";
+import { homedir as homedir6 } from "os";
+import { join as join40 } from "path";
 function createReadinessState() {
   return { shuttingDown: false, auditFailures: [], dbWriteFailuresTotal: 0 };
 }
@@ -55410,7 +56409,7 @@ function pruneAuditFailures(state, now = Date.now()) {
   }
 }
 async function checkUserDirSpecs(userDir) {
-  if (!existsSync34(userDir))
+  if (!existsSync35(userDir))
     return "empty";
   const entries = await readdir2(userDir).catch(() => []);
   const specFiles = entries.filter((name) => name.endsWith(".specialist.json") || name.endsWith(".specialist.yaml"));
@@ -55419,7 +56418,7 @@ async function checkUserDirSpecs(userDir) {
   let validCount = 0;
   for (const file of specFiles) {
     try {
-      const content = await readFile5(join38(userDir, file), "utf-8");
+      const content = await readFile5(join40(userDir, file), "utf-8");
       const json = file.endsWith(".json") ? content : null;
       if (!json)
         continue;
@@ -55437,7 +56436,7 @@ async function evaluateReadiness2(opts) {
   if (opts.state.auditFailures.length > opts.auditFailureThreshold) {
     return { ready: false, reason: "degraded:audit" };
   }
-  const piConfigPath = opts.piConfigPath ?? join38(homedir5(), ".pi", "agent", "auth.json");
+  const piConfigPath = opts.piConfigPath ?? join40(homedir6(), ".pi", "agent", "auth.json");
   try {
     await access(piConfigPath, constants.R_OK);
   } catch {
@@ -55458,7 +56457,7 @@ async function evaluateReadiness2(opts) {
       warning = canaryFailure;
     }
   }
-  const userDir = join38(opts.projectDir, ".specialists", "user");
+  const userDir = join40(opts.projectDir, ".specialists", "user");
   const userDirResult = await checkUserDirSpecs(userDir);
   if (userDirResult === "empty")
     return { ready: false, reason: "empty_user_dir" };
@@ -55530,7 +56529,7 @@ function parseArgs16(argv) {
   return { port, concurrency, queueTimeoutMs, shutdownGraceMs, projectDir, dbPath, fallbackModel, auditFailureThreshold, allowSkills, allowSkillsRoots, reloadPollMs, readinessCanaryMode, readinessRequiredPiFlags, readinessCanarySpecialist, readinessCanaryTimeoutMs, logLevel };
 }
 function checkPiHelpForFlags(flags = DEFAULT_REQUIRED_PI_FLAGS) {
-  const result = spawnSync22("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync23("pi", ["--help"], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error || result.status === 127)
     return "pi_binary_missing";
   const help = `${result.stdout ?? ""}
@@ -55604,7 +56603,7 @@ async function startServe(argv = process.argv.slice(3)) {
     return createObservabilitySqliteClient(args.projectDir);
   })();
   const readinessState = createReadinessState();
-  const userDir = join38(args.projectDir, ".specialists", "user");
+  const userDir = join40(args.projectDir, ".specialists", "user");
   const hotReload = createUserDirWatcher({ loader, userDir, pollMs: args.reloadPollMs });
   let active = 0;
   const children = new Set;
@@ -55666,7 +56665,7 @@ async function startServe(argv = process.argv.slice(3)) {
     const requestStartedAt = Date.now();
     const method = req.method ?? "POST";
     const path3 = req.url ?? "/v1/generate";
-    const requestTraceId = randomUUID3();
+    const requestTraceId = randomUUID5();
     if (readinessState.shuttingDown) {
       emitGenerateLog(args.logLevel, {
         trace_id: requestTraceId,
@@ -55810,7 +56809,7 @@ __export(exports_script, {
   parseArgs: () => parseArgs17,
   mapExitCode: () => mapExitCode
 });
-import { spawnSync as spawnSync23 } from "child_process";
+import { spawnSync as spawnSync24 } from "child_process";
 function parseVar(entry) {
   const index = entry.indexOf("=");
   if (index <= 0)
@@ -55913,7 +56912,7 @@ function printResult(result, json) {
   console.error(result.error);
 }
 function runUnderLock(lockPath, argv) {
-  const flock = spawnSync23("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
+  const flock = spawnSync24("flock", ["-n", lockPath, "env", "SP_SCRIPT_NO_LOCK=1", process.execPath, process.argv[1], "script", ...argv], {
     encoding: "utf-8",
     stdio: "inherit"
   });
@@ -56123,7 +57122,7 @@ var init_help = __esm(() => {
 });
 
 // src/index.ts
-import { spawnSync as spawnSync24 } from "child_process";
+import { spawnSync as spawnSync25 } from "child_process";
 
 // node_modules/zod/v4/core/core.js
 var NEVER2 = Object.freeze({
@@ -63404,7 +64403,9 @@ class StdioServerTransport {
 }
 
 // src/server.ts
-import { join as join6 } from "path";
+init_zod();
+import { randomUUID } from "crypto";
+import { join as join7 } from "path";
 
 // src/constants.ts
 var LOG_PREFIX = "[specialists]";
@@ -63446,28 +64447,9 @@ var AGENT_ROLES = {
   }
 };
 
-// src/utils/logger.ts
-var logger = {
-  info: (message, ...args) => {
-    console.error(`${LOG_PREFIX} [INFO] ${message}`, ...args);
-  },
-  error: (message, ...args) => {
-    console.error(`${LOG_PREFIX} [ERROR] ${message}`, ...args);
-  },
-  warn: (message, ...args) => {
-    console.error(`${LOG_PREFIX} [WARN] ${message}`, ...args);
-  },
-  debug: (message, ...args) => {
-    if (process.env.DEBUG) {
-      console.error(`${LOG_PREFIX} [DEBUG] ${message}`, ...args);
-    }
-  },
-  progress: (message) => {
-    console.error(`${LOG_PREFIX} [PROGRESS] ${message}`);
-  }
-};
-
 // src/server.ts
+init_forensic_events();
+init_observability_sqlite();
 init_loader();
 init_runner();
 init_hooks();
@@ -63528,69 +64510,136 @@ function createUseSpecialistTool(runner) {
   };
 }
 
+// src/utils/logger.ts
+var logger = {
+  info: (message, ...args) => {
+    console.error(`${LOG_PREFIX} [INFO] ${message}`, ...args);
+  },
+  error: (message, ...args) => {
+    console.error(`${LOG_PREFIX} [ERROR] ${message}`, ...args);
+  },
+  warn: (message, ...args) => {
+    console.error(`${LOG_PREFIX} [WARN] ${message}`, ...args);
+  },
+  debug: (message, ...args) => {
+    if (process.env.DEBUG) {
+      console.error(`${LOG_PREFIX} [DEBUG] ${message}`, ...args);
+    }
+  },
+  progress: (message) => {
+    console.error(`${LOG_PREFIX} [PROGRESS] ${message}`);
+  }
+};
+
 // src/server.ts
-init_zod();
+function createMcpCallContext(sessionId, request = {}) {
+  return {
+    mcpSessionId: sessionId,
+    jsonrpcRequestId: typeof request.id === "string" || typeof request.id === "number" ? String(request.id) : undefined,
+    traceId: randomUUID(),
+    spanId: randomUUID()
+  };
+}
+function toMcpMeta(context) {
+  return {
+    trace_id: context.traceId,
+    span_id: context.spanId,
+    mcp_session_id: context.mcpSessionId,
+    ...context.jsonrpcRequestId ? { jsonrpc_request_id: context.jsonrpcRequestId } : {},
+    trace_carrier: "_meta"
+  };
+}
+function emitMcpForensicEvent(observability, eventName, context, body, durationMs, errorType) {
+  if (!observability)
+    return;
+  observability.appendForensicEvent("mcp-gateway", "specialists-mcp", undefined, createForensicEvent({
+    event_family: "mcp",
+    event_name: eventName,
+    severity: eventName.endsWith(".failed") || eventName === "mcp.auth.failed" ? "error" : eventName === "mcp.rate_limited" ? "warn" : "info",
+    resource: {
+      service_namespace: "xtrm",
+      service_name: "specialists",
+      service_component: "mcp-gateway",
+      deployment_environment: "local",
+      repo: "specialists",
+      participant_kind: "adapter",
+      participant_role: "specialists-mcp"
+    },
+    correlation: {
+      mcp_session_id: context.mcpSessionId,
+      jsonrpc_request_id: context.jsonrpcRequestId,
+      trace_id: context.traceId,
+      span_id: context.spanId
+    },
+    body: {
+      ...body,
+      ...durationMs !== undefined ? { duration_ms: durationMs } : {},
+      ...errorType ? { error_type: errorType } : {}
+    },
+    redaction: { status: "clean" }
+  }));
+}
 
 class SpecialistsServer {
   server;
   tools;
+  observability;
+  mcpSessionId;
   constructor() {
     const circuitBreaker = new CircuitBreaker;
     const loader = new SpecialistLoader;
-    const hooks = new HookEmitter({
-      tracePath: join6(process.cwd(), ".specialists", "trace.jsonl")
-    });
+    const hooks = new HookEmitter({ tracePath: join7(process.cwd(), ".specialists", "trace.jsonl") });
     const beadsClient = new BeadsClient;
     const runner = new SpecialistRunner({ loader, hooks, circuitBreaker, beadsClient });
     this.tools = [createUseSpecialistTool(runner)];
+    this.observability = createObservabilitySqliteClient();
+    this.mcpSessionId = randomUUID();
     this.server = new Server({ name: MCP_CONFIG.SERVER_NAME, version: MCP_CONFIG.VERSION }, { capabilities: MCP_CONFIG.CAPABILITIES });
     this.setupHandlers();
   }
   toolSchemas = {};
   setupHandlers() {
-    const schemaMap = {
-      use_specialist: useSpecialistSchema
-    };
+    const schemaMap = { use_specialist: useSpecialistSchema };
     this.toolSchemas = schemaMap;
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       logger.debug("Received ListTools request");
-      const tools = this.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: zodToJsonSchema(schemaMap[t.name] ?? exports_external.object({}))
+      const tools = this.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: zodToJsonSchema(schemaMap[tool.name] ?? exports_external.object({}))
       }));
       logger.debug(`Returning ${tools.length} tools`);
       return { tools };
     });
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name: toolName, arguments: args = {} } = request.params;
+      const context = createMcpCallContext(this.mcpSessionId, request.id ? { id: request.id } : {});
       logger.info(`Tool call: ${toolName}`);
-      const tool = this.tools.find((t) => t.name === toolName);
+      emitMcpForensicEvent(this.observability, "mcp.call.started", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, network_transport: "stdio" });
+      const tool = this.tools.find((candidate) => candidate.name === toolName);
       if (!tool) {
         logger.error(`Tool not found: ${toolName}`);
+        emitMcpForensicEvent(this.observability, "mcp.call.failed", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, status_code: "ERROR" }, undefined, "tool_not_found");
         throw new Error(`Tool '${toolName}' not found`);
       }
       const schema = this.toolSchemas[toolName];
-      const parsed = schema ? schema.parse(args) : args;
+      const startedAt = Date.now();
       const onProgress = (msg) => {
-        this.server.notification({
-          method: "notifications/message",
-          params: { level: "info", logger: "specialists", data: msg }
-        }).catch(() => {});
+        this.server.notification({ method: "notifications/message", params: { level: "info", logger: "specialists", data: msg } }).catch(() => {});
       };
       try {
+        const parsed = schema ? schema.parse(args) : args;
         const result = await tool.execute(parsed, onProgress);
-        return {
-          content: [
-            {
-              type: "text",
-              text: typeof result === "string" ? result : JSON.stringify(result, null, 2)
-            }
-          ]
-        };
+        const elapsedMs = Date.now() - startedAt;
+        emitMcpForensicEvent(this.observability, "mcp.call.completed", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, status_code: "OK" }, elapsedMs);
+        emitMcpForensicEvent(this.observability, "mcp.latency.observed", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, status_code: "OK" }, elapsedMs);
+        return { content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result, null, 2) }], _meta: toMcpMeta(context) };
       } catch (error2) {
         const message = error2 instanceof Error ? error2.message : String(error2);
         logger.error(`Tool ${toolName} failed: ${message}`);
+        const elapsedMs = Date.now() - startedAt;
+        emitMcpForensicEvent(this.observability, "mcp.call.failed", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, status_code: "ERROR" }, elapsedMs, error2 instanceof Error ? error2.name : "internal_error");
+        emitMcpForensicEvent(this.observability, "mcp.latency.observed", context, { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "tools/call", tool_name: toolName, status_code: "ERROR" }, elapsedMs);
         throw error2;
       }
     });
@@ -63599,9 +64648,11 @@ class SpecialistsServer {
     try {
       const transport = new StdioServerTransport;
       await this.server.connect(transport);
+      emitMcpForensicEvent(this.observability, "mcp.connected", createMcpCallContext(this.mcpSessionId), { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "initialize", network_transport: "stdio" });
       logger.info(`Specialists MCP Server v2 started \u2014 ${this.tools.length} tools registered`);
       process.on("SIGTERM", async () => {
         logger.info("SIGTERM received \u2014 shutting down");
+        emitMcpForensicEvent(this.observability, "mcp.disconnected", createMcpCallContext(this.mcpSessionId), { mcp_server: MCP_CONFIG.SERVER_NAME, mcp_method: "shutdown", network_transport: "stdio" });
         await this.stop();
         process.exit(0);
       });
@@ -63780,11 +64831,14 @@ async function run39() {
         "  --sync-skills      Re-sync skills only (.xtrm/default + active symlinks).",
         "                     Skips full init flow.",
         "  --no-xtrm-check    Skip .xtrm/ + xt CLI prerequisite checks (CI/testing).",
+        "  --global           Generate/extend the global ~/.config/specialists/user.json",
+        "                     override layer instead of bootstrapping a project.",
         "",
         "Examples:",
         "  specialists init                  # full bootstrap",
         "  specialists init --sync-defaults  # sync canonical specialists",
         "  specialists init --sync-skills    # re-sync skills only",
+        "  specialists init --global         # seed global user overrides",
         "",
         "Notes:",
         "  setup and install are deprecated; use specialists init.",
@@ -63802,8 +64856,9 @@ async function run39() {
     const syncDefaults = process.argv.includes("--sync-defaults");
     const syncSkills = process.argv.includes("--sync-skills");
     const noXtrmCheck = process.argv.includes("--no-xtrm-check");
+    const globalFlag = process.argv.includes("--global");
     const { run: handler } = await Promise.resolve().then(() => (init_init(), exports_init));
-    return handler({ syncDefaults, syncSkills, noXtrmCheck });
+    return handler({ syncDefaults, syncSkills, noXtrmCheck, global: globalFlag });
   }
   if (sub === "memory") {
     if (wantsHelp()) {
@@ -63912,18 +64967,22 @@ async function run39() {
         "       specialists edit --all --set <dot.path> <value> [options]",
         "       specialists edit --all",
         "       specialists edit <name> --preset <preset> [--dry-run]",
+        "       specialists edit --global [name.field value]",
+        "       specialists edit --global --get name.execution.model",
+        "       specialists edit --global --set name.execution.model <value>",
         "       specialists edit --list-presets",
         "",
         "Edit specialist YAML fields via schema-validated dot-paths.",
         "",
         "Options:",
+        "  --global                 Edit ~/.config/specialists/user.json override layer",
         "  --append                 Append value(s) to array field",
         "  --remove                 Remove value(s) from array field",
         "  --file <path>            Read value from file (prompt.system/task_template)",
         "  --preset <name>          Apply a preset (bundle of field values)",
         "  --list-presets            Show available presets",
         "  --dry-run                Preview change without writing",
-        "  --scope <default|user>   Disambiguate duplicate names across scopes",
+        "  --scope <default|user>   Disambiguate duplicate names across scopes (excludes --global)",
         "  --all                    Target all specialists (or open all in $EDITOR when used alone)",
         "",
         "Backwards-compat aliases:",
@@ -64766,7 +65825,7 @@ async function run39() {
   }
   if (sub === "release") {
     console.error("Deprecated. Use `xt release prepare/publish`. This alias will be removed in v4.0.");
-    const result = spawnSync24("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
+    const result = spawnSync25("xt", ["release", ...process.argv.slice(3)], { stdio: "inherit" });
     if (result.error) {
       console.error(`Failed to run xt release: ${result.error.message}`);
       process.exit(1);

@@ -28,6 +28,7 @@ export interface RunArgs {
     forceStaleBase: boolean;
 }
 export declare function buildInjectedReviewerDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
+export declare function buildInjectedWriterDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
 export declare function run(): Promise<void>;
 export {};
 //# sourceMappingURL=run.d.ts.map

@@ -12,6 +12,14 @@ import {
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
 import { syncMemoriesCacheFromBd } from '../specialist/memory-retrieval.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
+import { SpecialistLoader } from '../specialist/loader.js';
+import {
+  buildGlobalUserConfigTemplate,
+  getGlobalUserConfigPath,
+  mergeGlobalUserConfig,
+  readGlobalUserConfig,
+  writeGlobalUserConfig,
+} from '../specialist/global-config.js';
 
 // ── ANSI helpers ───────────────────────────────────────────────────────────────
 const bold   = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -870,9 +878,64 @@ export interface InitOptions {
   syncSkills?: boolean;
   /** Skip xtrm prerequisites (.xtrm dir + xt CLI). Useful for CI/testing. */
   noXtrmCheck?: boolean;
+  /** When true, manage the global ~/.config/specialists/user.json override layer instead of bootstrapping a project. */
+  global?: boolean;
+}
+
+/**
+ * Generate / extend the global ~/.config/specialists/user.json override layer.
+ * Idempotent: seeds every shipped specialist with null/[] defaults on first run;
+ * on re-run extends with newly-shipped specialists and fills missing override
+ * fields WITHOUT clobbering user-filled values. Removed specialists stay in the
+ * file and are surfaced in stdout (no JSON comments — doctor flags them).
+ */
+export async function runGlobal(): Promise<void> {
+  console.log(`\n${bold('specialists init --global')}\n`);
+
+  const loader = new SpecialistLoader();
+  const specialists = await loader.list();
+  const shippedNames = specialists.map(spec => spec.name).sort();
+  const template = buildGlobalUserConfigTemplate(shippedNames);
+
+  const location = getGlobalUserConfigPath();
+  const existing = readGlobalUserConfig(location);
+
+  if (existing) {
+    const result = mergeGlobalUserConfig(
+      existing as Record<string, unknown>,
+      template,
+    );
+    writeGlobalUserConfig(location, result.config);
+
+    ok(`using global config at ${location.path} (${location.source})`);
+    if (result.added.length > 0) {
+      ok(`added ${result.added.length} new specialist${result.added.length === 1 ? '' : 's'}: ${result.added.join(', ')}`);
+    } else {
+      skip('no new specialists to add');
+    }
+    if (result.extended.length > 0) {
+      ok(`preserved ${result.extended.length} existing specialist${result.extended.length === 1 ? '' : 's'} (user values kept)`);
+    }
+    for (const removedName of result.removed) {
+      warn(`${removedName} is no longer shipped but kept in file (remove manually if unwanted)`);
+    }
+  } else {
+    writeGlobalUserConfig(location, template);
+    ok(`created global config at ${location.path} (${location.source})`);
+    ok(`seeded ${shippedNames.length} specialist${shippedNames.length === 1 ? '' : 's'} with inherit defaults`);
+  }
+
+  console.log(`\n${bold('Done!')}\n`);
+  console.log(`  ${dim('Edit override fields with:')}`);
+  console.log(`  ${yellow('specialists edit --global <name>.execution.model <value>')}`);
+  console.log(`  ${yellow('specialists edit --global')} ${dim('# open in $EDITOR')}\n`);
 }
 
 export async function run(opts: InitOptions = {}): Promise<void> {
+  if (opts.global) {
+    return runGlobal();
+  }
+
   const cwd = process.cwd();
 
   const forceInit = process.env.SPECIALISTS_INIT_FORCE === '1';

@@ -1,8 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as z from 'zod';
 import { SpecialistLoader, type SpecialistSummary } from '../specialist/loader.js';
 import { SpecialistSchema } from '../specialist/schema.js';
+import {
+  GlobalSpecialistOverrideSchema,
+  getGlobalUserConfigPath,
+  readGlobalUserConfig,
+  validateGlobalUserConfig,
+  writeGlobalUserConfig,
+} from '../specialist/global-config.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
@@ -68,6 +76,8 @@ interface ParsedArgs {
   filePath?: string;
   preset?: string;
   forkFrom?: string;
+  /** When true, target the global ~/.config/specialists/user.json override layer. */
+  global: boolean;
 }
 
 interface ResolvedPath {
@@ -87,16 +97,21 @@ function usage(): string {
     '  specialists edit --all --set <dot.path> <value> [options]',
     '  specialists edit --all --get <dot.path>',
     '  specialists edit <name> --preset <preset> [--dry-run]',
+    '  specialists edit --global [<name>.<field.path> <value>]',
+    '  specialists edit --global --get <name>.<field.path>',
+    '  specialists edit --global --set <name>.<field.path> <value>',
+    '  specialists edit --global                       # open in $EDITOR',
     '  specialists edit --list-presets',
     '',
     'Options:',
+    '  --global              Edit ~/.config/specialists/user.json override layer',
     '  --append              Append value(s) to array field',
     '  --remove              Remove value(s) from array field',
     '  --file <path>         Read value from file (prompt.system/task_template)',
     '  --preset <name>       Apply a preset (bundle of field values)',
     '  --list-presets         Show available presets',
     '  --dry-run             Preview the change without writing',
-    '  --scope <scope>       default | user',
+    '  --scope <scope>       default | user (mutually exclusive with --global)',
     '  --name <specialist>   Alias for positional <name> (compat)',
     '',
     `Legacy aliases (compat): ${aliasList}`,
@@ -110,7 +125,7 @@ function fail(message: string): never {
 
 function parseArgs(argv: string[]): ParsedArgs {
   if (argv.includes('--list-presets')) {
-    return { all: false, dryRun: false, action: 'list-presets' };
+    return { all: false, dryRun: false, action: 'list-presets', global: false };
   }
 
   let name: string | undefined;
@@ -124,6 +139,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let pendingArrayOp: 'append' | 'remove' | undefined;
   let preset: string | undefined;
   let forkFrom: string | undefined;
+  let global = false;
 
   const positional: string[] = [];
 
@@ -145,6 +161,26 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (token === '--global') {
+      if (scope !== undefined) {
+        fail(`Error: --global cannot be combined with --scope\n\n${usage()}`);
+      }
+      global = true;
+      continue;
+    }
+
+    if (token === '--scope') {
+      if (global) {
+        fail(`Error: --scope cannot be combined with --global\n\n${usage()}`);
+      }
+      const rawScope = argv[++i];
+      if (rawScope !== 'default' && rawScope !== 'user') {
+        fail(`Error: --scope must be "default" or "user", got: "${rawScope ?? ''}"`);
+      }
+      scope = rawScope;
+      continue;
+    }
+
     if (token === '--append') {
       pendingArrayOp = 'append';
       continue;
@@ -152,15 +188,6 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (token === '--remove') {
       pendingArrayOp = 'remove';
-      continue;
-    }
-
-    if (token === '--scope') {
-      const rawScope = argv[++i];
-      if (rawScope !== 'default' && rawScope !== 'user') {
-        fail(`Error: --scope must be "default" or "user", got: "${rawScope ?? ''}"`);
-      }
-      scope = rawScope;
       continue;
     }
 
@@ -259,12 +286,33 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: --get does not accept a value\n\n${usage()}`);
   }
 
+  // Global mode: specialist name lives in the dot-path (<name>.<field.path>),
+  // or no path means "open the file in $EDITOR".
+  if (global) {
+    if (all) fail('Error: --global cannot be combined with --all');
+    if (preset) fail('Error: --global cannot be combined with --preset');
+    if (forkFrom) fail('Error: --global cannot be combined with --fork-from');
+    if (filePath) fail('Error: --global cannot be combined with --file');
+    if (pendingArrayOp) fail('Error: --global does not support --append/--remove');
+    if (!path) {
+      // bare `sp edit --global` → open in $EDITOR
+      return { all: false, dryRun, action: 'set', global };
+    }
+    if (action === 'get') {
+      return { all: false, dryRun, action, path, value, global };
+    }
+    if (value === undefined || value === '') {
+      fail(`Error: missing value\n\n${usage()}`);
+    }
+    return { all: false, dryRun, action, path, value, global };
+  }
+
   if (!all && !name) {
     fail(`Error: missing specialist name. Use <name> or --all\n\n${usage()}`);
   }
 
   if (action === 'preset') {
-    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
+    return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
   }
 
   if (!path) {
@@ -283,7 +331,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: file not found: ${filePath}`);
   }
 
-  return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom };
+  return { name, all, scope, dryRun, action, path, value, filePath, preset, forkFrom, global };
 }
 
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -603,8 +651,167 @@ async function resolveTargets(args: ParsedArgs): Promise<EditableSpecialistSumma
   return [match];
 }
 
+// ── Global user-config editing (~/.config/specialists/user.json) ───────────────
+
+interface ResolvedGlobalPath {
+  specialistName: string;
+  fieldSegments: string[];
+  schema: z.ZodTypeAny;
+}
+
+/**
+ * Resolve a global dot-path of the form <specialist>.<field.path> against the
+ * override schema. The first segment is the specialist name (dynamic key);
+ * remaining segments navigate GlobalSpecialistOverrideSchema.
+ */
+function resolveGlobalPath(rawPath: string): ResolvedGlobalPath {
+  const segments = rawPath.split('.').map(part => part.trim()).filter(Boolean);
+  if (segments.length < 2) {
+    fail(`Error: global path must be <specialist>.<field.path>, got: "${rawPath}"`);
+  }
+
+  const [specialistName, ...fieldSegments] = segments;
+  let schema: z.ZodTypeAny = GlobalSpecialistOverrideSchema;
+
+  for (const segment of fieldSegments) {
+    const unwrapped = unwrapSchema(schema);
+    if (!(unwrapped instanceof z.ZodObject)) {
+      fail(`Error: invalid global path "${rawPath}" ("${segment}" is not a nested object field)`);
+    }
+    const shape = unwrapped.shape;
+    if (!(segment in shape)) {
+      fail(`Error: invalid global path "${rawPath}". Unknown segment "${segment}". Available: ${Object.keys(shape).sort().join(', ')}`);
+    }
+    schema = shape[segment];
+  }
+
+  return {
+    specialistName: specialistName!,
+    fieldSegments,
+    schema: unwrapSchema(schema),
+  };
+}
+
+/**
+ * Coerce a raw string value to the leaf type of a global override field.
+ * The literal string "null" clears a field back to inherit.
+ */
+function coerceGlobalValue(schema: z.ZodTypeAny, rawValue: string): unknown {
+  if (rawValue === 'null') return null;
+
+  const unwrapped = unwrapSchema(schema);
+
+  if (unwrapped instanceof z.ZodNumber) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      fail(`Error: value must be a number, got: ${rawValue}`);
+    }
+    return parsed;
+  }
+
+  if (unwrapped instanceof z.ZodBoolean) {
+    return parseBoolean(rawValue);
+  }
+
+  if (unwrapped instanceof z.ZodEnum) {
+    if (!unwrapped.options.includes(rawValue)) {
+      fail(`Error: invalid enum value "${rawValue}". Allowed: ${unwrapped.options.join(', ')}`);
+    }
+    return rawValue;
+  }
+
+  if (unwrapped instanceof z.ZodArray) {
+    return parseArray(rawValue, unwrapped.element);
+  }
+
+  if (unwrapped instanceof z.ZodString) {
+    return rawValue;
+  }
+
+  return rawValue;
+}
+
+function openInEditor(filePath: string): void {
+  const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || 'vi';
+  const result = spawnSync(editor, [filePath], { stdio: 'inherit' });
+  if (result.error) {
+    fail(`Error: failed to launch $EDITOR (${editor}): ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    fail(`Error: $EDITOR (${editor}) exited with status ${result.status}`);
+  }
+}
+
+/**
+ * `sp edit --global` entry: read/write the global user-config override layer.
+ * Supports --get, --set (schema-validated), and bare invocation (open $EDITOR
+ * with a validate-on-save pass).
+ */
+async function runGlobalEdit(args: ParsedArgs): Promise<void> {
+  const location = getGlobalUserConfigPath();
+
+  // Bare `sp edit --global` → open in $EDITOR, validate on save.
+  if (!args.path) {
+    if (!location.exists) {
+      fail(`Error: global config not found at ${location.path}. Run ${yellow('specialists init --global')} first.`);
+    }
+    openInEditor(location.path);
+    const content = readFileSync(location.path, 'utf-8');
+    const validation = validateGlobalUserConfig(content);
+    if (!validation.valid) {
+      const errorList = validation.errors.map(e => `  • ${e.path}: ${e.message}`).join('\n');
+      fail(`Error: global config failed validation after $EDITOR exit:\n${errorList}\n  Fix the file and re-run.`);
+    }
+    console.log(`${green('✓')} validated global config at ${location.path}`);
+    return;
+  }
+
+  const resolvedPath = resolveGlobalPath(args.path);
+  const existing = readGlobalUserConfig(location);
+  if (existing === null) {
+    fail(`Error: global config not found at ${location.path}. Run ${yellow('specialists init --global')} first.`);
+  }
+
+  const specialistOverride = (existing as Record<string, unknown>)[resolvedPath.specialistName];
+  if (specialistOverride === undefined) {
+    const available = Object.keys(existing).sort().join(', ');
+    fail(`Error: specialist "${resolvedPath.specialistName}" not in global config. Available: ${available || 'none'}`);
+  }
+
+  if (args.action === 'get') {
+    const value = getAtPath(specialistOverride, resolvedPath.fieldSegments);
+    console.log(`${yellow(resolvedPath.specialistName)}.${resolvedPath.fieldSegments.join('.')}: ${formatOutputValue(value)}`);
+    return;
+  }
+
+  const nextValue = coerceGlobalValue(resolvedPath.schema, args.value!);
+  setAtPath(specialistOverride as Record<string, unknown>, resolvedPath.fieldSegments, nextValue);
+
+  const updatedJson = `${JSON.stringify(existing, null, 2)}\n`;
+  const validation = validateGlobalUserConfig(updatedJson);
+  if (!validation.valid) {
+    const errorList = validation.errors.map(e => `  • ${e.path}: ${e.message}`).join('\n');
+    fail(`Error: change would make the global config invalid:\n${errorList}`);
+  }
+
+  if (args.dryRun) {
+    printDryRun(location.path, `${JSON.stringify(readGlobalUserConfig(location), null, 2)}\n`, updatedJson);
+    return;
+  }
+
+  writeFileSync(location.path, updatedJson, 'utf-8');
+  console.log(
+    `${green('✓')} ${bold(resolvedPath.specialistName)}.${yellow(resolvedPath.fieldSegments.join('.'))} = ${formatOutputValue(nextValue)}` +
+    dim(` (${location.path})`),
+  );
+}
+
 export async function run(): Promise<void> {
   const args = parseArgs(process.argv.slice(3));
+
+  if (args.global) {
+    return runGlobalEdit(args);
+  }
 
   if (args.action === 'list-presets') {
     const presets = loadPresets();
