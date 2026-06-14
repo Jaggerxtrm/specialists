@@ -18,8 +18,8 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "openai-codex/gpt-5.5",
-      "fallback_model": "nano-gpt/qwen/qwen3.5-397b-a17b-thinking",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 0,
       "stall_timeout_ms": 120000,
       "response_format": "markdown",

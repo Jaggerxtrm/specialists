@@ -16,9 +16,8 @@
     },
     "execution": {
       "mode": "tool",
-      "model": "nano-gpt/minimax/minimax-m3:thinking",
-      "thinking_level": "high",
-      "fallback_model": "anthropic/claude-sonnet-4-6",
+      "model": null,
+      "fallback_model": null,
       "timeout_ms": 0,
       "stall_timeout_ms": 600000,
       "response_format": "markdown",
