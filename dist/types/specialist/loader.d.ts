@@ -47,14 +47,23 @@ export declare class SpecialistLoader {
     private projectDir;
     constructor(options?: LoaderOptions);
     /**
-     * Scan dirs in priority order: highest-priority layer FIRST (user → default → package).
-     * Used both to find a file for a given name (first hit wins for "where to load") and
-     * to know which package/default file feeds the merge base.
+     * Scan dirs in priority order: highest-priority layer FIRST (user → package).
+     *
+     * KAN-90 three-layer contract:
+     *   package canonical → ~/.config/specialists/user.json → repo .specialists/user/<name>
+     *
+     * The repo `.specialists/default/` mirror was retired by commit 31a6421c
+     * ("reconcile: empty .specialists/default/ — live-from-package canonical resolves all")
+     * and is no longer walked by the loader. Stale `.specialists/default/` files left
+     * behind on disk are detected by `drift-detector` and removed by `sp prune-stale-defaults`,
+     * but they no longer feed into the merge. The legacy paths `./specialists`,
+     * `.claude/specialists`, and `.agent-forge/specialists` are likewise no longer
+     * authoritative — they belonged to the same `scope: 'default'` tier.
      */
     private getScanDirs;
     private toJson;
     private resolveSpecialistPath;
-    /** Find every layer that has a file for `name`, ordered base-first (package → default → user). */
+    /** Find every layer that has a file for `name`, ordered base-first (package → user). */
     private findLayerHits;
     /**
      * Apply override-allowed fields from `override` onto `base`, in place.
@@ -63,10 +72,12 @@ export declare class SpecialistLoader {
      */
     private applyOverrideFields;
     /**
-     * Build the merged spec for `name`. Reads every contributing layer
-     * (package base → global user.json → repo default → repo user) and applies
-     * override-allowed fields field-by-field. Does NOT throw on null model;
-     * caller (get) enforces the missing-model error.
+     * Build the merged spec for `name`. Single linear pass over the three layers:
+     *
+     *   package canonical → ~/.config/specialists/user.json → repo .specialists/user/<name>
+     *
+     * findLayerHits returns at most two hits (package + user repo), ordered base-first.
+     * Does NOT throw on null model; caller (get) enforces the missing-model error.
      */
     private buildMergedSpec;
     list(category?: string): Promise<SpecialistSummary[]>;

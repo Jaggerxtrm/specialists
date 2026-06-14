@@ -5,25 +5,43 @@ var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toESMCache_node;
+var __toESMCache_esm;
 var __toESM = (mod, isNodeMode, target) => {
+  var canCache = mod != null && typeof mod === "object";
+  if (canCache) {
+    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
+    var cached = cache.get(mod);
+    if (cached)
+      return cached;
+  }
   target = mod != null ? __create(__getProtoOf(mod)) : {};
   const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
   for (let key of __getOwnPropNames(mod))
     if (!__hasOwnProp.call(to, key))
       __defProp(to, key, {
-        get: () => mod[key],
+        get: __accessProp.bind(mod, key),
         enumerable: true
       });
+  if (canCache)
+    cache.set(mod, to);
   return to;
 };
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
       get: all[name],
       enumerable: true,
       configurable: true,
-      set: (newValue) => all[name] = () => newValue
+      set: __exportSetter.bind(all, name)
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
@@ -10335,7 +10353,7 @@ var require_formats = __commonJS((exports) => {
   }
   var TIME = /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)(z|([+-])(\d\d)(?::?(\d\d))?)?$/i;
   function getTime(strictTimeZone) {
-    return function time(str) {
+    return function time3(str) {
       const matches = TIME.exec(str);
       if (!matches)
         return false;
@@ -20904,13 +20922,8 @@ class SpecialistLoader {
     const dirs = [
       { path: join5(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
       { path: join5(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join5(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
-      { path: join5(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
       { path: join5(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
-      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" },
-      { path: join5(this.projectDir, "specialists"), scope: "default", source: "legacy" },
-      { path: join5(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
-      { path: join5(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
+      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
     return dirs.filter((d) => d.path && existsSync5(d.path));
   }
@@ -21009,6 +21022,12 @@ class SpecialistLoader {
 `);
     }
     const warnings = [];
+    const globalLocation = getGlobalUserConfigPath();
+    const globalConfig2 = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+    const globalOverride = globalConfig2?.[name];
+    if (globalOverride) {
+      warnings.push(...this.applyOverrideFields(name, base, { specialist: globalOverride }, "global"));
+    }
     for (const hit of hits.slice(1)) {
       const content = await readFile(hit.resolved.filePath, "utf-8");
       let overrideRaw;
@@ -21024,40 +21043,9 @@ class SpecialistLoader {
         process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${hit.resolved.filePath}. Please migrate to .specialist.json
 `);
       }
-      const layerSource = hit.dir.scope === "user" ? "user" : "default";
-      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, layerSource));
+      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, "user"));
     }
     const top = hits[hits.length - 1];
-    const globalLocation = getGlobalUserConfigPath();
-    const globalConfig2 = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
-    const globalOverride = globalConfig2?.[name];
-    if (globalOverride) {
-      const rebuiltBase = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
-      const rebuiltWarnings = [];
-      rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, { specialist: globalOverride }, "global"));
-      for (const hit of hits.slice(1)) {
-        const content = await readFile(hit.resolved.filePath, "utf-8");
-        let overrideRaw;
-        try {
-          overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
-        } catch {
-          continue;
-        }
-        const layerSource = hit.dir.scope === "user" ? "user" : "default";
-        rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, overrideRaw, layerSource));
-      }
-      resolveSkillsPaths(rebuiltBase, baseHit.dir.path);
-      return {
-        spec: rebuiltBase,
-        topLayer: {
-          scope: top.dir.scope,
-          source: top.dir.source,
-          filePath: top.resolved.filePath,
-          deprecatedYaml: top.resolved.deprecatedYaml
-        },
-        warnings: rebuiltWarnings
-      };
-    }
     resolveSkillsPaths(base, baseHit.dir.path);
     return {
       spec: base,
@@ -21166,6 +21154,10 @@ function readDottedPath(obj, dotted) {
   for (const part of parts) {
     if (cur === null || typeof cur !== "object")
       return;
+    if (PROTOTYPE_POLLUTION_KEYS.has(part))
+      return;
+    if (!Object.prototype.hasOwnProperty.call(cur, part))
+      return;
     cur = cur[part];
   }
   return cur;
@@ -21183,7 +21175,7 @@ function resolveSkillsPaths(spec, fileDir) {
   });
   spec.specialist.skills.paths = resolved;
 }
-var SpecialistMissingModelError;
+var SpecialistMissingModelError, PROTOTYPE_POLLUTION_KEYS;
 var init_loader = __esm(() => {
   init_dist();
   init_schema();
@@ -21197,6 +21189,7 @@ var init_loader = __esm(() => {
       this.name = "SpecialistMissingModelError";
     }
   };
+  PROTOTYPE_POLLUTION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 });
 
 // src/specialist/job-file-output.ts

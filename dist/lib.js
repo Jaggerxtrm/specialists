@@ -14457,13 +14457,8 @@ class SpecialistLoader {
     const dirs = [
       { path: join4(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
       { path: join4(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join4(this.projectDir, ".specialists", "default"), scope: "default", source: "default-mirror" },
-      { path: join4(this.projectDir, ".specialists", "default", "specialists"), scope: "default", source: "legacy" },
       { path: join4(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
-      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" },
-      { path: join4(this.projectDir, "specialists"), scope: "default", source: "legacy" },
-      { path: join4(this.projectDir, ".claude", "specialists"), scope: "default", source: "legacy" },
-      { path: join4(this.projectDir, ".agent-forge", "specialists"), scope: "default", source: "legacy" }
+      { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
     return dirs.filter((d) => d.path && existsSync4(d.path));
   }
@@ -14562,6 +14557,12 @@ class SpecialistLoader {
 `);
     }
     const warnings = [];
+    const globalLocation = getGlobalUserConfigPath();
+    const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
+    const globalOverride = globalConfig?.[name];
+    if (globalOverride) {
+      warnings.push(...this.applyOverrideFields(name, base, { specialist: globalOverride }, "global"));
+    }
     for (const hit of hits.slice(1)) {
       const content = await readFile(hit.resolved.filePath, "utf-8");
       let overrideRaw;
@@ -14577,40 +14578,9 @@ class SpecialistLoader {
         process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${hit.resolved.filePath}. Please migrate to .specialist.json
 `);
       }
-      const layerSource = hit.dir.scope === "user" ? "user" : "default";
-      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, layerSource));
+      warnings.push(...this.applyOverrideFields(name, base, overrideRaw, "user"));
     }
     const top = hits[hits.length - 1];
-    const globalLocation = getGlobalUserConfigPath();
-    const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
-    const globalOverride = globalConfig?.[name];
-    if (globalOverride) {
-      const rebuiltBase = await parseSpecialist(this.toJson(baseContent, baseHit.resolved.deprecatedYaml));
-      const rebuiltWarnings = [];
-      rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, { specialist: globalOverride }, "global"));
-      for (const hit of hits.slice(1)) {
-        const content = await readFile(hit.resolved.filePath, "utf-8");
-        let overrideRaw;
-        try {
-          overrideRaw = JSON.parse(this.toJson(content, hit.resolved.deprecatedYaml));
-        } catch {
-          continue;
-        }
-        const layerSource = hit.dir.scope === "user" ? "user" : "default";
-        rebuiltWarnings.push(...this.applyOverrideFields(name, rebuiltBase, overrideRaw, layerSource));
-      }
-      resolveSkillsPaths(rebuiltBase, baseHit.dir.path);
-      return {
-        spec: rebuiltBase,
-        topLayer: {
-          scope: top.dir.scope,
-          source: top.dir.source,
-          filePath: top.resolved.filePath,
-          deprecatedYaml: top.resolved.deprecatedYaml
-        },
-        warnings: rebuiltWarnings
-      };
-    }
     resolveSkillsPaths(base, baseHit.dir.path);
     return {
       spec: base,
@@ -14713,11 +14683,16 @@ class SpecialistLoader {
     }
   }
 }
+var PROTOTYPE_POLLUTION_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 function readDottedPath(obj, dotted) {
   const parts = dotted.split(".");
   let cur = obj;
   for (const part of parts) {
     if (cur === null || typeof cur !== "object")
+      return;
+    if (PROTOTYPE_POLLUTION_KEYS.has(part))
+      return;
+    if (!Object.prototype.hasOwnProperty.call(cur, part))
       return;
     cur = cur[part];
   }
