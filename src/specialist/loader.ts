@@ -434,6 +434,11 @@ export class SpecialistLoader {
 // rule javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.
 const PROTOTYPE_POLLUTION_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+// Read-only walk used to detect blocked-field assignments in override layers.
+// `part` is guarded by PROTOTYPE_POLLUTION_KEYS deny-list and a hasOwnProperty check above each
+// indexed read. Current callers pass static keys from BLOCKED_OVERRIDE_FIELDS (constant strings,
+// not user-controlled). Semgrep's prototype-pollution-loop rule fires on the AST shape regardless,
+// so the indexed read carries an inline `nosemgrep:` waiver on the same line.
 function readDottedPath(obj: Record<string, unknown>, dotted: string): unknown {
   const parts = dotted.split('.');
   let cur: unknown = obj;
@@ -441,11 +446,7 @@ function readDottedPath(obj: Record<string, unknown>, dotted: string): unknown {
     if (cur === null || typeof cur !== 'object') return undefined;
     if (PROTOTYPE_POLLUTION_KEYS.has(part)) return undefined;
     if (!Object.prototype.hasOwnProperty.call(cur, part)) return undefined;
-    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
-    // Read-only walk. `part` is guarded by PROTOTYPE_POLLUTION_KEYS deny-list and a hasOwnProperty
-    // check above. Current callers pass static keys from BLOCKED_OVERRIDE_FIELDS (constant strings,
-    // not user-controlled). Rule fires on pattern shape, not behavior.
-    cur = (cur as Record<string, unknown>)[part];
+    cur = (cur as Record<string, unknown>)[part]; // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
   }
   return cur;
 }
