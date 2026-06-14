@@ -441,6 +441,10 @@ function readDottedPath(obj: Record<string, unknown>, dotted: string): unknown {
     if (cur === null || typeof cur !== 'object') return undefined;
     if (PROTOTYPE_POLLUTION_KEYS.has(part)) return undefined;
     if (!Object.prototype.hasOwnProperty.call(cur, part)) return undefined;
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
+    // Read-only walk. `part` is guarded by PROTOTYPE_POLLUTION_KEYS deny-list and a hasOwnProperty
+    // check above. Current callers pass static keys from BLOCKED_OVERRIDE_FIELDS (constant strings,
+    // not user-controlled). Rule fires on pattern shape, not behavior.
     cur = (cur as Record<string, unknown>)[part];
   }
   return cur;
