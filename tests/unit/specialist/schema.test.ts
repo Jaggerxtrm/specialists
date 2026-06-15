@@ -51,6 +51,27 @@ describe('override allowlist contract', () => {
 
     expect(getGlobalSpecialistOverrideLeafPaths().slice().sort()).toEqual(schemaLeafPaths);
   });
+
+  describe('Phase 1 — six allowlisted user-environment fields', () => {
+    it('includes new execution leaf fields in OVERRIDE_ALLOWED_EXECUTION_FIELDS', () => {
+      expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('prompt_limit_bytes');
+      expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('stdout_limit_bytes');
+    });
+
+    it('includes new nested execution extension leaf paths in OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS', () => {
+      expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.serena');
+      expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.gitnexus');
+    });
+
+    it('includes system_prompt_mode in OVERRIDE_ALLOWED_PROMPT_FIELDS', () => {
+      expect(OVERRIDE_ALLOWED_PROMPT_FIELDS).toContain('system_prompt_mode');
+    });
+
+    it('includes notes_mode and output_file in OVERRIDE_ALLOWED_TOP_FIELDS', () => {
+      expect(OVERRIDE_ALLOWED_TOP_FIELDS).toContain('notes_mode');
+      expect(OVERRIDE_ALLOWED_TOP_FIELDS).toContain('output_file');
+    });
+  });
 });
 
 describe('parseSpecialist', () => {
