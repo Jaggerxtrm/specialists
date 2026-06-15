@@ -14429,7 +14429,7 @@ var OverrideExecutionSchema = objectType({
   stall_timeout_ms: numberType().nullable(),
   thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
   max_retries: numberType().int().min(0).nullable(),
-  extensions: OverrideExtensionsSchema
+  extensions: OverrideExtensionsSchema.optional()
 }).strict();
 var OverridePromptSchema = objectType({
   system_prompt_mode: enumType(["append", "replace"]).nullable()
@@ -14439,7 +14439,7 @@ var OverrideSkillsSchema = objectType({
 }).strict();
 var GlobalSpecialistOverrideSchema = objectType({
   execution: OverrideExecutionSchema,
-  prompt: OverridePromptSchema,
+  prompt: OverridePromptSchema.optional(),
   beads_write_notes: booleanType().nullable(),
   skills: OverrideSkillsSchema
 }).strict();

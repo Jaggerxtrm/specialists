@@ -28,6 +28,25 @@ describe('global specialist override config', () => {
     });
   });
 
+  it('validates pre-extension user.json without nested execution or prompt keys', () => {
+    const existing = {
+      demo: {
+        execution: {
+          model: 'global/glm-5.1',
+          fallback_model: null,
+          timeout_ms: null,
+          stall_timeout_ms: null,
+          thinking_level: null,
+          max_retries: null,
+        },
+        beads_write_notes: false,
+        skills: { paths: [] },
+      },
+    };
+
+    expect(validateGlobalUserConfig(JSON.stringify(existing))).toEqual({ valid: true, errors: [] });
+  });
+
   it('mergeGlobalUserConfig extends pre-extension user.json without clobbering values', () => {
     const existing = {
       demo: {
@@ -80,6 +99,23 @@ describe('global specialist override config', () => {
     const result = validateGlobalUserConfig(JSON.stringify(invalid));
 
     expect(result.valid).toBe(false);
-    expect(result.errors.some(error => error.path === 'demo.prompt')).toBe(true);
+    expect(result.errors.some(error => error.path === 'demo.prompt.bogus')).toBe(true);
+  });
+
+  it('validateGlobalUserConfig rejects unknown nested execution sub-keys with leaf path', () => {
+    const invalid = {
+      demo: {
+        ...buildSpecialistOverrideTemplate(),
+        execution: {
+          ...buildSpecialistOverrideTemplate().execution,
+          extensions: { serena: null, gitnexus: null, bogus: true },
+        },
+      },
+    };
+
+    const result = validateGlobalUserConfig(JSON.stringify(invalid));
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(error => error.path === 'demo.execution.extensions.bogus')).toBe(true);
   });
 });

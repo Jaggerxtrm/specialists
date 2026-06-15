@@ -20861,10 +20861,16 @@ function validateGlobalUserConfig(jsonContent) {
   if (result.success) {
     return { valid: true, errors: [] };
   }
-  const errors5 = result.error.issues.map((issue2) => ({
-    path: issue2.path.map((p) => typeof p === "number" ? `[${p}]` : p).join("."),
-    message: issue2.message
-  }));
+  const errors5 = result.error.issues.flatMap((issue2) => {
+    const basePath = issue2.path.map((p) => typeof p === "number" ? `[${p}]` : p).join(".");
+    if (issue2.code !== "unrecognized_keys") {
+      return [{ path: basePath, message: issue2.message }];
+    }
+    return issue2.keys.map((key) => ({
+      path: basePath ? `${basePath}.${key}` : key,
+      message: issue2.message
+    }));
+  });
   return { valid: false, errors: errors5 };
 }
 function readGlobalUserConfig(location) {
@@ -20893,7 +20899,7 @@ var init_global_config = __esm(() => {
     stall_timeout_ms: numberType().nullable(),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
     max_retries: numberType().int().min(0).nullable(),
-    extensions: OverrideExtensionsSchema
+    extensions: OverrideExtensionsSchema.optional()
   }).strict();
   OverridePromptSchema = objectType({
     system_prompt_mode: enumType(["append", "replace"]).nullable()
@@ -20903,7 +20909,7 @@ var init_global_config = __esm(() => {
   }).strict();
   GlobalSpecialistOverrideSchema = objectType({
     execution: OverrideExecutionSchema,
-    prompt: OverridePromptSchema,
+    prompt: OverridePromptSchema.optional(),
     beads_write_notes: booleanType().nullable(),
     skills: OverrideSkillsSchema
   }).strict();

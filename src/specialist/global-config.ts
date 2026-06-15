@@ -84,7 +84,7 @@ const OverrideExecutionSchema = z.object({
     .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
     .nullable(),
   max_retries: z.number().int().min(0).nullable(),
-  extensions: OverrideExtensionsSchema,
+  extensions: OverrideExtensionsSchema.optional(),
 }).strict();
 
 const OverridePromptSchema = z.object({
@@ -97,7 +97,7 @@ const OverrideSkillsSchema = z.object({
 
 export const GlobalSpecialistOverrideSchema = z.object({
   execution: OverrideExecutionSchema,
-  prompt: OverridePromptSchema,
+  prompt: OverridePromptSchema.optional(),
   beads_write_notes: z.boolean().nullable(),
   skills: OverrideSkillsSchema,
 }).strict();
@@ -275,10 +275,16 @@ export function validateGlobalUserConfig(
     return { valid: true, errors: [] };
   }
 
-  const errors = result.error.issues.map(issue => ({
-    path: issue.path.map(p => (typeof p === 'number' ? `[${p}]` : p)).join('.'),
-    message: issue.message,
-  }));
+  const errors = result.error.issues.flatMap(issue => {
+    const basePath = issue.path.map(p => (typeof p === 'number' ? `[${p}]` : p)).join('.');
+    if (issue.code !== 'unrecognized_keys') {
+      return [{ path: basePath, message: issue.message }];
+    }
+    return issue.keys.map(key => ({
+      path: basePath ? `${basePath}.${key}` : key,
+      message: issue.message,
+    }));
+  });
   return { valid: false, errors };
 }
 

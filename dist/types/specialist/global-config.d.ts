@@ -29,7 +29,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         max_retries: z.ZodNullable<z.ZodNumber>;
-        extensions: z.ZodObject<{
+        extensions: z.ZodOptional<z.ZodObject<{
             serena: z.ZodNullable<z.ZodBoolean>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
@@ -38,37 +38,37 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         }, {
             gitnexus: boolean | null;
             serena: boolean | null;
-        }>;
+        }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     }, {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     }>;
-    prompt: z.ZodObject<{
+    prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
     }, "strict", z.ZodTypeAny, {
         system_prompt_mode: "replace" | "append" | null;
     }, {
         system_prompt_mode: "replace" | "append" | null;
-    }>;
+    }>>;
     beads_write_notes: z.ZodNullable<z.ZodBoolean>;
     skills: z.ZodObject<{
         paths: z.ZodArray<z.ZodString, "many">;
@@ -78,45 +78,45 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         paths: string[];
     }>;
 }, "strict", z.ZodTypeAny, {
-    prompt: {
-        system_prompt_mode: "replace" | "append" | null;
-    };
     execution: {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
     };
     beads_write_notes: boolean | null;
+    prompt?: {
+        system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
 }, {
-    prompt: {
-        system_prompt_mode: "replace" | "append" | null;
-    };
     execution: {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
     };
     beads_write_notes: boolean | null;
+    prompt?: {
+        system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
 }>;
 export type GlobalSpecialistOverride = z.infer<typeof GlobalSpecialistOverrideSchema>;
 export declare function getGlobalSpecialistOverrideLeafPaths(): readonly string[];
@@ -129,7 +129,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         max_retries: z.ZodNullable<z.ZodNumber>;
-        extensions: z.ZodObject<{
+        extensions: z.ZodOptional<z.ZodObject<{
             serena: z.ZodNullable<z.ZodBoolean>;
             gitnexus: z.ZodNullable<z.ZodBoolean>;
         }, "strict", z.ZodTypeAny, {
@@ -138,37 +138,37 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
         }, {
             gitnexus: boolean | null;
             serena: boolean | null;
-        }>;
+        }>>;
     }, "strict", z.ZodTypeAny, {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     }, {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     }>;
-    prompt: z.ZodObject<{
+    prompt: z.ZodOptional<z.ZodObject<{
         system_prompt_mode: z.ZodNullable<z.ZodEnum<["append", "replace"]>>;
     }, "strict", z.ZodTypeAny, {
         system_prompt_mode: "replace" | "append" | null;
     }, {
         system_prompt_mode: "replace" | "append" | null;
-    }>;
+    }>>;
     beads_write_notes: z.ZodNullable<z.ZodBoolean>;
     skills: z.ZodObject<{
         paths: z.ZodArray<z.ZodString, "many">;
@@ -178,45 +178,45 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
         paths: string[];
     }>;
 }, "strict", z.ZodTypeAny, {
-    prompt: {
-        system_prompt_mode: "replace" | "append" | null;
-    };
     execution: {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
     };
     beads_write_notes: boolean | null;
+    prompt?: {
+        system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
 }, {
-    prompt: {
-        system_prompt_mode: "replace" | "append" | null;
-    };
     execution: {
         model: string | null;
-        extensions: {
-            gitnexus: boolean | null;
-            serena: boolean | null;
-        };
         fallback_model: string | null;
         timeout_ms: number | null;
         stall_timeout_ms: number | null;
         max_retries: number | null;
         thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
     };
     skills: {
         paths: string[];
     };
     beads_write_notes: boolean | null;
+    prompt?: {
+        system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
 }>>;
 export type GlobalUserConfig = z.infer<typeof GlobalUserConfigSchema>;
 export interface GlobalConfigValidationResult {
