@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
 import {
+  PRESET_REFERENCE_MAX_DEPTH,
   SpecialistPresetConfigError,
   SpecialistPresetCycleError,
   SpecialistPresetFieldMissingError,
@@ -41,13 +42,26 @@ describe('preset resolver', () => {
     expect(result.depth).toBe(1);
   });
 
-  it('throws for unknown preset', async () => {
+  it('throws for unknown preset with structured metadata', async () => {
     await writePresets({
       cheap: { description: 'cheap', fields: { 'specialist.execution.model': 'cheap/model' } },
     });
 
     expect(() => resolvePresetReference('@preset/fast', 'specialist.execution.model', loadPresets({ force: true }), new Set(), { specialist: 'demo' }))
       .toThrow('preset "fast" referenced by demo.specialist.execution.model not found in config/presets.json. Known presets: cheap');
+
+    try {
+      resolvePresetReference('@preset/fast', 'specialist.execution.model', loadPresets(), new Set(), { specialist: 'demo' });
+      throw new Error('expected preset lookup to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SpecialistPresetNotFoundError);
+      expect(error).toMatchObject({
+        specialist: 'demo',
+        fieldPath: 'specialist.execution.model',
+        presetName: 'fast',
+        knownPresets: ['cheap'],
+      });
+    }
   });
 
   it('throws for preset cycles with visited list', async () => {
@@ -66,7 +80,9 @@ describe('preset resolver', () => {
     }
   });
 
-  it('throws when depth cap is exceeded', async () => {
+  it('exports depth cap constant at 4 and throws when depth cap is exceeded', async () => {
+    expect(PRESET_REFERENCE_MAX_DEPTH).toBe(4);
+
     await writePresets({
       A: { description: 'A', fields: { 'specialist.execution.model': '@preset/B' } },
       B: { description: 'B', fields: { 'specialist.execution.model': '@preset/C' } },
@@ -142,6 +158,41 @@ describe('preset resolver', () => {
 
     expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.fallback_models', loadPresets({ force: true })))
       .toThrow('expected string[] or null, got array(string, number)');
+  });
+
+  it('resolves field-specific preset entries independently', async () => {
+    await writePresets({
+      cheap: {
+        description: 'cheap',
+        fields: {
+          'specialist.execution.model': 'nano-gpt/moonshotai/kimi-k2.5',
+          'specialist.execution.thinking_level': 'off',
+        },
+      },
+    });
+
+    const result = resolvePresetReference('@preset/cheap', 'specialist.execution.thinking_level', loadPresets({ force: true }));
+
+    expect(result.value).toBe('off');
+    expect(result.depth).toBe(1);
+  });
+
+  it('caches loadPresets until force=true refreshes file contents', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.model': 'cached/model' } },
+    });
+
+    const first = loadPresets({ force: true });
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.model': 'fresh/model' } },
+    });
+
+    const cached = loadPresets();
+    const forced = loadPresets({ force: true });
+
+    expect(first.cheap.fields['specialist.execution.model']).toBe('cached/model');
+    expect(cached.cheap.fields['specialist.execution.model']).toBe('cached/model');
+    expect(forced.cheap.fields['specialist.execution.model']).toBe('fresh/model');
   });
 
   it('passes non-preset strings through unchanged', () => {
