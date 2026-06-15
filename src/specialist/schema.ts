@@ -17,6 +17,7 @@ const ExecutionSchema = z.object({
   mode: z.enum(['tool', 'skill', 'auto']).default('auto'),
   model: z.string().nullable(),
   fallback_model: z.string().nullable().optional(),
+  fallback_models: z.array(z.string()).nullable().optional(),
   timeout_ms: z.number().default(120_000),
   stall_timeout_ms: z.number().optional(),
   max_retries: z.number().int().min(0).default(0),
@@ -146,6 +147,7 @@ export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: b
 export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'model',
   'fallback_model',
+  'fallback_models',
   'timeout_ms',
   'stall_timeout_ms',
   'thinking_level',

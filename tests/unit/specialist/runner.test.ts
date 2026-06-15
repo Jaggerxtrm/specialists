@@ -726,6 +726,26 @@ describe('SpecialistRunner', () => {
     expect(result.model).toBe('qwen');
   });
 
+  it('walks fallback_models until available model and emits fallback_step events', async () => {
+    const cb = new CircuitBreaker({ failureThreshold: 1 });
+    cb.recordFailure('gemini');
+    cb.recordFailure('qwen');
+    const onEvent = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ fallback_model: 'legacy', fallback_models: ['qwen', 'anthropic'] }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace3.jsonl' }),
+      circuitBreaker: cb,
+      sessionFactory: vi.fn().mockResolvedValue(mockSession),
+    });
+
+    const result = await runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent);
+
+    expect(result.model).toBe('anthropic');
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'gemini' }));
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'qwen' }));
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'anthropic' }));
+  });
+
   describe('beads integration', () => {
     it('creates bead and emits audit on success when always (closeBead delegated to Supervisor)', async () => {
       const beadsClient = makeBeadsClient();

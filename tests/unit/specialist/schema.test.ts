@@ -54,6 +54,24 @@ describe('override allowlist contract', () => {
 });
 
 describe('parseSpecialist', () => {
+  it('parses fallback_model singular', async () => {
+    const spec = createValidSpec();
+    spec.specialist.execution.fallback_model = 'openai-codex/gpt-5.4';
+
+    const result = await parseSpecialist(toJson(spec));
+
+    expect(result.specialist.execution.fallback_model).toBe('openai-codex/gpt-5.4');
+  });
+
+  it('parses fallback_models plural', async () => {
+    const spec = createValidSpec();
+    spec.specialist.execution.fallback_models = ['openai-codex/gpt-5.4', 'anthropic/claude-sonnet-4-6'];
+
+    const result = await parseSpecialist(toJson(spec));
+
+    expect(result.specialist.execution.fallback_models).toEqual(['openai-codex/gpt-5.4', 'anthropic/claude-sonnet-4-6']);
+  });
+
   it('parses a valid specialist JSON', async () => {
     const result = await parseSpecialist(toJson(createValidSpec()));
     expect(result.specialist.metadata.name).toBe('codebase-explorer');

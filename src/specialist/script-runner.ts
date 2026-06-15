@@ -7,6 +7,7 @@ import { renderTemplate } from './templateEngine.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
 import type { Specialist } from './schema.js';
 import type { SupervisorStatus } from './supervisor.js';
+import { resolveModelChain } from './model-chain.js';
 
 export type ScriptSpecialistErrorType =
   | 'specialist_not_found'
@@ -511,7 +512,8 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
 }
 
 export function collectModelCandidates(input: ScriptGenerateRequest, spec: Specialist, options: ScriptRunnerOptions): string[] {
-  const candidates = [input.model_override, spec.specialist.execution.model, spec.specialist.execution.fallback_model, options.fallbackModel]
+  const executionChain = resolveModelChain(spec.specialist.execution);
+  const candidates = [input.model_override, ...executionChain, options.fallbackModel]
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
   return [...new Set(candidates)];
 }

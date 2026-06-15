@@ -399,6 +399,25 @@ describe('runScriptSpecialist fallback chain', () => {
     expect(isRetryableModelFailure('', '')).toBe(true);
   });
 
+  it('prefers fallback_models over fallback_model', () => {
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        execution: {
+          ...baseSpec.specialist.execution,
+          fallback_models: ['openai-codex/gpt-5.4', 'nano-gpt/moonshotai/kimi-k2.5'],
+        },
+      },
+    } as never;
+
+    expect(collectModelCandidates({ specialist: 'changelog-keeper' }, spec, {} as never)).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'openai-codex/gpt-5.4',
+      'nano-gpt/moonshotai/kimi-k2.5',
+    ]);
+  });
+
   it('advances to fallback_model after quota error', () => {
     expect(isRetryableModelFailure('429 insufficient_quota quota exceeded', '')).toBe(true);
     expect(isRetryableModelFailure('quota exceeded', '')).toBe(true);

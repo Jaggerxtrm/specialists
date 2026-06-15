@@ -16,6 +16,7 @@ import { stripJsonFences } from './json-output.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
+import { resolveModelChain } from './model-chain.js';
 
 export interface RunOptions {
   name: string;
@@ -872,6 +873,44 @@ function validateOutputContract(
   return warnings;
 }
 
+function selectAvailableModel(
+  modelChain: readonly string[],
+  circuitBreaker: CircuitBreaker,
+  specialist: string,
+  onEvent?: (type: string, details?: { model?: string; data?: Record<string, unknown> }) => void,
+): string {
+  for (let index = 0; index < modelChain.length; index++) {
+    const model = modelChain[index];
+    const isTerminal = index === modelChain.length - 1;
+    const isAvailable = circuitBreaker.isAvailable(model);
+    emitFallbackStep(onEvent, specialist, index + 1, model, isAvailable ? 'unknown' : 'circuit_open', isTerminal);
+    if (isAvailable || isTerminal) return model;
+  }
+
+  return modelChain[0];
+}
+
+function emitFallbackStep(
+  onEvent: ((type: string, details?: { model?: string; data?: Record<string, unknown> }) => void) | undefined,
+  specialist: string,
+  attemptN: number,
+  modelTried: string,
+  errorClass: string,
+  terminal: boolean,
+): void {
+  onEvent?.('fallback_step', {
+    model: modelTried,
+    data: {
+      event: 'fallback_step',
+      specialist,
+      attempt_n: attemptN,
+      model_tried: modelTried,
+      error_class: errorClass,
+      terminal,
+    },
+  });
+}
+
 export class SpecialistRunner {
   private sessionFactory: SessionFactory;
 
@@ -943,13 +982,12 @@ export class SpecialistRunner {
     // loader.get() hard-fails on null execution.model via SpecialistMissingModelError
     // before reaching here, so the cast is sound at runtime. tsc cannot prove it.
     const executionModel = execution.model as string;
-    const executionFallbackModel = (execution.fallback_model ?? null) as string | null;
 
-    // Backend resolution: override → primary → fallback
-    const primaryModel = options.backendOverride ?? executionModel;
-    const model = circuitBreaker.isAvailable(primaryModel)
-      ? primaryModel
-      : (executionFallbackModel ?? primaryModel);
+    const modelChain = options.backendOverride
+      ? [options.backendOverride]
+      : resolveModelChain({ ...execution, model: executionModel });
+    const primaryModel = modelChain[0] ?? executionModel;
+    const model = selectAvailableModel(modelChain, circuitBreaker, metadata.name, onEvent);
     const fallbackUsed = model !== primaryModel;
 
     await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
