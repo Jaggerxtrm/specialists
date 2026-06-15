@@ -114,9 +114,38 @@ describe('global specialist override config', () => {
     expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
   });
 
+  it('validateGlobalUserConfig accepts arbitrary underscore-prefixed metadata keys', () => {
+    const valid = {
+      _doc: GLOBAL_USER_CONFIG_DOC,
+      _comment: 'operator note',
+      _phase4: { owner: 'unitAI-gp7nq.5' },
+      executor: buildSpecialistOverrideTemplate(),
+    };
+
+    expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+  });
+
+  it('mergeGlobalUserConfig ignores underscore-prefixed metadata when computing removed specialists', () => {
+    const result = mergeGlobalUserConfig(
+      {
+        _doc: GLOBAL_USER_CONFIG_DOC,
+        _comment: 'operator note',
+        executor: buildSpecialistOverrideTemplate(),
+      },
+      { executor: buildSpecialistOverrideTemplate() },
+    );
+
+    expect(result.config._doc).toBe(GLOBAL_USER_CONFIG_DOC);
+    expect((result.config as Record<string, unknown>)._comment).toBeUndefined();
+    expect(result.removed).toEqual([]);
+  });
+
   it('mergeGlobalUserConfig preserves _doc and excludes it from removed specialists', () => {
     const result = mergeGlobalUserConfig(
-      { _doc: GLOBAL_USER_CONFIG_DOC, executor: buildSpecialistOverrideTemplate() },
+      {
+        _doc: GLOBAL_USER_CONFIG_DOC,
+        executor: buildSpecialistOverrideTemplate(),
+      },
       { executor: buildSpecialistOverrideTemplate() },
     );
 
