@@ -883,7 +883,9 @@ function selectAvailableModel(
     const model = modelChain[index];
     const isTerminal = index === modelChain.length - 1;
     const isAvailable = circuitBreaker.isAvailable(model);
-    emitFallbackStep(onEvent, specialist, index + 1, model, isAvailable ? 'unknown' : 'circuit_open', isTerminal);
+    if (index > 0) {
+      emitFallbackStep(onEvent, specialist, index + 1, model, isAvailable ? 'unknown' : 'transient', isTerminal);
+    }
     if (isAvailable || isTerminal) return model;
   }
 

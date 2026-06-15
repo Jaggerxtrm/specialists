@@ -25,6 +25,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     execution: z.ZodObject<{
         model: z.ZodNullable<z.ZodString>;
         fallback_model: z.ZodNullable<z.ZodString>;
+        fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
         timeout_ms: z.ZodNullable<z.ZodNumber>;
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
@@ -52,6 +53,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }, {
@@ -65,6 +67,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }>;
@@ -97,6 +100,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -121,6 +125,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -141,6 +146,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
     execution: z.ZodObject<{
         model: z.ZodNullable<z.ZodString>;
         fallback_model: z.ZodNullable<z.ZodString>;
+        fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
         timeout_ms: z.ZodNullable<z.ZodNumber>;
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
@@ -168,6 +174,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }, {
@@ -181,6 +188,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }>;
@@ -213,6 +221,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -237,6 +246,7 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
             gitnexus: boolean | null;
             serena: boolean | null;
         } | undefined;
+        fallback_models?: string[] | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };

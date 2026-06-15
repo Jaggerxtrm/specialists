@@ -741,9 +741,15 @@ describe('SpecialistRunner', () => {
     const result = await runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent);
 
     expect(result.model).toBe('anthropic');
-    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'gemini' }));
-    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'qwen' }));
-    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'anthropic' }));
+    expect(onEvent).not.toHaveBeenCalledWith('fallback_step', expect.objectContaining({ model: 'gemini' }));
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
+      model: 'qwen',
+      data: expect.objectContaining({ error_class: 'transient', terminal: false }),
+    }));
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
+      model: 'anthropic',
+      data: expect.objectContaining({ error_class: 'unknown', terminal: true }),
+    }));
   });
 
   describe('beads integration', () => {

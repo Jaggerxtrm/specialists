@@ -9821,6 +9821,30 @@ function createObservabilitySqliteClientAtPath(dbPath) {
   return openObservabilitySqliteClient(dbPath);
 }
 
+// src/specialist/model-chain.ts
+function resolveModelChain(execution) {
+  const primary = normalizeModel(execution.model);
+  const fallbacks = resolveFallbackModels(execution);
+  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
+}
+function resolveFallbackModels(execution) {
+  if (execution.fallback_models && execution.fallback_models.length > 0) {
+    if (normalizeModel(execution.fallback_model ?? null)) {
+      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
+    }
+    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
+  }
+  const fallback = normalizeModel(execution.fallback_model ?? null);
+  return fallback ? [fallback] : [];
+}
+function normalizeModel(model) {
+  const trimmed = model?.trim();
+  return trimmed ? trimmed : null;
+}
+function dedupeModels(models) {
+  return [...new Set(models)];
+}
+
 // src/specialist/script-runner.ts
 class CompatGuardError extends Error {
   field;
@@ -10195,7 +10219,8 @@ async function runScriptSpecialist(input, options) {
   }
 }
 function collectModelCandidates(input, spec, options) {
-  const candidates = [input.model_override, spec.specialist.execution.model, spec.specialist.execution.fallback_model, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
+  const executionChain = resolveModelChain(spec.specialist.execution);
+  const candidates = [input.model_override, ...executionChain, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
   return [...new Set(candidates)];
 }
 function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths = []) {
@@ -14197,6 +14222,7 @@ var ExecutionSchema = objectType({
   mode: enumType(["tool", "skill", "auto"]).default("auto"),
   model: stringType().nullable(),
   fallback_model: stringType().nullable().optional(),
+  fallback_models: arrayType(stringType()).nullable().optional(),
   timeout_ms: numberType().default(120000),
   stall_timeout_ms: numberType().optional(),
   max_retries: numberType().int().min(0).default(0),
@@ -14276,6 +14302,7 @@ var SpecialistSchema = objectType({
 var OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   "model",
   "fallback_model",
+  "fallback_models",
   "timeout_ms",
   "stall_timeout_ms",
   "thinking_level",
@@ -14427,6 +14454,7 @@ var OverrideExtensionsSchema = objectType({
 var OverrideExecutionSchema = objectType({
   model: stringType().nullable(),
   fallback_model: stringType().nullable(),
+  fallback_models: arrayType(stringType()).nullable().optional(),
   timeout_ms: numberType().nullable(),
   stall_timeout_ms: numberType().nullable(),
   thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),

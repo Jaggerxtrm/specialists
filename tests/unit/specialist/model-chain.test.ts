@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveModelChain } from '../../../src/specialist/model-chain.js';
 
 describe('resolveModelChain', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns primary followed by plural fallbacks', () => {
     expect(resolveModelChain({ model: 'p', fallback_models: ['a', 'b'] })).toEqual(['p', 'a', 'b']);
   });
@@ -15,7 +19,10 @@ describe('resolveModelChain', () => {
   });
 
   it('prefers plural fallbacks over singular fallback', () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+
     expect(resolveModelChain({ model: 'p', fallback_model: 'f', fallback_models: ['a', 'b'] })).toEqual(['p', 'a', 'b']);
+    expect(debug).toHaveBeenCalledWith('[model-chain] plural fallback_models wins; ignoring fallback_model=f');
   });
 
   it('dedupes while preserving order', () => {
