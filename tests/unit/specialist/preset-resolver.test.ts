@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
 import {
+  SpecialistPresetConfigError,
   SpecialistPresetCycleError,
+  SpecialistPresetFieldMissingError,
   SpecialistPresetNotFoundError,
   loadPresets,
   resolvePresetReference,
@@ -44,7 +46,7 @@ describe('preset resolver', () => {
     });
 
     expect(() => resolvePresetReference('@preset/fast', 'specialist.execution.model', loadPresets({ force: true }), new Set(), { specialist: 'demo' }))
-      .toThrow(SpecialistPresetNotFoundError);
+      .toThrow('preset "fast" referenced by demo.specialist.execution.model not found in config/presets.json. Known presets: cheap');
   });
 
   it('throws for preset cycles with visited list', async () => {
@@ -74,6 +76,24 @@ describe('preset resolver', () => {
 
     expect(() => resolvePresetReference('@preset/A', 'specialist.execution.model', loadPresets({ force: true })))
       .toThrow(SpecialistPresetCycleError);
+  });
+
+  it('throws for invalid preset JSON', async () => {
+    await writeFile(join('config', 'presets.json'), '{ nope');
+
+    expect(() => loadPresets({ force: true })).toThrow(SpecialistPresetConfigError);
+    expect(() => loadPresets({ force: true })).toThrow('failed to load presets from');
+  });
+
+  it('throws when preset field is missing', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.fallback_model': 'cheap/fallback' } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.model', loadPresets({ force: true }), new Set(), { specialist: 'demo' }))
+      .toThrow(SpecialistPresetFieldMissingError);
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.model', loadPresets(), new Set(), { specialist: 'demo' }))
+      .toThrow('preset "cheap" referenced by demo.specialist.execution.model does not define specialist.execution.model. Defined keys: specialist.execution.fallback_model');
   });
 
   it('passes non-preset strings through unchanged', () => {

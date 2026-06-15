@@ -29,6 +29,18 @@ export declare class SpecialistPresetCycleError extends Error {
     readonly fieldPath: string;
     constructor(visited: readonly string[], specialist: string | undefined, fieldPath: string);
 }
+export declare class SpecialistPresetConfigError extends Error {
+    readonly configPath: string;
+    readonly cause: unknown;
+    constructor(configPath: string, cause: unknown);
+}
+export declare class SpecialistPresetFieldMissingError extends Error {
+    readonly presetName: string;
+    readonly specialist: string | undefined;
+    readonly fieldPath: string;
+    readonly definedKeys: readonly string[];
+    constructor(presetName: string, specialist: string | undefined, fieldPath: string, definedKeys: readonly string[]);
+}
 export declare function loadPresets(options?: LoadPresetsOptions): Record<string, PresetDefinition>;
 export declare function resolvePresetReference(value: unknown, fieldPath: string, presets: Record<string, PresetDefinition>, visited?: Set<string>, options?: ResolvePresetOptions): PresetResolution;
 export declare function isPresetReference(value: unknown): value is string;

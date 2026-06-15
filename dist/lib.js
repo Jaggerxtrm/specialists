@@ -14527,6 +14527,33 @@ class SpecialistPresetCycleError extends Error {
     this.name = "SpecialistPresetCycleError";
   }
 }
+
+class SpecialistPresetConfigError extends Error {
+  configPath;
+  cause;
+  constructor(configPath, cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(`failed to load presets from ${configPath}: ${message}`);
+    this.configPath = configPath;
+    this.cause = cause;
+    this.name = "SpecialistPresetConfigError";
+  }
+}
+
+class SpecialistPresetFieldMissingError extends Error {
+  presetName;
+  specialist;
+  fieldPath;
+  definedKeys;
+  constructor(presetName, specialist, fieldPath, definedKeys) {
+    super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} does not define ${fieldPath}. Defined keys: ${definedKeys.join(", ") || "(none)"}`);
+    this.presetName = presetName;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.definedKeys = definedKeys;
+    this.name = "SpecialistPresetFieldMissingError";
+  }
+}
 function loadPresets(options = {}) {
   const baseDir = options.baseDir ?? process.cwd();
   if (presetsCache && presetsCacheBaseDir === baseDir && !options.force)
@@ -14542,10 +14569,10 @@ function loadPresets(options = {}) {
       presetsCache = JSON.parse(readFileSync4(path, "utf-8"));
       presetsCacheBaseDir = baseDir;
       return presetsCache;
-    } catch {
-      presetsCache = {};
-      presetsCacheBaseDir = baseDir;
-      return presetsCache;
+    } catch (error) {
+      presetsCache = null;
+      presetsCacheBaseDir = null;
+      throw new SpecialistPresetConfigError(path, error);
     }
   }
   presetsCache = {};
@@ -14565,6 +14592,9 @@ function resolvePresetReference(value, fieldPath, presets, visited = new Set, op
   const preset = presets[presetName];
   if (!preset) {
     throw new SpecialistPresetNotFoundError(presetName, options.specialist, fieldPath, Object.keys(presets));
+  }
+  if (!Object.prototype.hasOwnProperty.call(preset.fields, fieldPath)) {
+    throw new SpecialistPresetFieldMissingError(presetName, options.specialist, fieldPath, Object.keys(preset.fields));
   }
   const nextValue = preset.fields[fieldPath];
   const nextVisited = new Set([...visited, presetName]);

@@ -20948,10 +20948,10 @@ function loadPresets(options = {}) {
       presetsCache = JSON.parse(readFileSync4(path, "utf-8"));
       presetsCacheBaseDir = baseDir;
       return presetsCache;
-    } catch {
-      presetsCache = {};
-      presetsCacheBaseDir = baseDir;
-      return presetsCache;
+    } catch (error2) {
+      presetsCache = null;
+      presetsCacheBaseDir = null;
+      throw new SpecialistPresetConfigError(path, error2);
     }
   }
   presetsCache = {};
@@ -20972,6 +20972,9 @@ function resolvePresetReference(value, fieldPath, presets, visited = new Set, op
   if (!preset) {
     throw new SpecialistPresetNotFoundError(presetName, options.specialist, fieldPath, Object.keys(presets));
   }
+  if (!Object.prototype.hasOwnProperty.call(preset.fields, fieldPath)) {
+    throw new SpecialistPresetFieldMissingError(presetName, options.specialist, fieldPath, Object.keys(preset.fields));
+  }
   const nextValue = preset.fields[fieldPath];
   const nextVisited = new Set([...visited, presetName]);
   const resolved = resolvePresetReference(nextValue, fieldPath, presets, nextVisited, options);
@@ -20983,7 +20986,7 @@ function isPresetReference(value) {
 function formatReferenceLocation(specialist, fieldPath) {
   return specialist ? `${specialist}.${fieldPath}` : fieldPath;
 }
-var PRESET_REFERENCE_PREFIX = "@preset/", PRESET_REFERENCE_MAX_DEPTH = 4, presetsCache = null, presetsCacheBaseDir = null, SpecialistPresetNotFoundError, SpecialistPresetCycleError;
+var PRESET_REFERENCE_PREFIX = "@preset/", PRESET_REFERENCE_MAX_DEPTH = 4, presetsCache = null, presetsCacheBaseDir = null, SpecialistPresetNotFoundError, SpecialistPresetCycleError, SpecialistPresetConfigError, SpecialistPresetFieldMissingError;
 var init_preset_resolver = __esm(() => {
   SpecialistPresetNotFoundError = class SpecialistPresetNotFoundError extends Error {
     presetName;
@@ -21009,6 +21012,31 @@ var init_preset_resolver = __esm(() => {
       this.specialist = specialist;
       this.fieldPath = fieldPath;
       this.name = "SpecialistPresetCycleError";
+    }
+  };
+  SpecialistPresetConfigError = class SpecialistPresetConfigError extends Error {
+    configPath;
+    cause;
+    constructor(configPath, cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      super(`failed to load presets from ${configPath}: ${message}`);
+      this.configPath = configPath;
+      this.cause = cause;
+      this.name = "SpecialistPresetConfigError";
+    }
+  };
+  SpecialistPresetFieldMissingError = class SpecialistPresetFieldMissingError extends Error {
+    presetName;
+    specialist;
+    fieldPath;
+    definedKeys;
+    constructor(presetName, specialist, fieldPath, definedKeys) {
+      super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} does not define ${fieldPath}. Defined keys: ${definedKeys.join(", ") || "(none)"}`);
+      this.presetName = presetName;
+      this.specialist = specialist;
+      this.fieldPath = fieldPath;
+      this.definedKeys = definedKeys;
+      this.name = "SpecialistPresetFieldMissingError";
     }
   };
 });
