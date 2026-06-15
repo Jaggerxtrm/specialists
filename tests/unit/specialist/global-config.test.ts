@@ -186,8 +186,8 @@ describe('global specialist override config', () => {
     expect(result.errors.some(error => error.path === 'demo.execution.extensions.bogus')).toBe(true);
   });
 
-  it('validates the complete KAN-91 upgrade-note example', () => {
-    const markdown = readFileSync('docs/upgrade-notes/kan-91-expanded-overrides.md', 'utf8');
+  it('validates the complete global overrides guide example', () => {
+    const markdown = readFileSync('docs/overrides-guide.md', 'utf8');
     const match = markdown.match(
       /## Complete example \(validates against `GlobalUserConfigSchema`\)[\s\S]*?```json\n([\s\S]*?)\n```/,
     );

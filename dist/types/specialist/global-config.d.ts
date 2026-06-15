@@ -1,7 +1,7 @@
 import * as z from 'zod';
 declare const CONFIG_FILENAME = "user.json";
 declare const SPECIALISTS_SUBDIR = "specialists";
-export declare const GLOBAL_USER_CONFIG_DOC = "See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.";
+export declare const GLOBAL_USER_CONFIG_DOC = "./overrides-guide.md";
 export type GlobalConfigSource = 'xdg' | 'config-home' | 'legacy';
 export interface GlobalUserConfigPath {
     /** Absolute path to user.json (may not exist yet). */
