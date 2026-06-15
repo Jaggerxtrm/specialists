@@ -20,6 +20,7 @@ import {
   readGlobalUserConfig,
   type GlobalUserConfigPath,
 } from './global-config.js';
+import { loadPresets, resolvePresetReference } from './preset-resolver.js';
 
 export interface StallDetectionConfig {
   running_silence_warn_ms?: number;
@@ -224,12 +225,12 @@ export class SpecialistLoader {
       const overrideValue = overrideExecution[field];
       // null + global = "inherit base" (skip). null + repo-full-spec = explicit null (skip too).
       if (overrideValue === null || overrideValue === undefined) continue;
-      baseExecution[field] = overrideValue;
+      baseExecution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, overrideValue);
     }
     for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
       const overrideValue = readDottedPath(overrideExecution, path);
       if (overrideValue === null || overrideValue === undefined) continue;
-      writeDottedPath(baseExecution, path, overrideValue);
+      writeDottedPath(baseExecution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, overrideValue));
     }
     baseSpec.execution = baseExecution;
 
@@ -240,7 +241,7 @@ export class SpecialistLoader {
       if (!(field in overridePrompt)) continue;
       const overrideValue = overridePrompt[field];
       if (overrideValue === null || overrideValue === undefined) continue;
-      basePrompt[field] = overrideValue;
+      basePrompt[field] = this.resolveOverrideValue(name, `specialist.prompt.${field}`, overrideValue);
     }
     baseSpec.prompt = basePrompt;
 
@@ -249,7 +250,7 @@ export class SpecialistLoader {
       if (!(field in overrideSpec)) continue;
       const overrideValue = overrideSpec[field];
       if (overrideValue === null || overrideValue === undefined) continue;
-      baseSpec[field] = overrideValue;
+      baseSpec[field] = this.resolveOverrideValue(name, `specialist.${field}`, overrideValue);
     }
 
     // 5. skills.paths: append + dedup. Other skills.* fields stay base.
@@ -270,6 +271,16 @@ export class SpecialistLoader {
     }
 
     return warnings;
+  }
+
+  private resolveOverrideValue(name: string, fieldPath: string, value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map(entry => this.resolveOverrideValue(name, fieldPath, entry));
+    }
+
+    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set(), { specialist: name });
+    if (resolution.presetName) emitPresetResolved(name, fieldPath, resolution.presetName, resolution.value, resolution.depth);
+    return resolution.value;
   }
 
   /**
@@ -293,6 +304,7 @@ export class SpecialistLoader {
         `[specialists] DEPRECATED: YAML specialist config detected at ${baseHit.resolved.filePath}. Please migrate to .specialist.json\n`,
       );
     }
+    this.resolveCanonicalPresetReferences(name, base);
 
     const warnings: BlockedFieldWarning[] = [];
 
@@ -345,6 +357,21 @@ export class SpecialistLoader {
       },
       warnings,
     };
+  }
+
+  private resolveCanonicalPresetReferences(name: string, spec: Specialist): void {
+    const execution = spec.specialist.execution as Record<string, unknown>;
+    for (const field of OVERRIDE_ALLOWED_EXECUTION_FIELDS) {
+      if (!(field in execution)) continue;
+      const value = execution[field];
+      if (value === null || value === undefined) continue;
+      execution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, value);
+    }
+    for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
+      const value = readDottedPath(execution, path);
+      if (value === null || value === undefined) continue;
+      writeDottedPath(execution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, value));
+    }
   }
 
   async list(category?: string): Promise<SpecialistSummary[]> {
@@ -484,6 +511,23 @@ function writeDottedPath(obj: Record<string, unknown>, dotted: string, value: un
     cur = cur[part] as Record<string, unknown>;
   }
   cur[leaf] = value;
+}
+
+function emitPresetResolved(
+  specialist: string,
+  field: string,
+  presetName: string,
+  resolvedValue: unknown,
+  depth: number,
+): void {
+  process.stderr.write(`${JSON.stringify({
+    event: 'preset_resolved',
+    specialist,
+    field,
+    preset_name: presetName,
+    resolved_value: resolvedValue,
+    depth,
+  })}\n`);
 }
 
 function resolveSkillsPaths(spec: Specialist, fileDir: string): void {

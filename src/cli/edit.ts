@@ -11,6 +11,7 @@ import {
   validateGlobalUserConfig,
   writeGlobalUserConfig,
 } from '../specialist/global-config.js';
+import { loadPresets, type PresetDefinition } from '../specialist/preset-resolver.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
@@ -39,29 +40,6 @@ const MULTILINE_FILE_PATHS = new Set([
   'specialist.prompt.system',
   'specialist.prompt.task_template',
 ]);
-
-interface PresetDefinition {
-  description: string;
-  fields: Record<string, unknown>;
-}
-
-function loadPresets(): Record<string, PresetDefinition> {
-  const paths = [
-    join(process.cwd(), 'config', 'presets.json'),
-    join(process.cwd(), 'config', 'specialists', 'presets.json'),
-  ];
-  for (const p of paths) {
-    if (existsSync(p)) {
-      try {
-        const data = JSON.parse(readFileSync(p, 'utf-8'));
-        return data as Record<string, PresetDefinition>;
-      } catch {
-        return {};
-      }
-    }
-  }
-  return {};
-}
 
 type Action = 'get' | 'set' | 'append' | 'remove' | 'list-presets' | 'preset';
 

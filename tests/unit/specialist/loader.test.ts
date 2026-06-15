@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
 import { SpecialistLoader, checkStaleness, type SpecialistSummary } from '../../../src/specialist/loader.js';
+import { loadPresets } from '../../../src/specialist/preset-resolver.js';
 
 const MINIMAL_YAML = (name: string) => JSON.stringify({
   specialist: {
@@ -603,6 +604,7 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     else process.env.XDG_CONFIG_HOME = originalXdg;
     await rm(tmpProject, { recursive: true, force: true });
     await rm(tmpHome, { recursive: true, force: true });
+    loadPresets({ force: true });
   });
 
   async function writeGlobalUserJson(content: Record<string, unknown>): Promise<void> {
@@ -615,6 +617,72 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
     const spec = await loader.get('demo');
     expect(spec.specialist.execution.model).toBe('pkg/base-model');
+  });
+
+  it('global user.json resolves preset references for model', async () => {
+    await writeFile(join(tmpProject, 'config', 'presets.json'), JSON.stringify({
+      cheap: {
+        description: 'cheap',
+        fields: { 'specialist.execution.model': 'nano-gpt/moonshotai/kimi-k2.5' },
+      },
+    }));
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { execution: { model: '@preset/cheap' } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.model).toBe('nano-gpt/moonshotai/kimi-k2.5');
+  });
+
+  it('package canonical resolves preset references on plain load', async () => {
+    await writeFile(join(tmpProject, 'config', 'presets.json'), JSON.stringify({
+      medium: {
+        description: 'medium',
+        fields: { 'specialist.execution.model': 'anthropic/claude-sonnet-4-6' },
+      },
+    }));
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ model: '@preset/medium' }));
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.model).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  it('global user.json resolves preset references inside fallback_models independently', async () => {
+    await writeFile(join(tmpProject, 'config', 'presets.json'), JSON.stringify({
+      cheap: {
+        description: 'cheap',
+        fields: { 'specialist.execution.fallback_models': 'nano-gpt/moonshotai/kimi-k2.5' },
+      },
+    }));
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { execution: { fallback_models: ['@preset/cheap', 'openai-codex/gpt-5.4'] } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.fallback_models).toEqual(['nano-gpt/moonshotai/kimi-k2.5', 'openai-codex/gpt-5.4']);
+  });
+
+  it('blocked prompt.system preset reference is stripped before resolution', async () => {
+    await writeFile(join(tmpProject, 'config', 'presets.json'), JSON.stringify({
+      foo: {
+        description: 'foo',
+        fields: { 'specialist.prompt.system': 'smuggled prompt' },
+      },
+    }));
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({
+      demo: { prompt: { system: '@preset/foo' } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.prompt.system).toBeUndefined();
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).toContain('prompt.system');
   });
 
   it('global user.json overrides the package model', async () => {
