@@ -25,6 +25,10 @@ describe('resolveModelChain', () => {
     expect(debug).toHaveBeenCalledWith('[model-chain] plural fallback_models wins; ignoring fallback_model=f');
   });
 
+  it('returns empty chain when model missing and no fallback exists', () => {
+    expect(resolveModelChain({ model: null })).toEqual([]);
+  });
+
   it('dedupes while preserving order', () => {
     expect(resolveModelChain({ model: 'p', fallback_models: ['p', 'a', 'a'] })).toEqual(['p', 'a']);
   });

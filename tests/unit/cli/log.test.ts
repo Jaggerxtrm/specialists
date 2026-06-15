@@ -122,6 +122,46 @@ describe('log CLI', () => {
     expect(logs.join('\n')).toContain('tool=bash');
   });
 
+  it('prints fallback_step events in chronological order with telemetry fields', async () => {
+    sqliteState.events.set('jobfallback', [
+      { t: 1000, seq: 1, type: 'fallback_step', event: 'fallback_step', attempt_n: 2, model_tried: 'anthropic/claude-sonnet-4-6', error_class: 'transient', terminal: false },
+      { t: 2000, seq: 2, type: 'fallback_step', event: 'fallback_step', attempt_n: 3, model_tried: 'openai-codex/gpt-5.4', error_class: 'timeout', terminal: true },
+    ] as TimelineEvent[]);
+    sqliteState.statuses = [{
+      id: 'jobfallback',
+      specialist: 'reviewer',
+      status: 'error',
+      started_at_ms: 1000,
+      last_event_at_ms: 2000,
+      pid: 123,
+      bead_id: 'unitAI-log',
+      branch: 'feature/log',
+      worktree_path: tempRoot,
+      model: 'openai-codex/gpt-5.4',
+      backend: 'openai-codex',
+    }];
+    process.argv = ['node', 'specialists', 'log', 'jobfallback', '--all-events'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg?: unknown) => logs.push(String(msg ?? '')));
+
+    const { run } = await import('../../../src/cli/log.js');
+    await run();
+
+    const output = logs.join('\n');
+    const firstIndex = output.indexOf('attempt_n":2');
+    const secondIndex = output.indexOf('attempt_n":3');
+    expect(output).toContain('FALLBA');
+    expect(output).toContain('event":"fallback_step"');
+    expect(output).toContain('model_tried":"anthropic/claude-sonnet-4-6"');
+    expect(output).toContain('error_class":"transient"');
+    expect(output).toContain('terminal":true');
+    expect(firstIndex).toBeGreaterThan(-1);
+    expect(secondIndex).toBeGreaterThan(firstIndex);
+    expect(output).not.toContain('stack');
+    expect(output).not.toContain('prompt');
+  });
+
   it('emits JSON rows with full event payload', async () => {
     seedJob('jobjson');
     process.argv = ['node', 'specialists', 'log', 'jobjson', '--json', '--limit', '1'];

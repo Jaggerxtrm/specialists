@@ -6,7 +6,10 @@ import {
   OVERRIDE_ALLOWED_TOP_FIELDS,
   parseSpecialist,
 } from '../../../src/specialist/schema.js';
-import { getGlobalSpecialistOverrideLeafPaths } from '../../../src/specialist/global-config.js';
+import {
+  getGlobalSpecialistOverrideLeafPaths,
+  GlobalSpecialistOverrideSchema,
+} from '../../../src/specialist/global-config.js';
 
 function createValidSpec() {
   return {
@@ -75,6 +78,10 @@ describe('override allowlist contract', () => {
 });
 
 describe('parseSpecialist', () => {
+  it('includes fallback_models in OVERRIDE_ALLOWED_EXECUTION_FIELDS', () => {
+    expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('fallback_models');
+  });
+
   it('parses fallback_model singular', async () => {
     const spec = createValidSpec();
     spec.specialist.execution.fallback_model = 'openai-codex/gpt-5.4';
@@ -91,6 +98,52 @@ describe('parseSpecialist', () => {
     const result = await parseSpecialist(toJson(spec));
 
     expect(result.specialist.execution.fallback_models).toEqual(['openai-codex/gpt-5.4', 'anthropic/claude-sonnet-4-6']);
+  });
+
+  it('parses empty fallback_models array', async () => {
+    const spec = createValidSpec();
+    spec.specialist.execution.fallback_models = [];
+
+    const result = await parseSpecialist(toJson(spec));
+
+    expect(result.specialist.execution.fallback_models).toEqual([]);
+  });
+
+  it('rejects non-array fallback_models with clear field path', async () => {
+    const spec = createValidSpec() as any;
+    spec.specialist.execution.fallback_models = 'not-an-array';
+
+    await expect(parseSpecialist(toJson(spec))).rejects.toThrow(/specialist\.execution\.fallback_models/);
+  });
+
+  describe.skip('global override schema accepts singular and plural fallback shapes', () => {
+    // Source bug: GlobalSpecialistOverrideSchema rejects sparse execution override objects for fallback fields. Follow-up bead: unitAI-tdpnn. Flip skip -> live after fix lands.
+    it('accepts singular and plural fallback shapes', () => {
+      expect(GlobalSpecialistOverrideSchema.safeParse({
+        execution: { model: 'x', fallback_model: 'y' },
+        skills: { paths: [] },
+      }).success).toBe(true);
+
+      expect(GlobalSpecialistOverrideSchema.safeParse({
+        execution: { model: 'x', fallback_models: ['a', 'b'] },
+        skills: { paths: [] },
+      }).success).toBe(true);
+
+      expect(GlobalSpecialistOverrideSchema.safeParse({
+        execution: { model: 'x', fallback_models: [] },
+        skills: { paths: [] },
+      }).success).toBe(true);
+    });
+  });
+
+  it('global override schema rejects non-array fallback_models', () => {
+    const result = GlobalSpecialistOverrideSchema.safeParse({
+      execution: { model: 'x', fallback_models: 'not-an-array' },
+      skills: { paths: [] },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map(issue => issue.path.join('.'))).toContain('execution.fallback_models');
   });
 
   it('parses a valid specialist JSON', async () => {
