@@ -694,6 +694,19 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(spec.specialist.execution.model).toBe('global/glm-5.1');
   });
 
+  // Source bug: loader merge preserves inherited singular fallback_model when plural fallback_models override exists. Follow-up bead: unitAI-pzncp. Flip skip -> live after fix lands.
+  it.skip('global plural fallback_models wins over package singular fallback_model', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ fallback_model: 'package/legacy' }));
+    await writeGlobalUserJson({
+      demo: { execution: { fallback_models: ['global/first', 'global/second'] } },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.fallback_models).toEqual(['global/first', 'global/second']);
+    expect(spec.specialist.execution.fallback_model).toBeNull();
+  });
+
   it('repo .specialists/user wins over the global layer (field-level)', async () => {
     await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
     await writeGlobalUserJson({ demo: { execution: { model: 'global/glm-5.1' } } });
