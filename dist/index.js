@@ -20644,6 +20644,7 @@ var init_schema = __esm(() => {
     mode: enumType(["tool", "skill", "auto"]).default("auto"),
     model: stringType().nullable(),
     fallback_model: stringType().nullable().optional(),
+    fallback_models: arrayType(stringType()).nullable().optional(),
     timeout_ms: numberType().default(120000),
     stall_timeout_ms: numberType().optional(),
     max_retries: numberType().int().min(0).default(0),
@@ -20723,6 +20724,7 @@ var init_schema = __esm(() => {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
     "model",
     "fallback_model",
+    "fallback_models",
     "timeout_ms",
     "stall_timeout_ms",
     "thinking_level",
@@ -20788,6 +20790,7 @@ function buildSpecialistOverrideTemplate() {
     execution: {
       model: null,
       fallback_model: null,
+      fallback_models: null,
       timeout_ms: null,
       stall_timeout_ms: null,
       thinking_level: null,
@@ -20901,6 +20904,7 @@ var init_global_config = __esm(() => {
   OverrideExecutionSchema = objectType({
     model: stringType().nullable(),
     fallback_model: stringType().nullable(),
+    fallback_models: arrayType(stringType()).nullable().optional(),
     timeout_ms: numberType().nullable(),
     stall_timeout_ms: numberType().nullable(),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
@@ -23016,6 +23020,30 @@ var init_mandatory_rules = __esm(() => {
   init_canonical_asset_resolver();
 });
 
+// src/specialist/model-chain.ts
+function resolveModelChain(execution) {
+  const primary = normalizeModel(execution.model);
+  const fallbacks = resolveFallbackModels(execution);
+  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
+}
+function resolveFallbackModels(execution) {
+  if (execution.fallback_models && execution.fallback_models.length > 0) {
+    if (normalizeModel(execution.fallback_model ?? null)) {
+      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
+    }
+    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
+  }
+  const fallback = normalizeModel(execution.fallback_model ?? null);
+  return fallback ? [fallback] : [];
+}
+function normalizeModel(model) {
+  const trimmed = model?.trim();
+  return trimmed ? trimmed : null;
+}
+function dedupeModels(models) {
+  return [...new Set(models)];
+}
+
 // src/specialist/beads.ts
 import { spawnSync as spawnSync3 } from "child_process";
 function buildBeadContext(bead, completedBlockers = []) {
@@ -23684,6 +23712,32 @@ function validateOutputContract(output, responseFormat, outputSchema) {
   }
   return warnings;
 }
+function selectAvailableModel(modelChain, circuitBreaker, specialist, onEvent) {
+  for (let index = 0;index < modelChain.length; index++) {
+    const model = modelChain[index];
+    const isTerminal2 = index === modelChain.length - 1;
+    const isAvailable = circuitBreaker.isAvailable(model);
+    if (index > 0) {
+      emitFallbackStep(onEvent, specialist, index + 1, model, isAvailable ? "unknown" : "transient", isTerminal2);
+    }
+    if (isAvailable || isTerminal2)
+      return model;
+  }
+  return modelChain[0];
+}
+function emitFallbackStep(onEvent, specialist, attemptN, modelTried, errorClass, terminal) {
+  onEvent?.("fallback_step", {
+    model: modelTried,
+    data: {
+      event: "fallback_step",
+      specialist,
+      attempt_n: attemptN,
+      model_tried: modelTried,
+      error_class: errorClass,
+      terminal
+    }
+  });
+}
 
 class SpecialistRunner {
   deps;
@@ -23715,9 +23769,9 @@ ${buildBeadBoundaryInstruction(runCwd, options.worktreeBoundary)}`.trim();
     const spec = await loader.get(options.name);
     const { metadata, execution, prompt, output_file } = spec.specialist;
     const executionModel = execution.model;
-    const executionFallbackModel = execution.fallback_model ?? null;
-    const primaryModel = options.backendOverride ?? executionModel;
-    const model = circuitBreaker.isAvailable(primaryModel) ? primaryModel : executionFallbackModel ?? primaryModel;
+    const modelChain = options.backendOverride ? [options.backendOverride] : resolveModelChain({ ...execution, model: executionModel });
+    const primaryModel = modelChain[0] ?? executionModel;
+    const model = selectAvailableModel(modelChain, circuitBreaker, metadata.name, onEvent);
     const fallbackUsed = model !== primaryModel;
     await hooks.emit("pre_render", invocationId, metadata.name, metadata.version, {
       variables_keys: Object.keys(options.variables ?? {}),
@@ -30564,7 +30618,8 @@ async function runScriptSpecialist(input2, options) {
   }
 }
 function collectModelCandidates(input2, spec, options) {
-  const candidates = [input2.model_override, spec.specialist.execution.model, spec.specialist.execution.fallback_model, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
+  const executionChain = resolveModelChain(spec.specialist.execution);
+  const candidates = [input2.model_override, ...executionChain, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
   return [...new Set(candidates)];
 }
 function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths = []) {
@@ -52642,7 +52697,7 @@ function jobParticipantLabels(record3, repo) {
     ...DEFAULT_SERVICE_LABELS,
     repo,
     participant_role: record3.specialist,
-    model: normalizeModel(record3.model)
+    model: normalizeModel2(record3.model)
   });
 }
 function jobResultLabels(record3, repo) {
@@ -53081,7 +53136,7 @@ function resultForStatus(status) {
 function normalizeState(status) {
   return status.toLowerCase().replace(/[^a-z0-9_:-]+/g, "_") || "unknown";
 }
-function normalizeModel(model) {
+function normalizeModel2(model) {
   if (!model)
     return;
   const normalized = model.toLowerCase().replace(/[^a-z0-9_.:/-]+/g, "_");

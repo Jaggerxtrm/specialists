@@ -11,6 +11,7 @@ describe('global specialist override config', () => {
       execution: {
         model: null,
         fallback_model: null,
+        fallback_models: null,
         timeout_ms: null,
         stall_timeout_ms: null,
         thinking_level: null,
@@ -74,6 +75,7 @@ describe('global specialist override config', () => {
       execution: {
         model: 'global/glm-5.1',
         fallback_model: null,
+        fallback_models: null,
         timeout_ms: null,
         stall_timeout_ms: null,
         thinking_level: null,

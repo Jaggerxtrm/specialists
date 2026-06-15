@@ -16,6 +16,7 @@ import { stripJsonFences } from './json-output.js';
 import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { createObservabilitySqliteClient } from './observability-sqlite.js';
 import type { TimelineEvent, TimelineEventRunComplete } from './timeline-events.js';
+import { resolveModelChain } from './model-chain.js';
 
 export interface RunOptions {
   name: string;
@@ -872,6 +873,48 @@ function validateOutputContract(
   return warnings;
 }
 
+function selectAvailableModel(
+  modelChain: readonly string[],
+  circuitBreaker: CircuitBreaker,
+): string {
+  for (const model of modelChain) {
+    if (circuitBreaker.isAvailable(model)) return model;
+  }
+
+  return modelChain.at(-1) ?? modelChain[0];
+}
+
+function classifyFallbackError(error: unknown): string {
+  if (isAuthError(error)) return 'auth';
+
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (/rate.?limit|429|too many requests/.test(message)) return 'rate_limit';
+  if (/timeout|timed out|etimedout|deadline/.test(message)) return 'timeout';
+  if (isTransientError(error)) return 'transient';
+  return 'unknown';
+}
+
+function emitFallbackStep(
+  onEvent: ((type: string, details?: { model?: string; data?: Record<string, unknown> }) => void) | undefined,
+  specialist: string,
+  attemptN: number,
+  modelTried: string,
+  errorClass: string,
+  terminal: boolean,
+): void {
+  onEvent?.('fallback_step', {
+    model: modelTried,
+    data: {
+      event: 'fallback_step',
+      specialist,
+      attempt_n: attemptN,
+      model_tried: modelTried,
+      error_class: errorClass,
+      terminal,
+    },
+  });
+}
+
 export class SpecialistRunner {
   private sessionFactory: SessionFactory;
 
@@ -943,20 +986,19 @@ export class SpecialistRunner {
     // loader.get() hard-fails on null execution.model via SpecialistMissingModelError
     // before reaching here, so the cast is sound at runtime. tsc cannot prove it.
     const executionModel = execution.model as string;
-    const executionFallbackModel = (execution.fallback_model ?? null) as string | null;
 
-    // Backend resolution: override → primary → fallback
-    const primaryModel = options.backendOverride ?? executionModel;
-    const model = circuitBreaker.isAvailable(primaryModel)
-      ? primaryModel
-      : (executionFallbackModel ?? primaryModel);
-    const fallbackUsed = model !== primaryModel;
+    const modelChain = options.backendOverride
+      ? [options.backendOverride]
+      : resolveModelChain({ ...execution, model: executionModel });
+    const primaryModel = modelChain[0] ?? executionModel;
+    const initialModel = selectAvailableModel(modelChain, circuitBreaker);
+    const fallbackUsed = initialModel !== primaryModel;
 
     await hooks.emit('pre_render', invocationId, metadata.name, metadata.version, {
       variables_keys: Object.keys(options.variables ?? {}),
-      backend_resolved: model,
+      backend_resolved: initialModel,
       fallback_used: fallbackUsed,
-      circuit_breaker_state: circuitBreaker.getState(model),
+      circuit_breaker_state: circuitBreaker.getState(initialModel),
       scope: 'project',
     });
 
@@ -1315,80 +1357,105 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       if (beadId) { ownsBead = true; onBeadCreated?.(beadId); }
     }
 
+    let currentModel = initialModel;
     await hooks.emit('pre_execute', invocationId, metadata.name, metadata.version, {
-      backend: model,
-      model,
+      backend: currentModel,
+      model: currentModel,
       timeout_ms: execution.timeout_ms,
       permission_level: permissionLevel,
     });
 
     let output: string | undefined;
-    let sessionBackend: string = model; // captured before kill() can destroy meta
+    let sessionBackend: string = currentModel; // captured before kill() can destroy meta
     let runMetrics: SessionRunMetrics | undefined;
     let session: Awaited<ReturnType<SessionFactory>> | undefined;
     let keepAliveActive = false; // set true when keepAlive hands session ownership to caller
     let sessionClosed = false; // track if we closed cleanly (to avoid kill in finally)
+    let currentFailureRecorded = false;
     const maxRetries = Math.max(0, Math.trunc(options.maxRetries ?? execution.max_retries ?? 0));
     const maxAttempts = maxRetries + 1;
 
     try {
-      // Forward selected specialist variables as real shell env vars for bash tool access
       const envVars: Record<string, string> = {};
       const resolvedNodeId = options.variables?.SPECIALISTS_NODE_ID ?? options.variables?.node_id;
       if (resolvedNodeId) envVars.SPECIALISTS_NODE_ID = resolvedNodeId;
       if (options.variables?.SPECIALISTS_JOB_ID) envVars.SPECIALISTS_JOB_ID = options.variables.SPECIALISTS_JOB_ID;
-      session = await this.sessionFactory({
-        model,
-        systemPrompt: agentsMd || undefined,
-        systemPromptMode: prompt.system_prompt_mode,
-        skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
-        thinkingLevel: execution.thinking_level,
-        permissionLevel,
-        specialistName: options.specialistName ?? metadata.name,
-        specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
-        stallTimeoutMs: execution.stall_timeout_ms,
-        cwd: runCwd,
-        worktreeBoundary: options.worktreeBoundary,
-        ...(excludeExtensions.length > 0 ? { excludeExtensions } : {}),
-        ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
-        onToken:     (delta) => onProgress?.(delta),
-        onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
-        onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
-        onToolEnd:   (tool, isError, toolCallId, resultContent, resultRaw) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw); },
-        onEvent:     (type, details)  => onEvent?.(type, details),
-        onMetric:    (event) => onMetric?.(event),
-        onMeta:      (meta)  => onMeta?.(meta),
-      });
-      await session.start();
 
-      // Register kill function with the caller (e.g. JobRegistry for stop_specialist)
-      onKillRegistered?.(session.kill.bind(session));
-      // Register steer function so callers can send mid-run messages to the Pi agent
-      onSteerRegistered?.((msg) => session!.steer(msg));
+      for (let modelIndex = 0; modelIndex < modelChain.length; modelIndex++) {
+        currentModel = modelChain[modelIndex];
+        currentFailureRecorded = false;
+        const isTerminalModel = modelIndex === modelChain.length - 1;
 
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          await session.prompt(renderedTask);
-          await session.waitForDone(execution.timeout_ms);
-          output = await session.getLastOutput();
-          runMetrics = session.getMetrics?.();
-          sessionBackend = session.meta.backend; // capture before finally calls kill()
-          break;
-        } catch (err: any) {
-          const shouldRetry = attempt < maxAttempts
-            && !(err instanceof SessionKilledError)
-            && !isAuthError(err)
-            && isTransientError(err);
-
-          if (!shouldRetry) {
-            throw err;
-          }
-
-          const delayMs = getRetryDelayMs(attempt);
-          onEvent?.('auto_retry');
-          onProgress?.(`\n↻ transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms\n`);
-          await sleep(delayMs);
+        if (!circuitBreaker.isAvailable(currentModel) && !isTerminalModel) {
+          emitFallbackStep(onEvent, metadata.name, modelIndex + 2, modelChain[modelIndex + 1], 'transient', false);
+          continue;
         }
+
+        sessionClosed = false;
+        session = await this.sessionFactory({
+          model: currentModel,
+          systemPrompt: agentsMd || undefined,
+          systemPromptMode: prompt.system_prompt_mode,
+          skillPaths: skillPaths.length > 0 ? skillPaths : undefined,
+          thinkingLevel: execution.thinking_level,
+          permissionLevel,
+          specialistName: options.specialistName ?? metadata.name,
+          specialistPermissions: options.specialistPermissions ?? (spec.specialist.permissions as PiSessionOptions['specialistPermissions']),
+          stallTimeoutMs: execution.stall_timeout_ms,
+          cwd: runCwd,
+          worktreeBoundary: options.worktreeBoundary,
+          ...(excludeExtensions.length > 0 ? { excludeExtensions } : {}),
+          ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
+          onToken:     (delta) => onProgress?.(delta),
+          onThinking:  (delta) => onProgress?.(`💭 ${delta}`),
+          onToolStart: (tool, args, toolCallId) => { onProgress?.(`\n⚙ ${tool}…`); onToolStartCallback?.(tool, args, toolCallId); },
+          onToolEnd:   (tool, isError, toolCallId, resultContent, resultRaw) => { onProgress?.(`✓\n`); onToolEndCallback?.(tool, isError, toolCallId, resultContent, resultRaw); },
+          onEvent:     (type, details)  => onEvent?.(type, details),
+          onMetric:    (event) => onMetric?.(event),
+          onMeta:      (meta)  => onMeta?.(meta),
+        });
+        await session.start();
+
+        onKillRegistered?.(session.kill.bind(session));
+        onSteerRegistered?.((msg) => session!.steer(msg));
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            await session.prompt(renderedTask);
+            await session.waitForDone(execution.timeout_ms);
+            output = await session.getLastOutput();
+            runMetrics = session.getMetrics?.();
+            sessionBackend = session.meta.backend;
+            break;
+          } catch (err: any) {
+            const isTransient = !(err instanceof SessionKilledError) && !isAuthError(err) && isTransientError(err);
+            const shouldRetry = attempt < maxAttempts && isTransient;
+
+            if (shouldRetry) {
+              const delayMs = getRetryDelayMs(attempt);
+              onEvent?.('auto_retry');
+              onProgress?.(`\n↻ transient backend error on attempt ${attempt}/${maxAttempts}; retrying in ${delayMs}ms\n`);
+              await sleep(delayMs);
+              continue;
+            }
+
+            if (!isTransient) throw err;
+
+            circuitBreaker.recordFailure(currentModel);
+            currentFailureRecorded = true;
+            if (isTerminalModel) {
+              emitFallbackStep(onEvent, metadata.name, modelIndex + 1, currentModel, classifyFallbackError(err), true);
+              throw err;
+            }
+
+            emitFallbackStep(onEvent, metadata.name, modelIndex + 2, modelChain[modelIndex + 1], classifyFallbackError(err), false);
+            session.kill();
+            session = undefined;
+            break;
+          }
+        }
+
+        if (output !== undefined) break;
       }
 
       if (output === undefined) {
@@ -1413,7 +1480,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         };
         onResumeReady(resumeFn, closeFn);
       } else {
-        // Clean shutdown: send EOF to stdin, await process exit
+        if (!session) throw new Error('Specialist run finished without session');
         await session.close();
         sessionClosed = true;
       }
@@ -1422,20 +1489,20 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       const postScripts = spec.specialist.skills?.scripts?.filter(s => s.phase === 'post') ?? [];
       for (const script of postScripts) runScript(script.run ?? (script as unknown as { path?: string }).path, runCwd);
 
-      circuitBreaker.recordSuccess(model);
+      circuitBreaker.recordSuccess(currentModel);
     } catch (err: any) {
       const isCancelled = err instanceof SessionKilledError;
       const authError = isAuthError(err);
-      if (!isCancelled && !authError) {
+      if (!isCancelled && !authError && !currentFailureRecorded) {
         // Only record a circuit-breaker failure for real backend errors
-        circuitBreaker.recordFailure(model);
+        circuitBreaker.recordFailure(currentModel);
       }
       // Beads: close with CANCELLED for kill, ERROR for real failures; always audit.
       // Only close if runner owns the bead — input beads are closed by the orchestrator.
       const beadStatus = isCancelled ? 'CANCELLED' : 'ERROR';
       if (beadId) {
-        if (ownsBead) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, model);
-        beadsClient?.auditBead(beadId, metadata.name, model, 1);
+        if (ownsBead) beadsClient?.closeBead(beadId, beadStatus, Date.now() - start, currentModel);
+        beadsClient?.auditBead(beadId, metadata.name, currentModel, 1);
       }
       await hooks.emit('post_execute', invocationId, metadata.name, metadata.version, {
         status: isCancelled ? 'CANCELLED' : 'ERROR',
@@ -1473,13 +1540,13 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
     // (Error/cancel paths close owned beads in the catch block above because
     // Supervisor never reaches post-processing on failure.)
     if (beadId) {
-      beadsClient?.auditBead(beadId, metadata.name, model, 0);
+      beadsClient?.auditBead(beadId, metadata.name, currentModel, 0);
     }
 
     return {
       output,
       backend: sessionBackend,
-      model,
+      model: currentModel,
       durationMs,
       specialistVersion: metadata.version,
       promptHash,

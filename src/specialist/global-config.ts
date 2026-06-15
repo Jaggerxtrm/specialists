@@ -78,6 +78,7 @@ const OverrideExtensionsSchema = z.object({
 const OverrideExecutionSchema = z.object({
   model: z.string().nullable(),
   fallback_model: z.string().nullable(),
+  fallback_models: z.array(z.string()).nullable().optional(),
   timeout_ms: z.number().nullable(),
   stall_timeout_ms: z.number().nullable(),
   thinking_level: z
@@ -140,6 +141,7 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
     execution: {
       model: null,
       fallback_model: null,
+      fallback_models: null,
       timeout_ms: null,
       stall_timeout_ms: null,
       thinking_level: null,

@@ -1,0 +1,1 @@
+{"version":3,"file":"model-chain.d.ts","sourceRoot":"","sources":["../../../src/specialist/model-chain.ts"],"names":[],"mappings":"AAAA,MAAM,WAAW,mBAAmB;IAClC,KAAK,EAAE,MAAM,GAAG,IAAI,CAAC;IACrB,cAAc,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;IAC/B,eAAe,CAAC,EAAE,SAAS,MAAM,EAAE,GAAG,IAAI,CAAC;CAC5C;AAED,wBAAgB,iBAAiB,CAAC,SAAS,EAAE,mBAAmB,GAAG,MAAM,EAAE,CAI1E"}
