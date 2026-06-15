@@ -22,7 +22,7 @@ import {
 
 const CONFIG_FILENAME = 'user.json';
 const SPECIALISTS_SUBDIR = 'specialists';
-export const GLOBAL_USER_CONFIG_DOC = 'See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.';
+export const GLOBAL_USER_CONFIG_DOC = './overrides-guide.md';
 
 export type GlobalConfigSource = 'xdg' | 'config-home' | 'legacy';
 
@@ -235,7 +235,7 @@ export function mergeGlobalUserConfig(
   existing: Readonly<Record<string, unknown>>,
   template: GlobalUserConfig,
 ): GlobalConfigMergeResult {
-  const merged: GlobalUserConfig = { _doc: typeof existing._doc === 'string' ? existing._doc : GLOBAL_USER_CONFIG_DOC };
+  const merged: GlobalUserConfig = { _doc: GLOBAL_USER_CONFIG_DOC };
   const added: string[] = [];
   const extended: string[] = [];
   const removed: string[] = [];

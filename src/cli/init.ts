@@ -130,6 +130,20 @@ function saveJson(path: string, value: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf-8');
 }
 
+function writeGlobalOverridesGuide(configPath: string): string | null {
+  const docsDir = resolveCanonicalAssetDir('../docs');
+  const sourcePath = docsDir ? join(docsDir, 'overrides-guide.md') : null;
+
+  if (!sourcePath || !existsSync(sourcePath)) {
+    warn('global overrides guide not found in package; see docs/overrides-guide.md on GitHub');
+    return null;
+  }
+
+  const targetPath = join(dirname(configPath), 'overrides-guide.md');
+  copyFileSync(sourcePath, targetPath);
+  return targetPath;
+}
+
 
 /**
  * Move legacy nested specialist files from .specialists/<scope>/specialists/
@@ -900,12 +914,15 @@ export async function runGlobal(): Promise<void> {
   const location = getGlobalUserConfigPath();
   const existing = readGlobalUserConfig(location);
 
+  let guidePath: string | null = null;
+
   if (existing) {
     const result = mergeGlobalUserConfig(
       existing as Record<string, unknown>,
       template,
     );
     writeGlobalUserConfig(location, result.config);
+    guidePath = writeGlobalOverridesGuide(location.path);
 
     ok(`using global config at ${location.path} (${location.source})`);
     if (result.added.length > 0) {
@@ -921,11 +938,17 @@ export async function runGlobal(): Promise<void> {
     }
   } else {
     writeGlobalUserConfig(location, template);
+    guidePath = writeGlobalOverridesGuide(location.path);
     ok(`created global config at ${location.path} (${location.source})`);
     ok(`seeded ${shippedNames.length} specialist${shippedNames.length === 1 ? '' : 's'} with inherit defaults`);
   }
 
+  if (guidePath) {
+    ok(`wrote overrides guide at ${guidePath}`);
+  }
+
   console.log(`\n${bold('Done!')}\n`);
+  console.log(`  ${dim('Override reference:')} ${yellow(guidePath ?? './overrides-guide.md')}`);
   console.log(`  ${dim('Edit override fields with:')}`);
   console.log(`  ${yellow('specialists edit --global <name>.execution.model <value>')}`);
   console.log(`  ${yellow('specialists edit --global')} ${dim('# open in $EDITOR')}\n`);

@@ -1,12 +1,10 @@
-# KAN-91 / unitAI-gp7nq — Expanded global overrides
+# Global user overrides guide
 
-For the current canonical reference, see [`docs/overrides-guide.md`](../overrides-guide.md). This page documents the KAN-91 delta only.
-
-KAN-91 expands the KAN-90 global `user.json` layer from model-only tuning into a per-user environment override surface. The new surface adds user-owned knobs for prompt composition, extension injection, notes/output behavior, prompt/stdout limits, fallback model chains, and `@preset/<name>` references. Specialist identity and safety fields remain blocked.
+This guide is the canonical reference for `~/.config/specialists/user.json`, created by `sp init --global`. The global user layer lets each user tune environment-specific fields without forking shipped specialists. Specialist identity and safety fields remain blocked.
 
 ## Overview
 
-This expansion adds:
+The global override surface includes:
 
 - Six allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
 - Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
@@ -181,7 +179,7 @@ Write a preset reference as an exact string inside the existing generated specia
 }
 ```
 
-Package presets live in `config/presets.json`. Current shipped names are `cheap`, `medium`, and `power`. User-defined preset files and repo-level preset shadowing are not part of KAN-91.
+Package presets live in `config/presets.json`. Current shipped names are `cheap`, `medium`, and `power`. User-defined preset files and repo-level preset shadowing are not part of this global override surface.
 
 Preset references resolve transitively with depth cap 4. Cycles raise `SpecialistPresetCycleError` with the visited preset list. Unknown names raise `SpecialistPresetNotFoundError` and list known presets. Malformed preset payloads raise `SpecialistPresetTypeError` before the loader writes the resolved value into the merged specialist spec.
 
@@ -199,11 +197,25 @@ Plural wins over singular in the same layer. A plural override in a higher layer
 
 Each fallback step emits `fallback_step` telemetry with specialist, attempt number, tried model, error class, and whether the step was terminal. Chain walk only happens for transient failures such as rate limits, network errors, timeouts, and 5xx-class provider failures.
 
-## Migration
+## `auto_commit` is fork-only by design
 
-Existing `~/.config/specialists/user.json` files auto-extend on the next `sp init --global` run. Existing values are preserved. Missing fields are filled with `null` defaults, and `_doc` is added if absent.
+`auto_commit` is intentionally blocked from `user.json`. The package default is `checkpoint_on_waiting` for `executor` and `debugger`, which checkpoints work before these long-running specialists enter `waiting`. Silent loss is the failure mode this default prevents: a specialist can produce useful edits, pause for review, then be resumed or terminated before manual staging captures the work.
 
-Generated files stay strict JSON. `sp init --global` does not write comments; it writes `_doc` as a top-level metadata key instead.
+Change `auto_commit` only by forking the specialist into `.specialists/user/<name>.specialist.json` and editing that fork:
+
+```bash
+mkdir -p .specialists/user
+cp config/specialists/executor.specialist.json .specialists/user/executor.specialist.json
+# edit .specialists/user/executor.specialist.json and set auto_commit intentionally
+```
+
+Repo/user forks are explicit because `auto_commit` changes repository-write behavior for everyone using that fork.
+
+## Initialization and strict JSON
+
+Existing `~/.config/specialists/user.json` files auto-extend on the next `sp init --global` run. Existing values are preserved. Missing fields are filled with `null` defaults, and `_doc` points at `./overrides-guide.md`.
+
+Generated files stay strict JSON. `sp init --global` does not write comments; it writes `_doc` as a top-level metadata key and writes this guide as `overrides-guide.md` next to `user.json`.
 
 ## Complete example (validates against `GlobalUserConfigSchema`)
 
@@ -211,7 +223,7 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
 
 ```json
 {
-  "_doc": "See docs/upgrade-notes/kan-91-expanded-overrides.md for expanded override fields.",
+  "_doc": "./overrides-guide.md",
   "executor": {
     "execution": {
       "model": "@preset/cheap",
@@ -246,6 +258,7 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
 
 ## Cross-references
 
+- Historical KAN-91 delta: `docs/upgrade-notes/kan-91-expanded-overrides.md`
 - Origin doc: `docs/upgrade-notes/kan-90-global-user-config.md`
 - KAN-91 epic: `unitAI-gp7nq`
 - Phase 0 override machinery: `unitAI-gp7nq.1`

@@ -27,6 +27,7 @@
     "config/nodes/",
     "config/hooks/",
     "config/presets.json",
+    "docs/",
     "LICENSE",
     "!config/benchmarks/",
     "!config/skills/**/evals/",

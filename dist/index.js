@@ -20832,7 +20832,7 @@ function fillMissingDefaults(target, defaults) {
   return target;
 }
 function mergeGlobalUserConfig(existing, template) {
-  const merged = { _doc: typeof existing._doc === "string" ? existing._doc : GLOBAL_USER_CONFIG_DOC };
+  const merged = { _doc: GLOBAL_USER_CONFIG_DOC };
   const added = [];
   const extended = [];
   const removed = [];
@@ -20897,7 +20897,7 @@ function writeGlobalUserConfig(location, config2) {
   writeFileSync2(location.path, `${JSON.stringify(config2, null, 2)}
 `, "utf-8");
 }
-var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", GLOBAL_USER_CONFIG_DOC = "See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
+var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", GLOBAL_USER_CONFIG_DOC = "./overrides-guide.md", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
 var init_global_config = __esm(() => {
   init_zod();
   init_schema();
@@ -28980,6 +28980,17 @@ function saveJson(path, value) {
   writeFileSync7(path, JSON.stringify(value, null, 2) + `
 `, "utf-8");
 }
+function writeGlobalOverridesGuide(configPath) {
+  const docsDir = resolveCanonicalAssetDir("../docs");
+  const sourcePath = docsDir ? join15(docsDir, "overrides-guide.md") : null;
+  if (!sourcePath || !existsSync15(sourcePath)) {
+    warn("global overrides guide not found in package; see docs/overrides-guide.md on GitHub");
+    return null;
+  }
+  const targetPath = join15(dirname8(configPath), "overrides-guide.md");
+  copyFileSync(sourcePath, targetPath);
+  return targetPath;
+}
 function migrateLegacySpecialists(cwd, scope) {
   const sourceDir = join15(cwd, ".specialists", scope, "specialists");
   if (!existsSync15(sourceDir))
@@ -29567,9 +29578,11 @@ ${bold5("specialists init --global")}
   const template = buildGlobalUserConfigTemplate(shippedNames);
   const location = getGlobalUserConfigPath();
   const existing = readGlobalUserConfig(location);
+  let guidePath = null;
   if (existing) {
     const result = mergeGlobalUserConfig(existing, template);
     writeGlobalUserConfig(location, result.config);
+    guidePath = writeGlobalOverridesGuide(location.path);
     ok(`using global config at ${location.path} (${location.source})`);
     if (result.added.length > 0) {
       ok(`added ${result.added.length} new specialist${result.added.length === 1 ? "" : "s"}: ${result.added.join(", ")}`);
@@ -29584,12 +29597,17 @@ ${bold5("specialists init --global")}
     }
   } else {
     writeGlobalUserConfig(location, template);
+    guidePath = writeGlobalOverridesGuide(location.path);
     ok(`created global config at ${location.path} (${location.source})`);
     ok(`seeded ${shippedNames.length} specialist${shippedNames.length === 1 ? "" : "s"} with inherit defaults`);
+  }
+  if (guidePath) {
+    ok(`wrote overrides guide at ${guidePath}`);
   }
   console.log(`
 ${bold5("Done!")}
 `);
+  console.log(`  ${dim5("Override reference:")} ${yellow5(guidePath ?? "./overrides-guide.md")}`);
   console.log(`  ${dim5("Edit override fields with:")}`);
   console.log(`  ${yellow5("specialists edit --global <name>.execution.model <value>")}`);
   console.log(`  ${yellow5("specialists edit --global")} ${dim5("# open in $EDITOR")}
