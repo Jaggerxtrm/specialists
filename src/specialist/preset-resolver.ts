@@ -16,7 +16,10 @@ export interface LoadPresetsOptions {
 
 export interface ResolvePresetOptions {
   specialist?: string;
+  arrayEntry?: boolean;
 }
+
+type PresetValueType = 'string-or-null' | 'string-array-or-null' | 'number';
 
 export interface PresetResolution {
   value: unknown;
@@ -51,6 +54,21 @@ export class SpecialistPresetCycleError extends Error {
       `preset cycle referenced by ${formatReferenceLocation(specialist, fieldPath)}: ${visited.join(' -> ')}`,
     );
     this.name = 'SpecialistPresetCycleError';
+  }
+}
+
+export class SpecialistPresetTypeError extends Error {
+  constructor(
+    public readonly presetName: string,
+    public readonly specialist: string | undefined,
+    public readonly fieldPath: string,
+    public readonly expectedType: string,
+    public readonly actualType: string,
+  ) {
+    super(
+      `preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} resolved invalid value type: expected ${expectedType}, got ${actualType}`,
+    );
+    this.name = 'SpecialistPresetTypeError';
   }
 }
 
@@ -140,11 +158,80 @@ export function resolvePresetReference(
   const nextValue = preset.fields[fieldPath];
   const nextVisited = new Set([...visited, presetName]);
   const resolved = resolvePresetReference(nextValue, fieldPath, presets, nextVisited, options);
+  validateResolvedPresetValue(resolved.value, fieldPath, presetName, options);
   return { value: resolved.value, presetName, depth: resolved.depth };
 }
 
 export function isPresetReference(value: unknown): value is string {
   return typeof value === 'string' && value.startsWith(PRESET_REFERENCE_PREFIX);
+}
+
+function validateResolvedPresetValue(
+  value: unknown,
+  fieldPath: string,
+  presetName: string,
+  options: ResolvePresetOptions,
+): void {
+  const expectedType = getExpectedPresetValueType(fieldPath, options.arrayEntry === true);
+  if (!expectedType) return;
+  if (matchesExpectedPresetValueType(value, expectedType)) return;
+
+  throw new SpecialistPresetTypeError(
+    presetName,
+    options.specialist,
+    fieldPath,
+    formatExpectedType(expectedType),
+    formatActualType(value),
+  );
+}
+
+function getExpectedPresetValueType(fieldPath: string, isArrayEntry: boolean): PresetValueType | null {
+  if (fieldPath === 'specialist.execution.fallback_models' && isArrayEntry) return 'string-or-null';
+
+  switch (fieldPath) {
+    case 'specialist.execution.model':
+    case 'specialist.execution.fallback_model':
+    case 'specialist.execution.thinking_level':
+      return 'string-or-null';
+    case 'specialist.execution.fallback_models':
+      return 'string-array-or-null';
+    case 'specialist.execution.stall_timeout_ms':
+      return 'number';
+    default:
+      return null;
+  }
+}
+
+function matchesExpectedPresetValueType(value: unknown, expectedType: PresetValueType): boolean {
+  switch (expectedType) {
+    case 'string-or-null':
+      return value === null || typeof value === 'string';
+    case 'string-array-or-null':
+      return value === null || (Array.isArray(value) && value.every(entry => typeof entry === 'string'));
+    case 'number':
+      return typeof value === 'number';
+    default:
+      return expectedType satisfies never;
+  }
+}
+
+function formatExpectedType(expectedType: PresetValueType): string {
+  switch (expectedType) {
+    case 'string-or-null':
+      return 'string or null';
+    case 'string-array-or-null':
+      return 'string[] or null';
+    case 'number':
+      return 'number';
+    default:
+      return expectedType satisfies never;
+  }
+}
+
+function formatActualType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return `array(${value.map(formatActualType).join(', ')})`;
+  return typeof value;
 }
 
 function formatReferenceLocation(specialist: string | undefined, fieldPath: string): string {

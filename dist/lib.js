@@ -14528,6 +14528,23 @@ class SpecialistPresetCycleError extends Error {
   }
 }
 
+class SpecialistPresetTypeError extends Error {
+  presetName;
+  specialist;
+  fieldPath;
+  expectedType;
+  actualType;
+  constructor(presetName, specialist, fieldPath, expectedType, actualType) {
+    super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} resolved invalid value type: expected ${expectedType}, got ${actualType}`);
+    this.presetName = presetName;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.expectedType = expectedType;
+    this.actualType = actualType;
+    this.name = "SpecialistPresetTypeError";
+  }
+}
+
 class SpecialistPresetConfigError extends Error {
   configPath;
   cause;
@@ -14599,10 +14616,66 @@ function resolvePresetReference(value, fieldPath, presets, visited = new Set, op
   const nextValue = preset.fields[fieldPath];
   const nextVisited = new Set([...visited, presetName]);
   const resolved = resolvePresetReference(nextValue, fieldPath, presets, nextVisited, options);
+  validateResolvedPresetValue(resolved.value, fieldPath, presetName, options);
   return { value: resolved.value, presetName, depth: resolved.depth };
 }
 function isPresetReference(value) {
   return typeof value === "string" && value.startsWith(PRESET_REFERENCE_PREFIX);
+}
+function validateResolvedPresetValue(value, fieldPath, presetName, options) {
+  const expectedType = getExpectedPresetValueType(fieldPath, options.arrayEntry === true);
+  if (!expectedType)
+    return;
+  if (matchesExpectedPresetValueType(value, expectedType))
+    return;
+  throw new SpecialistPresetTypeError(presetName, options.specialist, fieldPath, formatExpectedType(expectedType), formatActualType(value));
+}
+function getExpectedPresetValueType(fieldPath, isArrayEntry) {
+  if (fieldPath === "specialist.execution.fallback_models" && isArrayEntry)
+    return "string-or-null";
+  switch (fieldPath) {
+    case "specialist.execution.model":
+    case "specialist.execution.fallback_model":
+    case "specialist.execution.thinking_level":
+      return "string-or-null";
+    case "specialist.execution.fallback_models":
+      return "string-array-or-null";
+    case "specialist.execution.stall_timeout_ms":
+      return "number";
+    default:
+      return null;
+  }
+}
+function matchesExpectedPresetValueType(value, expectedType) {
+  switch (expectedType) {
+    case "string-or-null":
+      return value === null || typeof value === "string";
+    case "string-array-or-null":
+      return value === null || Array.isArray(value) && value.every((entry) => typeof entry === "string");
+    case "number":
+      return typeof value === "number";
+    default:
+      return expectedType;
+  }
+}
+function formatExpectedType(expectedType) {
+  switch (expectedType) {
+    case "string-or-null":
+      return "string or null";
+    case "string-array-or-null":
+      return "string[] or null";
+    case "number":
+      return "number";
+    default:
+      return expectedType;
+  }
+}
+function formatActualType(value) {
+  if (value === null)
+    return "null";
+  if (Array.isArray(value))
+    return `array(${value.map(formatActualType).join(", ")})`;
+  return typeof value;
 }
 function formatReferenceLocation(specialist, fieldPath) {
   return specialist ? `${specialist}.${fieldPath}` : fieldPath;
@@ -14733,11 +14806,11 @@ class SpecialistLoader {
     }
     return warnings;
   }
-  resolveOverrideValue(name, fieldPath, value) {
+  resolveOverrideValue(name, fieldPath, value, isArrayEntry = false) {
     if (Array.isArray(value)) {
-      return value.map((entry) => this.resolveOverrideValue(name, fieldPath, entry));
+      return value.map((entry) => this.resolveOverrideValue(name, fieldPath, entry, true));
     }
-    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set, { specialist: name });
+    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set, { specialist: name, arrayEntry: isArrayEntry });
     if (resolution.presetName)
       emitPresetResolved(name, fieldPath, resolution.presetName, resolution.value, resolution.depth);
     return resolution.value;

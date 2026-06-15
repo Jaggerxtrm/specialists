@@ -8,6 +8,7 @@ import {
   SpecialistPresetCycleError,
   SpecialistPresetFieldMissingError,
   SpecialistPresetNotFoundError,
+  SpecialistPresetTypeError,
   loadPresets,
   resolvePresetReference,
 } from '../../../src/specialist/preset-resolver.js';
@@ -94,6 +95,53 @@ describe('preset resolver', () => {
       .toThrow(SpecialistPresetFieldMissingError);
     expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.model', loadPresets(), new Set(), { specialist: 'demo' }))
       .toThrow('preset "cheap" referenced by demo.specialist.execution.model does not define specialist.execution.model. Defined keys: specialist.execution.fallback_model');
+  });
+
+  it('throws when a preset resolves an object for a string field', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.model': { nested: 'model' } } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.model', loadPresets({ force: true }), new Set(), { specialist: 'demo' }))
+      .toThrow(SpecialistPresetTypeError);
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.model', loadPresets(), new Set(), { specialist: 'demo' }))
+      .toThrow('preset "cheap" referenced by demo.specialist.execution.model resolved invalid value type: expected string or null, got object');
+  });
+
+  it('throws when a preset resolves an array for a string field', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.fallback_model': ['cheap/fallback'] } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.fallback_model', loadPresets({ force: true })))
+      .toThrow(SpecialistPresetTypeError);
+  });
+
+  it('throws when a preset resolves a number for a string field', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.thinking_level': 1 } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.thinking_level', loadPresets({ force: true })))
+      .toThrow('expected string or null, got number');
+  });
+
+  it('throws when a preset resolves a non-number for a number field', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.stall_timeout_ms': '60000' } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.stall_timeout_ms', loadPresets({ force: true })))
+      .toThrow('expected number, got string');
+  });
+
+  it('throws when fallback_models contains non-string entries', async () => {
+    await writePresets({
+      cheap: { description: 'cheap', fields: { 'specialist.execution.fallback_models': ['cheap/fallback', 1] } },
+    });
+
+    expect(() => resolvePresetReference('@preset/cheap', 'specialist.execution.fallback_models', loadPresets({ force: true })))
+      .toThrow('expected string[] or null, got array(string, number)');
   });
 
   it('passes non-preset strings through unchanged', () => {

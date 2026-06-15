@@ -10,6 +10,7 @@ export interface LoadPresetsOptions {
 }
 export interface ResolvePresetOptions {
     specialist?: string;
+    arrayEntry?: boolean;
 }
 export interface PresetResolution {
     value: unknown;
@@ -28,6 +29,14 @@ export declare class SpecialistPresetCycleError extends Error {
     readonly specialist: string | undefined;
     readonly fieldPath: string;
     constructor(visited: readonly string[], specialist: string | undefined, fieldPath: string);
+}
+export declare class SpecialistPresetTypeError extends Error {
+    readonly presetName: string;
+    readonly specialist: string | undefined;
+    readonly fieldPath: string;
+    readonly expectedType: string;
+    readonly actualType: string;
+    constructor(presetName: string, specialist: string | undefined, fieldPath: string, expectedType: string, actualType: string);
 }
 export declare class SpecialistPresetConfigError extends Error {
     readonly configPath: string;

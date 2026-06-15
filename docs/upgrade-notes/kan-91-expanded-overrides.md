@@ -19,4 +19,4 @@ Preset references resolve from package `config/presets.json` only. User-defined 
 
 Resolution is transitive and capped at depth 4; deeper chains or cycles fail fast because they usually indicate accidental config loops.
 
-Invalid package preset JSON now fails with `SpecialistPresetConfigError` naming the preset file path and parse error. Existing presets that omit the referenced field now fail with `SpecialistPresetFieldMissingError` naming the specialist, field, preset, and keys defined by that preset.
+Invalid package preset JSON now fails with `SpecialistPresetConfigError` naming the preset file path and parse error. Existing presets that omit the referenced field now fail with `SpecialistPresetFieldMissingError` naming the specialist, field, preset, and keys defined by that preset. Presets with values that do not match target field runtime type fail with `SpecialistPresetTypeError` before merged specs are written.

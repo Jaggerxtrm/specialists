@@ -273,12 +273,12 @@ export class SpecialistLoader {
     return warnings;
   }
 
-  private resolveOverrideValue(name: string, fieldPath: string, value: unknown): unknown {
+  private resolveOverrideValue(name: string, fieldPath: string, value: unknown, isArrayEntry = false): unknown {
     if (Array.isArray(value)) {
-      return value.map(entry => this.resolveOverrideValue(name, fieldPath, entry));
+      return value.map(entry => this.resolveOverrideValue(name, fieldPath, entry, true));
     }
 
-    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set(), { specialist: name });
+    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set(), { specialist: name, arrayEntry: isArrayEntry });
     if (resolution.presetName) emitPresetResolved(name, fieldPath, resolution.presetName, resolution.value, resolution.depth);
     return resolution.value;
   }
