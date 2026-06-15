@@ -84,6 +84,8 @@ const OverrideExecutionSchema = z.object({
     .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
     .nullable(),
   max_retries: z.number().int().min(0).nullable(),
+  prompt_limit_bytes: z.number().int().positive().nullable().optional(),
+  stdout_limit_bytes: z.number().int().positive().nullable().optional(),
   extensions: OverrideExtensionsSchema.optional(),
 }).strict();
 
@@ -99,6 +101,8 @@ export const GlobalSpecialistOverrideSchema = z.object({
   execution: OverrideExecutionSchema,
   prompt: OverridePromptSchema.optional(),
   beads_write_notes: z.boolean().nullable(),
+  notes_mode: z.enum(['full-trail', 'final-only']).nullable().optional(),
+  output_file: z.string().nullable().optional(),
   skills: OverrideSkillsSchema,
 }).strict();
 
@@ -140,6 +144,8 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
       stall_timeout_ms: null,
       thinking_level: null,
       max_retries: null,
+      prompt_limit_bytes: null,
+      stdout_limit_bytes: null,
       extensions: {
         serena: null,
         gitnexus: null,
@@ -149,6 +155,8 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
       system_prompt_mode: null,
     },
     beads_write_notes: null,
+    notes_mode: null,
+    output_file: null,
     skills: { paths: [] },
   };
 }

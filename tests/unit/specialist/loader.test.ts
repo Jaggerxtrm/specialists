@@ -729,6 +729,85 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(spec.specialist.execution.model).toBe('pkg/base-model');
   });
 
+  it('global layer overrides system_prompt_mode without blocked warnings', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY' },
+          prompt: { task_template: 'Do $prompt', system_prompt_mode: 'append' },
+        },
+      }),
+    );
+    await writeGlobalUserJson({ demo: { prompt: { system_prompt_mode: 'replace' } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.prompt.system_prompt_mode).toBe('replace');
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('prompt.system_prompt_mode');
+  });
+
+  it('global layer overrides execution.extensions.serena per key without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ extensions: { serena: true, gitnexus: true } }));
+    await writeGlobalUserJson({ demo: { execution: { extensions: { serena: false } } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({ serena: false, gitnexus: true });
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.extensions.serena');
+  });
+
+  it('global layer overrides execution.extensions.gitnexus per key without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ extensions: { serena: true, gitnexus: true } }));
+    await writeGlobalUserJson({ demo: { execution: { extensions: { gitnexus: false } } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({ serena: true, gitnexus: false });
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.extensions.gitnexus');
+  });
+
+  it('global layer overrides notes_mode without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({ demo: { notes_mode: 'final-only' } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.notes_mode).toBe('final-only');
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('notes_mode');
+  });
+
+  it('global layer overrides output_file without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC());
+    await writeGlobalUserJson({ demo: { output_file: '/tmp/my-runs/demo.md' } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.output_file).toBe('/tmp/my-runs/demo.md');
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('output_file');
+  });
+
+  it('global layer overrides prompt_limit_bytes without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ prompt_limit_bytes: 1024 }));
+    await writeGlobalUserJson({ demo: { execution: { prompt_limit_bytes: 8388608 } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.prompt_limit_bytes).toBe(8388608);
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.prompt_limit_bytes');
+  });
+
+  it('global layer overrides stdout_limit_bytes without blocked warnings', async () => {
+    await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), BASE_SPEC({ stdout_limit_bytes: 2048 }));
+    await writeGlobalUserJson({ demo: { execution: { stdout_limit_bytes: 67108864 } } });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.stdout_limit_bytes).toBe(67108864);
+    expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.stdout_limit_bytes');
+  });
+
   it('XDG_CONFIG_HOME wins over ~/.config/specialists', async () => {
     process.env.XDG_CONFIG_HOME = join(tmpHome, 'xdg');
     const xdgDir = join(process.env.XDG_CONFIG_HOME, 'specialists');
