@@ -3135,8 +3135,12 @@ export type ScriptEntry = {
     phase: 'pre' | 'post';
     inject_output: boolean;
 };
-/** Execution sub-fields an override layer may set. */
+/** Flat execution sub-fields an override layer may set. */
 export declare const OVERRIDE_ALLOWED_EXECUTION_FIELDS: readonly ["model", "fallback_model", "timeout_ms", "stall_timeout_ms", "thinking_level", "max_retries"];
+/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`. */
+export declare const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS: readonly ["extensions.serena", "extensions.gitnexus"];
+/** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */
+export declare const OVERRIDE_ALLOWED_PROMPT_FIELDS: readonly ["system_prompt_mode"];
 /** Top-level specialist fields an override layer may set. */
 export declare const OVERRIDE_ALLOWED_TOP_FIELDS: readonly ["beads_write_notes"];
 /**

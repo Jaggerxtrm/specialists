@@ -7,6 +7,8 @@ import {
   parseSpecialist,
   BLOCKED_OVERRIDE_FIELDS,
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
+  OVERRIDE_ALLOWED_PROMPT_FIELDS,
   OVERRIDE_ALLOWED_TOP_FIELDS,
   type ScriptEntry,
   type Specialist,
@@ -224,9 +226,25 @@ export class SpecialistLoader {
       if (overrideValue === null || overrideValue === undefined) continue;
       baseExecution[field] = overrideValue;
     }
+    for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
+      const overrideValue = readDottedPath(overrideExecution, path);
+      if (overrideValue === null || overrideValue === undefined) continue;
+      writeDottedPath(baseExecution, path, overrideValue);
+    }
     baseSpec.execution = baseExecution;
 
-    // 3. Apply allowed top-level fields.
+    // 3. Apply allowed prompt fields.
+    const overridePrompt = (overrideSpec.prompt ?? {}) as Record<string, unknown>;
+    const basePrompt = (baseSpec.prompt ?? {}) as Record<string, unknown>;
+    for (const field of OVERRIDE_ALLOWED_PROMPT_FIELDS) {
+      if (!(field in overridePrompt)) continue;
+      const overrideValue = overridePrompt[field];
+      if (overrideValue === null || overrideValue === undefined) continue;
+      basePrompt[field] = overrideValue;
+    }
+    baseSpec.prompt = basePrompt;
+
+    // 4. Apply allowed top-level fields.
     for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
       if (!(field in overrideSpec)) continue;
       const overrideValue = overrideSpec[field];
@@ -234,7 +252,7 @@ export class SpecialistLoader {
       baseSpec[field] = overrideValue;
     }
 
-    // 4. skills.paths: append + dedup. Other skills.* fields stay base.
+    // 5. skills.paths: append + dedup. Other skills.* fields stay base.
     const overrideSkills = (overrideSpec.skills ?? {}) as Record<string, unknown>;
     const overridePaths = Array.isArray(overrideSkills.paths) ? (overrideSkills.paths as string[]) : null;
     if (overridePaths && overridePaths.length) {
@@ -449,6 +467,23 @@ function readDottedPath(obj: Record<string, unknown>, dotted: string): unknown {
     cur = (cur as Record<string, unknown>)[part]; // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
   }
   return cur;
+}
+
+function writeDottedPath(obj: Record<string, unknown>, dotted: string, value: unknown): void {
+  const parts = dotted.split('.');
+  const leaf = parts.pop();
+  if (!leaf || PROTOTYPE_POLLUTION_KEYS.has(leaf)) return;
+
+  let cur = obj;
+  for (const part of parts) {
+    if (PROTOTYPE_POLLUTION_KEYS.has(part)) return;
+    const next = cur[part];
+    if (next === null || typeof next !== 'object' || Array.isArray(next)) {
+      cur[part] = {};
+    }
+    cur = cur[part] as Record<string, unknown>;
+  }
+  cur[leaf] = value;
 }
 
 function resolveSkillsPaths(spec: Specialist, fileDir: string): void {

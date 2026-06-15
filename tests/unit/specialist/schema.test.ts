@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseSpecialist } from '../../../src/specialist/schema.js';
+import {
+  OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
+  OVERRIDE_ALLOWED_PROMPT_FIELDS,
+  OVERRIDE_ALLOWED_TOP_FIELDS,
+  parseSpecialist,
+} from '../../../src/specialist/schema.js';
+import { getGlobalSpecialistOverrideLeafPaths } from '../../../src/specialist/global-config.js';
 
 function createValidSpec() {
   return {
@@ -31,6 +38,20 @@ function createValidSpec() {
 function toJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
+
+describe('override allowlist contract', () => {
+  it('keeps schema allowlist exports in sync with global override schema leaf keys', () => {
+    const schemaLeafPaths = [
+      ...OVERRIDE_ALLOWED_EXECUTION_FIELDS.map(field => `execution.${field}`),
+      ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
+      ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
+      ...OVERRIDE_ALLOWED_TOP_FIELDS,
+      'skills.paths',
+    ].sort();
+
+    expect(getGlobalSpecialistOverrideLeafPaths().slice().sort()).toEqual(schemaLeafPaths);
+  });
+});
 
 describe('parseSpecialist', () => {
   it('parses a valid specialist JSON', async () => {
