@@ -748,8 +748,79 @@ describe('SpecialistRunner', () => {
     }));
     expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
       model: 'anthropic',
-      data: expect.objectContaining({ error_class: 'unknown', terminal: true }),
+      data: expect.objectContaining({ error_class: 'transient', terminal: false }),
     }));
+  });
+
+  it('walks fallback_models after transient model failure', async () => {
+    const firstSession = makeMockSession();
+    firstSession.waitForDone.mockRejectedValue(new Error('503 service unavailable'));
+    const secondSession = makeMockSession();
+    secondSession.meta = { ...secondSession.meta, model: 'qwen' };
+    const sessionFactory = vi.fn()
+      .mockResolvedValueOnce(firstSession)
+      .mockResolvedValueOnce(secondSession);
+    const onEvent = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ fallback_models: ['qwen'] }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace4.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    const result = await runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent);
+
+    expect(sessionFactory).toHaveBeenCalledTimes(2);
+    expect(sessionFactory.mock.calls[0][0].model).toBe('gemini');
+    expect(sessionFactory.mock.calls[1][0].model).toBe('qwen');
+    expect(result.model).toBe('qwen');
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
+      model: 'qwen',
+      data: expect.objectContaining({ attempt_n: 2, model_tried: 'qwen', error_class: 'transient', terminal: false }),
+    }));
+  });
+
+  it('marks final fallback_step terminal when all fallback models fail transiently', async () => {
+    const firstSession = makeMockSession();
+    firstSession.waitForDone.mockRejectedValue(new Error('503 service unavailable'));
+    const secondSession = makeMockSession();
+    secondSession.waitForDone.mockRejectedValue(new Error('request timed out'));
+    const sessionFactory = vi.fn()
+      .mockResolvedValueOnce(firstSession)
+      .mockResolvedValueOnce(secondSession);
+    const onEvent = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ fallback_models: ['qwen'] }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace5.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent)).rejects.toThrow('request timed out');
+
+    expect(sessionFactory).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenCalledWith('fallback_step', expect.objectContaining({
+      model: 'qwen',
+      data: expect.objectContaining({ attempt_n: 2, model_tried: 'qwen', error_class: 'timeout', terminal: true }),
+    }));
+  });
+
+  it('does not walk fallback_models after auth failure', async () => {
+    const firstSession = makeMockSession();
+    firstSession.waitForDone.mockRejectedValue(new Error('401 Unauthorized'));
+    const sessionFactory = vi.fn().mockResolvedValue(firstSession);
+    const onEvent = vi.fn();
+    const runner = new SpecialistRunner({
+      loader: makeLoader({ fallback_models: ['qwen'] }),
+      hooks: new HookEmitter({ tracePath: '/tmp/test-hooks-trace6.jsonl' }),
+      circuitBreaker: new CircuitBreaker(),
+      sessionFactory,
+    });
+
+    await expect(runner.run({ name: 'test-spec', prompt: 'test' }, undefined, onEvent)).rejects.toThrow('401 Unauthorized');
+
+    expect(sessionFactory).toHaveBeenCalledTimes(1);
+    expect(onEvent).not.toHaveBeenCalledWith('fallback_step', expect.anything());
   });
 
   describe('beads integration', () => {
