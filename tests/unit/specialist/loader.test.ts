@@ -700,6 +700,35 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(warnings[0].field).toBe('execution.permission_required');
   });
 
+  it('global layer overrides allowed nested execution and prompt fields', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: {
+            model: 'pkg/base-model',
+            permission_required: 'READ_ONLY',
+            extensions: { serena: true, gitnexus: true },
+          },
+          prompt: { task_template: 'Do $prompt', system_prompt_mode: 'append' },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: {
+        execution: { extensions: { serena: false, gitnexus: null } },
+        prompt: { system_prompt_mode: 'replace' },
+      },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.extensions).toEqual({ serena: false, gitnexus: true });
+    expect(spec.specialist.prompt.system_prompt_mode).toBe('replace');
+    expect(spec.specialist.execution.model).toBe('pkg/base-model');
+  });
+
   it('XDG_CONFIG_HOME wins over ~/.config/specialists', async () => {
     process.env.XDG_CONFIG_HOME = join(tmpHome, 'xdg');
     const xdgDir = join(process.env.XDG_CONFIG_HOME, 'specialists');

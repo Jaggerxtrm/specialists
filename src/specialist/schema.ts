@@ -136,11 +136,13 @@ export type Specialist = z.infer<typeof SpecialistSchema>;
 export type ScriptEntry = { run: string; phase: 'pre' | 'post'; inject_output: boolean };
 
 // ── Layered field-merge contract ──────────────────────────────────────────────
-// Drives the SpecialistLoader 4-layer merge (package base + global + default + user).
-// Allowed fields may be overridden by any non-package layer; blocked fields are
-// taken from the package base only (global layer strips them, repo layers warn).
+// Drives SpecialistLoader layered merge (package base + global + default + user).
+// Allowed fields may be overridden by any non-package layer using override-or-inherit
+// semantics: missing/undefined inherits, null inherits, listed leaf stays isolated,
+// unlisted fields stay package-canonical. Blocked fields are taken from package base
+// only (global layer strips them, repo layers warn).
 
-/** Execution sub-fields an override layer may set. */
+/** Flat execution sub-fields an override layer may set. */
 export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'model',
   'fallback_model',
@@ -149,6 +151,15 @@ export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'thinking_level',
   'max_retries',
 ] as const;
+
+/** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`. */
+export const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
+  'extensions.serena',
+  'extensions.gitnexus',
+] as const;
+
+/** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */
+export const OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode'] as const;
 
 /** Top-level specialist fields an override layer may set. */
 export const OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes'] as const;

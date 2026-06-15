@@ -13,6 +13,12 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import * as z from 'zod';
+import {
+  OVERRIDE_ALLOWED_EXECUTION_FIELDS,
+  OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
+  OVERRIDE_ALLOWED_PROMPT_FIELDS,
+  OVERRIDE_ALLOWED_TOP_FIELDS,
+} from './schema.js';
 
 const CONFIG_FILENAME = 'user.json';
 const SPECIALISTS_SUBDIR = 'specialists';
@@ -64,6 +70,11 @@ export function getGlobalUserConfigPath(): GlobalUserConfigPath {
 // Mirrors the override-allowed field set from the loader contract.
 // null / [] = "inherit from the layer below".
 
+const OverrideExtensionsSchema = z.object({
+  serena: z.boolean().nullable(),
+  gitnexus: z.boolean().nullable(),
+}).strict();
+
 const OverrideExecutionSchema = z.object({
   model: z.string().nullable(),
   fallback_model: z.string().nullable(),
@@ -73,6 +84,11 @@ const OverrideExecutionSchema = z.object({
     .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
     .nullable(),
   max_retries: z.number().int().min(0).nullable(),
+  extensions: OverrideExtensionsSchema,
+}).strict();
+
+const OverridePromptSchema = z.object({
+  system_prompt_mode: z.enum(['append', 'replace']).nullable(),
 }).strict();
 
 const OverrideSkillsSchema = z.object({
@@ -81,11 +97,22 @@ const OverrideSkillsSchema = z.object({
 
 export const GlobalSpecialistOverrideSchema = z.object({
   execution: OverrideExecutionSchema,
+  prompt: OverridePromptSchema,
   beads_write_notes: z.boolean().nullable(),
   skills: OverrideSkillsSchema,
 }).strict();
 
 export type GlobalSpecialistOverride = z.infer<typeof GlobalSpecialistOverrideSchema>;
+
+export function getGlobalSpecialistOverrideLeafPaths(): readonly string[] {
+  return [
+    ...OVERRIDE_ALLOWED_EXECUTION_FIELDS.map(field => `execution.${field}`),
+    ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
+    ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
+    ...OVERRIDE_ALLOWED_TOP_FIELDS,
+    'skills.paths',
+  ];
+}
 
 /** Top-level shape: { "<specialist-name>": GlobalSpecialistOverride }. */
 export const GlobalUserConfigSchema = z.record(
@@ -113,6 +140,13 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
       stall_timeout_ms: null,
       thinking_level: null,
       max_retries: null,
+      extensions: {
+        serena: null,
+        gitnexus: null,
+      },
+    },
+    prompt: {
+      system_prompt_mode: null,
     },
     beads_write_notes: null,
     skills: { paths: [] },
