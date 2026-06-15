@@ -11,6 +11,8 @@ This expansion adds:
 - Preset references like `@preset/cheap` for model and fallback entries.
 - A top-level `_doc` sentinel in generated `user.json` pointing back to this guide. Keys starting with `_` are metadata, not specialist names.
 
+The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
+
 ## Per-field reference
 
 ### `prompt.system_prompt_mode`
@@ -164,7 +166,7 @@ Pitfall: fallback walk is transient-failure-only. Auth failures, prompt rejectio
 
 ## Preset reference syntax
 
-Write a preset reference as an exact string:
+Write a preset reference as an exact string inside the existing generated specialist entry:
 
 ```json
 {
