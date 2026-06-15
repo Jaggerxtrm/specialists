@@ -876,6 +876,107 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(loader.getBlockedFieldWarnings('demo').map(warning => warning.field)).not.toContain('execution.stdout_limit_bytes');
   });
 
+  describe('Phase 1 — six allowlisted user-environment fields', () => {
+    it('overlays all six fields together, preserves untouched fields, and records no blocked warnings', async () => {
+      const packageSpec = {
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: {
+            model: 'pkg/base-model',
+            permission_required: 'READ_ONLY',
+            timeout_ms: 120000,
+            prompt_limit_bytes: 4194304,
+            extensions: { serena: true, gitnexus: true },
+          },
+          prompt: {
+            system: 'package-system',
+            task_template: 'Do $prompt',
+            system_prompt_mode: 'append',
+          },
+          mandatory_rules: { inline_rules: [{ id: 'r1', text: 'keep me' }] },
+          capabilities: { required_tools: ['read_file'] },
+          notes_mode: 'full-trail',
+        },
+      };
+      await writeFile(join(tmpProject, 'config', 'specialists', 'demo.specialist.json'), JSON.stringify(packageSpec));
+      await writeGlobalUserJson({
+        demo: {
+          execution: {
+            prompt_limit_bytes: 8388608,
+            stdout_limit_bytes: 67108864,
+            extensions: { serena: false, gitnexus: false },
+          },
+          prompt: { system_prompt_mode: 'replace' },
+          notes_mode: 'final-only',
+          output_file: '/tmp/out.md',
+        },
+      });
+
+      const spec = await loader.get('demo');
+
+      expect(spec.specialist.prompt.system_prompt_mode).toBe('replace');
+      expect(spec.specialist.execution.extensions).toEqual({ serena: false, gitnexus: false });
+      expect(spec.specialist.notes_mode).toBe('final-only');
+      expect(spec.specialist.output_file).toBe('/tmp/out.md');
+      expect(spec.specialist.execution.prompt_limit_bytes).toBe(8388608);
+      expect(spec.specialist.execution.stdout_limit_bytes).toBe(67108864);
+      expect(spec.specialist.prompt.system).toBe(packageSpec.specialist.prompt.system);
+      expect(spec.specialist.mandatory_rules?.inline_rules).toMatchObject(packageSpec.specialist.mandatory_rules.inline_rules);
+      expect(spec.specialist.capabilities?.required_tools).toEqual(packageSpec.specialist.capabilities.required_tools);
+      expect(loader.getBlockedFieldWarnings('demo').filter(warning => [
+        'prompt.system_prompt_mode',
+        'execution.extensions.serena',
+        'execution.extensions.gitnexus',
+        'notes_mode',
+        'output_file',
+        'execution.prompt_limit_bytes',
+        'execution.stdout_limit_bytes',
+      ].includes(warning.field))).toEqual([]);
+    });
+
+    it('treats explicit null override as inherit for each new field family', async () => {
+      await writeFile(
+        join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+        JSON.stringify({
+          specialist: {
+            metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+            execution: {
+              model: 'pkg/base-model',
+              permission_required: 'READ_ONLY',
+              prompt_limit_bytes: 4194304,
+              stdout_limit_bytes: 1234,
+              extensions: { serena: true, gitnexus: false },
+            },
+            prompt: { task_template: 'Do $prompt', system_prompt_mode: 'append' },
+            notes_mode: 'full-trail',
+            output_file: '/pkg/out.md',
+          },
+        }),
+      );
+      await writeGlobalUserJson({
+        demo: {
+          execution: {
+            prompt_limit_bytes: null,
+            stdout_limit_bytes: null,
+            extensions: { serena: null, gitnexus: null },
+          },
+          prompt: { system_prompt_mode: null },
+          notes_mode: null,
+          output_file: null,
+        },
+      });
+
+      const spec = await loader.get('demo');
+
+      expect(spec.specialist.prompt.system_prompt_mode).toBe('append');
+      expect(spec.specialist.execution.extensions).toEqual({ serena: true, gitnexus: false });
+      expect(spec.specialist.notes_mode).toBe('full-trail');
+      expect(spec.specialist.output_file).toBe('/pkg/out.md');
+      expect(spec.specialist.execution.prompt_limit_bytes).toBe(4194304);
+      expect(spec.specialist.execution.stdout_limit_bytes).toBe(1234);
+    });
+  });
+
   it('XDG_CONFIG_HOME wins over ~/.config/specialists', async () => {
     process.env.XDG_CONFIG_HOME = join(tmpHome, 'xdg');
     const xdgDir = join(process.env.XDG_CONFIG_HOME, 'specialists');
