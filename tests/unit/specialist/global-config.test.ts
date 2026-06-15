@@ -96,6 +96,27 @@ describe('global specialist override config', () => {
     expect(result.extended).toEqual(['demo']);
   });
 
+  it('validateGlobalUserConfig accepts top-level notes_mode and output_file', () => {
+    const valid = {
+      demo: {
+        execution: {
+          model: 'global/glm-5.1',
+          fallback_model: null,
+          timeout_ms: null,
+          stall_timeout_ms: null,
+          thinking_level: null,
+          max_retries: null,
+        },
+        beads_write_notes: false,
+        skills: { paths: [] },
+        notes_mode: 'final-only',
+        output_file: '/tmp/x.md',
+      },
+    };
+
+    expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+  });
+
   it('validateGlobalUserConfig rejects unknown prompt sub-keys with path', () => {
     const invalid = {
       demo: {
