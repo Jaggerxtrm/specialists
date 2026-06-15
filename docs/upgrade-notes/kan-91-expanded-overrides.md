@@ -203,6 +203,45 @@ Existing `~/.config/specialists/user.json` files auto-extend on the next `sp ini
 
 Generated files stay strict JSON. `sp init --global` does not write comments; it writes `_doc` as a top-level metadata key instead.
 
+## Complete example (validates against `GlobalUserConfigSchema`)
+
+This is a complete `user.json` shape, not a delta snippet. It keeps every required key from `sp init --global` and exercises `system_prompt_mode`, fallback chains, extension opt-out, and `@preset/<name>` references.
+
+```json
+{
+  "_doc": "See docs/upgrade-notes/kan-91-expanded-overrides.md for expanded override fields.",
+  "executor": {
+    "execution": {
+      "model": "@preset/cheap",
+      "fallback_model": null,
+      "fallback_models": [
+        "@preset/medium",
+        "openai-codex/gpt-5.4-mini"
+      ],
+      "timeout_ms": null,
+      "stall_timeout_ms": null,
+      "thinking_level": null,
+      "max_retries": null,
+      "prompt_limit_bytes": 8388608,
+      "stdout_limit_bytes": null,
+      "extensions": {
+        "serena": false,
+        "gitnexus": null
+      }
+    },
+    "prompt": {
+      "system_prompt_mode": "replace"
+    },
+    "beads_write_notes": null,
+    "notes_mode": "final-only",
+    "output_file": null,
+    "skills": {
+      "paths": []
+    }
+  }
+}
+```
+
 ## Cross-references
 
 - Origin doc: `docs/upgrade-notes/kan-90-global-user-config.md`
