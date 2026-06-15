@@ -150,6 +150,8 @@ export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'stall_timeout_ms',
   'thinking_level',
   'max_retries',
+  'prompt_limit_bytes',
+  'stdout_limit_bytes',
 ] as const;
 
 /** Nested execution leaf paths an override layer may set. Relative to `specialist.execution`. */
@@ -162,7 +164,7 @@ export const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
 export const OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode'] as const;
 
 /** Top-level specialist fields an override layer may set. */
-export const OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes'] as const;
+export const OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes', 'notes_mode', 'output_file'] as const;
 
 /**
  * Fields an override layer may NOT change. Dotted paths are schema-accurate.

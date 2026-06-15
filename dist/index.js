@@ -20726,14 +20726,16 @@ var init_schema = __esm(() => {
     "timeout_ms",
     "stall_timeout_ms",
     "thinking_level",
-    "max_retries"
+    "max_retries",
+    "prompt_limit_bytes",
+    "stdout_limit_bytes"
   ];
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
     "extensions.serena",
     "extensions.gitnexus"
   ];
   OVERRIDE_ALLOWED_PROMPT_FIELDS = ["system_prompt_mode"];
-  OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes"];
+  OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes", "notes_mode", "output_file"];
   BLOCKED_OVERRIDE_FIELDS = [
     "execution.permission_required",
     "execution.auto_commit",
@@ -20790,6 +20792,8 @@ function buildSpecialistOverrideTemplate() {
       stall_timeout_ms: null,
       thinking_level: null,
       max_retries: null,
+      prompt_limit_bytes: null,
+      stdout_limit_bytes: null,
       extensions: {
         serena: null,
         gitnexus: null
@@ -20799,6 +20803,8 @@ function buildSpecialistOverrideTemplate() {
       system_prompt_mode: null
     },
     beads_write_notes: null,
+    notes_mode: null,
+    output_file: null,
     skills: { paths: [] }
   };
 }
@@ -20899,6 +20905,8 @@ var init_global_config = __esm(() => {
     stall_timeout_ms: numberType().nullable(),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
     max_retries: numberType().int().min(0).nullable(),
+    prompt_limit_bytes: numberType().int().positive().nullable().optional(),
+    stdout_limit_bytes: numberType().int().positive().nullable().optional(),
     extensions: OverrideExtensionsSchema.optional()
   }).strict();
   OverridePromptSchema = objectType({
@@ -20911,6 +20919,8 @@ var init_global_config = __esm(() => {
     execution: OverrideExecutionSchema,
     prompt: OverridePromptSchema.optional(),
     beads_write_notes: booleanType().nullable(),
+    notes_mode: enumType(["full-trail", "final-only"]).nullable().optional(),
+    output_file: stringType().nullable().optional(),
     skills: OverrideSkillsSchema
   }).strict();
   GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);

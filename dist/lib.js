@@ -14279,14 +14279,16 @@ var OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   "timeout_ms",
   "stall_timeout_ms",
   "thinking_level",
-  "max_retries"
+  "max_retries",
+  "prompt_limit_bytes",
+  "stdout_limit_bytes"
 ];
 var OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
   "extensions.serena",
   "extensions.gitnexus"
 ];
 var OVERRIDE_ALLOWED_PROMPT_FIELDS = ["system_prompt_mode"];
-var OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes"];
+var OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes", "notes_mode", "output_file"];
 var BLOCKED_OVERRIDE_FIELDS = [
   "execution.permission_required",
   "execution.auto_commit",
@@ -14429,6 +14431,8 @@ var OverrideExecutionSchema = objectType({
   stall_timeout_ms: numberType().nullable(),
   thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
   max_retries: numberType().int().min(0).nullable(),
+  prompt_limit_bytes: numberType().int().positive().nullable().optional(),
+  stdout_limit_bytes: numberType().int().positive().nullable().optional(),
   extensions: OverrideExtensionsSchema.optional()
 }).strict();
 var OverridePromptSchema = objectType({
@@ -14441,6 +14445,8 @@ var GlobalSpecialistOverrideSchema = objectType({
   execution: OverrideExecutionSchema,
   prompt: OverridePromptSchema.optional(),
   beads_write_notes: booleanType().nullable(),
+  notes_mode: enumType(["full-trail", "final-only"]).nullable().optional(),
+  output_file: stringType().nullable().optional(),
   skills: OverrideSkillsSchema
 }).strict();
 var GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);

@@ -15,6 +15,8 @@ describe('global specialist override config', () => {
         stall_timeout_ms: null,
         thinking_level: null,
         max_retries: null,
+        prompt_limit_bytes: null,
+        stdout_limit_bytes: null,
         extensions: {
           serena: null,
           gitnexus: null,
@@ -24,6 +26,8 @@ describe('global specialist override config', () => {
         system_prompt_mode: null,
       },
       beads_write_notes: null,
+      notes_mode: null,
+      output_file: null,
       skills: { paths: [] },
     });
   });
@@ -74,6 +78,8 @@ describe('global specialist override config', () => {
         stall_timeout_ms: null,
         thinking_level: null,
         max_retries: null,
+        prompt_limit_bytes: null,
+        stdout_limit_bytes: null,
         extensions: {
           serena: null,
           gitnexus: null,
@@ -83,6 +89,8 @@ describe('global specialist override config', () => {
         system_prompt_mode: null,
       },
       beads_write_notes: false,
+      notes_mode: null,
+      output_file: null,
       skills: { paths: ['/custom'] },
     });
     expect(result.extended).toEqual(['demo']);
