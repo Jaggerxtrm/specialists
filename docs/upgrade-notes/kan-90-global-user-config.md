@@ -11,14 +11,17 @@ package should ship.
 
 - Every `config/specialists/*.specialist.json` ships with
   `execution.model = null` and `execution.fallback_model = null`.
-- The `SpecialistLoader` resolves each specialist via a 4-layer field-merge:
+- The `SpecialistLoader` resolves each specialist via a 3-layer field-merge:
 
   ```
   package canonical            (base)
     ⇡ ~/.config/specialists/user.json    (your model + per-spec tuning)
-    ⇡ .specialists/default/<name>        (repo-managed mirror)
     ⇡ .specialists/user/<name>           (repo authoring layer)
   ```
+
+  The repo-managed `.specialists/default/<name>` mirror was retired by commit
+  `31a6421c` and is no longer walked by the loader. Stale entries left on disk
+  are detected by `drift-detector` and removed by `sp prune-stale-defaults`.
 
 - If `execution.model` is still `null` after the full merge, the loader throws
   a `SpecialistMissingModelError` pointing you at `sp edit --global`.
@@ -74,10 +77,9 @@ merge and `sp doctor --specialists` surfaces a `STRIPPED` warning:
 - `mandatory_rules`
 - `capabilities`
 
-Repo-level overrides (`.specialists/default/<name>`, `.specialists/user/<name>`)
-keep the existing whole-file replacement behaviour: blocked fields are applied
-but `sp doctor --specialists` flags them as a `warn`-severity finding so the
-divergence is visible.
+Repo-level overrides (`.specialists/user/<name>`) keep the existing whole-file
+replacement behaviour: blocked fields are applied but `sp doctor --specialists`
+flags them as a `warn`-severity finding so the divergence is visible.
 
 ## Path resolution
 
