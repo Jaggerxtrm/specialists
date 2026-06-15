@@ -1,22 +1,213 @@
-# KAN-91 expanded overrides
+# KAN-91 / unitAI-gp7nq — Expanded global overrides
 
-## Preset references
+KAN-91 expands the KAN-90 global `user.json` layer from model-only tuning into a per-user environment override surface. The new surface adds user-owned knobs for prompt composition, extension injection, notes/output behavior, prompt/stdout limits, fallback model chains, and `@preset/<name>` references. Specialist identity and safety fields remain blocked.
 
-User override fields that are already allowlisted can use `@preset/<name>` as a literal value. Example:
+## Overview
+
+This expansion adds:
+
+- Six allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
+- Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
+- Preset references like `@preset/cheap` for model and fallback entries.
+- A top-level `_doc` sentinel in generated `user.json` pointing back to this guide. Keys starting with `_` are metadata, not specialist names.
+
+## Per-field reference
+
+### `prompt.system_prompt_mode`
+
+- Type: `"append" | "replace" | null`
+- Default semantics: `null` inherits the shipped specialist value, normally `append`.
+- Example:
+
+```json
+{
+  "executor": {
+    "prompt": { "system_prompt_mode": "replace" }
+  }
+}
+```
+
+Pitfall: this controls composition mode only. It does not let `user.json` replace `prompt.system`; prompt content remains blocked.
+
+### `execution.extensions.serena`
+
+- Type: `boolean | null`
+- Default semantics: `null` inherits the shipped extension setting.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": { "extensions": { "serena": false } }
+  }
+}
+```
+
+Pitfall: extension overrides are per-key overlays. Setting `serena: false` does not change `gitnexus`.
+
+### `execution.extensions.gitnexus`
+
+- Type: `boolean | null`
+- Default semantics: `null` inherits the shipped extension setting.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": { "extensions": { "gitnexus": false } }
+  }
+}
+```
+
+Pitfall: disabling GitNexus removes graph tooling from that specialist run. Use only when project indexing is unavailable or too expensive.
+
+### `notes_mode`
+
+- Type: `"full-trail" | "final-only" | null`
+- Default semantics: `null` inherits the specialist default. `full-trail` appends turn handoffs; `final-only` keeps final handoff only.
+- Example:
+
+```json
+{
+  "researcher": {
+    "notes_mode": "final-only"
+  }
+}
+```
+
+Pitfall: `final-only` is quieter but removes intermediate turn notes from bead history.
+
+### `output_file`
+
+- Type: `string | null`
+- Default semantics: `null` inherits the specialist default or no file mirror.
+- Example:
+
+```json
+{
+  "researcher": {
+    "output_file": "./.specialists/researcher-result.md"
+  }
+}
+```
+
+Pitfall: paths are not expanded by the loader. `~/result.md` stays literal and is not converted to your home directory.
+
+### `execution.prompt_limit_bytes`
+
+- Type: `number | null`
+- Default semantics: `null` inherits the shipped prompt input limit.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": { "prompt_limit_bytes": 8388608 }
+  }
+}
+```
+
+Pitfall: raising this limit can increase token spend or provider rejection risk.
+
+### `execution.stdout_limit_bytes`
+
+- Type: `number | null`
+- Default semantics: `null` inherits the shipped stdout capture limit.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": { "stdout_limit_bytes": 67108864 }
+  }
+}
+```
+
+Pitfall: raising this limit can produce very large logs and result files.
+
+### `execution.fallback_model`
+
+- Type: `string | null`
+- Default semantics: legacy single fallback. `null` means no singular fallback from this layer.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": { "fallback_model": "openai-codex/gpt-5.4-mini" }
+  }
+}
+```
+
+Pitfall: if `fallback_models` is also set, plural wins.
+
+### `execution.fallback_models`
+
+- Type: `string[] | null`
+- Default semantics: `null` inherits lower layers. Array values replace the singular fallback chain for that layer.
+- Example:
+
+```json
+{
+  "executor": {
+    "execution": {
+      "fallback_models": [
+        "openai-codex/gpt-5.4-mini",
+        "nano-gpt/moonshotai/kimi-k2.5"
+      ]
+    }
+  }
+}
+```
+
+Pitfall: fallback walk is transient-failure-only. Auth failures, prompt rejections, and other logical failures do not advance to the next provider.
+
+## Preset reference syntax
+
+Write a preset reference as an exact string:
 
 ```json
 {
   "executor": {
     "execution": {
       "model": "@preset/cheap",
-      "fallback_models": ["@preset/cheap", "openai-codex/gpt-5.4"]
+      "fallback_models": ["@preset/medium", "openai-codex/gpt-5.4-mini"]
     }
   }
 }
 ```
 
-Preset references resolve from package `config/presets.json` only. User-defined preset files and repo-level preset shadowing are not supported in this phase.
+Package presets live in `config/presets.json`. Current shipped names are `cheap`, `medium`, and `power`. User-defined preset files and repo-level preset shadowing are not part of KAN-91.
 
-Resolution is transitive and capped at depth 4; deeper chains or cycles fail fast because they usually indicate accidental config loops.
+Preset references resolve transitively with depth cap 4. Cycles raise `SpecialistPresetCycleError` with the visited preset list. Unknown names raise `SpecialistPresetNotFoundError` and list known presets. Malformed preset payloads raise `SpecialistPresetTypeError` before the loader writes the resolved value into the merged specialist spec.
 
-Invalid package preset JSON now fails with `SpecialistPresetConfigError` naming the preset file path and parse error. Existing presets that omit the referenced field now fail with `SpecialistPresetFieldMissingError` naming the specialist, field, preset, and keys defined by that preset. Presets with values that do not match target field runtime type fail with `SpecialistPresetTypeError` before merged specs are written.
+Only allowlisted override fields accept preset references. A blocked field such as `prompt.system` cannot smuggle a preset reference through `user.json`.
+
+## Fallback chain semantics
+
+Runtime model order is:
+
+1. Primary `execution.model`.
+2. `execution.fallback_models` entries when plural is present.
+3. Legacy `execution.fallback_model` only when plural is absent.
+
+Plural wins over singular in the same layer. A plural override in a higher layer replaces the lower layer's singular fallback chain because mixing singular and plural fallbacks across layers is ambiguous.
+
+Each fallback step emits `fallback_step` telemetry with specialist, attempt number, tried model, error class, and whether the step was terminal. Chain walk only happens for transient failures such as rate limits, network errors, timeouts, and 5xx-class provider failures.
+
+## Migration
+
+Existing `~/.config/specialists/user.json` files auto-extend on the next `sp init --global` run. Existing values are preserved. Missing fields are filled with `null` defaults, and `_doc` is added if absent.
+
+Generated files stay strict JSON. `sp init --global` does not write comments; it writes `_doc` as a top-level metadata key instead.
+
+## Cross-references
+
+- Origin doc: `docs/upgrade-notes/kan-90-global-user-config.md`
+- KAN-91 epic: `unitAI-gp7nq`
+- Phase 0 override machinery: `unitAI-gp7nq.1`
+- Phase 1 user-environment fields: `unitAI-gp7nq.2`
+- Phase 2 fallback chains: `unitAI-gp7nq.3`
+- Phase 3 preset references: `unitAI-gp7nq.4`
+- Follow-up reference-doc update: `unitAI-aav4w`
+- Follow-up stale 4-layer wording fix: `unitAI-v4i0j`

@@ -929,6 +929,11 @@ export async function runGlobal(): Promise<void> {
   console.log(`  ${dim('Edit override fields with:')}`);
   console.log(`  ${yellow('specialists edit --global <name>.execution.model <value>')}`);
   console.log(`  ${yellow('specialists edit --global')} ${dim('# open in $EDITOR')}\n`);
+  console.log(`  ${dim('Common override hints:')}`);
+  console.log(`  ${dim('• for extension opt-out, set')} ${yellow('<name>.execution.extensions.serena false')} ${dim('or')} ${yellow('<name>.execution.extensions.gitnexus false')}`);
+  console.log(`  ${dim('• for system prompt composition, set')} ${yellow('<name>.prompt.system_prompt_mode append|replace')}`);
+  console.log(`  ${dim('• for fallback chains, set')} ${yellow('<name>.execution.fallback_models ["provider/model", "provider/model"]')}`);
+  console.log(`  ${dim('• for preset refs, set model/fallback entries to')} ${yellow('@preset/cheap')} ${dim('(or medium, power)')}\n`);
 }
 
 export async function run(opts: InitOptions = {}): Promise<void> {

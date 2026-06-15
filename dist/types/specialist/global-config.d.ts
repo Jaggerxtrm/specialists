@@ -1,6 +1,7 @@
 import * as z from 'zod';
 declare const CONFIG_FILENAME = "user.json";
 declare const SPECIALISTS_SUBDIR = "specialists";
+export declare const GLOBAL_USER_CONFIG_DOC = "See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.";
 export type GlobalConfigSource = 'xdg' | 'config-home' | 'legacy';
 export interface GlobalUserConfigPath {
     /** Absolute path to user.json (may not exist yet). */
@@ -141,8 +142,8 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
 }>;
 export type GlobalSpecialistOverride = z.infer<typeof GlobalSpecialistOverrideSchema>;
 export declare function getGlobalSpecialistOverrideLeafPaths(): readonly string[];
-/** Top-level shape: { "<specialist-name>": GlobalSpecialistOverride }. */
-export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObject<{
+/** Top-level shape: { "<specialist-name>": GlobalSpecialistOverride }. Underscore keys are metadata sentinels. */
+export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodObject<{
     execution: z.ZodObject<{
         model: z.ZodNullable<z.ZodString>;
         fallback_model: z.ZodNullable<z.ZodString>;
@@ -259,8 +260,35 @@ export declare const GlobalUserConfigSchema: z.ZodRecord<z.ZodString, z.ZodObjec
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
-}>>;
-export type GlobalUserConfig = z.infer<typeof GlobalUserConfigSchema>;
+}>>, Record<string, {
+    execution: {
+        model: string | null;
+        fallback_model: string | null;
+        timeout_ms: number | null;
+        stall_timeout_ms: number | null;
+        max_retries: number | null;
+        thinking_level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+        extensions?: {
+            gitnexus: boolean | null;
+            serena: boolean | null;
+        } | undefined;
+        fallback_models?: string[] | null | undefined;
+        stdout_limit_bytes?: number | null | undefined;
+        prompt_limit_bytes?: number | null | undefined;
+    };
+    skills: {
+        paths: string[];
+    };
+    beads_write_notes: boolean | null;
+    prompt?: {
+        system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    output_file?: string | null | undefined;
+    notes_mode?: "full-trail" | "final-only" | null | undefined;
+}>, unknown>;
+export type GlobalUserConfig = Record<string, GlobalSpecialistOverride | string> & {
+    _doc?: string;
+};
 export interface GlobalConfigValidationResult {
     valid: boolean;
     errors: Array<{

@@ -14484,7 +14484,11 @@ var GlobalSpecialistOverrideSchema = objectType({
   output_file: stringType().nullable().optional(),
   skills: OverrideSkillsSchema
 }).strict();
-var GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
+var GlobalUserConfigSchema = preprocessType((value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !key.startsWith("_")));
+}, recordType(stringType(), GlobalSpecialistOverrideSchema));
 function readGlobalUserConfig(location) {
   if (!location.exists)
     return null;
