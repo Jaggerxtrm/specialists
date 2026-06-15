@@ -71,6 +71,7 @@ export declare class SpecialistLoader {
      * Returns warnings (does NOT mutate the warnings store).
      */
     private applyOverrideFields;
+    private resolveOverrideValue;
     /**
      * Build the merged spec for `name`. Single linear pass over the three layers:
      *
@@ -80,6 +81,7 @@ export declare class SpecialistLoader {
      * Does NOT throw on null model; caller (get) enforces the missing-model error.
      */
     private buildMergedSpec;
+    private resolveCanonicalPresetReferences;
     list(category?: string): Promise<SpecialistSummary[]>;
     get(name: string): Promise<Specialist>;
     /**

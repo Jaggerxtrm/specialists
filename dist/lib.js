@@ -9962,23 +9962,24 @@ function applyOutputContract(prompt, spec) {
 ${contract}` : prompt;
 }
 function mapErrorType(message) {
+  const normalizedMessage = message.toLowerCase();
   if (message.includes("Specialist not found"))
     return "specialist_not_found";
-  if (message.includes("interactive") || message.includes("worktree") || message.includes("permission_required") || message.includes("scripts not allowed"))
+  if (normalizedMessage.includes("interactive") || normalizedMessage.includes("worktree") || normalizedMessage.includes("permission_required") || normalizedMessage.includes("scripts not allowed"))
     return "specialist_load_error";
   if (message.includes("Missing template variable"))
     return "template_variable_missing";
-  if (message.includes("prompt too large"))
+  if (normalizedMessage.includes("prompt too large"))
     return "prompt_too_large";
-  if (message.includes("output too large"))
+  if (normalizedMessage.includes("output too large"))
     return "output_too_large";
-  if (message.includes("auth") || message.includes("403") || message.includes("401"))
+  if (isAuthFailureMessage(normalizedMessage))
     return "auth";
-  if (message.includes("quota") || message.includes("rate limit") || message.includes("out of extra usage") || message.includes("insufficient_quota") || message.includes("429"))
+  if (normalizedMessage.includes("quota") || normalizedMessage.includes("rate limit") || normalizedMessage.includes("out of extra usage") || normalizedMessage.includes("insufficient_quota") || normalizedMessage.includes("429"))
     return "quota";
-  if (message.includes("timeout"))
+  if (normalizedMessage.includes("timeout"))
     return "timeout";
-  if (message.includes("network") || message.includes("ECONN"))
+  if (normalizedMessage.includes("network") || message.includes("ECONN"))
     return "network";
   if (message.includes("invalid JSON") || message.includes("Unexpected token"))
     return "invalid_json";
@@ -10181,7 +10182,7 @@ async function runScriptSpecialist(input, options) {
       const attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths);
       attempts.push(attempt);
       const parsed = classifyAttempt(attempt);
-      if (parsed.retryable)
+      if (parsed.retryable && parsed.errorType !== "auth")
         continue;
       const durationMs2 = Date.now() - startedAt;
       const observability2 = openObservabilityClient(options);
@@ -10332,23 +10333,29 @@ function classifyAttempt(attempt) {
   }
   if (attempt.timedOut)
     return { retryable: false, kind: "failure", error: attempt.stderr || "timed out", errorType: "timeout", text: attempt.text };
-  const retryable = isRetryableModelFailure(attempt.stderr, attempt.text);
+  const errorType = mapErrorType(attempt.stderr);
+  const retryable = errorType !== "auth" && isRetryableModelFailure(attempt.stderr, attempt.text);
   if (attempt.exitCode !== 0) {
-    const errorType = mapErrorType(attempt.stderr);
     return { retryable, kind: "failure", error: attempt.stderr || `pi exit ${attempt.exitCode}`, errorType, text: attempt.text };
   }
   if (!attempt.text) {
-    return { retryable, kind: "failure", error: attempt.stderr || "pi produced no assistant text", errorType: mapErrorType(attempt.stderr), text: attempt.text };
+    return { retryable, kind: "failure", error: attempt.stderr || "pi produced no assistant text", errorType, text: attempt.text };
   }
   return { retryable: false, kind: "success", error: "", errorType: "internal", text: attempt.text };
 }
 function isRetryableModelFailure(stderr, text) {
-  return stderr.includes("0 tokens") || stderr.includes("quota") || stderr.includes("rate limit") || stderr.includes("403") || stderr.includes("401") || stderr.includes("insufficient_quota") || !text && !stderr.trim();
+  const normalizedStderr = stderr.toLowerCase();
+  if (isAuthFailureMessage(normalizedStderr))
+    return false;
+  return normalizedStderr.includes("0 tokens") || normalizedStderr.includes("quota") || normalizedStderr.includes("rate limit") || normalizedStderr.includes("insufficient_quota") || !text && !normalizedStderr.trim();
+}
+function isAuthFailureMessage(message) {
+  return /\b(401|403)\b/.test(message) || message.includes("auth") || message.includes("unauthorized") || message.includes("forbidden") || message.includes("invalid_api_key") || message.includes("authentication failed") || message.includes("credentials");
 }
 // src/specialist/loader.ts
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join as join4 } from "node:path";
-import { existsSync as existsSync4 } from "node:fs";
+import { basename, join as join5 } from "node:path";
+import { existsSync as existsSync5 } from "node:fs";
 
 // ../../../node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -14485,6 +14492,195 @@ function readGlobalUserConfig(location) {
   return JSON.parse(content);
 }
 
+// src/specialist/preset-resolver.ts
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { join as join4 } from "node:path";
+var PRESET_REFERENCE_PREFIX = "@preset/";
+var PRESET_REFERENCE_MAX_DEPTH = 4;
+var presetsCache = null;
+var presetsCacheBaseDir = null;
+
+class SpecialistPresetNotFoundError extends Error {
+  presetName;
+  specialist;
+  fieldPath;
+  knownPresets;
+  constructor(presetName, specialist, fieldPath, knownPresets) {
+    super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} not found in config/presets.json. Known presets: ${knownPresets.join(", ") || "(none)"}`);
+    this.presetName = presetName;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.knownPresets = knownPresets;
+    this.name = "SpecialistPresetNotFoundError";
+  }
+}
+
+class SpecialistPresetCycleError extends Error {
+  visited;
+  specialist;
+  fieldPath;
+  constructor(visited, specialist, fieldPath) {
+    super(`preset cycle referenced by ${formatReferenceLocation(specialist, fieldPath)}: ${visited.join(" -> ")}`);
+    this.visited = visited;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.name = "SpecialistPresetCycleError";
+  }
+}
+
+class SpecialistPresetTypeError extends Error {
+  presetName;
+  specialist;
+  fieldPath;
+  expectedType;
+  actualType;
+  constructor(presetName, specialist, fieldPath, expectedType, actualType) {
+    super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} resolved invalid value type: expected ${expectedType}, got ${actualType}`);
+    this.presetName = presetName;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.expectedType = expectedType;
+    this.actualType = actualType;
+    this.name = "SpecialistPresetTypeError";
+  }
+}
+
+class SpecialistPresetConfigError extends Error {
+  configPath;
+  cause;
+  constructor(configPath, cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(`failed to load presets from ${configPath}: ${message}`);
+    this.configPath = configPath;
+    this.cause = cause;
+    this.name = "SpecialistPresetConfigError";
+  }
+}
+
+class SpecialistPresetFieldMissingError extends Error {
+  presetName;
+  specialist;
+  fieldPath;
+  definedKeys;
+  constructor(presetName, specialist, fieldPath, definedKeys) {
+    super(`preset "${presetName}" referenced by ${formatReferenceLocation(specialist, fieldPath)} does not define ${fieldPath}. Defined keys: ${definedKeys.join(", ") || "(none)"}`);
+    this.presetName = presetName;
+    this.specialist = specialist;
+    this.fieldPath = fieldPath;
+    this.definedKeys = definedKeys;
+    this.name = "SpecialistPresetFieldMissingError";
+  }
+}
+function loadPresets(options = {}) {
+  const baseDir = options.baseDir ?? process.cwd();
+  if (presetsCache && presetsCacheBaseDir === baseDir && !options.force)
+    return presetsCache;
+  const paths = [
+    join4(baseDir, "config", "presets.json"),
+    join4(baseDir, "config", "specialists", "presets.json")
+  ];
+  for (const path of paths) {
+    if (!existsSync4(path))
+      continue;
+    try {
+      presetsCache = JSON.parse(readFileSync4(path, "utf-8"));
+      presetsCacheBaseDir = baseDir;
+      return presetsCache;
+    } catch (error) {
+      presetsCache = null;
+      presetsCacheBaseDir = null;
+      throw new SpecialistPresetConfigError(path, error);
+    }
+  }
+  presetsCache = {};
+  presetsCacheBaseDir = baseDir;
+  return presetsCache;
+}
+function resolvePresetReference(value, fieldPath, presets, visited = new Set, options = {}) {
+  if (!isPresetReference(value))
+    return { value, depth: visited.size };
+  const presetName = value.slice(PRESET_REFERENCE_PREFIX.length);
+  if (visited.has(presetName)) {
+    throw new SpecialistPresetCycleError([...visited, presetName], options.specialist, fieldPath);
+  }
+  if (visited.size >= PRESET_REFERENCE_MAX_DEPTH) {
+    throw new SpecialistPresetCycleError([...visited, presetName], options.specialist, fieldPath);
+  }
+  const preset = presets[presetName];
+  if (!preset) {
+    throw new SpecialistPresetNotFoundError(presetName, options.specialist, fieldPath, Object.keys(presets));
+  }
+  if (!Object.prototype.hasOwnProperty.call(preset.fields, fieldPath)) {
+    throw new SpecialistPresetFieldMissingError(presetName, options.specialist, fieldPath, Object.keys(preset.fields));
+  }
+  const nextValue = preset.fields[fieldPath];
+  const nextVisited = new Set([...visited, presetName]);
+  const resolved = resolvePresetReference(nextValue, fieldPath, presets, nextVisited, options);
+  validateResolvedPresetValue(resolved.value, fieldPath, presetName, options);
+  return { value: resolved.value, presetName, depth: resolved.depth };
+}
+function isPresetReference(value) {
+  return typeof value === "string" && value.startsWith(PRESET_REFERENCE_PREFIX);
+}
+function validateResolvedPresetValue(value, fieldPath, presetName, options) {
+  const expectedType = getExpectedPresetValueType(fieldPath, options.arrayEntry === true);
+  if (!expectedType)
+    return;
+  if (matchesExpectedPresetValueType(value, expectedType))
+    return;
+  throw new SpecialistPresetTypeError(presetName, options.specialist, fieldPath, formatExpectedType(expectedType), formatActualType(value));
+}
+function getExpectedPresetValueType(fieldPath, isArrayEntry) {
+  if (fieldPath === "specialist.execution.fallback_models" && isArrayEntry)
+    return "string-or-null";
+  switch (fieldPath) {
+    case "specialist.execution.model":
+    case "specialist.execution.fallback_model":
+    case "specialist.execution.thinking_level":
+      return "string-or-null";
+    case "specialist.execution.fallback_models":
+      return "string-array-or-null";
+    case "specialist.execution.stall_timeout_ms":
+      return "number";
+    default:
+      return null;
+  }
+}
+function matchesExpectedPresetValueType(value, expectedType) {
+  switch (expectedType) {
+    case "string-or-null":
+      return value === null || typeof value === "string";
+    case "string-array-or-null":
+      return value === null || Array.isArray(value) && value.every((entry) => typeof entry === "string");
+    case "number":
+      return typeof value === "number";
+    default:
+      return expectedType;
+  }
+}
+function formatExpectedType(expectedType) {
+  switch (expectedType) {
+    case "string-or-null":
+      return "string or null";
+    case "string-array-or-null":
+      return "string[] or null";
+    case "number":
+      return "number";
+    default:
+      return expectedType;
+  }
+}
+function formatActualType(value) {
+  if (value === null)
+    return "null";
+  if (Array.isArray(value))
+    return `array(${value.map(formatActualType).join(", ")})`;
+  return typeof value;
+}
+function formatReferenceLocation(specialist, fieldPath) {
+  return specialist ? `${specialist}.${fieldPath}` : fieldPath;
+}
+
 // src/specialist/loader.ts
 class SpecialistMissingModelError extends Error {
   specialistName;
@@ -14503,12 +14699,12 @@ class SpecialistLoader {
   }
   getScanDirs() {
     const dirs = [
-      { path: join4(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join4(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join4(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join5(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join5(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join5(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
-    return dirs.filter((d) => d.path && existsSync4(d.path));
+    return dirs.filter((d) => d.path && existsSync5(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -14516,12 +14712,12 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join4(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync4(jsonPath)) {
+    const jsonPath = join5(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync5(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join4(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync4(yamlPath)) {
+    const yamlPath = join5(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync5(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
@@ -14564,13 +14760,13 @@ class SpecialistLoader {
       const overrideValue = overrideExecution[field];
       if (overrideValue === null || overrideValue === undefined)
         continue;
-      baseExecution[field] = overrideValue;
+      baseExecution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, overrideValue);
     }
     for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
       const overrideValue = readDottedPath(overrideExecution, path);
       if (overrideValue === null || overrideValue === undefined)
         continue;
-      writeDottedPath(baseExecution, path, overrideValue);
+      writeDottedPath(baseExecution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, overrideValue));
     }
     baseSpec.execution = baseExecution;
     const overridePrompt = overrideSpec.prompt ?? {};
@@ -14581,7 +14777,7 @@ class SpecialistLoader {
       const overrideValue = overridePrompt[field];
       if (overrideValue === null || overrideValue === undefined)
         continue;
-      basePrompt[field] = overrideValue;
+      basePrompt[field] = this.resolveOverrideValue(name, `specialist.prompt.${field}`, overrideValue);
     }
     baseSpec.prompt = basePrompt;
     for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
@@ -14590,7 +14786,7 @@ class SpecialistLoader {
       const overrideValue = overrideSpec[field];
       if (overrideValue === null || overrideValue === undefined)
         continue;
-      baseSpec[field] = overrideValue;
+      baseSpec[field] = this.resolveOverrideValue(name, `specialist.${field}`, overrideValue);
     }
     const overrideSkills = overrideSpec.skills ?? {};
     const overridePaths = Array.isArray(overrideSkills.paths) ? overrideSkills.paths : null;
@@ -14610,6 +14806,15 @@ class SpecialistLoader {
     }
     return warnings;
   }
+  resolveOverrideValue(name, fieldPath, value, isArrayEntry = false) {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.resolveOverrideValue(name, fieldPath, entry, true));
+    }
+    const resolution = resolvePresetReference(value, fieldPath, loadPresets({ baseDir: this.projectDir }), new Set, { specialist: name, arrayEntry: isArrayEntry });
+    if (resolution.presetName)
+      emitPresetResolved(name, fieldPath, resolution.presetName, resolution.value, resolution.depth);
+    return resolution.value;
+  }
   async buildMergedSpec(name) {
     const hits = this.findLayerHits(name);
     if (hits.length === 0)
@@ -14621,6 +14826,7 @@ class SpecialistLoader {
       process.stderr.write(`[specialists] DEPRECATED: YAML specialist config detected at ${baseHit.resolved.filePath}. Please migrate to .specialist.json
 `);
     }
+    this.resolveCanonicalPresetReferences(name, base);
     const warnings = [];
     const globalLocation = getGlobalUserConfigPath();
     const globalConfig = globalLocation.exists ? readGlobalUserConfig(globalLocation) : null;
@@ -14657,6 +14863,23 @@ class SpecialistLoader {
       },
       warnings
     };
+  }
+  resolveCanonicalPresetReferences(name, spec) {
+    const execution = spec.specialist.execution;
+    for (const field of OVERRIDE_ALLOWED_EXECUTION_FIELDS) {
+      if (!(field in execution))
+        continue;
+      const value = execution[field];
+      if (value === null || value === undefined)
+        continue;
+      execution[field] = this.resolveOverrideValue(name, `specialist.execution.${field}`, value);
+    }
+    for (const path of OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS) {
+      const value = readDottedPath(execution, path);
+      if (value === null || value === undefined)
+        continue;
+      writeDottedPath(execution, path, this.resolveOverrideValue(name, `specialist.execution.${path}`, value));
+    }
   }
   async list(category) {
     const results = [];
@@ -14780,15 +15003,26 @@ function writeDottedPath(obj, dotted, value) {
   }
   cur[leaf] = value;
 }
+function emitPresetResolved(specialist, field, presetName, resolvedValue, depth) {
+  process.stderr.write(`${JSON.stringify({
+    event: "preset_resolved",
+    specialist,
+    field,
+    preset_name: presetName,
+    resolved_value: resolvedValue,
+    depth
+  })}
+`);
+}
 function resolveSkillsPaths(spec, fileDir) {
   const rawPaths = spec.specialist.skills?.paths;
   if (!rawPaths?.length)
     return;
   const resolved = rawPaths.map((p) => {
     if (p.startsWith("~/"))
-      return join4(process.env.HOME || "", p.slice(2));
+      return join5(process.env.HOME || "", p.slice(2));
     if (p.startsWith("./"))
-      return join4(fileDir, p.slice(2));
+      return join5(fileDir, p.slice(2));
     return p;
   });
   spec.specialist.skills.paths = resolved;
