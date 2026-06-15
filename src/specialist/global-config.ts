@@ -22,6 +22,7 @@ import {
 
 const CONFIG_FILENAME = 'user.json';
 const SPECIALISTS_SUBDIR = 'specialists';
+export const GLOBAL_USER_CONFIG_DOC = 'See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.';
 
 export type GlobalConfigSource = 'xdg' | 'config-home' | 'legacy';
 
@@ -119,13 +120,18 @@ export function getGlobalSpecialistOverrideLeafPaths(): readonly string[] {
   ];
 }
 
-/** Top-level shape: { "<specialist-name>": GlobalSpecialistOverride }. */
-export const GlobalUserConfigSchema = z.record(
-  z.string(),
-  GlobalSpecialistOverrideSchema,
+/** Top-level shape: { "<specialist-name>": GlobalSpecialistOverride }. Underscore keys are metadata sentinels. */
+export const GlobalUserConfigSchema = z.preprocess(
+  value => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value).filter(([key]) => !key.startsWith('_')),
+    );
+  },
+  z.record(z.string(), GlobalSpecialistOverrideSchema),
 );
 
-export type GlobalUserConfig = z.infer<typeof GlobalUserConfigSchema>;
+export type GlobalUserConfig = Record<string, GlobalSpecialistOverride | string> & { _doc?: string };
 
 export interface GlobalConfigValidationResult {
   valid: boolean;
@@ -170,7 +176,7 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
 export function buildGlobalUserConfigTemplate(
   specialistNames: ReadonlyArray<string>,
 ): GlobalUserConfig {
-  const template: GlobalUserConfig = {};
+  const template: GlobalUserConfig = { _doc: GLOBAL_USER_CONFIG_DOC };
   for (const name of specialistNames) {
     template[name] = buildSpecialistOverrideTemplate();
   }
@@ -229,15 +235,16 @@ export function mergeGlobalUserConfig(
   existing: Readonly<Record<string, unknown>>,
   template: GlobalUserConfig,
 ): GlobalConfigMergeResult {
-  const merged: GlobalUserConfig = {};
+  const merged: GlobalUserConfig = { _doc: typeof existing._doc === 'string' ? existing._doc : GLOBAL_USER_CONFIG_DOC };
   const added: string[] = [];
   const extended: string[] = [];
   const removed: string[] = [];
 
   // 1. Preserve existing specialists, filling missing override fields.
   for (const [name, rawExisting] of Object.entries(existing)) {
+    if (name.startsWith('_')) continue;
     const templateOverride = template[name];
-    if (templateOverride) {
+    if (templateOverride && typeof templateOverride === 'object') {
       const normalized = fillMissingDefaults(
         (rawExisting && typeof rawExisting === 'object' ? { ...rawExisting } : {}) as Record<string, unknown>,
         templateOverride as unknown as Record<string, unknown>,
@@ -253,8 +260,9 @@ export function mergeGlobalUserConfig(
 
   // 2. Append newly-shipped specialists not already in the file.
   for (const [name, override] of Object.entries(template)) {
+    if (name.startsWith('_')) continue;
     if (!(name in existing)) {
-      merged[name] = override;
+      merged[name] = override as GlobalSpecialistOverride;
       added.push(name);
     }
   }

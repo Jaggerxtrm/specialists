@@ -20812,7 +20812,7 @@ function buildSpecialistOverrideTemplate() {
   };
 }
 function buildGlobalUserConfigTemplate(specialistNames) {
-  const template = {};
+  const template = { _doc: GLOBAL_USER_CONFIG_DOC };
   for (const name of specialistNames) {
     template[name] = buildSpecialistOverrideTemplate();
   }
@@ -20832,13 +20832,15 @@ function fillMissingDefaults(target, defaults) {
   return target;
 }
 function mergeGlobalUserConfig(existing, template) {
-  const merged = {};
+  const merged = { _doc: typeof existing._doc === "string" ? existing._doc : GLOBAL_USER_CONFIG_DOC };
   const added = [];
   const extended = [];
   const removed = [];
   for (const [name, rawExisting] of Object.entries(existing)) {
+    if (name.startsWith("_"))
+      continue;
     const templateOverride = template[name];
-    if (templateOverride) {
+    if (templateOverride && typeof templateOverride === "object") {
       const normalized = fillMissingDefaults(rawExisting && typeof rawExisting === "object" ? { ...rawExisting } : {}, templateOverride);
       merged[name] = normalized;
       extended.push(name);
@@ -20848,6 +20850,8 @@ function mergeGlobalUserConfig(existing, template) {
     }
   }
   for (const [name, override] of Object.entries(template)) {
+    if (name.startsWith("_"))
+      continue;
     if (!(name in existing)) {
       merged[name] = override;
       added.push(name);
@@ -20893,7 +20897,7 @@ function writeGlobalUserConfig(location, config2) {
   writeFileSync2(location.path, `${JSON.stringify(config2, null, 2)}
 `, "utf-8");
 }
-var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
+var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", GLOBAL_USER_CONFIG_DOC = "See docs/upgrade-notes/kan-91-expanded-overrides.md for allowed global override fields.", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
 var init_global_config = __esm(() => {
   init_zod();
   init_schema();
@@ -20927,7 +20931,11 @@ var init_global_config = __esm(() => {
     output_file: stringType().nullable().optional(),
     skills: OverrideSkillsSchema
   }).strict();
-  GlobalUserConfigSchema = recordType(stringType(), GlobalSpecialistOverrideSchema);
+  GlobalUserConfigSchema = preprocessType((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+      return value;
+    return Object.fromEntries(Object.entries(value).filter(([key]) => !key.startsWith("_")));
+  }, recordType(stringType(), GlobalSpecialistOverrideSchema));
 });
 
 // src/specialist/preset-resolver.ts
@@ -29585,6 +29593,12 @@ ${bold5("Done!")}
   console.log(`  ${dim5("Edit override fields with:")}`);
   console.log(`  ${yellow5("specialists edit --global <name>.execution.model <value>")}`);
   console.log(`  ${yellow5("specialists edit --global")} ${dim5("# open in $EDITOR")}
+`);
+  console.log(`  ${dim5("Common override hints:")}`);
+  console.log(`  ${dim5("\u2022 for extension opt-out, set")} ${yellow5("<name>.execution.extensions.serena false")} ${dim5("or")} ${yellow5("<name>.execution.extensions.gitnexus false")}`);
+  console.log(`  ${dim5("\u2022 for system prompt composition, set")} ${yellow5("<name>.prompt.system_prompt_mode append|replace")}`);
+  console.log(`  ${dim5("\u2022 for fallback chains, set")} ${yellow5('<name>.execution.fallback_models ["provider/model", "provider/model"]')}`);
+  console.log(`  ${dim5("\u2022 for preset refs, set model/fallback entries to")} ${yellow5("@preset/cheap")} ${dim5("(or medium, power)")}
 `);
 }
 async function run7(opts = {}) {

@@ -1,11 +1,18 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
+  GLOBAL_USER_CONFIG_DOC,
+  buildGlobalUserConfigTemplate,
   buildSpecialistOverrideTemplate,
   mergeGlobalUserConfig,
   validateGlobalUserConfig,
 } from '../../../src/specialist/global-config.js';
 
 describe('global specialist override config', () => {
+  it('buildGlobalUserConfigTemplate includes upgrade-note doc sentinel', () => {
+    expect(buildGlobalUserConfigTemplate(['demo'])._doc).toBe(GLOBAL_USER_CONFIG_DOC);
+  });
+
   it('buildSpecialistOverrideTemplate includes nested execution and prompt defaults', () => {
     expect(buildSpecialistOverrideTemplate()).toEqual({
       execution: {
@@ -98,6 +105,35 @@ describe('global specialist override config', () => {
     expect(result.extended).toEqual(['demo']);
   });
 
+  it('validateGlobalUserConfig accepts _doc plus normal specialist entries', () => {
+    const valid = {
+      _doc: GLOBAL_USER_CONFIG_DOC,
+      executor: buildSpecialistOverrideTemplate(),
+    };
+
+    expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+  });
+
+  it('mergeGlobalUserConfig preserves _doc and excludes it from removed specialists', () => {
+    const result = mergeGlobalUserConfig(
+      { _doc: GLOBAL_USER_CONFIG_DOC, executor: buildSpecialistOverrideTemplate() },
+      { executor: buildSpecialistOverrideTemplate() },
+    );
+
+    expect(result.config._doc).toBe(GLOBAL_USER_CONFIG_DOC);
+    expect(result.removed).toEqual([]);
+  });
+
+  it('mergeGlobalUserConfig adds _doc to existing configs without clobbering values', () => {
+    const result = mergeGlobalUserConfig(
+      { executor: buildSpecialistOverrideTemplate() },
+      { executor: buildSpecialistOverrideTemplate() },
+    );
+
+    expect(result.config._doc).toBe(GLOBAL_USER_CONFIG_DOC);
+    expect(result.removed).toEqual([]);
+  });
+
   it('validateGlobalUserConfig accepts top-level notes_mode and output_file', () => {
     const valid = {
       demo: {
@@ -148,5 +184,17 @@ describe('global specialist override config', () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors.some(error => error.path === 'demo.execution.extensions.bogus')).toBe(true);
+  });
+
+  it('validates the complete KAN-91 upgrade-note example', () => {
+    const markdown = readFileSync('docs/upgrade-notes/kan-91-expanded-overrides.md', 'utf8');
+    const match = markdown.match(
+      /## Complete example \(validates against `GlobalUserConfigSchema`\)[\s\S]*?```json\n([\s\S]*?)\n```/,
+    );
+
+    expect(match).not.toBeNull();
+
+    const example = match?.[1] ?? '';
+    expect(validateGlobalUserConfig(example)).toEqual({ valid: true, errors: [] });
   });
 });
