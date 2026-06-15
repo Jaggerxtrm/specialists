@@ -424,6 +424,72 @@ describe('runScriptSpecialist fallback chain', () => {
     expect(isRetryableModelFailure('rate limit', '')).toBe(true);
     expect(classifyAttempt({ text: '', stderr: '429 insufficient_quota quota exceeded', exitCode: 1, timedOut: false, outputTooLarge: false })).toMatchObject({ retryable: true });
   });
+
+  it('does not retry auth-shaped failures', () => {
+    expect(isRetryableModelFailure('HTTP 401 Unauthorized', '')).toBe(false);
+    expect(isRetryableModelFailure('HTTP 403 Forbidden', '')).toBe(false);
+    expect(isRetryableModelFailure('invalid_api_key authentication failed', '')).toBe(false);
+    expect(classifyAttempt({ text: '', stderr: 'HTTP 401 Unauthorized', exitCode: 1, timedOut: false, outputTooLarge: false })).toMatchObject({ retryable: false, errorType: 'auth' });
+  });
+
+  it('stops chain walk on auth failure from first model', async () => {
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        execution: {
+          ...baseSpec.specialist.execution,
+          fallback_models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    } as never;
+    const firstChild = new FakeChild();
+    const secondChild = new FakeChild();
+    spawnMock.mockReturnValueOnce(firstChild as never).mockReturnValueOnce(secondChild as never);
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-keeper', variables: { name: 'release notes' } },
+      { loader: makeLoader(spec) as never, projectDir: '.' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    firstChild.stderr.emit('data', Buffer.from('HTTP 401 Unauthorized'));
+    firstChild.emit('close', 1);
+
+    const result = await resultPromise;
+    expect(result).toMatchObject({ success: false, error_type: 'auth' });
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues chain walk on transient failure from first model', async () => {
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        execution: {
+          ...baseSpec.specialist.execution,
+          fallback_models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    } as never;
+    const firstChild = new FakeChild();
+    const secondChild = new FakeChild();
+    spawnMock.mockReturnValueOnce(firstChild as never).mockReturnValueOnce(secondChild as never);
+
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'changelog-keeper', variables: { name: 'release notes' } },
+      { loader: makeLoader(spec) as never, projectDir: '.' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    firstChild.stderr.emit('data', Buffer.from('429 insufficient_quota quota exceeded'));
+    firstChild.emit('close', 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    secondChild.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })}\n`));
+    secondChild.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result).toMatchObject({ success: true });
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('stdout limit resolution', () => {

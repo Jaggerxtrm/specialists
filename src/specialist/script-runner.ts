@@ -194,15 +194,16 @@ export function applyOutputContract(prompt: string, spec: Specialist): string {
 }
 
 function mapErrorType(message: string): ScriptSpecialistErrorType {
+  const normalizedMessage = message.toLowerCase();
   if (message.includes('Specialist not found')) return 'specialist_not_found';
-  if (message.includes('interactive') || message.includes('worktree') || message.includes('permission_required') || message.includes('scripts not allowed')) return 'specialist_load_error';
+  if (normalizedMessage.includes('interactive') || normalizedMessage.includes('worktree') || normalizedMessage.includes('permission_required') || normalizedMessage.includes('scripts not allowed')) return 'specialist_load_error';
   if (message.includes('Missing template variable')) return 'template_variable_missing';
-  if (message.includes('prompt too large')) return 'prompt_too_large';
-  if (message.includes('output too large')) return 'output_too_large';
-  if (message.includes('auth') || message.includes('403') || message.includes('401')) return 'auth';
-  if (message.includes('quota') || message.includes('rate limit') || message.includes('out of extra usage') || message.includes('insufficient_quota') || message.includes('429')) return 'quota';
-  if (message.includes('timeout')) return 'timeout';
-  if (message.includes('network') || message.includes('ECONN')) return 'network';
+  if (normalizedMessage.includes('prompt too large')) return 'prompt_too_large';
+  if (normalizedMessage.includes('output too large')) return 'output_too_large';
+  if (isAuthFailureMessage(normalizedMessage)) return 'auth';
+  if (normalizedMessage.includes('quota') || normalizedMessage.includes('rate limit') || normalizedMessage.includes('out of extra usage') || normalizedMessage.includes('insufficient_quota') || normalizedMessage.includes('429')) return 'quota';
+  if (normalizedMessage.includes('timeout')) return 'timeout';
+  if (normalizedMessage.includes('network') || message.includes('ECONN')) return 'network';
   if (message.includes('invalid JSON') || message.includes('Unexpected token')) return 'invalid_json';
   return 'internal';
 }
@@ -474,7 +475,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       const attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths);
       attempts.push(attempt);
       const parsed = classifyAttempt(attempt);
-      if (parsed.retryable) continue;
+      if (parsed.retryable && parsed.errorType !== 'auth') continue;
 
       const durationMs = Date.now() - startedAt;
       const observability = openObservabilityClient(options);
@@ -628,17 +629,29 @@ export function classifyAttempt(attempt: { text: string; stderr: string; exitCod
     return { retryable: false, kind: 'failure', error: 'output exceeded cap', errorType: 'output_too_large', text: attempt.text };
   }
   if (attempt.timedOut) return { retryable: false, kind: 'failure', error: attempt.stderr || 'timed out', errorType: 'timeout', text: attempt.text };
-  const retryable = isRetryableModelFailure(attempt.stderr, attempt.text);
+  const errorType = mapErrorType(attempt.stderr);
+  const retryable = errorType !== 'auth' && isRetryableModelFailure(attempt.stderr, attempt.text);
   if (attempt.exitCode !== 0) {
-    const errorType = mapErrorType(attempt.stderr);
     return { retryable, kind: 'failure', error: attempt.stderr || `pi exit ${attempt.exitCode}`, errorType, text: attempt.text };
   }
   if (!attempt.text) {
-    return { retryable, kind: 'failure', error: attempt.stderr || 'pi produced no assistant text', errorType: mapErrorType(attempt.stderr), text: attempt.text };
+    return { retryable, kind: 'failure', error: attempt.stderr || 'pi produced no assistant text', errorType, text: attempt.text };
   }
   return { retryable: false, kind: 'success', error: '', errorType: 'internal', text: attempt.text };
 }
 
 export function isRetryableModelFailure(stderr: string, text: string): boolean {
-  return stderr.includes('0 tokens') || stderr.includes('quota') || stderr.includes('rate limit') || stderr.includes('403') || stderr.includes('401') || stderr.includes('insufficient_quota') || (!text && !stderr.trim());
+  const normalizedStderr = stderr.toLowerCase();
+  if (isAuthFailureMessage(normalizedStderr)) return false;
+  return normalizedStderr.includes('0 tokens') || normalizedStderr.includes('quota') || normalizedStderr.includes('rate limit') || normalizedStderr.includes('insufficient_quota') || (!text && !normalizedStderr.trim());
+}
+
+function isAuthFailureMessage(message: string): boolean {
+  return /\b(401|403)\b/.test(message)
+    || message.includes('auth')
+    || message.includes('unauthorized')
+    || message.includes('forbidden')
+    || message.includes('invalid_api_key')
+    || message.includes('authentication failed')
+    || message.includes('credentials');
 }
