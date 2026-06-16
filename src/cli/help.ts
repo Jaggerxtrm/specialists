@@ -21,7 +21,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['node', 'Run and inspect NodeSupervisor nodes (run/status)'],
   ['epic', 'Epic lifecycle management: list/status/resolve wave-bound chain groups'],
   ['feed', 'Tail compact job events; use -f to follow all jobs'],
-  ['log', 'Full runtime logs with job/bead/repo/path metadata; -f follows control/error events'],
+  ['log', 'Full runtime logs from xtrm.forensic.v1 (default); --legacy uses TimelineEvent filtering (deprecated, removed next minor release); -f follows live events'],
   ['forensic', 'Query persisted xtrm.forensic.v1 runtime events; --json emits NDJSON'],
   ['metrics', 'Export low-cardinality xtrm AgentOps metrics in Prometheus text format'],
   ['chat', 'Launch an interactive TUI: feed-style timeline, status row, result, and steer/resume input'],

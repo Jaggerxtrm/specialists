@@ -1,27 +1,31 @@
-// Forensic FeedSource adapter.
+// Forensic FeedSource adapter for the console.
 //
-// Reads timeline events, projects them through `forensicEventFromTimelineEvent`,
-// and renders one console row per event using spec §7.2 layout:
-//   seq(4R) · type(18L,bright) · actor(24L,dim) · payload(free,dim)
-//
-// Payload is rendered through pickAllowedLabels so forbidden Prometheus labels
-// (raw_command, prompt, model_output, …) never reach the screen. We intentionally
-// surface event_family.event_name in the type column instead of the mock's
-// 5-bucket taxonomy (D3 resolved).
+// Delegates ForensicEvent → row mapping + redaction to the shared
+// `src/specialist/forensic-renderer.ts` module. This file only applies the
+// console's theme paint and shapes the result into FeedEventRow for the
+// view-model. Per bead unitAI-ctb4u.13 there must be exactly ONE mapper in
+// the codebase; this file is the second consumer alongside `sp log`.
 
 import {
+  forensicEventToRow,
+  formatRenderedRowColumns,
+  SPEC_72_LAYOUT,
+  type RenderedRow,
+} from '../../specialist/forensic-renderer.js';
+import {
   forensicEventFromTimelineEvent,
-  pickAllowedLabels,
   type ForensicEvent,
   type TimelineForensicContext,
 } from '../../specialist/forensic-events.js';
 import type { TimelineEvent } from '../../specialist/timeline-events.js';
-import { padL, padR, paint, truncEllipsis } from './theme.js';
+import { paint } from './theme.js';
 import type { FeedEventRow } from './types.js';
 
-const SEQ_W = 4;
-const TYPE_W = 18;
-const ACTOR_W = 24;
+export const FORENSIC_LAYOUT = {
+  SEQ_W: SPEC_72_LAYOUT.seqW,
+  TYPE_W: SPEC_72_LAYOUT.typeW,
+  ACTOR_W: SPEC_72_LAYOUT.actorW,
+} as const;
 
 export function timelineToForensicRow(
   event: TimelineEvent,
@@ -40,50 +44,23 @@ export function forensicEventToFeedRow(
   ctx: TimelineForensicContext,
   displaySeq: number,
 ): FeedEventRow {
-  const seqValue = forensic.seq ?? displaySeq;
-  const seqText = padL(String(seqValue).slice(-SEQ_W), SEQ_W);
-  const typeText = padR(
-    truncEllipsis(`${forensic.event_family}.${forensic.event_name}`, TYPE_W),
-    TYPE_W,
-  );
-  const actorRaw = forensic.resource.participant_role ?? 'unknown';
-  const jobShort = (forensic.correlation.job_id ?? ctx.jobId).slice(0, 8);
-  const actorText = padR(truncEllipsis(`${actorRaw}:${jobShort}`, ACTOR_W), ACTOR_W);
-  const payloadText = renderPayloadSummary(forensic);
-
+  const row = forensicEventToRow(forensic);
+  // Display sequence falls back to position when the event has no seq.
+  const renderRow: RenderedRow = { ...row, seq: row.seq ?? displaySeq };
+  const cols = formatRenderedRowColumns(renderRow);
   const line = [
-    paint(seqText, 'dim'),
-    paint(typeText, 'bright'),
-    paint(actorText, 'dim'),
-    paint(payloadText, 'dim'),
+    paint(cols.seq, 'dim'),
+    paint(cols.type, 'bright'),
+    paint(cols.actor, 'dim'),
+    paint(cols.payload, 'dim'),
   ].join(' ');
-
   return {
     jobId: ctx.jobId,
     specialist: ctx.specialist,
     beadId: ctx.beadId,
-    seq: forensic.seq,
-    t: forensic.t_unix_ms,
+    seq: row.seq,
+    t: row.ts,
     type: forensic.event_family,
     line,
   };
 }
-
-function renderPayloadSummary(forensic: ForensicEvent): string {
-  const safe = pickAllowedLabels(forensic.body);
-  const compact = Object.entries(safe)
-    .filter(([, v]) => v && v !== 'null' && v !== 'undefined')
-    .slice(0, 5)
-    .map(([k, v]) => `${k}=${shorten(String(v))}`)
-    .join(' ');
-  if (compact) return compact;
-  // Fall back to severity + redaction status only — never raw body.
-  return `severity=${forensic.severity} redaction=${forensic.redaction.status}`;
-}
-
-function shorten(value: string): string {
-  const cleaned = value.replace(/\s+/g, ' ').trim();
-  return cleaned.length > 32 ? cleaned.slice(0, 31) + '…' : cleaned;
-}
-
-export const FORENSIC_LAYOUT = { SEQ_W, TYPE_W, ACTOR_W } as const;

@@ -9,7 +9,9 @@ import { createObservabilitySqliteClientAtPath } from '../specialist/observabili
 import { resolveObservabilityDbLocation } from '../specialist/observability-db.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import type { TimelineEvent } from '../specialist/timeline-events.js';
-import { forensicEventFromTimelineEvent } from '../specialist/forensic-events.js';
+import { forensicEventFromTimelineEvent, type ForensicEvent } from '../specialist/forensic-events.js';
+import { forensicEventToRow, formatRenderedRowColumns, type RenderedRow } from '../specialist/forensic-renderer.js';
+import type { ForensicEventRecord, ListForensicEventsFilters } from '../specialist/observability-sqlite.js';
 import {
   bold,
   cyan,
@@ -34,6 +36,7 @@ interface LogOptions {
   follow: boolean;
   json: boolean;
   allEvents: boolean;
+  legacy: boolean;
 }
 
 const DISPLAY_DUPLICATE_WINDOW_MS = 2000;
@@ -100,6 +103,7 @@ function parseArgs(argv: readonly string[]): LogOptions {
   let follow = false;
   let json = false;
   let allEvents = false;
+  let legacy = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
@@ -113,11 +117,12 @@ function parseArgs(argv: readonly string[]): LogOptions {
     if (token === '--follow' || token === '-f') { follow = true; continue; }
     if (token === '--json') { json = true; continue; }
     if (token === '--all-events' || token === '--verbose') { allEvents = true; continue; }
+    if (token === '--legacy') { legacy = true; continue; }
     if (!token.startsWith('-') && !jobId) { jobId = token; continue; }
     throw new Error(`Unknown option: ${token}`);
   }
 
-  return { jobId, specialist, beadId, nodeId, repo, since, limit, follow, json, allEvents };
+  return { jobId, specialist, beadId, nodeId, repo, since, limit, follow, json, allEvents, legacy };
 }
 
 interface DbTarget {
@@ -455,7 +460,8 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
     options = parseArgs(argv);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    console.error('Usage: specialists|sp log [job-id] [--specialist <name>] [--bead <id>] [--node <id>] [--since <5m|iso>] [--limit <n>] [-f|--follow] [--json] [--all-events]');
+    console.error('Usage: specialists|sp log [job-id] [--specialist <name>] [--bead <id>] [--node <id>] [--since <5m|iso>] [--limit <n>] [-f|--follow] [--json] [--all-events] [--legacy]');
+    console.error('  Default: renders xtrm.forensic.v1 events. --legacy falls back to TimelineEvent filtering (deprecated, removed next minor release).');
     process.exit(1);
   }
 
@@ -489,18 +495,142 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
     if (limitedRows.length === 0 && !options.json && printed.size === 0) console.error('No matching specialist log rows.');
   };
 
+  const printForensicSnapshot = (): void => {
+    const records = clients.flatMap(({ target, client }) => {
+      if (!client) return [];
+      try {
+        const filters: ListForensicEventsFilters = {
+          jobId: options.jobId,
+          sinceMs: options.since,
+          // Over-fetch then post-filter by specialist/bead/node since those live
+          // inside the event payload.
+          limit: options.limit * 4,
+        };
+        return client.readForensicEvents(filters).map((r) => ({ target, record: r }));
+      } catch (error) {
+        logForensicReadError(target.repo, error);
+        return [];
+      }
+    });
+
+    type ForensicRow = {
+      target: DbTarget;
+      record: ForensicEventRecord;
+      event: ForensicEvent;
+      row: RenderedRow;
+    };
+
+    const rows: ForensicRow[] = [];
+    for (const { target, record } of records) {
+      let event: ForensicEvent;
+      try {
+        event = JSON.parse(record.event_json) as ForensicEvent;
+      } catch (error) {
+        logForensicReadError(target.repo, error);
+        continue;
+      }
+      const correlation = event.correlation ?? {};
+      if (options.specialist && event.resource?.participant_role !== options.specialist) continue;
+      if (options.beadId && correlation.bead_id !== options.beadId) continue;
+      if (options.nodeId && correlation.node_id !== options.nodeId) continue;
+      rows.push({ target, record, event, row: forensicEventToRow(event) });
+    }
+
+    rows.sort((a, b) =>
+      a.row.ts - b.row.ts
+      || a.target.repo.localeCompare(b.target.repo)
+      || a.row.jobId.localeCompare(b.row.jobId)
+      || ((a.row.seq ?? 0) - (b.row.seq ?? 0))
+    );
+    const limitedRows = rows.slice(Math.max(0, rows.length - options.limit));
+    for (const fr of limitedRows) {
+      const key = `${fr.target.repo}:${fr.row.jobId}:${fr.row.seq ?? fr.row.ts}:${fr.row.type}`;
+      if (printed.has(key)) continue;
+      printed.add(key);
+      printForensicRow(fr.target, fr.event, fr.row, options.json);
+    }
+    if (limitedRows.length === 0 && !options.json && printed.size === 0) {
+      console.error('No matching specialist log rows.');
+    }
+  };
+
+  const snapshotFn = options.legacy ? printSnapshot : printForensicSnapshot;
+
   try {
-    printSnapshot();
+    snapshotFn();
     if (!options.follow) return;
 
-    if (!options.json) console.error(`Following specialist runtime logs across ${targets.length} repo${targets.length === 1 ? '' : 's'}... (Ctrl+C to stop)`);
+    if (!options.json) {
+      const mode = options.legacy ? 'legacy timeline' : 'xtrm.forensic.v1';
+      console.error(`Following specialist runtime logs (${mode}) across ${targets.length} repo${targets.length === 1 ? '' : 's'}... (Ctrl+C to stop)`);
+    }
     await new Promise<void>((resolve) => {
-      const interval = setInterval(printSnapshot, 750);
+      const interval = setInterval(snapshotFn, 750);
       const stop = () => { clearInterval(interval); resolve(); };
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
     });
   } finally {
     for (const { client } of clients) client?.close();
+  }
+}
+
+function printForensicRow(
+  target: DbTarget,
+  event: ForensicEvent,
+  row: RenderedRow,
+  json: boolean,
+): void {
+  if (json) {
+    console.log(JSON.stringify({
+      timestamp: new Date(row.ts).toISOString(),
+      job_id: row.jobId || null,
+      bead_id: row.beadId ?? null,
+      repo: target.repo,
+      db_path: target.dbPath,
+      forensic_event: event,
+    }));
+    return;
+  }
+
+  const cols = formatRenderedRowColumns(row);
+  const severityFn = severityColor(row.severity);
+  const head = [
+    dim(formatDateTime(row.ts)),
+    severityFn(bold(cols.type.trimEnd().padEnd(18))),
+    row.jobId || '-',
+    dim(`bead=${row.beadId ?? '-'}`),
+    dim(`repo=${target.repo}`),
+  ].join(' ');
+  const tail = `${cols.actor.trimEnd()} ${cols.payload}`;
+  console.log(`${head} ${tail}`.trim());
+
+  if (row.schemaWarning) {
+    console.log(dim(`  ⚠ ${row.schemaWarning}`));
+  }
+}
+
+function severityColor(s: ForensicEvent['severity']): Colorizer {
+  switch (s) {
+    case 'critical':
+    case 'error': return red;
+    case 'warn': return yellow;
+    case 'info': return cyan;
+    case 'debug': return dim;
+    default: return dim;
+  }
+}
+
+function logForensicReadError(repo: string, error: unknown): void {
+  try {
+    process.stderr.write(JSON.stringify({
+      ts: new Date().toISOString(),
+      component: 'sp-log',
+      op: 'read_forensic',
+      repo,
+      errorClass: error instanceof Error ? error.name : 'unknown',
+    }) + '\n');
+  } catch {
+    // swallow
   }
 }
