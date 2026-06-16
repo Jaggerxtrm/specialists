@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              chat, status, ps, result, feed, log, forensic, metrics, clean, merge, epic, end, stop, attach, quickstart, serve, script, release, help
+ *              chat, status, ps, result, feed, log, forensic, metrics, clean, merge, epic, end, stop, attach, quickstart, setup, serve, script, release, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -1128,15 +1128,15 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        '⚠ DEPRECATED: Use `specialists init` instead.',
+        'Usage: specialists setup --discovery|--fetch-benchmarks|--plan <preset>|--apply <plan.json>|--probe-only <model> <spec>|--interactive [--json]',
         '',
-        'The setup command is deprecated. Run `specialists init` for project setup.',
+        'Structured setup workflow for discovery, benchmark cache, plan generation, and global apply.',
         '',
       ].join('\n'));
       return;
     }
     const { run: handler } = await import('./cli/setup.js');
-    return handler();
+    return handler(process.argv.slice(3));
   }
 
   if (sub === 'serve') {
