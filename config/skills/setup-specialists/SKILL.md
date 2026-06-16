@@ -10,8 +10,8 @@ description: >
   ~/.config/specialists/user.json → .specialists/user), bootstraps the global
   user.json via `sp init --global`, applies model + behavior overrides via
   `sp edit --global`, and validates with `sp doctor --specialists`.
-version: 2.0
-synced_at: 2026-06-16
+version: 3.0
+synced_at: 5a86c1ce
 ---
 
 # setup-specialists
@@ -24,6 +24,263 @@ extension opt-out, byte limits, the `_doc` sentinel, and per-spec `notes_mode` /
 model and runtime behavior **once for all repos** instead of forking
 per-repo specs.
 
+## 3.0 interactive playbook
+
+From `setup-specialists` v3.0 onward, the operator flow is explicit and directed.
+All decisions come from machine-parseable state and operator answers. Interactive
+checkpoints are mandatory.
+
+> Version gate: commands marked with `sp setup` verbs require **sp >= 3.18**.
+> If installed version is older, ask operator to upgrade first and pause.
+
+### Phase 1 (DISCOVERY)
+
+Commands:
+
+```bash
+pi --list-models
+sp doctor --specialists
+sp list --full
+```
+
+Parse contract (JSON state):
+
+```json
+{
+  "discovered_at": "ISO-8601",
+  "pi_models": [
+    {"provider": "string", "model": "string", "id": "provider/model", "context_window": "string", "max_output": "string", "thinking": true, "images": true, "raw": "string"}
+  ],
+  "doctor": {
+    "configured": 0,
+    "total": 0,
+    "missing": ["specialist"],
+    "global_user_config_present": true,
+    "missing_global_file": false,
+    "blocked_field_warnings": [
+      {"specialist": "string", "field": "string", "source": "global|repo", "severity": "strip|warn", "value": "unknown|null|string|array|number|bool"}
+    ]
+  },
+  "registry": [
+    {
+      "name": "string",
+      "version": "string",
+      "model": "string",
+      "permission_required": "READ_ONLY|LOW|MEDIUM|HIGH",
+      "scope": "default|package|user",
+      "chain_position": "pre-impl|impl|post-impl|merge|standalone",
+      "description": "string",
+      "model_from_source": "global|package|repo"
+    }
+  ],
+  "provider_auth": ["provider-id"],
+  "notes": "string"
+}
+```
+
+Exact parsing rules:
+
+- `pi --list-models` output is parsed as newline table rows; split each line by
+  whitespace and map
+  `provider model context_window max_output thinking images` into `PiModel`.
+  Preserve order after filtering out empty fields and dedupe identical
+  `provider/model` pairs.
+- `sp doctor --specialists` parse first line matching
+  `^(\d+)\/(\d+) specialists have a model configured` into
+  `doctor.configured` and `doctor.total`.
+  - If line contains `global user config NOT present`, set
+    `doctor.global_user_config_present=false`, `doctor.missing_global_file=true`.
+  - Collect blocked-field lines from `checkSpecialistOverrides()` hints in two
+    buckets:
+    - `source: global` + `severity: strip`
+    - `source: <repo-path>` + `severity: warn`
+  - `doctor.missing` are the specialists named on the `missing:` hint line, if
+    present.
+- `sp list --full` parse every spec row that matches
+  `^\s{2}(?<name>\S+)`.
+  - Capture `[v<version>]`, model, version tag, permission model and scope tags.
+  - Map `scope` from `[package]`, `[default]`, `[user]`.
+  - Set `model_from_source` from source row tag in `sp doctor --specialists` output
+    when available; fallback to `model` provenance from list summary if ambiguous.
+- Normalize deterministic JSON shape: stable sort
+  `pi_models` by `id`, `registry` by `name`, `missing` alphabetical, and
+  `provider_auth` alphabetical.
+
+Persist this object in the session as `state.setupPhase1`.
+
+### Phase 2 (FETCH)
+
+Execute exactly:
+
+```bash
+sp setup --fetch-benchmarks --json
+```
+
+Expected JSON shape for phase orchestration:
+
+```json
+{
+  "snapshot": {
+    "source": "string",
+    "source_url": "https://...",
+    "fetched_at": "ISO-8601"
+  },
+  "model_count": 0,
+  "warnings": ["string"],
+  "offline": true|false,
+  "cache_status": "fresh|stale|missing"
+}
+```
+
+If `snapshot` is null, mark benchmark availability as failed and continue to
+Phase 3 only with `state.benchmarks = unavailable`.
+
+Render a pre-operator comparison table from this response with columns:
+
+| source | model_count | fetched_at | cache_status |
+|---|---:|---|---|
+
+### Phase 3 (INTERACTIVE Q)
+
+Use five `AskUserQuestion` checkpoints. Every question must include this exact
+question wording, header, options, and parsing contract.
+
+1. **Budget preference**
+   - **header:** `Budget`
+   - **question wording:** `Choose setup budget profile for model selection.`
+   - **options (2-4):**
+     - `cheap` — prioritize lowest cost input models
+     - `balanced` — balanced cost / quality default
+     - `power` — prefer quality and throughput (higher cost)
+   - **expected answer parsing:** `{ "budget": "cheap" | "balanced" | "power" }`
+
+2. **Working provider auth**
+   - **header:** `Auth`
+   - **question wording:** `Which providers are currently authenticated for model use in this session?`
+   - **options:** render checkboxes from `state.provider_auth` items (from Phase 1)
+     with an explicit `unchecked` bucket for unknown providers.
+   - **expected answer parsing:** `{ "providers": ["string"] }`
+
+3. **Privacy exclusions**
+   - **header:** `Privacy`
+   - **question wording:** `Which providers should be excluded from global model assignment?`
+   - **options:** checkboxes using the same provider list used for Auth, plus one
+     synthetic `none` option.
+   - **expected answer parsing:** `{ "disallowed_providers": ["string"] }`
+
+4. **Project shape**
+   - **header:** `Shape`
+   - **question wording:** `What is the project shape for this setup?`
+   - **options (3):**
+     - `code-heavy` — implementation and refactor tasks dominate
+     - `research-heavy` — investigation and docs-heavy sessions dominate
+     - `mixed` — both engineering and research are frequent
+   - **expected answer parsing:** `{ "project_shape": "code-heavy" | "research-heavy" | "mixed" }`
+
+5. **Verify probes**
+   - **header:** `Probe`
+   - **question wording:** `Run agentic-followthrough probe before apply?`
+   - **options (3):**
+     - `yes` — run probes for all proposed spec/model changes
+     - `no` — skip probe phase
+     - `only-for-specs-X` — run probes only for candidate specs in X
+   - **expected answer parsing:**
+     ```json
+     {
+       "run_probe": "yes" | "no" | "only-for-specs",
+       "probe_specs": ["string"]
+     }
+     ```
+     If `run_probe === "only-for-specs"`, treat `probe_specs` as authoritative and
+     run each with `sp setup --probe-only <model> <spec> --json`.
+
+### Phase 4 (PROPOSE)
+
+Map question answers to setup plan input object and run:
+
+```bash
+sp setup --plan <preset> --json
+```
+
+where preset is:
+- `cheap` → `cheap`
+- `balanced` → `balanced`
+- `power` → `premium`
+
+Expected output JSON is from Phase B plan shape:
+
+```json
+{
+  "version": "3.0",
+  "generated_at": "ISO-8601",
+  "preset": "cheap|balanced|premium",
+  "inputs": {
+    "specialists": ["string"],
+    "preferred_providers": ["string"],
+    "disallowed_models": ["string"]
+  },
+  "writes": [
+    {
+      "specialist": "string",
+      "path": "execution.model",
+      "value": "string",
+      "reason": "string"
+    }
+  ],
+  "entries": [
+    {
+      "specialist": "string",
+      "current_model": "string",
+      "recommended_model": "string",
+      "score": "string",
+      "rationale_snippet": "string"
+    }
+  ],
+  "benchmark": {"source":"string","source_url":"string","fetched_at":"ISO-8601"}
+}
+```
+
+Render to operator as a comparable markdown table:
+
+| specialist | current model | recommended model | score | rationale |
+|---|---|---|---:|---|
+
+Require operator review and explicit confirmation before proceeding.
+
+### Phase 5 (APPLY)
+
+If confirmed:
+
+```bash
+sp setup --apply <plan.json> --json
+```
+
+Then run:
+
+```bash
+sp doctor --specialists
+```
+
+For plans where a proposed `(model, spec)` has `runs multi-turn roles`, run probe check
+first:
+
+```bash
+sp setup --probe-only <model> <spec> --json
+```
+
+If probe verdict is `FAIL`, keep that write out and continue only with explicit
+operator override (do not auto-apply). For `PARTIAL`, show warning and require
+reconfirm.
+
+Final verification command:
+
+```bash
+sp doctor --specialists
+```
+
+Mark setup done only when doctor shows configured specialists no longer regressed
+from proposal state.
+
 ## The 3-layer field merge
 
 Specialist resolution merges top-down:
@@ -33,8 +290,8 @@ Specialist resolution merges top-down:
    `fallback_model` ship as `null` since KAN-90 part 2 because each operator
    has different providers.
 2. **`~/.config/specialists/user.json`** — your global override. Per-spec
-   sub-tree containing only the user-environment fields (allowlist below).
-   Wins over package canonical.
+   sub-tree containing only the allowlisted fields (below). Wins over package
+   canonical.
 3. **`.specialists/user/<name>.specialist.json`** — per-repo override. Wins
    over global. Can change any field (including ones blocked from global).
 
@@ -57,7 +314,7 @@ and are pruned by `sp prune-stale-defaults`.
 | Different model just for this repo | per-repo |
 | Override a field NOT allowlisted at the global layer (see below) | per-repo |
 
-## Workflow
+## Legacy v2.0 workflow reference (kept for field facts)
 
 ### 1) Bootstrap `~/.config/specialists/user.json`
 
@@ -180,11 +437,11 @@ The supervisor renders markdown-native blocks (no emoji, no dividers):
 ```
 ### service-skills-sync · kimi-k2.5 · [turn 12 · WAITING]   ← H3 per-turn
 <assistant output verbatim>
-_turn 12 · 8413 ms · 4222 to 167 tok · 2026-06-16 02:11 · git fc9168e2_
+_turn 12 · 8413 ms · 4222 to 167 tok · 2026-06-16 02:11 · git fc9168e2
 
 ## service-skills-sync · kimi-k2.5 · [FINAL · DONE]        ← H2 canonical, greppable
 <final assistant output verbatim>
-_final · 107106 ms · 18269 to 468 tok · 2026-06-16 02:13 · git fc9168e2_
+_final · 107106 ms · 18269 to 468 tok · 2026-06-16 02:13 · git fc9168e2
 ```
 
 | Mode | Bead notes | `output_file` |
@@ -207,7 +464,7 @@ For a human-monitored keep-alive role, leave `notes_mode: null` (= default
 ## Common pitfalls
 
 - **`sp edit --global <name>.<dot.path> <value>` falls through to vim in some
-  environments**. Use `--set` explicitly: `sp edit --global --set <name>.field value`.
+environments**. Use `--set` explicitly: `sp edit --global --set <name>.field value`.
 - **`thinking_level: "off"` silently breaks some thinking-class models** —
   Kimi-via-nano-gpt verified emitting empty assistant text (`char_count: 1`)
   after multi-tool runs when forced to `off`. Leave it `null` (inherit pi's
