@@ -73,7 +73,9 @@ Parse contract (JSON state):
       "model_from_source": "global|package|repo"
     }
   ],
-  "provider_auth": ["provider-id"],
+  "providers": [
+    { "label": "provider-id", "status": "OAuth|API-key|missing" }
+  ],
   "notes": "string"
 }
 ```
@@ -96,6 +98,9 @@ Exact parsing rules:
     - `source: <repo-path>` + `severity: warn`
   - `doctor.missing` are the specialists named on the `missing:` hint line, if
     present.
+  - Build `providers` from phase-1 discovery data:
+    - `label`: provider id
+    - `status`: auth status (`OAuth`, `API-key`, or `missing`).
 - `sp list --full` parse every spec row that matches
   `^\s{2}(?<name>\S+)`.
   - Capture `[v<version>]`, model, version tag, permission model and scope tags.
@@ -104,7 +109,7 @@ Exact parsing rules:
     when available; fallback to `model` provenance from list summary if ambiguous.
 - Normalize deterministic JSON shape: stable sort
   `pi_models` by `id`, `registry` by `name`, `missing` alphabetical, and
-  `provider_auth` alphabetical.
+  `providers` by `label` alphabetical.
 
 Persist this object in the session as `state.setupPhase1`.
 
@@ -142,7 +147,8 @@ Render a pre-operator comparison table from this response with columns:
 
 ### Phase 3 (INTERACTIVE Q)
 
-Use five `AskUserQuestion` checkpoints. Every question must include this exact
+Use five `AskUserQuestion` checkpoints. Privacy is represented as a two-step flow with a conditional follow-up.
+Every question must include this exact
 question wording, header, options, and parsing contract.
 
 1. **Budget preference**
@@ -156,19 +162,46 @@ question wording, header, options, and parsing contract.
 
 2. **Working provider auth**
    - **header:** `Auth`
-   - **question wording:** `Which providers are currently authenticated for model use in this session?`
-   - **options:** render checkboxes from `state.provider_auth` items (from Phase 1)
-     with an explicit `unchecked` bucket for unknown providers.
+   - **question wording:** `Which providers do you have working auth for in this environment?`
+   - **multiSelect:** `true`
+   - **options:** bounded by discovered providers in `state.providers` (build this from phase-1 discovery output).
+   - **provider option shape:**
+     ```json
+     { "label": "provider-id", "description": "<status: OAuth | API-key | missing>" }
+     ```
+   - **options example (shape):**
+     ```json
+     [
+       {"label":"openai","description":"OAuth available"},
+       {"label":"anthropic","description":"API key present"},
+       {"label":"mistral","description":"missing credentials"}
+     ]
+     ```
    - **expected answer parsing:** `{ "providers": ["string"] }`
 
-3. **Privacy exclusions**
+3. **Privacy exclusions (Step 1)**
    - **header:** `Privacy`
-   - **question wording:** `Which providers should be excluded from global model assignment?`
-   - **options:** checkboxes using the same provider list used for Auth, plus one
-     synthetic `none` option.
+   - **question wording:** `Are there any providers to exclude (data-privacy / vendor-policy)?`
+   - **multiSelect:** `false`
+   - **options (2):**
+     - { `label`: `No exclusions`, `description`: `all working providers are eligible` }
+     - { `label`: `Yes, exclude some`, `description`: `narrow down on next step` }
+   - **expected answer parsing:** `{ "has_exclusions": true|false }`
+
+   **Privacy Step 2 (conditional only when Step 1 answer is `Yes, exclude some`)**
+   - **header:** `Exclude`
+   - **question wording:** `Select providers to exclude from this setup`
+   - **multiSelect:** `true`
+   - **options:** provider option objects from auth-confirmed list:
+     ```json
+     [
+       {"label":"openai","description":"working auth confirmed in this session"},
+       {"label":"anthropic","description":"working auth confirmed in this session"}
+     ]
+     ```
    - **expected answer parsing:** `{ "disallowed_providers": ["string"] }`
 
-4. **Project shape**
+4. **Project shape**5. **Project shape**
    - **header:** `Shape`
    - **question wording:** `What is the project shape for this setup?`
    - **options (3):**
@@ -177,7 +210,7 @@ question wording, header, options, and parsing contract.
      - `mixed` — both engineering and research are frequent
    - **expected answer parsing:** `{ "project_shape": "code-heavy" | "research-heavy" | "mixed" }`
 
-5. **Verify probes**
+6. **Verify probes**
    - **header:** `Probe`
    - **question wording:** `Run agentic-followthrough probe before apply?`
    - **options (3):**
@@ -281,6 +314,8 @@ sp doctor --specialists
 Mark setup done only when doctor shows configured specialists no longer regressed
 from proposal state.
 
+## Legacy v2.0 workflow reference (kept for field facts)
+
 ## The 3-layer field merge
 
 Specialist resolution merges top-down:
@@ -290,8 +325,8 @@ Specialist resolution merges top-down:
    `fallback_model` ship as `null` since KAN-90 part 2 because each operator
    has different providers.
 2. **`~/.config/specialists/user.json`** — your global override. Per-spec
-   sub-tree containing only the allowlisted fields (below). Wins over package
-   canonical.
+   sub-tree containing only the user-environment fields (allowlist below).
+   Wins over package canonical.
 3. **`.specialists/user/<name>.specialist.json`** — per-repo override. Wins
    over global. Can change any field (including ones blocked from global).
 
@@ -314,7 +349,7 @@ and are pruned by `sp prune-stale-defaults`.
 | Different model just for this repo | per-repo |
 | Override a field NOT allowlisted at the global layer (see below) | per-repo |
 
-## Legacy v2.0 workflow reference (kept for field facts)
+## Workflow
 
 ### 1) Bootstrap `~/.config/specialists/user.json`
 
@@ -437,11 +472,11 @@ The supervisor renders markdown-native blocks (no emoji, no dividers):
 ```
 ### service-skills-sync · kimi-k2.5 · [turn 12 · WAITING]   ← H3 per-turn
 <assistant output verbatim>
-_turn 12 · 8413 ms · 4222 to 167 tok · 2026-06-16 02:11 · git fc9168e2
+_turn 12 · 8413 ms · 4222 to 167 tok · 2026-06-16 02:11 · git fc9168e2_
 
 ## service-skills-sync · kimi-k2.5 · [FINAL · DONE]        ← H2 canonical, greppable
 <final assistant output verbatim>
-_final · 107106 ms · 18269 to 468 tok · 2026-06-16 02:13 · git fc9168e2
+_final · 107106 ms · 18269 to 468 tok · 2026-06-16 02:13 · git fc9168e2_
 ```
 
 | Mode | Bead notes | `output_file` |
@@ -464,7 +499,7 @@ For a human-monitored keep-alive role, leave `notes_mode: null` (= default
 ## Common pitfalls
 
 - **`sp edit --global <name>.<dot.path> <value>` falls through to vim in some
-environments**. Use `--set` explicitly: `sp edit --global --set <name>.field value`.
+  environments**. Use `--set` explicitly: `sp edit --global --set <name>.field value`.
 - **`thinking_level: "off"` silently breaks some thinking-class models** —
   Kimi-via-nano-gpt verified emitting empty assistant text (`char_count: 1`)
   after multi-tool runs when forced to `off`. Leave it `null` (inherit pi's
@@ -507,6 +542,7 @@ KAN-91 global setup result:
 - Caveats / models that failed pi --list-models check: <list or none>
 - Per-repo overrides still in .specialists/user that shadow global: <list or none>
 ```
+
 
 ## Related skills
 
