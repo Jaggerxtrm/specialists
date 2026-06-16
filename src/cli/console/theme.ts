@@ -354,7 +354,7 @@ export function renderKeyBar(
           : view === 'diff'
             ? '↑↓ nav  ↵ open file  r refresh  ⌫ back  q quit'
             : view === 'config'
-              ? '↑↓ specialist  r refresh  ⌫ back  q quit'
+              ? '↑↓ field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  ⌫ back  q quit'
               : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
   return paint(truncateToWidth(line, width), 'dim');
 }

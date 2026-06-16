@@ -6,14 +6,16 @@
 // READ-ONLY. writeGlobalUserConfig is intentionally NOT imported here.
 
 import { homedir } from 'node:os';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import {
   getGlobalSpecialistOverrideLeafPaths,
   getGlobalUserConfigPath,
   GlobalSpecialistOverrideSchema,
   validateGlobalUserConfig,
+  writeGlobalUserConfig,
   type GlobalConfigSource,
+  type GlobalUserConfigPath,
 } from '../../specialist/global-config.js';
 import type { SpecialistLoader } from '../../specialist/loader.js';
 
@@ -288,4 +290,183 @@ export function formatConfigValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
+}
+
+// ---------- Phase 7: inline edit ----------
+
+export interface CoerceResult {
+  ok: boolean;
+  value?: unknown;
+  error?: string;
+}
+
+export function getLeafSchema(path: string): z.ZodTypeAny | undefined {
+  try {
+    const rootShape = extractShape(GlobalSpecialistOverrideSchema as unknown as z.ZodTypeAny);
+    if (!rootShape) return undefined;
+    const parts = path.split('.');
+    let node: z.ZodTypeAny | undefined = rootShape[parts[0]!];
+    for (let i = 1; i < parts.length; i += 1) {
+      if (!node) return undefined;
+      const innerShape = extractShape(node);
+      if (!innerShape) return undefined;
+      node = innerShape[parts[i]!];
+    }
+    return node;
+  } catch {
+    return undefined;
+  }
+}
+
+function unwrapNullableOptional(node: z.ZodTypeAny): { inner: z.ZodTypeAny; nullable: boolean } {
+  let current: z.ZodTypeAny = node;
+  let nullable = false;
+  for (let i = 0; i < 6; i += 1) {
+    const def = (current as unknown as { _def?: Record<string, unknown> })._def;
+    if (!def) break;
+    const typeName = def.typeName as string | undefined;
+    if (typeName === 'ZodNullable' || typeName === 'ZodOptional') {
+      nullable = nullable || typeName === 'ZodNullable';
+      const inner = def.innerType as z.ZodTypeAny | undefined;
+      if (!inner) break;
+      current = inner;
+      continue;
+    }
+    break;
+  }
+  return { inner: current, nullable };
+}
+
+export function coerceFieldValue(path: string, rawInput: string): CoerceResult {
+  const node = getLeafSchema(path);
+  if (!node) return { ok: false, error: `unknown leaf: ${path}` };
+  const trimmed = rawInput.trim();
+  const { inner, nullable } = unwrapNullableOptional(node);
+
+  if (trimmed === '' || trimmed === 'null' || trimmed.toLowerCase() === 'inherit') {
+    if (nullable) return { ok: true, value: null };
+    return { ok: false, error: 'field is not nullable' };
+  }
+
+  const def = (inner as unknown as { _def?: Record<string, unknown> })._def ?? {};
+  const typeName = def.typeName as string | undefined;
+
+  switch (typeName) {
+    case 'ZodBoolean': {
+      if (/^(true|false)$/i.test(trimmed)) return { ok: true, value: trimmed.toLowerCase() === 'true' };
+      return { ok: false, error: 'expected true|false' };
+    }
+    case 'ZodNumber': {
+      const parsed = trimmed.includes('.') ? Number.parseFloat(trimmed) : Number.parseInt(trimmed, 10);
+      if (!Number.isFinite(parsed)) return { ok: false, error: 'expected a number' };
+      return { ok: true, value: parsed };
+    }
+    case 'ZodEnum':
+    case 'ZodNativeEnum': {
+      const values = (def.values as unknown[] | undefined) ?? Object.values(def.entries as Record<string, unknown> ?? {});
+      const accepted = values.filter((v): v is string => typeof v === 'string');
+      if (accepted.includes(trimmed)) return { ok: true, value: trimmed };
+      return { ok: false, error: `expected one of: ${accepted.join('|')}` };
+    }
+    case 'ZodArray': {
+      if (trimmed.startsWith('[')) {
+        try {
+          const arr = JSON.parse(trimmed) as unknown;
+          if (!Array.isArray(arr)) return { ok: false, error: 'expected JSON array' };
+          return { ok: true, value: arr };
+        } catch {
+          return { ok: false, error: 'invalid JSON array' };
+        }
+      }
+      const items = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+      return { ok: true, value: items };
+    }
+    case 'ZodString':
+    default:
+      return { ok: true, value: trimmed };
+  }
+}
+
+export function applyFieldEdit(
+  raw: Record<string, unknown>,
+  specialist: string,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
+  const clone: Record<string, unknown> = structuredClone(raw);
+  const top = (clone[specialist] as Record<string, unknown> | undefined) ?? {};
+  const parts = path.split('.');
+  let cursor: Record<string, unknown> = top;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const key = parts[i]!;
+    const existing = cursor[key];
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+      cursor = existing as Record<string, unknown>;
+    } else {
+      const next: Record<string, unknown> = {};
+      cursor[key] = next;
+      cursor = next;
+    }
+  }
+  cursor[parts[parts.length - 1]!] = value;
+  clone[specialist] = top;
+  return clone;
+}
+
+export interface WriteOutcome {
+  ok: boolean;
+  errors?: Array<{ path: string; message: string }>;
+  errorClass?: string;
+}
+
+export function writeGlobalConfigSafe(
+  rawObj: Record<string, unknown>,
+  expectedMtimeMs?: number,
+): WriteOutcome {
+  const location = getGlobalUserConfigPath();
+  if (typeof expectedMtimeMs === 'number' && existsSync(location.path)) {
+    try {
+      const stat = statSync(location.path);
+      if (Math.floor(stat.mtimeMs) !== Math.floor(expectedMtimeMs)) {
+        return { ok: false, errorClass: 'mtime_mismatch' };
+      }
+    } catch {
+      return { ok: false, errorClass: 'stat_failed' };
+    }
+  }
+  const validation = validateGlobalUserConfig(JSON.stringify(rawObj));
+  if (!validation.valid) return { ok: false, errors: validation.errors };
+  try {
+    writeGlobalUserConfig({ ...location, exists: true } as GlobalUserConfigPath, rawObj as any);
+    return { ok: true };
+  } catch (error) {
+    logConfigWriteError(error);
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    return { ok: false, errorClass: code ?? (error instanceof Error ? error.name : 'unknown') };
+  }
+}
+
+export function statConfigFileMtimeMs(): number | undefined {
+  const location = getGlobalUserConfigPath();
+  try {
+    if (!existsSync(location.path)) return undefined;
+    return statSync(location.path).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function logConfigWriteError(error: unknown): void {
+  try {
+    const errorClass = (error as NodeJS.ErrnoException | undefined)?.code
+      ?? (error instanceof Error ? error.name : 'unknown');
+    process.stderr.write(JSON.stringify({
+      ts: new Date().toISOString(),
+      component: 'sp-console',
+      op: 'write_global_config',
+      errorClass,
+    }) + '\n');
+  } catch {
+    // swallow
+  }
 }

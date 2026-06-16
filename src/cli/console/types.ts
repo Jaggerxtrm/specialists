@@ -156,6 +156,12 @@ export interface RuntimeClient {
   diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary>;
   diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile>;
   readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot>;
+  writeGlobalConfig(
+    rawObj: Record<string, unknown>,
+    expectedMtimeMs?: number,
+  ): Promise<import('./config-source.js').WriteOutcome>;
+  readRawGlobalConfig(): Promise<{ raw: Record<string, unknown>; mtimeMs?: number; exists: boolean }>;
+  openConfigInEditor(): Promise<{ ok: boolean; errorClass?: string }>;
 }
 
 export const BEAD_ID_RE = /^[a-zA-Z]+-[a-zA-Z0-9]+(\.[0-9]+)*$/;

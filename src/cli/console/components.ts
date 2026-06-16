@@ -41,7 +41,7 @@ import {
   renderTabs,
   renderViewtag,
 } from './theme.js';
-import { formatConfigValue } from './config-source.js';
+import { applyFieldEdit, coerceFieldValue, formatConfigValue } from './config-source.js';
 
 const POLL_MS = 1000;
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
@@ -120,14 +120,21 @@ export class ConsoleApp implements Component {
     else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
     else if (data === 'd' && this.state.view === 'ps' && selected) this.open('diff', selected.id);
     else if (data === 'g' && this.state.view === 'ps') this.open('config', selected?.id ?? '');
-    else if (data === 'r' && this.state.view === 'config') this.refreshAfter({ type: 'configRefresh' });
+    else if (this.state.view === 'config' && this.state.configEdit.active) {
+      this.handleConfigEditInput(data);
+    } else if (data === 'r' && this.state.view === 'config') this.refreshAfter({ type: 'configRefresh' });
     else if (data === 'r' && this.state.view === 'diff') this.refreshAfter({ type: 'diffRefresh' });
+    else if (data === 'e' && this.state.view === 'config') this.startConfigEdit();
+    else if (data === 'u' && this.state.view === 'config') void this.undoConfigEdit();
+    else if (data === 'b' && this.state.view === 'config') void this.openConfigInEditor();
+    else if (data === '[' && this.state.view === 'config') this.cycleConfigSpecialist(-1);
+    else if (data === ']' && this.state.view === 'config') this.cycleConfigSpecialist(1);
     else if (this.state.view === 'config' && (matchesKey(data, Key.backspace) || matchesKey(data, Key.escape) || matchesKey(data, Key.left))) {
       this.back();
     } else if (this.state.view === 'config' && (data === 'j' || matchesKey(data, Key.down))) {
-      this.cycleConfigSpecialist(1);
+      this.dispatch({ type: 'configCycleField', delta: 1 });
     } else if (this.state.view === 'config' && (data === 'k' || matchesKey(data, Key.up))) {
-      this.cycleConfigSpecialist(-1);
+      this.dispatch({ type: 'configCycleField', delta: -1 });
     }
     else if (this.state.view === 'diff' && (matchesKey(data, Key.enter) || data === 'l' || matchesKey(data, Key.right))) {
       const idx = this.state.diff.selectedFileIndex;
@@ -309,6 +316,103 @@ export class ConsoleApp implements Component {
     if (name) this.dispatch({ type: 'configSelectSpecialist', name });
   }
 
+  private selectedConfigField(): { specialist: string; fieldPath: string } | undefined {
+    const snapshot = this.state.config;
+    if (!snapshot) return undefined;
+    const specialist = snapshot.specialists.find((s) => s.name === this.state.configSelectedSpecialist);
+    if (!specialist) return undefined;
+    const field = specialist.fields[this.state.configSelectedFieldIndex];
+    if (!field) return undefined;
+    return { specialist: specialist.name, fieldPath: field.path };
+  }
+
+  private startConfigEdit(): void {
+    const target = this.selectedConfigField();
+    if (!target) return;
+    this.dispatch({
+      type: 'configEditStart',
+      specialist: target.specialist,
+      fieldPath: target.fieldPath,
+      expectedMtimeMs: this.state.configRawMtimeMs,
+    });
+  }
+
+  private handleConfigEditInput(data: string): void {
+    if (matchesKey(data, Key.escape)) {
+      this.dispatch({ type: 'configEditCancel' });
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      void this.submitConfigEdit();
+      return;
+    }
+    if (matchesKey(data, Key.backspace)) {
+      this.dispatch({ type: 'configEditBackspace' });
+      return;
+    }
+    if (data.length === 1 && data >= ' ' && data !== '\x7f') {
+      this.dispatch({ type: 'configEditChar', char: data });
+    }
+  }
+
+  private async submitConfigEdit(): Promise<void> {
+    const edit = this.state.configEdit;
+    if (!edit.active || !edit.specialist || !edit.fieldPath) return;
+    const coerce = coerceFieldValue(edit.fieldPath, edit.buffer);
+    if (!coerce.ok) {
+      this.dispatch({ type: 'configEditError', error: coerce.error ?? 'invalid input' });
+      return;
+    }
+    try {
+      const { raw, mtimeMs } = await this.options.runtime.readRawGlobalConfig();
+      const prevRaw = structuredCloneCompat(raw);
+      const candidate = applyFieldEdit(raw, edit.specialist, edit.fieldPath, coerce.value);
+      const outcome = await this.options.runtime.writeGlobalConfig(candidate, edit.expectedMtimeMs ?? mtimeMs);
+      if (!outcome.ok) {
+        const msg = outcome.errorClass === 'mtime_mismatch'
+          ? 'user.json changed on disk — press `r` to refresh'
+          : outcome.errors && outcome.errors[0]
+            ? `${outcome.errors[0].path}: ${outcome.errors[0].message}`
+            : `write failed (${outcome.errorClass ?? 'unknown'})`;
+        this.dispatch({ type: 'configEditError', error: msg });
+        return;
+      }
+      const nextSnapshot = await this.options.runtime.readGlobalConfig();
+      const next = await this.options.runtime.readRawGlobalConfig();
+      this.dispatch({
+        type: 'configEditCommit',
+        nextSnapshot,
+        rawMtimeMs: next.mtimeMs,
+        prevRaw,
+      });
+    } catch (error) {
+      this.dispatch({
+        type: 'configEditError',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async undoConfigEdit(): Promise<void> {
+    const stack = this.state.configUndoStack;
+    if (stack.length === 0) return;
+    const target = stack[0]!;
+    try {
+      const outcome = await this.options.runtime.writeGlobalConfig(target);
+      if (!outcome.ok) return;
+      const restoredSnapshot = await this.options.runtime.readGlobalConfig();
+      const next = await this.options.runtime.readRawGlobalConfig();
+      this.dispatch({ type: 'configUndo', restoredSnapshot, rawMtimeMs: next.mtimeMs });
+    } catch {
+      // swallow — undo is best-effort
+    }
+  }
+
+  private async openConfigInEditor(): Promise<void> {
+    await this.options.runtime.openConfigInEditor();
+    this.refreshAfter({ type: 'configRefresh' });
+  }
+
   private renderConfigRows(width: number, viewportRows: number): string[] {
     const snapshot = this.state.config;
     if (this.state.configLoading || !snapshot) {
@@ -335,17 +439,26 @@ export class ConsoleApp implements Component {
     const selected = snapshot.specialists.find((s) => s.name === selectedName);
     if (selected) {
       rows.push(renderSectionTitle(`${selected.name} · fields`, width));
-      selected.fields.forEach((field) => {
+      selected.fields.forEach((field, idx) => {
         const isInherit = field.value === undefined || field.value === null;
-        rows.push(
-          renderConfigField(
-            field.path,
-            formatConfigValue(field.value),
-            field.allowedHint,
-            width,
-            { isOverride: field.isOverride, isInherit },
-          ),
+        const fieldSelected = idx === this.state.configSelectedFieldIndex;
+        const cursor = fieldSelected ? '›' : ' ';
+        const row = renderConfigField(
+          field.path,
+          formatConfigValue(field.value),
+          field.allowedHint,
+          width - 2,
+          { isOverride: field.isOverride, isInherit },
         );
+        rows.push(`${cursor} ${row}`);
+        if (this.state.configEdit.active
+          && this.state.configEdit.fieldPath === field.path
+          && this.state.configEdit.specialist === selected.name) {
+          rows.push(renderPlaceholder(`  edit > ${this.state.configEdit.buffer}_`, width));
+          if (this.state.configEdit.error) {
+            rows.push(renderPlaceholder(`  ! ${this.state.configEdit.error}`, width));
+          }
+        }
       });
       if (selected.blockedWarnings.length > 0) {
         rows.push(renderSectionTitle('blocked-field warnings', width));
@@ -548,6 +661,11 @@ export class ConsoleApp implements Component {
     const overhead = CHROME_ROWS + (this.state.filtering ? 1 : 0) + (this.state.message ? 1 : 0);
     return Math.max(1, this.options.rows() - overhead);
   }
+}
+
+function structuredCloneCompat<T>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export function fitFrame(lines: string[], width: number, height: number): string[] {

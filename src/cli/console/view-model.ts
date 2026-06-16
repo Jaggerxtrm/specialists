@@ -26,8 +26,21 @@ export interface ConsoleState {
   config?: ConfigSnapshot;
   configLoading: boolean;
   configSelectedSpecialist?: string;
+  configSelectedFieldIndex: number;
   configScroll: number;
+  configEdit: ConfigEditState;
+  configUndoStack: Array<Record<string, unknown>>;
+  configRawMtimeMs?: number;
   message?: string;
+}
+
+export interface ConfigEditState {
+  active: boolean;
+  fieldPath?: string;
+  specialist?: string;
+  buffer: string;
+  error?: string;
+  expectedMtimeMs?: number;
 }
 
 export interface DiffViewState {
@@ -55,9 +68,17 @@ export type ConsoleAction =
   | { type: 'diffBack' }
   | { type: 'diffRefresh' }
   | { type: 'diffMove'; delta: number; viewportRows: number; totalRows?: number }
-  | { type: 'configLoaded'; snapshot: ConfigSnapshot }
+  | { type: 'configLoaded'; snapshot: ConfigSnapshot; rawMtimeMs?: number }
   | { type: 'configSelectSpecialist'; name: string }
   | { type: 'configRefresh' }
+  | { type: 'configCycleField'; delta: number }
+  | { type: 'configEditStart'; specialist: string; fieldPath: string; expectedMtimeMs?: number }
+  | { type: 'configEditChar'; char: string }
+  | { type: 'configEditBackspace' }
+  | { type: 'configEditCancel' }
+  | { type: 'configEditError'; error: string }
+  | { type: 'configEditCommit'; nextSnapshot?: ConfigSnapshot; rawMtimeMs?: number; prevRaw: Record<string, unknown> }
+  | { type: 'configUndo'; restoredSnapshot?: ConfigSnapshot; rawMtimeMs?: number }
   | { type: 'message'; message?: string }
   | { type: 'move'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'top'; viewportRows: number; totalRows?: number }
@@ -94,6 +115,9 @@ export function initialConsoleState(): ConsoleState {
     diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
     configLoading: false,
     configScroll: 0,
+    configSelectedFieldIndex: 0,
+    configEdit: { active: false, buffer: '' },
+    configUndoStack: [],
   };
 }
 
@@ -254,13 +278,60 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         ...state,
         config: action.snapshot,
         configLoading: false,
+        configRawMtimeMs: action.rawMtimeMs ?? state.configRawMtimeMs,
         configSelectedSpecialist: state.configSelectedSpecialist ?? firstSpecialist,
       };
     }
     case 'configSelectSpecialist':
-      return { ...state, configSelectedSpecialist: action.name, configScroll: 0 };
+      return { ...state, configSelectedSpecialist: action.name, configScroll: 0, configSelectedFieldIndex: 0 };
     case 'configRefresh':
       return { ...state, configLoading: true };
+    case 'configCycleField': {
+      const selected = state.config?.specialists.find((s) => s.name === state.configSelectedSpecialist);
+      const total = selected?.fields.length ?? 0;
+      if (total === 0) return state;
+      const next = Math.max(0, Math.min(total - 1, state.configSelectedFieldIndex + action.delta));
+      return { ...state, configSelectedFieldIndex: next };
+    }
+    case 'configEditStart':
+      return {
+        ...state,
+        configEdit: {
+          active: true,
+          fieldPath: action.fieldPath,
+          specialist: action.specialist,
+          buffer: '',
+          error: undefined,
+          expectedMtimeMs: action.expectedMtimeMs,
+        },
+      };
+    case 'configEditChar':
+      if (!state.configEdit.active) return state;
+      return { ...state, configEdit: { ...state.configEdit, buffer: state.configEdit.buffer + action.char, error: undefined } };
+    case 'configEditBackspace':
+      if (!state.configEdit.active) return state;
+      return { ...state, configEdit: { ...state.configEdit, buffer: state.configEdit.buffer.slice(0, -1), error: undefined } };
+    case 'configEditCancel':
+      return { ...state, configEdit: { active: false, buffer: '' } };
+    case 'configEditError':
+      return { ...state, configEdit: { ...state.configEdit, error: action.error } };
+    case 'configEditCommit': {
+      const undoStack = [action.prevRaw, ...state.configUndoStack].slice(0, 5);
+      return {
+        ...state,
+        config: action.nextSnapshot ?? state.config,
+        configRawMtimeMs: action.rawMtimeMs ?? state.configRawMtimeMs,
+        configUndoStack: undoStack,
+        configEdit: { active: false, buffer: '' },
+      };
+    }
+    case 'configUndo':
+      return {
+        ...state,
+        config: action.restoredSnapshot ?? state.config,
+        configRawMtimeMs: action.rawMtimeMs ?? state.configRawMtimeMs,
+        configUndoStack: state.configUndoStack.slice(1),
+      };
     case 'diffMove': {
       const stage = state.diff.stage;
       if (stage === 'summary') {

@@ -250,6 +250,44 @@ class LocalRuntimeClient implements RuntimeClient {
     return readGlobalConfigSnapshot();
   }
 
+  async writeGlobalConfig(
+    rawObj: Record<string, unknown>,
+    expectedMtimeMs?: number,
+  ): Promise<import('./config-source.js').WriteOutcome> {
+    const { writeGlobalConfigSafe } = await import('./config-source.js');
+    return writeGlobalConfigSafe(rawObj, expectedMtimeMs);
+  }
+
+  async readRawGlobalConfig(): Promise<{ raw: Record<string, unknown>; mtimeMs?: number; exists: boolean }> {
+    const { getGlobalUserConfigPath } = await import('../../specialist/global-config.js');
+    const location = getGlobalUserConfigPath();
+    if (!existsSync(location.path)) return { raw: {}, exists: false };
+    try {
+      const raw = JSON.parse(readFileSync(location.path, 'utf-8')) as Record<string, unknown>;
+      const { statSync } = await import('node:fs');
+      const mtimeMs = statSync(location.path).mtimeMs;
+      return { raw, exists: true, mtimeMs };
+    } catch {
+      return { raw: {}, exists: true };
+    }
+  }
+
+  async openConfigInEditor(): Promise<{ ok: boolean; errorClass?: string }> {
+    const { getGlobalUserConfigPath } = await import('../../specialist/global-config.js');
+    const location = getGlobalUserConfigPath();
+    const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || 'vi';
+    try {
+      const result = spawnSync(editor, [location.path], { stdio: 'inherit' });
+      if (result.error) {
+        return { ok: false, errorClass: (result.error as NodeJS.ErrnoException).code ?? 'editor_failed' };
+      }
+      if (result.status !== 0) return { ok: false, errorClass: `editor_exit_${result.status}` };
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, errorClass: (error as NodeJS.ErrnoException).code ?? 'editor_failed' };
+    }
+  }
+
   async resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null> {
     const job = resolveJob(repo, jobIdPrefix);
     if (!job) return null;
