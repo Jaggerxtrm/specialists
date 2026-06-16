@@ -241,20 +241,28 @@ describe('edit CLI — --global + --scope rejection (run path)', () => {
     exitSpy.mockRestore();
   });
 
-  it('fails fast when stdin is not a TTY for bare --global', async () => {
+  it('fails fast when stdin is not a TTY for bare --global and hints --set usage', async () => {
     const stdin = process.stdin as NodeJS.ReadStream & { isTTY?: boolean | undefined };
     const originalIsTty = stdin.isTTY;
-    stdin.isTTY = false;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await seedGlobalConfig(tempHome);
-    process.argv = ['node', 'sp', 'edit', '--global'];
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: number | string) => {
-      throw new Error(`exit:${code}`);
-    });
+    try {
+      stdin.isTTY = false;
+      await seedGlobalConfig(tempHome);
+      process.argv = ['node', 'sp', 'edit', '--global'];
 
-    const { run } = await importEdit();
-    await expect(run()).rejects.toThrow('exit:1');
-    exitSpy.mockRestore();
-    stdin.isTTY = originalIsTty;
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: number | string) => {
+        throw new Error(`exit:${code}`);
+      });
+      const { run } = await importEdit();
+      await expect(run()).rejects.toThrow('exit:1');
+      exitSpy.mockRestore();
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('interactive terminal'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('specialists edit --global --set <name>.<field.path> <value>'));
+    } finally {
+      stdin.isTTY = originalIsTty;
+      errorSpy.mockRestore();
+    }
   });
 });
