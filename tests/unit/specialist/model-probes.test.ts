@@ -1,9 +1,9 @@
-import { appendFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { getProbeRunDir, runAgenticFollowthroughProbe } from '../../../src/specialist/model-probes.js';
+import { getProbeCanonicalPath, getProbeRunDir, runAgenticFollowthroughProbe } from '../../../src/specialist/model-probes.js';
 import type { ScriptGenerateResult } from '../../../src/specialist/script-runner.js';
 
 async function tempCache(): Promise<string> {
@@ -52,6 +52,23 @@ describe('runAgenticFollowthroughProbe', () => {
 
     expect(statSync(probeDir).mode & 0o777).toBe(0o700);
     expect(statSync(join(probeDir, 'probe-notes.md')).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === 'win32')('writes canonical probe summary with user-only permissions', async () => {
+    const cacheDir = await tempCache();
+    const canonicalPath = getProbeCanonicalPath('provider/model', 'executor spec', cacheDir);
+
+    await runAgenticFollowthroughProbe('provider/model', 'executor spec', {
+      cacheDir,
+      runSpecialist: async (_input, options) => {
+        writeEvents(options.projectDir ?? cacheDir, 5, 3);
+        return success('evidence '.repeat(80));
+      },
+    });
+
+    expect(canonicalPath).toMatch(/provider-model-executor-spec-[a-f0-9]{12}\.json$/u);
+    expect(existsSync(canonicalPath)).toBe(true);
+    expect(statSync(canonicalPath).mode & 0o777).toBe(0o600);
   });
 
   it('classifies fail on premature agent_end or tiny output', async () => {

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { SpecialistLoader } from './loader.js';
 import { runScriptSpecialist, type ScriptGenerateResult, type ScriptRunnerOptions } from './script-runner.js';
 
@@ -73,7 +73,11 @@ export async function runAgenticFollowthroughProbe(model: string, specName: stri
   const metrics = collectMetrics(probeDir, output, result);
   const verdict = classifyProbe(metrics);
   const summaryPath = join(probeDir, 'probe-summary.json');
-  writeFileSync(summaryPath, `${JSON.stringify({ verdict, metrics, sample_output: output, transcript_path: transcriptPath }, null, 2)}\n`, { mode: 0o600 });
+  const canonicalPath = getProbeCanonicalPath(model, specName, opts.cacheDir);
+  const summaryJson = `${JSON.stringify({ verdict, metrics, sample_output: output, transcript_path: transcriptPath }, null, 2)}\n`;
+  writeFileSync(summaryPath, summaryJson, { mode: 0o600 });
+  mkdirSync(dirname(canonicalPath), { recursive: true, mode: 0o700 });
+  writeFileSync(canonicalPath, summaryJson, { mode: 0o600 });
 
   return { verdict, metrics, sample_output: output, transcript_path: transcriptPath };
 }
@@ -163,8 +167,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 export function getProbeRunDir(model: string, specName: string, cacheDir = join(homedir(), '.cache', 'specialists', 'probes')): string {
+  return resolve(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ''), randomUUID());
+}
+
+export function getProbeCanonicalPath(model: string, specName: string, cacheDir = join(homedir(), '.cache', 'specialists', 'probes')): string {
   const probeId = createHash('sha256').update(`${model}\0${specName}\0${PROBE_TEMPLATE}`).digest('hex').slice(0, 12);
-  return resolve(cacheDir, `${sanitizePathSegment(model)}-${sanitizePathSegment(specName)}-${probeId}`, randomUUID());
+  return join(cacheDir, `${sanitizePathSegment(model)}-${sanitizePathSegment(specName)}-${probeId}.json`);
 }
 
 function sanitizePathSegment(value: string): string {

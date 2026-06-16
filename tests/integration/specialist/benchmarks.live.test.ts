@@ -13,6 +13,16 @@ liveDescribe('benchmark live smoke', () => {
     expect(snapshot?.models.size).toBeGreaterThan(0);
   }, 20_000);
 
+  it('falls through to secondary source when primary fails', async () => {
+    const wrappedFetch = (async (url, init) => {
+      if (typeof url === 'string' && url.includes('artificialanalysis.ai')) throw new Error('primary forced down');
+      return fetch(url, init);
+    }) as typeof fetch;
+    const snapshot = await loadBenchmarkSnapshot({ cacheDir: '/tmp/specialists-live-benchmarks-secondary', fetchImpl: wrappedFetch });
+
+    expect(snapshot?.source).toBe('lmarena');
+  }, 20_000);
+
   it('runs one real agentic followthrough probe', async () => {
     const result = await runAgenticFollowthroughProbe(process.env.SPECIALISTS_LIVE_MODEL ?? 'stub', process.env.SPECIALISTS_LIVE_SPEC ?? 'executor', {
       cacheDir: '/tmp/specialists-live-probes',
