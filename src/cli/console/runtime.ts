@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { JobColorMap, bold, formatCostUsd, formatElapsed, formatEventLine, formatTokenUsageSummary, magenta } from '../format-helpers.js';
+import { JobColorMap, bold, formatElapsed, formatEventLine, formatTokenUsageSummary, magenta } from '../format-helpers.js';
 import { resolveObservabilityDbLocation } from '../../specialist/observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath, type ObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { resolveJobsDir } from '../../specialist/job-root.js';
@@ -128,7 +128,6 @@ class LocalRuntimeClient implements RuntimeClient {
       field('started', formatDateTime(job.started_at_ms)),
       field('elapsed', `${formatElapsed(job.elapsed_s ?? 0)} · ${job.metrics?.turns ?? 0} turns · ${job.metrics?.tool_calls ?? 0} tools`),
       field('tokens', tokenParts.join(' · ') || '--'),
-      field('cost_usd', formatCostUsd(job.metrics?.token_usage?.cost_usd) ?? '--'),
       field('context', job.context_pct === undefined ? '--' : `${Math.round(job.context_pct)}% ${job.context_health ?? ''}`),
       field('current', job.current_tool ?? '--'),
       field('payload', `${job.payload_kb ?? '--'} · ${job.payload_tokens ?? '--'}`),
@@ -532,9 +531,7 @@ function deriveTerminalReason(events: TimelineEvent[]): string | null {
 
 function metricFooter(job: ConsoleJob): string {
   const tokenParts = formatTokenUsageSummary(job.metrics?.token_usage).filter((part) => !part.startsWith('cost='));
-  const cost = formatCostUsd(job.metrics?.token_usage?.cost_usd);
-  const parts = [...tokenParts, ...(cost ? [`cost_usd=${cost}`] : [])];
-  return parts.length > 0 ? `metrics: ${parts.join(' · ')}` : 'done';
+  return tokenParts.length > 0 ? `metrics: ${tokenParts.join(' · ')}` : 'done';
 }
 
 export function formatDateTime(ms: number | undefined): string {
