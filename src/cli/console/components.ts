@@ -42,8 +42,10 @@ import {
   renderViewtag,
 } from './theme.js';
 import { applyFieldEdit, coerceFieldValue, formatConfigValue } from './config-source.js';
+import { errorClassOf, logError, type ConsoleView as LogView } from './log.js';
 
-const POLL_MS = 1000;
+const POLL_MS = 1500;
+const COALESCE_MS = 50; // ~20Hz dispatch cap (spec §10)
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
@@ -63,6 +65,9 @@ export class ConsoleApp implements Component {
   private disposed = false;
   private renderedDetailRows = 0;
   private lastWidth = 80;
+  private lastSnapshotSig: string | undefined;
+  private coalesceTimer: ReturnType<typeof setTimeout> | null = null;
+  private resizeHandler: (() => void) | null = null;
 
   constructor(private readonly options: ConsoleAppOptions) {}
 
@@ -72,12 +77,28 @@ export class ConsoleApp implements Component {
     this.timer = setInterval(() => {
       void this.refresh();
     }, POLL_MS);
+    this.resizeHandler = (): void => this.scheduleRender();
+    try {
+      process.stdout.on('resize', this.resizeHandler);
+    } catch {
+      // non-TTY contexts may throw — safe to ignore
+    }
   }
 
   stop(): void {
     this.disposed = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.coalesceTimer) clearTimeout(this.coalesceTimer);
+    this.coalesceTimer = null;
+    if (this.resizeHandler) {
+      try {
+        process.stdout.off('resize', this.resizeHandler);
+      } catch {
+        // ignore
+      }
+      this.resizeHandler = null;
+    }
   }
 
   invalidate(): void {}
@@ -219,12 +240,24 @@ export class ConsoleApp implements Component {
     try {
       const repo = currentRepo(this.state);
       if (!repo) return;
-      const snapshot = await this.options.runtime.listProcessSnapshot(repo, {
-        historyMode: this.state.historyMode,
-        includeCleaned: this.state.includeCleaned,
-        textFilter: this.state.filter,
-      });
-      this.dispatch({ type: 'snapshotLoaded', snapshot });
+      let snapshot;
+      try {
+        snapshot = await this.options.runtime.listProcessSnapshot(repo, {
+          historyMode: this.state.historyMode,
+          includeCleaned: this.state.includeCleaned,
+          textFilter: this.state.filter,
+        });
+      } catch (error) {
+        logError(this.logViewKey(), 'list_processes', { errorClass: errorClassOf(error) });
+        this.dispatch({ type: 'message', message: 'snapshot read failed — runtime unreachable' });
+        return;
+      }
+      // Snapshot dispatch coalesce: skip when nothing changed.
+      const sig = this.snapshotSignature(snapshot);
+      if (sig !== this.lastSnapshotSig) {
+        this.lastSnapshotSig = sig;
+        this.dispatch({ type: 'snapshotLoaded', snapshot });
+      }
 
       if (this.state.view === 'feed' && this.state.selectedJobId) {
         const rows = await this.options.runtime.readFeed({
@@ -268,16 +301,42 @@ export class ConsoleApp implements Component {
         }
       }
     } catch (error) {
+      logError(this.logViewKey(), 'render', { errorClass: errorClassOf(error) });
       this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
     } finally {
       this.refreshInFlight = false;
-      this.options.requestRender();
+      this.scheduleRender();
     }
+  }
+
+  private logViewKey(): LogView {
+    return this.state.view as LogView;
+  }
+
+  // Cheap snapshot signature: sort job ids + statuses + ctxPct. Used by the
+  // poll loop to drop no-op dispatches that would force a re-render.
+  private snapshotSignature(snapshot: { jobs: Array<{ id: string; status?: string; context_pct?: number }>; totalJobs: number; visibleJobs: number }): string {
+    const ids = snapshot.jobs
+      .map((j) => `${j.id}:${j.status ?? '-'}:${j.context_pct === undefined ? '-' : Math.round(j.context_pct)}`)
+      .sort()
+      .join('|');
+    return `${snapshot.totalJobs}/${snapshot.visibleJobs}#${ids}`;
   }
 
   private dispatch(action: Parameters<typeof reduceConsoleState>[1]): void {
     this.state = reduceConsoleState(this.state, action);
-    this.options.requestRender();
+    this.scheduleRender();
+  }
+
+  // Coalesce frequent re-render requests into one paint per ~50ms tick
+  // (spec §10: feed dispatch coalesces bursts ≤ 20Hz).
+  private scheduleRender(): void {
+    if (this.coalesceTimer || this.disposed) return;
+    this.coalesceTimer = setTimeout(() => {
+      this.coalesceTimer = null;
+      if (this.disposed) return;
+      this.options.requestRender();
+    }, COALESCE_MS);
   }
 
   private refreshAfter(action: Parameters<typeof reduceConsoleState>[1]): void {
