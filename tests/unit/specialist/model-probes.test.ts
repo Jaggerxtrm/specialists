@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,8 +44,10 @@ describe('runAgenticFollowthroughProbe', () => {
     const result = await runAgenticFollowthroughProbe('minimax-m3', 'executor', {
       cacheDir,
       runSpecialist: async (_input, options) => {
-        writeEvents(options.projectDir ?? cacheDir, 5, 3);
-        return success('agent_end after pivot');
+        const projectDir = options.projectDir ?? cacheDir;
+        writeEvents(projectDir, 5, 3);
+        appendFileSync(join(projectDir, 'events.jsonl'), `${JSON.stringify({ type: 'agent_end' })}\n`);
+        return success('pivot announced without final evidence');
       },
     });
 
@@ -64,6 +66,23 @@ describe('runAgenticFollowthroughProbe', () => {
       },
     });
 
+    expect(result.verdict).toBe('PARTIAL');
+  });
+
+  it('counts files outside scope and prevents pass verdict', async () => {
+    const cacheDir = await tempCache();
+
+    const result = await runAgenticFollowthroughProbe('scope-leaker', 'executor', {
+      cacheDir,
+      runSpecialist: async (_input, options) => {
+        const projectDir = options.projectDir ?? cacheDir;
+        writeEvents(projectDir, 5, 3);
+        writeFileSync(join(projectDir, 'outside-scope.md'), 'leaked');
+        return success('evidence '.repeat(80));
+      },
+    });
+
+    expect(result.metrics.files_outside_scope_touched).toBeGreaterThan(0);
     expect(result.verdict).toBe('PARTIAL');
   });
 

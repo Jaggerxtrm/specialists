@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SpecialistLoader } from './loader.js';
@@ -81,14 +81,14 @@ export async function runAgenticFollowthroughProbe(model: string, specName: stri
 function collectMetrics(probeDir: string, output: string, result: ScriptGenerateResult): AgenticFollowthroughMetrics {
   const eventsPath = join(probeDir, 'events.jsonl');
   const events = readJsonl(eventsPath);
-  const turns = events.filter((event) => hasType(event, 'turn') || hasType(event, 'assistant') || hasType(event, 'user')).length;
-  const tools = events.filter((event) => hasType(event, 'tool')).length;
+  const turns = events.filter(isTurnEvent).length;
+  const tools = events.filter(isToolEvent).length;
   return {
     turns_used: turns,
     tools_used: tools,
     output_length: output.length,
-    files_outside_scope_touched: 0,
-    premature_agent_end: !result.success || /premature|agent_end|bail/i.test(output),
+    files_outside_scope_touched: countFilesOutsideScope(probeDir),
+    premature_agent_end: !result.success || turns < FAIL_MIN_TURNS || events.some(isAgentEndEvent),
   };
 }
 
@@ -115,10 +115,37 @@ function readJsonl(path: string): unknown[] {
   }
 }
 
-function hasType(value: unknown, needle: string): boolean {
-  if (typeof value !== 'object' || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return Object.values(record).some((field) => typeof field === 'string' && field.toLowerCase().includes(needle));
+function isTurnEvent(value: unknown): boolean {
+  const type = eventType(value);
+  return type === 'assistant_turn' || type === 'user_turn' || type === 'turn';
+}
+
+function isToolEvent(value: unknown): boolean {
+  const type = eventType(value);
+  return type === 'tool_use' || type === 'tool_result' || type === 'tool';
+}
+
+function isAgentEndEvent(value: unknown): boolean {
+  const type = eventType(value);
+  return type === 'agent_end' || type === 'premature_agent_end';
+}
+
+function eventType(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const type = (value as Record<string, unknown>).type;
+  return typeof type === 'string' ? type : null;
+}
+
+function countFilesOutsideScope(probeDir: string): number {
+  const allowedFiles = new Set(['probe-notes.md', 'events.jsonl', 'probe-summary.json']);
+  try {
+    return readdirSync(probeDir, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .filter((entry) => !allowedFiles.has(entry.name))
+      .length;
+  } catch {
+    return 0;
+  }
 }
 
 function writeTranscript(probeDir: string, result: ScriptGenerateResult, output: string, now: Date): string {
