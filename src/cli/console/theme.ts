@@ -341,10 +341,12 @@ export function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: nu
 export function renderKeyBar(view: string, follow: boolean, width: number): string {
   const line =
     view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  h history  a all  c cleaned  / filter  tab repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  h history  a all  c cleaned  / filter  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  ⌫ back  g/G top/end  q quit`
-        : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
+        : view === 'bead'
+          ? '↑↓ scroll  PgUp/PgDn page  ⌫ back  g/G top/end  q quit'
+          : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
   return paint(truncateToWidth(line, width), 'dim');
 }
 
@@ -432,6 +434,19 @@ export function renderFilterPrompt(text: string, width: number): string {
 
 export function renderPlaceholder(text: string, width: number): string {
   return paint(truncateToWidth(text, width), 'dim');
+}
+
+// ---------- BeadView rows ----------
+
+export function renderBeadField(key: string, value: string, width: number): string {
+  const k = padR(key.slice(0, 12), 12);
+  const head = paint(k, 'bright');
+  const tail = paint(value, 'txt');
+  return truncateToWidth(head + ' ' + tail, width);
+}
+
+export function renderBeadBodyLine(line: string, width: number): string {
+  return paint(truncateToWidth(line, width), 'txt');
 }
 
 // ---------- Utility: visible (non-ANSI) length ----------

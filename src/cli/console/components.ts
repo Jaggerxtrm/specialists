@@ -18,6 +18,8 @@ import {
 import {
   fillerLine,
   paint,
+  renderBeadBodyLine,
+  renderBeadField,
   renderFilterPrompt,
   renderGroupRow,
   renderHeader,
@@ -39,7 +41,7 @@ const POLL_MS = 1000;
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
-const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result'];
+const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -107,6 +109,9 @@ export class ConsoleApp implements Component {
       this.open('feed', selected.id);
     else if (data === 'r' && this.state.view === 'ps' && selected) this.open('result', selected.id);
     else if (data === 'i' && this.state.view === 'ps' && selected) this.open('job', selected.id);
+    // 'b' opens BeadView. Decision (bd notes): shift+enter cannot be reliably distinguished
+    // from enter in pi-tui input stream, so 'b' is the documented keybind.
+    else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
     else if (
       (matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) &&
       this.state.view !== 'ps'
@@ -203,6 +208,12 @@ export class ConsoleApp implements Component {
           type: 'resultLoaded',
           result: await this.options.runtime.readResult(repo, this.state.selectedJobId),
         });
+      } else if (this.state.view === 'bead' && this.state.selectedJobId) {
+        const [doc, live] = await Promise.all([
+          this.options.runtime.linkedDetail(repo, this.state.selectedJobId),
+          this.options.runtime.liveStateFor(repo, this.state.selectedJobId),
+        ]);
+        this.dispatch({ type: 'beadLoaded', doc, live });
       }
     } catch (error) {
       this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
@@ -222,7 +233,7 @@ export class ConsoleApp implements Component {
     void this.refresh();
   }
 
-  private open(view: 'feed' | 'job' | 'result', jobId: string): void {
+  private open(view: 'feed' | 'job' | 'result' | 'bead', jobId: string): void {
     this.dispatch({ type: 'open', view, jobId });
     void this.refresh();
   }
@@ -236,7 +247,43 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'ps') return this.renderProcessRows(width, viewportRows);
     if (this.state.view === 'feed') return this.renderFeedRows(width, viewportRows);
     if (this.state.view === 'job') return this.renderJobRows(width, viewportRows);
+    if (this.state.view === 'bead') return this.renderBeadRows(width, viewportRows);
     return this.renderResultRows(width, viewportRows);
+  }
+
+  private renderBeadRows(width: number, viewportRows: number): string[] {
+    if (this.state.beadLoading) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('loading bead…', width)];
+    }
+    const doc = this.state.beadDoc;
+    const live = this.state.beadLive;
+    const rows: string[] = [];
+    if (doc?.error) {
+      rows.push(renderPlaceholder(doc.error, width));
+    } else if (doc) {
+      for (const f of doc.fields) rows.push(renderBeadField(f.key, f.value, width));
+    }
+    rows.push(renderSectionTitle('live state', width));
+    if (live?.error) {
+      rows.push(renderPlaceholder(live.error, width));
+    } else if (live && live.rows.length > 0) {
+      for (const r of live.rows) rows.push(renderBeadField(r.key, r.value, width));
+    } else {
+      rows.push(renderPlaceholder('no live state — job terminated', width));
+    }
+    if (doc && !doc.error) {
+      for (const section of doc.sections) {
+        rows.push(renderSectionTitle(section.title, width));
+        for (const line of section.body.split('\n')) {
+          rows.push(renderBeadBodyLine(line || ' ', width));
+        }
+      }
+    }
+    this.renderedDetailRows = rows.length;
+    const maxScroll = Math.max(0, rows.length - Math.max(1, viewportRows));
+    const scroll = Math.max(0, Math.min(this.state.scroll, maxScroll));
+    return visibleSlice(rows, scroll, viewportRows).map((row) => truncateToWidth(row, width));
   }
 
   private renderProcessRows(width: number, viewportRows: number): string[] {
@@ -315,6 +362,10 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'ps' || !this.state.selectedJobId) return undefined;
     const job = this.findSelectedJob();
     const specialist = job?.specialist ?? 'specialist';
+    if (this.state.view === 'bead') {
+      const beadId = job?.bead_id ?? this.state.beadDoc?.beadId ?? '(unlinked)';
+      return `bead · ${beadId}`;
+    }
     return `${this.state.view} · ${specialist}:${this.state.selectedJobId}`;
   }
 

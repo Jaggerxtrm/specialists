@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { JobColorMap, bold, formatElapsed, formatEventLine, formatTokenUsageSummary, magenta } from '../format-helpers.js';
@@ -8,7 +9,22 @@ import { collectProcessHealth } from '../../specialist/process-health.js';
 import { isJobDead } from '../../specialist/supervisor.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 import { compareTimelineEvents, parseTimelineEvent, type TimelineEvent } from '../../specialist/timeline-events.js';
-import type { ConsoleJob, FeedEventRow, JobInspect, JobResult, ProcessFilter, ProcessRow, ProcessSnapshot, RepoRef, RuntimeClient } from './types.js';
+import type {
+  BeadDoc,
+  BeadField,
+  BeadSection,
+  ConsoleJob,
+  FeedEventRow,
+  JobInspect,
+  JobResult,
+  LiveStateRows,
+  ProcessFilter,
+  ProcessRow,
+  ProcessSnapshot,
+  RepoRef,
+  RuntimeClient,
+} from './types.js';
+import { BEAD_ID_RE } from './types.js';
 
 const ACTIVE_STATES: ReadonlyArray<SupervisorStatus['status']> = ['starting', 'running', 'waiting'];
 const TERMINAL_STATES: ReadonlyArray<SupervisorStatus['status']> = ['done', 'error', 'cancelled'];
@@ -180,6 +196,155 @@ class LocalRuntimeClient implements RuntimeClient {
       footer: metricFooter(job),
     };
   }
+
+  async linkedDetail(repo: RepoRef, jobIdPrefix: string): Promise<BeadDoc> {
+    const job = resolveJob(repo, jobIdPrefix);
+    const beadId = job?.bead_id;
+    if (!beadId) {
+      return { beadId: '', fields: [], sections: [], error: 'no linked bead' };
+    }
+    return fetchBeadDoc(beadId);
+  }
+
+  async liveStateFor(repo: RepoRef, jobIdPrefix: string): Promise<LiveStateRows> {
+    const job = resolveJob(repo, jobIdPrefix);
+    if (!job) return { rows: [], error: 'no live state — job terminated' };
+    const rows = [
+      kvRow('state', `${job.status}${job.is_dead ? ' dead' : ''}`),
+      kvRow('role', job.chain_kind ?? '--'),
+      kvRow('worktree', [job.branch, job.worktree_path].filter(Boolean).join(' ') || '--'),
+      kvRow('lease', job.worktree_owner_job_id ?? job.chain_id ?? '--'),
+      kvRow('ctx', job.context_pct === undefined ? '--' : `${Math.round(job.context_pct)}%${job.context_health ? ` ${job.context_health}` : ''}`),
+      kvRow('deps', job.chain_root_bead_id ?? '--'),
+      kvRow('current', job.current_tool ?? '--'),
+    ];
+    return { rows };
+  }
+}
+
+function kvRow(key: string, value: string): { key: string; value: string } {
+  return { key, value };
+}
+
+const BEAD_DOC_CACHE = new Map<string, { doc: BeadDoc; at: number }>();
+const BEAD_DOC_TTL_MS = 3000;
+
+function fetchBeadDoc(beadId: string): BeadDoc {
+  if (!BEAD_ID_RE.test(beadId)) {
+    logBeadShowError(beadId, -1, 0, 'invalid_bead_id');
+    return { beadId, fields: [], sections: [], error: `invalid bead id: ${beadId}` };
+  }
+
+  const now = Date.now();
+  const cached = BEAD_DOC_CACHE.get(beadId);
+  if (cached && now - cached.at < BEAD_DOC_TTL_MS) return cached.doc;
+
+  const started = now;
+  const result = spawnSync('bd', ['show', beadId, '--json'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 3000,
+  });
+  const durationMs = Date.now() - started;
+
+  if (result.error || result.status !== 0 || !result.stdout) {
+    const errCode = (result.error as NodeJS.ErrnoException | undefined)?.code;
+    const errorClass = errCode ?? (result.signal ? `signal:${result.signal}` : `exit:${result.status}`);
+    logBeadShowError(beadId, result.status ?? -1, durationMs, String(errorClass));
+    const doc: BeadDoc = { beadId, fields: [], sections: [], error: `bd show failed: ${errorClass}` };
+    BEAD_DOC_CACHE.set(beadId, { doc, at: now });
+    return doc;
+  }
+
+  try {
+    const doc = parseBdShowJson(beadId, result.stdout);
+    BEAD_DOC_CACHE.set(beadId, { doc, at: now });
+    return doc;
+  } catch (error) {
+    logBeadShowError(beadId, result.status ?? 0, durationMs, 'parse_error');
+    const doc: BeadDoc = {
+      beadId,
+      fields: [],
+      sections: [],
+      error: `bd show parse error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+    BEAD_DOC_CACHE.set(beadId, { doc, at: now });
+    return doc;
+  }
+}
+
+function logBeadShowError(beadId: string, exitCode: number, durationMs: number, errorClass: string): void {
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      component: 'sp-console',
+      op: 'bd_show',
+      beadId: beadId.slice(0, 24),
+      exitCode,
+      durationMs,
+      errorClass,
+    });
+    process.stderr.write(line + '\n');
+  } catch {
+    // swallow
+  }
+}
+
+export function parseBdShowJson(beadId: string, stdout: string): BeadDoc {
+  const parsed = JSON.parse(stdout) as unknown;
+  const payload = (Array.isArray(parsed) ? parsed[0] : parsed) as Record<string, unknown> | null;
+  if (!payload || typeof payload !== 'object') {
+    return { beadId, fields: [], sections: [], error: 'empty bd show payload' };
+  }
+
+  const issue = (payload.issue && typeof payload.issue === 'object' ? payload.issue : payload) as Record<string, unknown>;
+  const fields: BeadField[] = [];
+  const push = (key: string, value: unknown): void => {
+    if (value === undefined || value === null) return;
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
+    if (!str || str === 'null') return;
+    fields.push({ key, value: str.replace(/\s+/g, ' ').trim() });
+  };
+  push('issue', issue.id ?? payload.id);
+  push('title', issue.title ?? payload.title);
+  push('type', issue.type ?? payload.type);
+  push('priority', issue.priority ?? payload.priority);
+  push('status', issue.status ?? payload.status);
+  push('assignee', issue.assignee ?? payload.assignee);
+  push('owner', issue.owner ?? payload.owner);
+  push('parent', issue.parent ?? payload.parent);
+  push('epic', issue.epic_id ?? payload.epic_id);
+  push('created', issue.created ?? issue.created_at ?? payload.created_at);
+  push('updated', issue.updated ?? issue.updated_at ?? payload.updated_at);
+
+  const description = typeof issue.description === 'string'
+    ? issue.description
+    : typeof payload.description === 'string'
+      ? payload.description
+      : '';
+  const notes = typeof issue.notes === 'string'
+    ? issue.notes
+    : typeof payload.notes === 'string'
+      ? payload.notes
+      : '';
+  const design = typeof issue.design === 'string'
+    ? issue.design
+    : typeof payload.design === 'string'
+      ? payload.design
+      : '';
+  const acceptance = typeof issue.acceptance === 'string'
+    ? issue.acceptance
+    : typeof payload.acceptance === 'string'
+      ? payload.acceptance
+      : '';
+
+  const sections: BeadSection[] = [];
+  if (description.trim()) sections.push({ title: 'description', body: description.trim() });
+  if (design.trim()) sections.push({ title: 'design', body: design.trim() });
+  if (acceptance.trim()) sections.push({ title: 'acceptance', body: acceptance.trim() });
+  if (notes.trim()) sections.push({ title: 'notes', body: notes.trim() });
+
+  return { beadId, fields, sections };
 }
 
 function parseConfiguredRepos(): RepoRef[] {

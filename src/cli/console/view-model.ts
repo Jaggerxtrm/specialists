@@ -1,4 +1,4 @@
-import type { ConsoleView, FeedEventRow, HistoryMode, JobInspect, JobResult, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { BeadDoc, ConsoleView, FeedEventRow, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
 
 export interface ConsoleState {
   repos: RepoRef[];
@@ -16,6 +16,10 @@ export interface ConsoleState {
   feedRows: FeedEventRow[];
   jobInspect?: JobInspect;
   jobResult?: JobResult;
+  beadDoc?: BeadDoc;
+  beadLive?: LiveStateRows;
+  beadLoading: boolean;
+  beadError?: string;
   message?: string;
 }
 
@@ -25,6 +29,8 @@ export type ConsoleAction =
   | { type: 'feedLoaded'; rows: FeedEventRow[]; totalRows?: number; viewportRows?: number }
   | { type: 'jobLoaded'; inspect: JobInspect }
   | { type: 'resultLoaded'; result: JobResult }
+  | { type: 'beadLoaded'; doc: BeadDoc; live: LiveStateRows }
+  | { type: 'beadError'; error: string }
   | { type: 'message'; message?: string }
   | { type: 'move'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'top'; viewportRows: number; totalRows?: number }
@@ -55,6 +61,7 @@ export function initialConsoleState(): ConsoleState {
     includeCleaned: false,
     follow: false,
     feedRows: [],
+    beadLoading: false,
   };
 }
 
@@ -103,6 +110,10 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
       return { ...state, jobInspect: action.inspect, message: undefined };
     case 'resultLoaded':
       return { ...state, jobResult: action.result, message: undefined };
+    case 'beadLoaded':
+      return { ...state, beadDoc: action.doc, beadLive: action.live, beadLoading: false, beadError: undefined, message: undefined };
+    case 'beadError':
+      return { ...state, beadLoading: false, beadError: action.error };
     case 'message':
       return { ...state, message: action.message };
     case 'move': {
@@ -124,9 +135,31 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
       return { ...state, selectedRow, scroll: Math.max(0, rows.length - action.viewportRows) };
     }
     case 'open':
-      return { ...state, view: action.view, selectedJobId: action.jobId, scroll: 0, follow: action.view === 'feed' };
+      return {
+        ...state,
+        view: action.view,
+        selectedJobId: action.jobId,
+        scroll: 0,
+        follow: action.view === 'feed',
+        beadLoading: action.view === 'bead' ? true : state.beadLoading,
+        beadDoc: action.view === 'bead' ? undefined : state.beadDoc,
+        beadLive: action.view === 'bead' ? undefined : state.beadLive,
+        beadError: action.view === 'bead' ? undefined : state.beadError,
+      };
     case 'back':
-      return { ...state, view: 'ps', selectedJobId: undefined, scroll: 0, follow: false, jobInspect: undefined, jobResult: undefined };
+      // selectedRow + scroll preserved: only the view switches back.
+      return {
+        ...state,
+        view: 'ps',
+        selectedJobId: undefined,
+        follow: false,
+        jobInspect: undefined,
+        jobResult: undefined,
+        beadDoc: undefined,
+        beadLive: undefined,
+        beadLoading: false,
+        beadError: undefined,
+      };
     case 'cycleHistory': {
       const historyMode: HistoryMode = state.historyMode === 'default' ? 'history' : state.historyMode === 'history' ? 'all' : 'default';
       return { ...state, historyMode, selectedRow: 0, scroll: 0 };

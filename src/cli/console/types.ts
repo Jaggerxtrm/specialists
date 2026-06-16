@@ -1,7 +1,7 @@
 import type { ProcessHealthReport } from '../../specialist/process-health.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
-export type ConsoleView = 'ps' | 'feed' | 'job' | 'result';
+export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead';
 export type HistoryMode = 'default' | 'history' | 'all';
 
 export interface RepoRef {
@@ -72,10 +72,44 @@ export interface JobResult {
   error?: string;
 }
 
+// ---------- BeadView (Phase 2) ----------
+
+export interface BeadField {
+  key: string;
+  value: string;
+}
+
+export interface BeadSection {
+  title: string;
+  body: string;
+}
+
+export interface BeadDoc {
+  beadId: string;
+  fields: BeadField[];
+  sections: BeadSection[];
+  raw?: string;
+  error?: string;
+}
+
+export interface LiveStateRow {
+  key: string;
+  value: string;
+}
+
+export interface LiveStateRows {
+  rows: LiveStateRow[];
+  error?: string;
+}
+
 export interface RuntimeClient {
   listRepos(): Promise<RepoRef[]>;
   listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot>;
   readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number }): Promise<FeedEventRow[]>;
   inspectJob(repo: RepoRef, jobIdPrefix: string): Promise<JobInspect>;
   readResult(repo: RepoRef, jobIdPrefix: string): Promise<JobResult>;
+  linkedDetail(repo: RepoRef, jobIdPrefix: string): Promise<BeadDoc>;
+  liveStateFor(repo: RepoRef, jobIdPrefix: string): Promise<LiveStateRows>;
 }
+
+export const BEAD_ID_RE = /^[a-zA-Z]+-[a-zA-Z0-9]+(\.[0-9]+)*$/;
