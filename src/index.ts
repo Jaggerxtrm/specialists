@@ -3,7 +3,7 @@
 /**
  * Specialists MCP Server — entry point
  * Subcommands: install, version, list, view, models, init, db, validate, edit, config, run,
- *              chat, status, ps, result, feed, log, forensic, metrics, clean, merge, epic, end, stop, attach, quickstart, serve, script, release, help
+ *              chat, console, status, ps, result, feed, log, forensic, metrics, clean, merge, epic, end, stop, attach, quickstart, serve, script, release, help
  */
 
 // Suppress EBADF errors from bun's internal fd handling on named pipes.
@@ -397,6 +397,35 @@ async function run() {
       return;
     }
     const { run: handler } = await import('./cli/chat.js');
+    return handler();
+  }
+
+  if (sub === 'console') {
+    if (wantsHelp()) {
+      console.log([
+        '',
+        'Usage: specialists console',
+        '',
+        'Open the operator TUI for ps/feed/result/inspect navigation.',
+        '',
+        'Keys:',
+        '  ↑↓/j/k        Navigate rows or scroll detail views',
+        '  Enter         Open feed for selected job',
+        '  r             Open result for selected job',
+        '  i             Inspect selected job',
+        '  h / a         Cycle history modes / toggle all audit rows',
+        '  c             Include rows hidden by sp clean --ps',
+        '  /             Filter process rows',
+        '  Tab, 1-9      Switch repos when multiple runtime DBs are configured',
+        '  q, Ctrl+C     Quit cleanly',
+        '',
+        'Environment:',
+        '  SPECIALISTS_CONSOLE_REPOS=name=/repo,path2  Optional comma-separated repo list',
+        '',
+      ].join('\n'));
+      return;
+    }
+    const { run: handler } = await import('./cli/console.js');
     return handler();
   }
 

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sp console grounded mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#181818;--txt:#c8c8c8;--bright:#e4e4e4;--dim:#7d7d7d;--rail:#3a3a3a;--sel:#262626;
+    --running:#c39a5e;--done:#8caa6a;--reviewing:#9f88bf;--waiting:#8095a8;--idle:#4a4a4a;--blocked:#c4806f;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--lh:1.2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{height:100vh;background:var(--bg);color:var(--txt);font-family:var(--mono);font-size:12.5px;line-height:var(--lh);font-weight:400;letter-spacing:.15px;display:flex;flex-direction:column;overflow:hidden;outline:none}
+  .ctx,.stats,.keys,.filter{flex:0 0 auto;padding:0 10px;white-space:pre;overflow:hidden}
+  .ctx{color:var(--dim)}.ctx b{color:var(--bright);font-weight:500}
+  .main{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:thin}.main::-webkit-scrollbar{width:6px}.main::-webkit-scrollbar-thumb{background:#2c2c2c;border-radius:3px}
+  .ln{display:flex;align-items:stretch;line-height:var(--lh);padding:0 10px;white-space:pre}.ln.sel{background:var(--sel)}
+  .rail{flex:0 0 2ch;border-left:1px solid var(--rail)}.rail.blank{border-left-color:transparent}.c{white-space:pre}.dim{color:var(--dim)}.bright{color:var(--bright)}
+  .id,.meta,.payload,.bead,.next{color:var(--dim)}.group{color:var(--bright)}.branch{color:var(--dim)}
+  .running{color:var(--running)}.done{color:var(--done)}.reviewing{color:var(--reviewing)}.waiting{color:var(--waiting)}.idle{color:var(--idle)}.blocked,.error{color:var(--blocked)}
+  .stats{color:var(--dim)}.stats .ok{color:var(--done)}.stats .warn{color:var(--running)}.stats .bad{color:var(--blocked)}
+  .keys{color:var(--dim)}.keys .k{color:var(--txt)}.filter{color:var(--txt)}.filter .p{color:var(--dim)}.hidden{display:none}
+</style>
+</head>
+<body tabindex="0">
+  <div class="ctx" id="ctx"></div>
+  <div class="main" id="main"></div>
+  <div class="filter hidden" id="filter"></div>
+  <div class="stats" id="stats"></div>
+  <div class="keys" id="keys"></div>
+<script>
+const E=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const padR=(s,n)=>{s=String(s??'');return s.length>=n?s.slice(0,n):s+' '.repeat(n-s.length)};
+const padL=(s,n)=>{s=String(s??'');return s.length>=n?s.slice(0,n):' '.repeat(n-s.length)+s};
+const trunc=(s,n)=>{s=String(s??'');return s.length>n?s.slice(0,Math.max(0,n-1))+'…':s};
+const GLY={running:'●',waiting:'◐',starting:'◐',done:'○',error:'✕',cancelled:'○',dead:'✕'};
+const CLS={running:'running',waiting:'waiting',starting:'waiting',done:'done',error:'error',cancelled:'idle',dead:'blocked'};
+const REPOS=[{name:'specialists',path:'/home/dawid/dev/specialists'},{name:'mercury',path:'/home/dawid/projects/mercury'},{name:'gitboard',path:'/home/dawid/dev/gitboard'}];
+const rows=[
+ {kind:'epic',d:0,id:'unitAI-ye5s9',label:'release distribution hardening',state:'blocked',summary:'prep 1/2 done · chains 2/3 pass'},
+ {kind:'label',d:1,label:'Prep'},
+ {kind:'job',d:2,id:'8f31aa',spec:'researcher',status:'done',ctx:18,elapsed:'4m12s 3t·8tc·42ktok',payload:'31.0kb',ptok:'8.4kt',bead:'unitAI-prep1',next:'result',title:'npm-pack validation research'},
+ {kind:'label',d:1,label:'Chains'},
+ {kind:'chain',d:2,id:'chain:0db4',label:'root: unitAI-9b2dn · pass'},
+ {kind:'branch',d:3,label:'fix/unitAI-9b2dn-pack-smoke'},
+ {kind:'job',d:4,id:'0db4c1',spec:'executor',status:'done',ctx:41,elapsed:'7m03s 5t·19tc·91ktok',payload:'44.2kb',ptok:'12.1kt',bead:'unitAI-9b2dn',next:'result',title:'add npm pack smoke'},
+ {kind:'job',d:4,id:'3a912e',spec:'reviewer',status:'waiting',ctx:63,elapsed:'1m28s 2t·4tc·28ktok',payload:'38.5kb',ptok:'10.8kt',bead:'unitAI-9b2dn',next:'resume',title:'review npm pack smoke'},
+ {kind:'chain',d:2,id:'chain:71ab',label:'root: unitAI-yq31q · running'},
+ {kind:'branch',d:3,label:'fix/unitAI-yq31q-fresh-install'},
+ {kind:'job',d:4,id:'71ab09',spec:'executor',status:'running',ctx:57,elapsed:'2m19s 2t·7tc·36ktok',payload:'40.0kb',ptok:'11.5kt',bead:'unitAI-yq31q',next:'feed',title:'fresh install smoke paths'},
+ {kind:'node',d:0,id:'node:research',label:'node-coordinator · running · 3 members'},
+ {kind:'job',d:1,id:'44ac01',spec:'researcher',status:'running',ctx:24,elapsed:'0m51s 1t·2tc·12ktok',payload:'22.3kb',ptok:'6.2kt',bead:'unitAI-eoqxp',next:'feed',title:'AgentOps telemetry patterns'},
+ {kind:'worktree',d:0,label:'docs/unitAI-i29fm-sp-console-tui-grounding · unitAI-i29fm'},
+ {kind:'job',d:1,id:'b710da',spec:'explorer',status:'done',ctx:35,elapsed:'3m10s 3t·5tc·21ktok',payload:'19.8kb',ptok:'5.4kt',bead:'unitAI-i29fm',next:'result',title:'map sp ps/feed runtime'},
+];
+const feeds={
+ '71ab09':[
+  ['run_start','executor/gpt-5.3-codex','bead=unitAI-yq31q branch=fix/unitAI-yq31q-fresh-install chain=chain:71ab'],
+  ['payload_breakdown','executor/gpt-5.3-codex','payload: 40.0kb · 11.5kt across 7 components'],
+  ['tool','executor/gpt-5.3-codex','start bash bun run build'],
+  ['token_usage','executor/gpt-5.3-codex','input=18240 · output=2310 · total=20550'],
+  ['status_change','executor/gpt-5.3-codex','running → waiting? no · current_tool=bash'],
+ ],
+ '3a912e':[
+  ['run_start','reviewer/gpt-5.4-mini','bead=unitAI-9b2dn reused=0db4c1 chain_root_bead=unitAI-9b2dn'],
+  ['tool','reviewer/gpt-5.4-mini','start read docs/pack-smoke.md'],
+  ['status_change','reviewer/gpt-5.4-mini','waiting'],
+  ['WAIT','reviewer/gpt-5.4-mini','reviewer (3a912e) is waiting for input. Use: sp resume 3a912e "..."'],
+ ],
+};
+const results={
+ '0db4c1':[
+  ['section','startup context'],['job_id','0db4c1'],['specialist','executor'],['bead_id','unitAI-9b2dn'],['chain_id','chain:0db4'],
+  ['section','result'],['text','Implemented npm-pack smoke and verified package asset resolution from a packed install.'],
+  ['section','metrics'],['tokens','input=52000 · output=3900 · total=55900'],['cost_usd','$0.0841'],
+ ],
+ '3a912e':[
+  ['section','latest completed output'],['text','Reviewer reached a waiting state after checking docs/pack-smoke.md. Needs operator input before final verdict.'],
+  ['section','waiting'],['resume','sp resume 3a912e "..."'],
+ ],
+ '71ab09':[
+  ['section','running'],['text','No final result yet. Use feed for live progress; previous turn output will appear here when persisted.'],
+ ],
+};
+let S={repo:0,view:'ps',sel:0,filtering:false,filter:'',job:null,follow:false,scroll:0,history:'default'};
+function visible(){const q=S.filter.toLowerCase();if(!q)return rows;return rows.filter(r=>r.kind!=='label'&&(r.id+' '+r.label+' '+r.spec+' '+r.title+' '+r.bead+' '+r.status).toLowerCase().includes(q));}
+function rails(d){let h='';for(let i=0;i<d;i++)h+='<span class="rail"></span>';return h}
+function rowHtml(r,selected){
+ let body='';
+ if(r.kind==='job'){
+  const cls=CLS[r.status], glyph=GLY[r.status];
+  const left=`<span class="${cls}">${glyph}</span> <span class="id">${padR(r.id,8)}</span> <span>${padR(r.spec,13)}</span> <span class="${cls}">${padR(r.status,9)}</span>`;
+  body=left+` <span class="meta">${padL(r.ctx+'%',4)}</span> <span class="meta">${padR(r.elapsed,20)}</span> <span class="payload">${padR(r.payload,8)} ${padR(r.ptok,7)}</span> <span class="bead">${padR(r.bead,14)}</span> <span class="next">${padR(r.next,7)}</span><span class="dim">${E(trunc(r.title,42))}</span>`;
+ } else if(r.kind==='epic') body=`<span class="group">◆ ${r.id} · ${r.label}</span> <span class="${CLS[r.state]}">${r.state}</span> <span class="dim">· ${r.summary}</span>`;
+ else if(r.kind==='node') body=`<span class="group">⬢ ${r.id}</span> <span class="dim">· ${r.label}</span>`;
+ else if(r.kind==='chain') body=`<span class="group">◇ ${r.id}</span> <span class="dim">· ${r.label}</span>`;
+ else if(r.kind==='branch'||r.kind==='worktree') body=`<span class="branch">${r.label}</span>`;
+ else body=`<span class="dim">${r.label}</span>`;
+ return `<div class="ln${selected?' sel':''}">${rails(r.d)}<span class="c">${body}</span></div>`;
+}
+function feedRows(){return feeds[S.job]||[['run_start','sp feed',`job ${S.job} has no mock feed rows`]]}
+function feedHtml(f,i){return `<div class="ln${i===S.scroll?' sel':''}"><span class="c"><span class="dim">${padR(String(i+1),4)}</span> <span class="bright">${padR(f[0],18)}</span> <span class="dim">${padR(f[1],24)}</span> ${E(f[2])}</span></div>`}
+function beadHtml(item){if(item[0]==='section')return `<div class="ln"><span class="c"><span class="dim">── ${E(item[1])} ──</span></span></div>`;if(item[0]==='text')return `<div class="ln"><span class="c">${E(item[1])}</span></div>`;return `<div class="ln"><span class="c"><span class="dim">${padR(item[0],12)}</span>${E(item[1])}</span></div>`}
+function selectedJob(){return visible().filter(r=>r.kind==='job')[0]&&visible()[S.sel]?.kind==='job'?visible()[S.sel]:null}
+function setCtx(){const repo=REPOS[S.repo];document.getElementById('ctx').innerHTML=`<b>${S.view}</b> · ${repo.name} · ${repo.path}${S.job?' · '+S.job:''}`}
+function setStats(){document.getElementById('stats').innerHTML=`health <span class="ok">OK</span> rss=512MB cpu=3.1% · jobs 6 visible/42 total · running 2 waiting 1 · history ${S.history} · epics 1 nodes 1 worktrees 3 · ctx max <span class="warn">63%</span> · tokens 184k · orphans 0`}
+function key(k,d){return `<span class="k">${k}</span> ${d}    `}
+function setKeys(){const el=document.getElementById('keys');if(S.view==='ps')el.innerHTML=key('↑↓','nav')+key('↵','feed')+key('r','result')+key('i','inspect')+key('h','history')+key('a','all')+key('/','filter')+key('⇥','repo')+key('q','quit');else if(S.view==='feed')el.innerHTML=key('↑↓','scroll')+key('f','follow')+key('⌫','back')+key('g/G','top/end')+key('q','quit');else el.innerHTML=key('↑↓','scroll')+key('⌫','back')+key('q','quit')}
+function render(){setCtx();setStats();setKeys();const main=document.getElementById('main');if(S.view==='ps'){const vis=visible();S.sel=Math.max(0,Math.min(S.sel,vis.length-1));main.innerHTML=vis.map((r,i)=>rowHtml(r,i===S.sel)).join('')||'<div class="ln"><span class="c dim">no matches</span></div>'}else if(S.view==='feed'){main.innerHTML=feedRows().map(feedHtml).join('')}else if(S.view==='job'){const r=rows.find(x=>x.id===S.job);main.innerHTML=[['job',r?.id],['specialist',r?.spec],['status',r?.status],['bead',r?.bead],['worktree','fix/'+(r?.bead||'none')],['chain_id','from worktree_owner_job_id'],['elapsed',r?.elapsed],['context',r?.ctx+'%'],['next',r?.next]].map(beadHtml).join('')}else{main.innerHTML=(results[S.job]||[['section','result'],['text','No persisted result yet. Use feed for timeline replay.']]).map(beadHtml).join('')}const fl=document.getElementById('filter');if(S.filtering){fl.classList.remove('hidden');fl.innerHTML=`<span class="p">/</span>${E(S.filter)}_`}else fl.classList.add('hidden');const sel=main.querySelector('.sel');if(sel)sel.scrollIntoView({block:'nearest'})}
+function move(d){if(S.view==='ps'){S.sel=Math.max(0,Math.min(visible().length-1,S.sel+d))}else{const max=(S.view==='feed'?feedRows().length:20)-1;S.scroll=Math.max(0,Math.min(max,S.scroll+d));document.getElementById('main').scrollBy(0,d*16)}}
+window.addEventListener('keydown',e=>{if(S.filtering){if(e.key==='Escape'){S.filtering=false;S.filter=''}else if(e.key==='Enter'){S.filtering=false}else if(e.key==='Backspace'){S.filter=S.filter.slice(0,-1)}else if(e.key.length===1){S.filter+=e.key}else return;e.preventDefault();render();return}const r=visible()[S.sel];switch(e.key){case'ArrowDown':case'j':move(1);break;case'ArrowUp':case'k':move(-1);break;case'Enter':if(S.view==='ps'&&r?.kind==='job'){S.view='feed';S.job=r.id;S.scroll=0}break;case'r':if(S.view==='ps'&&r?.kind==='job'){S.view='result';S.job=r.id;S.scroll=0}break;case'i':if(S.view==='ps'&&r?.kind==='job'){S.view='job';S.job=r.id;S.scroll=0}break;case'h':if(S.view==='ps'){S.history=S.history==='default'?'history':S.history==='history'?'all':'default'}break;case'a':if(S.view==='ps'){S.history=S.history==='all'?'default':'all'}break;case'Escape':case'Backspace':case'ArrowLeft':if(S.view!=='ps'){S.view='ps';S.job=null}break;case'/':if(S.view==='ps')S.filtering=true;break;case'f':if(S.view==='feed')S.follow=!S.follow;break;case'Tab':S.repo=(S.repo+1)%REPOS.length;S.view='ps';S.sel=0;break;case'1':case'2':case'3':S.repo=Number(e.key)-1;S.view='ps';S.sel=0;break;case'g':S.sel=0;S.scroll=0;document.getElementById('main').scrollTop=0;break;case'G':S.sel=visible().length-1;document.getElementById('main').scrollTop=document.getElementById('main').scrollHeight;break;default:return}e.preventDefault();render()});
+document.body.focus();window.addEventListener('click',()=>document.body.focus());render();
+</script>
+</body>
+</html>
