@@ -5,8 +5,8 @@ description: >
   agent through writing a valid `.specialist.json`, choosing supported models,
   validating against the schema, and avoiding common specialist authoring
   mistakes.
-version: 1.3
-synced_at: 78a7883e
+version: 1.4
+synced_at: fc9168e2
 ---
 
 # Specialist Author Guide
@@ -648,6 +648,124 @@ This specialist goes STALE the moment `schema.ts` or `runner.ts` is modified aft
 | `auto` (default) | Create tracking bead when permission_required is LOW+ |
 | `always` | Always create a tracking bead |
 | `never` | Never create a tracking bead |
+
+---
+
+## Global User Override Layer (KAN-90/91)
+
+The same per-spec field schema documented above is also exposed at a **global,
+cross-repo layer** since 2026-06-13. Operators do not need to fork a
+`.specialists/user/<name>.specialist.json` per repo just to swap their model or
+opt out of an extension — those changes live once in
+`~/.config/specialists/user.json` and apply everywhere.
+
+### 3-layer field merge
+
+`SpecialistLoader.get()` resolves fields top-down:
+
+1. **Package canonical** — `config/specialists/<name>.specialist.json` shipped
+   in `@jaggerxtrm/specialists`. Most fields are concrete defaults; `model` and
+   `fallback_model` ship as `null` since KAN-90 part 2.
+2. **`~/.config/specialists/user.json`** — operator's global override. Wins
+   over package canonical for the allowlisted user-environment fields.
+3. **`.specialists/user/<name>.specialist.json`** — per-repo override. Wins
+   over global. Can change any field, including ones blocked at the global
+   layer.
+
+The pre-KAN-90 `.specialists/default/<name>.specialist.json` mirror is no
+longer walked (commit `31a6421c`).
+
+### CLI surface
+
+| Command | Effect |
+|---|---|
+| `sp init --global` | Bootstraps `~/.config/specialists/user.json` with null placeholders for every spec; writes `_doc` sentinel + `overrides-guide.md`. Idempotent — preserves existing values, only adds entries for newly-discovered specialists on re-run. |
+| `sp edit --global --set <name>.<dot.path> <value>` | Writes one field in `user.json` (schema-validated). |
+| `sp edit --global --get <name>.<dot.path>` | Reads the current merged value. |
+| `sp doctor --specialists` | Reports `N/M specialists have a model configured`, lists missing models, and surfaces blocked-field overrides applied with warning. |
+| `sp config show <name> --resolved` | Shows the merged spec for one specialist with per-layer attribution. |
+
+The bare positional form (`sp edit --global <name>.field value` without
+`--set`) currently falls through to `$EDITOR` in some environments — prefer
+`--set` in scripts.
+
+### Allowlist mapping (which fields can be set globally)
+
+The constants in `src/specialist/schema.ts` define what the global layer may
+write:
+
+```ts
+OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
+  'model', 'fallback_model', 'fallback_models',
+  'timeout_ms', 'stall_timeout_ms', 'thinking_level',
+  'max_retries', 'prompt_limit_bytes', 'stdout_limit_bytes',
+]
+OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
+  'extensions.serena', 'extensions.gitnexus',
+]
+OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode']
+OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes', 'notes_mode', 'output_file']
+```
+
+So `sp edit --global --set executor.notes_mode final-only` is allowed; the
+same effect for `permission_required`, `prompt.system`, `mandatory_rules`,
+`capabilities`, `output_schema`, `auto_commit`, `skills.scripts`, or
+`prompt.task_template` is **blocked at the global layer** and must be done
+per-repo in `.specialists/user/<name>.specialist.json`. A blocked field that
+sneaks into `user.json` is applied with a `BlockedFieldWarning` and reported
+by `sp doctor --specialists`.
+
+### Same fields as the per-spec reference
+
+Every field documented above in `## Schema Reference` applies at the global
+layer with the same semantics — only the **scope** changes (one machine vs one
+repo). Examples:
+
+```bash
+# Set notes_mode + output_file globally for a chained pipeline reader
+sp edit --global --set sync-docs.notes_mode final-only
+sp edit --global --set sync-docs.output_file ".specialists/sync-docs-result.md"
+
+# Opt out of Serena MCP injection on a read-only specialist (RAM saver)
+sp edit --global --set overthinker.execution.extensions.serena false
+
+# Set system_prompt_mode to replace globally for a bare specialist
+sp edit --global --set my-bare-spec.prompt.system_prompt_mode replace
+
+# Plural fallback chain (KAN-91 Phase 2; walked on transient failures only)
+sp edit --global --set executor.execution.fallback_models \
+  '["openai-codex/gpt-5.5","anthropic/claude-sonnet-4-6"]'
+```
+
+### Preset references (KAN-91 Phase 3)
+
+Both `model` and `fallback_model`/`fallback_models` entries may be a
+`@preset/<name>` reference:
+
+```bash
+sp edit --global --set executor.execution.model @preset/medium
+sp edit --global --set executor.execution.fallback_models '["@preset/cheap"]'
+sp edit --list-presets    # show available preset names in the installed package
+```
+
+Built-in presets typically include `cheap`, `medium`, `power`. Depth cap = 5;
+cycles surface a structured error at dispatch.
+
+### `_doc` sentinel and `overrides-guide.md`
+
+`sp init --global` writes a `_doc` key at the top of `user.json` pointing at
+`./overrides-guide.md`, and (re)generates that guide with the live field
+reference. Any other `_`-prefixed keys are tolerated as comments. Authors of a
+new specialist should run `sp init --global` after release so existing operators
+get a fresh null-placeholder entry on next bootstrap.
+
+### Pitfall — `thinking_level: "off"`
+
+`thinking_level: null` inherits pi's `defaultThinkingLevel` (typically `high`
+on most installs). Forcing `off` on certain thinking-class models (verified:
+Kimi-via-nano-gpt) silently produces an empty assistant text turn after
+multi-tool runs because the model's tool-result-summary phase needs thinking
+budget. Leave it `null` unless you have a documented reason to force a level.
 
 ---
 
