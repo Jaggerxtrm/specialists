@@ -138,7 +138,7 @@ describe('live smoke: preset resolution', () => {
 
     const create = run('bd', ['create', '--title=phase-3 preset smoke', '--type=task'], repoRoot, { ...process.env, HOME: tempHome });
     expect(create.status).toBe(0);
-    beadId = create.stdout.trim().split(/\s+/).at(-1) ?? '';
+    beadId = create.stdout.match(/unitAI-[a-z0-9]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
     expect(run('bd', ['update', beadId, '--claim'], repoRoot, { ...process.env, HOME: tempHome }).status).toBe(0);
 
@@ -175,7 +175,7 @@ describe('live smoke: preset resolution', () => {
 
     const create = run('bd', ['create', '--title=phase-3 preset sad smoke', '--type=task'], repoRoot, { ...process.env, HOME: tempHome });
     expect(create.status).toBe(0);
-    beadId = create.stdout.trim().split(/\s+/).at(-1) ?? '';
+    beadId = create.stdout.match(/unitAI-[a-z0-9]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
     expect(run('bd', ['update', beadId, '--claim'], repoRoot, { ...process.env, HOME: tempHome }).status).toBe(0);
 
