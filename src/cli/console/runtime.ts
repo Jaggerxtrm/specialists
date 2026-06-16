@@ -245,6 +245,11 @@ class LocalRuntimeClient implements RuntimeClient {
     return fetchBeadDoc(beadId);
   }
 
+  async readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot> {
+    const { readGlobalConfigSnapshot } = await import('./config-source.js');
+    return readGlobalConfigSnapshot();
+  }
+
   async resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null> {
     const job = resolveJob(repo, jobIdPrefix);
     if (!job) return null;

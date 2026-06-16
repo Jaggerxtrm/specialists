@@ -1,7 +1,7 @@
 import type { ProcessHealthReport } from '../../specialist/process-health.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
-export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff';
+export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config';
 export type HistoryMode = 'default' | 'history' | 'all';
 export type FeedSource = 'sp_feed' | 'forensic';
 
@@ -142,6 +142,8 @@ export interface DiffFile {
   error?: string;
 }
 
+// ---------- ConfigView (Phase 6) — types defined in config-source.ts ----------
+
 export interface RuntimeClient {
   listRepos(): Promise<RepoRef[]>;
   listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot>;
@@ -153,6 +155,7 @@ export interface RuntimeClient {
   resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null>;
   diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary>;
   diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile>;
+  readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot>;
 }
 
 export const BEAD_ID_RE = /^[a-zA-Z]+-[a-zA-Z0-9]+(\.[0-9]+)*$/;

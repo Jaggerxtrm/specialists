@@ -1,4 +1,5 @@
 import type { BeadDoc, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { ConfigSnapshot } from './config-source.js';
 
 export interface ConsoleState {
   repos: RepoRef[];
@@ -22,6 +23,10 @@ export interface ConsoleState {
   beadError?: string;
   feedSource: FeedSource;
   diff: DiffViewState;
+  config?: ConfigSnapshot;
+  configLoading: boolean;
+  configSelectedSpecialist?: string;
+  configScroll: number;
   message?: string;
 }
 
@@ -50,6 +55,9 @@ export type ConsoleAction =
   | { type: 'diffBack' }
   | { type: 'diffRefresh' }
   | { type: 'diffMove'; delta: number; viewportRows: number; totalRows?: number }
+  | { type: 'configLoaded'; snapshot: ConfigSnapshot }
+  | { type: 'configSelectSpecialist'; name: string }
+  | { type: 'configRefresh' }
   | { type: 'message'; message?: string }
   | { type: 'move'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'top'; viewportRows: number; totalRows?: number }
@@ -84,6 +92,8 @@ export function initialConsoleState(): ConsoleState {
     beadLoading: false,
     feedSource: 'forensic',
     diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
+    configLoading: false,
+    configScroll: 0,
   };
 }
 
@@ -170,6 +180,9 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         diff: action.view === 'diff'
           ? { stage: 'summary', loading: true, selectedFileIndex: 0, fileScroll: 0 }
           : state.diff,
+        configLoading: action.view === 'config' ? true : state.configLoading,
+        configScroll: action.view === 'config' ? 0 : state.configScroll,
+        config: action.view === 'config' ? undefined : state.config,
       };
     case 'back':
       // selectedRow + scroll preserved: only the view switches back.
@@ -235,6 +248,19 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         ...state,
         diff: { ...state.diff, loading: true, error: undefined },
       };
+    case 'configLoaded': {
+      const firstSpecialist = action.snapshot.specialists[0]?.name;
+      return {
+        ...state,
+        config: action.snapshot,
+        configLoading: false,
+        configSelectedSpecialist: state.configSelectedSpecialist ?? firstSpecialist,
+      };
+    }
+    case 'configSelectSpecialist':
+      return { ...state, configSelectedSpecialist: action.name, configScroll: 0 };
+    case 'configRefresh':
+      return { ...state, configLoading: true };
     case 'diffMove': {
       const stage = state.diff.stage;
       if (stage === 'summary') {

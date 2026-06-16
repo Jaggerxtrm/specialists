@@ -346,14 +346,16 @@ export function renderKeyBar(
 ): string {
   const line =
     view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  h history  a all  c cleaned  / filter  tab repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  h history  a all  / filter  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
           ? '↑↓ scroll  PgUp/PgDn page  ⌫ back  g/G top/end  q quit'
           : view === 'diff'
             ? '↑↓ nav  ↵ open file  r refresh  ⌫ back  q quit'
-            : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
+            : view === 'config'
+              ? '↑↓ specialist  r refresh  ⌫ back  q quit'
+              : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
   return paint(truncateToWidth(line, width), 'dim');
 }
 
@@ -441,6 +443,38 @@ export function renderFilterPrompt(text: string, width: number): string {
 
 export function renderPlaceholder(text: string, width: number): string {
   return paint(truncateToWidth(text, width), 'dim');
+}
+
+// ---------- ConfigView rows ----------
+
+export function renderConfigField(
+  path: string,
+  valueText: string,
+  hint: string,
+  width: number,
+  flags: { isOverride: boolean; isInherit: boolean } = { isOverride: false, isInherit: true },
+): string {
+  const keyText = padR(path, 28);
+  const head = paint(keyText, flags.isOverride ? 'bright' : 'dim');
+  const value = paint(flags.isInherit ? 'inherit' : valueText, flags.isInherit ? 'dim' : 'txt');
+  const minBody = visibleLength(head) + 1 + visibleLength(value) + 1;
+  const hintWidth = Math.max(0, width - minBody);
+  const hintText = hintWidth > 0
+    ? paint(' '.repeat(Math.max(0, hintWidth - hint.length)) + hint, 'dim')
+    : '';
+  return truncateToWidth(head + ' ' + value + ' ' + hintText, width);
+}
+
+export function renderConfigSpecialistRow(
+  name: string,
+  hasOverride: boolean,
+  selected: boolean,
+  width: number,
+): string {
+  const marker = selected ? '›' : ' ';
+  const tag = hasOverride ? paint('●', 'running') : paint('○', 'dim');
+  const label = paint(name, selected || hasOverride ? 'bright' : 'dim');
+  return truncateToWidth(`${marker} ${tag} ${label}`, width);
 }
 
 // ---------- DiffView rows ----------

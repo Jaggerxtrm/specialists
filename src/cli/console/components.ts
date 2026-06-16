@@ -20,6 +20,8 @@ import {
   paint,
   renderBeadBodyLine,
   renderBeadField,
+  renderConfigField,
+  renderConfigSpecialistRow,
   renderDiffHunkHeader,
   renderDiffHunkLine,
   renderDiffSummaryRow,
@@ -39,12 +41,13 @@ import {
   renderTabs,
   renderViewtag,
 } from './theme.js';
+import { formatConfigValue } from './config-source.js';
 
 const POLL_MS = 1000;
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
-const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff'];
+const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff', 'config'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -116,7 +119,16 @@ export class ConsoleApp implements Component {
     // from enter in pi-tui input stream, so 'b' is the documented keybind.
     else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
     else if (data === 'd' && this.state.view === 'ps' && selected) this.open('diff', selected.id);
+    else if (data === 'g' && this.state.view === 'ps') this.open('config', selected?.id ?? '');
+    else if (data === 'r' && this.state.view === 'config') this.refreshAfter({ type: 'configRefresh' });
     else if (data === 'r' && this.state.view === 'diff') this.refreshAfter({ type: 'diffRefresh' });
+    else if (this.state.view === 'config' && (matchesKey(data, Key.backspace) || matchesKey(data, Key.escape) || matchesKey(data, Key.left))) {
+      this.back();
+    } else if (this.state.view === 'config' && (data === 'j' || matchesKey(data, Key.down))) {
+      this.cycleConfigSpecialist(1);
+    } else if (this.state.view === 'config' && (data === 'k' || matchesKey(data, Key.up))) {
+      this.cycleConfigSpecialist(-1);
+    }
     else if (this.state.view === 'diff' && (matchesKey(data, Key.enter) || data === 'l' || matchesKey(data, Key.right))) {
       const idx = this.state.diff.selectedFileIndex;
       const entry = this.state.diff.summary?.entries[idx];
@@ -236,6 +248,9 @@ export class ConsoleApp implements Component {
           this.options.runtime.liveStateFor(repo, this.state.selectedJobId),
         ]);
         this.dispatch({ type: 'beadLoaded', doc, live });
+      } else if (this.state.view === 'config') {
+        const snapshot = await this.options.runtime.readGlobalConfig();
+        this.dispatch({ type: 'configLoaded', snapshot });
       } else if (this.state.view === 'diff' && this.state.selectedJobId) {
         if (this.state.diff.stage === 'summary') {
           const summary = await this.options.runtime.diffSummary(repo, this.state.selectedJobId);
@@ -263,7 +278,7 @@ export class ConsoleApp implements Component {
     void this.refresh();
   }
 
-  private open(view: 'feed' | 'job' | 'result' | 'bead' | 'diff', jobId: string): void {
+  private open(view: 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config', jobId: string): void {
     this.dispatch({ type: 'open', view, jobId });
     void this.refresh();
   }
@@ -279,7 +294,74 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'job') return this.renderJobRows(width, viewportRows);
     if (this.state.view === 'bead') return this.renderBeadRows(width, viewportRows);
     if (this.state.view === 'diff') return this.renderDiffRows(width, viewportRows);
+    if (this.state.view === 'config') return this.renderConfigRows(width, viewportRows);
     return this.renderResultRows(width, viewportRows);
+  }
+
+  private cycleConfigSpecialist(delta: number): void {
+    const snapshot = this.state.config;
+    if (!snapshot || snapshot.specialists.length === 0) return;
+    const names = snapshot.specialists.map((s) => s.name);
+    const current = this.state.configSelectedSpecialist ?? names[0];
+    const idx = Math.max(0, names.indexOf(current ?? ''));
+    const next = Math.max(0, Math.min(names.length - 1, idx + delta));
+    const name = names[next];
+    if (name) this.dispatch({ type: 'configSelectSpecialist', name });
+  }
+
+  private renderConfigRows(width: number, viewportRows: number): string[] {
+    const snapshot = this.state.config;
+    if (this.state.configLoading || !snapshot) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('loading config…', width)];
+    }
+    const rows: string[] = [];
+    rows.push(renderPlaceholder(`path: ${snapshot.displayPath} (${snapshot.source})`, width));
+    if (!snapshot.exists) {
+      rows.push(renderPlaceholder('no user.json — run `sp init --global` to create', width));
+      this.renderedDetailRows = rows.length;
+      return visibleSlice(rows, 0, viewportRows).map((row) => truncateToWidth(row, width));
+    }
+    if (snapshot.parseError) {
+      rows.push(renderPlaceholder(snapshot.parseError, width));
+      this.renderedDetailRows = rows.length;
+      return visibleSlice(rows, 0, viewportRows).map((row) => truncateToWidth(row, width));
+    }
+    rows.push(renderSectionTitle('specialists', width));
+    const selectedName = this.state.configSelectedSpecialist ?? snapshot.specialists[0]?.name;
+    snapshot.specialists.forEach((s) => {
+      rows.push(renderConfigSpecialistRow(s.name, s.hasOverride, s.name === selectedName, width));
+    });
+    const selected = snapshot.specialists.find((s) => s.name === selectedName);
+    if (selected) {
+      rows.push(renderSectionTitle(`${selected.name} · fields`, width));
+      selected.fields.forEach((field) => {
+        const isInherit = field.value === undefined || field.value === null;
+        rows.push(
+          renderConfigField(
+            field.path,
+            formatConfigValue(field.value),
+            field.allowedHint,
+            width,
+            { isOverride: field.isOverride, isInherit },
+          ),
+        );
+      });
+      if (selected.blockedWarnings.length > 0) {
+        rows.push(renderSectionTitle('blocked-field warnings', width));
+        for (const warn of selected.blockedWarnings) rows.push(renderPlaceholder(warn, width));
+      }
+    }
+    if (snapshot.validationErrors.length > 0) {
+      rows.push(renderSectionTitle('validation errors', width));
+      for (const err of snapshot.validationErrors.slice(0, 5)) {
+        rows.push(renderPlaceholder(`${err.path}: ${err.message}`, width));
+      }
+    }
+    this.renderedDetailRows = rows.length;
+    const maxScroll = Math.max(0, rows.length - Math.max(1, viewportRows));
+    const scroll = Math.max(0, Math.min(this.state.configScroll, maxScroll));
+    return visibleSlice(rows, scroll, viewportRows).map((row) => truncateToWidth(row, width));
   }
 
   private renderDiffRows(width: number, viewportRows: number): string[] {
