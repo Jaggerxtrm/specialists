@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getProbeRunDir, runAgenticFollowthroughProbe } from '../../../src/specialist/model-probes.js';
 import type { ScriptGenerateResult } from '../../../src/specialist/script-runner.js';
 
@@ -69,7 +69,7 @@ describe('runAgenticFollowthroughProbe', () => {
     expect(result.verdict).toBe('PARTIAL');
   });
 
-  it('counts files outside scope and prevents pass verdict', async () => {
+  it('counts nested files outside scope and prevents pass verdict', async () => {
     const cacheDir = await tempCache();
 
     const result = await runAgenticFollowthroughProbe('scope-leaker', 'executor', {
@@ -77,13 +77,71 @@ describe('runAgenticFollowthroughProbe', () => {
       runSpecialist: async (_input, options) => {
         const projectDir = options.projectDir ?? cacheDir;
         writeEvents(projectDir, 5, 3);
-        writeFileSync(join(projectDir, 'outside-scope.md'), 'leaked');
+        mkdirSync(join(projectDir, 'nested', 'deeper'), { recursive: true });
+        writeFileSync(join(projectDir, 'nested', 'deeper', 'outside-scope.md'), 'leaked');
         return success('evidence '.repeat(80));
       },
     });
 
-    expect(result.metrics.files_outside_scope_touched).toBeGreaterThan(0);
+    expect(result.metrics.files_outside_scope_touched).toBe(1);
     expect(result.verdict).toBe('PARTIAL');
+  });
+
+  it('classifies exact threshold boundaries', async () => {
+    const cacheDir = await tempCache();
+    const cases = [
+      { model: 'pass-boundary', turns: 5, tools: 3, output: 'x'.repeat(500), verdict: 'PASS' },
+      { model: 'partial-boundary', turns: 3, tools: 2, output: 'x'.repeat(200), verdict: 'PARTIAL' },
+      { model: 'fail-boundary', turns: 2, tools: 2, output: 'x'.repeat(500), verdict: 'FAIL' },
+    ] as const;
+
+    for (const testCase of cases) {
+      const result = await runAgenticFollowthroughProbe(testCase.model, 'executor', {
+        cacheDir,
+        runSpecialist: async (_input, options) => {
+          writeEvents(options.projectDir ?? cacheDir, testCase.turns, testCase.tools);
+          return success(testCase.output);
+        },
+      });
+
+      expect(result.verdict).toBe(testCase.verdict);
+    }
+  });
+
+  it('fails on premature_agent_end event type', async () => {
+    const cacheDir = await tempCache();
+
+    const result = await runAgenticFollowthroughProbe('premature-end', 'executor', {
+      cacheDir,
+      runSpecialist: async (_input, options) => {
+        const projectDir = options.projectDir ?? cacheDir;
+        writeEvents(projectDir, 5, 3);
+        appendFileSync(join(projectDir, 'events.jsonl'), `${JSON.stringify({ type: 'premature_agent_end' })}\n`);
+        return success('evidence '.repeat(80));
+      },
+    });
+
+    expect(result.metrics.premature_agent_end).toBe(true);
+    expect(result.verdict).toBe('FAIL');
+  });
+
+  it('rejects when specialist run exceeds hard timeout window', async () => {
+    vi.useFakeTimers();
+    try {
+      const cacheDir = await tempCache();
+      const probePromise = runAgenticFollowthroughProbe('slow-model', 'executor', {
+        cacheDir,
+        timeoutMs: 1_000,
+        runSpecialist: async () => await new Promise<ScriptGenerateResult>(() => undefined),
+      });
+      const rejection = expect(probePromise).rejects.toThrow('probe timed out after 1000ms');
+
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses deterministic probe parent id for same model and spec', () => {

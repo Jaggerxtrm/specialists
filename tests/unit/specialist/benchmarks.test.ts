@@ -49,6 +49,37 @@ describe('loadBenchmarkSnapshot', () => {
     expect(fetchImpl).toHaveBeenCalledWith(PRIMARY_BENCHMARK_URL, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
+  it('infers provider from id and keeps first numeric field precedence', async () => {
+    const cacheDir = await tempCache();
+    const fetchImpl = okFetch({
+      models: [{ id: 'anthropic/claude-test', quality_score: 91, score: 77, input_cost: 2, price_1m_input_tokens: 9, output_cost: 8, price_1m_output_tokens: 11, max_tokens: 256000 }],
+    });
+
+    const snapshot = await loadBenchmarkSnapshot({ cacheDir, now: NOW, fetchImpl });
+    const model = snapshot?.models.get('anthropic/claude-test');
+
+    expect(model).toMatchObject({
+      provider: 'anthropic',
+      quality_score: 91,
+      cost_input: 2,
+      cost_output: 8,
+      context_window: 256000,
+    });
+  });
+
+  it('uses lmarena score as elo fallback', async () => {
+    const cacheDir = await tempCache();
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === PRIMARY_BENCHMARK_URL) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => [{ id: 'arena/model', score: 1337 }] };
+    }) as unknown as typeof fetch;
+
+    const snapshot = await loadBenchmarkSnapshot({ cacheDir, now: NOW, fetchImpl });
+
+    expect(snapshot?.source).toBe('lmarena');
+    expect(snapshot?.models.get('arena/model')).toMatchObject({ elo: 1337, quality_score: 1337, provider: 'arena' });
+  });
+
   it('refreshes stale cache when online', async () => {
     const cacheDir = await tempCache();
     writeCache(cacheDir, 'artificialanalysis', '2026-06-14T23:00:00.000Z');
