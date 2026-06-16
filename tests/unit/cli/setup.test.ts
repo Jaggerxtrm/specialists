@@ -1,10 +1,10 @@
-// NOTE: Live probe contract validation is deferred to Phase C unitAI-oeysi probe suite live smoke;
-// running it here requires upstream pi model access not available in unit/CI scope.
+// NOTE: Live --probe-only validation deferred to Phase C (unitAI-oeysi probe suite live smoke).
+// Contract validation requires upstream pi model API access not available in unit/CI scope.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type SpawnCall = { command: string; args: string[] };
 
@@ -130,7 +130,15 @@ describe('setup CLI', () => {
     expect(payload.blocked_field_warnings[0]).toMatchObject({ specialist: 'executor', field: 'metadata.name' });
   });
 
-  it('apply dry-run does get pre-checks, skips set calls, emits JSON summary', async () => {
+  it('apply dry-run does get pre-checks, skips set calls, emits JSON summary, leaves user.json untouched', async () => {
+    const userConfigDir = join(tempDir, '.config', 'specialists');
+    mkdirSync(userConfigDir, { recursive: true });
+    const userConfigPath = join(userConfigDir, 'user.json');
+    const initialUserConfig = '{\n  "executor": {\n    "execution": {\n      "model": "openai/gpt-4.1-mini"\n    }\n  }\n}\n';
+    writeFileSync(userConfigPath, initialUserConfig, 'utf8');
+    const beforeContent = readFileSync(userConfigPath, 'utf8');
+    const beforeMtimeMs = statSync(userConfigPath).mtimeMs;
+
     const planPath = join(tempDir, 'plan.json');
     writeFileSync(planPath, JSON.stringify({
       version: '3.0',
@@ -168,6 +176,8 @@ describe('setup CLI', () => {
     const { run } = await import('../../../src/cli/setup.js');
     await run(['--apply', planPath, '--dry-run', '--json']);
 
+    const afterContent = readFileSync(userConfigPath, 'utf8');
+    const afterMtimeMs = statSync(userConfigPath).mtimeMs;
     const payload = JSON.parse(stdout.join('\n'));
     expect(payload).toMatchObject({
       dry_run: true,
@@ -175,6 +185,47 @@ describe('setup CLI', () => {
       skipped_idempotent: 0,
     });
     expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--get')).toHaveLength(1);
+    expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--set')).toHaveLength(0);
+    expect(afterContent).toBe(beforeContent);
+    expect(afterContent).toBe(initialUserConfig);
+    expect(afterMtimeMs).toBe(beforeMtimeMs);
+  });
+
+  it('applies plan idempotently when current values already match', async () => {
+    const planPath = join(tempDir, 'plan.json');
+    writeFileSync(planPath, JSON.stringify({
+      version: '3.0',
+      generated_at: '2026-06-16T12:00:00.000Z',
+      preset: 'balanced',
+      inputs: {},
+      writes: [
+        { specialist: 'alpha', path: 'execution.model', value: 'same-model-1', reason: 'upgrade' },
+        { specialist: 'beta', path: 'execution.model', value: 'same-model-2', reason: 'upgrade' },
+      ],
+      benchmark: {
+        source: state.benchmark.source,
+        source_url: state.benchmark.source_url,
+        fetched_at: state.benchmark.fetched_at,
+      },
+    }, null, 2));
+
+    state.spawnImpl = (command: string, args: string[]) => {
+      if (command === 'sp' && args[0] === 'edit' && args[2] === '--get') {
+        const key = args[3] ?? '';
+        return { status: 0, stdout: `${key === 'alpha.execution.model' ? 'same-model-1' : 'same-model-2'}\n`, stderr: '', error: undefined };
+      }
+      return { status: 0, stdout: '', stderr: '', error: undefined };
+    };
+
+    const { run } = await import('../../../src/cli/setup.js');
+    await run(['--apply', planPath, '--json']);
+
+    const payload = JSON.parse(stdout.join('\n'));
+    expect(payload).toMatchObject({
+      dry_run: false,
+      applied: 0,
+      skipped_idempotent: 2,
+    });
     expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--set')).toHaveLength(0);
   });
 
