@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,6 +47,15 @@ describe('loadBenchmarkSnapshot', () => {
 
     expect(snapshot?.models.get('openai/gpt-x')?.quality_score).toBe(88);
     expect(fetchImpl).toHaveBeenCalledWith(PRIMARY_BENCHMARK_URL, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it.skipIf(process.platform === 'win32')('writes cache files with user-only permissions', async () => {
+    const cacheDir = await tempCache();
+    const fetchImpl = okFetch({ models: [{ id: 'openai/gpt-x', provider: 'openai', score: 88 }] });
+
+    await loadBenchmarkSnapshot({ cacheDir, now: NOW, fetchImpl });
+
+    expect(statSync(join(cacheDir, 'artificialanalysis.json')).mode & 0o777).toBe(0o600);
   });
 
   it('infers provider from id and keeps first numeric field precedence', async () => {

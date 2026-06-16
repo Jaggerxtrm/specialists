@@ -1,7 +1,7 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { getProbeRunDir, runAgenticFollowthroughProbe } from '../../../src/specialist/model-probes.js';
 import type { ScriptGenerateResult } from '../../../src/specialist/script-runner.js';
@@ -36,6 +36,22 @@ describe('runAgenticFollowthroughProbe', () => {
     expect(result.verdict).toBe('PASS');
     expect(result.metrics).toMatchObject({ turns_used: 5, tools_used: 3, files_outside_scope_touched: 0, premature_agent_end: false });
     expect(result.transcript_path).toContain(cacheDir);
+  });
+
+  it.skipIf(process.platform === 'win32')('creates probe artifacts with user-only permissions', async () => {
+    const cacheDir = await tempCache();
+
+    const result = await runAgenticFollowthroughProbe('secure-model', 'executor', {
+      cacheDir,
+      runSpecialist: async (_input, options) => {
+        writeEvents(options.projectDir ?? cacheDir, 5, 3);
+        return success('evidence '.repeat(80));
+      },
+    });
+    const probeDir = dirname(result.transcript_path);
+
+    expect(statSync(probeDir).mode & 0o777).toBe(0o700);
+    expect(statSync(join(probeDir, 'probe-notes.md')).mode & 0o777).toBe(0o600);
   });
 
   it('classifies fail on premature agent_end or tiny output', async () => {

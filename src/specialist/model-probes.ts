@@ -53,8 +53,8 @@ const HARD_TIMEOUT_MS = 300_000;
 
 export async function runAgenticFollowthroughProbe(model: string, specName: string, opts: AgenticFollowthroughOptions = {}): Promise<AgenticFollowthroughResult> {
   const probeDir = getProbeRunDir(model, specName, opts.cacheDir);
-  mkdirSync(probeDir, { recursive: true });
-  writeFileSync(join(probeDir, 'probe-notes.md'), '# Probe notes\n');
+  mkdirSync(probeDir, { recursive: true, mode: 0o700 });
+  writeFileSync(join(probeDir, 'probe-notes.md'), '# Probe notes\n', { mode: 0o600 });
 
   const run = opts.runSpecialist ?? runScriptSpecialist;
   const result = await withTimeout(run({
@@ -73,7 +73,7 @@ export async function runAgenticFollowthroughProbe(model: string, specName: stri
   const metrics = collectMetrics(probeDir, output, result);
   const verdict = classifyProbe(metrics);
   const summaryPath = join(probeDir, 'probe-summary.json');
-  writeFileSync(summaryPath, `${JSON.stringify({ verdict, metrics, sample_output: output, transcript_path: transcriptPath }, null, 2)}\n`);
+  writeFileSync(summaryPath, `${JSON.stringify({ verdict, metrics, sample_output: output, transcript_path: transcriptPath }, null, 2)}\n`, { mode: 0o600 });
 
   return { verdict, metrics, sample_output: output, transcript_path: transcriptPath };
 }
@@ -150,7 +150,7 @@ function countFilesOutsideScope(probeDir: string): number {
 
 function writeTranscript(probeDir: string, result: ScriptGenerateResult, output: string, now: Date): string {
   const transcriptPath = join(probeDir, 'events.jsonl');
-  writeFileSync(transcriptPath, `${JSON.stringify({ type: 'probe_result', at: now.toISOString(), result, output })}\n`, { flag: 'a' });
+  writeFileSync(transcriptPath, `${JSON.stringify({ type: 'probe_result', at: now.toISOString(), result, output })}\n`, { flag: 'a', mode: 0o600 });
   return transcriptPath;
 }
 

@@ -194,9 +194,9 @@ export function getBenchmarkCachePath(source: BenchmarkSource, cacheDir = join(h
 }
 
 function writeCache(path: string, snapshot: CacheFile): void {
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(tmpPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+  writeFileSync(tmpPath, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600 });
   const fd = openSync(tmpPath, 'r');
   try {
     fsyncSync(fd);
