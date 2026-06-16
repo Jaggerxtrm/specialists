@@ -130,6 +130,35 @@ describe('setup CLI', () => {
     expect(payload.blocked_field_warnings[0]).toMatchObject({ specialist: 'executor', field: 'metadata.name' });
   });
 
+  it('sp setup --plan --json produces valid JSON', async () => {
+    const { run } = await import('../../../src/cli/setup.js');
+    await run(['--plan', 'balanced', '--json']);
+
+    const payload = JSON.parse(stdout.join('\n'));
+    expect(Array.isArray((payload as { entries?: unknown }).entries)).toBe(true);
+    expect(payload).toMatchObject({
+      preset: 'balanced',
+      entries: [
+        {
+          specialist: 'executor',
+          current_model: 'openai/gpt-4.1-mini',
+          recommended_model: 'anthropic/claude-sonnet-4-6',
+          score: '95',
+        },
+      ],
+    });
+  });
+
+  it('sp setup --plan WITHOUT --json prints human table', async () => {
+    const { run } = await import('../../../src/cli/setup.js');
+    await run(['--plan', 'balanced']);
+
+    const output = stdout.join('\n');
+    expect(output).toContain('specialist');
+    expect(output).toContain('executor');
+    expect(() => JSON.parse(output)).toThrow();
+  });
+
   it('apply dry-run does get pre-checks, skips set calls, emits JSON summary, leaves user.json untouched', async () => {
     const userConfigDir = join(tempDir, '.config', 'specialists');
     mkdirSync(userConfigDir, { recursive: true });

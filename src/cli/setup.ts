@@ -25,12 +25,21 @@ const SetupWriteSchema = z.object({
   reason: z.string().min(1),
 }).strict();
 
+const SetupPlanEntrySchema = z.object({
+  specialist: z.string().min(1),
+  current_model: z.string().min(1),
+  recommended_model: z.string().min(1),
+  score: z.string().min(1),
+  rationale_snippet: z.string().min(1),
+}).strict();
+
 const SetupPlanSchema = z.object({
   version: z.literal('3.0'),
   generated_at: z.string().min(1),
   preset: z.string().min(1),
   inputs: SetupInputSchema,
   writes: z.array(SetupWriteSchema),
+  entries: z.array(SetupPlanEntrySchema).optional(),
   benchmark: z.object({
     source: z.string().min(1),
     source_url: z.string().min(1),
@@ -41,6 +50,7 @@ const SetupPlanSchema = z.object({
 type SetupInput = z.infer<typeof SetupInputSchema>;
 type SetupPlan = z.infer<typeof SetupPlanSchema>;
 type SetupWrite = z.infer<typeof SetupWriteSchema>;
+type SetupPlanEntry = z.infer<typeof SetupPlanEntrySchema>;
 
 type SetupMode = 'discovery' | 'fetch-benchmarks' | 'plan' | 'apply' | 'probe-only' | 'interactive';
 
@@ -233,7 +243,7 @@ export async function runFetchBenchmarks(args: ParsedArgs): Promise<void> {
 
 export async function runPlan(args: ParsedArgs): Promise<void> {
   const plan = await buildPlan(args.planPreset!);
-  console.log(JSON.stringify(plan, null, 2));
+  printValue(plan, args.json, formatPlan);
 }
 
 export async function runApply(args: ParsedArgs): Promise<void> {
@@ -344,18 +354,34 @@ async function buildPlan(preset: string): Promise<SetupPlan> {
   const preferredProviders = new Set(input.preferred_providers ?? []);
   const targetSpecialists = input.specialists ?? discovery.registry.map((entry) => entry.name);
 
-  const writes = targetSpecialists.flatMap((name) => {
-    const registryEntry = discovery.registry.find((entry) => entry.name === name);
-    if (!registryEntry) return [];
-    const selected = selectBenchmarkModel({ benchmark, availableModelIds, disallowedModels, preferredProviders, budget });
-    if (!selected || registryEntry.model === selected.id) return [];
-    return [{
-      specialist: name,
-      path: 'execution.model' as const,
-      value: selected.id,
-      reason: `preset=${preset}; benchmark=${benchmark.source}; quality=${selected.quality_score ?? selected.elo ?? 'n/a'}`,
-    }];
-  });
+  const recommendations = targetSpecialists
+    .map((name) => {
+      const registryEntry = discovery.registry.find((entry) => entry.name === name);
+      if (!registryEntry) return null;
+      const selected = selectBenchmarkModel({ benchmark, availableModelIds, disallowedModels, preferredProviders, budget });
+      if (!selected || registryEntry.model === selected.id) return null;
+      const quality = selected.quality_score ?? selected.elo ?? 'n/a';
+
+      return {
+        write: {
+          specialist: name,
+          path: 'execution.model' as const,
+          value: selected.id,
+          reason: `preset=${preset}; benchmark=${benchmark.source}; quality=${quality}`,
+        } satisfies SetupWrite,
+        entry: {
+          specialist: name,
+          current_model: registryEntry.model,
+          recommended_model: selected.id,
+          score: String(quality),
+          rationale_snippet: `benchmark=${benchmark.source}, quality=${quality}`,
+        } satisfies SetupPlanEntry,
+      };
+    })
+    .filter((recommendation): recommendation is { write: SetupWrite; entry: SetupPlanEntry } => recommendation !== null);
+
+  const writes = recommendations.map(({ write }) => write);
+  const entries = recommendations.map(({ entry }) => entry);
 
   return SetupPlanSchema.parse({
     version: '3.0',
@@ -363,6 +389,7 @@ async function buildPlan(preset: string): Promise<SetupPlan> {
     preset,
     inputs: input,
     writes,
+    entries,
     benchmark: {
       source: benchmark.source,
       source_url: benchmark.source_url,
@@ -507,6 +534,30 @@ function formatBenchmarkFetch(result: BenchmarkFetchResult): string {
   for (const warning of result.warnings) lines.push(`  warning: ${warning}`);
   lines.push('');
   return lines.join('\n');
+}
+
+function formatPlan(plan: SetupPlan): string {
+  const rows = plan.entries ?? plan.writes.map((write) => ({
+    specialist: write.specialist,
+    current_model: 'n/a',
+    recommended_model: write.value,
+    score: 'n/a',
+    rationale_snippet: write.reason,
+  }));
+  const lines = ['', bold('sp setup --plan'), `  preset: ${plan.preset}`];
+  lines.push('');
+  lines.push('  specialist         | current model         | recommended model                 | score   | rationale');
+  lines.push('  ------------------ | -------------------- | --------------------------------- | ------- | --------------------');
+  for (const row of rows) {
+    lines.push(`  ${row.specialist.padEnd(18)} | ${row.current_model.padEnd(20)} | ${row.recommended_model.padEnd(33)} | ${row.score.padEnd(7)} | ${truncatePlanRationale(row.rationale_snippet)}`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+function truncatePlanRationale(value: string, maxLength = 36): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
 }
 
 function formatDiscovery(state: DiscoveryState): string {
