@@ -6,6 +6,7 @@ import { resolveObservabilityDbLocation } from '../../specialist/observability-d
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath, type ObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { resolveJobsDir } from '../../specialist/job-root.js';
 import { collectProcessHealth } from '../../specialist/process-health.js';
+import { aggregateLiveSnapshot } from '../../specialist/live-aggregates.js';
 import { isJobDead } from '../../specialist/supervisor.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 import { compareTimelineEvents, parseTimelineEvent, type TimelineEvent } from '../../specialist/timeline-events.js';
@@ -87,23 +88,27 @@ class LocalRuntimeClient implements RuntimeClient {
     const filtered = applyTextFilter(visible, filter.textFilter);
     const rows = buildRows(filtered, filter.historyMode);
     const health = safeCollectHealth();
-    const contexts = filtered.map((job) => job.context_pct).filter((pct): pct is number => Number.isFinite(pct));
+
+    const live = aggregateLiveSnapshot(filtered, {
+      nowMs: Date.now(),
+      isDead: (s) => Boolean((s as ConsoleJob).is_dead),
+    });
 
     return {
-      generatedAtMs: Date.now(),
+      generatedAtMs: live.generatedAtMs,
       repo,
       filter,
       rows,
       jobs: filtered,
       totalJobs: statuses.length,
       visibleJobs: filtered.length,
-      runningJobs: filtered.filter((job) => job.status === 'running').length,
-      waitingJobs: filtered.filter((job) => job.status === 'waiting').length,
-      epics: new Set(filtered.map((job) => job.epic_id).filter(Boolean)).size,
-      nodes: new Set(filtered.map((job) => job.node_id).filter(Boolean)).size,
-      worktrees: new Set(filtered.map((job) => job.worktree_owner_job_id ?? job.worktree_path).filter(Boolean)).size,
-      maxContextPct: contexts.length > 0 ? Math.max(...contexts) : undefined,
-      totalTokens: filtered.reduce((sum, job) => sum + (job.metrics?.token_usage?.total_tokens ?? 0), 0),
+      runningJobs: live.counts.running,
+      waitingJobs: live.counts.waiting,
+      epics: live.containers.epics,
+      nodes: live.containers.nodes,
+      worktrees: live.containers.worktrees,
+      maxContextPct: live.context.ctxMaxPct,
+      totalTokens: live.tokens.totalTokens,
       health,
     };
   }
