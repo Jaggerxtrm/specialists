@@ -201,7 +201,7 @@ question wording, header, options, and parsing contract.
      ```
    - **expected answer parsing:** `{ "disallowed_providers": ["string"] }`
 
-4. **Project shape**5. **Project shape**
+4. **Project shape**
    - **header:** `Shape`
    - **question wording:** `What is the project shape for this setup?`
    - **options (3):**
@@ -210,7 +210,7 @@ question wording, header, options, and parsing contract.
      - `mixed` — both engineering and research are frequent
    - **expected answer parsing:** `{ "project_shape": "code-heavy" | "research-heavy" | "mixed" }`
 
-6. **Verify probes**
+5. **Verify probes**
    - **header:** `Probe`
    - **question wording:** `Run agentic-followthrough probe before apply?`
    - **options (3):**
@@ -325,7 +325,7 @@ Specialist resolution merges top-down:
    `fallback_model` ship as `null` since KAN-90 part 2 because each operator
    has different providers.
 2. **`~/.config/specialists/user.json`** — your global override. Per-spec
-   sub-tree containing only the user-environment fields (allowlist below).
+   sub-tree containing only the allowlisted fields (below).
    Wins over package canonical.
 3. **`.specialists/user/<name>.specialist.json`** — per-repo override. Wins
    over global. Can change any field (including ones blocked from global).
