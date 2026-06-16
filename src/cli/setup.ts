@@ -1,10 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import * as z from 'zod';
 import { loadBenchmarkSnapshot, BENCHMARK_TTL_MS, type BenchmarkRow, type BenchmarkSnapshot } from '../specialist/benchmarks.js';
-import { getGlobalUserConfigPath, readGlobalUserConfig, validateGlobalUserConfig, GlobalUserConfigSchema, type GlobalUserConfig } from '../specialist/global-config.js';
+import { getGlobalUserConfigPath } from '../specialist/global-config.js';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { runAgenticFollowthroughProbe } from '../specialist/model-probes.js';
 
@@ -83,6 +81,25 @@ interface DiscoveryState {
     severity: string;
   }>;
   global_config_path: string;
+}
+
+interface BenchmarkFetchResult {
+  snapshot: null | {
+    source: string;
+    source_url: string;
+    fetched_at: string;
+    model_count: number;
+  };
+  warnings: string[];
+  offline: boolean;
+  cache_status: 'fresh' | 'stale' | 'missing';
+}
+
+interface ApplyResult {
+  dry_run: boolean;
+  path: string;
+  writes: SetupWrite[];
+  changed: boolean;
 }
 
 function usage(): string {
@@ -172,44 +189,61 @@ export async function run(argv = process.argv.slice(3)): Promise<void> {
   const args = parseArgs(argv);
 
   switch (args.mode) {
-    case 'discovery': {
-      const state = await collectDiscoveryState();
-      printDiscovery(state, args.json);
+    case 'discovery':
+      await runDiscovery(args);
       return;
-    }
-    case 'fetch-benchmarks': {
-      const result = await fetchBenchmarks(args.offline);
-      printValue(result, args.json, formatBenchmarkFetch);
+    case 'fetch-benchmarks':
+      await runFetchBenchmarks(args);
       return;
-    }
-    case 'plan': {
-      const plan = await buildPlan(args.planPreset!);
-      console.log(JSON.stringify(plan, null, 2));
+    case 'plan':
+      await runPlan(args);
       return;
-    }
-    case 'apply': {
-      const result = applyPlan(args.planPath!, args.dryRun);
-      printValue(result, args.json, formatApplyResult);
+    case 'apply':
+      await runApply(args);
       return;
-    }
-    case 'probe-only': {
-      const result = await runAgenticFollowthroughProbe(args.probeModel!, args.probeSpec!);
-      printValue(result, args.json, formatProbeResult);
+    case 'probe-only':
+      await runProbeOnly(args);
       return;
-    }
-    case 'interactive': {
-      const text = renderInteractiveWorkflow();
-      if (args.json) {
-        console.log(JSON.stringify({ workflow: text, skill_reference: 'setup-specialists' }, null, 2));
-        return;
-      }
-      console.log(text);
+    case 'interactive':
+      await runInteractive(args);
       return;
-    }
-    default: {
+    default:
       return assertNever(args.mode);
-    }
   }
+}
+
+export async function runDiscovery(args: ParsedArgs): Promise<void> {
+  const state = await collectDiscoveryState();
+  printValue(state, args.json, formatDiscovery);
+}
+
+export async function runFetchBenchmarks(args: ParsedArgs): Promise<void> {
+  const result = await fetchBenchmarks(args.offline);
+  printValue(result, args.json, formatBenchmarkFetch);
+}
+
+export async function runPlan(args: ParsedArgs): Promise<void> {
+  const plan = await buildPlan(args.planPreset!);
+  console.log(JSON.stringify(plan, null, 2));
+}
+
+export async function runApply(args: ParsedArgs): Promise<void> {
+  const result = applyPlan(args.planPath!, args.dryRun);
+  printValue(result, args.json, formatApplyResult);
+}
+
+export async function runProbeOnly(args: ParsedArgs): Promise<void> {
+  const result = await runAgenticFollowthroughProbe(args.probeModel!, args.probeSpec!);
+  printValue(result, args.json, formatProbeResult);
+}
+
+export async function runInteractive(args: ParsedArgs): Promise<void> {
+  const text = renderInteractiveWorkflow();
+  if (args.json) {
+    console.log(JSON.stringify({ workflow: text, skill_reference: 'setup-specialists' }, null, 2));
+    return;
+  }
+  console.log(text);
 }
 
 function printValue<T>(value: T, json: boolean, render: (value: T) => string): void {
@@ -264,7 +298,7 @@ function parsePiModels(): PiModel[] {
     .filter((model) => model.provider.length > 0 && model.model.length > 0);
 }
 
-async function fetchBenchmarks(offline: boolean): Promise<{ snapshot: null | { source: string; source_url: string; fetched_at: string; model_count: number }; warnings: string[]; offline: boolean; cache_status: 'fresh' | 'stale' | 'missing' }> {
+async function fetchBenchmarks(offline: boolean): Promise<BenchmarkFetchResult> {
   const warnings: string[] = [];
   const snapshot = await loadBenchmarkSnapshot({ offline, warn: (warning) => warnings.push(warning.message) });
   if (!snapshot) {
@@ -305,8 +339,7 @@ async function buildPlan(preset: string): Promise<SetupPlan> {
     const registryEntry = discovery.registry.find((entry) => entry.name === name);
     if (!registryEntry) return [];
     const selected = selectBenchmarkModel({ benchmark, availableModelIds, disallowedModels, preferredProviders, budget });
-    if (!selected) return [];
-    if (registryEntry.model === selected.id) return [];
+    if (!selected || registryEntry.model === selected.id) return [];
     return [{
       specialist: name,
       path: 'execution.model' as const,
@@ -369,77 +402,50 @@ function scoreRow(row: BenchmarkRow, preferredProviders: ReadonlySet<string>): n
   return providerBonus + (row.quality_score ?? row.elo ?? 0);
 }
 
-function applyPlan(planPath: string, dryRun: boolean): { dry_run: boolean; path: string; writes: SetupWrite[]; changed: boolean } {
+function applyPlan(planPath: string, dryRun: boolean): ApplyResult {
   const plan = SetupPlanSchema.parse(JSON.parse(readFileSync(planPath, 'utf8')));
-  if (dryRun) return { dry_run: true, path: getGlobalUserConfigPath().path, writes: plan.writes, changed: false };
+  const path = getGlobalUserConfigPath().path;
+  if (dryRun) return { dry_run: true, path, writes: plan.writes, changed: false };
 
-  const location = getGlobalUserConfigPath();
-  const before = location.exists ? readGlobalUserConfig(location) : null;
-  const after = applyWrites(before, plan.writes);
-  const changed = JSON.stringify(before ?? {}) !== JSON.stringify(after);
-  if (!changed) return { dry_run: false, path: location.path, writes: plan.writes, changed: false };
-
-  atomicWriteValidatedConfig(location.path, after);
-  return { dry_run: false, path: location.path, writes: plan.writes, changed: true };
-}
-
-function applyWrites(current: GlobalUserConfig | null, writes: readonly SetupWrite[]): GlobalUserConfig {
-  const next = structuredClone((current ?? {}) as Record<string, unknown>) as GlobalUserConfig;
-  for (const write of writes) {
-    const existing = next[write.specialist];
-    const specialist = (existing && typeof existing === 'object' && !Array.isArray(existing) ? structuredClone(existing) : {
-      execution: {},
-      skills: { paths: [] },
-    }) as Record<string, unknown>;
-    const execution = (specialist.execution && typeof specialist.execution === 'object' && !Array.isArray(specialist.execution) ? specialist.execution : {}) as Record<string, unknown>;
-    execution.model = write.value;
-    specialist.execution = execution;
-    if (!('skills' in specialist)) specialist.skills = { paths: [] };
-    next[write.specialist] = specialist as GlobalUserConfig[string];
+  let changed = false;
+  for (const write of plan.writes) {
+    if (isWriteAlreadyApplied(write)) continue;
+    applyWriteWithGlobalEdit(write);
+    changed = true;
   }
-  return GlobalUserConfigSchema.parse(next) as GlobalUserConfig;
+
+  return { dry_run: false, path, writes: plan.writes, changed };
 }
 
-function atomicWriteValidatedConfig(path: string, config: GlobalUserConfig): void {
-  const content = `${JSON.stringify(config, null, 2)}\n`;
-  const validation = validateGlobalUserConfig(content);
-  if (!validation.valid) throw new Error(`Refusing invalid global config write: ${validation.errors.map((error) => `${error.path} ${error.message}`).join('; ')}`);
-
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(tmpPath, content, { mode: 0o600 });
-  fsyncFile(tmpPath);
-  renameSync(tmpPath, path);
-  fsyncDirectory(dirname(path));
+function isWriteAlreadyApplied(write: SetupWrite): boolean {
+  const getResult = spawnSync('sp', ['edit', '--global', '--get', `${write.specialist}.${write.path}`], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  if (getResult.status !== 0 || getResult.error) return false;
+  return getResult.stdout.trim() === write.value;
 }
 
-function fsyncFile(path: string): void {
-  const fd = openSync(path, 'r');
-  try {
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-}
+function applyWriteWithGlobalEdit(write: SetupWrite): void {
+  const setResult = spawnSync('sp', ['edit', '--global', '--set', `${write.specialist}.${write.path}`, write.value], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  if (setResult.status === 0 && !setResult.error) return;
 
-function fsyncDirectory(path: string): void {
-  try {
-    const fd = openSync(path, 'r');
-    try {
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return;
-  }
+  const stderr = setResult.stderr?.trim();
+  const stdout = setResult.stdout?.trim();
+  throw new Error([
+    `Failed to apply ${write.specialist}.${write.path}=${write.value} via sp edit --global`,
+    stderr || stdout || setResult.error?.message || 'unknown subprocess failure',
+  ].filter(Boolean).join(': '));
 }
 
 function ageFrom(timestamp: string): number {
   return Date.now() - Date.parse(timestamp);
 }
 
-function formatBenchmarkFetch(result: Awaited<ReturnType<typeof fetchBenchmarks>>): string {
+function formatBenchmarkFetch(result: BenchmarkFetchResult): string {
   const lines = ['', bold('sp setup --fetch-benchmarks')];
   lines.push(`  offline: ${result.offline ? 'yes' : 'no'}`);
   lines.push(`  cache_status: ${result.cache_status}`);
@@ -447,10 +453,6 @@ function formatBenchmarkFetch(result: Awaited<ReturnType<typeof fetchBenchmarks>
   for (const warning of result.warnings) lines.push(`  warning: ${warning}`);
   lines.push('');
   return lines.join('\n');
-}
-
-function printDiscovery(state: DiscoveryState, json: boolean): void {
-  printValue(state, json, formatDiscovery);
 }
 
 function formatDiscovery(state: DiscoveryState): string {
@@ -464,14 +466,12 @@ function formatDiscovery(state: DiscoveryState): string {
   return lines.join('\n');
 }
 
-function formatApplyResult(result: ReturnType<typeof applyPlan>): string {
+function formatApplyResult(result: ApplyResult): string {
   const lines = ['', bold('sp setup --apply')];
   lines.push(`  path: ${result.path}`);
   lines.push(`  dry_run: ${result.dry_run ? 'yes' : 'no'}`);
   lines.push(`  changed: ${result.changed ? 'yes' : 'no'}`);
-  for (const write of result.writes) {
-    lines.push(`  - ${write.specialist}.${write.path} = ${write.value}`);
-  }
+  for (const write of result.writes) lines.push(`  - ${write.specialist}.${write.path} = ${write.value}`);
   lines.push('');
   return lines.join('\n');
 }
