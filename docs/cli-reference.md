@@ -833,6 +833,12 @@ specialists edit <name> <dot.path> <value> [options]
 specialists edit <name> --set <dot.path> <value> [options]
 specialists edit <name> --get <dot.path> [--scope <default|user>]
 
+# Global overrides (machine scope, no file-path argument)
+specialists edit --global <name>.<field.path> <value> [options]
+specialists edit --global --get <name>.<field.path>
+specialists edit --global --set <name>.<field.path> <value>
+specialists edit --global
+
 # Bulk operations
 specialists edit --all --set <dot.path> <value> [options]
 specialists edit --all --get <dot.path>
@@ -864,6 +870,7 @@ specialists edit <name> --file <path> <dot.path>
 - `--list-presets`: Show available presets
 
 **Options**:
+- `--global`: Target shared machine scope at `~/.config/specialists/user.json` (cannot combine with `--scope`)
 - `--scope <default|user>`: Target scope (default: auto-detect)
 - `--dry-run`: Preview changes without writing
 - `--all`: Apply to all specialists
@@ -936,6 +943,10 @@ specialists edit executor --get specialist.execution.model
 # Set single field
 specialists edit executor specialist.execution.model openai-codex/gpt-5.5
 
+# Global override examples
+specialists edit --global executor.execution.model openai-codex/gpt-5.5
+specialists edit --global --get executor.execution.model
+
 # Legacy alias (compat)
 specialists edit executor --model openai-codex/gpt-5.5
 
@@ -965,6 +976,7 @@ specialists edit executor --set specialist.execution.timeout_ms 300000 --dry-run
 - Specialist configs are **JSON format** (`.specialist.json`).
 - Ownership model for edits:
   - package source in `config/specialists/` is upstream fallback, not repo customization surface
+  - `~/.config/specialists/user.json` is machine-wide global override layer (managed by `sp init --global` / `sp edit --global`)
   - `.specialists/default/` is optional pin / compatibility snapshot state; do not hand-edit; prune stale entries with `sp prune-stale-defaults`
   - `.specialists/user/` is repo customization/fork layer
 - `--fork-from` supports both same-name override and new-name fork into `.specialists/user/`.
@@ -1047,13 +1059,14 @@ See [manifest.md](manifest.md) for the full resolution semantics.
 ### Synopsis
 
 ```bash
-specialists init [--sync-defaults] [--sync-skills] [--no-xtrm-check]
+specialists init [--global] [--sync-defaults] [--sync-skills] [--no-xtrm-check]
 ```
 
 ### Flags
 
 | Flag | Description |
 |------|-------------|
+| `--global` | Initialize/update global override layer at `~/.config/specialists/user.json` for cross-repo defaults and model fallback edits. |
 | `--sync-defaults` | Compatibility/operator path: copy canonical Category A assets into `.specialists/default/`. Not the default install model. |
 | `--sync-skills` | Re-sync skills only through the xtrm-managed skill surface. |
 | `--no-xtrm-check` | Skip `.xtrm/` / `xt` prerequisite checks for CI or tests. |
@@ -1061,9 +1074,10 @@ specialists init [--sync-defaults] [--sync-skills] [--no-xtrm-check]
 ### Examples
 
 ```bash
-specialists init                  # full bootstrap
-specialists init --sync-defaults  # deprecated compatibility snapshot only when deliberately needed
-specialists init --sync-skills    # skill-only refresh path
+sp init                         # per-repo bootstrap
+sp init --global                # seed/update global user override layer for this machine
+sp init --sync-defaults         # deprecated compatibility snapshot only when deliberately needed
+sp init --sync-skills           # skill-only refresh path
 ```
 
 ### Exit codes
@@ -1101,7 +1115,7 @@ Prefer `sp doctor --check-drift` and `sp prune-stale-defaults` for current packa
 ### Synopsis
 
 ```bash
-specialists doctor [orphans] [--check-drift | --drift]
+specialists doctor [orphans] [--specialists] [--check-drift | --drift]
 ```
 
 ### Flags and subcommands
@@ -1109,12 +1123,14 @@ specialists doctor [orphans] [--check-drift | --drift]
 | Flag / subcommand | Description |
 |---|---|
 | `orphans` | Read-only orphan scan for membership, jobs, epics, and worktree pointers. |
+| `--specialists` / `--check-specialists` | Health check specialist override layers (`sp init --global`, `sp edit --global`, model coverage, blocked-field attempts). |
 | `--check-drift`, `--drift` | Report stale `.specialists/default/` snapshots against package canonical assets. |
 
 ### Examples
 
 ```bash
 specialists doctor
+specialists doctor --specialists
 specialists doctor orphans
 specialists doctor --check-drift
 ```

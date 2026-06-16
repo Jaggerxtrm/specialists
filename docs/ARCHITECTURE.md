@@ -214,6 +214,40 @@ export function resolveJobsDir(cwd = process.cwd()): string {
 
 Returns the current branch name, or `undefined` when HEAD is detached. Used by Supervisor to persist `branch` in `status.json`.
 
+## Specialist configuration merge contract (KAN-90)
+
+Specialist resolution is implemented in `src/specialist/loader.ts` through a deterministic 3-layer merge used by all runtime consumers.
+
+### Layer order
+
+1. **Package canonical** (`config/specialists/<name>.specialist.json`)
+   - Upstream default for every specialist.
+2. **Global user** (`~/.config/specialists/user.json`)
+   - Sparse override surface initialized by `sp init --global`.
+   - Merge path supports allowlisted execution/prompt/metadata fields and `skills.paths` append semantics.
+3. **Repo user** (`.specialists/user/<name>.specialist.json`)
+   - Full override file in repository scope.
+   - Same allowlisted merge semantics as global for safe fields.
+
+### Field governance
+
+- **Allowed override fields (global/repo):** `execution.*`, `prompt.system_prompt_mode`, `beads_write_notes`, `notes_mode`, `output_file`, and `skills.paths`.
+- **Blocked fields:** `execution.permission_required`, `execution.auto_commit`, `prompt.system`, `prompt.output_schema`, `skills.scripts`, `mandatory_rules`, `capabilities`.
+- **Severity model:**
+  - Global blocked attempt: stripped (`severity: strip`) and surfaced only in diagnostic metadata.
+  - Repo/user blocked attempt: retained in warning stream (`severity: warn`) and surfaced by `sp doctor --specialists`.
+
+### Health checks and failure path
+
+- `sp init --global` creates and seeds global override files from shipped catalog.
+- `sp edit --global` mutates the shared layer.
+- `sp doctor --specialists` evaluates global-model coverage, blocked fields, and model completeness.
+- `SpecialistLoader.get()` throws `SpecialistMissingModelError` when a fully merged specialist still has no model after all layers.
+
+### Why this contract exists
+
+This contract centralizes user intent (`~/.config/specialists/user.json`) without forking canonical package assets, while preserving safety on policy-sensitive fields. It also keeps repo-local overrides composable with one machine-wide baseline and one per-repo layer.
+
 ## 4) Worktree isolation (`worktree.ts`)
 
 `src/specialist/worktree.ts` provisions isolated git workspaces for edit-permission specialists.

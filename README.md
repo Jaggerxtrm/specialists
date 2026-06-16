@@ -101,7 +101,9 @@ xt init
 
 # 3. Specialists
 npm install -g @jaggerxtrm/specialists
-sp init
+sp init --global   # first use: set machine-level defaults and model overrides once
+sp init            # per-repo bootstrap (project wiring, skills, db paths)
+sp doctor --specialists
 sp doctor
 sp list
 ```
