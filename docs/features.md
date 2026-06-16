@@ -515,21 +515,40 @@ Specialist configurations migrated from YAML to JSON in v2.1.15+.
 
 ### File locations
 
-Specialist configs live in:
+Specialist configs and global overrides include:
 - `config/specialists/<name>.specialist.json` (canonical)
-- `.specialists/default/<name>.specialist.json` (project-local defaults)
-- `.specialists/user/<name>.specialist.json` (user overrides)
+- `.specialists/user/<name>.specialist.json` (repo user override fork, full spec)
+- `~/.config/specialists/user.json` (global user override layer, sparse fields only, machine scope)
 
-### Loading precedence
+### Loading precedence (KAN-90)
 
-The loader uses **JSON-first** with **YAML fallback**:
+Override merge is strict 3-layer policy:
+
+1. **Package canonical** specialist from `config/specialists/<name>.specialist.json`
+2. **Global user** sparse overrides from `~/.config/specialists/user.json`
+3. **Repo user spec** from `.specialists/user/<name>.specialist.json`
+
+Only allowed fields flow through global/repo override layers. Package canonical defines baseline behavior, then machine and repo layers may override safe fields (or append `skills.paths` values).
+
+Blocked fields are still guarded:
+- `execution.permission_required`
+- `execution.auto_commit`
+- `prompt.system`
+- `prompt.output_schema`
+- `skills.scripts`
+- `mandatory_rules`
+- `capabilities`
+
+Global-layer blocked attempts are stripped at merge time; repo-layer blocked attempts are surfaced in `sp doctor --specialists`.
+
+The loader keeps JSON-first with YAML fallback at each leaf source:
 
 1. Look for `<name>.specialist.json` — use if found
 2. Fall back to `<name>.specialist.yaml` — use if JSON missing (deprecated)
 3. Emit warning to stderr when YAML is used:
-   ```
-   [specialists] DEPRECATED: YAML specialist config detected at <path>. Please migrate to .specialist.json
-   ```
+```
+[specialists] DEPRECATED: YAML specialist config detected at <path>. Please migrate to .specialist.json
+```
 
 ### Migration from YAML
 
@@ -537,7 +556,7 @@ YAML configs remain functional but are deprecated. To migrate:
 
 ```bash
 # YAML (deprecated)
-config/specialists/executor.specialist.json
+config/specialists/executor.specialist.yaml
 
 # JSON (preferred)
 config/specialists/executor.specialist.json
