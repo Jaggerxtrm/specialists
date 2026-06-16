@@ -14,6 +14,8 @@ import type {
   BeadField,
   BeadSection,
   ConsoleJob,
+  DiffFile,
+  DiffSummary,
   FeedEventRow,
   FeedSource,
   JobInspect,
@@ -24,9 +26,18 @@ import type {
   ProcessSnapshot,
   RepoRef,
   RuntimeClient,
+  WorktreeRef,
 } from './types.js';
 import { BEAD_ID_RE } from './types.js';
 import { timelineToForensicRow } from './forensic.js';
+import {
+  buildDiffSummary,
+  HUNK_DISPLAY_CEILING,
+  isValidGitRef,
+  parseNumstat,
+  parsePorcelainStatus,
+  parseUnifiedDiff,
+} from './git.js';
 
 const ACTIVE_STATES: ReadonlyArray<SupervisorStatus['status']> = ['starting', 'running', 'waiting'];
 const TERMINAL_STATES: ReadonlyArray<SupervisorStatus['status']> = ['done', 'error', 'cancelled'];
@@ -229,6 +240,64 @@ class LocalRuntimeClient implements RuntimeClient {
     return fetchBeadDoc(beadId);
   }
 
+  async resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null> {
+    const job = resolveJob(repo, jobIdPrefix);
+    if (!job) return null;
+    const path = job.worktree_path;
+    if (!path || !existsSync(path)) return null;
+    const branch = job.branch;
+    const base = resolveDiffBase(path, branch);
+    return { path, branch, base };
+  }
+
+  async diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary> {
+    const worktree = await this.resolveWorktree(repo, jobIdPrefix);
+    if (!worktree) return { worktree: null, entries: [], error: 'no worktree for this job' };
+    if (!isValidGitRef(worktree.base)) {
+      return { worktree, entries: [], error: `invalid base ref: ${worktree.base}` };
+    }
+    try {
+      const numstat = runGit(['diff', '--numstat', worktree.base], worktree.path, 'git_numstat');
+      const porcelain = runGit(['status', '--porcelain=v1', '--untracked-files=all'], worktree.path, 'git_status');
+      const entries = buildDiffSummary(parseNumstat(numstat), parsePorcelainStatus(porcelain));
+      return { worktree, entries };
+    } catch (error) {
+      return { worktree, entries: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile> {
+    const worktree = await this.resolveWorktree(repo, jobIdPrefix);
+    if (!worktree) return { path: file, binary: false, hunks: [], error: 'no worktree for this job' };
+    if (!isValidGitRef(worktree.base)) {
+      return { path: file, binary: false, hunks: [], error: `invalid base ref: ${worktree.base}` };
+    }
+    try {
+      const raw = runGit(['diff', worktree.base, '--', file], worktree.path, 'git_diff');
+      const hunks = parseUnifiedDiff(raw);
+      const totalLines = hunks.reduce((acc, h) => acc + h.lines.length, 0);
+      const binary = /^Binary files /m.test(raw);
+      if (binary) {
+        return { path: file, binary: true, hunks: [], totalLines: 0 };
+      }
+      if (totalLines > HUNK_DISPLAY_CEILING) {
+        const cap = HUNK_DISPLAY_CEILING;
+        let remaining = cap;
+        const trimmed: typeof hunks = [];
+        for (const h of hunks) {
+          if (remaining <= 0) break;
+          const slice = h.lines.slice(0, remaining);
+          remaining -= slice.length;
+          trimmed.push({ header: h.header, lines: slice });
+        }
+        return { path: file, binary: false, hunks: trimmed, truncated: true, totalLines };
+      }
+      return { path: file, binary: false, hunks, totalLines };
+    } catch (error) {
+      return { path: file, binary: false, hunks: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async liveStateFor(repo: RepoRef, jobIdPrefix: string): Promise<LiveStateRows> {
     const job = resolveJob(repo, jobIdPrefix);
     if (!job) return { rows: [], error: 'no live state — job terminated' };
@@ -247,6 +316,64 @@ class LocalRuntimeClient implements RuntimeClient {
 
 function kvRow(key: string, value: string): { key: string; value: string } {
   return { key, value };
+}
+
+function resolveDiffBase(worktreePath: string, branch?: string): string {
+  // Prefer merge-base against the repo's default branch.
+  const candidates = ['origin/HEAD', 'origin/main', 'origin/master', 'main', 'master'];
+  for (const ref of candidates) {
+    const result = spawnSync('git', ['-C', worktreePath, 'merge-base', 'HEAD', ref], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+    });
+    if (result.status === 0 && result.stdout) return result.stdout.trim();
+  }
+  // Fall back to the branch's tracking ref if available.
+  if (branch) {
+    const result = spawnSync('git', ['-C', worktreePath, 'rev-parse', `${branch}@{u}`], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+    });
+    if (result.status === 0 && result.stdout) return result.stdout.trim();
+  }
+  // Last resort: parent of HEAD (a single-commit diff).
+  const fallback = spawnSync('git', ['-C', worktreePath, 'rev-parse', 'HEAD^'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 1500,
+  });
+  return fallback.status === 0 && fallback.stdout ? fallback.stdout.trim() : 'HEAD';
+}
+
+function runGit(args: string[], cwd: string, op: 'git_numstat' | 'git_status' | 'git_diff'): string {
+  const started = Date.now();
+  const result = spawnSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 10_000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const durationMs = Date.now() - started;
+  if (result.error || result.status !== 0) {
+    const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
+    const errorClass = code ?? (result.signal ? `signal:${result.signal}` : `exit:${result.status}`);
+    try {
+      process.stderr.write(JSON.stringify({
+        ts: new Date().toISOString(),
+        component: 'sp-console',
+        op,
+        exitCode: result.status,
+        durationMs,
+        errorClass: String(errorClass),
+      }) + '\n');
+    } catch {
+      // swallow
+    }
+    throw new Error(`git ${op} failed (${errorClass})`);
+  }
+  return result.stdout ?? '';
 }
 
 const BEAD_DOC_CACHE = new Map<string, { doc: BeadDoc; at: number }>();

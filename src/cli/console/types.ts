@@ -1,7 +1,7 @@
 import type { ProcessHealthReport } from '../../specialist/process-health.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
-export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead';
+export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff';
 export type HistoryMode = 'default' | 'history' | 'all';
 export type FeedSource = 'sp_feed' | 'forensic';
 
@@ -103,6 +103,45 @@ export interface LiveStateRows {
   error?: string;
 }
 
+// ---------- DiffView (Phase 4) ----------
+
+export interface WorktreeRef {
+  path: string;
+  branch?: string;
+  base: string;
+}
+
+export interface DiffSummary {
+  worktree: WorktreeRef | null;
+  entries: Array<{
+    path: string;
+    status: 'M' | 'A' | 'D' | 'R' | 'C' | 'T' | 'U' | '?';
+    added: number;
+    deleted: number;
+    binary: boolean;
+  }>;
+  error?: string;
+}
+
+export interface DiffHunkLine {
+  kind: 'context' | 'add' | 'del' | 'meta';
+  text: string;
+}
+
+export interface DiffHunkBlock {
+  header: string;
+  lines: DiffHunkLine[];
+}
+
+export interface DiffFile {
+  path: string;
+  binary: boolean;
+  hunks: DiffHunkBlock[];
+  truncated?: boolean;
+  totalLines?: number;
+  error?: string;
+}
+
 export interface RuntimeClient {
   listRepos(): Promise<RepoRef[]>;
   listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot>;
@@ -111,6 +150,9 @@ export interface RuntimeClient {
   readResult(repo: RepoRef, jobIdPrefix: string): Promise<JobResult>;
   linkedDetail(repo: RepoRef, jobIdPrefix: string): Promise<BeadDoc>;
   liveStateFor(repo: RepoRef, jobIdPrefix: string): Promise<LiveStateRows>;
+  resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null>;
+  diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary>;
+  diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile>;
 }
 
 export const BEAD_ID_RE = /^[a-zA-Z]+-[a-zA-Z0-9]+(\.[0-9]+)*$/;

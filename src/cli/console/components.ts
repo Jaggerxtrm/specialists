@@ -20,6 +20,9 @@ import {
   paint,
   renderBeadBodyLine,
   renderBeadField,
+  renderDiffHunkHeader,
+  renderDiffHunkLine,
+  renderDiffSummaryRow,
   renderFilterPrompt,
   renderGroupRow,
   renderHeader,
@@ -41,7 +44,7 @@ const POLL_MS = 1000;
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
-const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead'];
+const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -112,6 +115,23 @@ export class ConsoleApp implements Component {
     // 'b' opens BeadView. Decision (bd notes): shift+enter cannot be reliably distinguished
     // from enter in pi-tui input stream, so 'b' is the documented keybind.
     else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
+    else if (data === 'd' && this.state.view === 'ps' && selected) this.open('diff', selected.id);
+    else if (data === 'r' && this.state.view === 'diff') this.refreshAfter({ type: 'diffRefresh' });
+    else if (this.state.view === 'diff' && (matchesKey(data, Key.enter) || data === 'l' || matchesKey(data, Key.right))) {
+      const idx = this.state.diff.selectedFileIndex;
+      const entry = this.state.diff.summary?.entries[idx];
+      if (this.state.diff.stage === 'summary' && entry && !entry.binary) {
+        this.dispatch({ type: 'diffOpenFile', index: idx, path: entry.path });
+        void this.refresh();
+      }
+    } else if (this.state.view === 'diff' && (data === 'j' || matchesKey(data, Key.down))) {
+      this.dispatch({ type: 'diffMove', delta: 1, viewportRows: this.mainViewportRows(), totalRows: this.renderedDetailRows });
+    } else if (this.state.view === 'diff' && (data === 'k' || matchesKey(data, Key.up))) {
+      this.dispatch({ type: 'diffMove', delta: -1, viewportRows: this.mainViewportRows(), totalRows: this.renderedDetailRows });
+    } else if (this.state.view === 'diff' && (matchesKey(data, Key.backspace) || matchesKey(data, Key.escape) || matchesKey(data, Key.left))) {
+      this.dispatch({ type: 'diffBack' });
+      void this.refresh();
+    }
     else if (
       (matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) &&
       this.state.view !== 'ps'
@@ -216,6 +236,14 @@ export class ConsoleApp implements Component {
           this.options.runtime.liveStateFor(repo, this.state.selectedJobId),
         ]);
         this.dispatch({ type: 'beadLoaded', doc, live });
+      } else if (this.state.view === 'diff' && this.state.selectedJobId) {
+        if (this.state.diff.stage === 'summary') {
+          const summary = await this.options.runtime.diffSummary(repo, this.state.selectedJobId);
+          this.dispatch({ type: 'diffSummaryLoaded', summary });
+        } else if (this.state.diff.filePath) {
+          const file = await this.options.runtime.diffFile(repo, this.state.selectedJobId, this.state.diff.filePath);
+          this.dispatch({ type: 'diffFileLoaded', file });
+        }
       }
     } catch (error) {
       this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
@@ -235,7 +263,7 @@ export class ConsoleApp implements Component {
     void this.refresh();
   }
 
-  private open(view: 'feed' | 'job' | 'result' | 'bead', jobId: string): void {
+  private open(view: 'feed' | 'job' | 'result' | 'bead' | 'diff', jobId: string): void {
     this.dispatch({ type: 'open', view, jobId });
     void this.refresh();
   }
@@ -250,7 +278,56 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'feed') return this.renderFeedRows(width, viewportRows);
     if (this.state.view === 'job') return this.renderJobRows(width, viewportRows);
     if (this.state.view === 'bead') return this.renderBeadRows(width, viewportRows);
+    if (this.state.view === 'diff') return this.renderDiffRows(width, viewportRows);
     return this.renderResultRows(width, viewportRows);
+  }
+
+  private renderDiffRows(width: number, viewportRows: number): string[] {
+    const diff = this.state.diff;
+    if (diff.loading) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('loading diff…', width)];
+    }
+    if (diff.stage === 'summary') {
+      if (diff.error || !diff.summary || diff.summary.entries.length === 0) {
+        const msg = diff.error ?? diff.summary?.error ?? 'no changes in worktree';
+        this.renderedDetailRows = 2;
+        return [
+          renderSectionTitle('diff summary', width),
+          renderPlaceholder(msg, width),
+        ];
+      }
+      const rows = [renderSectionTitle('diff summary', width)];
+      diff.summary.entries.forEach((entry, idx) => {
+        rows.push(renderDiffSummaryRow(entry, width, idx === diff.selectedFileIndex));
+      });
+      this.renderedDetailRows = rows.length;
+      return visibleSlice(rows, 0, viewportRows).map((row) => truncateToWidth(row, width));
+    }
+    // file stage
+    const file = diff.fileDoc;
+    if (!file) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('loading file…', width)];
+    }
+    if (file.error) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder(file.error, width)];
+    }
+    const rows: string[] = [renderSectionTitle(file.path, width)];
+    if (file.binary) {
+      rows.push(renderPlaceholder('binary file (no diff rendered)', width));
+    } else {
+      for (const h of file.hunks) {
+        rows.push(renderDiffHunkHeader(h.header, width));
+        for (const ln of h.lines) rows.push(renderDiffHunkLine(ln.kind, ln.text, width));
+      }
+      if (file.truncated) {
+        rows.push(renderPlaceholder(`… truncated (${Math.round((file.totalLines ?? 0) / 1000)}k lines) — press r to re-load`, width));
+      }
+    }
+    this.renderedDetailRows = rows.length;
+    return visibleSlice(rows, diff.fileScroll, viewportRows).map((row) => truncateToWidth(row, width));
   }
 
   private renderBeadRows(width: number, viewportRows: number): string[] {

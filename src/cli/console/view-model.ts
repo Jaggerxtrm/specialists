@@ -1,4 +1,4 @@
-import type { BeadDoc, ConsoleView, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { BeadDoc, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
 
 export interface ConsoleState {
   repos: RepoRef[];
@@ -21,7 +21,19 @@ export interface ConsoleState {
   beadLoading: boolean;
   beadError?: string;
   feedSource: FeedSource;
+  diff: DiffViewState;
   message?: string;
+}
+
+export interface DiffViewState {
+  stage: 'summary' | 'file';
+  loading: boolean;
+  summary?: DiffSummary;
+  selectedFileIndex: number;
+  fileScroll: number;
+  filePath?: string;
+  fileDoc?: DiffFile;
+  error?: string;
 }
 
 export type ConsoleAction =
@@ -32,6 +44,12 @@ export type ConsoleAction =
   | { type: 'resultLoaded'; result: JobResult }
   | { type: 'beadLoaded'; doc: BeadDoc; live: LiveStateRows }
   | { type: 'beadError'; error: string }
+  | { type: 'diffSummaryLoaded'; summary: DiffSummary }
+  | { type: 'diffFileLoaded'; file: DiffFile }
+  | { type: 'diffOpenFile'; index: number; path: string }
+  | { type: 'diffBack' }
+  | { type: 'diffRefresh' }
+  | { type: 'diffMove'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'message'; message?: string }
   | { type: 'move'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'top'; viewportRows: number; totalRows?: number }
@@ -65,6 +83,7 @@ export function initialConsoleState(): ConsoleState {
     feedRows: [],
     beadLoading: false,
     feedSource: 'forensic',
+    diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
   };
 }
 
@@ -148,6 +167,9 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         beadDoc: action.view === 'bead' ? undefined : state.beadDoc,
         beadLive: action.view === 'bead' ? undefined : state.beadLive,
         beadError: action.view === 'bead' ? undefined : state.beadError,
+        diff: action.view === 'diff'
+          ? { stage: 'summary', loading: true, selectedFileIndex: 0, fileScroll: 0 }
+          : state.diff,
       };
     case 'back':
       // selectedRow + scroll preserved: only the view switches back.
@@ -162,7 +184,69 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         beadLive: undefined,
         beadLoading: false,
         beadError: undefined,
+        diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
       };
+    case 'diffSummaryLoaded':
+      return {
+        ...state,
+        diff: {
+          ...state.diff,
+          loading: false,
+          summary: action.summary,
+          error: action.summary.error,
+          selectedFileIndex: Math.min(state.diff.selectedFileIndex, Math.max(0, action.summary.entries.length - 1)),
+        },
+      };
+    case 'diffFileLoaded':
+      return {
+        ...state,
+        diff: { ...state.diff, loading: false, fileDoc: action.file, error: action.file.error, fileScroll: 0 },
+      };
+    case 'diffOpenFile':
+      return {
+        ...state,
+        diff: {
+          ...state.diff,
+          stage: 'file',
+          loading: true,
+          selectedFileIndex: action.index,
+          filePath: action.path,
+          fileDoc: undefined,
+          fileScroll: 0,
+          error: undefined,
+        },
+      };
+    case 'diffBack':
+      if (state.diff.stage === 'file') {
+        return {
+          ...state,
+          diff: { ...state.diff, stage: 'summary', fileDoc: undefined, filePath: undefined, fileScroll: 0, error: undefined },
+        };
+      }
+      // Already at summary — fall through to leave DiffView.
+      return {
+        ...state,
+        view: 'ps',
+        selectedJobId: undefined,
+        diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
+      };
+    case 'diffRefresh':
+      return {
+        ...state,
+        diff: { ...state.diff, loading: true, error: undefined },
+      };
+    case 'diffMove': {
+      const stage = state.diff.stage;
+      if (stage === 'summary') {
+        const total = state.diff.summary?.entries.length ?? 0;
+        const next = Math.max(0, Math.min(total - 1, state.diff.selectedFileIndex + action.delta));
+        return { ...state, diff: { ...state.diff, selectedFileIndex: next } };
+      }
+      const total = action.totalRows ?? 0;
+      const max = Math.max(0, total - Math.max(1, action.viewportRows));
+      const next = Math.max(0, Math.min(max, state.diff.fileScroll + action.delta));
+      return { ...state, diff: { ...state.diff, fileScroll: next } };
+    }
     case 'cycleHistory': {
       const historyMode: HistoryMode = state.historyMode === 'default' ? 'history' : state.historyMode === 'history' ? 'all' : 'default';
       return { ...state, historyMode, selectedRow: 0, scroll: 0 };

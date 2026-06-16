@@ -346,12 +346,14 @@ export function renderKeyBar(
 ): string {
   const line =
     view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  h history  a all  c cleaned  / filter  tab repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  h history  a all  c cleaned  / filter  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
           ? '↑↓ scroll  PgUp/PgDn page  ⌫ back  g/G top/end  q quit'
-          : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
+          : view === 'diff'
+            ? '↑↓ nav  ↵ open file  r refresh  ⌫ back  q quit'
+            : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
   return paint(truncateToWidth(line, width), 'dim');
 }
 
@@ -439,6 +441,36 @@ export function renderFilterPrompt(text: string, width: number): string {
 
 export function renderPlaceholder(text: string, width: number): string {
   return paint(truncateToWidth(text, width), 'dim');
+}
+
+// ---------- DiffView rows ----------
+
+export function renderDiffSummaryRow(
+  entry: { path: string; status: string; added: number; deleted: number; binary: boolean },
+  width: number,
+  selected: boolean,
+): string {
+  const marker = selected ? '›' : ' ';
+  const status = padR(entry.status, 1);
+  const added = entry.binary ? '   bin' : padL(`+${entry.added}`, 6);
+  const deleted = entry.binary ? '      ' : padL(`-${entry.deleted}`, 6);
+  const head = paint(`${marker} ${status} ${added} ${deleted}`, 'dim');
+  const pathPaint = entry.status === '?' ? 'dim' : 'bright';
+  return truncateToWidth(head + ' ' + paint(entry.path, pathPaint), width);
+}
+
+export function renderDiffHunkHeader(text: string, width: number): string {
+  return paint(truncateToWidth(text, width), 'dim');
+}
+
+export function renderDiffHunkLine(
+  kind: 'context' | 'add' | 'del' | 'meta',
+  text: string,
+  width: number,
+): string {
+  const color: ThemeColor =
+    kind === 'add' ? 'done' : kind === 'del' ? 'blocked' : kind === 'meta' ? 'dim' : 'txt';
+  return paint(truncateToWidth(text, width), color);
 }
 
 // ---------- BeadView rows ----------
