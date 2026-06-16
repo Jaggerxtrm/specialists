@@ -1,4 +1,4 @@
-import type { BeadDoc, ConsoleView, FeedEventRow, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { BeadDoc, ConsoleView, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
 
 export interface ConsoleState {
   repos: RepoRef[];
@@ -20,6 +20,7 @@ export interface ConsoleState {
   beadLive?: LiveStateRows;
   beadLoading: boolean;
   beadError?: string;
+  feedSource: FeedSource;
   message?: string;
 }
 
@@ -41,6 +42,7 @@ export type ConsoleAction =
   | { type: 'toggleAll' }
   | { type: 'toggleCleaned' }
   | { type: 'toggleFollow' }
+  | { type: 'toggleFeedSource' }
   | { type: 'startFilter' }
   | { type: 'filterChar'; char: string }
   | { type: 'filterBackspace' }
@@ -62,6 +64,7 @@ export function initialConsoleState(): ConsoleState {
     follow: false,
     feedRows: [],
     beadLoading: false,
+    feedSource: 'forensic',
   };
 }
 
@@ -170,6 +173,15 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
       return { ...state, includeCleaned: !state.includeCleaned, selectedRow: 0, scroll: 0 };
     case 'toggleFollow':
       return { ...state, follow: !state.follow };
+    case 'toggleFeedSource':
+      // Source-switch atomicity: clear buffer before next subscribe so no
+      // mixed-source rows can be drawn.
+      return {
+        ...state,
+        feedSource: state.feedSource === 'forensic' ? 'sp_feed' : 'forensic',
+        feedRows: [],
+        scroll: 0,
+      };
     case 'startFilter':
       return { ...state, filtering: true };
     case 'filterChar':

@@ -122,6 +122,7 @@ export class ConsoleApp implements Component {
     else if (data === 'c' && this.state.view === 'ps') this.refreshAfter({ type: 'toggleCleaned' });
     else if (data === '/' && this.state.view === 'ps') this.dispatch({ type: 'startFilter' });
     else if (data === 'f' && this.state.view === 'feed') this.refreshAfter({ type: 'toggleFollow' });
+    else if (data === 't' && this.state.view === 'feed') this.refreshAfter({ type: 'toggleFeedSource' });
     else if (matchesKey(data, Key.tab)) this.refreshAfter({ type: 'nextRepo' });
     else if (/^[1-9]$/.test(data)) this.refreshAfter({ type: 'selectRepo', index: Number(data) - 1 });
   }
@@ -149,7 +150,7 @@ export class ConsoleApp implements Component {
     lines.push(...mainRows);
 
     lines.push(renderStatsLine(this.state.snapshot, width));
-    lines.push(renderKeyBar(this.state.view, this.state.follow, width));
+    lines.push(renderKeyBar(this.state.view, this.state.follow, width, this.state.feedSource));
     if (this.state.filtering) lines.push(renderFilterPrompt(`/${this.state.filter}_`, width));
     if (this.state.message) lines.push(renderMessage(this.state.message, width));
     return fitFrame(lines, width, height);
@@ -191,6 +192,7 @@ export class ConsoleApp implements Component {
           repo,
           jobId: this.state.selectedJobId,
           limit: 250,
+          source: this.state.feedSource,
         });
         this.dispatch({
           type: 'feedLoaded',
@@ -365,6 +367,9 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'bead') {
       const beadId = job?.bead_id ?? this.state.beadDoc?.beadId ?? '(unlinked)';
       return `bead · ${beadId}`;
+    }
+    if (this.state.view === 'feed') {
+      return `feed · ${specialist}:${this.state.selectedJobId} · ${this.state.feedSource}`;
     }
     return `${this.state.view} · ${specialist}:${this.state.selectedJobId}`;
   }

@@ -3,6 +3,7 @@ import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
 export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead';
 export type HistoryMode = 'default' | 'history' | 'all';
+export type FeedSource = 'sp_feed' | 'forensic';
 
 export interface RepoRef {
   id: string;
@@ -105,7 +106,7 @@ export interface LiveStateRows {
 export interface RuntimeClient {
   listRepos(): Promise<RepoRef[]>;
   listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot>;
-  readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number }): Promise<FeedEventRow[]>;
+  readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number; source?: FeedSource }): Promise<FeedEventRow[]>;
   inspectJob(repo: RepoRef, jobIdPrefix: string): Promise<JobInspect>;
   readResult(repo: RepoRef, jobIdPrefix: string): Promise<JobResult>;
   linkedDetail(repo: RepoRef, jobIdPrefix: string): Promise<BeadDoc>;

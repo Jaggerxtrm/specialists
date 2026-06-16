@@ -338,12 +338,17 @@ export function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: nu
 
 // ---------- KeyBar ----------
 
-export function renderKeyBar(view: string, follow: boolean, width: number): string {
+export function renderKeyBar(
+  view: string,
+  follow: boolean,
+  width: number,
+  feedSource: 'sp_feed' | 'forensic' = 'forensic',
+): string {
   const line =
     view === 'ps'
       ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  h history  a all  c cleaned  / filter  tab repo  q quit'
       : view === 'feed'
-        ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  ⌫ back  g/G top/end  q quit`
+        ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
           ? '↑↓ scroll  PgUp/PgDn page  ⌫ back  g/G top/end  q quit'
           : '↑↓ scroll  ⌫ back  g/G top/end  q quit';

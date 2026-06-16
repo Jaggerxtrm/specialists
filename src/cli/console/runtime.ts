@@ -15,6 +15,7 @@ import type {
   BeadSection,
   ConsoleJob,
   FeedEventRow,
+  FeedSource,
   JobInspect,
   JobResult,
   LiveStateRows,
@@ -25,6 +26,7 @@ import type {
   RuntimeClient,
 } from './types.js';
 import { BEAD_ID_RE } from './types.js';
+import { timelineToForensicRow } from './forensic.js';
 
 const ACTIVE_STATES: ReadonlyArray<SupervisorStatus['status']> = ['starting', 'running', 'waiting'];
 const TERMINAL_STATES: ReadonlyArray<SupervisorStatus['status']> = ['done', 'error', 'cancelled'];
@@ -95,14 +97,35 @@ class LocalRuntimeClient implements RuntimeClient {
     };
   }
 
-  async readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number }): Promise<FeedEventRow[]> {
+  async readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number; source?: FeedSource }): Promise<FeedEventRow[]> {
     const job = resolveJob(args.repo, args.jobId);
     if (!job) return [];
-    const events = readEvents(args.repo, job.id)
+    const source: FeedSource = args.source ?? 'forensic';
+    const raw = readEvents(args.repo, job.id)
       .filter((event) => typeof args.fromSeq !== 'number' || (event.seq ?? -1) >= args.fromSeq)
-      .filter(shouldRenderHumanEvent)
       .sort(compareTimelineEvents);
-    const visibleEvents = dedupeHumanEvents(job.id, events);
+
+    if (source === 'forensic') {
+      const limited = raw.slice(-Math.max(1, args.limit ?? 200));
+      const ctx = {
+        jobId: job.id,
+        specialist: job.specialist,
+        beadId: job.bead_id,
+        nodeId: job.node_id,
+        backend: job.backend,
+        model: job.model,
+        chainKind: job.chain_kind,
+        chainId: job.chain_id,
+        chainRootJobId: job.chain_root_job_id,
+        chainRootBeadId: job.chain_root_bead_id,
+        epicId: job.epic_id,
+      };
+      return limited.map((event, idx) => timelineToForensicRow(event, ctx, idx));
+    }
+
+    // legacy sp_feed path (human-formatted timeline rendering)
+    const filtered = raw.filter(shouldRenderHumanEvent);
+    const visibleEvents = dedupeHumanEvents(job.id, filtered);
     const limited = visibleEvents.slice(-Math.max(1, args.limit ?? 200));
     const colorize = colorMap.get(job.id);
     return limited.map((event) => ({
