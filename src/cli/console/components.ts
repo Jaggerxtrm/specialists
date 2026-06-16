@@ -1,10 +1,45 @@
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component } from '@earendil-works/pi-tui';
-import { bold, cyan, dim, green, magenta, red, yellow } from '../format-helpers.js';
+import {
+  Key,
+  matchesKey,
+  truncateToWidth,
+  wrapTextWithAnsi,
+  type Component,
+} from '@earendil-works/pi-tui';
 import type { RuntimeClient, ConsoleJob } from './types.js';
 import { formatDateTime } from './runtime.js';
-import { currentRepo, initialConsoleState, reduceConsoleState, selectedJobRow, visibleSlice, type ConsoleState } from './view-model.js';
+import {
+  currentRepo,
+  initialConsoleState,
+  reduceConsoleState,
+  selectedJobRow,
+  visibleSlice,
+  type ConsoleState,
+} from './view-model.js';
+import {
+  fillerLine,
+  paint,
+  renderFilterPrompt,
+  renderGroupRow,
+  renderHeader,
+  renderInspectField,
+  renderJobRow,
+  renderKeyBar,
+  renderMessage,
+  renderMeters,
+  renderPlaceholder,
+  renderResultFooter,
+  renderResultTitle,
+  renderSectionTitle,
+  renderStatsLine,
+  renderTabs,
+  renderViewtag,
+} from './theme.js';
 
 const POLL_MS = 1000;
+const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
+const BOTTOM_CHROME_ROWS = 2; // stats + keys
+const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
+const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -56,19 +91,27 @@ export class ConsoleApp implements Component {
 
     const viewportRows = this.mainViewportRows();
     const selected = selectedJobRow(this.state);
-
     const totalRows = this.state.view === 'ps' ? undefined : this.renderedDetailRows;
 
-    if (matchesKey(data, Key.down) || data === 'j') this.dispatch({ type: 'move', delta: 1, viewportRows, totalRows });
-    else if (matchesKey(data, Key.up) || data === 'k') this.dispatch({ type: 'move', delta: -1, viewportRows, totalRows });
-    else if (matchesKey(data, Key.pageDown) || data === 'd') this.dispatch({ type: 'move', delta: Math.max(1, viewportRows - 1), viewportRows, totalRows });
-    else if (matchesKey(data, Key.pageUp) || data === 'u') this.dispatch({ type: 'move', delta: -Math.max(1, viewportRows - 1), viewportRows, totalRows });
+    if (matchesKey(data, Key.down) || data === 'j')
+      this.dispatch({ type: 'move', delta: 1, viewportRows, totalRows });
+    else if (matchesKey(data, Key.up) || data === 'k')
+      this.dispatch({ type: 'move', delta: -1, viewportRows, totalRows });
+    else if (matchesKey(data, Key.pageDown) || data === 'd')
+      this.dispatch({ type: 'move', delta: Math.max(1, viewportRows - 1), viewportRows, totalRows });
+    else if (matchesKey(data, Key.pageUp) || data === 'u')
+      this.dispatch({ type: 'move', delta: -Math.max(1, viewportRows - 1), viewportRows, totalRows });
     else if (data === 'g') this.dispatch({ type: 'top', viewportRows, totalRows });
     else if (data === 'G') this.dispatch({ type: 'bottom', viewportRows, totalRows });
-    else if (matchesKey(data, Key.enter) && this.state.view === 'ps' && selected) this.open('feed', selected.id);
+    else if (matchesKey(data, Key.enter) && this.state.view === 'ps' && selected)
+      this.open('feed', selected.id);
     else if (data === 'r' && this.state.view === 'ps' && selected) this.open('result', selected.id);
     else if (data === 'i' && this.state.view === 'ps' && selected) this.open('job', selected.id);
-    else if ((matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) && this.state.view !== 'ps') this.back();
+    else if (
+      (matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) &&
+      this.state.view !== 'ps'
+    )
+      this.back();
     else if (data === 'h' && this.state.view === 'ps') this.refreshAfter({ type: 'cycleHistory' });
     else if (data === 'a' && this.state.view === 'ps') this.refreshAfter({ type: 'toggleAll' });
     else if (data === 'c' && this.state.view === 'ps') this.refreshAfter({ type: 'toggleCleaned' });
@@ -82,16 +125,38 @@ export class ConsoleApp implements Component {
     this.lastWidth = width;
     const height = Math.max(1, this.options.rows());
     const repo = currentRepo(this.state);
-    const lines = [this.headerLine(width, repo)];
+    const lines: string[] = [];
+    lines.push(renderTabs(this.state.repos, this.state.repoIndex, width));
+    lines.push(renderMeters(this.metersInput(), width));
+    lines.push(renderViewtag(VIEWS, this.state.view, width));
+    lines.push(
+      renderHeader(
+        this.detailJobLabel() ?? this.state.view,
+        repo?.name ?? 'specialists',
+        repo?.path ?? process.cwd(),
+        width,
+      ),
+    );
+
     const viewportRows = this.mainViewportRows();
     const mainRows = this.renderMain(width, viewportRows).slice(0, viewportRows);
-    while (mainRows.length < viewportRows) mainRows.push('');
+    while (mainRows.length < viewportRows) mainRows.push(fillerLine(width));
     lines.push(...mainRows);
-    lines.push(this.statsLine(width));
-    lines.push(this.keysLine(width));
-    if (this.state.filtering) lines.push(truncateToWidth(`/${this.state.filter}_`, width));
-    if (this.state.message) lines.push(truncateToWidth(yellow(this.state.message), width));
+
+    lines.push(renderStatsLine(this.state.snapshot, width));
+    lines.push(renderKeyBar(this.state.view, this.state.follow, width));
+    if (this.state.filtering) lines.push(renderFilterPrompt(`/${this.state.filter}_`, width));
+    if (this.state.message) lines.push(renderMessage(this.state.message, width));
     return fitFrame(lines, width, height);
+  }
+
+  private metersInput() {
+    const snap = this.state.snapshot;
+    const active = snap ? snap.runningJobs : 0;
+    const activeTotal = snap ? snap.totalJobs : 0;
+    // leases + budget read from ~/.config/specialists/user.json in Phase 6;
+    // Phase 1 normative stub per bead NOTES.
+    return { active, activeTotal, leases: 1, leaseCapacity: 4, budgetPct: 61 };
   }
 
   private async loadRepos(): Promise<void> {
@@ -117,12 +182,27 @@ export class ConsoleApp implements Component {
       this.dispatch({ type: 'snapshotLoaded', snapshot });
 
       if (this.state.view === 'feed' && this.state.selectedJobId) {
-        const rows = await this.options.runtime.readFeed({ repo, jobId: this.state.selectedJobId, limit: 250 });
-        this.dispatch({ type: 'feedLoaded', rows, totalRows: this.feedLines(rows, this.lastWidth).length, viewportRows: this.mainViewportRows() });
+        const rows = await this.options.runtime.readFeed({
+          repo,
+          jobId: this.state.selectedJobId,
+          limit: 250,
+        });
+        this.dispatch({
+          type: 'feedLoaded',
+          rows,
+          totalRows: this.feedLines(rows, this.lastWidth).length,
+          viewportRows: this.mainViewportRows(),
+        });
       } else if (this.state.view === 'job' && this.state.selectedJobId) {
-        this.dispatch({ type: 'jobLoaded', inspect: await this.options.runtime.inspectJob(repo, this.state.selectedJobId) });
+        this.dispatch({
+          type: 'jobLoaded',
+          inspect: await this.options.runtime.inspectJob(repo, this.state.selectedJobId),
+        });
       } else if (this.state.view === 'result' && this.state.selectedJobId) {
-        this.dispatch({ type: 'resultLoaded', result: await this.options.runtime.readResult(repo, this.state.selectedJobId) });
+        this.dispatch({
+          type: 'resultLoaded',
+          result: await this.options.runtime.readResult(repo, this.state.selectedJobId),
+        });
       }
     } catch (error) {
       this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
@@ -161,31 +241,34 @@ export class ConsoleApp implements Component {
 
   private renderProcessRows(width: number, viewportRows: number): string[] {
     const rows = this.state.snapshot?.rows ?? [];
-    if (rows.length === 0) return [dim('no jobs match current filters')];
+    if (rows.length === 0) return [renderPlaceholder('no jobs match current filters', width)];
     return visibleSlice(rows, this.state.scroll, viewportRows).map((row, offset) => {
       const index = this.state.scroll + offset;
-      if (row.kind === 'group') return truncateToWidth(`${'  '.repeat(row.depth)}${cyan(row.label)}`, width);
+      if (row.kind === 'group') {
+        // legacy group rows from runtime.ts still pass {kind:'group', label, depth}
+        return renderGroupRow('label', row.label, width, row.depth);
+      }
       const selected = index === this.state.selectedRow;
-      const marker = selected ? '›' : ' ';
       const job = row.job;
-      const status = colorStatus(job.status, job.is_dead);
-      const ctx = job.context_pct === undefined ? '--' : `${Math.round(job.context_pct)}%${job.context_health === 'WARN' || job.context_health === 'CRITICAL' ? '▲' : ''}`;
-      const elapsed = job.elapsed_s === undefined ? '--' : formatShortElapsed(job.elapsed_s);
-      const datePrefix = this.state.historyMode === 'default' ? '' : `${formatDateTime(job.started_at_ms)} `;
-      const metrics = [job.metrics?.turns ? `${job.metrics.turns}t` : null, job.metrics?.tool_calls ? `${job.metrics.tool_calls}tc` : null, job.metrics?.token_usage?.total_tokens ? `${job.metrics.token_usage.total_tokens}tok` : null].filter(Boolean).join('·');
-      const bead = job.bead_id ?? '';
-      const title = job.bead_title ? ` ${dim(job.bead_title)}` : '';
-      const line = `${marker} ${'  '.repeat(row.depth)}${datePrefix}${statusIcon(job)} ${job.id.padEnd(8)} ${job.specialist.slice(0, 13).padEnd(13)} ${status.padEnd(18)} ${ctx.padStart(4)} ${elapsed}${metrics ? ` ${dim(metrics)}` : ''} ${dim((job.payload_kb ?? '--').padEnd(8))} ${dim((job.payload_tokens ?? '--').padEnd(8))} ${dim(bead.padEnd(14))} ${dim(job.next_action ?? '')}${title}`;
-      return truncateToWidth(line, width);
+      const datePrefix =
+        this.state.historyMode === 'default' ? '' : `${formatDateTime(job.started_at_ms)} `;
+      // datePrefix is rendered through theme via paint() to keep the no-raw-ANSI invariant.
+      if (datePrefix) {
+        const base = renderJobRow(job, Math.max(1, width - datePrefix.length), row.depth, selected);
+        return truncateToWidth(paint(datePrefix, 'dim') + base, width);
+      }
+      return renderJobRow(job, width, row.depth, selected);
     });
   }
 
   private renderFeedRows(width: number, viewportRows: number): string[] {
     const lines = this.feedLines(this.state.feedRows, width);
-    const rows = lines.length > 0 ? lines : [dim('no feed events found')];
+    const rows = lines.length > 0 ? lines : [renderPlaceholder('no feed events found', width)];
     this.renderedDetailRows = rows.length;
     const maxScroll = Math.max(0, rows.length - Math.max(1, viewportRows));
-    const scroll = this.state.follow ? maxScroll : Math.max(0, Math.min(this.state.scroll, maxScroll));
+    const scroll = this.state.follow
+      ? maxScroll
+      : Math.max(0, Math.min(this.state.scroll, maxScroll));
     return [...visibleSlice(rows, scroll, viewportRows)];
   }
 
@@ -193,12 +276,13 @@ export class ConsoleApp implements Component {
     const inspect = this.state.jobInspect;
     if (!inspect) {
       this.renderedDetailRows = 1;
-      return [dim('loading job inspect…')];
+      return [renderPlaceholder('loading job inspect…', width)];
     }
     const rows = [
-      ...inspect.fields.map((field) => `${field.label.padEnd(16)} ${field.value}`),
-      '',
-      dim(`actions: ${inspect.actions.join(' | ') || 'none'}`),
+      renderSectionTitle('inspect', width),
+      ...inspect.fields.map((field) => renderInspectField(field.label, field.value, width)),
+      renderSectionTitle('actions', width),
+      renderPlaceholder(inspect.actions.join(' | ') || 'none', width),
     ];
     this.renderedDetailRows = rows.length;
     return visibleSlice(rows, this.state.scroll, viewportRows).map((row) => truncateToWidth(row, width));
@@ -208,9 +292,15 @@ export class ConsoleApp implements Component {
     const result = this.state.jobResult;
     if (!result) {
       this.renderedDetailRows = 1;
-      return [dim('loading result…')];
+      return [renderPlaceholder('loading result…', width)];
     }
-    const rows = [bold(result.title), '', ...wrapTextWithAnsi(result.output, width), '', dim(result.footer)];
+    const rows = [
+      renderResultTitle(result.title, width),
+      renderSectionTitle('output', width),
+      ...wrapTextWithAnsi(result.output, width),
+      renderSectionTitle('footer', width),
+      renderResultFooter(result.footer, width),
+    ];
     this.renderedDetailRows = rows.length;
     const maxScroll = Math.max(0, rows.length - Math.max(1, viewportRows));
     const scroll = Math.max(0, Math.min(this.state.scroll, maxScroll));
@@ -219,11 +309,6 @@ export class ConsoleApp implements Component {
 
   private feedLines(rows: readonly { line: string }[], width: number): string[] {
     return rows.flatMap((row) => wrapTextWithAnsi(row.line, width));
-  }
-
-  private headerLine(width: number, repo = currentRepo(this.state)): string {
-    const viewLabel = this.detailJobLabel() ?? this.state.view;
-    return truncateToWidth(`${viewLabel} · ${repo?.name ?? 'specialists'} · ${repo?.path ?? process.cwd()}`, width);
   }
 
   private detailJobLabel(): string | undefined {
@@ -236,70 +321,22 @@ export class ConsoleApp implements Component {
   private findSelectedJob(): ConsoleJob | undefined {
     const id = this.state.selectedJobId;
     if (!id) return undefined;
-    return this.state.snapshot?.jobs.find((job) => job.id.startsWith(id))
-      ?? this.state.jobInspect?.job
-      ?? this.state.jobResult?.job
-      ?? undefined;
-  }
-
-  private statsLine(width: number): string {
-    const snapshot = this.state.snapshot;
-    if (!snapshot) return truncateToWidth(dim('health -- · jobs --'), width);
-    const health = snapshot.health;
-    const healthStatus = health?.status ?? '--';
-    const rss = health ? `${(health.totalRssBytes / (1024 * 1024)).toFixed(0)}MB` : '--';
-    const cpu = health ? `${health.totalCpuPct.toFixed(1)}%` : '--';
-    const ctx = snapshot.maxContextPct === undefined ? '--' : `${Math.round(snapshot.maxContextPct)}%`;
-    const tokens = snapshot.totalTokens > 0 ? `${snapshot.totalTokens}` : '--';
-    const line = `health ${healthStatus} rss=${rss} cpu=${cpu} · jobs ${snapshot.visibleJobs} visible/${snapshot.totalJobs} total · running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs} · history ${snapshot.filter.historyMode}${snapshot.filter.includeCleaned ? '+cleaned' : ''} · epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees} · ctx max ${ctx} · tokens ${tokens} · orphans ${health?.orphanCount ?? 0}`;
-    return truncateToWidth(dim(line), width);
-  }
-
-  private keysLine(width: number): string {
-    const line = this.state.view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  h history  a all  c cleaned  / filter  tab repo  q quit'
-      : this.state.view === 'feed'
-        ? `↑↓ scroll  PgUp/PgDn page  f follow:${this.state.follow ? 'on' : 'off'}  ⌫ back  g/G top/end  q quit`
-        : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
-    return truncateToWidth(line, width);
+    return (
+      this.state.snapshot?.jobs.find((job) => job.id.startsWith(id)) ??
+      this.state.jobInspect?.job ??
+      this.state.jobResult?.job ??
+      undefined
+    );
   }
 
   private mainViewportRows(): number {
-    const overhead = 3 + (this.state.filtering ? 1 : 0) + (this.state.message ? 1 : 0);
+    const overhead = CHROME_ROWS + (this.state.filtering ? 1 : 0) + (this.state.message ? 1 : 0);
     return Math.max(1, this.options.rows() - overhead);
   }
 }
 
 export function fitFrame(lines: string[], width: number, height: number): string[] {
   const frame = lines.slice(0, height).map((line) => truncateToWidth(line, width));
-  while (frame.length < height) frame.push('');
+  while (frame.length < height) frame.push(fillerLine(width));
   return frame;
 }
-
-function colorStatus(status: string, dead?: boolean): string {
-  if (dead) return red('dead');
-  if (status === 'running') return green(status);
-  if (status === 'waiting') return magenta(status);
-  if (status === 'starting') return yellow(status);
-  if (status === 'error') return red(status);
-  if (status === 'done') return dim(status);
-  return status;
-}
-
-function statusIcon(job: { status: string; is_dead?: boolean }): string {
-  if (job.is_dead) return red('◉');
-  if (job.status === 'running') return cyan('◉');
-  if (job.status === 'waiting') return magenta('◐');
-  if (job.status === 'starting') return yellow('◐');
-  if (job.status === 'done') return green('○');
-  if (job.status === 'error') return red('○');
-  return dim('○');
-}
-
-function formatShortElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return `${minutes}m${String(remainder).padStart(2, '0')}s`;
-}
-
