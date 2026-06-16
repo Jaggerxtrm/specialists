@@ -42,8 +42,10 @@ type SetupInput = z.infer<typeof SetupInputSchema>;
 type SetupPlan = z.infer<typeof SetupPlanSchema>;
 type SetupWrite = z.infer<typeof SetupWriteSchema>;
 
+type SetupMode = 'discovery' | 'fetch-benchmarks' | 'plan' | 'apply' | 'probe-only' | 'interactive';
+
 interface ParsedArgs {
-  mode: 'discovery' | 'fetch-benchmarks' | 'plan' | 'apply' | 'probe-only' | 'interactive';
+  mode: SetupMode;
   json: boolean;
   offline: boolean;
   dryRun: boolean;
@@ -95,11 +97,18 @@ interface BenchmarkFetchResult {
   cache_status: 'fresh' | 'stale' | 'missing';
 }
 
+interface PlannedChange {
+  key: string;
+  prevValue: string;
+  newValue: string;
+}
+
 interface ApplyResult {
   dry_run: boolean;
   path: string;
+  applied: number;
+  skipped_idempotent: number;
   writes: SetupWrite[];
-  changed: boolean;
 }
 
 function usage(): string {
@@ -115,7 +124,7 @@ function usage(): string {
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
-  let mode: ParsedArgs['mode'] | undefined;
+  let mode: SetupMode | undefined;
   let json = false;
   let offline = false;
   let dryRun = false;
@@ -180,7 +189,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   return { mode, json, offline, dryRun, planPreset, planPath, probeModel, probeSpec };
 }
 
-function pickMode(current: ParsedArgs['mode'] | undefined, next: ParsedArgs['mode']): ParsedArgs['mode'] {
+function pickMode(current: SetupMode | undefined, next: SetupMode): SetupMode {
   if (current && current !== next) throw new Error('Choose exactly one setup mode');
   return next;
 }
@@ -405,40 +414,85 @@ function scoreRow(row: BenchmarkRow, preferredProviders: ReadonlySet<string>): n
 function applyPlan(planPath: string, dryRun: boolean): ApplyResult {
   const plan = SetupPlanSchema.parse(JSON.parse(readFileSync(planPath, 'utf8')));
   const path = getGlobalUserConfigPath().path;
-  if (dryRun) return { dry_run: true, path, writes: plan.writes, changed: false };
-
-  let changed = false;
-  for (const write of plan.writes) {
-    if (isWriteAlreadyApplied(write)) continue;
-    applyWriteWithGlobalEdit(write);
-    changed = true;
+  const changes = collectPlannedChanges(plan.writes);
+  if (dryRun) {
+    return {
+      dry_run: true,
+      path,
+      applied: 0,
+      skipped_idempotent: plan.writes.length - changes.length,
+      writes: plan.writes,
+    };
   }
 
-  return { dry_run: false, path, writes: plan.writes, changed };
+  applyChangesAtomically(changes);
+  return {
+    dry_run: false,
+    path,
+    applied: changes.length,
+    skipped_idempotent: plan.writes.length - changes.length,
+    writes: plan.writes,
+  };
 }
 
-function isWriteAlreadyApplied(write: SetupWrite): boolean {
-  const getResult = spawnSync('sp', ['edit', '--global', '--get', `${write.specialist}.${write.path}`], {
+function collectPlannedChanges(writes: readonly SetupWrite[]): PlannedChange[] {
+  const changes: PlannedChange[] = [];
+  for (const write of writes) {
+    const key = `${write.specialist}.${write.path}`;
+    const prevValue = readGlobalField(key);
+    if (prevValue === write.value) continue;
+    changes.push({ key, prevValue, newValue: write.value });
+  }
+  return changes;
+}
+
+function readGlobalField(key: string): string {
+  const getResult = spawnSync('sp', ['edit', '--global', '--get', key], {
     encoding: 'utf8',
     stdio: 'pipe',
   });
-  if (getResult.status !== 0 || getResult.error) return false;
-  return getResult.stdout.trim() === write.value;
+  if (getResult.status === 0 && !getResult.error) return getResult.stdout.trim();
+  return '';
 }
 
-function applyWriteWithGlobalEdit(write: SetupWrite): void {
-  const setResult = spawnSync('sp', ['edit', '--global', '--set', `${write.specialist}.${write.path}`, write.value], {
+function applyChangesAtomically(changes: readonly PlannedChange[]): void {
+  const applied: PlannedChange[] = [];
+  for (const change of changes) {
+    const setResult = setGlobalField(change.key, change.newValue);
+    if (setResult.status === 0 && !setResult.error) {
+      applied.push(change);
+      continue;
+    }
+
+    const rollbackFailed = rollbackChanges(applied);
+    const failureMessage = describeSubprocessFailure(setResult);
+    const rollbackMessage = rollbackFailed ? ' rollback-incomplete' : ' rollback-complete';
+    throw new Error(`Failed to apply ${change.key}: ${failureMessage};${rollbackMessage}`);
+  }
+}
+
+function rollbackChanges(applied: readonly PlannedChange[]): boolean {
+  let failed = false;
+  for (const change of [...applied].reverse()) {
+    const rollbackResult = setGlobalField(change.key, change.prevValue);
+    if (rollbackResult.status === 0 && !rollbackResult.error) continue;
+    failed = true;
+    console.error(`Rollback failed for ${change.key}: ${describeSubprocessFailure(rollbackResult)}`);
+  }
+  return failed;
+}
+
+function setGlobalField(key: string, value: string) {
+  return spawnSync('sp', ['edit', '--global', '--set', key, value], {
     encoding: 'utf8',
     stdio: 'pipe',
   });
-  if (setResult.status === 0 && !setResult.error) return;
+}
 
-  const stderr = setResult.stderr?.trim();
-  const stdout = setResult.stdout?.trim();
-  throw new Error([
-    `Failed to apply ${write.specialist}.${write.path}=${write.value} via sp edit --global`,
-    stderr || stdout || setResult.error?.message || 'unknown subprocess failure',
-  ].filter(Boolean).join(': '));
+function describeSubprocessFailure(result: ReturnType<typeof spawnSync>): string {
+  const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  return stderr || stdout || result.error?.message || 'unknown subprocess failure';
 }
 
 function ageFrom(timestamp: string): number {
@@ -470,7 +524,8 @@ function formatApplyResult(result: ApplyResult): string {
   const lines = ['', bold('sp setup --apply')];
   lines.push(`  path: ${result.path}`);
   lines.push(`  dry_run: ${result.dry_run ? 'yes' : 'no'}`);
-  lines.push(`  changed: ${result.changed ? 'yes' : 'no'}`);
+  lines.push(`  applied: ${result.applied}`);
+  lines.push(`  skipped_idempotent: ${result.skipped_idempotent}`);
   for (const write of result.writes) lines.push(`  - ${write.specialist}.${write.path} = ${write.value}`);
   lines.push('');
   return lines.join('\n');

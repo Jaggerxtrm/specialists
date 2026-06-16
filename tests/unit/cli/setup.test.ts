@@ -1,7 +1,12 @@
+// NOTE: Live probe contract validation is deferred to Phase C unitAI-oeysi probe suite live smoke;
+// running it here requires upstream pi model access not available in unit/CI scope.
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+type SpawnCall = { command: string; args: string[] };
 
 const state = vi.hoisted(() => ({
   specialists: [
@@ -25,7 +30,20 @@ const state = vi.hoisted(() => ({
     sample_output: 'done',
     transcript_path: '/tmp/probe/events.jsonl',
   },
+  spawnCalls: [] as SpawnCall[],
+  spawnImpl: ((command: string, args: string[]) => ({ status: 0, stdout: '', stderr: '', error: undefined }) as any),
 }));
+
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return {
+    ...actual,
+    spawnSync: vi.fn((command: string, args: string[]) => {
+      state.spawnCalls.push({ command, args });
+      return state.spawnImpl(command, args);
+    }),
+  };
+});
 
 vi.mock('../../../src/specialist/loader.js', () => ({
   SpecialistLoader: class {
@@ -51,33 +69,40 @@ describe('setup CLI', () => {
   const originalEnv = { ...process.env };
   let tempDir: string;
   let stdout: string[];
+  let stderr: string[];
 
   beforeEach(() => {
     vi.resetModules();
     tempDir = mkdtempSync(join(tmpdir(), 'setup-cli-'));
     stdout = [];
+    stderr = [];
+    state.spawnCalls = [];
     process.env = { ...originalEnv, HOME: tempDir, XDG_CONFIG_HOME: join(tempDir, '.config') };
     vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
       stdout.push(String(value ?? ''));
+    });
+    vi.spyOn(console, 'error').mockImplementation((value?: unknown) => {
+      stderr.push(String(value ?? ''));
     });
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
     vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${code}`);
     }) as never);
-    vi.doMock('node:child_process', async () => {
-      const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
-      return {
-        ...actual,
-        spawnSync: vi.fn(() => ({
+    state.spawnImpl = (command: string, args: string[]) => {
+      if (command === 'pi' && args[0] === '--list-models') {
+        return {
           status: 0,
           stdout: [
             'provider model context maxOut thinking images',
             'openai gpt-4.1-mini 128k 8k yes no',
             'anthropic claude-sonnet-4-6 200k 8k yes no',
           ].join('\n'),
-        })),
-      };
-    });
+          stderr: '',
+          error: undefined,
+        };
+      }
+      return { status: 0, stdout: '', stderr: '', error: undefined };
+    };
   });
 
   afterEach(() => {
@@ -105,14 +130,7 @@ describe('setup CLI', () => {
     expect(payload.blocked_field_warnings[0]).toMatchObject({ specialist: 'executor', field: 'metadata.name' });
   });
 
-  it('apply dry-run prints planned writes without touching user.json', async () => {
-    const userConfigDir = join(tempDir, '.config', 'specialists');
-    mkdirSync(userConfigDir, { recursive: true });
-    const userConfigPath = join(userConfigDir, 'user.json');
-    const initial = '{\n  "executor": {\n    "execution": {\n      "model": "openai/gpt-4.1-mini",\n      "fallback_model": null,\n      "fallback_models": null,\n      "timeout_ms": null,\n      "stall_timeout_ms": null,\n      "thinking_level": null,\n      "max_retries": null,\n      "prompt_limit_bytes": null,\n      "stdout_limit_bytes": null,\n      "extensions": {\n        "serena": null,\n        "gitnexus": null\n      }\n    },\n    "prompt": {\n      "system_prompt_mode": null\n    },\n    "beads_write_notes": null,\n    "notes_mode": null,\n    "output_file": null,\n    "skills": {\n      "paths": []\n    }\n  }\n}\n';
-    writeFileSync(userConfigPath, initial, 'utf8');
-    const before = statSync(userConfigPath);
-
+  it('apply dry-run does get pre-checks, skips set calls, emits JSON summary', async () => {
     const planPath = join(tempDir, 'plan.json');
     writeFileSync(planPath, JSON.stringify({
       version: '3.0',
@@ -132,12 +150,87 @@ describe('setup CLI', () => {
       },
     }, null, 2));
 
-    const { run } = await import('../../../src/cli/setup.js');
-    await run(['--apply', planPath, '--dry-run']);
+    state.spawnImpl = (command: string, args: string[]) => {
+      if (command === 'sp' && args[0] === 'edit' && args[2] === '--get') {
+        return { status: 0, stdout: 'openai/gpt-4.1-mini\n', stderr: '', error: undefined };
+      }
+      if (command === 'pi' && args[0] === '--list-models') {
+        return {
+          status: 0,
+          stdout: 'provider model context maxOut thinking images',
+          stderr: '',
+          error: undefined,
+        };
+      }
+      return { status: 0, stdout: '', stderr: '', error: undefined };
+    };
 
-    expect(stdout.join('\n')).toContain('anthropic/claude-sonnet-4-6');
-    expect(readFileSync(userConfigPath, 'utf8')).toBe(initial);
-    expect(statSync(userConfigPath).mtimeMs).toBe(before.mtimeMs);
+    const { run } = await import('../../../src/cli/setup.js');
+    await run(['--apply', planPath, '--dry-run', '--json']);
+
+    const payload = JSON.parse(stdout.join('\n'));
+    expect(payload).toMatchObject({
+      dry_run: true,
+      applied: 0,
+      skipped_idempotent: 0,
+    });
+    expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--get')).toHaveLength(1);
+    expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--set')).toHaveLength(0);
+  });
+
+  it('apply rolls back earlier writes when second set fails', async () => {
+    const planPath = join(tempDir, 'plan.json');
+    writeFileSync(planPath, JSON.stringify({
+      version: '3.0',
+      generated_at: '2026-06-16T12:00:00.000Z',
+      preset: 'balanced',
+      inputs: {},
+      writes: [
+        { specialist: 'alpha', path: 'execution.model', value: 'model-new-1', reason: 'upgrade' },
+        { specialist: 'beta', path: 'execution.model', value: 'model-new-2', reason: 'upgrade' },
+        { specialist: 'gamma', path: 'execution.model', value: 'model-new-3', reason: 'upgrade' },
+      ],
+      benchmark: {
+        source: state.benchmark.source,
+        source_url: state.benchmark.source_url,
+        fetched_at: state.benchmark.fetched_at,
+      },
+    }, null, 2));
+
+    const previousValues = new Map([
+      ['alpha.execution.model', 'model-old-1'],
+      ['beta.execution.model', 'model-old-2'],
+      ['gamma.execution.model', 'model-old-3'],
+    ]);
+
+    state.spawnImpl = (command: string, args: string[]) => {
+      if (command === 'sp' && args[0] === 'edit' && args[2] === '--get') {
+        return { status: 0, stdout: `${previousValues.get(args[3]!) ?? ''}\n`, stderr: '', error: undefined };
+      }
+      if (command === 'sp' && args[0] === 'edit' && args[2] === '--set') {
+        if (args[3] === 'alpha.execution.model' && args[4] === 'model-new-1') {
+          return { status: 0, stdout: '', stderr: '', error: undefined };
+        }
+        if (args[3] === 'beta.execution.model' && args[4] === 'model-new-2') {
+          return { status: 1, stdout: '', stderr: 'set failed', error: undefined };
+        }
+        if (args[3] === 'alpha.execution.model' && args[4] === 'model-old-1') {
+          return { status: 0, stdout: '', stderr: '', error: undefined };
+        }
+        return { status: 0, stdout: '', stderr: '', error: undefined };
+      }
+      return { status: 0, stdout: '', stderr: '', error: undefined };
+    };
+
+    const { run } = await import('../../../src/cli/setup.js');
+    await expect(run(['--apply', planPath, '--json'])).rejects.toThrow('Failed to apply beta.execution.model');
+
+    expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--get')).toHaveLength(3);
+    expect(state.spawnCalls.filter((call) => call.command === 'sp' && call.args[2] === '--set')).toEqual([
+      { command: 'sp', args: ['edit', '--global', '--set', 'alpha.execution.model', 'model-new-1'] },
+      { command: 'sp', args: ['edit', '--global', '--set', 'beta.execution.model', 'model-new-2'] },
+      { command: 'sp', args: ['edit', '--global', '--set', 'alpha.execution.model', 'model-old-1'] },
+    ]);
   });
 
   it('probe-only emits probe contract result', async () => {
