@@ -1,7 +1,7 @@
-// Live HOME strategy for smoke: temp HOME keeps specialist overrides scoped via XDG_CONFIG_HOME,
-// while leaving real HOME (and ~/.pi credentials) intact.
+// Live HOME strategy for smoke: keep real HOME (and ~/.pi credentials) intact and set XDG_CONFIG_HOME
+// to a temp directory so specialist overrides stay isolated; symlink repoRoot/.beads into tempRepo.
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -68,6 +68,8 @@ describe('live smoke: run fallback chain', () => {
     tempRepo = await mkdtemp(join(tmpdir(), 'specialists-live-fallback-repo-'));
 
     expect(run('git', ['init', '-b', 'main'], tempRepo).status).toBe(0);
+    // Symlink .beads from repoRoot so sp run dispatched from tempRepo can resolve the bead.
+    await symlink(join(repoRoot, '.beads'), join(tempRepo, '.beads'));
     await mkdir(join(tempHome, '.config', 'specialists'), { recursive: true });
     await mkdir(join(tempRepo, 'config', 'specialists'), { recursive: true });
     await writeFile(join(tempRepo, 'README.md'), 'live smoke repo\n');
@@ -146,5 +148,5 @@ describe('live smoke: run fallback chain', () => {
     expect(fallbackLines.length).toBeGreaterThanOrEqual(2);
     expect(fallbackLines[0]).toContain('nano-gpt/bad/nonexistent-model');
     expect(fallbackLines.at(-1)).toContain(String(liveModel));
-  }, 180_000);
+  }, 60_000);
 });

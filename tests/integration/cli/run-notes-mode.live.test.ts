@@ -1,5 +1,6 @@
-// Live HOME strategy for smoke: temp HOME keeps specialist overrides scoped via XDG_CONFIG_HOME,
-// while leaving real HOME (and ~/.pi credentials) intact.
+// Symlink .beads from repoRoot so sp run dispatched from tempRepo can resolve the bead.
+// Live HOME strategy for smoke: keep real HOME (and ~/.pi credentials) intact and set XDG_CONFIG_HOME
+// to a temp directory so specialist overrides stay isolated.
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -71,5 +72,5 @@ describe('live smoke: notes_mode final-only bead notes', () => {
     expect(show.status).toBe(0);
     expect((show.stdout.match(/^### /gm) ?? []).length).toBe(1);
     expect(show.stdout).toContain('### FINAL');
-  }, 180_000);
+  }, 60_000);
 });
