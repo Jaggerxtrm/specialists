@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sp console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#181818;
+    --txt:#c8c8c8;
+    --bright:#e4e4e4;
+    --dim:#7d7d7d;
+    --tree:#3c3c3c;
+    --rail:#3a3a3a;
+    --sel:#262626;
+    --run:#c39a5e; --done:#8caa6a; --rev:#9f88bf; --wait:#8095a8; --idle:#4a4a4a; --block:#c4806f;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+    --lh:1.2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);font-family:var(--mono);
+    font-size:12.5px;line-height:var(--lh);font-weight:400;
+    -webkit-font-smoothing:antialiased;letter-spacing:.2px;
+    height:100vh;display:flex;flex-direction:column;outline:none;overflow:hidden}
+
+  .top{flex:0 0 auto;padding:0 10px}
+  .top > div{line-height:var(--lh);white-space:pre}
+  .tabs{color:var(--dim)}
+  .tabs .on{color:var(--bright)}
+  .meters{color:var(--dim)}
+  .viewtag{color:var(--dim)}
+  .viewtag b{color:var(--txt);font-weight:500}
+
+  .main{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}
+  .main::-webkit-scrollbar{width:6px}
+  .main::-webkit-scrollbar-thumb{background:#2c2c2c;border-radius:3px}
+
+  .ln{display:flex;align-items:stretch;line-height:var(--lh);padding:0 10px;white-space:pre}
+  .ln.sel{background:var(--sel)}
+  .g{flex:0 0 2ch}
+  .g.rail{border-left:1px solid var(--rail)}
+  .c{white-space:pre}
+
+  .tree{color:var(--tree)}
+  .id{color:var(--dim)}
+  .name{color:var(--txt)}
+  .hname{color:var(--bright)}
+  .dim{color:var(--dim)}
+  .type{color:var(--tree)}
+  .g-run,.s-run{color:var(--run)}
+  .g-done,.s-done{color:var(--done)}
+  .g-rev,.s-rev{color:var(--rev)}
+  .g-wait,.s-wait{color:var(--wait)}
+  .g-idle,.s-idle{color:var(--idle)}
+  .g-block,.s-block{color:var(--block)}
+
+  .ftime{color:var(--tree)} .ftag{color:var(--txt)} .fjob{color:var(--dim)} .farr{color:var(--tree)}
+
+  .ck{color:var(--dim)} .cv{color:var(--txt)} .ch{color:var(--tree)}
+
+  .bot{flex:0 0 auto;padding:0 10px;white-space:pre;color:var(--dim);font-size:12px;overflow:hidden;line-height:var(--lh)}
+  .bot .k{color:var(--txt)}
+  .filter{flex:0 0 auto;padding:0 10px;color:var(--txt);white-space:pre;line-height:var(--lh)}
+  .filter .p{color:var(--dim)}
+  .hidden{display:none}
+</style>
+</head>
+<body tabindex="0">
+  <div class="top">
+    <div class="tabs" id="tabs"></div>
+    <div class="meters" id="meters"></div>
+    <div class="viewtag" id="viewtag"></div>
+  </div>
+  <div class="main" id="main"></div>
+  <div class="filter hidden" id="filter"></div>
+  <div class="bot" id="bot"></div>
+
+<script>
+const E = s => String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const padR=(s,n)=>{s=String(s);return s.length>=n?s:s+' '.repeat(n-s.length);};
+const padL=(s,n)=>{s=String(s);return s.length>=n?s:' '.repeat(n-s.length)+s;};
+const trunc=(s,n)=>{s=String(s);return s.length>n?s.slice(0,n-1)+'…':s;};
+
+const GLY={running:'●',done:'✓',reviewing:'◉',waiting:'◔',idle:'○',blocked:'✕'};
+const GC ={running:'g-run',done:'g-done',reviewing:'g-rev',waiting:'g-wait',idle:'g-idle',blocked:'g-block'};
+const SC ={running:'s-run',done:'s-done',reviewing:'s-rev',waiting:'s-wait',idle:'s-idle',blocked:'s-block'};
+const CGLY={epic:'◆',chain:'◇',wave:'▦'};
+const MAXD=2;
+
+function step(d,id,name,st,role,wt,clk,note){return {kind:'step',d,id,name,st,role,wt,clk,note,job:id};}
+function cont(kind,d,id,name,st,counts){return {kind,d,id,name,st,counts};}
+
+const REPOS=[
+ {name:'mercury-quant', rows:[
+   cont('epic' ,0,'ep-4f2a','rates-pipeline-refactor','running','3/7'),
+   cont('chain',1,'ch-91bd','event-study schema promotion','running','2/4'),
+   step(2,'iss-12','composition','done','executor','cmp-a','2m04',''),
+   step(2,'iss-13','formula-derivation','running','executor','fml-b','0:48','tether 1'),
+   step(2,'iss-14','numerical-test','reviewing','reviewer','fml-b','0:12','mbox 2'),
+   step(2,'iss-15','adversarial-review','idle','—','—','—',''),
+   cont('chain',1,'ch-77ce','convention yaml lookup','running','1/2'),
+   step(2,'iss-20','yaml-migrate','running','executor','cnv-c','1:31',''),
+   step(2,'iss-21','validate','blocked','debugger','cnv-c','0:05','collision conventions.yaml'),
+   cont('chain',1,'ch-12aa','no-lookahead static analysis','waiting','0/1'),
+   step(2,'iss-30','static-scan','waiting','explorer','sca-d','—','tether pending'),
+   cont('wave' ,0,'wv-08e1','nightly-regression','reviewing','1/1'),
+   step(1,'iss-40','judge-eval','reviewing','judge','—','0:22',''),
+ ]},
+ {name:'substrate', rows:[
+   cont('epic' ,0,'ep-8c10','channel-as-substrate','running','1/3'),
+   cont('chain',1,'ch-44de','single-scheduler invariant','running','1/2'),
+   step(2,'iss-50','scheduler-lease','running','executor','sch-a','3:12',''),
+   step(2,'iss-51','split-brain-test','idle','—','—','—',''),
+   cont('chain',1,'ch-09a1','mailbox discriminated-union','reviewing','1/1'),
+   step(2,'iss-52','union-model','reviewing','reviewer','mbx-b','0:39','mbox 1'),
+ ]},
+ {name:'rates-research', rows:[
+   cont('chain',0,'ch-71f0','SR3-ZN event study','running','1/2'),
+   step(1,'iss-60','build-windows','done','executor','evt-a','5m20',''),
+   step(1,'iss-61','fisher-z-ci','running','executor','evt-a','0:54','tether 1'),
+ ]},
+];
+
+const FEEDS={
+ 'iss-13':[['19:41:02','LIFE','iss-13','step.claimed     executor acquired lease fml-b'],['19:41:02','LIFE','iss-13','step.running     model=opus ctx=18k'],['19:41:18','MAIL','iss-13','msg.recv  reviewer→  "watch lookahead on event window"'],['19:41:33','TETH','iss-13','hint.inject pending  no-lookahead: window fixed pre-event'],['19:41:49','CTRC','iss-13','gate.check  composition ok  schema:event_study'],['19:42:04','LIFE','iss-13','tool.run   mq.fisher_z_ci(n=42)'],['19:42:11','MAIL','iss-13','msg.send  →reviewer  "CI computed, n_min ok"'],['19:42:20','TETH','iss-13','hint.cleared  no-lookahead (resolved)'],['19:42:31','LIFE','iss-13','step.progress  derivation 3/5']],
+ 'iss-14':[['19:40:55','LIFE','iss-14','step.running   reviewer (read-only, no lease)'],['19:41:10','MAIL','iss-14','msg.recv  executor→  "CI computed, n_min ok"'],['19:41:40','CTRC','iss-14','verdict.partial  finding: outlier sensitivity untested'],['19:42:01','MAIL','iss-14','msg.send  →executor  "add jackknife on tail"']],
+ 'iss-21':[['19:38:12','LIFE','iss-21','step.running   debugger'],['19:39:00','COLL','iss-21','collision.detect  conventions.yaml  owner=iss-20'],['19:39:00','LIFE','iss-21','step.blocked   awaiting lease release']],
+ 'iss-50':[['19:36:00','LIFE','iss-50','step.running   executor sch-a'],['19:37:30','CTRC','iss-50','gate.check  scheduler invariant pending'],['19:39:11','LIFE','iss-50','tool.run   build single-scheduler path']],
+ 'iss-61':[['19:40:00','LIFE','iss-61','step.running   executor evt-a'],['19:41:12','TETH','iss-61','hint.inject pending  use act/360 day-count'],['19:41:50','LIFE','iss-61','tool.run   mq.fisher_z_ci(n=58)']],
+};
+function feedFor(j){return FEEDS[j]||[['--:--:--','LIFE',j,'no events for this job']];}
+
+// contract overrides; fallback generated
+const CONTRACTS={
+ 'iss-13':[
+  ['kv','issue','iss-13  formula-derivation'],['kv','state','running   claimed 19:41:02'],
+  ['kv','role','executor   model opus   ctx 18k'],['kv','worktree','fml-b   lease held'],
+  ['kv','chain','ch-91bd  event-study schema promotion'],['kv','schema','event_study   KNOWN_TYPES: pending'],
+  ['kv','deps','iss-12 composition  done'],['kv','budget','turns 6/12   tokens 18k/40k'],
+  ['h','contract gate'],
+  ['kv','built-in val','pass'],['kv','agent val','pending  .mercury/validators.py'],
+  ['kv','adversarial','pending'],['kv','no-lookahead','pass  static analysis'],
+  ['kv','n_min','n=42  satisfied (n_min=30)'],['kv','schema reg','no  -> requires human review'],
+  ['h','memory pack'],
+  ['kv','mem','act/360 day-count convention'],['kv','mem','Fisher-z CI for correlations'],
+  ['h','acceptance'],
+  ['li','derive CI for SR3~ZN beta with n_min guard'],['li','BH-FDR across event buckets'],['li','no lookahead in event window'],
+ ],
+ 'iss-21':[
+  ['kv','issue','iss-21  validate'],['kv','state','blocked   0:05'],
+  ['kv','role','debugger   model haiku'],['kv','worktree','cnv-c   lease contested'],
+  ['kv','chain','ch-77ce  convention yaml lookup'],['kv','deps','iss-20 yaml-migrate  running'],
+  ['h','block reason'],['kv','collision','conventions.yaml   owner iss-20'],['kv','resolves','on lease release by iss-20'],
+  ['h','contract gate'],['kv','built-in val','pass'],['kv','agent val','blocked'],['kv','adversarial','n/a'],
+  ['h','acceptance'],['li','yaml schema validates against convention spec'],['li','versioned lookup keys unique'],
+ ],
+};
+function buildContract(repoIdx,row){
+  if(CONTRACTS[row.id]) return CONTRACTS[row.id];
+  const rows=REPOS[repoIdx].rows; const idx=rows.indexOf(row);
+  let chain=''; for(let i=idx;i>=0;i--){ if(rows[i].kind==='chain'){chain=rows[i].id+'  '+rows[i].name;break;} }
+  return [
+   ['kv','issue',row.id+'  '+row.name],['kv','state',row.st+'   '+(row.clk!=='—'?row.clk:'')],
+   ['kv','role',row.role!=='—'?row.role:'(unassigned)'],['kv','worktree',row.wt!=='—'?row.wt:'(none)'],
+   ['kv','chain',chain],
+   ['h','contract gate'],['kv','built-in val',row.st==='done'?'pass':'pending'],['kv','agent val','pending'],['kv','adversarial','pending'],
+   ['h','acceptance'],['li','contract acceptance criteria not yet expanded'],
+  ];
+}
+
+let S={repo:0, view:'ps', sel:0, feedJob:null, feedSel:0, contractRow:null, follow:false, filtering:false, fstr:''};
+
+function visibleRows(){
+  const rows=REPOS[S.repo].rows;
+  if(!S.fstr) return rows.map((r,i)=>({r,i}));
+  const q=S.fstr.toLowerCase();
+  return rows.map((r,i)=>({r,i})).filter(o=>(o.r.id+' '+o.r.name+' '+(o.r.st||'')).toLowerCase().includes(q));
+}
+
+function renderTop(){
+  let t='';
+  REPOS.forEach((r,i)=>{ t+=`<span class="${i===S.repo?'on':''}">${i===S.repo?'['+E(r.name)+']':' '+E(r.name)+' '}</span>`; if(i<REPOS.length-1) t+='  '; });
+  document.getElementById('tabs').innerHTML=t;
+  const rows=REPOS[S.repo].rows; const steps=rows.filter(r=>r.kind==='step');
+  const active=steps.filter(s=>['running','reviewing','waiting'].includes(s.st)).length; const total=steps.length;
+  const leases=new Set(steps.filter(s=>['running','reviewing'].includes(s.st)&&s.wt&&s.wt!=='—').map(s=>s.wt)).size;
+  document.getElementById('meters').textContent=`active ${active}/${total}    leases ${leases}/4    budget 61%`;
+}
+
+function gutter(d){
+  let g='';
+  for(let i=0;i<d;i++){ g+='<span class="g rail"></span>'; }
+  return g;
+}
+function psLine(r,selected){
+  const isStep=r.kind==='step';
+  const g=isStep?`<span class="${GC[r.st]}">${GLY[r.st]}</span>`:`<span class="${SC[r.st]}">${CGLY[r.kind]}</span>`;
+  const target = 46 - r.d*2;
+  const idp=padR(r.id,7), nm=trunc(r.name, Math.max(8,target-10));
+  const nameCls=isStep?'name':'hname';
+  let leftVis = 1+1+idp.length+1+nm.length;
+  let content = `${g} <span class="id">${E(idp)}</span> <span class="${nameCls}">${E(nm)}</span>`;
+  content += (leftVis<target?' '.repeat(target-leftVis):' ');
+  if(isStep){
+    content+=`<span class="${SC[r.st]}">${E(padR(r.st,10))}</span><span class="dim">${E(padR(r.role,9))}</span><span class="dim">${E(padR(r.wt,7))}</span><span class="dim">${E(padL(r.clk,6))}</span>`;
+    if(r.note) content+=` <span class="dim">${E(r.note)}</span>`;
+  }else{
+    content+=`<span class="type">${E(padR(r.kind,10))}</span><span class="dim">${E(padR('',16))}</span><span class="dim">${E(padL(r.counts,6))}</span>`;
+  }
+  return `<div class="ln${selected?' sel':''}">${gutter(r.d)}<span class="c">${content}</span></div>`;
+}
+
+function feedLine(f,selected){
+  const txt=E(f[3]).replace(/→/g,'<span class="farr">→</span>');
+  return `<div class="ln${selected?' sel':''}"><span class="c"><span class="ftime">${E(f[0])}</span>  <span class="ftag">${E(padR(f[1],5))}</span> <span class="fjob">${E(padR(f[2],8))}</span> ${txt}</span></div>`;
+}
+function contractLine(item){
+  if(item[0]==='h') return `<div class="ln"><span class="c"><span class="ch">── ${E(item[1])} ──</span></span></div>`;
+  if(item[0]==='li') return `<div class="ln"><span class="c"><span class="dim">• </span><span class="cv">${E(item[1])}</span></span></div>`;
+  return `<div class="ln"><span class="c"><span class="ck">${E(padR(item[1],13))}</span><span class="cv">${E(item[2])}</span></span></div>`;
+}
+
+function render(){
+  renderTop();
+  const main=document.getElementById('main'); const vt=document.getElementById('viewtag');
+  if(S.view==='ps'){
+    vt.innerHTML=`<b>ps</b>  ${E(REPOS[S.repo].name)} · process tree`;
+    const vis=visibleRows(); if(S.sel>=vis.length) S.sel=Math.max(0,vis.length-1);
+    main.innerHTML = vis.map((o,vi)=>psLine(o.r, vi===S.sel)).join('') || '<div class="ln"><span class="c dim">no matches</span></div>';
+  }else if(S.view==='feed'){
+    const feed=feedFor(S.feedJob);
+    vt.innerHTML=`<b>feed</b>  ${E(S.feedJob)} · event stream${S.follow?' · follow':''}`;
+    if(S.feedSel>=feed.length) S.feedSel=feed.length-1;
+    main.innerHTML = feed.map((f,i)=>feedLine(f, i===S.feedSel)).join('');
+  }else{
+    vt.innerHTML=`<b>contract</b>  ${E(S.contractRow.id)} · issue contract`;
+    main.innerHTML = buildContract(S.repo,S.contractRow).map(contractLine).join('');
+  }
+  const fl=document.getElementById('filter');
+  if(S.filtering){fl.classList.remove('hidden'); fl.innerHTML=`<span class="p">/</span>${E(S.fstr)}_`;} else fl.classList.add('hidden');
+  renderBot();
+  const sel=main.querySelector('.sel'); if(sel) sel.scrollIntoView({block:'nearest'});
+  if(S.view==='feed'&&S.follow){main.scrollTop=main.scrollHeight;}
+}
+
+function key(label,desc){return `<span class="k">${label}</span> ${desc}    `;}
+function renderBot(){
+  const b=document.getElementById('bot');
+  if(S.view==='ps') b.innerHTML=key('↑↓','nav')+key('↵','feed')+key('⇧↵','contract')+key('⇥','repo')+key('/','filter')+key('g/G','top/end')+key('q','quit');
+  else if(S.view==='feed') b.innerHTML=key('↑↓','scroll')+key('⌫','back')+key('f','follow')+key('g/G','top/end')+key('q','quit');
+  else b.innerHTML=key('↑↓','scroll')+key('⌫','back')+key('q','quit');
+}
+
+function clampSel(d){
+  if(S.view==='ps'){const n=visibleRows().length; S.sel=Math.max(0,Math.min(n-1,S.sel+d));}
+  else if(S.view==='feed'){const n=feedFor(S.feedJob).length; S.feedSel=Math.max(0,Math.min(n-1,S.feedSel+d)); S.follow=false;}
+  else{document.getElementById('main').scrollBy(0, d*19);}
+}
+window.addEventListener('keydown',e=>{
+  if(S.filtering){
+    if(e.key==='Escape'){S.filtering=false;S.fstr='';S.sel=0;}
+    else if(e.key==='Enter'){S.filtering=false;}
+    else if(e.key==='Backspace'){S.fstr=S.fstr.slice(0,-1);S.sel=0;}
+    else if(e.key.length===1){S.fstr+=e.key;S.sel=0;}
+    else return;
+    e.preventDefault();render();return;
+  }
+  switch(e.key){
+    case 'ArrowDown': case 'j': clampSel(1); break;
+    case 'ArrowUp': case 'k': clampSel(-1); break;
+    case 'Enter':
+      if(S.view==='ps'){const o=visibleRows()[S.sel]; if(o&&o.r.kind==='step'){ if(e.shiftKey){S.view='contract';S.contractRow=o.r;} else {S.view='feed';S.feedJob=o.r.job;S.feedSel=0;S.follow=false;} }}
+      break;
+    case 'Escape': case 'Backspace': case 'ArrowLeft':
+      if(S.view!=='ps'){S.view='ps';} break;
+    case 'Tab': S.repo=(S.repo+1)%REPOS.length; S.sel=0; S.fstr=''; S.view='ps'; break;
+    case '1': case '2': case '3': {const i=+e.key-1; if(i<REPOS.length){S.repo=i;S.sel=0;S.fstr='';S.view='ps';}} break;
+    case '/': if(S.view==='ps'){S.filtering=true;} break;
+    case 'f': if(S.view==='feed'){S.follow=!S.follow;} break;
+    case 'g': if(S.view==='ps')S.sel=0; else if(S.view==='feed')S.feedSel=0; else document.getElementById('main').scrollTop=0; break;
+    case 'G': if(S.view==='ps')S.sel=visibleRows().length-1; else if(S.view==='feed')S.feedSel=feedFor(S.feedJob).length-1; else {const m=document.getElementById('main');m.scrollTop=m.scrollHeight;} break;
+    default: return;
+  }
+  e.preventDefault(); render();
+});
+document.body.focus(); window.addEventListener('click',()=>document.body.focus()); render();
+</script>
+</body>
+</html>
