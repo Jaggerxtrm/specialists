@@ -83,7 +83,11 @@ class LocalRuntimeClient implements RuntimeClient {
   }
 
   async listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot> {
-    const statuses = readStatuses(repo).map(enrichJob);
+    const raw = readStatuses(repo).map(enrichJob);
+    // Filter malformed rows (id/specialist/status undefined) before any
+    // downstream use. Without this, render() crashes on the first bad row.
+    // (unitAI-ctb4u.27)
+    const statuses = raw.filter(isWellFormedJob);
     const visible = statuses.filter((job) => isVisible(job, filter));
     const filtered = applyTextFilter(visible, filter.textFilter);
     const rows = buildRows(filtered, filter.historyMode);
@@ -658,6 +662,17 @@ function enrichJob(status: SupervisorStatus): ConsoleJob {
     payload_tokens: payload.payload_tokens,
     next_action: nextAction(status),
   };
+}
+
+// Production DBs can carry historical status_json rows where the top-level
+// id is null (16 of 1389 observed on a 2026-06 dev box). Filter them out
+// before they reach buildRows so the snapshot count stays honest and the
+// theme-level defensive coercion is a last-line-of-defense, not the
+// primary handler. (unitAI-ctb4u.27)
+function isWellFormedJob(job: ConsoleJob): boolean {
+  return typeof job.id === 'string' && job.id.length > 0
+    && typeof job.specialist === 'string' && job.specialist.length > 0
+    && typeof job.status === 'string' && job.status.length > 0;
 }
 
 function isVisible(job: ConsoleJob, filter: ProcessFilter): boolean {

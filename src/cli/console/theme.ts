@@ -194,13 +194,25 @@ export function composeElapsed(job: ConsoleJob): string {
 
 // ---------- Job row ----------
 
+// Defensive coercion: production DBs can ship malformed status_json rows
+// (16 of 1389 observed on a 2026-06 dev box had id: null after JSON.parse).
+// A single bad row used to throw TypeError on `.slice()` and kill the whole
+// TUI process via the uncaughtException handler. Coerce missing strings to
+// placeholders so renders never crash on per-row drift. (unitAI-ctb4u.27)
+function asString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.length > 0 ? value : fallback;
+}
+
 export function jobRowFieldValues(job: ConsoleJob): Record<JobColumnKey, string> {
   const ctxRaw = job.context_pct === undefined ? '--' : `${Math.round(job.context_pct)}%`;
   const ctxMark = job.context_health === 'WARN' || job.context_health === 'CRITICAL' ? '▲' : '';
+  const id = asString(job.id, '????????');
+  const specialist = asString(job.specialist, '?');
+  const status = asString(job.status, '?');
   return {
-    id: padR(job.id.slice(0, COLUMNS.id.width), COLUMNS.id.width),
-    spec: padR(job.specialist.slice(0, COLUMNS.spec.width), COLUMNS.spec.width),
-    status: padR(job.status.slice(0, COLUMNS.status.width), COLUMNS.status.width),
+    id: padR(id.slice(0, COLUMNS.id.width), COLUMNS.id.width),
+    spec: padR(specialist.slice(0, COLUMNS.spec.width), COLUMNS.spec.width),
+    status: padR(status.slice(0, COLUMNS.status.width), COLUMNS.status.width),
     ctxPct: padL((ctxRaw + ctxMark).slice(0, COLUMNS.ctxPct.width), COLUMNS.ctxPct.width),
     elapsed: composeElapsed(job),
     payloadKb: padR(job.payload_kb ?? '--', COLUMNS.payloadKb.width),
