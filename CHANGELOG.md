@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`service-skills-sync` specialist v1.4.0 — mandatory Phase 2.5 diff content scan for non-symbol drift.** Adds a `git diff <last_sync_ref>..HEAD` scan step between Serena cross-check and classify, grepping for renamed env vars, new/removed exception sites, error log strings, docker container/image renames, and new API endpoints (6 patterns). The `audited-and-unchanged` verdict now requires a clean diff scan in addition to a gitnexus cosmetic signal. Missing `last_sync_ref` emits a new `⚠ Triage-incomplete` verdict rather than silently passing. New `service-skills-diff-scan-mandatory` mandatory rule enforces the contract. Motivated by `py_backend-0ndo` (darth-feedor) where string-literal-only drift was mislabeled as semantic-unchanged (`unitAI-ekt17`).
 - **`test-runner` specialist — `task_template` aligns with exact-command-wins scope semantics.** Pinned exact commands from the orchestrator/test-engineer now explicitly win over manifest-detected fallback (fallback is clearly labelled as evidence, never a scope override) (`v2.0.0 → v2.0.1`, PR #102).
 
+### Fixed
+- **`sp edit --global <name.field> <value>` now applies the value instead of falling through to vim (`unitAI-61h1b`, PR #123).** `parseArgs` no longer consumes the first positional as the specialist name when `--global` is active, so the documented positional form works without `--set`. In addition, bare `sp edit --global` (no path) now fails fast with a script-friendly hint (`specialists edit --global --set <name>.<field.path> <value>`) when stdin is not a TTY — prior behavior was to spawn `$EDITOR` and hang indefinitely in non-TTY contexts (scripts, hooks).
+
 ## [v3.17.0] — 2026-05-31
 
 ### Added
