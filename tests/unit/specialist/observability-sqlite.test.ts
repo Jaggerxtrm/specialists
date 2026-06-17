@@ -917,6 +917,52 @@ describe('observability-sqlite', () => {
       expect(JSON.parse(forensicRows[2]!.event_json).body.changed_paths_count).toBe(2);
       expect(JSON.parse(forensicRows[4]!.event_json).body.merge_ref).toBe('refs/heads/sp/publish-chain');
     });
+
+    // Regression for codex PR #125 review finding: `sp log` snapshot fetches
+    // `limit * 4` rows then slices the tail. Without `order:'desc'` it
+    // received the OLDEST window and the newest events for busy jobs were
+    // never surfaced. The fix lets callers request the latest rows directly.
+    it('readForensicEvents respects order:asc (default) vs order:desc', () => {
+      const client = createClient();
+      const now = Date.now();
+      client.upsertStatus({
+        id: 'job-order',
+        specialist: 'executor',
+        status: 'running',
+        bead_id: 'unitAI-order',
+        chain_kind: 'chain',
+        chain_id: 'chain-order',
+        chain_root_job_id: 'job-order',
+        chain_root_bead_id: 'unitAI-order',
+        started_at_ms: now - 1_000,
+        updated_at_ms: now,
+        model: 'openai/gpt-5.4-mini',
+        backend: 'openai',
+      } as any);
+
+      for (let i = 0; i < 10; i += 1) {
+        client.appendEvent('job-order', 'executor', 'unitAI-order', {
+          t: now + i,
+          type: 'tool',
+          tool: 'bash',
+          phase: 'end',
+          args: { sequence_index: i },
+          tool_call_id: `tool-${i}`,
+        } as any);
+      }
+
+      const ascRows = client.readForensicEvents({ jobId: 'job-order', limit: 3 });
+      expect(ascRows).toHaveLength(3);
+      const ascTs = ascRows.map((r) => r.t);
+      expect(ascTs).toEqual([...ascTs].sort((a, b) => a - b));
+      expect(ascRows[0]?.t).toBe(now + 0);
+
+      const descRows = client.readForensicEvents({ jobId: 'job-order', limit: 3, order: 'desc' });
+      expect(descRows).toHaveLength(3);
+      const descTs = descRows.map((r) => r.t);
+      expect(descTs).toEqual([...descTs].sort((a, b) => b - a));
+      expect(descRows[0]?.t).toBe(now + 9);
+    });
   });
 
   describe('parseJournalMode', () => {

@@ -121,17 +121,25 @@ export class ConsoleApp implements Component {
     const viewportRows = this.mainViewportRows();
     const selected = selectedJobRow(this.state);
     const totalRows = this.state.view === 'ps' ? undefined : this.renderedDetailRows;
+    // Views where vim-style paging chars (d/u/g/G) scroll; elsewhere they are
+    // view-specific shortcuts: ps `d`=diff / `g`=config, config `u`=undo.
+    // Key.pageDown/Key.pageUp keyboard events still fire everywhere.
+    const isScrollView =
+      this.state.view === 'feed' ||
+      this.state.view === 'job' ||
+      this.state.view === 'result' ||
+      this.state.view === 'bead';
 
     if (matchesKey(data, Key.down) || data === 'j')
       this.dispatch({ type: 'move', delta: 1, viewportRows, totalRows });
     else if (matchesKey(data, Key.up) || data === 'k')
       this.dispatch({ type: 'move', delta: -1, viewportRows, totalRows });
-    else if (matchesKey(data, Key.pageDown) || data === 'd')
+    else if (matchesKey(data, Key.pageDown) || (data === 'd' && isScrollView))
       this.dispatch({ type: 'move', delta: Math.max(1, viewportRows - 1), viewportRows, totalRows });
-    else if (matchesKey(data, Key.pageUp) || data === 'u')
+    else if (matchesKey(data, Key.pageUp) || (data === 'u' && isScrollView))
       this.dispatch({ type: 'move', delta: -Math.max(1, viewportRows - 1), viewportRows, totalRows });
-    else if (data === 'g') this.dispatch({ type: 'top', viewportRows, totalRows });
-    else if (data === 'G') this.dispatch({ type: 'bottom', viewportRows, totalRows });
+    else if (data === 'g' && isScrollView) this.dispatch({ type: 'top', viewportRows, totalRows });
+    else if (data === 'G' && isScrollView) this.dispatch({ type: 'bottom', viewportRows, totalRows });
     else if (matchesKey(data, Key.enter) && this.state.view === 'ps' && selected)
       this.open('feed', selected.id);
     else if (data === 'r' && this.state.view === 'ps' && selected) this.open('result', selected.id);

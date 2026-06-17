@@ -503,8 +503,14 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
           jobId: options.jobId,
           sinceMs: options.since,
           // Over-fetch then post-filter by specialist/bead/node since those live
-          // inside the event payload.
+          // inside the event payload. order:'desc' so the SQL window slices the
+          // NEWEST `limit*4` rows; we re-sort ascending below for chronological
+          // display and slice the tail to keep the newest `limit` after the
+          // payload-filter waste. Without `desc` here, busy streams with
+          // >4×limit events would surface the OLDEST window and -f follow would
+          // repeat the same oldest window every 750ms (codex review PR #125).
           limit: options.limit * 4,
+          order: 'desc',
         };
         return client.readForensicEvents(filters).map((r) => ({ target, record: r }));
       } catch (error) {

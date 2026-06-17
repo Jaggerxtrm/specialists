@@ -952,6 +952,9 @@ export interface ListForensicEventsFilters {
   eventFamily?: string;
   eventName?: string;
   limit?: number;
+  // Default 'asc' (oldest first) for back-compat. Use 'desc' to fetch the
+  // newest rows when a caller intends to slice the tail of a busy stream.
+  order?: 'asc' | 'desc';
 }
 
 export interface JobMetricsRecord {
@@ -2159,12 +2162,13 @@ class SqliteClient implements ObservabilitySqliteClient {
       if (filters.eventName) { clauses.push('event_name = ?'); params.push(filters.eventName); }
       const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
       const limit = Math.max(1, Math.min(filters.limit ?? 1000, 10_000));
+      const dir = filters.order === 'desc' ? 'DESC' : 'ASC';
       return this.db.query(`
         SELECT id, job_id, seq, t, schema_version, event_family, event_name,
                participant_kind, participant_role, participant_id, redaction_status, event_json
         FROM specialist_forensic_events
         ${where}
-        ORDER BY t ASC, seq ASC, id ASC
+        ORDER BY t ${dir}, seq ${dir}, id ${dir}
         LIMIT ?
       `).all(...params, limit) as ForensicEventRecord[];
     }, 'readForensicEvents');
