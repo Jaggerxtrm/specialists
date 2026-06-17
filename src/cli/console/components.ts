@@ -641,11 +641,19 @@ export class ConsoleApp implements Component {
       const datePrefix =
         this.state.historyMode === 'default' ? '' : `${formatDateTime(job.started_at_ms)} `;
       // datePrefix is rendered through theme via paint() to keep the no-raw-ANSI invariant.
-      if (datePrefix) {
-        const base = renderJobRow(job, Math.max(1, width - datePrefix.length), row.depth, selected);
-        return truncateToWidth(paint(datePrefix, 'dim') + base, width);
+      // Per-row try/catch is a backstop for any future render-time drift; the
+      // upstream isWellFormedJob filter + theme.ts:asString coercion should
+      // make this branch dead code in practice. (unitAI-ctb4u.27)
+      try {
+        if (datePrefix) {
+          const base = renderJobRow(job, Math.max(1, width - datePrefix.length), row.depth, selected);
+          return truncateToWidth(paint(datePrefix, 'dim') + base, width);
+        }
+        return renderJobRow(job, width, row.depth, selected);
+      } catch (error) {
+        logError(this.logViewKey(), 'render', { errorClass: errorClassOf(error) });
+        return renderPlaceholder('  ?? <malformed row dropped>', width);
       }
-      return renderJobRow(job, width, row.depth, selected);
     });
   }
 
