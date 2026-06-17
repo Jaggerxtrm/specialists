@@ -1,8 +1,12 @@
+// Symlink .beads from repoRoot so sp run dispatched from tempRepo can resolve the bead.
+// Live HOME strategy for smoke: keep real HOME (and ~/.pi credentials) intact and set XDG_CONFIG_HOME
+// to a temp directory so specialist overrides stay isolated.
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { createLiveSmokeHome } from './live-smoke.helpers';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const runLive = process.env.SPECIALISTS_LIVE_SMOKE === '1';
@@ -18,17 +22,17 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 
 describe('live smoke: notes_mode final-only bead notes', () => {
   let tempHome = '';
+  let env: NodeJS.ProcessEnv = process.env;
   let beadId = '';
 
   afterEach(async () => {
-    if (beadId) run('bd', ['close', beadId, '--reason=phase-1 smoke complete'], repoRoot, { ...process.env, HOME: tempHome });
+    if (beadId) run('bd', ['close', beadId, '--reason=phase-1 smoke complete'], repoRoot, env);
     if (tempHome) await rm(tempHome, { recursive: true, force: true });
   });
 
   it.skipIf(!runLive)('writes exactly one FINAL handoff block with global notes_mode override', async () => {
     expect(liveModel).toBeTruthy();
-    tempHome = await mkdtemp(join(tmpdir(), 'specialists-live-notes-'));
-    await mkdir(join(tempHome, '.config', 'specialists'), { recursive: true });
+    ({ tempHome, env } = await createLiveSmokeHome('specialists-live-notes-'));
     await writeFile(
       join(tempHome, '.config', 'specialists', 'user.json'),
       JSON.stringify({
@@ -54,19 +58,19 @@ describe('live smoke: notes_mode final-only bead notes', () => {
       }),
     );
 
-    const create = run('bd', ['create', '--title=phase-1 smoke', '--type=task'], repoRoot, { ...process.env, HOME: tempHome });
+    const create = run('bd', ['create', '--title=phase-1 smoke', '--type=task'], repoRoot, env);
     expect(create.status).toBe(0);
     beadId = create.stdout.match(/unitAI-[a-z0-9]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
 
-    expect(run('bd', ['update', beadId, '--claim'], repoRoot, { ...process.env, HOME: tempHome }).status).toBe(0);
+    expect(run('bd', ['update', beadId, '--claim'], repoRoot, env).status).toBe(0);
 
-    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'executor', '--bead', beadId], repoRoot, { ...process.env, HOME: tempHome });
+    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'executor', '--bead', beadId], repoRoot, env);
     expect(smoke.status).toBe(0);
 
-    const show = run('bd', ['show', beadId], repoRoot, { ...process.env, HOME: tempHome });
+    const show = run('bd', ['show', beadId], repoRoot, env);
     expect(show.status).toBe(0);
     expect((show.stdout.match(/^### /gm) ?? []).length).toBe(1);
     expect(show.stdout).toContain('### FINAL');
-  }, 180_000);
+  }, 60_000);
 });

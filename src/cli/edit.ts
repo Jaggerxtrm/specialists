@@ -243,7 +243,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     fail(`Error: unknown option: ${token}\n\n${usage()}`);
   }
 
-  if (!name && positional.length > 0 && !positional[0].startsWith('--')) {
+  if (!global && !name && positional.length > 0 && !positional[0].startsWith('--')) {
     name = positional.shift();
   }
 
@@ -710,6 +710,11 @@ function coerceGlobalValue(schema: z.ZodTypeAny, rawValue: string): unknown {
 }
 
 function openInEditor(filePath: string): void {
+  if (!process.stdin.isTTY) {
+    const setCommand = yellow('specialists edit --global --set <name>.<field.path> <value>');
+    fail(`Error: --global without a path requires an interactive terminal.\nRun ${setCommand} in scripts.`);
+  }
+
   const editor = process.env.EDITOR?.trim() || process.env.VISUAL?.trim() || 'vi';
   const result = spawnSync(editor, [filePath], { stdio: 'inherit' });
   if (result.error) {

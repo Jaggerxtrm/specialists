@@ -43,6 +43,7 @@ const CORE_COMMANDS: CommandEntry[] = [
   ['ps', 'Show actionable dashboard (active + unresolved terminal problems); --json, --all, --follow, --active, --health, --include-terminal, --include-cleaned'],
   ['doctor', 'Diagnose installation/runtime problems; --check-drift reports stale .specialists/default/ snapshots'],
   ['prune-stale-defaults', 'Prune stale .specialists/default snapshots; default removes diverged mirrors too; --dry-run, --keep-diverged, --root <path>'],
+  ['setup', 'Discovery + benchmark cache + recommendation plan + global apply workflow'],
   ['quickstart', 'Full getting-started guide'],
   ['help', 'Show this help'],
 ];
@@ -53,7 +54,6 @@ const EXTENDED_COMMANDS: CommandEntry[] = [
   ['models', 'List models available on pi'],
   ['version', 'Print installed version'],
   ['follow-up', '[deprecated] Use resume instead'],
-  ['setup', '[deprecated] Use specialists init instead'],
   ['install', '[deprecated] Use specialists init instead'],
 ];
 
@@ -138,6 +138,7 @@ export async function run(): Promise<void> {
     '',
     bold('Examples:'),
     '  specialists init',
+    '  specialists setup --discovery --json',
     '  specialists list',
     '  specialists list-rules                            # rule × specialist matrix',
     '  specialists view explorer --section prompt',

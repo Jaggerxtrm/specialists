@@ -94,4 +94,11 @@ describe('command-specific --help', () => {
     expect(out).toContain('--name <specialist>');
     expect(out).toContain('--resolved');
   });
+
+  it('edit --help documents global positional form and global set/get', () => {
+    const out = captureIndexHelp(['edit', '--help']);
+    expect(out).toContain('specialists edit --global [name.field value]');
+    expect(out).toContain('specialists edit --global --set name.execution.model <value>');
+    expect(out).toContain('specialists edit --global --get name.execution.model');
+  });
 });

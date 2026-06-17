@@ -1,9 +1,12 @@
+// Live HOME strategy for smoke: keep real HOME (and ~/.pi credentials) intact and set XDG_CONFIG_HOME
+// to a temp directory so specialist overrides stay isolated; symlink repoRoot/.beads into tempRepo.
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { createLiveSmokeHome, snapshotJobIds, waitForNewJobId } from './live-smoke.helpers';
 import type { SupervisorStatus } from '../../../src/specialist/supervisor.js';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
@@ -50,10 +53,11 @@ async function waitFor<T>(producer: () => Promise<T>, predicate: (value: T) => b
 describe('live smoke: preset resolution', () => {
   let tempHome = '';
   let tempRepo = '';
+  let env: NodeJS.ProcessEnv = process.env;
   let beadId = '';
 
   afterEach(async () => {
-    if (beadId) run('bd', ['close', beadId, '--reason=phase-3 preset smoke complete'], repoRoot, { ...process.env, HOME: tempHome });
+    if (beadId) run('bd', ['close', beadId, '--reason=phase-3 preset smoke complete'], repoRoot, env);
     if (tempHome) await rm(tempHome, { recursive: true, force: true });
     if (tempRepo) await rm(tempRepo, { recursive: true, force: true });
   });
@@ -129,22 +133,26 @@ describe('live smoke: preset resolution', () => {
 
   it.skipIf(!runLive)('resolves @preset/cheap, dispatches with resolved model, logs preset_resolved event', async () => {
     expect(liveModel).toBeTruthy();
-    tempHome = await mkdtemp(join(tmpdir(), 'specialists-live-preset-home-'));
+    ({ tempHome, env } = await createLiveSmokeHome('specialists-live-preset-home-'));
     tempRepo = await mkdtemp(join(tmpdir(), 'specialists-live-preset-repo-'));
 
     expect(run('git', ['init', '-b', 'main'], tempRepo).status).toBe(0);
     await writePresetRepo();
     await writeUserConfig('@preset/cheap');
 
-    const create = run('bd', ['create', '--title=phase-3 preset smoke', '--type=task'], repoRoot, { ...process.env, HOME: tempHome });
+    const create = run('bd', ['create', '--title=phase-3 preset smoke', '--type=task'], repoRoot, env);
     expect(create.status).toBe(0);
     beadId = create.stdout.match(/unitAI-[a-z0-9]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
-    expect(run('bd', ['update', beadId, '--claim'], repoRoot, { ...process.env, HOME: tempHome }).status).toBe(0);
+    expect(run('bd', ['update', beadId, '--claim'], repoRoot, env).status).toBe(0);
 
-    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'echo', '--bead', beadId, '--background', '--no-bead-notes'], tempRepo, { ...process.env, HOME: tempHome });
+    // Symlink .beads from repoRoot so sp run dispatched from tempRepo can resolve the bead.
+    await symlink(join(repoRoot, '.beads'), join(tempRepo, '.beads'));
+    const knownJobIds = await snapshotJobIds(tempRepo);
+    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'echo', '--bead', beadId, '--background', '--no-bead-notes'], tempRepo, env);
     expect(smoke.status).toBe(0);
-    const jobId = smoke.stdout.trim();
+    const observedJobId = smoke.stdout.trim();
+    const jobId = observedJobId || (await waitForNewJobId(tempRepo, knownJobIds));
     expect(jobId).toMatch(/^[a-f0-9]{6}$/);
 
     const status = await waitFor(
@@ -154,7 +162,7 @@ describe('live smoke: preset resolution', () => {
     expect(status.status).toBe('done');
     expect(status.model).toBe(liveModel);
 
-    const log = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'log', jobId, '--all-events'], tempRepo, { ...process.env, HOME: tempHome });
+    const log = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'log', jobId, '--all-events'], tempRepo, env);
     expect(log.status).toBe(0);
     const presetLines = log.stdout.split('\n').filter(line => line.includes('preset_resolved'));
     expect(presetLines.length).toBeGreaterThanOrEqual(1);
@@ -162,27 +170,29 @@ describe('live smoke: preset resolution', () => {
     expect(presetLines.join('\n')).toContain('"preset_name":"cheap"');
     expect(presetLines.join('\n')).toContain(`"resolved_value":"${liveModel}"`);
     expect(presetLines.join('\n')).toContain('"depth":1');
-  }, 180_000);
+  }, 60_000);
 
   it.skipIf(!runLive)('fails fast on unknown preset before llm dispatch', async () => {
     expect(liveModel).toBeTruthy();
-    tempHome = await mkdtemp(join(tmpdir(), 'specialists-live-preset-home-'));
+    ({ tempHome, env } = await createLiveSmokeHome('specialists-live-preset-home-'));
     tempRepo = await mkdtemp(join(tmpdir(), 'specialists-live-preset-repo-'));
 
     expect(run('git', ['init', '-b', 'main'], tempRepo).status).toBe(0);
     await writePresetRepo();
     await writeUserConfig('@preset/typo');
 
-    const create = run('bd', ['create', '--title=phase-3 preset sad smoke', '--type=task'], repoRoot, { ...process.env, HOME: tempHome });
+    const create = run('bd', ['create', '--title=phase-3 preset sad smoke', '--type=task'], repoRoot, env);
     expect(create.status).toBe(0);
     beadId = create.stdout.match(/unitAI-[a-z0-9]+/)?.[0] ?? '';
     expect(beadId).toMatch(/^unitAI-/);
-    expect(run('bd', ['update', beadId, '--claim'], repoRoot, { ...process.env, HOME: tempHome }).status).toBe(0);
+    expect(run('bd', ['update', beadId, '--claim'], repoRoot, env).status).toBe(0);
 
-    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'echo', '--bead', beadId, '--no-bead-notes'], tempRepo, { ...process.env, HOME: tempHome });
+    // Symlink .beads from repoRoot so sp run dispatched from tempRepo can resolve the bead.
+    await symlink(join(repoRoot, '.beads'), join(tempRepo, '.beads'));
+    const smoke = run('bun', ['run', join(repoRoot, 'src/index.ts'), 'run', 'echo', '--bead', beadId, '--no-bead-notes'], tempRepo, env);
     expect(smoke.status).not.toBe(0);
     expect(smoke.stderr).toContain('preset "typo"');
     expect(smoke.stderr).toContain('echo.specialist.execution.model');
     expect(smoke.stderr).toContain('Known presets: cheap');
-  }, 180_000);
+  }, 60_000);
 });
