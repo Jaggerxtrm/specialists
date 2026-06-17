@@ -82,6 +82,16 @@ describe('edit CLI — --global --get / --set', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('null'));
   });
 
+  it('supports positional form for set without --set', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', 'executor.execution.model', 'anthropic/claude-sonnet-4-5'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.execution.model).toBe('anthropic/claude-sonnet-4-5');
+  });
+
   it('--set writes a string value', async () => {
     await seedGlobalConfig(tempHome);
     process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.execution.model', 'anthropic/claude-opus-4-6'];
@@ -113,7 +123,7 @@ describe('edit CLI — --global --get / --set', () => {
   });
 
   it('--set null clears a field back to inherit', async () => {
-    const cfgPath = await seedGlobalConfig(tempHome, {
+    await seedGlobalConfig(tempHome, {
       executor: {
         execution: {
           model: 'anthropic/claude-opus-4-6',
@@ -229,5 +239,30 @@ describe('edit CLI — --global + --scope rejection (run path)', () => {
     const { run } = await importEdit();
     await expect(run()).rejects.toThrow('exit:1');
     exitSpy.mockRestore();
+  });
+
+  it('fails fast when stdin is not a TTY for bare --global and hints --set usage', async () => {
+    const stdin = process.stdin as NodeJS.ReadStream & { isTTY?: boolean | undefined };
+    const originalIsTty = stdin.isTTY;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      stdin.isTTY = false;
+      await seedGlobalConfig(tempHome);
+      process.argv = ['node', 'sp', 'edit', '--global'];
+
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: number | string) => {
+        throw new Error(`exit:${code}`);
+      });
+      const { run } = await importEdit();
+      await expect(run()).rejects.toThrow('exit:1');
+      exitSpy.mockRestore();
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('interactive terminal'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('specialists edit --global --set <name>.<field.path> <value>'));
+    } finally {
+      stdin.isTTY = originalIsTty;
+      errorSpy.mockRestore();
+    }
   });
 });
