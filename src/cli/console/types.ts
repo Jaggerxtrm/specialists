@@ -157,8 +157,24 @@ export interface DiffFile {
 
 // ---------- ConfigView (Phase 6) — types defined in config-source.ts ----------
 
+export interface ListReposContext {
+  repos: RepoRef[];
+  /**
+   * Optional one-line message surfaced into the existing message slot.
+   * Used for first-run auto-discovery feedback (unitAI-29p39).
+   */
+  message?: string;
+}
+
 export interface RuntimeClient {
   listRepos(): Promise<RepoRef[]>;
+  /**
+   * Optional context-aware seam used by ConsoleApp.loadRepos to surface
+   * a startup message (e.g. discovery result). Defaults to a thin
+   * wrapper over listRepos() when a runtime implementation skips it
+   * (e.g. test stubs).
+   */
+  listReposWithContext?(): Promise<ListReposContext>;
   listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot>;
   readFeed(args: { repo: RepoRef; jobId: string; fromSeq?: number; limit?: number; source?: FeedSource }): Promise<FeedEventRow[]>;
   inspectJob(repo: RepoRef, jobIdPrefix: string): Promise<JobInspect>;

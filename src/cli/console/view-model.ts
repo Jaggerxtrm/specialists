@@ -59,7 +59,7 @@ export interface DiffViewState {
 }
 
 export type ConsoleAction =
-  | { type: 'reposLoaded'; repos: RepoRef[] }
+  | { type: 'reposLoaded'; repos: RepoRef[]; message?: string }
   | { type: 'snapshotLoaded'; snapshot: ProcessSnapshot }
   | { type: 'snapshotDelta'; upserts: ConsoleJob[]; tombstones: ConsoleJob[] }
   | { type: 'feedLoaded'; rows: FeedEventRow[]; totalRows?: number; viewportRows?: number }
@@ -154,8 +154,24 @@ export function visibleSlice<T>(rows: readonly T[], scroll: number, viewportRows
 export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): ConsoleState {
   switch (action.type) {
     case 'reposLoaded': {
-      const repoIndex = Math.min(state.repoIndex, Math.max(0, action.repos.length - 1));
-      return { ...state, repos: action.repos, repoIndex };
+      // First load: honor the runtime's `current` flag (unitAI-29p39 marks
+      // the repo whose path matches cwd). Subsequent loads (re-discovery
+      // via R / rescan) keep the operator's current selection.
+      const isFirstLoad = state.repos.length === 0;
+      const currentIdx = action.repos.findIndex((r) => r.current);
+      const repoIndex = isFirstLoad && currentIdx >= 0
+        ? currentIdx
+        : Math.min(state.repoIndex, Math.max(0, action.repos.length - 1));
+      return {
+        ...state,
+        repos: action.repos,
+        repoIndex,
+        // First-run discovery surfaces a one-line "discovered N repos in
+        // ..." message via this field (unitAI-29p39). Subsequent runs
+        // load from console.json and pass message=undefined, which is a
+        // no-op on the existing message slot.
+        message: action.message ?? state.message,
+      };
     }
     case 'snapshotLoaded': {
       if (state.view !== 'ps') return { ...state, snapshot: action.snapshot, message: undefined };

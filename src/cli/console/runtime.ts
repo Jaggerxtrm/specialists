@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { JobColorMap, bold, formatElapsed, formatEventLine, formatTokenUsageSummary, magenta } from '../format-helpers.js';
 import { resolveObservabilityDbLocation } from '../../specialist/observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath, type ObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
@@ -40,6 +40,12 @@ import {
   parseUnifiedDiff,
 } from './git.js';
 import { logError } from './log.js';
+import {
+  buildConsoleConfigTemplate,
+  readConsoleConfig,
+  writeConsoleConfig,
+} from './repo-config.js';
+import { discoverRepos } from './repo-discovery.js';
 
 const ACTIVE_STATES: ReadonlyArray<SupervisorStatus['status']> = ['starting', 'running', 'waiting'];
 const TERMINAL_STATES: ReadonlyArray<SupervisorStatus['status']> = ['done', 'error', 'cancelled'];
@@ -49,38 +55,80 @@ export function createRuntimeClient(cwd = process.cwd()): RuntimeClient {
   return new LocalRuntimeClient(cwd);
 }
 
+// Surfaces context from listRepos so the caller (ConsoleApp) can show a
+// one-line "discovered N repos in ..." message after first-run. Optional;
+// callers that don't need it just call listRepos().
+export interface ListReposResult {
+  repos: RepoRef[];
+  message?: string;
+}
+
 class LocalRuntimeClient implements RuntimeClient {
   constructor(private readonly cwd: string) {}
 
   async listRepos(): Promise<RepoRef[]> {
+    return (await this.listReposWithContext()).repos;
+  }
+
+  // Precedence chain (unitAI-29p39):
+  //   1) SPECIALISTS_CONSOLE_REPOS env var (always wins)
+  //   2) ~/.config/specialists/console.json (loaded if present)
+  //   3) cwd-as-repo + parent-scan for siblings
+  //   4) first-run auto-discovery across DEFAULT_BASE_DIR_CANDIDATES,
+  //      persisted to console.json so subsequent runs are cheap
+  async listReposWithContext(): Promise<ListReposResult> {
     const configured = parseConfiguredRepos();
-    if (configured.length > 0) return configured;
+    if (configured.length > 0) return { repos: configured };
 
-    const current = resolveRepoRef(this.cwd, true);
-    if (current) return [current];
-
-    const repos: RepoRef[] = [];
-    let entries: string[] = [];
-    try {
-      entries = readdirSync(this.cwd);
-    } catch {
-      return [{ id: 'cwd', name: basename(this.cwd), path: this.cwd, current: true }];
-    }
-
-    for (const entry of entries) {
-      const root = join(this.cwd, entry);
-      try {
-        if (!statSync(root).isDirectory()) continue;
-      } catch {
-        continue;
+    const persisted = readConsoleConfig();
+    if (persisted && persisted.repos.length > 0) {
+      const repos = persisted.repos
+        .flatMap((entry) => {
+          const ref = resolveRepoRef(entry.path, false, entry.name);
+          return ref ? [ref] : [];
+        });
+      if (repos.length > 0) {
+        markCurrent(repos, this.cwd);
+        return { repos };
       }
-      const repo = resolveRepoRef(root, false);
-      if (repo) repos.push(repo);
     }
 
-    return repos.length > 0
-      ? repos.sort((a, b) => a.name.localeCompare(b.name))
-      : [{ id: 'cwd', name: basename(this.cwd), path: this.cwd, current: true }];
+    // (3) cwd-as-repo + sibling scan via its parent dir.
+    const cwdRepo = resolveRepoRef(this.cwd, true);
+    if (cwdRepo) {
+      const sibs = scanSiblingsForRepos(cwdRepo.path);
+      const repos = sibs.length > 0
+        ? mergeCurrentWithSiblings(cwdRepo, sibs)
+        : [cwdRepo];
+      return { repos };
+    }
+
+    // (4) first-run auto-discovery — write the result so future starts are
+    //     cheap.
+    const discovery = discoverRepos();
+    if (discovery.repos.length > 0) {
+      const nowIso = new Date().toISOString();
+      try {
+        writeConsoleConfig(buildConsoleConfigTemplate(discovery.repos, discovery.scannedBaseDirs, nowIso));
+      } catch {
+        // logged through logError inside writeConsoleConfig; never crash
+        // the TUI on a config write failure.
+      }
+      const repos = discovery.repos
+        .flatMap((entry) => {
+          const ref = resolveRepoRef(entry.path, false, entry.name);
+          return ref ? [ref] : [];
+        });
+      if (repos.length > 0) {
+        markCurrent(repos, this.cwd);
+        const baseStr = discovery.scannedBaseDirs.join(', ') || 'default base dirs';
+        const message = `discovered ${repos.length} repo${repos.length === 1 ? '' : 's'} in ${baseStr} · saved to console.json`;
+        return { repos, message };
+      }
+    }
+
+    // Last resort: surface cwd as a placeholder so the TUI doesn't crash.
+    return { repos: [{ id: 'cwd', name: basename(this.cwd), path: this.cwd, current: true }] };
   }
 
   async listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot> {
@@ -590,6 +638,79 @@ export function parseBdShowJson(beadId: string, stdout: string): BeadDoc {
   if (notes.trim()) sections.push({ title: 'notes', body: notes.trim() });
 
   return { beadId, fields, sections };
+}
+
+// Scan the immediate parent of a known repo root for sibling repos that
+// also have a `.specialists/db/observability.db`. Only one level up,
+// dotdirs skipped. Cheap by design — used as the auto-multi-repo path
+// when cwd is INSIDE a git root but no console.json has been written yet.
+function scanSiblingsForRepos(repoRoot: string): RepoRef[] {
+  const parent = dirname(repoRoot);
+  if (parent === repoRoot) return []; // at filesystem root
+  let entries: string[];
+  try {
+    entries = readdirSync(parent);
+  } catch {
+    return [];
+  }
+  const repos: RepoRef[] = [];
+  const seen = new Set<string>([repoRoot]);
+  for (const entry of entries) {
+    if (entry.startsWith('.')) continue;
+    const root = join(parent, entry);
+    if (seen.has(root)) continue;
+    try {
+      if (!statSync(root).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const ref = resolveRepoRef(root, false);
+    if (ref) {
+      seen.add(root);
+      repos.push(ref);
+    }
+  }
+  return repos.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Mark the repo whose path the operator is currently inside as `current`.
+// Used when loading from console.json: console.json stores repos sorted
+// alphabetically, but the operator expects the tab matching their cwd to
+// be the active one on startup. Falls back to repos[0] when cwd is
+// outside all configured repos.
+function markCurrent(repos: RepoRef[], cwd: string): void {
+  // Normalize cwd + repo paths to never end with `/` so prefix checks are
+  // unambiguous (resolveRepoRef sometimes returns paths with a trailing
+  // separator depending on git resolution).
+  const normCwd = cwd.replace(/[\\/]+$/, '');
+  let matchIndex = -1;
+  let matchLen = -1;
+  for (let i = 0; i < repos.length; i += 1) {
+    const normRepo = repos[i]!.path.replace(/[\\/]+$/, '');
+    if (normCwd === normRepo
+      || normCwd.startsWith(`${normRepo}/`)
+      || normCwd.startsWith(`${normRepo}\\`)) {
+      // Prefer the longest-prefix match (deepest repo) when paths nest.
+      if (normRepo.length > matchLen) {
+        matchIndex = i;
+        matchLen = normRepo.length;
+      }
+    }
+  }
+  const chosen = matchIndex >= 0 ? matchIndex : 0;
+  for (let i = 0; i < repos.length; i += 1) {
+    repos[i]!.current = i === chosen;
+  }
+}
+
+// Place the operator's current repo at index 0 (carries current:true)
+// followed by deduped siblings sorted by name.
+function mergeCurrentWithSiblings(current: RepoRef, siblings: RepoRef[]): RepoRef[] {
+  const ordered: RepoRef[] = [current];
+  for (const sib of siblings) {
+    if (sib.path !== current.path) ordered.push(sib);
+  }
+  return ordered;
 }
 
 function parseConfiguredRepos(): RepoRef[] {
