@@ -27,25 +27,38 @@ export interface LogErrorExtras {
   exitCode?: number | null;
   durationMs?: number;
   errorClass?: string;
+  // Optional bead identifier. Capped to 24 chars before emission so logs
+  // never leak the full bead body even if an upstream caller passes a long
+  // identifier or accidental payload.
+  beadId?: string;
+  // Optional finer-grained step inside the op (e.g. 'read' vs 'parse' for
+  // read_global_config). Included in the dedupe key so distinct steps
+  // get distinct envelopes.
+  step?: string;
 }
 
 const SEEN = new Set<string>();
+const BEAD_ID_MAX = 24;
 
 export function logError(view: ConsoleView, op: ConsoleErrorOp, extras: LogErrorExtras = {}): void {
-  const key = `${view}:${op}:${extras.errorClass ?? 'unknown'}`;
+  const errorClass = extras.errorClass ?? 'unknown';
+  const stepKey = extras.step ? `:${extras.step}` : '';
+  const key = `${view}:${op}${stepKey}:${errorClass}`;
   if (SEEN.has(key)) return;
   SEEN.add(key);
   try {
-    const envelope = JSON.stringify({
+    const envelope: Record<string, unknown> = {
       ts: new Date().toISOString(),
       component: 'sp-console',
       view,
       op,
       exitCode: extras.exitCode ?? null,
       durationMs: extras.durationMs ?? null,
-      errorClass: extras.errorClass ?? 'unknown',
-    });
-    process.stderr.write(envelope + '\n');
+      errorClass,
+    };
+    if (extras.step) envelope.step = extras.step;
+    if (extras.beadId) envelope.beadId = extras.beadId.slice(0, BEAD_ID_MAX);
+    process.stderr.write(JSON.stringify(envelope) + '\n');
   } catch {
     // never crash on logging
   }

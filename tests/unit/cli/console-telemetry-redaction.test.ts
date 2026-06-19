@@ -22,6 +22,9 @@ const ALLOWED_KEYS = new Set([
   'exitCode',
   'durationMs',
   'errorClass',
+  // Optional fields, only present when provided by the caller.
+  'step',
+  'beadId',
 ]);
 
 const FORBIDDEN_SUBSTRINGS = [
@@ -116,5 +119,52 @@ describe('NDJSON envelope shape', () => {
     logError('diff', 'git_diff', { errorClass: 'EACCES' });
     logError('diff', 'git_diff', { errorClass: 'ENOENT' });
     expect(writes.length).toBe(2);
+  });
+
+  // ---------- unitAI-21sn4 regressions ----------
+
+  it('step field appears in envelope and isolates dedupe per step (unitAI-21sn4)', () => {
+    logError('config', 'read_global_config', { step: 'read', errorClass: 'ENOENT' });
+    logError('config', 'read_global_config', { step: 'parse', errorClass: 'ENOENT' });
+    logError('config', 'read_global_config', { step: 'parse', errorClass: 'ENOENT' });
+    expect(writes.length).toBe(2);
+    const first = JSON.parse(writes[0]!.trim());
+    const second = JSON.parse(writes[1]!.trim());
+    expect(first.step).toBe('read');
+    expect(second.step).toBe('parse');
+    expect(first.view).toBe('config');
+  });
+
+  it('beadId field is capped at 24 chars (unitAI-21sn4)', () => {
+    const longBead = 'a'.repeat(64);
+    logError('bead', 'bd_show', { beadId: longBead, errorClass: 'parse_error' });
+    const parsed = JSON.parse(writes[0]!.trim());
+    expect(parsed.beadId.length).toBe(24);
+    expect(parsed.beadId).toBe('a'.repeat(24));
+  });
+
+  it('beadId field omitted when not provided (unitAI-21sn4)', () => {
+    logError('diff', 'git_diff', { errorClass: 'ENOENT' });
+    const parsed = JSON.parse(writes[0]!.trim());
+    expect(Object.prototype.hasOwnProperty.call(parsed, 'beadId')).toBe(false);
+  });
+
+  it('every envelope carries the view field (unitAI-21sn4)', () => {
+    logError('diff', 'git_numstat', { errorClass: 'ENOENT' });
+    logError('bead', 'bd_show', { beadId: 'unitAI-test', errorClass: 'exit:1' });
+    logError('config', 'read_global_config', { step: 'read', errorClass: 'EACCES' });
+    logError('config', 'write_global_config', { errorClass: 'EACCES' });
+    for (const w of writes) {
+      const parsed = JSON.parse(w.trim());
+      expect(typeof parsed.view).toBe('string');
+      expect(parsed.view.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('burst of 50 identical git failures emits 1 envelope (unitAI-21sn4)', () => {
+    for (let i = 0; i < 50; i += 1) {
+      logError('diff', 'git_numstat', { exitCode: 127, durationMs: 1, errorClass: 'exit:127' });
+    }
+    expect(writes.length).toBe(1);
   });
 });
