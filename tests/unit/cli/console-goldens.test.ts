@@ -204,7 +204,7 @@ describe('no-empty-lines invariant across every render fn', () => {
       renderBeadField('k', 'v', 160),
       renderDiffSummaryRow({ path: 'a', status: 'M', added: 1, deleted: 0, binary: false }, 160, false),
       renderDiffHunkLine('add', '+x', 160),
-      renderConfigField('execution.model', 'inherit', 'string | null', 160, { isOverride: false, isInherit: true }),
+      renderConfigField('execution.model', 'inherit', '<provider>/<id> · e.g. openai-codex/gpt-5.4-mini', 160, { isOverride: false, isInherit: true }),
       renderConfigSpecialistRow('executor', true, false, 160),
     ];
     for (const out of outputs) {

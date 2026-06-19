@@ -48,20 +48,31 @@ export interface ConfigSnapshot {
   specialists: ConfigSpecialistRow[];
 }
 
+// Hints describe format/units · plain-word operational effect. The value column
+// already renders `inherit` when null, so the hint omits ` | null` and instead
+// surfaces what flipping the field actually does at runtime.
 const PRIMITIVE_HINT: Record<string, string> = {
-  'execution.model': 'string | null',
-  'execution.fallback_model': 'string | null',
-  'execution.fallback_models': 'string[] | null',
-  'execution.timeout_ms': 'int ≥ 0 | null',
-  'execution.stall_timeout_ms': 'int ≥ 0 | null',
-  'execution.max_retries': 'int ≥ 0 | null',
-  'execution.prompt_limit_bytes': 'int > 0 | null',
-  'execution.stdout_limit_bytes': 'int > 0 | null',
-  'execution.extensions.serena': 'bool | null',
-  'execution.extensions.gitnexus': 'bool | null',
-  'beads_write_notes': 'bool | null',
-  'output_file': 'string | null',
-  'skills.paths': 'string[]',
+  'execution.model': '<provider>/<id> · e.g. openai-codex/gpt-5.4-mini',
+  'execution.fallback_model': '<provider>/<id> · single fallback model',
+  'execution.fallback_models': 'JSON array · e.g. ["openai-codex/gpt-5.4-mini"]',
+  'execution.timeout_ms': 'ms · total cap; e.g. 120000 (2m); 0=disabled',
+  'execution.stall_timeout_ms': 'ms · idle cap; e.g. 300000 (5m); 0=disabled',
+  'execution.max_retries': 'count · transient-error retries; e.g. 3',
+  'execution.prompt_limit_bytes': 'bytes · prompt cap; e.g. 4194304 (4 MiB)',
+  'execution.stdout_limit_bytes': 'bytes · stdout cap; e.g. 33554432 (32 MiB)',
+  'execution.extensions.serena': 'true|false · false disables Serena MCP (~80-150 MB)',
+  'execution.extensions.gitnexus': 'true|false · false disables GitNexus MCP',
+  'beads_write_notes': 'true|false · false skips per-turn note append',
+  'output_file': 'absolute path · always written when set',
+  'skills.paths': 'string[] · extra skill folders, appended to spec',
+};
+
+// Plain-word gloss appended to enum hints so the operator sees what each value
+// MEANS, not just which letters are valid.
+const ENUM_GLOSS: Record<string, string> = {
+  'execution.thinking_level': 'model reasoning depth',
+  'prompt.system_prompt_mode': 'replace drops spec.prompt.system',
+  'notes_mode': 'final-only skips per-turn appends',
 };
 
 export function readGlobalConfigSnapshot(loader?: SpecialistLoader): ConfigSnapshot {
@@ -200,9 +211,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function describeLeaf(path: string): { hint: string; isEnum: boolean; enumValues?: string[] } {
   const enumValues = introspectEnumForPath(path);
   if (enumValues && enumValues.length > 0) {
-    return { hint: `enum: ${enumValues.join('|')} | null`, isEnum: true, enumValues };
+    const gloss = ENUM_GLOSS[path];
+    const head = `enum: ${enumValues.join('|')}`;
+    const hint = gloss ? `${head} · ${gloss}` : head;
+    return { hint, isEnum: true, enumValues };
   }
-  return { hint: PRIMITIVE_HINT[path] ?? 'string | null', isEnum: false };
+  return { hint: PRIMITIVE_HINT[path] ?? 'string · free text', isEnum: false };
 }
 
 function introspectEnumForPath(path: string): string[] | undefined {

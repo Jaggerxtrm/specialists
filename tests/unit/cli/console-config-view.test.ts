@@ -19,51 +19,98 @@ import {
 const SGR_RE = /\x1b\[[0-9;]*m/g;
 const strip = (s: string): string => s.replace(SGR_RE, '');
 
-describe('describeLeaf — schema-driven allowed-input hints', () => {
-  it('enum hint for thinking_level (zod introspection)', () => {
+describe('describeLeaf — operationally-grounded hints (unitAI-ctb4u.31)', () => {
+  it('enum hint for thinking_level lists alternatives AND appends a plain-word gloss', () => {
     const d = describeLeaf('execution.thinking_level');
+    expect(d.isEnum).toBe(true);
     expect(d.hint.startsWith('enum: ')).toBe(true);
     expect(d.hint).toContain('low');
     expect(d.hint).toContain('high');
-    expect(d.hint.endsWith(' | null')).toBe(true);
-    expect(d.isEnum).toBe(true);
+    expect(d.hint).toContain('reasoning depth');
   });
 
-  it('enum hint for prompt.system_prompt_mode', () => {
+  it('enum hint for prompt.system_prompt_mode names the operational effect of replace', () => {
     const d = describeLeaf('prompt.system_prompt_mode');
     expect(d.isEnum).toBe(true);
     expect(d.hint).toContain('append');
     expect(d.hint).toContain('replace');
+    expect(d.hint).toContain('drops spec.prompt.system');
   });
 
-  it('enum hint for notes_mode', () => {
+  it('enum hint for notes_mode names what final-only does', () => {
     const d = describeLeaf('notes_mode');
     expect(d.isEnum).toBe(true);
     expect(d.hint).toContain('full-trail');
     expect(d.hint).toContain('final-only');
+    expect(d.hint).toContain('per-turn');
   });
 
-  it('primitive hints for numeric leaves', () => {
-    expect(describeLeaf('execution.timeout_ms').hint).toBe('int ≥ 0 | null');
-    expect(describeLeaf('execution.max_retries').hint).toBe('int ≥ 0 | null');
-    expect(describeLeaf('execution.prompt_limit_bytes').hint).toBe('int > 0 | null');
-    expect(describeLeaf('execution.stdout_limit_bytes').hint).toBe('int > 0 | null');
+  it('numeric hints carry units AND a concrete example', () => {
+    expect(describeLeaf('execution.timeout_ms').hint).toContain('ms');
+    expect(describeLeaf('execution.timeout_ms').hint).toContain('120000');
+    expect(describeLeaf('execution.stall_timeout_ms').hint).toContain('ms');
+    expect(describeLeaf('execution.stall_timeout_ms').hint).toContain('300000');
+    expect(describeLeaf('execution.max_retries').hint).toContain('count');
+    expect(describeLeaf('execution.max_retries').hint).toContain('e.g. 3');
+    expect(describeLeaf('execution.prompt_limit_bytes').hint).toContain('bytes');
+    expect(describeLeaf('execution.prompt_limit_bytes').hint).toContain('MiB');
+    expect(describeLeaf('execution.stdout_limit_bytes').hint).toContain('bytes');
+    expect(describeLeaf('execution.stdout_limit_bytes').hint).toContain('MiB');
   });
 
-  it('primitive hint for booleans', () => {
-    expect(describeLeaf('execution.extensions.serena').hint).toBe('bool | null');
-    expect(describeLeaf('execution.extensions.gitnexus').hint).toBe('bool | null');
-    expect(describeLeaf('beads_write_notes').hint).toBe('bool | null');
+  it('boolean hints name the OPERATIONAL effect of false, not the type', () => {
+    const serena = describeLeaf('execution.extensions.serena').hint;
+    expect(serena).toContain('true|false');
+    expect(serena).toContain('Serena');
+    expect(serena).toContain('disables');
+    const gitnexus = describeLeaf('execution.extensions.gitnexus').hint;
+    expect(gitnexus).toContain('true|false');
+    expect(gitnexus).toContain('GitNexus');
+    expect(gitnexus).toContain('disables');
+    const notes = describeLeaf('beads_write_notes').hint;
+    expect(notes).toContain('true|false');
+    expect(notes).toContain('skips');
+    expect(notes).toContain('note append');
   });
 
-  it('array hint for skills.paths', () => {
-    expect(describeLeaf('skills.paths').hint).toBe('string[]');
+  it('string hints carry format AND example', () => {
+    expect(describeLeaf('execution.model').hint).toContain('<provider>/<id>');
+    expect(describeLeaf('execution.model').hint).toContain('e.g.');
+    expect(describeLeaf('execution.fallback_model').hint).toContain('<provider>/<id>');
+    expect(describeLeaf('execution.fallback_models').hint).toContain('JSON array');
+    expect(describeLeaf('execution.fallback_models').hint).toContain('e.g.');
+    expect(describeLeaf('output_file').hint).toContain('absolute path');
   });
 
-  it('string fallback for unrecognised paths', () => {
-    expect(describeLeaf('execution.fallback_models').hint).toBe('string[] | null');
-    expect(describeLeaf('execution.model').hint).toBe('string | null');
-    expect(describeLeaf('output_file').hint).toBe('string | null');
+  it('skills.paths hint names the operational effect (append to spec)', () => {
+    const hint = describeLeaf('skills.paths').hint;
+    expect(hint).toContain('string[]');
+    expect(hint).toContain('appended to spec');
+  });
+
+  it('every hint is ≤ 70 chars to fit the dim slot at 120-col widths', () => {
+    const paths = [
+      'execution.model',
+      'execution.fallback_model',
+      'execution.fallback_models',
+      'execution.timeout_ms',
+      'execution.stall_timeout_ms',
+      'execution.thinking_level',
+      'execution.max_retries',
+      'execution.prompt_limit_bytes',
+      'execution.stdout_limit_bytes',
+      'execution.extensions.serena',
+      'execution.extensions.gitnexus',
+      'prompt.system_prompt_mode',
+      'beads_write_notes',
+      'notes_mode',
+      'output_file',
+      'skills.paths',
+    ];
+    for (const p of paths) {
+      const hint = describeLeaf(p).hint;
+      expect(hint.length, `${p} hint exceeds 70 chars: "${hint}"`).toBeLessThanOrEqual(70);
+    }
   });
 });
 
@@ -164,19 +211,19 @@ describe('readGlobalConfigSnapshot — file-existence + parse handling', () => {
 describe('theme.renderConfigField + renderConfigSpecialistRow', () => {
   it('field row shows path, value, and hint aligned', () => {
     const row = strip(
-      renderConfigField('execution.timeout_ms', 'inherit', 'int ≥ 0 | null', 80, {
+      renderConfigField('execution.timeout_ms', 'inherit', 'ms · total cap; e.g. 120000 (2m); 0=disabled', 80, {
         isOverride: false,
         isInherit: true,
       }),
     );
     expect(row.startsWith('execution.timeout_ms')).toBe(true);
     expect(row).toContain('inherit');
-    expect(row).toContain('int ≥ 0 | null');
+    expect(row).toContain('120000');
   });
 
   it('null value always renders as `inherit` (regardless of isOverride)', () => {
     const row = strip(
-      renderConfigField('execution.model', 'should-not-show', 'string | null', 80, {
+      renderConfigField('execution.model', 'should-not-show', '<provider>/<id> · e.g. openai-codex/gpt-5.4-mini', 80, {
         isOverride: false,
         isInherit: true,
       }),
