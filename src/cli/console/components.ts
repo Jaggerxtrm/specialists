@@ -44,8 +44,12 @@ import {
 import { applyFieldEdit, coerceFieldValue, formatConfigValue } from './config-source.js';
 import { errorClassOf, logError, type ConsoleView as LogView } from './log.js';
 import { snapshotDiff, snapshotHash } from '../../specialist/snapshot-diff.js';
+import { SourceQueue } from '../../specialist/source-queue.js';
 
-const POLL_MS = 1500;
+// Refresh cadence is owned by SourceQueue (unitAI-ctb4u.20). Each repo gets
+// its own queue with the gitboard-imported COALESCE_MS=1500 default, so
+// repo switching cancels the prior queue's pending dispatch without
+// waiting for the in-flight run to finish.
 const COALESCE_MS = 50; // ~20Hz dispatch cap (spec §10)
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
@@ -61,7 +65,10 @@ interface ConsoleAppOptions {
 
 export class ConsoleApp implements Component {
   private state: ConsoleState = initialConsoleState();
-  private timer: ReturnType<typeof setInterval> | null = null;
+  // Per-repo poll queue. Replaces the prior single setInterval — each
+  // repo gets its own coalesce window so tab-switching does not race a
+  // stale poll on the prior repo (unitAI-ctb4u.20).
+  private queues = new Map<string, SourceQueue>();
   private refreshInFlight = false;
   private disposed = false;
   private renderedDetailRows = 0;
@@ -82,9 +89,10 @@ export class ConsoleApp implements Component {
   async start(): Promise<void> {
     await this.loadRepos();
     await this.refresh();
-    this.timer = setInterval(() => {
-      void this.refresh();
-    }, POLL_MS);
+    // First refresh ran inline; subsequent polls go through the per-repo
+    // SourceQueue (unitAI-ctb4u.20). Schedule the next tick now so the
+    // queue's internal coalesce timer pulls us back in COALESCE_MS.
+    this.scheduleRefresh();
     this.resizeHandler = (): void => this.scheduleRender();
     try {
       process.stdout.on('resize', this.resizeHandler);
@@ -95,8 +103,11 @@ export class ConsoleApp implements Component {
 
   stop(): void {
     this.disposed = true;
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    // Cancel pending coalesce timers on every per-repo queue. In-flight
+    // runs still drain to completion — the running flag protects callers
+    // from torn intermediate state (unitAI-ctb4u.20).
+    for (const queue of this.queues.values()) queue.cancel();
+    this.queues.clear();
     if (this.coalesceTimer) clearTimeout(this.coalesceTimer);
     this.coalesceTimer = null;
     if (this.resizeHandler) {
@@ -365,8 +376,39 @@ export class ConsoleApp implements Component {
   }
 
   private refreshAfter(action: Parameters<typeof reduceConsoleState>[1]): void {
+    // Capture the prior repo id BEFORE the reducer runs so we can cancel
+    // its queue on switch (unitAI-ctb4u.20).
+    const priorRepoId = currentRepo(this.state)?.id;
     this.dispatch(action);
+    const nextRepoId = currentRepo(this.state)?.id;
+    if (priorRepoId && nextRepoId && priorRepoId !== nextRepoId) {
+      // Cancel the old repo's pending dispatch and refresh the new one
+      // immediately rather than waiting a full COALESCE_MS window.
+      this.queues.get(priorRepoId)?.cancel();
+      void this.refresh();
+      return;
+    }
     void this.refresh();
+  }
+
+  // Schedule the next refresh on the active repo's queue. Each repo gets
+  // its own SourceQueue so tab-switching cannot let a stale poll on the
+  // prior repo race the destination repo's first render. Errors route
+  // through the centralized logError sink (unitAI-21sn4 invariant).
+  private scheduleRefresh(): void {
+    const repo = currentRepo(this.state);
+    if (!repo || this.disposed) return;
+    let queue = this.queues.get(repo.id);
+    if (!queue) {
+      queue = new SourceQueue((_sourceKey, error) => {
+        logError(this.logViewKey(), 'list_processes', { errorClass: errorClassOf(error) });
+      });
+      this.queues.set(repo.id, queue);
+    }
+    queue.enqueue(repo.id, async () => {
+      await this.refresh();
+      if (!this.disposed) this.scheduleRefresh();
+    });
   }
 
   private open(view: 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config', jobId: string): void {
