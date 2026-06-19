@@ -9,7 +9,14 @@
 //   repo .specialists/user/  >  global user.json  >  package canonical
 // A null/empty override field means "inherit from the layer below".
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import * as z from 'zod';
@@ -321,13 +328,41 @@ export function readGlobalUserConfig(
 
 /**
  * Write the global user config, creating parent directories as needed.
+ *
+ * Atomic-write semantics: serialize JSON, write to a sibling temp file in
+ * the same directory, then renameSync over the destination. POSIX rename
+ * is atomic within the same filesystem, so a crash between truncate +
+ * write can no longer leave user.json empty or half-written.
+ *
+ * If the rename fails (e.g. cross-filesystem mount, no permission), fall
+ * back to a direct writeFileSync so we still update the file rather than
+ * leaving the user without a way to persist their override.
  */
 export function writeGlobalUserConfig(
   location: GlobalUserConfigPath,
   config: GlobalUserConfig,
 ): void {
-  mkdirSync(dirname(location.path), { recursive: true });
-  writeFileSync(location.path, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+  const dir = dirname(location.path);
+  mkdirSync(dir, { recursive: true });
+  const payload = `${JSON.stringify(config, null, 2)}\n`;
+  // Sibling tmp file in the same dir so renameSync stays within the same
+  // filesystem. Tag PID into the suffix so a crashed prior write can be
+  // distinguished from this one if it leaks.
+  const tmpPath = `${location.path}.tmp.${process.pid}.${Math.floor(performance.now() * 1000)}`;
+  try {
+    writeFileSync(tmpPath, payload, 'utf-8');
+    renameSync(tmpPath, location.path);
+  } catch (renameError) {
+    // Clean up the tmp file if it landed but rename failed; never throw
+    // from cleanup so the operator sees the original error.
+    try { rmSync(tmpPath, { force: true }); } catch { /* noop */ }
+    // Last-resort fallback so the user can still persist their config.
+    writeFileSync(location.path, payload, 'utf-8');
+    // Re-throw the rename error after the fallback succeeds so the
+    // operator surface (sp console) sees that atomicity was not
+    // achievable in this environment.
+    throw renameError;
+  }
 }
 
 export { SPECIALISTS_SUBDIR, CONFIG_FILENAME };

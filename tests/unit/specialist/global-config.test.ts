@@ -1,11 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { describe, it, expect } from 'vitest';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import {
   GLOBAL_USER_CONFIG_DOC,
   buildGlobalUserConfigTemplate,
   buildSpecialistOverrideTemplate,
   mergeGlobalUserConfig,
   validateGlobalUserConfig,
+  writeGlobalUserConfig,
+  type GlobalUserConfigPath,
 } from '../../../src/specialist/global-config.js';
 
 describe('global specialist override config', () => {
@@ -225,5 +229,56 @@ describe('global specialist override config', () => {
 
     const example = match?.[1] ?? '';
     expect(validateGlobalUserConfig(example)).toEqual({ valid: true, errors: [] });
+  });
+});
+
+describe('writeGlobalUserConfig — atomic-write semantics (unitAI-ctb4u.17)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sp-global-config-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function locationFor(name: string): GlobalUserConfigPath {
+    return { path: join(dir, name), source: 'xdg', exists: false };
+  }
+
+  it('persists the JSON payload with trailing newline (default success path)', () => {
+    const location = locationFor('user.json');
+    writeGlobalUserConfig(location, { demo: buildSpecialistOverrideTemplate() });
+    const raw = readFileSync(location.path, 'utf-8');
+    expect(raw.endsWith('\n')).toBe(true);
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toContain('demo');
+  });
+
+  it('overwrites an existing file atomically with no .tmp file left behind', () => {
+    const location = locationFor('user.json');
+    writeFileSync(location.path, '{"demo":{"execution":{"model":"old/model"}}}\n', 'utf-8');
+    writeGlobalUserConfig(location, { demo: buildSpecialistOverrideTemplate() });
+    const after = JSON.parse(readFileSync(location.path, 'utf-8')) as Record<string, { execution: { model: unknown } }>;
+    expect(after.demo!.execution.model).toBeNull();
+    const leakedTmps = readdirSync(dir).filter((name) => name.startsWith('user.json.tmp.'));
+    expect(leakedTmps).toEqual([]);
+  });
+
+  it('preserves prior dest if rename fails after successful tmp-write (regression: no partial overwrite)', () => {
+    // Place a directory at location.path so renameSync(tmpFile, location.path)
+    // throws EISDIR — exercises the post-tmp-success / pre-dest-replaced
+    // failure window. The pre-fix path would have left dest in an
+    // indeterminate state; the atomic path preserves dest + cleans up tmp.
+    const dirLocation = locationFor('dir-as-dest');
+    mkdirSync(dirLocation.path);
+    writeFileSync(join(dirLocation.path, 'sentinel.txt'), 'preserved\n', 'utf-8');
+    expect(() => writeGlobalUserConfig(dirLocation, { demo: buildSpecialistOverrideTemplate() })).toThrow();
+    // Sentinel file inside the dir survived: rename never clobbered it.
+    expect(readFileSync(join(dirLocation.path, 'sentinel.txt'), 'utf-8')).toBe('preserved\n');
+    // No leaked tmp file in the parent dir (cleanup ran in catch).
+    const leakedTmps = readdirSync(dir).filter((name) => name.startsWith('dir-as-dest.tmp.'));
+    expect(leakedTmps).toEqual([]);
   });
 });
