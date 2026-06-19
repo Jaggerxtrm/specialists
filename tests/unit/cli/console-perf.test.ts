@@ -57,3 +57,84 @@ describe('viewport windowing — fitFrame padding never grows result', () => {
     }
   });
 });
+
+describe('ProcessView delta render cache (unitAI-ctb4u.21)', () => {
+  it('cache key composition reuses identical (jobId,status,ctxBucket,width,depth,selected) tuples', () => {
+    // Synthetic cache exercises the same key shape as renderProcessRows.
+    const cache = new Map<string, string>();
+    const keyOf = (job: ConsoleJob, width: number, depth: number, selected: boolean, hasDate: boolean): string => {
+      const ctxBucket = job.context_pct === undefined ? '-' : Math.floor(job.context_pct / 5) * 5;
+      return `${job.id}|${job.status ?? '-'}|${ctxBucket}|${width}|${depth}|${selected ? '1' : '0'}|${hasDate ? '1' : '0'}`;
+    };
+    let renderCalls = 0;
+    const cachedRender = (job: ConsoleJob, width: number, depth: number, selected: boolean): string => {
+      const k = keyOf(job, width, depth, selected, false);
+      const hit = cache.get(k);
+      if (hit !== undefined) return hit;
+      renderCalls += 1;
+      const out = renderJobRow(job, width, depth, selected);
+      cache.set(k, out);
+      return out;
+    };
+
+    // Frame 1: 100 distinct jobs — every row is a cache miss.
+    const jobs = Array.from({ length: 100 }, (_, i) => makeJob(i));
+    for (const j of jobs) cachedRender(j, 120, 0, false);
+    expect(renderCalls).toBe(100);
+
+    // Frame 2: identical snapshot. Cache hits across the board.
+    for (const j of jobs) cachedRender(j, 120, 0, false);
+    expect(renderCalls).toBe(100); // no additional render calls
+
+    // Frame 3: one job's status changes (status='waiting' → 'running').
+    // Only that row should miss; everything else stays cached.
+    const mutated: ConsoleJob = { ...jobs[5]!, status: jobs[5]!.status === 'running' ? 'waiting' : 'running' };
+    const nextJobs = [...jobs];
+    nextJobs[5] = mutated;
+    for (const j of nextJobs) cachedRender(j, 120, 0, false);
+    expect(renderCalls).toBe(101); // exactly one extra call for the mutated row
+  });
+
+  it('cache key changes when width changes (no cross-width reuse)', () => {
+    const cache = new Map<string, string>();
+    let calls = 0;
+    const render = (job: ConsoleJob, width: number): string => {
+      const ctxBucket = job.context_pct === undefined ? '-' : Math.floor(job.context_pct / 5) * 5;
+      const k = `${job.id}|${job.status ?? '-'}|${ctxBucket}|${width}|0|0|0`;
+      if (cache.has(k)) return cache.get(k)!;
+      calls += 1;
+      const out = renderJobRow(job, width, 0, false);
+      cache.set(k, out);
+      return out;
+    };
+
+    const job = makeJob(0);
+    render(job, 80);
+    render(job, 80);
+    expect(calls).toBe(1);
+    render(job, 120);
+    expect(calls).toBe(2);
+  });
+
+  it('ctxBucket coalesces ctx drift within a 5%-wide window', () => {
+    const cache = new Map<string, string>();
+    let calls = 0;
+    const render = (job: ConsoleJob): string => {
+      const ctxBucket = job.context_pct === undefined ? '-' : Math.floor(job.context_pct / 5) * 5;
+      const k = `${job.id}|${job.status ?? '-'}|${ctxBucket}|120|0|0|0`;
+      if (cache.has(k)) return cache.get(k)!;
+      calls += 1;
+      const out = renderJobRow(job, 120, 0, false);
+      cache.set(k, out);
+      return out;
+    };
+
+    const base = makeJob(0);
+    render({ ...base, context_pct: 42 });
+    render({ ...base, context_pct: 43 });
+    render({ ...base, context_pct: 44 });
+    expect(calls).toBe(1); // all three fall into the 40-44 bucket → one render
+    render({ ...base, context_pct: 45 });
+    expect(calls).toBe(2); // crosses the bucket boundary → second render
+  });
+});
