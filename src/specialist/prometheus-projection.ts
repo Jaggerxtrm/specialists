@@ -1,3 +1,20 @@
+// Prometheus scrape projection. Aggregation model: label-keyed groupBy over
+// (repo, specialist, status, worktree, role, …) tuples → one Prometheus
+// sample per distinct tuple, plus histograms for durations.
+//
+// Decision per unitAI-ctb4u.16: this projection deliberately does NOT
+// consume src/specialist/live-aggregates.ts. live-aggregates is a scalar
+// counter core for the sp console StatsLine (one row of output per call);
+// the math overlap with Prometheus's label-keyed groupBy is minimal once
+// labels and histograms are accounted for, and routing through a shared
+// scalar core would force shoehorning two structurally different
+// aggregation models into one shape while risking byte-equivalence
+// regressions for the existing scrape format. Byte-format invariants
+// already guarded by validatePrometheusProjectionText below.
+//
+// If a future consumer needs label-keyed scalars, extract a shared
+// label-keyed core then — not preemptively.
+
 import { resolveObservabilityDbLocation } from './observability-db.js';
 import { createObservabilitySqliteClient, type JobMetricsRecord, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { assertNoForbiddenLabels, pickAllowedLabels } from './forensic-events.js';
