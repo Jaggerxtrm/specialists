@@ -10,6 +10,7 @@ import {
   forensicEventToRow,
   formatRenderedRowColumns,
   SPEC_72_LAYOUT,
+  type ColumnLayout,
   type RenderedRow,
 } from '../../specialist/forensic-renderer.js';
 import {
@@ -21,10 +22,18 @@ import type { TimelineEvent } from '../../specialist/timeline-events.js';
 import { paint } from './theme.js';
 import type { FeedEventRow } from './types.js';
 
+// Console terminal width (120+ cols) is much wider than the 72-col `sp log`
+// surface, so the type column must accommodate the longest current
+// event_family.event_name (~26 chars: `gitnexus.detect_changes`) plus
+// headroom. typeW=32 covers all known labels without truncation;
+// actorW/seqW match the shared spec. SPEC_72_LAYOUT remains canonical
+// for `sp log` (see specialist/forensic-renderer.ts).
+const CONSOLE_LAYOUT: ColumnLayout = { seqW: SPEC_72_LAYOUT.seqW, typeW: 32, actorW: SPEC_72_LAYOUT.actorW };
+
 export const FORENSIC_LAYOUT = {
-  SEQ_W: SPEC_72_LAYOUT.seqW,
-  TYPE_W: SPEC_72_LAYOUT.typeW,
-  ACTOR_W: SPEC_72_LAYOUT.actorW,
+  SEQ_W: CONSOLE_LAYOUT.seqW,
+  TYPE_W: CONSOLE_LAYOUT.typeW,
+  ACTOR_W: CONSOLE_LAYOUT.actorW,
 } as const;
 
 export function timelineToForensicRow(
@@ -47,7 +56,7 @@ export function forensicEventToFeedRow(
   const row = forensicEventToRow(forensic);
   // Display sequence falls back to position when the event has no seq.
   const renderRow: RenderedRow = { ...row, seq: row.seq ?? displaySeq };
-  const cols = formatRenderedRowColumns(renderRow);
+  const cols = formatRenderedRowColumns(renderRow, CONSOLE_LAYOUT);
   const line = [
     paint(cols.seq, 'dim'),
     paint(cols.type, 'bright'),

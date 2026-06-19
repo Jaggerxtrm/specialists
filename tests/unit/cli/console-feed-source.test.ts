@@ -106,14 +106,39 @@ describe('forensicEventToFeedRow — spec §7.2 layout', () => {
     expect(visible).toContain('state=running');
   });
 
-  it('truncates over-long type to 18 with ellipsis', () => {
-    const ev = makeForensicEvent({ event_family: 'aaaaaaaaaa', event_name: 'bbbbbbbbbbbbbb' });
+  it('truncates type wider than the console layout cap with ellipsis (unitAI-3wm6x)', () => {
+    // Build a label that exceeds the console TYPE_W (typeW=32 vs 72-col layout typeW=18)
+    // so the truncation invariant remains tested at the console width.
+    const overflow = 'x'.repeat(FORENSIC_LAYOUT.TYPE_W + 8);
+    const ev = makeForensicEvent({ event_family: 'family', event_name: overflow });
     const row = forensicEventToFeedRow(ev, { jobId: 'ab12cd34', specialist: 'executor' }, 0);
     const visible = strip(row.line);
     const typeStart = FORENSIC_LAYOUT.SEQ_W + 1;
     const typeCol = visible.slice(typeStart, typeStart + FORENSIC_LAYOUT.TYPE_W);
     expect(typeCol.length).toBe(FORENSIC_LAYOUT.TYPE_W);
     expect(typeCol).toContain('…');
+  });
+
+  it('renders the longest known event label without ellipsis at console layout (unitAI-3wm6x)', () => {
+    // Real-world longest labels observed (~23 chars): gitnexus.detect_changes,
+    // lifecycle.run_complete. Console layout MUST fit them without truncation.
+    const cases = [
+      { family: 'gitnexus', name: 'detect_changes' },
+      { family: 'lifecycle', name: 'run_complete' },
+    ];
+    for (const c of cases) {
+      const ev = makeForensicEvent({ event_family: c.family, event_name: c.name });
+      const row = forensicEventToFeedRow(ev, { jobId: 'ab12cd34', specialist: 'executor' }, 0);
+      const visible = strip(row.line);
+      const typeStart = FORENSIC_LAYOUT.SEQ_W + 1;
+      const typeCol = visible.slice(typeStart, typeStart + FORENSIC_LAYOUT.TYPE_W);
+      expect(typeCol).not.toContain('…');
+      expect(typeCol.trimEnd()).toBe(`${c.family}.${c.name}`);
+    }
+  });
+
+  it('console TYPE_W is wider than the shared 72-col layout (unitAI-3wm6x)', () => {
+    expect(FORENSIC_LAYOUT.TYPE_W).toBeGreaterThanOrEqual(32);
   });
 
   it('falls back to severity/redaction when body yields no allowed labels', () => {
