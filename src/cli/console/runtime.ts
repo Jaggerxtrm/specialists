@@ -39,6 +39,7 @@ import {
   parsePorcelainStatus,
   parseUnifiedDiff,
 } from './git.js';
+import { logError } from './log.js';
 
 const ACTIVE_STATES: ReadonlyArray<SupervisorStatus['status']> = ['starting', 'running', 'waiting'];
 const TERMINAL_STATES: ReadonlyArray<SupervisorStatus['status']> = ['done', 'error', 'cancelled'];
@@ -411,18 +412,14 @@ function runGit(args: string[], cwd: string, op: 'git_numstat' | 'git_status' | 
   if (result.error || result.status !== 0) {
     const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
     const errorClass = code ?? (result.signal ? `signal:${result.signal}` : `exit:${result.status}`);
-    try {
-      process.stderr.write(JSON.stringify({
-        ts: new Date().toISOString(),
-        component: 'sp-console',
-        op,
-        exitCode: result.status,
-        durationMs,
-        errorClass: String(errorClass),
-      }) + '\n');
-    } catch {
-      // swallow
-    }
+    // diff view owns every runGit callsite (diffSummary numstat/status,
+    // diffFile diff). Route through the single-sink dedupe in log.ts so
+    // burst failures collapse to one envelope per errorClass.
+    logError('diff', op, {
+      exitCode: result.status,
+      durationMs,
+      errorClass: String(errorClass),
+    });
     throw new Error(`git ${op} failed (${errorClass})`);
   }
   return result.stdout ?? '';
@@ -476,20 +473,10 @@ function fetchBeadDoc(beadId: string): BeadDoc {
 }
 
 function logBeadShowError(beadId: string, exitCode: number, durationMs: number, errorClass: string): void {
-  try {
-    const line = JSON.stringify({
-      ts: new Date().toISOString(),
-      component: 'sp-console',
-      op: 'bd_show',
-      beadId: beadId.slice(0, 24),
-      exitCode,
-      durationMs,
-      errorClass,
-    });
-    process.stderr.write(line + '\n');
-  } catch {
-    // swallow
-  }
+  // bd_show is the BeadView surface. Single-sink dedupe via log.ts caps
+  // burst stderr to one envelope per errorClass; log.ts also enforces
+  // the 24-char beadId cap (BEAD_ID_MAX) so we don't repeat it here.
+  logError('bead', 'bd_show', { exitCode, durationMs, errorClass, beadId });
 }
 
 export function parseBdShowJson(beadId: string, stdout: string): BeadDoc {

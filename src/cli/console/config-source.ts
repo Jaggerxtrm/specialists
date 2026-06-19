@@ -18,6 +18,7 @@ import {
   type GlobalUserConfigPath,
 } from '../../specialist/global-config.js';
 import type { SpecialistLoader } from '../../specialist/loader.js';
+import { errorClassOf, logError } from './log.js';
 
 export type ConfigFieldHint = string;
 
@@ -284,18 +285,12 @@ function describeError(error: unknown): string {
 }
 
 function logConfigError(op: 'read' | 'parse', error: unknown): void {
-  try {
-    const errorClass = error instanceof Error ? error.name : 'unknown';
-    process.stderr.write(JSON.stringify({
-      ts: new Date().toISOString(),
-      component: 'sp-console',
-      op: 'read_global_config',
-      step: op,
-      errorClass,
-    }) + '\n');
-  } catch {
-    // swallow
-  }
+  // step='read' vs 'parse' is dedupe-distinct via log.ts SEEN key so both
+  // failure modes can surface inside the same session without spamming.
+  logError('config', 'read_global_config', {
+    step: op,
+    errorClass: errorClassOf(error),
+  });
 }
 
 export function formatConfigValue(value: unknown): string {
@@ -471,16 +466,5 @@ export function statConfigFileMtimeMs(): number | undefined {
 }
 
 function logConfigWriteError(error: unknown): void {
-  try {
-    const errorClass = (error as NodeJS.ErrnoException | undefined)?.code
-      ?? (error instanceof Error ? error.name : 'unknown');
-    process.stderr.write(JSON.stringify({
-      ts: new Date().toISOString(),
-      component: 'sp-console',
-      op: 'write_global_config',
-      errorClass,
-    }) + '\n');
-  } catch {
-    // swallow
-  }
+  logError('config', 'write_global_config', { errorClass: errorClassOf(error) });
 }
