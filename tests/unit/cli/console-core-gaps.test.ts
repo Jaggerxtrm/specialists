@@ -104,17 +104,22 @@ describe('forensic mapping — drift-safe shape', () => {
   });
 });
 
-describe('schema-introspected hints — exact format', () => {
-  it('thinking_level enum hint includes all allowed values + null', () => {
+describe('schema-introspected hints — operationally-grounded format (unitAI-ctb4u.31)', () => {
+  it('thinking_level enum hint enumerates allowed values and includes the gloss', () => {
     const d = describeLeaf('execution.thinking_level');
-    expect(d.hint).toMatch(/^enum: [^|]+(\|[^|]+)+ \| null$/);
+    // Shape: "enum: a|b|c · <gloss>" — alternatives separated by |, gloss after middle dot.
+    expect(d.hint).toMatch(/^enum: [^|·]+(\|[^|·]+)+ · .+$/);
   });
 
-  it('skills.paths has NO `| null` suffix (non-nullable array)', () => {
-    expect(describeLeaf('skills.paths').hint).toBe('string[]');
+  it('skills.paths hint names the array shape AND the operational effect', () => {
+    const hint = describeLeaf('skills.paths').hint;
+    expect(hint).toContain('string[]');
+    expect(hint).toContain('appended to spec');
   });
 
-  it('execution.fallback_models DOES have `| null` suffix (nullable array)', () => {
-    expect(describeLeaf('execution.fallback_models').hint).toBe('string[] | null');
+  it('execution.fallback_models hint surfaces JSON-array format with an example', () => {
+    const hint = describeLeaf('execution.fallback_models').hint;
+    expect(hint).toContain('JSON array');
+    expect(hint).toContain('e.g.');
   });
 });
