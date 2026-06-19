@@ -669,8 +669,14 @@ function isVisible(job: ConsoleJob, filter: ProcessFilter): boolean {
   if (cleaned && filter.includeCleaned && TERMINAL_STATES.includes(job.status)) return true;
   if (job.is_dead) return false;
   if (ACTIVE_STATES.includes(job.status)) return true;
+  // unitAI-ctb4u.26: align default mode with `sp ps` shell default — only
+  // active jobs (starting/running/waiting). Terminal rows (error/cancelled/
+  // done) appear when the operator presses `h` to widen historyMode to
+  // 'history' or 'all'. This eliminates the "85 surplus terminal rows in
+  // TUI default vs 0 jobs in `sp ps`" discrepancy reported in the v2
+  // operator walkthrough §2.
   if (filter.historyMode === 'history' && TERMINAL_STATES.includes(job.status)) return true;
-  return job.status === 'error' || job.status === 'cancelled';
+  return false;
 }
 
 function isPsCleaned(job: SupervisorStatus): boolean {

@@ -209,12 +209,18 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         config: action.view === 'config' ? undefined : state.config,
       };
     case 'back': {
-      // Reset scroll + recompute selectedRow against ps rows: detail views
-      // (especially forensic feed in follow mode) can leave `scroll` in the
-      // hundreds, which would slice an empty viewport off `snapshot.rows`
-      // and render a blank ps. Land on row 0 (nearest selectable).
+      // unitAI-kz1ud + bead-view selection-preserving contract:
+      // - Detail views (especially forensic feed in follow mode) can leave
+      //   `scroll` in the hundreds, which would slice an empty viewport off
+      //   `snapshot.rows` and render a blank ps. Always reset scroll.
+      // - Preserve the operator's prior selectedRow when it's still in
+      //   range. If it's now out of bounds (rows shrank under us, or the
+      //   detail view stomped on it) snap to the nearest selectable row.
       const psRows = state.snapshot?.rows ?? [];
-      const selectedRow = nearestSelectableRow(psRows, 0, 1);
+      const inRange = state.selectedRow >= 0 && state.selectedRow < psRows.length;
+      const selectedRow = inRange
+        ? state.selectedRow
+        : nearestSelectableRow(psRows, 0, 1);
       return {
         ...state,
         view: 'ps',
