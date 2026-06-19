@@ -220,3 +220,50 @@ describe('view-model: diff actions', () => {
     expect(state.diff.selectedFileIndex).toBe(0);
   });
 });
+
+describe('DiffSummary/File source signal (unitAI-ctb4u.29)', () => {
+  it('diffSummaryTitle: no source / worktree → bare "diff summary"', async () => {
+    const { diffSummaryTitle } = await import('../../../src/cli/console/components.js');
+    expect(diffSummaryTitle()).toBe('diff summary');
+    expect(diffSummaryTitle({
+      worktree: { path: '/wt', base: 'abc' },
+      entries: [],
+      source: 'worktree',
+    })).toBe('diff summary');
+  });
+
+  it('diffSummaryTitle: commit source → "diff summary · @<sha7> (commit)"', async () => {
+    const { diffSummaryTitle } = await import('../../../src/cli/console/components.js');
+    const sha = 'ebe6ce0fdeadbeef1234567890abcdef12345678';
+    const title = diffSummaryTitle({
+      worktree: null,
+      entries: [{ path: 'a.ts', status: 'M', added: 1, deleted: 0, binary: false }],
+      source: 'commit',
+      commitSha: sha,
+    });
+    expect(title).toBe('diff summary · @ebe6ce0 (commit)');
+  });
+
+  it('diffFileTitle: worktree → bare path', async () => {
+    const { diffFileTitle } = await import('../../../src/cli/console/components.js');
+    expect(diffFileTitle({
+      path: 'src/foo.ts',
+      binary: false,
+      hunks: [],
+      source: 'worktree',
+    })).toBe('src/foo.ts');
+  });
+
+  it('diffFileTitle: commit source → "<path> · @<sha7> (commit)"', async () => {
+    const { diffFileTitle } = await import('../../../src/cli/console/components.js');
+    const sha = '37888b7e000111222333444555666777888999aa';
+    const title = diffFileTitle({
+      path: 'src/foo.ts',
+      binary: false,
+      hunks: [],
+      source: 'commit',
+      commitSha: sha,
+    });
+    expect(title).toBe('src/foo.ts · @37888b7 (commit)');
+  });
+});

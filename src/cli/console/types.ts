@@ -111,6 +111,8 @@ export interface WorktreeRef {
   base: string;
 }
 
+export type DiffSource = 'worktree' | 'commit';
+
 export interface DiffSummary {
   worktree: WorktreeRef | null;
   entries: Array<{
@@ -120,6 +122,13 @@ export interface DiffSummary {
     deleted: number;
     binary: boolean;
   }>;
+  // Which lookup path produced this summary. Absent when the diff is
+  // empty (no worktree + no recorded commit) so the header can render
+  // the empty state distinctly.
+  source?: DiffSource;
+  // For source='commit': the SHA the summary was extracted from. The
+  // view-model passes this to diffFile so the file-level diff matches.
+  commitSha?: string;
   error?: string;
 }
 
@@ -139,6 +148,10 @@ export interface DiffFile {
   hunks: DiffHunkBlock[];
   truncated?: boolean;
   totalLines?: number;
+  // Which lookup path produced this file diff. Mirrors DiffSummary.source.
+  source?: DiffSource;
+  // For source='commit': the SHA the file diff was extracted from.
+  commitSha?: string;
   error?: string;
 }
 

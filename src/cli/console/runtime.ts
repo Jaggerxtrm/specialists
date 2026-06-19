@@ -305,50 +305,80 @@ class LocalRuntimeClient implements RuntimeClient {
 
   async diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary> {
     const worktree = await this.resolveWorktree(repo, jobIdPrefix);
-    if (!worktree) return { worktree: null, entries: [], error: 'no worktree for this job' };
-    if (!isValidGitRef(worktree.base)) {
-      return { worktree, entries: [], error: `invalid base ref: ${worktree.base}` };
+    if (worktree) {
+      if (!isValidGitRef(worktree.base)) {
+        return { worktree, entries: [], error: `invalid base ref: ${worktree.base}`, source: 'worktree' };
+      }
+      try {
+        const numstat = runGit(['diff', '--numstat', worktree.base], worktree.path, 'git_numstat');
+        const porcelain = runGit(['status', '--porcelain=v1', '--untracked-files=all'], worktree.path, 'git_status');
+        const entries = buildDiffSummary(parseNumstat(numstat), parsePorcelainStatus(porcelain));
+        return { worktree, entries, source: 'worktree' };
+      } catch (error) {
+        return { worktree, entries: [], error: error instanceof Error ? error.message : String(error), source: 'worktree' };
+      }
     }
-    try {
-      const numstat = runGit(['diff', '--numstat', worktree.base], worktree.path, 'git_numstat');
-      const porcelain = runGit(['status', '--porcelain=v1', '--untracked-files=all'], worktree.path, 'git_status');
-      const entries = buildDiffSummary(parseNumstat(numstat), parsePorcelainStatus(porcelain));
-      return { worktree, entries };
-    } catch (error) {
-      return { worktree, entries: [], error: error instanceof Error ? error.message : String(error) };
+
+    // Worktree gone — try the recorded auto-commit SHA fallback (unitAI-ctb4u.29).
+    // executor + debugger record last_auto_commit_sha on each checkpoint, so
+    // their work survives even when the worktree has been cleaned.
+    const job = resolveJob(repo, jobIdPrefix);
+    const commitSha = job?.last_auto_commit_sha;
+    if (commitSha && isValidGitRef(commitSha)) {
+      try {
+        // `git show --numstat --format=` strips the commit header — we only
+        // want the file change list.
+        const numstat = runGit(['show', '--numstat', '--format=', commitSha], repo.path, 'git_show');
+        const entries = buildDiffSummary(parseNumstat(numstat), new Map());
+        return { worktree: null, entries, source: 'commit', commitSha };
+      } catch (error) {
+        return {
+          worktree: null,
+          entries: [],
+          source: 'commit',
+          commitSha,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
+
+    return { worktree: null, entries: [], error: 'no worktree for this job' };
   }
 
   async diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile> {
     const worktree = await this.resolveWorktree(repo, jobIdPrefix);
-    if (!worktree) return { path: file, binary: false, hunks: [], error: 'no worktree for this job' };
-    if (!isValidGitRef(worktree.base)) {
-      return { path: file, binary: false, hunks: [], error: `invalid base ref: ${worktree.base}` };
-    }
-    try {
-      const raw = runGit(['diff', worktree.base, '--', file], worktree.path, 'git_diff');
-      const hunks = parseUnifiedDiff(raw);
-      const totalLines = hunks.reduce((acc, h) => acc + h.lines.length, 0);
-      const binary = /^Binary files /m.test(raw);
-      if (binary) {
-        return { path: file, binary: true, hunks: [], totalLines: 0 };
+    if (worktree) {
+      if (!isValidGitRef(worktree.base)) {
+        return { path: file, binary: false, hunks: [], error: `invalid base ref: ${worktree.base}`, source: 'worktree' };
       }
-      if (totalLines > HUNK_DISPLAY_CEILING) {
-        const cap = HUNK_DISPLAY_CEILING;
-        let remaining = cap;
-        const trimmed: typeof hunks = [];
-        for (const h of hunks) {
-          if (remaining <= 0) break;
-          const slice = h.lines.slice(0, remaining);
-          remaining -= slice.length;
-          trimmed.push({ header: h.header, lines: slice });
-        }
-        return { path: file, binary: false, hunks: trimmed, truncated: true, totalLines };
+      try {
+        const raw = runGit(['diff', worktree.base, '--', file], worktree.path, 'git_diff');
+        return buildDiffFileResult(file, raw, { source: 'worktree' });
+      } catch (error) {
+        return { path: file, binary: false, hunks: [], error: error instanceof Error ? error.message : String(error), source: 'worktree' };
       }
-      return { path: file, binary: false, hunks, totalLines };
-    } catch (error) {
-      return { path: file, binary: false, hunks: [], error: error instanceof Error ? error.message : String(error) };
     }
+
+    // SHA fallback for dead-worktree jobs (unitAI-ctb4u.29).
+    const job = resolveJob(repo, jobIdPrefix);
+    const commitSha = job?.last_auto_commit_sha;
+    if (commitSha && isValidGitRef(commitSha)) {
+      try {
+        const raw = runGit(['show', '--format=', commitSha, '--', file], repo.path, 'git_show');
+        return buildDiffFileResult(file, raw, { source: 'commit', commitSha });
+      } catch (error) {
+        return {
+          path: file,
+          binary: false,
+          hunks: [],
+          source: 'commit',
+          commitSha,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    return { path: file, binary: false, hunks: [], error: 'no worktree for this job' };
   }
 
   async liveStateFor(repo: RepoRef, jobIdPrefix: string): Promise<LiveStateRows> {
@@ -400,7 +430,33 @@ function resolveDiffBase(worktreePath: string, branch?: string): string {
   return fallback.status === 0 && fallback.stdout ? fallback.stdout.trim() : 'HEAD';
 }
 
-function runGit(args: string[], cwd: string, op: 'git_numstat' | 'git_status' | 'git_diff'): string {
+function buildDiffFileResult(
+  file: string,
+  raw: string,
+  meta: { source: 'worktree' | 'commit'; commitSha?: string },
+): DiffFile {
+  const hunks = parseUnifiedDiff(raw);
+  const totalLines = hunks.reduce((acc, h) => acc + h.lines.length, 0);
+  const binary = /^Binary files /m.test(raw);
+  if (binary) {
+    return { path: file, binary: true, hunks: [], totalLines: 0, ...meta };
+  }
+  if (totalLines > HUNK_DISPLAY_CEILING) {
+    const cap = HUNK_DISPLAY_CEILING;
+    let remaining = cap;
+    const trimmed: typeof hunks = [];
+    for (const h of hunks) {
+      if (remaining <= 0) break;
+      const slice = h.lines.slice(0, remaining);
+      remaining -= slice.length;
+      trimmed.push({ header: h.header, lines: slice });
+    }
+    return { path: file, binary: false, hunks: trimmed, truncated: true, totalLines, ...meta };
+  }
+  return { path: file, binary: false, hunks, totalLines, ...meta };
+}
+
+function runGit(args: string[], cwd: string, op: 'git_numstat' | 'git_status' | 'git_diff' | 'git_show'): string {
   const started = Date.now();
   const result = spawnSync('git', ['-C', cwd, ...args], {
     encoding: 'utf-8',
