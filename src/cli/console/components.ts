@@ -129,10 +129,16 @@ export class ConsoleApp implements Component {
       this.state.view === 'job' ||
       this.state.view === 'result' ||
       this.state.view === 'bead';
+    // ↑/↓/j/k arrow handlers are gated to ps + scroll views. Config has
+    // configCycleField + cycleSpecialist below; diff has diffMove below.
+    // Without this gate the generic `move` action eats config + diff arrow
+    // keys before the view-specific handlers can win. Same class of bug as
+    // unitAI-ctb4u.25 (d/u/g/G gate). unitAI-ctb4u.30.
+    const isArrowMoveView = isScrollView || this.state.view === 'ps';
 
-    if (matchesKey(data, Key.down) || data === 'j')
+    if ((matchesKey(data, Key.down) || data === 'j') && isArrowMoveView)
       this.dispatch({ type: 'move', delta: 1, viewportRows, totalRows });
-    else if (matchesKey(data, Key.up) || data === 'k')
+    else if ((matchesKey(data, Key.up) || data === 'k') && isArrowMoveView)
       this.dispatch({ type: 'move', delta: -1, viewportRows, totalRows });
     else if (matchesKey(data, Key.pageDown) || (data === 'd' && isScrollView))
       this.dispatch({ type: 'move', delta: Math.max(1, viewportRows - 1), viewportRows, totalRows });
