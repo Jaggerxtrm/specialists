@@ -5,7 +5,7 @@ import {
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui';
-import type { RuntimeClient, ConsoleJob } from './types.js';
+import type { DiffFile, DiffSummary, RuntimeClient, ConsoleJob } from './types.js';
 import { formatDateTime } from './runtime.js';
 import {
   currentRepo,
@@ -556,16 +556,17 @@ export class ConsoleApp implements Component {
       this.renderedDetailRows = 1;
       return [renderPlaceholder('loading diff…', width)];
     }
+    const summaryTitle = diffSummaryTitle(diff.summary);
     if (diff.stage === 'summary') {
       if (diff.error || !diff.summary || diff.summary.entries.length === 0) {
         const msg = diff.error ?? diff.summary?.error ?? 'no changes in worktree';
         this.renderedDetailRows = 2;
         return [
-          renderSectionTitle('diff summary', width),
+          renderSectionTitle(summaryTitle, width),
           renderPlaceholder(msg, width),
         ];
       }
-      const rows = [renderSectionTitle('diff summary', width)];
+      const rows = [renderSectionTitle(summaryTitle, width)];
       diff.summary.entries.forEach((entry, idx) => {
         rows.push(renderDiffSummaryRow(entry, width, idx === diff.selectedFileIndex));
       });
@@ -582,7 +583,8 @@ export class ConsoleApp implements Component {
       this.renderedDetailRows = 1;
       return [renderPlaceholder(file.error, width)];
     }
-    const rows: string[] = [renderSectionTitle(file.path, width)];
+    const fileTitle = diffFileTitle(file);
+    const rows: string[] = [renderSectionTitle(fileTitle, width)];
     if (file.binary) {
       rows.push(renderPlaceholder('binary file (no diff rendered)', width));
     } else {
@@ -742,6 +744,23 @@ export class ConsoleApp implements Component {
     const overhead = CHROME_ROWS + (this.state.filtering ? 1 : 0) + (this.state.message ? 1 : 0);
     return Math.max(1, this.options.rows() - overhead);
   }
+}
+
+// Diff section titles signal which lookup path produced the rendering so the
+// operator knows whether they're looking at a live worktree patch or the
+// historical SHA snapshot (unitAI-ctb4u.29).
+export function diffSummaryTitle(summary?: DiffSummary): string {
+  if (summary?.source === 'commit' && summary.commitSha) {
+    return `diff summary · @${summary.commitSha.slice(0, 7)} (commit)`;
+  }
+  return 'diff summary';
+}
+
+export function diffFileTitle(file: DiffFile): string {
+  if (file.source === 'commit' && file.commitSha) {
+    return `${file.path} · @${file.commitSha.slice(0, 7)} (commit)`;
+  }
+  return file.path;
 }
 
 function structuredCloneCompat<T>(value: T): T {

@@ -12,6 +12,7 @@ export type ConsoleErrorOp =
   | 'bd_show'
   | 'git_diff'
   | 'git_numstat'
+  | 'git_show'
   | 'git_status'
   | 'merge_base'
   | 'subscribe_feed'
