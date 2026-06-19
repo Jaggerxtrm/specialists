@@ -43,6 +43,7 @@ import {
 } from './theme.js';
 import { applyFieldEdit, coerceFieldValue, formatConfigValue } from './config-source.js';
 import { errorClassOf, logError, type ConsoleView as LogView } from './log.js';
+import { snapshotDiff, snapshotHash } from '../../specialist/snapshot-diff.js';
 
 const POLL_MS = 1500;
 const COALESCE_MS = 50; // ~20Hz dispatch cap (spec §10)
@@ -65,7 +66,14 @@ export class ConsoleApp implements Component {
   private disposed = false;
   private renderedDetailRows = 0;
   private lastWidth = 80;
-  private lastSnapshotSig: string | undefined;
+  // Stable key-ordered SHA-256 over the prior snapshot. Used to drop
+  // no-op dispatches that would force a re-render. See snapshotHash in
+  // src/specialist/snapshot-diff.ts (unitAI-ctb4u.19).
+  private lastSnapshotHash: string | undefined;
+  // Prior snapshot's job list. Kept across polls so snapshotDiff can
+  // compute per-row upsert/tombstone deltas for future ProcessView
+  // consumers (unitAI-ctb4u.21).
+  private lastSnapshotJobs: ConsoleJob[] = [];
   private coalesceTimer: ReturnType<typeof setTimeout> | null = null;
   private resizeHandler: (() => void) | null = null;
 
@@ -266,11 +274,24 @@ export class ConsoleApp implements Component {
         this.dispatch({ type: 'message', message: 'snapshot read failed — runtime unreachable' });
         return;
       }
-      // Snapshot dispatch coalesce: skip when nothing changed.
-      const sig = this.snapshotSignature(snapshot);
-      if (sig !== this.lastSnapshotSig) {
-        this.lastSnapshotSig = sig;
+      // Snapshot dispatch coalesce: skip when nothing changed. Hash is
+      // a stable key-ordered SHA-256 (unitAI-ctb4u.19) so property-order
+      // drift across runtime updates cannot cause a false miss.
+      const hash = snapshotHash(snapshot.jobs, (j) => j.id);
+      if (hash !== this.lastSnapshotHash) {
+        // Compute upsert/tombstone delta and stash it in the view-model
+        // for future ProcessView consumers (unitAI-ctb4u.21). The poll
+        // loop itself still dispatches the full snapshot — this just
+        // surfaces the delta primitives without altering render shape.
+        const delta = snapshotDiff(this.lastSnapshotJobs, snapshot.jobs, (j) => j.id);
+        this.lastSnapshotHash = hash;
+        this.lastSnapshotJobs = snapshot.jobs;
         this.dispatch({ type: 'snapshotLoaded', snapshot });
+        this.dispatch({
+          type: 'snapshotDelta',
+          upserts: delta.upserts,
+          tombstones: delta.tombstones,
+        });
       }
 
       if (this.state.view === 'feed' && this.state.selectedJobId) {
@@ -325,16 +346,6 @@ export class ConsoleApp implements Component {
 
   private logViewKey(): LogView {
     return this.state.view as LogView;
-  }
-
-  // Cheap snapshot signature: sort job ids + statuses + ctxPct. Used by the
-  // poll loop to drop no-op dispatches that would force a re-render.
-  private snapshotSignature(snapshot: { jobs: Array<{ id: string; status?: string; context_pct?: number }>; totalJobs: number; visibleJobs: number }): string {
-    const ids = snapshot.jobs
-      .map((j) => `${j.id}:${j.status ?? '-'}:${j.context_pct === undefined ? '-' : Math.round(j.context_pct)}`)
-      .sort()
-      .join('|');
-    return `${snapshot.totalJobs}/${snapshot.visibleJobs}#${ids}`;
   }
 
   private dispatch(action: Parameters<typeof reduceConsoleState>[1]): void {

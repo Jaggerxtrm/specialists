@@ -1,4 +1,4 @@
-import type { BeadDoc, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { BeadDoc, ConsoleJob, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
 import type { ConfigSnapshot } from './config-source.js';
 
 export interface ConsoleState {
@@ -14,6 +14,10 @@ export interface ConsoleState {
   includeCleaned: boolean;
   follow: boolean;
   snapshot?: ProcessSnapshot;
+  // Per-poll upsert/tombstone delta surfaced by snapshotDiff
+  // (unitAI-ctb4u.19). Defaults to undefined; consumed by a future
+  // ProcessView render pass (unitAI-ctb4u.21).
+  lastDelta?: { upserts: ConsoleJob[]; tombstones: ConsoleJob[] };
   feedRows: FeedEventRow[];
   jobInspect?: JobInspect;
   jobResult?: JobResult;
@@ -57,6 +61,7 @@ export interface DiffViewState {
 export type ConsoleAction =
   | { type: 'reposLoaded'; repos: RepoRef[] }
   | { type: 'snapshotLoaded'; snapshot: ProcessSnapshot }
+  | { type: 'snapshotDelta'; upserts: ConsoleJob[]; tombstones: ConsoleJob[] }
   | { type: 'feedLoaded'; rows: FeedEventRow[]; totalRows?: number; viewportRows?: number }
   | { type: 'jobLoaded'; inspect: JobInspect }
   | { type: 'resultLoaded'; result: JobResult }
@@ -157,6 +162,12 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
       const selectedRow = nearestSelectableRow(action.snapshot.rows, Math.min(state.selectedRow, Math.max(0, action.snapshot.rows.length - 1)), 1);
       return { ...state, snapshot: action.snapshot, selectedRow, scroll: clampScroll(state.scroll, selectedRow, 1), message: undefined };
     }
+    case 'snapshotDelta':
+      // Surface the upsert/tombstone primitives from snapshotDiff
+      // (unitAI-ctb4u.19) without altering any render state. Downstream
+      // consumers (ProcessView delta rendering, sync_hint subscribers)
+      // read state.lastDelta off the reducer output.
+      return { ...state, lastDelta: { upserts: action.upserts, tombstones: action.tombstones } };
     case 'feedLoaded': {
       const totalRows = action.totalRows ?? action.rows.length;
       const scroll = state.follow ? Math.max(0, totalRows - Math.max(1, action.viewportRows ?? 1)) : Math.min(state.scroll, Math.max(0, totalRows - Math.max(1, action.viewportRows ?? 1)));
