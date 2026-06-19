@@ -78,9 +78,15 @@ export class ConsoleApp implements Component {
   // src/specialist/snapshot-diff.ts (unitAI-ctb4u.19).
   private lastSnapshotHash: string | undefined;
   // Prior snapshot's job list. Kept across polls so snapshotDiff can
-  // compute per-row upsert/tombstone deltas for future ProcessView
-  // consumers (unitAI-ctb4u.21).
+  // compute per-row upsert/tombstone deltas for ProcessView delta
+  // rendering (unitAI-ctb4u.21).
   private lastSnapshotJobs: ConsoleJob[] = [];
+  // Per-row paint cache keyed by `${jobId}|${status}|${ctxBucket}|${width}|${depth}|${selected}`.
+  // Hit means we can reuse the prior rendered string instead of calling
+  // renderJobRow again. Cache clears on repo switch (cross-repo bleed
+  // would be wrong) and is bounded to totalJobs * 2 to prevent unbounded
+  // growth in long sessions (unitAI-ctb4u.21).
+  private processRowCache = new Map<string, string>();
   private coalesceTimer: ReturnType<typeof setTimeout> | null = null;
   private resizeHandler: (() => void) | null = null;
 
@@ -303,6 +309,18 @@ export class ConsoleApp implements Component {
           upserts: delta.upserts,
           tombstones: delta.tombstones,
         });
+        // Drop cache entries for tombstoned jobs so the cache does not
+        // grow unbounded across long sessions. Tombstones are rare in
+        // steady state — this is O(tombstones) per poll, not per row.
+        if (delta.tombstones.length > 0) {
+          const dead = new Set(delta.tombstones.map((j) => j.id));
+          for (const key of this.processRowCache.keys()) {
+            const idEnd = key.indexOf('|');
+            if (idEnd > 0 && dead.has(key.slice(0, idEnd))) {
+              this.processRowCache.delete(key);
+            }
+          }
+        }
       }
 
       if (this.state.view === 'feed' && this.state.selectedJobId) {
@@ -382,9 +400,12 @@ export class ConsoleApp implements Component {
     this.dispatch(action);
     const nextRepoId = currentRepo(this.state)?.id;
     if (priorRepoId && nextRepoId && priorRepoId !== nextRepoId) {
-      // Cancel the old repo's pending dispatch and refresh the new one
-      // immediately rather than waiting a full COALESCE_MS window.
+      // Cancel the old repo's pending dispatch, drop the per-row paint
+      // cache (cross-repo bleed would render the wrong rows), and
+      // refresh the new repo immediately rather than waiting a full
+      // COALESCE_MS window. (unitAI-ctb4u.20 + unitAI-ctb4u.21)
       this.queues.get(priorRepoId)?.cancel();
+      this.invalidateProcessRowCache();
       void this.refresh();
       return;
     }
@@ -691,6 +712,14 @@ export class ConsoleApp implements Component {
   private renderProcessRows(width: number, viewportRows: number): string[] {
     const rows = this.state.snapshot?.rows ?? [];
     if (rows.length === 0) return [renderPlaceholder('no jobs match current filters', width)];
+    // Bound the cache so a long-running session doesn't grow it without
+    // limit. totalJobs * 2 leaves headroom for transitioning rows.
+    const cacheCap = Math.max(64, (this.state.snapshot?.totalJobs ?? rows.length) * 2);
+    if (this.processRowCache.size > cacheCap) {
+      this.processRowCache = new Map(
+        [...this.processRowCache.entries()].slice(-Math.floor(cacheCap / 2)),
+      );
+    }
     return visibleSlice(rows, this.state.scroll, viewportRows).map((row, offset) => {
       const index = this.state.scroll + offset;
       if (row.kind === 'group') {
@@ -701,21 +730,36 @@ export class ConsoleApp implements Component {
       const job = row.job;
       const datePrefix =
         this.state.historyMode === 'default' ? '' : `${formatDateTime(job.started_at_ms)} `;
+      // Cache key composes everything the rendered string depends on:
+      // job identity + visible state + width + tree depth + selection.
+      // ctxBucket rounds context_pct down to 5% to keep the cache stable
+      // when ctx drifts within a poll window. (unitAI-ctb4u.21)
+      const ctxBucket = job.context_pct === undefined ? '-' : Math.floor(job.context_pct / 5) * 5;
+      const cacheKey = `${job.id}|${job.status ?? '-'}|${ctxBucket}|${width}|${row.depth}|${selected ? '1' : '0'}|${datePrefix ? '1' : '0'}`;
+      const cached = this.processRowCache.get(cacheKey);
+      if (cached !== undefined) return cached;
       // datePrefix is rendered through theme via paint() to keep the no-raw-ANSI invariant.
       // Per-row try/catch is a backstop for any future render-time drift; the
       // upstream isWellFormedJob filter + theme.ts:asString coercion should
       // make this branch dead code in practice. (unitAI-ctb4u.27)
       try {
-        if (datePrefix) {
-          const base = renderJobRow(job, Math.max(1, width - datePrefix.length), row.depth, selected);
-          return truncateToWidth(paint(datePrefix, 'dim') + base, width);
-        }
-        return renderJobRow(job, width, row.depth, selected);
+        const rendered = datePrefix
+          ? truncateToWidth(paint(datePrefix, 'dim') + renderJobRow(job, Math.max(1, width - datePrefix.length), row.depth, selected), width)
+          : renderJobRow(job, width, row.depth, selected);
+        this.processRowCache.set(cacheKey, rendered);
+        return rendered;
       } catch (error) {
         logError(this.logViewKey(), 'render', { errorClass: errorClassOf(error) });
         return renderPlaceholder('  ?? <malformed row dropped>', width);
       }
     });
+  }
+
+  // Drop the per-row paint cache. Called on repo switch so the new
+  // repo's rows are painted fresh, and on tombstone delivery so removed
+  // jobs don't linger as ghost entries in the cache (unitAI-ctb4u.21).
+  private invalidateProcessRowCache(): void {
+    this.processRowCache.clear();
   }
 
   private renderFeedRows(width: number, viewportRows: number): string[] {
