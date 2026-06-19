@@ -1,9 +1,33 @@
 // Shared aggregator core for SupervisorStatus[] → scalar live snapshots.
 //
-// Two consumers today:
-//   1) sp console StatsLine (src/cli/console/runtime.ts) via listProcessSnapshot
-//   2) Prometheus projection (src/specialist/prometheus-projection.ts) — same
-//      math, different output format (labels + histograms stay in that file).
+// Current consumer: sp console StatsLine (src/cli/console/runtime.ts) via
+// listProcessSnapshot. The single edit-site goal for StatsLine math is
+// achieved here.
+//
+// NOT a shared source for src/specialist/prometheus-projection.ts. The two
+// modules look adjacent but have structurally different aggregation models:
+//
+//   - live-aggregates.ts:  bounded scalar counters over the full job set
+//                          (Active = starting+running+waiting, totalTokens,
+//                          maxContextPct). One row of output per call.
+//
+//   - prometheus-projection.ts:  label-keyed groupBy over (repo, specialist,
+//                                status, worktree, role, ...) tuples. Each
+//                                unique tuple becomes a distinct Prometheus
+//                                sample. Output is N rows per scrape; the
+//                                shared math overlap is minimal once labels
+//                                and histograms are taken into account.
+//
+// Decision per unitAI-ctb4u.16: keep prometheus aggregation label-keyed and
+// in-file rather than forcing both consumers through the same scalar core.
+// The cost of unifying would be high (two aggregation models shoehorned
+// into one shape, plus a byte-equivalence gate against the existing scrape
+// format) for low payoff (the overlapping math is small). The byte-format
+// invariant prometheus consumers rely on stays guarded by its existing
+// validator (validatePrometheusProjectionText) and golden tests.
+//
+// If a third consumer arrives that genuinely needs label-keyed scalars,
+// extract a shared label-keyed core THEN — not preemptively.
 //
 // Pure: no IO, no Date.now(), no state. Pass nowMs via opts when needed.
 
