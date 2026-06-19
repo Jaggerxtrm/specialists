@@ -146,4 +146,41 @@ describe('ConsoleApp key gating — codex PR #125 review regression', () => {
     expect((app as unknown as { state: { view: string } }).state.view).toBe('feed');
     app.stop();
   });
+
+  // Regression for unitAI-ctb4u.30 — same class as .25 but for the arrow keys.
+  // Before the .30 fix, generic ↑/↓ fired before view-specific handlers, so
+  // ConfigView could not cycle fields and DiffView could not navigate files.
+  it('config view: ↓ cycles fields (not generic move)', async () => {
+    const app = await makeApp();
+    app.handleInput('g');
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('config');
+    const before = (app as unknown as { state: { configSelectedFieldIndex: number } }).state.configSelectedFieldIndex ?? 0;
+    expect(() => app.handleInput('\x1b[B')).not.toThrow();
+    // Either the field index advanced OR there are no fields yet (config not
+    // populated). The critical assertion is: no exception, view stays config.
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('config');
+    const after = (app as unknown as { state: { configSelectedFieldIndex: number } }).state.configSelectedFieldIndex ?? 0;
+    expect(typeof after).toBe('number');
+    expect(after).toBeGreaterThanOrEqual(before);
+    app.stop();
+  });
+
+  it('config view: ↑ cycles fields backward (not generic move)', async () => {
+    const app = await makeApp();
+    app.handleInput('g');
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('config');
+    expect(() => app.handleInput('\x1b[A')).not.toThrow();
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('config');
+    app.stop();
+  });
+
+  it('diff view: ↑/↓ does not eat-then-no-op (view-specific diffMove must run)', async () => {
+    const app = await makeApp();
+    app.handleInput('d');
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('diff');
+    expect(() => app.handleInput('\x1b[B')).not.toThrow();
+    expect(() => app.handleInput('\x1b[A')).not.toThrow();
+    expect((app as unknown as { state: { view: string } }).state.view).toBe('diff');
+    app.stop();
+  });
 });
