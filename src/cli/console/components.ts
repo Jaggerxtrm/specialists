@@ -266,6 +266,15 @@ export class ConsoleApp implements Component {
 
   private async loadRepos(): Promise<void> {
     try {
+      // Prefer the context-aware seam if the runtime implements it so the
+      // first-run discovery message (unitAI-29p39) lands in the existing
+      // message area. Falls back to bare listRepos() for runtimes that
+      // skip it (test stubs).
+      if (typeof this.options.runtime.listReposWithContext === 'function') {
+        const { repos, message } = await this.options.runtime.listReposWithContext();
+        this.dispatch({ type: 'reposLoaded', repos, message });
+        return;
+      }
       const repos = await this.options.runtime.listRepos();
       this.dispatch({ type: 'reposLoaded', repos });
     } catch (error) {
