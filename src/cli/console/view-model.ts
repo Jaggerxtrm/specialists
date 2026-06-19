@@ -208,12 +208,19 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         configScroll: action.view === 'config' ? 0 : state.configScroll,
         config: action.view === 'config' ? undefined : state.config,
       };
-    case 'back':
-      // selectedRow + scroll preserved: only the view switches back.
+    case 'back': {
+      // Reset scroll + recompute selectedRow against ps rows: detail views
+      // (especially forensic feed in follow mode) can leave `scroll` in the
+      // hundreds, which would slice an empty viewport off `snapshot.rows`
+      // and render a blank ps. Land on row 0 (nearest selectable).
+      const psRows = state.snapshot?.rows ?? [];
+      const selectedRow = nearestSelectableRow(psRows, 0, 1);
       return {
         ...state,
         view: 'ps',
         selectedJobId: undefined,
+        selectedRow,
+        scroll: 0,
         follow: false,
         jobInspect: undefined,
         jobResult: undefined,
@@ -223,6 +230,7 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
         beadError: undefined,
         diff: { stage: 'summary', loading: false, selectedFileIndex: 0, fileScroll: 0 },
       };
+    }
     case 'diffSummaryLoaded':
       return {
         ...state,

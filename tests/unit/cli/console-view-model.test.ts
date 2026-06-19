@@ -123,6 +123,28 @@ describe('console view model', () => {
     expect(state.scroll).toBe(7);
   });
 
+  it('back from feed with high scroll resets scroll and selectedRow to ps (unitAI-kz1ud)', () => {
+    let state = initialConsoleState();
+    state = reduceConsoleState(state, { type: 'snapshotLoaded', snapshot: snapshot() });
+    state = reduceConsoleState(state, { type: 'open', view: 'feed', jobId: 'run1' });
+    state = reduceConsoleState(state, {
+      type: 'feedLoaded',
+      rows: Array.from({ length: 20 }, (_, index) => ({ seq: index + 1, type: 'event', line: `line ${index + 1}` })),
+      totalRows: 500,
+      viewportRows: 20,
+    });
+
+    expect(state.scroll).toBe(480);
+
+    state = reduceConsoleState(state, { type: 'back' });
+
+    expect(state.view).toBe('ps');
+    expect(state.scroll).toBe(0);
+    expect(state.selectedRow).toBe(1);
+    expect(state.follow).toBe(false);
+    expect(state.selectedJobId).toBeUndefined();
+  });
+
   it('switching repos resets detail state back to ps', () => {
     let state = initialConsoleState();
     state = reduceConsoleState(state, { type: 'reposLoaded', repos: [
