@@ -402,27 +402,8 @@ async function run() {
 
   if (sub === 'console') {
     if (wantsHelp()) {
-      console.log([
-        '',
-        'Usage: specialists console',
-        '',
-        'Open the operator TUI for ps/feed/result/inspect navigation.',
-        '',
-        'Keys:',
-        '  ↑↓/j/k        Navigate rows or scroll detail views',
-        '  Enter         Open feed for selected job',
-        '  r             Open result for selected job',
-        '  i             Inspect selected job',
-        '  h / a         Cycle history modes / toggle all audit rows',
-        '  c             Include rows hidden by sp clean --ps',
-        '  /             Filter process rows',
-        '  Tab, 1-9      Switch repos when multiple runtime DBs are configured',
-        '  q, Ctrl+C     Quit cleanly',
-        '',
-        'Environment:',
-        '  SPECIALISTS_CONSOLE_REPOS=name=/repo,path2  Optional comma-separated repo list',
-        '',
-      ].join('\n'));
+      const { consoleHelpText } = await import('./cli/console/help.js');
+      console.log(consoleHelpText().join('\n'));
       return;
     }
     const { run: handler } = await import('./cli/console.js');

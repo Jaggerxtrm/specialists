@@ -1,0 +1,61 @@
+// Static --help text for `specialists console`. Exported as an array so the
+// parity test (tests/unit/cli/console-help-parity.test.ts) can assert every
+// key advertised in `renderKeyBar` is documented here without drift.
+//
+// Keep grouped by view, mirroring the views renderKeyBar branches on:
+// ps / feed / bead / diff / config plus the implicit global keys.
+
+export function consoleHelpText(): readonly string[] {
+  return [
+    '',
+    'Usage: specialists console',
+    '',
+    'Open the operator TUI for ps/feed/result/inspect/bead/diff/config navigation.',
+    '',
+    'Global keys (every view):',
+    '  q, Ctrl+C       Quit cleanly',
+    '  ⌫ (backspace)   Back to ps',
+    '  Tab, 1-9        Switch repos when multiple runtime DBs are configured',
+    '',
+    'ps view (process list):',
+    '  ↑↓ / j k        Navigate rows',
+    '  Enter           Open feed for selected job',
+    '  r               Open result for selected job',
+    '  i               Inspect selected job',
+    '  b               Open bead view (bd show) for selected job',
+    '  d               Open diff view (git diff of worktree) for selected job',
+    '  g               Open config view (~/.config/specialists/user.json)',
+    '  h               Cycle history modes (default / history / all)',
+    '  a               Toggle all audit rows',
+    '  c               Include rows hidden by sp clean --ps',
+    '  /               Filter process rows',
+    '',
+    'feed view (timeline):',
+    '  ↑↓              Scroll',
+    '  PgUp / PgDn     Page',
+    '  f               Toggle follow (auto-pin to tail)',
+    '  t               Toggle FeedSource: forensic (xtrm.forensic.v1) ↔ sp_feed (legacy)',
+    '  g / G           Top / end',
+    '',
+    'bead view (bd show):',
+    '  ↑↓ / PgUp/PgDn  Scroll / page',
+    '  g / G           Top / end',
+    '',
+    'diff view (git diff of worktree):',
+    '  ↑↓              Navigate files',
+    '  Enter           Open file',
+    '  r               Refresh',
+    '',
+    'config view (read/edit overrides in ~/.config/specialists/user.json):',
+    '  ↑↓              Navigate fields',
+    '  [ / ]           Previous / next specialist',
+    '  e               Edit selected field',
+    '  u               Undo last edit',
+    '  b               Open user.json in $EDITOR',
+    '  r               Refresh',
+    '',
+    'Environment:',
+    '  SPECIALISTS_CONSOLE_REPOS=name=/repo,path2  Optional comma-separated repo list',
+    '',
+  ];
+}
