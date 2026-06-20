@@ -12,6 +12,7 @@ import {
   initialConsoleState,
   reduceConsoleState,
   selectedJobRow,
+  visibleRepoConfigRows,
   visibleSlice,
   type ConsoleState,
 } from './view-model.js';
@@ -34,6 +35,7 @@ import {
   renderMessage,
   renderMeters,
   renderPlaceholder,
+  renderRepoConfigRow,
   renderResultFooter,
   renderResultTitle,
   renderSectionTitle,
@@ -54,7 +56,7 @@ const COALESCE_MS = 50; // ~20Hz dispatch cap (spec §10)
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
-const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff', 'config'];
+const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff', 'config', 'repoConfig'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -180,6 +182,12 @@ export class ConsoleApp implements Component {
     else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
     else if (data === 'd' && this.state.view === 'ps' && selected) this.open('diff', selected.id);
     else if (data === 'g' && this.state.view === 'ps') this.open('config', selected?.id ?? '');
+    else if (data === 'R' && this.state.view === 'ps') this.openRepoConfig();
+    else if (this.state.view === 'repoConfig' && this.state.repoConfig.edit.mode !== 'none') {
+      this.handleRepoConfigEditInput(data);
+    } else if (this.state.view === 'repoConfig') {
+      this.handleRepoConfigViewInput(data);
+    }
     else if (this.state.view === 'config' && this.state.configEdit.active) {
       this.handleConfigEditInput(data);
     } else if (data === 'r' && this.state.view === 'config') this.refreshAfter({ type: 'configRefresh' });
@@ -446,6 +454,234 @@ export class ConsoleApp implements Component {
     void this.refresh();
   }
 
+  private openRepoConfig(): void {
+    // RepoConfigView has no associated jobId — reuse the existing `open`
+    // action shape with an empty jobId so the reducer's back-handling +
+    // chrome reset paths apply uniformly. The dedicated dispatch keeps
+    // the view-specific load detached from the per-job lookups.
+    this.dispatch({ type: 'open', view: 'repoConfig', jobId: '' });
+    this.dispatch({ type: 'repoConfigLoading' });
+    void this.loadRepoConfigSnapshot();
+  }
+
+  private async loadRepoConfigSnapshot(): Promise<void> {
+    const runtime = this.options.runtime;
+    if (typeof runtime.readRepoConfigSnapshot !== 'function') {
+      this.dispatch({ type: 'repoConfigMessage', message: 'repo config not supported by runtime' });
+      return;
+    }
+    try {
+      const snapshot = await runtime.readRepoConfigSnapshot();
+      this.dispatch({ type: 'repoConfigLoaded', snapshot });
+    } catch (error) {
+      logError(this.logViewKey(), 'render', { errorClass: errorClassOf(error) });
+      this.dispatch({
+        type: 'repoConfigMessage',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.scheduleRender();
+    }
+  }
+
+  private handleRepoConfigViewInput(data: string): void {
+    const repoConfig = this.state.repoConfig;
+    if (matchesKey(data, Key.backspace) || matchesKey(data, Key.escape) || matchesKey(data, Key.left)) {
+      this.back();
+      return;
+    }
+    if (data === 'j' || matchesKey(data, Key.down)) {
+      this.dispatch({ type: 'repoConfigMove', delta: 1 });
+      return;
+    }
+    if (data === 'k' || matchesKey(data, Key.up)) {
+      this.dispatch({ type: 'repoConfigMove', delta: -1 });
+      return;
+    }
+    if (data === '+') {
+      this.dispatch({ type: 'repoConfigStartAdd' });
+      return;
+    }
+    if (data === 's') {
+      this.dispatch({ type: 'repoConfigToggleInactive' });
+      return;
+    }
+    if (data === 'r') {
+      void this.rescanRepoConfig();
+      return;
+    }
+    const selectedName = this.selectedRepoConfigName();
+    if (!selectedName) return;
+    if (data === 'd') {
+      void this.removeRepoConfigEntry(selectedName);
+      return;
+    }
+    if (data === 'e') {
+      // Default to editing the path — most common drift. Operator can
+      // re-press `e` after Esc to pick name in a follow-up if needed.
+      this.dispatch({ type: 'repoConfigStartEdit', field: 'path', targetName: selectedName });
+      return;
+    }
+    if (data === 'n') {
+      // Edit name shortcut (mnemonic). Not advertised in the keybar to
+      // keep it terse, but kept available for parity with config view's
+      // `[`/`]` style add-on bindings.
+      this.dispatch({ type: 'repoConfigStartEdit', field: 'name', targetName: selectedName });
+      // Ensure repoConfig is exhaustively reachable lint-wise.
+      void repoConfig;
+    }
+  }
+
+  private basenameFromPath(p: string): string {
+    const trimmed = p.replace(/[\\/]+$/, '');
+    const last = trimmed.split(/[\\/]/).pop() ?? '';
+    return last || trimmed || 'repo';
+  }
+
+  private handleRepoConfigEditInput(data: string): void {
+    const mode = this.state.repoConfig.edit.mode;
+    if (matchesKey(data, Key.escape)) {
+      this.dispatch({ type: 'repoConfigEditCancel' });
+      return;
+    }
+    if (matchesKey(data, Key.enter)) {
+      void this.submitRepoConfigEdit();
+      return;
+    }
+    if (matchesKey(data, Key.backspace)) {
+      this.dispatch({ type: 'repoConfigEditBackspace' });
+      return;
+    }
+    if (data.length === 1 && data >= ' ' && data !== '\x7f') {
+      this.dispatch({ type: 'repoConfigEditChar', char: data });
+    }
+    void mode;
+  }
+
+  private async submitRepoConfigEdit(): Promise<void> {
+    const edit = this.state.repoConfig.edit;
+    const runtime = this.options.runtime;
+    if (edit.mode === 'add-path') {
+      if (!edit.buffer.trim()) {
+        this.dispatch({ type: 'repoConfigEditError', error: 'path required' });
+        return;
+      }
+      this.dispatch({ type: 'repoConfigEditAdvance' });
+      return;
+    }
+    if (edit.mode === 'add-name') {
+      const path = edit.pendingPath?.trim() ?? '';
+      const name = edit.buffer.trim() || this.basenameFromPath(path);
+      if (!path || !name) {
+        this.dispatch({ type: 'repoConfigEditError', error: 'path and name required' });
+        return;
+      }
+      if (typeof runtime.addRepoConfigEntry !== 'function') {
+        this.dispatch({ type: 'repoConfigEditError', error: 'runtime missing addRepoConfigEntry' });
+        return;
+      }
+      try {
+        const result = await runtime.addRepoConfigEntry({ name, path });
+        if (!result.ok) {
+          this.dispatch({ type: 'repoConfigEditError', error: result.error ?? 'add failed' });
+          return;
+        }
+        this.dispatch({ type: 'repoConfigEditCommit', snapshot: result.snapshot, message: `added ${name}` });
+      } catch (error) {
+        this.dispatch({
+          type: 'repoConfigEditError',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+    if (edit.mode === 'edit-name' || edit.mode === 'edit-path') {
+      const target = edit.targetName;
+      if (!target) {
+        this.dispatch({ type: 'repoConfigEditCancel' });
+        return;
+      }
+      const value = edit.buffer.trim();
+      if (!value) {
+        this.dispatch({ type: 'repoConfigEditError', error: 'value required' });
+        return;
+      }
+      if (typeof runtime.editRepoConfigEntry !== 'function') {
+        this.dispatch({ type: 'repoConfigEditError', error: 'runtime missing editRepoConfigEntry' });
+        return;
+      }
+      try {
+        const field = edit.mode === 'edit-name' ? 'name' : 'path';
+        const result = await runtime.editRepoConfigEntry(target, field, value);
+        if (!result.ok) {
+          this.dispatch({ type: 'repoConfigEditError', error: result.error ?? 'edit failed' });
+          return;
+        }
+        this.dispatch({
+          type: 'repoConfigEditCommit',
+          snapshot: result.snapshot,
+          message: `updated ${target}`,
+        });
+      } catch (error) {
+        this.dispatch({
+          type: 'repoConfigEditError',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private async removeRepoConfigEntry(name: string): Promise<void> {
+    const runtime = this.options.runtime;
+    if (typeof runtime.removeRepoConfigEntry !== 'function') return;
+    try {
+      const result = await runtime.removeRepoConfigEntry(name);
+      if (!result.ok) {
+        this.dispatch({ type: 'repoConfigMessage', message: result.error ?? 'remove failed' });
+        return;
+      }
+      if (result.snapshot) this.dispatch({ type: 'repoConfigLoaded', snapshot: result.snapshot });
+      this.dispatch({ type: 'repoConfigMessage', message: `removed ${name}` });
+    } catch (error) {
+      this.dispatch({
+        type: 'repoConfigMessage',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.scheduleRender();
+    }
+  }
+
+  private async rescanRepoConfig(): Promise<void> {
+    const runtime = this.options.runtime;
+    if (typeof runtime.rescanRepoConfig !== 'function') return;
+    try {
+      const result = await runtime.rescanRepoConfig();
+      if (!result.ok) {
+        this.dispatch({ type: 'repoConfigMessage', message: result.error ?? 'rescan failed' });
+        return;
+      }
+      if (result.snapshot) this.dispatch({ type: 'repoConfigLoaded', snapshot: result.snapshot });
+      const added = result.discoveredCount ?? 0;
+      this.dispatch({
+        type: 'repoConfigMessage',
+        message: added > 0 ? `discovered ${added} new repo${added === 1 ? '' : 's'}` : 'rescan complete · no new repos',
+      });
+    } catch (error) {
+      this.dispatch({
+        type: 'repoConfigMessage',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.scheduleRender();
+    }
+  }
+
+  private selectedRepoConfigName(): string | undefined {
+    const rows = visibleRepoConfigRows(this.state.repoConfig);
+    return rows[this.state.repoConfig.selectedIndex]?.name;
+  }
+
   private back(): void {
     this.dispatch({ type: 'back' });
     void this.refresh();
@@ -458,6 +694,7 @@ export class ConsoleApp implements Component {
     if (this.state.view === 'bead') return this.renderBeadRows(width, viewportRows);
     if (this.state.view === 'diff') return this.renderDiffRows(width, viewportRows);
     if (this.state.view === 'config') return this.renderConfigRows(width, viewportRows);
+    if (this.state.view === 'repoConfig') return this.renderRepoConfigRows(width, viewportRows);
     return this.renderResultRows(width, viewportRows);
   }
 
@@ -567,6 +804,59 @@ export class ConsoleApp implements Component {
   private async openConfigInEditor(): Promise<void> {
     await this.options.runtime.openConfigInEditor();
     this.refreshAfter({ type: 'configRefresh' });
+  }
+
+  private renderRepoConfigRows(width: number, viewportRows: number): string[] {
+    const repoConfig = this.state.repoConfig;
+    const snapshot = repoConfig.snapshot;
+    const rows: string[] = [];
+    if (repoConfig.loading && !snapshot) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('loading repo config…', width)];
+    }
+    if (!snapshot) {
+      this.renderedDetailRows = 1;
+      return [renderPlaceholder('no repo config snapshot', width)];
+    }
+    const headerBits = [
+      `path: ${snapshot.configPath}`,
+      snapshot.configExists ? 'exists' : 'will be created on first write',
+    ];
+    if (snapshot.autoDiscoveredAt) headerBits.push(`last scan: ${snapshot.autoDiscoveredAt}`);
+    if (snapshot.baseDirs.length > 0) headerBits.push(`base dirs: ${snapshot.baseDirs.join(', ')}`);
+    rows.push(renderPlaceholder(headerBits.join(' · '), width));
+
+    const visibleRows = visibleRepoConfigRows(repoConfig);
+    const hiddenCount = snapshot.rows.length - visibleRows.length;
+    rows.push(renderSectionTitle(
+      `repos (${visibleRows.length}${hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''})`,
+      width,
+    ));
+    if (visibleRows.length === 0) {
+      rows.push(renderPlaceholder('(no repos — press + to add or r to rescan)', width));
+    } else {
+      visibleRows.forEach((row, idx) => {
+        rows.push(renderRepoConfigRow(row, width, idx === repoConfig.selectedIndex));
+      });
+    }
+
+    const edit = repoConfig.edit;
+    if (edit.mode !== 'none') {
+      const label = edit.mode === 'add-path'
+        ? 'add · path'
+        : edit.mode === 'add-name'
+          ? `add · name (path=${edit.pendingPath ?? ''})`
+          : edit.mode === 'edit-name'
+            ? `edit name (${edit.targetName ?? ''})`
+            : `edit path (${edit.targetName ?? ''})`;
+      rows.push(renderPlaceholder(`${label} > ${edit.buffer}_`, width));
+      if (edit.error) rows.push(renderPlaceholder(`! ${edit.error}`, width));
+    }
+
+    if (repoConfig.message) rows.push(renderPlaceholder(repoConfig.message, width));
+
+    this.renderedDetailRows = rows.length;
+    return visibleSlice(rows, 0, viewportRows).map((r) => truncateToWidth(r, width));
   }
 
   private renderConfigRows(width: number, viewportRows: number): string[] {

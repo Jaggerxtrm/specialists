@@ -1,4 +1,4 @@
-import type { BeadDoc, ConsoleJob, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoRef } from './types.js';
+import type { BeadDoc, ConsoleJob, ConsoleView, DiffFile, DiffSummary, FeedEventRow, FeedSource, HistoryMode, JobInspect, JobResult, LiveStateRows, ProcessRow, ProcessSnapshot, RepoConfigSnapshot, RepoRef } from './types.js';
 import type { ConfigSnapshot } from './config-source.js';
 
 export interface ConsoleState {
@@ -35,6 +35,30 @@ export interface ConsoleState {
   configEdit: ConfigEditState;
   configUndoStack: Array<Record<string, unknown>>;
   configRawMtimeMs?: number;
+  repoConfig: RepoConfigViewState;
+  message?: string;
+}
+
+export type RepoConfigEditMode = 'none' | 'add-path' | 'add-name' | 'edit-name' | 'edit-path';
+
+export interface RepoConfigEditState {
+  mode: RepoConfigEditMode;
+  // Buffer carries the in-flight text input for add/edit prompts.
+  buffer: string;
+  // For edit-* modes: name of the entry being mutated. For add-name mode:
+  // the path captured during the previous add-path step.
+  targetName?: string;
+  pendingPath?: string;
+  error?: string;
+}
+
+export interface RepoConfigViewState {
+  snapshot?: RepoConfigSnapshot;
+  loading: boolean;
+  selectedIndex: number;
+  // Toggled by `s` — hides rows with zero jobs in the last 30d when true.
+  showInactive: boolean;
+  edit: RepoConfigEditState;
   message?: string;
 }
 
@@ -84,6 +108,19 @@ export type ConsoleAction =
   | { type: 'configEditError'; error: string }
   | { type: 'configEditCommit'; nextSnapshot?: ConfigSnapshot; rawMtimeMs?: number; prevRaw: Record<string, unknown> }
   | { type: 'configUndo'; restoredSnapshot?: ConfigSnapshot; rawMtimeMs?: number }
+  | { type: 'repoConfigLoading' }
+  | { type: 'repoConfigLoaded'; snapshot: RepoConfigSnapshot }
+  | { type: 'repoConfigMove'; delta: number }
+  | { type: 'repoConfigToggleInactive' }
+  | { type: 'repoConfigStartAdd' }
+  | { type: 'repoConfigStartEdit'; field: 'name' | 'path'; targetName: string }
+  | { type: 'repoConfigEditChar'; char: string }
+  | { type: 'repoConfigEditBackspace' }
+  | { type: 'repoConfigEditAdvance' }
+  | { type: 'repoConfigEditCancel' }
+  | { type: 'repoConfigEditError'; error: string }
+  | { type: 'repoConfigEditCommit'; snapshot?: RepoConfigSnapshot; message?: string }
+  | { type: 'repoConfigMessage'; message?: string }
   | { type: 'message'; message?: string }
   | { type: 'move'; delta: number; viewportRows: number; totalRows?: number }
   | { type: 'top'; viewportRows: number; totalRows?: number }
@@ -123,6 +160,16 @@ export function initialConsoleState(): ConsoleState {
     configSelectedFieldIndex: 0,
     configEdit: { active: false, buffer: '' },
     configUndoStack: [],
+    repoConfig: initialRepoConfigState(),
+  };
+}
+
+export function initialRepoConfigState(): RepoConfigViewState {
+  return {
+    loading: false,
+    selectedIndex: 0,
+    showInactive: false,
+    edit: { mode: 'none', buffer: '' },
   };
 }
 
@@ -416,7 +463,124 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
       return switchRepo(state, state.repoIndex + 1);
     case 'selectRepo':
       return switchRepo(state, action.index);
+    case 'repoConfigLoading':
+      return { ...state, repoConfig: { ...state.repoConfig, loading: true } };
+    case 'repoConfigLoaded': {
+      const max = Math.max(0, action.snapshot.rows.length - 1);
+      const selectedIndex = Math.min(state.repoConfig.selectedIndex, max);
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          snapshot: action.snapshot,
+          loading: false,
+          selectedIndex,
+        },
+      };
+    }
+    case 'repoConfigMove': {
+      const rows = visibleRepoConfigRows(state.repoConfig);
+      if (rows.length === 0) return state;
+      const max = rows.length - 1;
+      const next = Math.max(0, Math.min(max, state.repoConfig.selectedIndex + action.delta));
+      return { ...state, repoConfig: { ...state.repoConfig, selectedIndex: next } };
+    }
+    case 'repoConfigToggleInactive':
+      return {
+        ...state,
+        repoConfig: { ...state.repoConfig, showInactive: !state.repoConfig.showInactive, selectedIndex: 0 },
+      };
+    case 'repoConfigStartAdd':
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          edit: { mode: 'add-path', buffer: '', error: undefined },
+        },
+      };
+    case 'repoConfigStartEdit':
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          edit: {
+            mode: action.field === 'name' ? 'edit-name' : 'edit-path',
+            buffer: '',
+            targetName: action.targetName,
+            error: undefined,
+          },
+        },
+      };
+    case 'repoConfigEditChar':
+      if (state.repoConfig.edit.mode === 'none') return state;
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          edit: { ...state.repoConfig.edit, buffer: state.repoConfig.edit.buffer + action.char, error: undefined },
+        },
+      };
+    case 'repoConfigEditBackspace':
+      if (state.repoConfig.edit.mode === 'none') return state;
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          edit: { ...state.repoConfig.edit, buffer: state.repoConfig.edit.buffer.slice(0, -1), error: undefined },
+        },
+      };
+    case 'repoConfigEditAdvance': {
+      // Two-step add flow: after path is captured we move to name (default
+      // derived from basename in the component). Everything else is a
+      // single-step submit handled by the component, never this action.
+      if (state.repoConfig.edit.mode !== 'add-path') return state;
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          edit: {
+            mode: 'add-name',
+            buffer: '',
+            pendingPath: state.repoConfig.edit.buffer,
+            error: undefined,
+          },
+        },
+      };
+    }
+    case 'repoConfigEditCancel':
+      return { ...state, repoConfig: { ...state.repoConfig, edit: { mode: 'none', buffer: '' } } };
+    case 'repoConfigEditError':
+      return {
+        ...state,
+        repoConfig: { ...state.repoConfig, edit: { ...state.repoConfig.edit, error: action.error } },
+      };
+    case 'repoConfigEditCommit': {
+      const next = action.snapshot ?? state.repoConfig.snapshot;
+      const max = Math.max(0, (next?.rows.length ?? 1) - 1);
+      return {
+        ...state,
+        repoConfig: {
+          ...state.repoConfig,
+          snapshot: next,
+          edit: { mode: 'none', buffer: '' },
+          selectedIndex: Math.min(state.repoConfig.selectedIndex, max),
+          message: action.message,
+        },
+      };
+    }
+    case 'repoConfigMessage':
+      return { ...state, repoConfig: { ...state.repoConfig, message: action.message } };
   }
+}
+
+// Apply the showInactive toggle. Inactive = no jobs in the last 30 days OR
+// no DB at all. Exposed so the component can pick the matching row and so
+// the reducer's `move` action stays in sync with what the operator sees.
+export function visibleRepoConfigRows(state: RepoConfigViewState): RepoConfigSnapshot['rows'] {
+  const all = state.snapshot?.rows ?? [];
+  if (state.showInactive) return all;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return all.filter((r) => (r.lastActivityMs ?? 0) >= cutoff);
 }
 
 function switchRepo(state: ConsoleState, nextIndex: number): ConsoleState {

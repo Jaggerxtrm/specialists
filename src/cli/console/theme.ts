@@ -358,7 +358,7 @@ export function renderKeyBar(
 ): string {
   const line =
     view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  h history  a all  / filter  tab repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
@@ -367,7 +367,9 @@ export function renderKeyBar(
             ? '↑↓ nav  ↵ open file  r refresh  ⌫ back  q quit'
             : view === 'config'
               ? '↑↓ field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  ⌫ back  q quit'
-              : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
+              : view === 'repoConfig'
+                ? '↑↓ nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  ⌫ back  q quit'
+                : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
   return paint(truncateToWidth(line, width), 'dim');
 }
 
@@ -487,6 +489,80 @@ export function renderConfigSpecialistRow(
   const tag = hasOverride ? paint('●', 'running') : paint('○', 'dim');
   const label = paint(name, selected || hasOverride ? 'bright' : 'dim');
   return truncateToWidth(`${marker} ${tag} ${label}`, width);
+}
+
+// ---------- RepoConfigView rows (unitAI-hneld) ----------
+
+export interface RepoConfigRowInput {
+  name: string;
+  path: string;
+  exists: boolean;
+  dbExists: boolean;
+  dbSizeBytes: number;
+  lastActivityMs?: number;
+  runningJobs: number;
+  waitingJobs: number;
+  current: boolean;
+}
+
+export function renderRepoConfigRow(row: RepoConfigRowInput, width: number, selected: boolean): string {
+  const marker = selected ? '›' : ' ';
+  // Status glyph: ● current, ◌ healthy w/ db, ✗ missing path, · no db yet.
+  const glyph = !row.exists
+    ? paint('✗', 'blocked')
+    : row.current
+      ? paint('●', 'running')
+      : row.dbExists
+        ? paint('◌', 'dim')
+        : paint('·', 'dim');
+  const name = paint(padR(row.name, 16), row.exists ? (selected || row.current ? 'bright' : 'txt') : 'dim');
+  const sizeText = row.dbExists ? formatBytes(row.dbSizeBytes) : '   --';
+  const sizeCol = paint(padL(sizeText, 6), 'dim');
+  const activity = paint(padL(formatRelativeAge(row.lastActivityMs), 8), 'dim');
+  const jobs = formatJobCounts(row.runningJobs, row.waitingJobs);
+  const pathPaint: ThemeColor = row.exists ? 'dim' : 'blocked';
+  const head = `${marker} ${glyph} ${name} ${sizeCol} ${activity} ${jobs} `;
+  const headLen = visibleLength(head);
+  const pathRoom = Math.max(0, width - headLen);
+  const pathText = paint(truncateToWidth(row.path, pathRoom), pathPaint);
+  return truncateToWidth(head + pathText, width);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '   0B';
+  const units = ['B', 'K', 'M', 'G'];
+  let value = bytes;
+  let unitIdx = 0;
+  while (value >= 1024 && unitIdx < units.length - 1) {
+    value /= 1024;
+    unitIdx += 1;
+  }
+  const rendered = value >= 100 || unitIdx === 0
+    ? `${Math.round(value)}${units[unitIdx]}`
+    : `${value.toFixed(1)}${units[unitIdx]}`;
+  return rendered;
+}
+
+function formatRelativeAge(ms?: number): string {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return 'never';
+  const delta = Date.now() - ms;
+  if (delta < 0) return 'now';
+  const s = Math.floor(delta / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  return `${mo}mo ago`;
+}
+
+function formatJobCounts(running: number, waiting: number): string {
+  const r = running > 0 ? paint(`R${running}`, 'running') : paint('R0', 'dim');
+  const w = waiting > 0 ? paint(`W${waiting}`, 'blocked') : paint('W0', 'dim');
+  return `${r} ${w}`;
 }
 
 // ---------- DiffView rows ----------
