@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { bold, cyan, dim, formatTokenUsageSummary, green, magenta, red, yellow } from './format-helpers.js';
+// unitAI-ugw4s: import the TUI's themed row + stats renderers so `sp ps`
+// uses the same visual language as `sp console`'s ps view. The CLI keeps
+// its prefix-based tree (`└ `/`├ `) but the per-row body and the bottom
+// stats line share the TUI's column order, palette, and ctx coloring.
+import {
+  renderJobRow as themedJobRow,
+  renderStatsLine as themedStatsLine,
+} from './console/theme.js';
+import type { ConsoleJob, ProcessSnapshot } from './console/types.js';
 import { isJobDead } from '../specialist/supervisor.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import type { TimelineEvent, TimelineEventRunComplete, TimelineTokenUsage } from '../specialist/timeline-events.js';
@@ -585,33 +594,43 @@ function formatCtxWithIndicator(contextPct: number | undefined, contextHealth: s
   return `${pct}${warn}`.padStart(4);
 }
 
+function jobNodeToConsoleJob(node: JobNode, beadTitles: Map<string, string>): ConsoleJob {
+  // ConsoleJob extends SupervisorStatus; renderJobRow only reads a narrow
+  // subset, so casting a partial-shape object back is safe at the surface
+  // we exercise here.
+  const payloadStats = formatPayloadStats(node.startup_payload_json);
+  return {
+    id: node.id,
+    specialist: node.specialist,
+    status: node.status,
+    started_at_ms: node.started_at_ms,
+    elapsed_s: node.elapsed_s,
+    context_pct: node.context_pct,
+    context_health: node.context_health,
+    metrics: node.metrics,
+    bead_id: node.bead_id,
+    bead_title: node.bead_id ? beadTitles.get(node.bead_id) : undefined,
+    payload_kb: node.payload_kb ?? payloadStats.payload_kb,
+    payload_tokens: node.payload_tokens ?? payloadStats.payload_tokens,
+    next_action: getNextAction(node),
+    is_dead: node.is_dead,
+  } as ConsoleJob;
+}
+
 function renderJobLine(
   job: JobNode,
   beadTitles: Map<string, string>,
   prefix: string,
   connector: string,
 ): string {
-  const icon = getStatusIcon(job);
-  const id = job.id.padEnd(8);
-  const spec = job.specialist.slice(0, 13).padEnd(13);
-  const status = statusLabel(job.status).padEnd(18);
-  const ctx = dim(formatCtxWithIndicator(job.context_pct, job.context_health));
-  const elapsedBase = formatElapsed(job.elapsed_s);
-  const metricParts: string[] = [];
-  if (job.metrics?.turns) metricParts.push(`${job.metrics.turns}t`);
-  if (job.metrics?.tool_calls) metricParts.push(`${job.metrics.tool_calls}tc`);
-  const totalTokens = job.metrics?.token_usage?.total_tokens;
-  if (totalTokens) metricParts.push(`${totalTokens}tok`);
-  const payloadStats = formatPayloadStats(job.startup_payload_json);
-  const elapsed = metricParts.length > 0 ? dim(`${elapsedBase} ${metricParts.join('·')}`) : dim(elapsedBase);
-  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-  const payloadKbCol = dim(payloadStats.payload_kb.padEnd(8));
-  const payloadTokensCol = dim(payloadStats.payload_tokens.padEnd(8));
-  const beadCol = dim((job.bead_id ? job.bead_id : '').padEnd(14));
-  const action = getNextAction(job);
-  const actionCol = job.is_dead ? red(action) : dim(action);
-  const titleSuffix = beadTitle ? dim(` ${beadTitle.slice(0, 40)}`) : '';
-  return `${prefix}${connector}${icon} ${id} ${spec} ${status} ${ctx} ${elapsed} ${payloadKbCol} ${payloadTokensCol} ${beadCol} ${actionCol}${titleSuffix}`;
+  const consoleJob = jobNodeToConsoleJob(job, beadTitles);
+  const width = Math.max(80, (process.stdout.columns ?? 160) - prefix.length - connector.length);
+  // renderJobRow starts each line with "  " (selection marker + space).
+  // The CLI uses prefix+connector to draw its tree glyphs (└ ├) instead,
+  // so strip that leading pair before grafting.
+  const themed = themedJobRow(consoleJob, width, 0, false);
+  const body = themed.startsWith('  ') ? themed.slice(2) : themed;
+  return `${prefix}${connector}${body}`;
 }
 
 function renderTreeNodes(
@@ -826,7 +845,36 @@ function renderHuman(jobs: SupervisorStatus[], nodes: NodeTree[], trees: Worktre
   const runningCount = renderedJobs.filter((job) => job.status === 'running').length;
   const waitingCount = renderedJobs.filter((job) => job.status === 'waiting').length;
 
-  console.log(dim(`${renderedJobIds.size} jobs · ${epicGroups.length} epics · ${legacyNodes.length} nodes · ${legacyTrees.length} worktrees · ${runningCount} running · ${waitingCount} waiting${all ? ' · include terminal' : ''}`));
+  // Build a minimal ProcessSnapshot so the TUI's stats renderer can do
+  // the formatting. The maxContextPct / totalTokens fields aggregate from
+  // already-loaded jobs without an extra read pass.
+  const ctxValues = renderedJobs
+    .map((j) => j.context_pct)
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  const totalTokens = renderedJobs.reduce(
+    (acc, j) => acc + (j.metrics?.token_usage?.total_tokens ?? 0),
+    0,
+  );
+  const statsSnapshot: ProcessSnapshot = {
+    generatedAtMs: Date.now(),
+    repo: { id: '-', name: '-', path: process.cwd() },
+    filter: { historyMode: 'default', includeCleaned: false, textFilter: '' },
+    rows: [],
+    jobs: [],
+    totalJobs: jobs.length,
+    visibleJobs: renderedJobIds.size,
+    runningJobs: runningCount,
+    waitingJobs: waitingCount,
+    epics: epicGroups.length,
+    nodes: legacyNodes.length,
+    worktrees: legacyTrees.length,
+    maxContextPct: ctxValues.length > 0 ? Math.max(...ctxValues) : undefined,
+    totalTokens,
+    health: null,
+  };
+  const width = Math.max(80, process.stdout.columns ?? 160);
+  const includeSuffix = all ? '  ' + dim('· include terminal') : '';
+  console.log(themedStatsLine(statsSnapshot, width) + includeSuffix);
 }
 
 function statusFromRunComplete(status: TimelineEventRunComplete['status'] | undefined): JobState {

@@ -117,9 +117,11 @@ describe('ps CLI — run()', () => {
     const { run } = await import('../../../src/cli/ps.js');
     await run();
     const clean = stripAnsi(output.join('\n'));
-    expect(clean).toContain('0 jobs');
-    expect(clean).toContain('0 running');
-    expect(clean).toContain('0 waiting');
+    // unitAI-ugw4s: stats line now uses TUI's `renderStatsLine` format
+    // ("jobs N/M  running R waiting W"). Assert the new substrings.
+    expect(clean).toMatch(/jobs 0\/0/);
+    expect(clean).toContain('running 0');
+    expect(clean).toContain('waiting 0');
   }, TEST_TIMEOUT_MS);
 
   it('shows compact system health block with process counts by default', async () => {
@@ -173,7 +175,7 @@ describe('ps CLI — run()', () => {
     const clean = stripAnsi(output.join('\n'));
     expect(clean).toContain('aaa111');
     expect(clean).toContain('explorer');
-    expect(clean).toContain('1 running');
+    expect(clean).toContain('running 1');
   }, TEST_TIMEOUT_MS);
 
   it('filters dead jobs from default output', async () => {
@@ -190,7 +192,7 @@ describe('ps CLI — run()', () => {
     await run();
     const clean = stripAnsi(output.join('\n'));
     expect(clean).not.toContain('dead01');
-    expect(clean).toContain('0 jobs');
+    expect(clean).toMatch(/jobs 0\/0/);
   }, TEST_TIMEOUT_MS);
 
   it('--all includes dead jobs with dead label', async () => {
@@ -266,7 +268,7 @@ describe('ps CLI — run()', () => {
     await run();
     const clean = stripAnsi(output.join('\n'));
     expect(clean).not.toContain('err-clean');
-    expect(clean).toContain('0 jobs');
+    expect(clean).toMatch(/jobs 0\/0/);
   }, TEST_TIMEOUT_MS);
 
   it('--include-cleaned shows ps-cleaned terminal jobs', async () => {
@@ -279,7 +281,10 @@ describe('ps CLI — run()', () => {
     const { run } = await import('../../../src/cli/ps.js');
     await run();
     const clean = stripAnsi(output.join('\n'));
-    expect(clean).toContain('done-clean');
+    // TUI's id column is 8 chars wide (COLUMNS.id.width). 'done-clean'
+    // truncates to 'done-cle' in the themed row — assert the truncated
+    // form so we know the row landed.
+    expect(clean).toContain('done-cle');
   }, TEST_TIMEOUT_MS);
 
   it('--active hides unresolved terminal problem jobs', async () => {
@@ -293,7 +298,7 @@ describe('ps CLI — run()', () => {
     await run();
     const clean = stripAnsi(output.join('\n'));
     expect(clean).not.toContain('err-active');
-    expect(clean).toContain('0 jobs');
+    expect(clean).toMatch(/jobs 0\/0/);
   }, TEST_TIMEOUT_MS);
 
   it('--json outputs valid JSON with trees array', async () => {
