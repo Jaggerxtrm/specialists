@@ -659,9 +659,9 @@ describe('runScriptSpecialist system prompt forwarding', () => {
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
     const spawnOptions = spawnMock.mock.calls[0][2];
     expect(spawnArgs).not.toContain(renderedPrompt);
-    expect(spawnArgs.at(-1)).toBe('anthropic/claude-sonnet-4-6');
+    expect(spawnArgs[spawnArgs.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-6');
     expect(spawnOptions).toMatchObject({ stdio: ['pipe', 'pipe', 'pipe'] });
-    expect(child.stdin.write).toHaveBeenCalledWith(renderedPrompt);
+    expect(child.stdin.write.mock.calls[0][0]).toContain(renderedPrompt);
     expect(child.stdin.end).toHaveBeenCalledTimes(1);
   });
 

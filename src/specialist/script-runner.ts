@@ -727,11 +727,36 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
       onAuditFailure: options.onAuditFailure,
     });
     let terminalPersisted = false;
+    let cleanupExitHandler: (() => void) | undefined;
     const persistTerminalOnce = (terminal: Parameters<typeof persistScriptTerminal>[1]): void => {
       if (terminalPersisted) return;
       terminalPersisted = true;
+      cleanupExitHandler?.();
       persistScriptTerminal(observability, terminal);
     };
+    if (observability) {
+      const handleExit = (): void => {
+        if (terminalPersisted) return;
+        terminalPersisted = true;
+        persistScriptTerminal(observability, {
+          traceId,
+          specialist: resolvedSpecialist,
+          model: modelCandidates[0] ?? 'unknown',
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: 'error',
+          outputType: spec.specialist.execution.output_type,
+          output: 'script-specialist interrupted before terminal result',
+          error: 'script-specialist interrupted before terminal result',
+          errorType: 'internal',
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure,
+        });
+      };
+      process.once('exit', handleExit);
+      cleanupExitHandler = () => process.off('exit', handleExit);
+    }
     const attempts: Array<{ model: string; text: string; stderr: string }> = [];
 
     for (const model of modelCandidates) {
