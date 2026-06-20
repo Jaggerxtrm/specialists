@@ -54948,38 +54948,31 @@ function getNextAction(job) {
     return "result";
   return "";
 }
-function formatCtxWithIndicator(contextPct, contextHealth) {
-  if (contextPct === undefined || !Number.isFinite(contextPct))
-    return "  --";
-  const pct = `${Math.round(contextPct)}%`;
-  const warn3 = contextHealth === "WARN" || contextHealth === "CRITICAL" ? "\u25B2" : "";
-  return `${pct}${warn3}`.padStart(4);
+function jobNodeToConsoleJob(node, beadTitles) {
+  const payloadStats = formatPayloadStats2(node.startup_payload_json);
+  return {
+    id: node.id,
+    specialist: node.specialist,
+    status: node.status,
+    started_at_ms: node.started_at_ms,
+    elapsed_s: node.elapsed_s,
+    context_pct: node.context_pct,
+    context_health: node.context_health,
+    metrics: node.metrics,
+    bead_id: node.bead_id,
+    bead_title: node.bead_id ? beadTitles.get(node.bead_id) : undefined,
+    payload_kb: node.payload_kb ?? payloadStats.payload_kb,
+    payload_tokens: node.payload_tokens ?? payloadStats.payload_tokens,
+    next_action: getNextAction(node),
+    is_dead: node.is_dead
+  };
 }
 function renderJobLine(job, beadTitles, prefix, connector) {
-  const icon = getStatusIcon(job);
-  const id = job.id.padEnd(8);
-  const spec = job.specialist.slice(0, 13).padEnd(13);
-  const status = statusLabel(job.status).padEnd(18);
-  const ctx = dim9(formatCtxWithIndicator(job.context_pct, job.context_health));
-  const elapsedBase = formatElapsed3(job.elapsed_s);
-  const metricParts = [];
-  if (job.metrics?.turns)
-    metricParts.push(`${job.metrics.turns}t`);
-  if (job.metrics?.tool_calls)
-    metricParts.push(`${job.metrics.tool_calls}tc`);
-  const totalTokens = job.metrics?.token_usage?.total_tokens;
-  if (totalTokens)
-    metricParts.push(`${totalTokens}tok`);
-  const payloadStats = formatPayloadStats2(job.startup_payload_json);
-  const elapsed = metricParts.length > 0 ? dim9(`${elapsedBase} ${metricParts.join("\xB7")}`) : dim9(elapsedBase);
-  const beadTitle = job.bead_id ? beadTitles.get(job.bead_id) : undefined;
-  const payloadKbCol = dim9(payloadStats.payload_kb.padEnd(8));
-  const payloadTokensCol = dim9(payloadStats.payload_tokens.padEnd(8));
-  const beadCol = dim9((job.bead_id ? job.bead_id : "").padEnd(14));
-  const action = getNextAction(job);
-  const actionCol = job.is_dead ? red2(action) : dim9(action);
-  const titleSuffix = beadTitle ? dim9(` ${beadTitle.slice(0, 40)}`) : "";
-  return `${prefix}${connector}${icon} ${id} ${spec} ${status} ${ctx} ${elapsed} ${payloadKbCol} ${payloadTokensCol} ${beadCol} ${actionCol}${titleSuffix}`;
+  const consoleJob = jobNodeToConsoleJob(job, beadTitles);
+  const width = Math.max(80, (process.stdout.columns ?? 160) - prefix.length - connector.length);
+  const themed = renderJobRow(consoleJob, width, 0, false);
+  const body = themed.startsWith("  ") ? themed.slice(2) : themed;
+  return `${prefix}${connector}${body}`;
 }
 function renderTreeNodes(nodes, beadTitles, prefix, renderedJobIds) {
   for (let i = 0;i < nodes.length; i++) {
@@ -55161,7 +55154,28 @@ function renderHuman(jobs, nodes, trees, all, includeTerminal, epicReadiness, he
   const renderedJobs = jobs.filter((job) => renderedJobIds.has(job.id));
   const runningCount = renderedJobs.filter((job) => job.status === "running").length;
   const waitingCount = renderedJobs.filter((job) => job.status === "waiting").length;
-  console.log(dim9(`${renderedJobIds.size} jobs \xB7 ${epicGroups.length} epics \xB7 ${legacyNodes.length} nodes \xB7 ${legacyTrees.length} worktrees \xB7 ${runningCount} running \xB7 ${waitingCount} waiting${all ? " \xB7 include terminal" : ""}`));
+  const ctxValues = renderedJobs.map((j) => j.context_pct).filter((v) => typeof v === "number" && Number.isFinite(v));
+  const totalTokens = renderedJobs.reduce((acc, j) => acc + (j.metrics?.token_usage?.total_tokens ?? 0), 0);
+  const statsSnapshot = {
+    generatedAtMs: Date.now(),
+    repo: { id: "-", name: "-", path: process.cwd() },
+    filter: { historyMode: "default", includeCleaned: false, textFilter: "" },
+    rows: [],
+    jobs: [],
+    totalJobs: jobs.length,
+    visibleJobs: renderedJobIds.size,
+    runningJobs: runningCount,
+    waitingJobs: waitingCount,
+    epics: epicGroups.length,
+    nodes: legacyNodes.length,
+    worktrees: legacyTrees.length,
+    maxContextPct: ctxValues.length > 0 ? Math.max(...ctxValues) : undefined,
+    totalTokens,
+    health: null
+  };
+  const width = Math.max(80, process.stdout.columns ?? 160);
+  const includeSuffix = all ? "  " + dim9("\xB7 include terminal") : "";
+  console.log(renderStatsLine(statsSnapshot, width) + includeSuffix);
 }
 function statusFromRunComplete(status) {
   if (status === "COMPLETE")
@@ -55509,6 +55523,7 @@ async function run18() {
 var ACTIVE_STATES2, TERMINAL_STATES2, BEAD_TITLE_CACHE, STATUS_PRIORITY, ANSI_ENTER_ALT_SCREEN = "\x1B[?1049h", ANSI_EXIT_ALT_SCREEN = "\x1B[?1049l", ANSI_HIDE_CURSOR = "\x1B[?25l", ANSI_SHOW_CURSOR = "\x1B[?25h", ANSI_CURSOR_HOME = "\x1B[H", ANSI_ERASE_DOWN = "\x1B[J", ANSI_ESCAPE_SEQUENCE_PATTERN;
 var init_ps = __esm(() => {
   init_format_helpers();
+  init_theme();
   init_supervisor();
   init_status_load();
   init_observability_sqlite();
