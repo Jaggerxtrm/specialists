@@ -591,21 +591,36 @@ function listMatchingJobIds(
   jobsDir: string,
   options: FeedOptions
 ): string[] {
-  if (!existsSync(jobsDir)) return [];
+  const jobIds = new Set<string>();
 
-  const jobIds: string[] = [];
-  for (const entry of readdirSync(jobsDir)) {
-    const jobDir = join(jobsDir, entry);
-
-    try {
-      if (!statSync(jobDir).isDirectory()) continue;
-    } catch {
-      continue;
+  try {
+    for (const status of sqliteClient?.listStatuses?.() ?? []) {
+      if (!status?.id) continue;
+      jobIds.add(status.id);
     }
+  } catch {
+    // fall back to file discovery only
+  }
 
-    if (options.jobId && entry !== options.jobId) continue;
+  if (existsSync(jobsDir)) {
+    for (const entry of readdirSync(jobsDir)) {
+      const jobDir = join(jobsDir, entry);
 
-    const status = readStatusJson(sqliteClient, jobsDir, entry);
+      try {
+        if (!statSync(jobDir).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+
+      jobIds.add(entry);
+    }
+  }
+
+  const filtered: string[] = [];
+  for (const jobId of jobIds) {
+    if (options.jobId && jobId !== options.jobId) continue;
+
+    const status = readStatusJson(sqliteClient, jobsDir, jobId);
 
     if (options.nodeId) {
       const currentNodeId = typeof status?.node_id === 'string' ? status.node_id : '';
@@ -617,10 +632,10 @@ function listMatchingJobIds(
       if (specialist !== options.specialist) continue;
     }
 
-    jobIds.push(entry);
+    filtered.push(jobId);
   }
 
-  return jobIds;
+  return filtered;
 }
 
 interface JobEventsCacheEntry {
@@ -926,7 +941,15 @@ export async function run(): Promise<void> {
   try {
     const jobsDir = join(process.cwd(), '.specialists', 'jobs');
 
-    if (!existsSync(jobsDir)) {
+    const hasSqliteStatuses = (() => {
+      try {
+        return (sqliteClient?.listStatuses?.() ?? []).length > 0;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!existsSync(jobsDir) && !hasSqliteStatuses) {
       if (options.jobId && sqliteClient) {
         console.log(dim(`job ${options.jobId} not found in .specialists/db/observability.db`));
       } else {

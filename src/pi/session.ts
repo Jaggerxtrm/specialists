@@ -187,7 +187,7 @@ function probeExtensionHealth(packageName: string): 'loaded_healthy' | 'not_inst
   return 'not_installed';
 }
 
-function resolvePermissionTools(options: {
+export function resolvePermissionTools(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
@@ -211,7 +211,7 @@ function resolvePermissionTools(options: {
   }).tools || undefined;
 }
 
-function resolveGlobalNodeModulesDir(): string | undefined {
+export function resolveGlobalNodeModulesDir(): string | undefined {
   const candidates = [
     process.env.PI_NPM_GLOBAL_DIR,
     process.env.NPM_CONFIG_PREFIX ? join(process.env.NPM_CONFIG_PREFIX, 'lib', 'node_modules') : undefined,

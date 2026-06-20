@@ -6,6 +6,7 @@ interface ScriptArgs {
   specialist: string;
   variables: Record<string, string>;
   template?: string;
+  templateField?: string;
   modelOverride?: string;
   thinking?: string;
   projectDir: string;
@@ -27,6 +28,7 @@ export function parseArgs(argv: string[]): ScriptArgs {
   const specialist = argv[0];
   const variables: Record<string, string> = {};
   let template: string | undefined;
+  let templateField: string | undefined;
   let modelOverride: string | undefined;
   let thinking: string | undefined;
   let projectDir = process.cwd();
@@ -42,6 +44,7 @@ export function parseArgs(argv: string[]): ScriptArgs {
       const [key, value] = parseVar(argv[++i]);
       variables[key] = value;
     } else if (token === '--template' && argv[i + 1]) template = argv[++i];
+    else if (token === '--template-field' && argv[i + 1]) templateField = argv[++i];
     else if (token === '--model' && argv[i + 1]) modelOverride = argv[++i];
     else if (token === '--thinking' && argv[i + 1]) thinking = argv[++i];
     else if ((token === '--project-dir' || token === '--user-dir') && argv[i + 1]) projectDir = argv[++i];
@@ -51,15 +54,16 @@ export function parseArgs(argv: string[]): ScriptArgs {
     else if (token === '--single-instance' && argv[i + 1]) singleInstance = argv[++i];
     else if (token === '--no-trace') trace = false;
     else if (token === '--vars') throw new Error('Missing value for --vars');
-    else if (token === '--template' || token === '--model' || token === '--thinking' || token === '--project-dir' || token === '--user-dir' || token === '--db-path' || token === '--timeout-ms' || token === '--single-instance') {
+    else if (token === '--template' || token === '--template-field' || token === '--model' || token === '--thinking' || token === '--project-dir' || token === '--user-dir' || token === '--db-path' || token === '--timeout-ms' || token === '--single-instance') {
       throw new Error(`Missing value for ${token}`);
     }
   }
 
   if (!specialist) throw new Error('Missing specialist name');
   if (Number.isNaN(timeoutMs)) throw new Error('Invalid --timeout-ms value');
+  if (template !== undefined && templateField !== undefined) throw new Error('--template and --template-field are mutually exclusive');
 
-  return { specialist, variables, template, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
+  return { specialist, variables, template, templateField, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
 }
 
 function buildRequest(args: ScriptArgs): ScriptGenerateRequest {
@@ -68,6 +72,7 @@ function buildRequest(args: ScriptArgs): ScriptGenerateRequest {
     requested_specialist: args.specialist,
     variables: args.variables,
     template: args.template,
+    template_field: args.templateField,
     model_override: args.modelOverride,
     thinking_level: args.thinking,
     timeout_ms: args.timeoutMs,
@@ -123,6 +128,14 @@ export async function run(argv: string[] = process.argv.slice(3)): Promise<void>
   const result = await runScriptSpecialist(buildRequest(args), {
     loader,
     projectDir: args.projectDir,
+    surface: 'script',
+    trust: {
+      allowSkills: true,
+      allowSkillsRoots: [args.projectDir],
+      allowLocalScripts: true,
+      allowWriteCapable: true,
+      baseDir: args.projectDir,
+    },
     ...(args.dbPath ? { observabilityDbPath: args.dbPath } : {}),
   });
   printResult(result, args.json);
