@@ -45108,28 +45108,49 @@ function discoverRepos(baseDirCandidates = DEFAULT_BASE_DIR_CANDIDATES) {
     if (!safeIsDirectory(baseDir))
       continue;
     scannedBaseDirs.push(candidate);
-    let entries;
-    try {
-      entries = readdirSync9(baseDir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.startsWith("."))
-        continue;
-      const root = join26(baseDir, entry);
-      if (!safeIsDirectory(root))
-        continue;
-      if (!looksLikeSpecialistsRepo(root))
-        continue;
-      if (seen.has(root))
-        continue;
-      seen.add(root);
-      repos.push({ name: entry, path: root });
-    }
+    walk(baseDir, 1, seen, repos);
   }
   repos.sort((a, b) => a.name.localeCompare(b.name));
   return { repos, scannedBaseDirs };
+}
+function walk(dir, depth, seen, repos) {
+  if (isWorktreeDir(dir))
+    return;
+  let entries;
+  try {
+    entries = readdirSync9(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.startsWith("."))
+      continue;
+    const root = join26(dir, entry);
+    if (!safeIsDirectory(root))
+      continue;
+    if (isWorktreeDir(root))
+      continue;
+    if (looksLikeSpecialistsRepo(root)) {
+      if (!seen.has(root)) {
+        seen.add(root);
+        repos.push({ name: entry, path: root });
+      }
+      continue;
+    }
+    if (depth < MAX_SCAN_DEPTH) {
+      walk(root, depth + 1, seen, repos);
+    }
+  }
+}
+function isWorktreeDir(path3) {
+  try {
+    const gitPath = join26(path3, ".git");
+    if (!existsSync22(gitPath))
+      return false;
+    return !statSync6(gitPath).isDirectory();
+  } catch {
+    return false;
+  }
 }
 function safeIsDirectory(path3) {
   try {
@@ -45151,7 +45172,7 @@ function looksLikeSpecialistsRepo(root) {
   }
   return false;
 }
-var DEFAULT_BASE_DIR_CANDIDATES;
+var DEFAULT_BASE_DIR_CANDIDATES, MAX_SCAN_DEPTH = 2;
 var init_repo_discovery = __esm(() => {
   init_observability_db();
   init_job_root();

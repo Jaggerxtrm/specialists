@@ -237,6 +237,89 @@ describe('discoverRepos — base dir scan', () => {
     expect(DEFAULT_BASE_DIR_CANDIDATES.length).toBeGreaterThan(0);
     for (const c of DEFAULT_BASE_DIR_CANDIDATES) expect(c.startsWith('~')).toBe(true);
   });
+
+  // ── Wave C: depth-2 walk + worktree skip (unitAI-fd4pl) ─────────────────
+
+  it('descends to depth-2 to find ~/projects/parent/repo layouts', () => {
+    const projects = join(dir, 'projects');
+    mkdirSync(projects, { recursive: true });
+    // ~/projects/mercury is a plain parent (no .specialists, no .git).
+    const mercury = join(projects, 'mercury');
+    mkdirSync(mercury);
+    // ~/projects/mercury/infra carries the marker → should be found.
+    const infra = join(mercury, 'infra');
+    mkdirSync(join(infra, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(infra, '.specialists', 'db', 'observability.db'), '');
+
+    const result = discoverRepos(['~/projects']);
+    expect(result.repos.map((r) => r.name)).toEqual(['infra']);
+    expect(result.repos[0]?.path).toBe(infra);
+  });
+
+  it('skips worktrees at L1 (.git is a file, not a directory)', () => {
+    const dev = join(dir, 'dev');
+    mkdirSync(dev, { recursive: true });
+    // ~/dev/wt is shaped like a worktree: .git is a file with gitdir
+    // pointer. Even if it has a .specialists marker (because the
+    // resolver follows git-common-dir back to the main repo), it must
+    // not appear in the discovery result.
+    const wt = join(dev, 'wt');
+    mkdirSync(join(wt, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(wt, '.specialists', 'db', 'observability.db'), '');
+    writeFileSync(join(wt, '.git'), 'gitdir: /tmp/some-main-repo/.git/worktrees/wt\n');
+
+    const result = discoverRepos(['~/dev']);
+    expect(result.repos).toEqual([]);
+  });
+
+  it('skips worktrees encountered at L2 (under a non-marker parent)', () => {
+    const projects = join(dir, 'projects');
+    mkdirSync(projects, { recursive: true });
+    const parent = join(projects, 'parent');
+    mkdirSync(parent);
+    // L2 worktree should be skipped even though it has the marker.
+    const wt = join(parent, 'wt');
+    mkdirSync(join(wt, '.specialists', 'jobs'), { recursive: true });
+    writeFileSync(join(wt, '.git'), 'gitdir: /tmp/elsewhere/.git/worktrees/wt\n');
+    // Real L2 repo also present — must be found.
+    const real = join(parent, 'real');
+    mkdirSync(join(real, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(real, '.specialists', 'db', 'observability.db'), '');
+
+    const result = discoverRepos(['~/projects']);
+    expect(result.repos.map((r) => r.name)).toEqual(['real']);
+  });
+
+  it('stops descent when L1 carries the marker (no nested double-count)', () => {
+    const dev = join(dir, 'dev');
+    mkdirSync(dev, { recursive: true });
+    // L1 is itself a specialists repo …
+    const monorepo = join(dev, 'monorepo');
+    mkdirSync(join(monorepo, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(monorepo, '.specialists', 'db', 'observability.db'), '');
+    // … and contains a nested package with its own marker.
+    const pkg = join(monorepo, 'packages', 'inner');
+    mkdirSync(join(pkg, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(pkg, '.specialists', 'db', 'observability.db'), '');
+
+    const result = discoverRepos(['~/dev']);
+    expect(result.repos.map((r) => r.name)).toEqual(['monorepo']);
+    expect(result.repos[0]?.path).toBe(monorepo);
+  });
+
+  it('does not reach depth-3 (rare nesting stays manual)', () => {
+    const code = join(dir, 'code');
+    mkdirSync(code, { recursive: true });
+    // ~/code/L1/L2/L3 — only L3 has the marker. L1 and L2 are plain
+    // parents. With MAX_SCAN_DEPTH=2 we visit L1 (depth 1) and L2
+    // (depth 2) but stop before descending into L3.
+    const l3 = join(code, 'L1', 'L2', 'L3');
+    mkdirSync(join(l3, '.specialists', 'db'), { recursive: true });
+    writeFileSync(join(l3, '.specialists', 'db', 'observability.db'), '');
+
+    const result = discoverRepos(['~/code']);
+    expect(result.repos).toEqual([]);
+  });
 });
 
 describe('listReposWithContext — current-repo selection (unitAI-29p39)', () => {
