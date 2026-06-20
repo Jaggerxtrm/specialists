@@ -25,6 +25,8 @@ import type {
   ProcessFilter,
   ProcessRow,
   ProcessSnapshot,
+  RepoConfigRow,
+  RepoConfigSnapshot,
   RepoRef,
   RuntimeClient,
   WorktreeRef,
@@ -42,8 +44,11 @@ import {
 import { logError } from './log.js';
 import {
   buildConsoleConfigTemplate,
+  getConsoleConfigPath,
   readConsoleConfig,
   writeConsoleConfig,
+  type ConsoleConfig,
+  type ConsoleConfigRepoEntry,
 } from './repo-config.js';
 import { discoverRepos } from './repo-discovery.js';
 
@@ -129,6 +134,96 @@ class LocalRuntimeClient implements RuntimeClient {
 
     // Last resort: surface cwd as a placeholder so the TUI doesn't crash.
     return { repos: [{ id: 'cwd', name: basename(this.cwd), path: this.cwd, current: true }] };
+  }
+
+  // ── RepoConfigView (unitAI-hneld) ────────────────────────────────────────
+
+  async readRepoConfigSnapshot(cwd: string = this.cwd): Promise<RepoConfigSnapshot> {
+    return buildRepoConfigSnapshot(cwd);
+  }
+
+  async addRepoConfigEntry(entry: { name: string; path: string }): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }> {
+    const validation = validateRepoEntry(entry);
+    if (!validation.ok) return validation;
+    const current = readConsoleConfig() ?? buildConsoleConfigTemplate([], [], new Date().toISOString());
+    // Reject dup-by-name and dup-by-path.
+    const normPath = entry.path.replace(/[\\/]+$/, '');
+    const exists = current.repos.some((r) => r.name === entry.name || r.path.replace(/[\\/]+$/, '') === normPath);
+    if (exists) return { ok: false, error: `repo already configured: ${entry.name}` };
+    const next: ConsoleConfig = {
+      ...current,
+      repos: sortByName([...current.repos, { name: entry.name, path: entry.path }]),
+    };
+    try {
+      writeConsoleConfig(next);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd) };
+  }
+
+  async removeRepoConfigEntry(name: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }> {
+    const current = readConsoleConfig();
+    if (!current) return { ok: false, error: 'no console.json to edit' };
+    const filtered = current.repos.filter((r) => r.name !== name);
+    if (filtered.length === current.repos.length) return { ok: false, error: `repo not configured: ${name}` };
+    try {
+      writeConsoleConfig({ ...current, repos: filtered });
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd) };
+  }
+
+  async editRepoConfigEntry(name: string, field: 'name' | 'path', value: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }> {
+    const current = readConsoleConfig();
+    if (!current) return { ok: false, error: 'no console.json to edit' };
+    const idx = current.repos.findIndex((r) => r.name === name);
+    if (idx < 0) return { ok: false, error: `repo not configured: ${name}` };
+    const updated: ConsoleConfigRepoEntry = field === 'name'
+      ? { ...current.repos[idx]!, name: value }
+      : { ...current.repos[idx]!, path: value };
+    const validation = validateRepoEntry(updated);
+    if (!validation.ok) return validation;
+    // Reject name collision with an existing OTHER entry.
+    if (field === 'name' && current.repos.some((r, i) => i !== idx && r.name === value)) {
+      return { ok: false, error: `name already in use: ${value}` };
+    }
+    const repos = sortByName(current.repos.map((r, i) => (i === idx ? updated : r)));
+    try {
+      writeConsoleConfig({ ...current, repos });
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd) };
+  }
+
+  async rescanRepoConfig(): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot; discoveredCount?: number }> {
+    const current = readConsoleConfig() ?? buildConsoleConfigTemplate([], [], new Date().toISOString());
+    const discovery = discoverRepos();
+    // Merge discovery into existing repos — dedup by absolute path.
+    const byPath = new Map<string, ConsoleConfigRepoEntry>();
+    for (const r of current.repos) byPath.set(r.path.replace(/[\\/]+$/, ''), r);
+    let added = 0;
+    for (const found of discovery.repos) {
+      const key = found.path.replace(/[\\/]+$/, '');
+      if (!byPath.has(key)) {
+        byPath.set(key, found);
+        added += 1;
+      }
+    }
+    const next: ConsoleConfig = {
+      ...current,
+      base_dirs: discovery.scannedBaseDirs.length > 0 ? discovery.scannedBaseDirs : current.base_dirs,
+      repos: sortByName([...byPath.values()]),
+      auto_discovered_at: new Date().toISOString(),
+    };
+    try {
+      writeConsoleConfig(next);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd), discoveredCount: added };
   }
 
   async listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot> {
@@ -711,6 +806,123 @@ function mergeCurrentWithSiblings(current: RepoRef, siblings: RepoRef[]): RepoRe
     if (sib.path !== current.path) ordered.push(sib);
   }
   return ordered;
+}
+
+function sortByName<T extends { name: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function validateRepoEntry(entry: { name: string; path: string }): { ok: boolean; error?: string } {
+  const name = entry.name.trim();
+  const path = entry.path.trim();
+  if (!name) return { ok: false, error: 'name required' };
+  if (!path) return { ok: false, error: 'path required' };
+  // path-traversal hygiene — every other write path uses absolute paths.
+  if (!path.startsWith('/') && !path.startsWith('~')) {
+    return { ok: false, error: 'path must be absolute or start with ~' };
+  }
+  return { ok: true };
+}
+
+function buildRepoConfigSnapshot(cwd: string): RepoConfigSnapshot {
+  const location = getConsoleConfigPath();
+  const config = readConsoleConfig();
+  if (!config) {
+    return {
+      rows: [],
+      baseDirs: [],
+      configPath: displayablePath(location.path),
+      configExists: false,
+    };
+  }
+  // Mark `current` so the operator sees which configured repo their cwd
+  // maps onto (mirrors markCurrent's longest-prefix logic but operates on
+  // ConsoleConfigRepoEntry, not RepoRef).
+  const normCwd = cwd.replace(/[\\/]+$/, '');
+  let currentIdx = -1;
+  let currentLen = -1;
+  config.repos.forEach((repo, i) => {
+    const normRepo = repo.path.replace(/[\\/]+$/, '');
+    if (normCwd === normRepo || normCwd.startsWith(`${normRepo}/`)) {
+      if (normRepo.length > currentLen) {
+        currentIdx = i;
+        currentLen = normRepo.length;
+      }
+    }
+  });
+  const rows: RepoConfigRow[] = config.repos.map((entry, i) =>
+    buildRepoConfigRow(entry, i === currentIdx),
+  );
+  return {
+    rows,
+    baseDirs: config.base_dirs,
+    autoDiscoveredAt: config.auto_discovered_at,
+    configPath: displayablePath(location.path),
+    configExists: true,
+  };
+}
+
+function buildRepoConfigRow(entry: ConsoleConfigRepoEntry, current: boolean): RepoConfigRow {
+  // Disk + DB existence checks are cheap (statSync) — RepoConfigView is
+  // refreshed on open/edit/rescan, not on every tick.
+  let exists = false;
+  try {
+    exists = statSync(entry.path).isDirectory();
+  } catch {
+    exists = false;
+  }
+  let dbExists = false;
+  let dbSizeBytes = 0;
+  let lastActivityMs: number | undefined;
+  let runningJobs = 0;
+  let waitingJobs = 0;
+  if (exists) {
+    try {
+      const location = resolveObservabilityDbLocation(entry.path);
+      if (existsSync(location.dbPath)) {
+        const st = statSync(location.dbPath);
+        dbExists = true;
+        dbSizeBytes = st.size;
+        const client = createObservabilitySqliteClientAtPath(location.dbPath);
+        if (client) {
+          try {
+            const statuses = client.listStatuses();
+            for (const s of statuses) {
+              if (s.status === 'running' || s.status === 'starting') runningJobs += 1;
+              else if (s.status === 'waiting') waitingJobs += 1;
+              const last = s.last_event_at_ms ?? s.started_at_ms;
+              if (typeof last === 'number'
+                && Number.isFinite(last)
+                && (lastActivityMs === undefined || last > lastActivityMs)) {
+                lastActivityMs = last;
+              }
+            }
+          } finally {
+            client.close();
+          }
+        }
+      }
+    } catch {
+      // Best-effort metrics — leave defaults on failure.
+    }
+  }
+  return {
+    name: entry.name,
+    path: entry.path,
+    exists,
+    dbExists,
+    dbSizeBytes,
+    lastActivityMs,
+    runningJobs,
+    waitingJobs,
+    current,
+  };
+}
+
+function displayablePath(p: string): string {
+  const home = process.env.HOME?.trim();
+  if (home && p.startsWith(`${home}/`)) return `~/${p.slice(home.length + 1)}`;
+  return p;
 }
 
 function parseConfiguredRepos(): RepoRef[] {

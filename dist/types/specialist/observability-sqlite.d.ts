@@ -114,6 +114,7 @@ export interface ListForensicEventsFilters {
     eventFamily?: string;
     eventName?: string;
     limit?: number;
+    order?: 'asc' | 'desc';
 }
 export interface JobMetricsRecord {
     job_id: string;

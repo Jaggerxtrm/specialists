@@ -104,7 +104,7 @@ export declare const phaseSchema: z.ZodObject<{
     }>, "many">>;
 }, "strip", z.ZodTypeAny, {
     phase_id: string;
-    phase_kind: "review" | "custom" | "impl" | "explore" | "design" | "fix" | "re_review";
+    phase_kind: "review" | "custom" | "impl" | "design" | "explore" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members: {
         bead_id: string;
@@ -121,7 +121,7 @@ export declare const phaseSchema: z.ZodObject<{
     }[];
 }, {
     phase_id: string;
-    phase_kind: "review" | "custom" | "impl" | "explore" | "design" | "fix" | "re_review";
+    phase_kind: "review" | "custom" | "impl" | "design" | "explore" | "fix" | "re_review";
     barrier: "all_members_terminal";
     members?: {
         bead_id: string;

@@ -334,6 +334,15 @@ export declare function validateGlobalUserConfig(jsonContent: string): GlobalCon
 export declare function readGlobalUserConfig(location: GlobalUserConfigPath): GlobalUserConfig | null;
 /**
  * Write the global user config, creating parent directories as needed.
+ *
+ * Atomic-write semantics: serialize JSON, write to a sibling temp file in
+ * the same directory, then renameSync over the destination. POSIX rename
+ * is atomic within the same filesystem, so a crash between truncate +
+ * write can no longer leave user.json empty or half-written.
+ *
+ * If the rename fails (e.g. cross-filesystem mount, no permission), fall
+ * back to a direct writeFileSync so we still update the file rather than
+ * leaving the user without a way to persist their override.
  */
 export declare function writeGlobalUserConfig(location: GlobalUserConfigPath, config: GlobalUserConfig): void;
 export { SPECIALISTS_SUBDIR, CONFIG_FILENAME };

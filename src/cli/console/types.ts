@@ -1,7 +1,7 @@
 import type { ProcessHealthReport } from '../../specialist/process-health.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
-export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config';
+export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config' | 'repoConfig';
 export type HistoryMode = 'default' | 'history' | 'all';
 export type FeedSource = 'sp_feed' | 'forensic';
 
@@ -155,6 +155,36 @@ export interface DiffFile {
   error?: string;
 }
 
+// ---------- RepoConfigView (unitAI-hneld) ----------
+
+export interface RepoConfigRow {
+  name: string;
+  path: string;
+  // Disk existence — false when the configured path no longer resolves to a
+  // directory (stale entry after a repo move/delete).
+  exists: boolean;
+  // .specialists/db/observability.db state. Absent or zero size means the
+  // repo has never run a specialist locally.
+  dbExists: boolean;
+  dbSizeBytes: number;
+  // Most-recent updated_at_ms from specialist_jobs (or undefined when no
+  // jobs / no DB).
+  lastActivityMs?: number;
+  runningJobs: number;
+  waitingJobs: number;
+  // Mirrors RepoRef.current so the renderer can highlight the active tab
+  // without having to cross-reference state.repos.
+  current: boolean;
+}
+
+export interface RepoConfigSnapshot {
+  rows: RepoConfigRow[];
+  baseDirs: string[];
+  autoDiscoveredAt?: string;
+  configPath: string;
+  configExists: boolean;
+}
+
 // ---------- ConfigView (Phase 6) — types defined in config-source.ts ----------
 
 export interface ListReposContext {
@@ -184,6 +214,16 @@ export interface RuntimeClient {
   resolveWorktree(repo: RepoRef, jobIdPrefix: string): Promise<WorktreeRef | null>;
   diffSummary(repo: RepoRef, jobIdPrefix: string): Promise<DiffSummary>;
   diffFile(repo: RepoRef, jobIdPrefix: string, file: string): Promise<DiffFile>;
+  /**
+   * Repo config (~/.config/specialists/console.json) management — surfaced
+   * via RepoConfigView (unitAI-hneld). Optional so test stubs that don't
+   * care about the R keybind can skip the implementation.
+   */
+  readRepoConfigSnapshot?(cwd?: string): Promise<RepoConfigSnapshot>;
+  addRepoConfigEntry?(entry: { name: string; path: string }): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }>;
+  removeRepoConfigEntry?(name: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }>;
+  editRepoConfigEntry?(name: string, field: 'name' | 'path', value: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }>;
+  rescanRepoConfig?(): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot; discoveredCount?: number }>;
   readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot>;
   writeGlobalConfig(
     rawObj: Record<string, unknown>,
