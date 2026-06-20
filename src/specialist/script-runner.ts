@@ -10,7 +10,7 @@ import { resolveModelChain } from './model-chain.js';
 import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from './observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
 import { formatScriptOutput, runScript, validateBeforeRun } from './runner.js';
-import type { Specialist } from './schema.js';
+import type { ScriptEntry, Specialist } from './schema.js';
 import type { SupervisorStatus } from './supervisor.js';
 import { renderTemplate } from './templateEngine.js';
 import {
@@ -577,6 +577,28 @@ export function detectTemplateFieldMisuse(template: string, specPrompt: Record<s
   return template;
 }
 
+type LocalScriptEntry = ScriptEntry & { path?: string };
+
+function getLocalScripts(spec: Specialist): LocalScriptEntry[] {
+  return spec.specialist.skills?.scripts ?? [];
+}
+
+function getLocalScriptCommand(script: LocalScriptEntry): string | undefined {
+  return script.run || script.path;
+}
+
+function buildValidationSpec(spec: Specialist, scripts: LocalScriptEntry[]) {
+  return {
+    specialist: {
+      skills: {
+        paths: spec.specialist.skills?.paths,
+        scripts,
+      },
+      capabilities: spec.specialist.capabilities,
+    },
+  };
+}
+
 function resolveRequestedTemplate(input: ScriptGenerateRequest, spec: Specialist): string {
   if (input.template !== undefined && input.template_field !== undefined) {
     throw new Error('template and template_field are mutually exclusive');
@@ -617,19 +639,17 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
     const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
 
-    validateBeforeRun(spec as never, spec.specialist.execution.permission_required);
-    const preScripts = trust.allowLocalScripts
-      ? (spec.specialist.skills?.scripts?.filter((script) => script.phase === 'pre') ?? [])
-      : [];
-    const postScripts = trust.allowLocalScripts
-      ? (spec.specialist.skills?.scripts?.filter((script) => script.phase === 'post') ?? [])
-      : [];
+    const localScripts = getLocalScripts(spec);
+    validateBeforeRun(buildValidationSpec(spec, localScripts), spec.specialist.execution.permission_required);
+    const executableScripts = trust.allowLocalScripts ? localScripts : [];
+    const preScripts = executableScripts.filter((script) => script.phase === 'pre');
+    const postScripts = executableScripts.filter((script) => script.phase === 'post');
     const runPostScripts = (): void => {
-      for (const script of postScripts) runScript(script.run ?? (script as unknown as { path?: string }).path, baseDir);
+      for (const script of postScripts) runScript(getLocalScriptCommand(script), baseDir);
     };
     const preScriptOutput = formatScriptOutput(
       preScripts
-        .map((script) => runScript(script.run ?? (script as unknown as { path?: string }).path, baseDir))
+        .map((script) => runScript(getLocalScriptCommand(script), baseDir))
         .filter((_, index) => preScripts[index].inject_output),
     );
 
