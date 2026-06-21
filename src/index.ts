@@ -1174,7 +1174,7 @@ async function run() {
     if (wantsHelp()) {
       console.log([
         '',
-        'Usage: specialists script <name> [--vars key=value ...] [--template <text>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--single-instance <lockpath>] [--no-trace]',
+        'Usage: specialists script <name> [--vars key=value ...] [--template <text> | --template-field <name>] [--model <override>] [--thinking <level>] [--user-dir <path>] [--db-path <path>] [--timeout-ms <n>] [--json] [--allow-local-scripts] [--allow-write-capable] [--single-instance <lockpath>] [--no-trace]',
         '',
         'One-shot script-class specialist runner for cron and host scripts.',
         '',

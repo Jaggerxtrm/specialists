@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES,
@@ -17,16 +20,48 @@ import {
   applyOutputContract,
   runScriptSpecialist,
 } from '../../../src/specialist/script-runner.js';
+import { createObservabilitySqliteClientAtPath } from '../../../src/specialist/observability-sqlite.js';
 
-const { spawnMock, spawnSyncMock } = vi.hoisted(() => ({
+const { spawnMock, spawnSyncMock, piSessionCreateMock, sqliteClients } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   spawnSyncMock: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
+  piSessionCreateMock: vi.fn(),
+  sqliteClients: new Map<string, any>(),
 }));
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
   spawnSync: spawnSyncMock,
 }));
+
+vi.mock('../../../src/pi/session.js', () => ({
+  PiAgentSession: { create: piSessionCreateMock },
+  resolveGlobalNodeModulesDir: vi.fn(() => undefined),
+  resolvePermissionTools: vi.fn(() => undefined),
+}));
+
+vi.mock('../../../src/specialist/observability-sqlite.js', () => {
+  const createClient = (dbPath: string) => {
+    const eventsByJobId = new Map<string, any[]>();
+    const append = (jobId: string, event: any) => {
+      eventsByJobId.set(jobId, [...(eventsByJobId.get(jobId) ?? []), event]);
+    };
+    return {
+      appendEvent: vi.fn((jobId: string, _specialist: string, _beadId: string | undefined, event: any) => append(jobId, event)),
+      upsertStatusWithEvent: vi.fn((status: any, event: any) => append(status.id, event)),
+      upsertStatusWithEventAndResult: vi.fn((status: any, event: any) => append(status.id, event)),
+      readEvents: vi.fn((jobId: string) => eventsByJobId.get(jobId) ?? []),
+      close: vi.fn(),
+    };
+  };
+  return {
+    createObservabilitySqliteClient: vi.fn(() => null),
+    createObservabilitySqliteClientAtPath: vi.fn((dbPath: string) => {
+      if (!sqliteClients.has(dbPath)) sqliteClients.set(dbPath, createClient(dbPath));
+      return sqliteClients.get(dbPath);
+    }),
+  };
+});
 
 const baseSpec = {
   specialist: {
@@ -51,6 +86,8 @@ const baseSpec = {
 afterEach(() => {
   spawnMock.mockReset();
   spawnSyncMock.mockClear();
+  piSessionCreateMock.mockReset();
+  sqliteClients.clear();
   delete process.env.SPECIALISTS_SCRIPT_PROMPT_LIMIT_BYTES;
   delete process.env.SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES;
 });
@@ -158,6 +195,7 @@ describe('output contract injection', () => {
       ...baseSpec,
       specialist: {
         ...baseSpec.specialist,
+        metadata: { name: 'service-skills-sync' },
         execution: { ...baseSpec.specialist.execution, response_format: 'json' },
       },
     };
@@ -341,6 +379,31 @@ describe('runScriptSpecialist expected_output_keys validation', () => {
     expect(result).toMatchObject({ success: false, error_type: 'invalid_json' });
   });
 
+
+
+  it('passes when required JSON is returned in one fenced JSON block after prose', async () => {
+    const spec = textSpecWithKeys(['summary', 'services', 'actions']);
+    const child = createSpawnMock();
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'service-skills-sync', template: 'render $name', variables: { name: 'x' } },
+      { loader: makeLoader(spec as never) as never, projectDir: '.' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const text = [
+      'I audited the service skills and here is the machine-readable result:',
+      '```json',
+      JSON.stringify({ summary: 'ok', services: [], actions: [] }),
+      '```',
+    ].join('\n');
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }] } })}\n`));
+    child.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result).toMatchObject({ success: true });
+    if (result.success) {
+      expect(result.parsed_json).toMatchObject({ summary: 'ok', services: [], actions: [] });
+    }
+  });
   it('passes when text-format output contains every expected_output_keys entry', async () => {
     const spec = textSpecWithKeys(['summary', 'tags']);
     const child = createSpawnMock();
@@ -659,9 +722,9 @@ describe('runScriptSpecialist system prompt forwarding', () => {
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
     const spawnOptions = spawnMock.mock.calls[0][2];
     expect(spawnArgs).not.toContain(renderedPrompt);
-    expect(spawnArgs.at(-1)).toBe('anthropic/claude-sonnet-4-6');
+    expect(spawnArgs[spawnArgs.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-6');
     expect(spawnOptions).toMatchObject({ stdio: ['pipe', 'pipe', 'pipe'] });
-    expect(child.stdin.write).toHaveBeenCalledWith(renderedPrompt);
+    expect(child.stdin.write.mock.calls[0][0]).toContain(renderedPrompt);
     expect(child.stdin.end).toHaveBeenCalledTimes(1);
   });
 
@@ -757,5 +820,71 @@ describe('runScriptSpecialist system prompt forwarding', () => {
 
     const spawnArgs: string[] = spawnMock.mock.calls[0][1];
     expect(spawnArgs).not.toContain('--system-prompt');
+  });
+});
+
+
+describe('runScriptSpecialist PiAgentSession observability bridge', () => {
+  it('persists intermediate session callbacks to the script-specialist timeline', async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), 'script-runner-observability-')), 'observability.db');
+    const session = {
+      start: vi.fn(async () => undefined),
+      prompt: vi.fn(async () => undefined),
+      waitForDone: vi.fn(async () => {
+        const options = piSessionCreateMock.mock.calls[0][0];
+        options.onToken('hello');
+        options.onToolStart('bash', { command: 'echo ok' }, 'tool-1');
+        options.onToolEnd('bash', false, 'tool-1', 'ok', { exitCode: 0 });
+        options.onMetric({ type: 'token_usage', token_usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }, source: 'turn_end' });
+        options.onMetric({ type: 'turn_summary', turn_index: 1, token_usage: { total_tokens: 3 }, finish_reason: 'stop' });
+      }),
+      getLastOutput: vi.fn(async () => 'session output'),
+      getStderr: vi.fn(() => ''),
+      close: vi.fn(async () => undefined),
+      kill: vi.fn(),
+    };
+    piSessionCreateMock.mockResolvedValue(session);
+
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        metadata: { name: 'service-skills-sync' },
+        execution: {
+          ...baseSpec.specialist.execution,
+          permission_required: 'MEDIUM',
+        },
+      },
+    };
+
+    const result = await runScriptSpecialist(
+      { specialist: 'service-skills-sync', variables: { name: 'release notes' } },
+      {
+        loader: makeLoader(spec as never) as never,
+        projectDir: '.',
+        observabilityDbPath: dbPath,
+        surface: 'script',
+        trust: { allowWriteCapable: true },
+      },
+    );
+
+    expect(result).toMatchObject({ success: true, output: 'session output' });
+    const client = createObservabilitySqliteClientAtPath(dbPath);
+    expect(client).not.toBeNull();
+    const traceId = result.meta.trace_id;
+    const events = client!.readEvents(traceId);
+    client!.close();
+
+    expect(events.map((event) => event.type)).toEqual(expect.arrayContaining([
+      'run_start',
+      'meta',
+      'text',
+      'tool',
+      'token_usage',
+      'turn_summary',
+      'run_complete',
+    ]));
+    expect(events.some((event) => event.type === 'tool' && event.phase === 'start' && event.tool === 'bash')).toBe(true);
+    expect(events.some((event) => event.type === 'tool' && event.phase === 'end' && event.tool === 'bash')).toBe(true);
   });
 });

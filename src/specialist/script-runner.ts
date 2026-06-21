@@ -1,13 +1,28 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
+import { PiAgentSession, resolveGlobalNodeModulesDir, resolvePermissionTools } from '../pi/session.js';
 import { SpecialistLoader } from './loader.js';
-import { renderTemplate } from './templateEngine.js';
-import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
-import type { Specialist } from './schema.js';
-import type { SupervisorStatus } from './supervisor.js';
+import { buildMandatoryRulesInjection } from './mandatory-rules.js';
 import { resolveModelChain } from './model-chain.js';
+import { ensureObservabilityDbFile, resolveObservabilityDbLocation } from './observability-db.js';
+import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from './observability-sqlite.js';
+import { formatScriptOutput, runScript, validateBeforeRun } from './runner.js';
+import type { ScriptEntry, Specialist } from './schema.js';
+import type { SupervisorStatus } from './supervisor.js';
+import { renderTemplate } from './templateEngine.js';
+import {
+  createFinishReasonEvent,
+  createMetaEvent,
+  createRunCompleteEvent,
+  createRunStartEvent,
+  createTokenUsageEvent,
+  createTurnSummaryEvent,
+  mapCallbackEventToTimelineEvent,
+  type TimelineEvent,
+} from './timeline-events.js';
 
 export type ScriptSpecialistErrorType =
   | 'specialist_not_found'
@@ -28,6 +43,7 @@ export interface ScriptGenerateRequest {
   requested_specialist?: string;
   variables?: Record<string, string>;
   template?: string;
+  template_field?: string;
   model_override?: string;
   thinking_level?: string;
   timeout_ms?: number;
@@ -54,6 +70,8 @@ export interface TrustOptions {
   allowSkills?: boolean;
   allowSkillsRoots?: string[];
   allowLocalScripts?: boolean;
+  allowWriteCapable?: boolean;
+  baseDir?: string;
 }
 
 export class CompatGuardError extends Error {
@@ -80,6 +98,12 @@ export interface ScriptRunnerOptions {
   onChild?: (child: ChildProcess) => void;
   onAuditFailure?: (error: unknown) => void;
   trust?: TrustOptions;
+  surface?: 'script' | 'serve';
+}
+
+function normalizePath(path: string, baseDir?: string): string {
+  if (isAbsolute(path)) return path;
+  return resolve(baseDir ?? process.cwd(), path);
 }
 
 function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
@@ -89,8 +113,9 @@ function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
   return rel === '' || (rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel));
 }
 
-function assertSkillPathWithinRoots(field: 'skills.paths' | 'prompt.skill_inherit', path: string, roots: string[]): void {
-  const allowed = roots.some((root) => isPathWithinRoot(path, root));
+function assertSkillPathWithinRoots(field: 'skills.paths' | 'prompt.skill_inherit', path: string, roots: string[], baseDir?: string): void {
+  const candidate = normalizePath(path, baseDir);
+  const allowed = roots.some((root) => isPathWithinRoot(candidate, root));
   if (!allowed) {
     throw new CompatGuardError(field, `skill path '${path}' not under any --allow-skills-roots entry`);
   }
@@ -109,11 +134,13 @@ export function compatGuard(spec: Specialist, trust?: TrustOptions): void {
   const execution = spec.specialist.execution;
   if (execution.interactive) throw new CompatGuardError('execution.interactive', 'interactive specialists are not allowed');
   if (execution.requires_worktree) throw new CompatGuardError('execution.requires_worktree', 'worktree specialists are not allowed');
-  if (execution.permission_required !== 'READ_ONLY') throw new CompatGuardError('execution.permission_required', 'permission_required must be READ_ONLY');
+  if (execution.permission_required !== 'READ_ONLY' && !trust?.allowWriteCapable) {
+    throw new CompatGuardError('execution.permission_required', 'permission_required must be READ_ONLY unless trusted local script mode is enabled');
+  }
 
   const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
-  if (hasScripts) {
-    throw new CompatGuardError('skills.scripts', 'local scripts are not supported in script-class specialists');
+  if (hasScripts && !trust?.allowLocalScripts) {
+    throw new CompatGuardError('skills.scripts', 'local scripts are not supported in this script surface');
   }
 
   const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
@@ -127,28 +154,28 @@ export function compatGuard(spec: Specialist, trust?: TrustOptions): void {
 
   if (trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
     const paths = spec.specialist.skills?.paths ?? [];
-    for (const path of paths) assertSkillPathWithinRoots('skills.paths', path, trust.allowSkillsRoots);
+    for (const path of paths) assertSkillPathWithinRoots('skills.paths', path, trust.allowSkillsRoots, trust.baseDir);
     if (typeof spec.specialist.prompt.skill_inherit === 'string') {
-      assertSkillPathWithinRoots('prompt.skill_inherit', spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots);
+      assertSkillPathWithinRoots('prompt.skill_inherit', spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots, trust.baseDir);
     }
   }
 }
 
-function collectSkillPathEntries(spec: Specialist): Array<{ path: string; source: SkillSource['source'] }> {
+function collectSkillPathEntries(spec: Specialist, baseDir?: string): Array<{ path: string; source: SkillSource['source'] }> {
   return [
-    ...(spec.specialist.skills?.paths ?? []).map((path) => ({ path, source: 'skills.paths' as const })),
+    ...(spec.specialist.skills?.paths ?? []).map((path) => ({ path: normalizePath(path, baseDir), source: 'skills.paths' as const })),
     ...(typeof spec.specialist.prompt.skill_inherit === 'string'
-      ? [{ path: spec.specialist.prompt.skill_inherit, source: 'prompt.skill_inherit' as const }]
+      ? [{ path: normalizePath(spec.specialist.prompt.skill_inherit, baseDir), source: 'prompt.skill_inherit' as const }]
       : []),
   ];
 }
 
-function collectSkillPaths(spec: Specialist): string[] {
-  return collectSkillPathEntries(spec).map((entry) => entry.path);
+function collectSkillPaths(spec: Specialist, baseDir?: string): string[] {
+  return collectSkillPathEntries(spec, baseDir).map((entry) => entry.path);
 }
 
-export function computeSkillSources(spec: Specialist): SkillSource[] {
-  const entries = collectSkillPathEntries(spec);
+export function computeSkillSources(spec: Specialist, baseDir?: string): SkillSource[] {
+  const entries = collectSkillPathEntries(spec, baseDir);
   const sources: SkillSource[] = [];
   for (const { path, source } of entries) {
     try {
@@ -274,10 +301,15 @@ function extractAssistantTextFromEvent(event: PiEvent): string | undefined {
   return undefined;
 }
 
-function stripMarkdownFences(text: string): string {
+function extractJsonPayload(text: string): string {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return fenced ? fenced[1].trim() : trimmed;
+  const wholeFenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (wholeFenced) return wholeFenced[1].trim();
+
+  const fencedBlocks = [...trimmed.matchAll(/```(?:json|JSON)\s*\n([\s\S]*?)\n```/g)];
+  if (fencedBlocks.length === 1) return fencedBlocks[0][1].trim();
+
+  return trimmed;
 }
 
 function extractPiErrorMessage(lines: string[]): string | null {
@@ -295,24 +327,157 @@ function extractPiErrorMessage(lines: string[]): string | null {
   return null;
 }
 
-function writeTraceRow(client: ReturnType<typeof createObservabilitySqliteClient>, specialist: string, model: string, traceId: string, output: string, durationMs: number, skillSources: SkillSource[] | undefined, onAuditFailure?: (error: unknown) => void): void {
-  if (!client) return;
-  const status = {
-    id: traceId,
-    specialist,
-    status: 'done',
-    model,
-    started_at_ms: Date.now() - durationMs,
-    elapsed_s: durationMs / 1000,
-    last_event_at_ms: Date.now(),
-    surface: 'script_specialist',
-    ...(skillSources && skillSources.length > 0 ? { skill_sources: skillSources } : {}),
-  } as unknown as SupervisorStatus;
+type ScriptObservabilityClient = ReturnType<typeof createObservabilitySqliteClient>;
+type ScriptTimelineAppender = (event: TimelineEvent | null) => void;
+
+function appendScriptEvent(client: ScriptObservabilityClient, options: {
+  traceId: string;
+  specialist: string;
+  event: TimelineEvent | null;
+  onAuditFailure?: (error: unknown) => void;
+}): void {
+  if (!client || !options.event) return;
   try {
-    client.upsertStatus(status);
-    client.upsertResult(traceId, output);
+    client.appendEvent(options.traceId, options.specialist, undefined, options.event);
   } catch (error: unknown) {
-    onAuditFailure?.(error);
+    options.onAuditFailure?.(error);
+  }
+}
+
+function createScriptTimelineAppender(client: ScriptObservabilityClient, options: {
+  traceId: string;
+  specialist: string;
+  onAuditFailure?: (error: unknown) => void;
+}): ScriptTimelineAppender | undefined {
+  if (!client) return undefined;
+  return (event) => appendScriptEvent(client, { ...options, event });
+}
+
+function deriveBackendFromModel(model: string): string | undefined {
+  return model.includes('/') ? model.split('/')[0] : undefined;
+}
+
+function buildScriptStatus(options: {
+  traceId: string;
+  specialist: string;
+  model: string;
+  startedAtMs: number;
+  status: 'running' | 'done' | 'error';
+  outputType?: string;
+  error?: string;
+  errorType?: ScriptSpecialistErrorType;
+  parsedJson?: unknown;
+  outputSizeBytes?: number;
+  skillSources?: SkillSource[];
+  variablesKeys?: string[];
+  skillPaths?: string[];
+}): SupervisorStatus {
+  const backend = deriveBackendFromModel(options.model);
+  return {
+    id: options.traceId,
+    specialist: options.specialist,
+    status: options.status,
+    model: options.model,
+    ...(backend ? { backend } : {}),
+    ...(options.outputType ? { output_type: options.outputType } : {}),
+    started_at_ms: options.startedAtMs,
+    elapsed_s: Math.max(0, (Date.now() - options.startedAtMs) / 1000),
+    last_event_at_ms: Date.now(),
+    trace_id: options.traceId,
+    ...(options.error ? { error: options.error } : {}),
+    startup_context: {
+      job_id: options.traceId,
+      specialist_name: options.specialist,
+      variables_keys: options.variablesKeys ?? [],
+      ...(options.skillPaths ? { skills: { count: options.skillPaths.length, activated: options.skillPaths } } : {}),
+    },
+    surface: 'script_specialist',
+    ...(options.skillSources && options.skillSources.length > 0 ? { skill_sources: options.skillSources } : {}),
+    ...(options.errorType ? { error_type: options.errorType } : {}),
+    ...(options.parsedJson !== undefined ? { parsed_json: options.parsedJson } : {}),
+    ...(options.outputSizeBytes !== undefined ? { output_size_bytes: options.outputSizeBytes } : {}),
+  } as unknown as SupervisorStatus;
+}
+
+function persistScriptStart(client: ScriptObservabilityClient, options: {
+  traceId: string;
+  specialist: string;
+  model: string;
+  startedAtMs: number;
+  outputType?: string;
+  skillSources?: SkillSource[];
+  variablesKeys?: string[];
+  skillPaths?: string[];
+  onAuditFailure?: (error: unknown) => void;
+}): void {
+  if (!client) return;
+  try {
+    const status = buildScriptStatus({
+      traceId: options.traceId,
+      specialist: options.specialist,
+      model: options.model,
+      startedAtMs: options.startedAtMs,
+      status: 'running',
+      outputType: options.outputType,
+      skillSources: options.skillSources,
+      variablesKeys: options.variablesKeys,
+      skillPaths: options.skillPaths,
+    });
+    client.upsertStatusWithEvent(status, createRunStartEvent(options.specialist, undefined, status.startup_context));
+    const backend = deriveBackendFromModel(options.model);
+    if (backend) client.appendEvent(options.traceId, options.specialist, undefined, createMetaEvent(options.model, backend));
+  } catch (error: unknown) {
+    options.onAuditFailure?.(error);
+  }
+}
+
+function persistScriptTerminal(client: ScriptObservabilityClient, options: {
+  traceId: string;
+  specialist: string;
+  model: string;
+  startedAtMs: number;
+  finalStatus: 'done' | 'error';
+  outputType?: string;
+  output: string;
+  error?: string;
+  errorType?: ScriptSpecialistErrorType;
+  parsedJson?: unknown;
+  skillSources?: SkillSource[];
+  variablesKeys?: string[];
+  skillPaths?: string[];
+  onAuditFailure?: (error: unknown) => void;
+}): void {
+  if (!client) return;
+  try {
+    const status = buildScriptStatus({
+      traceId: options.traceId,
+      specialist: options.specialist,
+      model: options.model,
+      startedAtMs: options.startedAtMs,
+      status: options.finalStatus,
+      outputType: options.outputType,
+      error: options.error,
+      errorType: options.errorType,
+      parsedJson: options.parsedJson,
+      outputSizeBytes: Buffer.byteLength(options.output, 'utf8'),
+      skillSources: options.skillSources,
+      variablesKeys: options.variablesKeys,
+      skillPaths: options.skillPaths,
+    });
+    const backend = deriveBackendFromModel(options.model);
+    const runComplete = createRunCompleteEvent(
+      options.finalStatus === 'done' ? 'COMPLETE' : 'ERROR',
+      Math.max(0, Math.round((Date.now() - options.startedAtMs) / 1000)),
+      {
+        model: options.model,
+        ...(backend ? { backend } : {}),
+        ...(options.error ? { error: options.error } : {}),
+        output: options.output,
+      },
+    );
+    client.upsertStatusWithEventAndResult(status, runComplete, options.output);
+  } catch (error: unknown) {
+    options.onAuditFailure?.(error);
   }
 }
 
@@ -346,9 +511,15 @@ function resolveEnvAssistantTextLimitBytes(): number | undefined {
   return Math.floor(envLimit);
 }
 
-function openObservabilityClient(options: ScriptRunnerOptions): ReturnType<typeof createObservabilitySqliteClient> {
+function openObservabilityClient(options: ScriptRunnerOptions): ScriptObservabilityClient {
   if (options.observabilityDbPath) return createObservabilitySqliteClientAtPath(options.observabilityDbPath);
-  return createObservabilitySqliteClient(options.projectDir);
+  const projectDir = options.projectDir ?? process.cwd();
+  try {
+    ensureObservabilityDbFile(resolveObservabilityDbLocation(projectDir));
+  } catch {
+    return null;
+  }
+  return createObservabilitySqliteClient(projectDir);
 }
 
 function resolveScriptSpecialistName(name: string): string {
@@ -387,6 +558,15 @@ export function collectRequiredOutputKeys(spec: { specialist: { execution: { res
   return Array.from(keys);
 }
 
+function outputSatisfiesJsonContract(text: string, requiredKeys: string[]): boolean {
+  try {
+    const parsed = JSON.parse(extractJsonPayload(text));
+    return requiredKeys.every((key) => parsed !== null && typeof parsed === 'object' && key in parsed);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Detects when `input.template` looks like a spec field name (e.g. "task_template",
  * "normalize_template") instead of an actual template body. This catches the
@@ -402,37 +582,119 @@ export function detectTemplateFieldMisuse(template: string, specPrompt: Record<s
   return template;
 }
 
+type LocalScriptEntry = ScriptEntry & { path?: string };
+
+function getLocalScripts(spec: Specialist): LocalScriptEntry[] {
+  return spec.specialist.skills?.scripts ?? [];
+}
+
+function getLocalScriptCommand(script: LocalScriptEntry): string | undefined {
+  return script.run || script.path;
+}
+
+function buildValidationSpec(spec: Specialist, scripts: LocalScriptEntry[]) {
+  return {
+    specialist: {
+      skills: {
+        paths: spec.specialist.skills?.paths,
+        scripts,
+      },
+      capabilities: spec.specialist.capabilities,
+    },
+  };
+}
+
+function resolveRequestedTemplate(input: ScriptGenerateRequest, spec: Specialist): string {
+  if (input.template !== undefined && input.template_field !== undefined) {
+    throw new Error('template and template_field are mutually exclusive');
+  }
+
+  if (input.template_field !== undefined) {
+    const candidate = (spec.specialist.prompt as Record<string, unknown>)[input.template_field];
+    if (typeof candidate !== 'string' || candidate.length === 0) {
+      throw new Error(`template field not found or not a string: spec.prompt.${input.template_field}`);
+    }
+    return candidate;
+  }
+
+  const template = input.template ?? spec.specialist.prompt.task_template;
+  if (input.template !== undefined) {
+    const misusedField = detectTemplateFieldMisuse(input.template, spec.specialist.prompt as Record<string, unknown>);
+    if (misusedField !== null) {
+      throw new Error(
+        `template field misuse: input.template equals spec.prompt.${misusedField} key name (${input.template.length} chars). ` +
+        `The 'template' input field expects the literal template body, not a spec key. ` +
+        `To use a named template field, pass template_field=${misusedField}; ` +
+        `to use the spec's default, omit both fields; to use a non-default template body, pass its full text inline.`,
+      );
+    }
+  }
+  return template;
+}
+
 export async function runScriptSpecialist(input: ScriptGenerateRequest, options: ScriptRunnerOptions): Promise<ScriptGenerateResult> {
   const traceId = randomUUID();
   const startedAt = Date.now();
   try {
     const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
     const spec = await options.loader.get(resolvedSpecialist);
-    compatGuard(spec, options.trust);
-    const skillPaths = options.trust?.allowSkills ? collectSkillPaths(spec) : [];
-    const skillSources = options.trust?.allowSkills ? computeSkillSources(spec) : undefined;
+    const baseDir = options.projectDir ?? options.trust?.baseDir ?? process.cwd();
+    const trust = { ...options.trust, baseDir };
+    compatGuard(spec, trust);
+    const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
+    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
 
-    const template = input.template ?? spec.specialist.prompt.task_template;
-    if (input.template !== undefined) {
-      const misusedField = detectTemplateFieldMisuse(input.template, spec.specialist.prompt as Record<string, unknown>);
-      if (misusedField !== null) {
-        const modelCandidates = collectModelCandidates(input, spec, options);
-        return {
-          success: false,
-          error: `template field misuse: input.template equals spec.prompt.${misusedField} key name (${input.template.length} chars). The 'template' input field expects the literal template body, not a spec key. To use the spec's default, omit 'template'; to use a non-default template body, pass its full text inline.`,
-          error_type: 'template_field_misuse',
-          meta: {
-            specialist: resolvedSpecialist,
-            requested_specialist: input.requested_specialist ?? input.specialist,
-            resolved_specialist: resolvedSpecialist,
-            model: modelCandidates[0],
-            duration_ms: Date.now() - startedAt,
-            trace_id: traceId,
-          },
-        };
+    const localScripts = getLocalScripts(spec);
+    validateBeforeRun(buildValidationSpec(spec, localScripts), spec.specialist.execution.permission_required);
+    const executableScripts = trust.allowLocalScripts ? localScripts : [];
+    const preScripts = executableScripts.filter((script) => script.phase === 'pre');
+    const postScripts = executableScripts.filter((script) => script.phase === 'post');
+    const runPostScripts = (): void => {
+      for (const script of postScripts) runScript(getLocalScriptCommand(script), baseDir);
+    };
+    const preScriptOutput = formatScriptOutput(
+      preScripts
+        .map((script) => runScript(getLocalScriptCommand(script), baseDir))
+        .filter((_, index) => preScripts[index].inject_output),
+    );
+
+    let template: string;
+    try {
+      template = resolveRequestedTemplate(input, spec);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const modelCandidates = collectModelCandidates(input, spec, options);
+      return {
+        success: false,
+        error: message,
+        error_type: message.startsWith('template field misuse:') ? 'template_field_misuse' : 'specialist_load_error',
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input.requested_specialist ?? input.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: modelCandidates[0],
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId,
+        },
+      };
+    }
+
+    const variables = {
+      cwd: baseDir,
+      bead_id: '',
+      pre_script_output: preScriptOutput,
+      ...(input.variables ?? {}),
+    };
+    let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
+    if (!spec.specialist.execution.bare) {
+      try {
+        const mandatoryRulesBlock = buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
+        if (mandatoryRulesBlock.trim()) prompt = `${prompt}\n\n${mandatoryRulesBlock}`;
+      } catch (error) {
+        console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
       }
     }
-    const prompt = applyOutputContract(renderTaskTemplate(template, input.variables ?? {}), spec);
+
     const modelCandidates = collectModelCandidates(input, spec, options);
     const promptLimitBytes = resolvePromptLimitBytes(spec);
     const promptBytes = Buffer.byteLength(prompt, 'utf8');
@@ -467,43 +729,182 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
     }
     const timeoutMs = input.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120_000;
     const assistantTextLimitBytes = resolveAssistantTextLimitBytes(spec);
+    const expectedKeys = collectRequiredOutputKeys(spec);
+    const shouldParseJson = spec.specialist.execution.response_format === 'json' || expectedKeys.length > 0;
+    const observability = input.trace !== false ? openObservabilityClient(options) : null;
+    const scriptRunStartedAt = Date.now();
+    if (observability) {
+      persistScriptStart(observability, {
+        traceId,
+        specialist: resolvedSpecialist,
+        model: modelCandidates[0] ?? 'unknown',
+        startedAtMs: scriptRunStartedAt,
+        outputType: spec.specialist.execution.output_type,
+        skillSources,
+        variablesKeys: Object.keys(input.variables ?? {}),
+        skillPaths,
+        onAuditFailure: options.onAuditFailure,
+      });
+    }
+    const appendTimelineEvent = createScriptTimelineAppender(observability, {
+      traceId,
+      specialist: resolvedSpecialist,
+      onAuditFailure: options.onAuditFailure,
+    });
+    let terminalPersisted = false;
+    let cleanupExitHandler: (() => void) | undefined;
+    const persistTerminalOnce = (terminal: Parameters<typeof persistScriptTerminal>[1]): void => {
+      if (terminalPersisted) return;
+      terminalPersisted = true;
+      cleanupExitHandler?.();
+      persistScriptTerminal(observability, terminal);
+    };
+    if (observability) {
+      const handleExit = (): void => {
+        if (terminalPersisted) return;
+        terminalPersisted = true;
+        persistScriptTerminal(observability, {
+          traceId,
+          specialist: resolvedSpecialist,
+          model: modelCandidates[0] ?? 'unknown',
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: 'error',
+          outputType: spec.specialist.execution.output_type,
+          output: 'script-specialist interrupted before terminal result',
+          error: 'script-specialist interrupted before terminal result',
+          errorType: 'internal',
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure,
+        });
+      };
+      process.once('exit', handleExit);
+      cleanupExitHandler = () => process.off('exit', handleExit);
+    }
     const attempts: Array<{ model: string; text: string; stderr: string }> = [];
 
     for (const model of modelCandidates) {
       const systemPrompt = spec.specialist.prompt.system || undefined;
       const systemPromptMode = spec.specialist.prompt.system_prompt_mode;
-      const attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths);
+      let attempt: { model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason };
+      try {
+        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], appendTimelineEvent);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        persistTerminalOnce({
+          traceId,
+          specialist: resolvedSpecialist,
+          model,
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: 'error',
+          outputType: spec.specialist.execution.output_type,
+          output: message,
+          error: message,
+          errorType: mapErrorType(message),
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure,
+        });
+        throw error;
+      }
       attempts.push(attempt);
       const parsed = classifyAttempt(attempt);
       if (parsed.retryable && parsed.errorType !== 'auth') continue;
 
       const durationMs = Date.now() - startedAt;
-      const observability = openObservabilityClient(options);
-      if (input.trace !== false && observability) writeTraceRow(observability, resolvedSpecialist, model, traceId, parsed.text, durationMs, skillSources, options.onAuditFailure);
 
       if (parsed.kind === 'success') {
         let parsed_json: unknown;
-        const expectedKeys = collectRequiredOutputKeys(spec);
-        const shouldParseJson = spec.specialist.execution.response_format === 'json' || expectedKeys.length > 0;
         if (shouldParseJson) {
           try {
-            parsed_json = JSON.parse(stripMarkdownFences(parsed.text));
+            parsed_json = JSON.parse(extractJsonPayload(parsed.text));
             for (const key of expectedKeys) {
               if (parsed_json === null || typeof parsed_json !== 'object' || !(key in parsed_json)) throw new Error(`Missing required output field: ${key}`);
             }
           } catch (error) {
+            if (observability) {
+              persistTerminalOnce({
+                traceId,
+                specialist: resolvedSpecialist,
+                model,
+                startedAtMs: scriptRunStartedAt,
+                finalStatus: 'error',
+                outputType: spec.specialist.execution.output_type,
+                output: parsed.text || (error instanceof Error ? error.message : String(error)),
+                error: error instanceof Error ? error.message : String(error),
+                errorType: 'invalid_json',
+                skillSources,
+                variablesKeys: Object.keys(input.variables ?? {}),
+                skillPaths,
+                onAuditFailure: options.onAuditFailure,
+              });
+            }
+            runPostScripts();
             return { success: false, error: error instanceof Error ? error.message : String(error), error_type: 'invalid_json', meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs, trace_id: traceId } };
           }
         }
+        if (observability) {
+          persistTerminalOnce({
+            traceId,
+            specialist: resolvedSpecialist,
+            model,
+            startedAtMs: scriptRunStartedAt,
+            finalStatus: 'done',
+            outputType: spec.specialist.execution.output_type,
+            output: parsed.text,
+            parsedJson: parsed_json,
+            skillSources,
+            variablesKeys: Object.keys(input.variables ?? {}),
+            skillPaths,
+            onAuditFailure: options.onAuditFailure,
+          });
+        }
+        runPostScripts();
         return { success: true, output: parsed.text, parsed_json, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs, trace_id: traceId } };
       }
+      if (observability) {
+        persistTerminalOnce({
+          traceId,
+          specialist: resolvedSpecialist,
+          model,
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: 'error',
+          outputType: spec.specialist.execution.output_type,
+          output: parsed.text || parsed.error,
+          error: parsed.error,
+          errorType: parsed.errorType,
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure,
+        });
+      }
+      runPostScripts();
       return { success: false, error: parsed.error, error_type: parsed.errorType, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs, trace_id: traceId } };
     }
 
     const lastAttempt = attempts.at(-1);
     const durationMs = Date.now() - startedAt;
-    const observability = openObservabilityClient(options);
-    if (input.trace !== false && observability) writeTraceRow(observability, resolvedSpecialist, modelCandidates.at(-1) ?? 'unknown', traceId, lastAttempt?.text ?? '', durationMs, skillSources, options.onAuditFailure);
+    if (observability) {
+      persistTerminalOnce({
+        traceId,
+        specialist: resolvedSpecialist,
+        model: modelCandidates.at(-1) ?? 'unknown',
+        startedAtMs: scriptRunStartedAt,
+        finalStatus: 'error',
+        outputType: spec.specialist.execution.output_type,
+        output: lastAttempt?.text || lastAttempt?.stderr || 'pi produced no assistant text',
+        error: lastAttempt?.stderr || 'pi produced no assistant text',
+        errorType: 'internal',
+        skillSources,
+        variablesKeys: Object.keys(input.variables ?? {}),
+        skillPaths,
+        onAuditFailure: options.onAuditFailure,
+      });
+    }
+    runPostScripts();
     return { success: false, error: lastAttempt?.stderr || 'pi produced no assistant text', error_type: 'internal', meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model: modelCandidates.at(-1) ?? 'unknown', duration_ms: durationMs, trace_id: traceId } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -521,14 +922,145 @@ export function collectModelCandidates(input: ScriptGenerateRequest, spec: Speci
 
 type AttemptFailureReason = 'assistant_text_too_large' | 'stderr_too_large' | 'malformed_line_too_large';
 
-function runSingleAttempt(prompt: string, model: string, thinkingLevel: string | undefined, timeoutMs: number, assistantTextLimitBytes: number, options: ScriptRunnerOptions, systemPrompt?: string, systemPromptMode?: 'append' | 'replace', skillPaths: string[] = []): Promise<{ model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason }> {
-  return new Promise((resolve, reject) => {
-    const args = ['--mode', 'json', '--no-session', '--no-extensions', '--no-tools', '--offline', '--no-context-files', '--no-prompt-templates', '--no-themes'];
+function appendExtensionArgs(args: string[], spec: Specialist): void {
+  const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
+  const piExtDir = join(homedir(), '.pi', 'agent', 'extensions');
+  if (permissionLevel !== 'READ_ONLY') {
+    const qualityGatesPath = join(piExtDir, 'quality-gates');
+    if (existsSync(qualityGatesPath)) args.push('-e', qualityGatesPath);
+  }
+
+  const serviceSkillsPath = join(piExtDir, 'service-skills');
+  if (existsSync(serviceSkillsPath)) args.push('-e', serviceSkillsPath);
+
+  const cavemanPath = join(piExtDir, 'caveman');
+  if (existsSync(cavemanPath)) args.push('-e', cavemanPath);
+
+  const npmGlobalDir = resolveGlobalNodeModulesDir();
+  const excludedExtensions = new Set([
+    spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+    spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
+  ].filter((value): value is string => Boolean(value)));
+  if (!npmGlobalDir) return;
+
+  if (!excludedExtensions.has('pi-gitnexus')) {
+    const gitnexusPath = join(npmGlobalDir, 'pi-gitnexus');
+    if (existsSync(gitnexusPath)) args.push('-e', gitnexusPath);
+  }
+  if (!excludedExtensions.has('pi-serena-tools')) {
+    const serenaPath = join(npmGlobalDir, 'pi-serena-tools');
+    if (existsSync(serenaPath)) args.push('-e', serenaPath);
+  }
+}
+
+async function runSingleAttempt(prompt: string, model: string, thinkingLevel: string | undefined, timeoutMs: number, assistantTextLimitBytes: number, options: ScriptRunnerOptions, spec: Specialist, systemPrompt?: string, systemPromptMode?: 'append' | 'replace', skillPaths: string[] = [], requiredJsonKeys: string[] = [], appendTimelineEvent?: ScriptTimelineAppender): Promise<{ model: string; text: string; stderr: string; exitCode: number; timedOut: boolean; outputTooLarge: boolean; outputTooLargeReason?: AttemptFailureReason }> {
+  if (options.surface === 'script' && spec.specialist.execution.permission_required !== 'READ_ONLY') {
+    const session = await PiAgentSession.create({
+      model,
+      systemPrompt,
+      systemPromptMode,
+      permissionLevel: spec.specialist.execution.permission_required,
+      specialistName: spec.specialist.metadata.name,
+      skillPaths,
+      thinkingLevel,
+      cwd: options.projectDir ?? process.cwd(),
+      stallTimeoutMs: spec.specialist.execution.stall_timeout_ms ?? timeoutMs,
+      excludeExtensions: [
+        spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+        spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
+      ].filter((value): value is string => Boolean(value)),
+      onToken: (delta) => appendTimelineEvent?.({ t: Date.now(), type: 'text', char_count: delta.length }),
+      onThinking: (delta) => appendTimelineEvent?.({ t: Date.now(), type: 'thinking', char_count: delta.length }),
+      onToolStart: (tool, args, toolCallId) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent('tool_execution_start', { tool, args, toolCallId })),
+      onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent('tool_execution_end', { tool, isError, toolCallId, resultContent, resultRaw })),
+      onEvent: (type, details) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent(type, {
+        charCount: details?.charCount,
+        toolCallId: details?.toolCallId,
+        compaction: details,
+        retry: details,
+        modelChange: details?.action ? { action: details.action, model: details.model, previousModel: details.previousModel } : undefined,
+        extensionError: details,
+      })),
+      onMetric: (event) => {
+        if (event.type === 'token_usage') appendTimelineEvent?.(createTokenUsageEvent(event.token_usage, event.source));
+        if (event.type === 'finish_reason') appendTimelineEvent?.(createFinishReasonEvent(event.finish_reason, event.source));
+        if (event.type === 'turn_summary') appendTimelineEvent?.(createTurnSummaryEvent(event.turn_index, event.token_usage, event.finish_reason));
+        if (event.type === 'api_error') appendTimelineEvent?.(mapCallbackEventToTimelineEvent('api_error', { apiError: event }));
+        if (event.type === 'compaction') appendTimelineEvent?.(mapCallbackEventToTimelineEvent(event.phase === 'start' ? 'auto_compaction_start' : 'auto_compaction_end', { compaction: event }));
+        if (event.type === 'retry') appendTimelineEvent?.(mapCallbackEventToTimelineEvent(event.phase === 'start' ? 'auto_retry_start' : 'auto_retry_end', { retry: event }));
+        if (event.type === 'extension_error') appendTimelineEvent?.(mapCallbackEventToTimelineEvent('extension_error', { extensionError: event }));
+      },
+      onMeta: (meta) => appendTimelineEvent?.(createMetaEvent(meta.model, meta.backend)),
+    });
+
+    let assistantText = '';
+    let stderr = '';
+    let timedOut = false;
+    let outputTooLarge = false;
+    let outputTooLargeReason: AttemptFailureReason | undefined;
+
+    try {
+      await session.start();
+      await session.prompt(prompt);
+      await session.waitForDone(timeoutMs);
+      assistantText = await session.getLastOutput();
+      stderr = session.getStderr();
+
+      if (requiredJsonKeys.length > 0 && !outputSatisfiesJsonContract(assistantText, requiredJsonKeys)) {
+        const repairPrompt = [
+          'Return FINAL answer now as JSON only.',
+          `Required top-level keys: ${requiredJsonKeys.join(', ')}.`,
+          'No prose. No markdown fences. No tool-call markup. No preamble or commentary.',
+          'Use work already completed in this session. Do not restart from scratch. Avoid more tools unless strictly necessary.',
+        ].join(' ');
+        await session.resume(repairPrompt, timeoutMs);
+        assistantText = await session.getLastOutput();
+        stderr = session.getStderr();
+      }
+
+      if (Buffer.byteLength(assistantText, 'utf8') > assistantTextLimitBytes) {
+        outputTooLarge = true;
+        outputTooLargeReason = 'assistant_text_too_large';
+      }
+      return {
+        model,
+        text: assistantText,
+        stderr,
+        exitCode: 0,
+        timedOut,
+        outputTooLarge,
+        outputTooLargeReason,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      timedOut = message.toLowerCase().includes('timed out');
+      if (timedOut) session.kill(error instanceof Error ? error : new Error(message));
+      assistantText = await session.getLastOutput().catch(() => '');
+      stderr = session.getStderr() || message;
+      return {
+        model,
+        text: assistantText,
+        stderr,
+        exitCode: 1,
+        timedOut,
+        outputTooLarge,
+        outputTooLargeReason,
+      };
+    } finally {
+      await session.close().catch(() => undefined);
+    }
+  }
+
+  return await new Promise((resolve, reject) => {
+    const args = ['--mode', 'json', '--no-session', '--no-extensions', '--offline', '--no-context-files', '--no-prompt-templates', '--no-themes'];
+    const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
+    if (toolsFlag) args.push('--tools', toolsFlag);
     if (skillPaths.length === 0) args.push('--no-skills');
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
     args.push('--model', model);
     if (thinkingLevel) args.push('--thinking', thinkingLevel);
     if (systemPrompt) args.push(systemPromptMode === 'append' ? '--append-system-prompt' : '--system-prompt', systemPrompt);
+    appendExtensionArgs(args, spec);
 
     const pi = spawn('pi', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: options.projectDir ?? process.cwd() });
     options.onChild?.(pi);

@@ -47,10 +47,10 @@ describe('compatGuard trust options', () => {
       .toThrow(/local scripts are not supported/);
   });
 
-  it('rejects skills.scripts even when allowLocalScripts is set', () => {
+  it('allows skills.scripts when allowLocalScripts is set', () => {
     const trust: TrustOptions = { allowLocalScripts: true };
     expect(() => compatGuard(makeSpec({ scripts: [{ name: 'pre', on: 'pre', command: 'echo' }] }), trust))
-      .toThrow(/local scripts are not supported/);
+      .not.toThrow();
   });
 
   it('rejects skills.paths by default', () => {

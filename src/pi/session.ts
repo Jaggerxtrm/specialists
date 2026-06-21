@@ -38,10 +38,11 @@ export class StallTimeoutError extends Error {
 //   error                   — message-level error
 //
 import { createHash } from 'node:crypto';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { resolveManifestTools, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
@@ -187,7 +188,7 @@ function probeExtensionHealth(packageName: string): 'loaded_healthy' | 'not_inst
   return 'not_installed';
 }
 
-function resolvePermissionTools(options: {
+export function resolvePermissionTools(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
@@ -211,7 +212,7 @@ function resolvePermissionTools(options: {
   }).tools || undefined;
 }
 
-function resolveGlobalNodeModulesDir(): string | undefined {
+export function resolveGlobalNodeModulesDir(): string | undefined {
   const candidates = [
     process.env.PI_NPM_GLOBAL_DIR,
     process.env.NPM_CONFIG_PREFIX ? join(process.env.NPM_CONFIG_PREFIX, 'lib', 'node_modules') : undefined,
@@ -539,6 +540,29 @@ export default function(pi) {
   return extensionPath;
 }
 
+
+export function ensureSerenaForRootInSubprocess(serenaPoolPath: string, projectRoot: string, env: NodeJS.ProcessEnv): number | null {
+  const helperScript = [
+    'const [moduleUrl, cwd] = process.argv.slice(1);',
+    'const mod = await import(moduleUrl);',
+    'const ensure = mod?.ensureSerenaForRoot;',
+    'const port = typeof ensure === "function" ? await ensure(cwd) : null;',
+    'if (port != null) process.stdout.write(String(port));',
+  ].join(' ');
+  const helperArgs = process.versions.bun
+    ? ['-e', helperScript, pathToFileURL(serenaPoolPath).href, projectRoot]
+    : ['--input-type=module', '-e', helperScript, pathToFileURL(serenaPoolPath).href, projectRoot];
+  const output = execFileSync(process.execPath, helperArgs, {
+    encoding: 'utf8',
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+  if (!output) return null;
+  const port = Number(output);
+  if (!Number.isFinite(port)) throw new Error(`serena-pool helper returned invalid port: ${output}`);
+  return port;
+}
+
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -670,6 +694,12 @@ export class PiAgentSession {
 
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
+    const hookEnv = {
+      ...process.env,
+      ...(this.options.env ?? {}),
+      CAVEMAN_LEVEL: 'full',
+    };
+
     // serena-pool pre-spawn hook: ensure a shared Serena daemon is running for
     // this repo root and set SERENA_MCP_PORT so pi-serena-tools (which reads
     // the env at construction time) reuses it instead of spawning its own.
@@ -678,10 +708,7 @@ export class PiAgentSession {
       const serenaPoolPath = join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool', 'index.ts');
       if (existsSync(serenaPoolPath)) {
         try {
-          const mod = await import(serenaPoolPath);
-          if (typeof mod.ensureSerenaForRoot === 'function') {
-            serenaPoolPort = await mod.ensureSerenaForRoot(sessionCwd);
-          }
+          serenaPoolPort = ensureSerenaForRootInSubprocess(serenaPoolPath, sessionCwd, hookEnv);
         } catch (err) {
           console.warn('[serena-pool] pre-spawn ensure failed:', err);
         }
@@ -689,9 +716,7 @@ export class PiAgentSession {
     }
 
     const baseEnv = {
-      ...process.env,
-      ...(this.options.env ?? {}),
-      CAVEMAN_LEVEL: 'full',
+      ...hookEnv,
       ...(serenaPoolPort != null ? { SERENA_MCP_PORT: String(serenaPoolPort) } : {}),
     };
     // `detached: true` puts pi in its own process group so we can later

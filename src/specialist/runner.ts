@@ -118,7 +118,7 @@ interface ScriptResult {
   exitCode: number;
 }
 
-function runScript(command: string | undefined, cwd: string): ScriptResult {
+export function runScript(command: string | undefined, cwd: string): ScriptResult {
   const run = (command ?? '').trim();
   if (!run) {
     return { name: 'unknown', output: 'Missing script command (expected `run` or legacy `path`).', exitCode: 1 };
@@ -183,7 +183,7 @@ function buildReviewedGitnexusSummary(opts: {
   }
 }
 
-function formatScriptOutput(results: ScriptResult[]): string {
+export function formatScriptOutput(results: ScriptResult[]): string {
   const withOutput = results.filter(r => r.output.trim());
   if (withOutput.length === 0) return '';
   const blocks = withOutput
@@ -245,7 +245,7 @@ function isToolAvailable(tool: string, permissionLevel: string): boolean {
   return gatedLevels.includes(normalized);
 }
 
-function validateBeforeRun(
+export function validateBeforeRun(
   spec: { specialist: { skills?: { paths?: string[]; scripts?: Array<{ run?: string; path?: string; phase: string; inject_output: boolean }> }; capabilities?: { external_commands?: string[]; required_tools?: string[] } } },
   permissionLevel: string,
 ): void {

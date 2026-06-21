@@ -1,19 +1,21 @@
 // tests/unit/pi/session.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolve, join } from 'node:path';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { mapSpecialistBackend, getProviderArgs } from '../../../src/pi/backendMap.js';
 
 // ── Mock node:child_process before importing session ──────────────────────────
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
-import { spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { execFileSync, spawn } from 'node:child_process';
+import { PiAgentSession, StallTimeoutError, ensureSerenaForRootInSubprocess, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
+const mockExecFileSync = execFileSync as ReturnType<typeof vi.fn>;
 
 // ── backendMap tests (pre-existing) ──────────────────────────────────────────
 describe('backendMap', () => {
@@ -93,6 +95,45 @@ function getToolsArg(args: readonly string[]): string | undefined {
   const toolsIdx = args.indexOf('--tools');
   return toolsIdx >= 0 ? args[toolsIdx + 1] : undefined;
 }
+
+
+describe('ensureSerenaForRootInSubprocess', () => {
+  it('passes injected env to helper subprocess without mutating process.env', () => {
+    const previousPath = process.env.PATH;
+    const previousHome = process.env.HOME;
+    delete process.env.SERENA_TEST_ENV;
+    mockExecFileSync.mockReturnValue('41234\n');
+
+    const port = ensureSerenaForRootInSubprocess('/tmp/serena-pool/index.ts', '/tmp/project', {
+      ...process.env,
+      PATH: '/injected/bin:/original/bin',
+      HOME: '/injected/home',
+      SERENA_TEST_ENV: 'visible-to-hook',
+    });
+
+    expect(port).toBe(41234);
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      process.execPath,
+      expect.arrayContaining(['-e', expect.any(String), expect.stringMatching(/^file:\/\//), '/tmp/project']),
+      expect.objectContaining({
+        encoding: 'utf8',
+        env: expect.objectContaining({
+          PATH: '/injected/bin:/original/bin',
+          HOME: '/injected/home',
+          SERENA_TEST_ENV: 'visible-to-hook',
+        }),
+      }),
+    );
+    expect(process.env.PATH).toBe(previousPath);
+    expect(process.env.HOME).toBe(previousHome);
+    expect(process.env.SERENA_TEST_ENV).toBeUndefined();
+  });
+
+  it('returns null when helper emits no port', () => {
+    mockExecFileSync.mockReturnValue('');
+    expect(ensureSerenaForRootInSubprocess('/tmp/serena-pool/index.ts', '/tmp/project', process.env)).toBeNull();
+  });
+});
 
 // ── RPC protocol parsing tests ────────────────────────────────────────────────
 
@@ -337,6 +378,62 @@ describe('PiAgentSession', () => {
 
     const spawnOptions = mockSpawn.mock.calls[0][2] as { cwd?: string };
     expect(spawnOptions.cwd).toBe(resolve('.'));
+  });
+
+
+  it('passes merged env to isolated serena helper and injects returned port into spawn env', async () => {
+    const npmGlobalDir = mkdtempSync(join(tmpdir(), 'pi-npm-global-'));
+    const serenaPoolPath = join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool', 'index.ts');
+    const prevGlobalDir = process.env.PI_NPM_GLOBAL_DIR;
+    const prevPath = process.env.PATH;
+    try {
+      mkdirSync(join(npmGlobalDir, '@jaggerxtrm', 'pi-extensions', 'extensions', 'serena-pool'), { recursive: true });
+      writeFileSync(serenaPoolPath, 'export async function ensureSerenaForRoot() { return 41234; }');
+      process.env.PI_NPM_GLOBAL_DIR = npmGlobalDir;
+      process.env.PATH = '/original/bin';
+      mockExecFileSync.mockReturnValue('41234\n');
+
+      const session = await PiAgentSession.create({
+        model: 'gemini',
+        cwd: '/tmp/project',
+        env: {
+          PATH: '/injected/bin:/original/bin',
+          HOME: '/injected/home',
+          SERENA_TEST_ENV: 'visible-to-hook',
+        },
+      });
+      await session.start();
+
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        process.execPath,
+        expect.arrayContaining(['-e', expect.any(String), expect.stringMatching(/^file:\/\//), '/tmp/project']),
+        expect.objectContaining({
+          encoding: 'utf8',
+          env: expect.objectContaining({
+            PATH: '/injected/bin:/original/bin',
+            HOME: '/injected/home',
+            SERENA_TEST_ENV: 'visible-to-hook',
+            CAVEMAN_LEVEL: 'full',
+          }),
+        }),
+      );
+
+      const spawnOptions = mockSpawn.mock.calls[0][2] as { env?: NodeJS.ProcessEnv };
+      expect(spawnOptions.env).toEqual(expect.objectContaining({
+        PATH: '/injected/bin:/original/bin',
+        HOME: '/injected/home',
+        SERENA_TEST_ENV: 'visible-to-hook',
+        SERENA_MCP_PORT: '41234',
+      }));
+      expect(process.env.PATH).toBe('/original/bin');
+      expect(process.env.SERENA_TEST_ENV).toBeUndefined();
+    } finally {
+      if (prevGlobalDir === undefined) delete process.env.PI_NPM_GLOBAL_DIR;
+      else process.env.PI_NPM_GLOBAL_DIR = prevGlobalDir;
+      if (prevPath === undefined) delete process.env.PATH;
+      else process.env.PATH = prevPath;
+      rmSync(npmGlobalDir, { recursive: true, force: true });
+    }
   });
 
   it('starts package runner RPC sessions with Pi isolation flags', async () => {
