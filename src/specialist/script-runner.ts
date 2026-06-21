@@ -567,6 +567,33 @@ function outputSatisfiesJsonContract(text: string, requiredKeys: string[]): bool
   }
 }
 
+function containsToolCallMarkup(text: string): boolean {
+  return /<\|tool_calls_section_(?:begin|end)\|>|<\|tool_call_(?:begin|argument_begin|end)\|>/.test(text);
+}
+
+function preferAssistantText(options: {
+  rpcText: string;
+  streamedText: string;
+  requiredJsonKeys: string[];
+}): string {
+  const rpcText = options.rpcText.trim();
+  const streamedText = options.streamedText.trim();
+  if (!streamedText) return rpcText;
+  if (!rpcText) return streamedText;
+
+  const rpcHasMarkup = containsToolCallMarkup(rpcText);
+  const streamedHasMarkup = containsToolCallMarkup(streamedText);
+  if (rpcHasMarkup && !streamedHasMarkup) return streamedText;
+
+  if (options.requiredJsonKeys.length > 0) {
+    const rpcValid = outputSatisfiesJsonContract(rpcText, options.requiredJsonKeys);
+    const streamedValid = outputSatisfiesJsonContract(streamedText, options.requiredJsonKeys);
+    if (!rpcValid && streamedValid) return streamedText;
+  }
+
+  return rpcText;
+}
+
 /**
  * Detects when `input.template` looks like a spec field name (e.g. "task_template",
  * "normalize_template") instead of an actual template body. This catches the
@@ -969,18 +996,25 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
         spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
         spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
       ].filter((value): value is string => Boolean(value)),
-      onToken: (delta) => appendTimelineEvent?.({ t: Date.now(), type: 'text', char_count: delta.length }),
+      onToken: (delta) => {
+        recordAssistantDelta(delta);
+        appendTimelineEvent?.({ t: Date.now(), type: 'text', char_count: delta.length });
+      },
       onThinking: (delta) => appendTimelineEvent?.({ t: Date.now(), type: 'thinking', char_count: delta.length }),
       onToolStart: (tool, args, toolCallId) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent('tool_execution_start', { tool, args, toolCallId })),
       onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent('tool_execution_end', { tool, isError, toolCallId, resultContent, resultRaw })),
-      onEvent: (type, details) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent(type, {
-        charCount: details?.charCount,
-        toolCallId: details?.toolCallId,
-        compaction: details,
-        retry: details,
-        modelChange: details?.action ? { action: details.action, model: details.model, previousModel: details.previousModel } : undefined,
-        extensionError: details,
-      })),
+      onEvent: (type, details) => {
+        if (type === 'message_start_assistant') markAssistantMessageStart();
+        if (type === 'message_end_assistant') markAssistantMessageEnd();
+        appendTimelineEvent?.(mapCallbackEventToTimelineEvent(type, {
+          charCount: details?.charCount,
+          toolCallId: details?.toolCallId,
+          compaction: details,
+          retry: details,
+          modelChange: details?.action ? { action: details.action, model: details.model, previousModel: details.previousModel } : undefined,
+          extensionError: details,
+        }));
+      },
       onMetric: (event) => {
         if (event.type === 'token_usage') appendTimelineEvent?.(createTokenUsageEvent(event.token_usage, event.source));
         if (event.type === 'finish_reason') appendTimelineEvent?.(createFinishReasonEvent(event.finish_reason, event.source));
@@ -998,12 +1032,34 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
     let timedOut = false;
     let outputTooLarge = false;
     let outputTooLargeReason: AttemptFailureReason | undefined;
+    let currentAssistantMessage = '';
+    let lastCompletedAssistantMessage = '';
+
+    const markAssistantMessageStart = (): void => {
+      currentAssistantMessage = '';
+    };
+    const markAssistantMessageEnd = (): void => {
+      if (currentAssistantMessage.trim()) lastCompletedAssistantMessage = currentAssistantMessage;
+      currentAssistantMessage = '';
+    };
+    const recordAssistantDelta = (delta: string): void => {
+      if (!delta) return;
+      currentAssistantMessage += delta;
+    };
+    const resolveAssistantText = async (): Promise<string> => {
+      const rpcText = await session.getLastOutput();
+      return preferAssistantText({
+        rpcText,
+        streamedText: lastCompletedAssistantMessage,
+        requiredJsonKeys,
+      });
+    };
 
     try {
       await session.start();
       await session.prompt(prompt);
       await session.waitForDone(timeoutMs);
-      assistantText = await session.getLastOutput();
+      assistantText = await resolveAssistantText();
       stderr = session.getStderr();
 
       if (requiredJsonKeys.length > 0 && !outputSatisfiesJsonContract(assistantText, requiredJsonKeys)) {
@@ -1013,8 +1069,9 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
           'No prose. No markdown fences. No tool-call markup. No preamble or commentary.',
           'Use work already completed in this session. Do not restart from scratch. Avoid more tools unless strictly necessary.',
         ].join(' ');
+        markAssistantMessageStart();
         await session.resume(repairPrompt, timeoutMs);
-        assistantText = await session.getLastOutput();
+        assistantText = await resolveAssistantText();
         stderr = session.getStderr();
       }
 

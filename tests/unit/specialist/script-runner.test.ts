@@ -824,6 +824,68 @@ describe('runScriptSpecialist system prompt forwarding', () => {
 });
 
 
+describe('runScriptSpecialist PiAgentSession JSON recovery', () => {
+  it('prefers the streamed final assistant message over leaked tool-call markup from getLastOutput', async () => {
+    const session = {
+      start: vi.fn(async () => undefined),
+      prompt: vi.fn(async () => undefined),
+      waitForDone: vi.fn(async () => {
+        const options = piSessionCreateMock.mock.calls[0][0];
+        options.onEvent('message_start_assistant');
+        options.onToken('I need to inspect the repo before returning the final JSON.');
+        options.onEvent('message_end_assistant');
+      }),
+      resume: vi.fn(async () => {
+        const options = piSessionCreateMock.mock.calls[0][0];
+        options.onEvent('message_start_assistant');
+        options.onToken('{"summary":{"repo":"mercury-infra"},"services":[{"id":"svc-1"}],"actions":[]}');
+        options.onEvent('message_end_assistant');
+      }),
+      getLastOutput: vi.fn(async () => '<|tool_calls_section_begin|> <|tool_call_begin|> functions.execute_shell_command:1 <|tool_call_argument_begin|> {"command":"pwd"} <|tool_call_end|> <|tool_calls_section_end|>'),
+      getStderr: vi.fn(() => ''),
+      close: vi.fn(async () => undefined),
+      kill: vi.fn(),
+    };
+    piSessionCreateMock.mockResolvedValue(session);
+
+    const spec = {
+      ...baseSpec,
+      specialist: {
+        ...baseSpec.specialist,
+        metadata: { name: 'service-skills-sync' },
+        execution: {
+          ...baseSpec.specialist.execution,
+          permission_required: 'MEDIUM',
+          response_format: 'text',
+          expected_output_keys: ['summary', 'services', 'actions'],
+        },
+      },
+    };
+
+    const result = await runScriptSpecialist(
+      { specialist: 'service-skills-sync', variables: { name: 'release notes' } },
+      {
+        loader: makeLoader(spec as never) as never,
+        projectDir: '.',
+        surface: 'script',
+        trust: { allowWriteCapable: true },
+      },
+    );
+
+    expect(session.resume).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: true });
+    if (result.success) {
+      expect(result.output).toContain('"services":[{"id":"svc-1"}]');
+      expect(result.output).not.toContain('<|tool_calls_section_begin|>');
+      expect(result.parsed_json).toMatchObject({
+        summary: { repo: 'mercury-infra' },
+        services: [{ id: 'svc-1' }],
+        actions: [],
+      });
+    }
+  });
+});
+
 describe('runScriptSpecialist PiAgentSession observability bridge', () => {
   it('persists intermediate session callbacks to the script-specialist timeline', async () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), 'script-runner-observability-')), 'observability.db');

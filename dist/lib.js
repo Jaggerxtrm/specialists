@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
-// ../../node_modules/yaml/dist/nodes/identity.js
+// ../../../node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS((exports) => {
   var ALIAS = Symbol.for("yaml.alias");
   var DOC = Symbol.for("yaml.document");
@@ -56,7 +56,7 @@ var require_identity = __commonJS((exports) => {
   exports.isSeq = isSeq;
 });
 
-// ../../node_modules/yaml/dist/visit.js
+// ../../../node_modules/yaml/dist/visit.js
 var require_visit = __commonJS((exports) => {
   var identity = require_identity();
   var BREAK = Symbol("break visit");
@@ -211,7 +211,7 @@ var require_visit = __commonJS((exports) => {
   exports.visitAsync = visitAsync;
 });
 
-// ../../node_modules/yaml/dist/doc/directives.js
+// ../../../node_modules/yaml/dist/doc/directives.js
 var require_directives = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -284,8 +284,8 @@ var require_directives = __commonJS((exports) => {
             this.yaml.version = version;
             return true;
           } else {
-            const isValid = /^\d+\.\d+$/.test(version);
-            onError(6, `Unsupported YAML version ${version}`, isValid);
+            const isValid2 = /^\d+\.\d+$/.test(version);
+            onError(6, `Unsupported YAML version ${version}`, isValid2);
             return false;
           }
         }
@@ -363,7 +363,7 @@ var require_directives = __commonJS((exports) => {
   exports.Directives = Directives;
 });
 
-// ../../node_modules/yaml/dist/doc/anchors.js
+// ../../../node_modules/yaml/dist/doc/anchors.js
 var require_anchors = __commonJS((exports) => {
   var identity = require_identity();
   var visit = require_visit();
@@ -425,7 +425,7 @@ var require_anchors = __commonJS((exports) => {
   exports.findNewAnchor = findNewAnchor;
 });
 
-// ../../node_modules/yaml/dist/doc/applyReviver.js
+// ../../../node_modules/yaml/dist/doc/applyReviver.js
 var require_applyReviver = __commonJS((exports) => {
   function applyReviver(reviver, obj, key, val) {
     if (val && typeof val === "object") {
@@ -472,7 +472,7 @@ var require_applyReviver = __commonJS((exports) => {
   exports.applyReviver = applyReviver;
 });
 
-// ../../node_modules/yaml/dist/nodes/toJS.js
+// ../../../node_modules/yaml/dist/nodes/toJS.js
 var require_toJS = __commonJS((exports) => {
   var identity = require_identity();
   function toJS(value, arg, ctx) {
@@ -499,7 +499,7 @@ var require_toJS = __commonJS((exports) => {
   exports.toJS = toJS;
 });
 
-// ../../node_modules/yaml/dist/nodes/Node.js
+// ../../../node_modules/yaml/dist/nodes/Node.js
 var require_Node = __commonJS((exports) => {
   var applyReviver = require_applyReviver();
   var identity = require_identity();
@@ -536,7 +536,7 @@ var require_Node = __commonJS((exports) => {
   exports.NodeBase = NodeBase;
 });
 
-// ../../node_modules/yaml/dist/nodes/Alias.js
+// ../../../node_modules/yaml/dist/nodes/Alias.js
 var require_Alias = __commonJS((exports) => {
   var anchors = require_anchors();
   var visit = require_visit();
@@ -646,7 +646,7 @@ var require_Alias = __commonJS((exports) => {
   exports.Alias = Alias;
 });
 
-// ../../node_modules/yaml/dist/nodes/Scalar.js
+// ../../../node_modules/yaml/dist/nodes/Scalar.js
 var require_Scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Node = require_Node();
@@ -674,7 +674,7 @@ var require_Scalar = __commonJS((exports) => {
   exports.isScalarValue = isScalarValue;
 });
 
-// ../../node_modules/yaml/dist/doc/createNode.js
+// ../../../node_modules/yaml/dist/doc/createNode.js
 var require_createNode = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -746,7 +746,7 @@ var require_createNode = __commonJS((exports) => {
   exports.createNode = createNode;
 });
 
-// ../../node_modules/yaml/dist/nodes/Collection.js
+// ../../../node_modules/yaml/dist/nodes/Collection.js
 var require_Collection = __commonJS((exports) => {
   var createNode = require_createNode();
   var identity = require_identity();
@@ -861,7 +861,7 @@ var require_Collection = __commonJS((exports) => {
   exports.isEmptyPath = isEmptyPath;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyComment.js
+// ../../../node_modules/yaml/dist/stringify/stringifyComment.js
 var require_stringifyComment = __commonJS((exports) => {
   var stringifyComment = (str) => str.replace(/^(?!$)(?: $)?/gm, "#");
   function indentComment(comment, indent) {
@@ -878,7 +878,7 @@ var require_stringifyComment = __commonJS((exports) => {
   exports.stringifyComment = stringifyComment;
 });
 
-// ../../node_modules/yaml/dist/stringify/foldFlowLines.js
+// ../../../node_modules/yaml/dist/stringify/foldFlowLines.js
 var require_foldFlowLines = __commonJS((exports) => {
   var FOLD_FLOW = "flow";
   var FOLD_BLOCK = "block";
@@ -1015,7 +1015,7 @@ ${indent}${text.slice(fold + 1, end2)}`;
   exports.foldFlowLines = foldFlowLines;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyString.js
+// ../../../node_modules/yaml/dist/stringify/stringifyString.js
 var require_stringifyString = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var foldFlowLines = require_foldFlowLines();
@@ -1313,7 +1313,7 @@ ${indent}`);
   exports.stringifyString = stringifyString;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringify.js
+// ../../../node_modules/yaml/dist/stringify/stringify.js
 var require_stringify = __commonJS((exports) => {
   var anchors = require_anchors();
   var identity = require_identity();
@@ -1434,7 +1434,7 @@ ${ctx.indent}${str}`;
   exports.stringify = stringify;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyPair.js
+// ../../../node_modules/yaml/dist/stringify/stringifyPair.js
 var require_stringifyPair = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -1570,7 +1570,7 @@ ${ctx.indent}`;
   exports.stringifyPair = stringifyPair;
 });
 
-// ../../node_modules/yaml/dist/log.js
+// ../../../node_modules/yaml/dist/log.js
 var require_log = __commonJS((exports) => {
   var node_process = __require("process");
   function debug(logLevel, ...messages) {
@@ -1589,7 +1589,7 @@ var require_log = __commonJS((exports) => {
   exports.warn = warn;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/merge.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/merge.js
 var require_merge = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -1646,7 +1646,7 @@ var require_merge = __commonJS((exports) => {
   exports.merge = merge;
 });
 
-// ../../node_modules/yaml/dist/nodes/addPairToJSMap.js
+// ../../../node_modules/yaml/dist/nodes/addPairToJSMap.js
 var require_addPairToJSMap = __commonJS((exports) => {
   var log = require_log();
   var merge = require_merge();
@@ -1707,7 +1707,7 @@ var require_addPairToJSMap = __commonJS((exports) => {
   exports.addPairToJSMap = addPairToJSMap;
 });
 
-// ../../node_modules/yaml/dist/nodes/Pair.js
+// ../../../node_modules/yaml/dist/nodes/Pair.js
 var require_Pair = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyPair = require_stringifyPair();
@@ -1745,7 +1745,7 @@ var require_Pair = __commonJS((exports) => {
   exports.createPair = createPair;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyCollection.js
+// ../../../node_modules/yaml/dist/stringify/stringifyCollection.js
 var require_stringifyCollection = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -1897,7 +1897,7 @@ ${indent}${end}`;
   exports.stringifyCollection = stringifyCollection;
 });
 
-// ../../node_modules/yaml/dist/nodes/YAMLMap.js
+// ../../../node_modules/yaml/dist/nodes/YAMLMap.js
 var require_YAMLMap = __commonJS((exports) => {
   var stringifyCollection = require_stringifyCollection();
   var addPairToJSMap = require_addPairToJSMap();
@@ -2024,7 +2024,7 @@ var require_YAMLMap = __commonJS((exports) => {
   exports.findPair = findPair;
 });
 
-// ../../node_modules/yaml/dist/schema/common/map.js
+// ../../../node_modules/yaml/dist/schema/common/map.js
 var require_map = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLMap = require_YAMLMap();
@@ -2043,7 +2043,7 @@ var require_map = __commonJS((exports) => {
   exports.map = map;
 });
 
-// ../../node_modules/yaml/dist/nodes/YAMLSeq.js
+// ../../../node_modules/yaml/dist/nodes/YAMLSeq.js
 var require_YAMLSeq = __commonJS((exports) => {
   var createNode = require_createNode();
   var stringifyCollection = require_stringifyCollection();
@@ -2136,7 +2136,7 @@ var require_YAMLSeq = __commonJS((exports) => {
   exports.YAMLSeq = YAMLSeq;
 });
 
-// ../../node_modules/yaml/dist/schema/common/seq.js
+// ../../../node_modules/yaml/dist/schema/common/seq.js
 var require_seq = __commonJS((exports) => {
   var identity = require_identity();
   var YAMLSeq = require_YAMLSeq();
@@ -2155,7 +2155,7 @@ var require_seq = __commonJS((exports) => {
   exports.seq = seq;
 });
 
-// ../../node_modules/yaml/dist/schema/common/string.js
+// ../../../node_modules/yaml/dist/schema/common/string.js
 var require_string = __commonJS((exports) => {
   var stringifyString = require_stringifyString();
   var string = {
@@ -2171,7 +2171,7 @@ var require_string = __commonJS((exports) => {
   exports.string = string;
 });
 
-// ../../node_modules/yaml/dist/schema/common/null.js
+// ../../../node_modules/yaml/dist/schema/common/null.js
 var require_null = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var nullTag = {
@@ -2186,7 +2186,7 @@ var require_null = __commonJS((exports) => {
   exports.nullTag = nullTag;
 });
 
-// ../../node_modules/yaml/dist/schema/core/bool.js
+// ../../../node_modules/yaml/dist/schema/core/bool.js
 var require_bool = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var boolTag = {
@@ -2207,7 +2207,7 @@ var require_bool = __commonJS((exports) => {
   exports.boolTag = boolTag;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyNumber.js
+// ../../../node_modules/yaml/dist/stringify/stringifyNumber.js
 var require_stringifyNumber = __commonJS((exports) => {
   function stringifyNumber({ format, minFractionDigits, tag, value }) {
     if (typeof value === "bigint")
@@ -2231,7 +2231,7 @@ var require_stringifyNumber = __commonJS((exports) => {
   exports.stringifyNumber = stringifyNumber;
 });
 
-// ../../node_modules/yaml/dist/schema/core/float.js
+// ../../../node_modules/yaml/dist/schema/core/float.js
 var require_float = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -2274,7 +2274,7 @@ var require_float = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../node_modules/yaml/dist/schema/core/int.js
+// ../../../node_modules/yaml/dist/schema/core/int.js
 var require_int = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2316,7 +2316,7 @@ var require_int = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../node_modules/yaml/dist/schema/core/schema.js
+// ../../../node_modules/yaml/dist/schema/core/schema.js
 var require_schema = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -2341,7 +2341,7 @@ var require_schema = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../node_modules/yaml/dist/schema/json/schema.js
+// ../../../node_modules/yaml/dist/schema/json/schema.js
 var require_schema2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var map = require_map();
@@ -2405,7 +2405,7 @@ var require_schema2 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/binary.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/binary.js
 var require_binary = __commonJS((exports) => {
   var node_buffer = __require("buffer");
   var Scalar = require_Scalar();
@@ -2460,7 +2460,7 @@ var require_binary = __commonJS((exports) => {
   exports.binary = binary;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/pairs.js
 var require_pairs = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -2535,7 +2535,7 @@ ${cn.comment}` : item.comment;
   exports.resolvePairs = resolvePairs;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/omap.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/omap.js
 var require_omap = __commonJS((exports) => {
   var identity = require_identity();
   var toJS = require_toJS();
@@ -2607,7 +2607,7 @@ var require_omap = __commonJS((exports) => {
   exports.omap = omap;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/bool.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/bool.js
 var require_bool2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function boolStringify({ value, source }, ctx) {
@@ -2636,7 +2636,7 @@ var require_bool2 = __commonJS((exports) => {
   exports.trueTag = trueTag;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/float.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/float.js
 var require_float2 = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var stringifyNumber = require_stringifyNumber();
@@ -2682,7 +2682,7 @@ var require_float2 = __commonJS((exports) => {
   exports.floatNaN = floatNaN;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/int.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/int.js
 var require_int2 = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   var intIdentify = (value) => typeof value === "bigint" || Number.isInteger(value);
@@ -2758,7 +2758,7 @@ var require_int2 = __commonJS((exports) => {
   exports.intOct = intOct;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/set.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/set.js
 var require_set = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -2841,7 +2841,7 @@ var require_set = __commonJS((exports) => {
   exports.set = set;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/timestamp.js
 var require_timestamp = __commonJS((exports) => {
   var stringifyNumber = require_stringifyNumber();
   function parseSexagesimal(str, asBigInt) {
@@ -2923,7 +2923,7 @@ var require_timestamp = __commonJS((exports) => {
   exports.timestamp = timestamp;
 });
 
-// ../../node_modules/yaml/dist/schema/yaml-1.1/schema.js
+// ../../../node_modules/yaml/dist/schema/yaml-1.1/schema.js
 var require_schema3 = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -2964,7 +2964,7 @@ var require_schema3 = __commonJS((exports) => {
   exports.schema = schema;
 });
 
-// ../../node_modules/yaml/dist/schema/tags.js
+// ../../../node_modules/yaml/dist/schema/tags.js
 var require_tags = __commonJS((exports) => {
   var map = require_map();
   var _null = require_null();
@@ -3055,7 +3055,7 @@ var require_tags = __commonJS((exports) => {
   exports.getTags = getTags;
 });
 
-// ../../node_modules/yaml/dist/schema/Schema.js
+// ../../../node_modules/yaml/dist/schema/Schema.js
 var require_Schema = __commonJS((exports) => {
   var identity = require_identity();
   var map = require_map();
@@ -3085,7 +3085,7 @@ var require_Schema = __commonJS((exports) => {
   exports.Schema = Schema;
 });
 
-// ../../node_modules/yaml/dist/stringify/stringifyDocument.js
+// ../../../node_modules/yaml/dist/stringify/stringifyDocument.js
 var require_stringifyDocument = __commonJS((exports) => {
   var identity = require_identity();
   var stringify = require_stringify();
@@ -3165,7 +3165,7 @@ var require_stringifyDocument = __commonJS((exports) => {
   exports.stringifyDocument = stringifyDocument;
 });
 
-// ../../node_modules/yaml/dist/doc/Document.js
+// ../../../node_modules/yaml/dist/doc/Document.js
 var require_Document = __commonJS((exports) => {
   var Alias = require_Alias();
   var Collection = require_Collection();
@@ -3400,7 +3400,7 @@ var require_Document = __commonJS((exports) => {
   exports.Document = Document;
 });
 
-// ../../node_modules/yaml/dist/errors.js
+// ../../../node_modules/yaml/dist/errors.js
 var require_errors = __commonJS((exports) => {
   class YAMLError extends Error {
     constructor(name, pos, code, message) {
@@ -3465,7 +3465,7 @@ ${pointer}
   exports.prettifyError = prettifyError;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-props.js
+// ../../../node_modules/yaml/dist/compose/resolve-props.js
 var require_resolve_props = __commonJS((exports) => {
   function resolveProps(tokens, { flow, indicator, next, offset, onError, parentIndent, startOnNewline }) {
     let spaceBefore = false;
@@ -3595,7 +3595,7 @@ var require_resolve_props = __commonJS((exports) => {
   exports.resolveProps = resolveProps;
 });
 
-// ../../node_modules/yaml/dist/compose/util-contains-newline.js
+// ../../../node_modules/yaml/dist/compose/util-contains-newline.js
 var require_util_contains_newline = __commonJS((exports) => {
   function containsNewline(key) {
     if (!key)
@@ -3635,7 +3635,7 @@ var require_util_contains_newline = __commonJS((exports) => {
   exports.containsNewline = containsNewline;
 });
 
-// ../../node_modules/yaml/dist/compose/util-flow-indent-check.js
+// ../../../node_modules/yaml/dist/compose/util-flow-indent-check.js
 var require_util_flow_indent_check = __commonJS((exports) => {
   var utilContainsNewline = require_util_contains_newline();
   function flowIndentCheck(indent, fc, onError) {
@@ -3650,7 +3650,7 @@ var require_util_flow_indent_check = __commonJS((exports) => {
   exports.flowIndentCheck = flowIndentCheck;
 });
 
-// ../../node_modules/yaml/dist/compose/util-map-includes.js
+// ../../../node_modules/yaml/dist/compose/util-map-includes.js
 var require_util_map_includes = __commonJS((exports) => {
   var identity = require_identity();
   function mapIncludes(ctx, items, search) {
@@ -3663,7 +3663,7 @@ var require_util_map_includes = __commonJS((exports) => {
   exports.mapIncludes = mapIncludes;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-block-map.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-map.js
 var require_resolve_block_map = __commonJS((exports) => {
   var Pair = require_Pair();
   var YAMLMap = require_YAMLMap();
@@ -3680,10 +3680,10 @@ var require_resolve_block_map = __commonJS((exports) => {
     let offset = bm.offset;
     let commentEnd = null;
     for (const collItem of bm.items) {
-      const { start, key, sep: sep2, value } = collItem;
+      const { start, key, sep: sep3, value } = collItem;
       const keyProps = resolveProps.resolveProps(start, {
         indicator: "explicit-key-ind",
-        next: key ?? sep2?.[0],
+        next: key ?? sep3?.[0],
         offset,
         onError,
         parentIndent: bm.indent,
@@ -3697,7 +3697,7 @@ var require_resolve_block_map = __commonJS((exports) => {
           else if ("indent" in key && key.indent !== bm.indent)
             onError(offset, "BAD_INDENT", startColMsg);
         }
-        if (!keyProps.anchor && !keyProps.tag && !sep2) {
+        if (!keyProps.anchor && !keyProps.tag && !sep3) {
           commentEnd = keyProps.end;
           if (keyProps.comment) {
             if (map.comment)
@@ -3722,7 +3722,7 @@ var require_resolve_block_map = __commonJS((exports) => {
       ctx.atKey = false;
       if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
         onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-      const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+      const valueProps = resolveProps.resolveProps(sep3 ?? [], {
         indicator: "map-value-ind",
         next: value,
         offset: keyNode.range[2],
@@ -3738,7 +3738,7 @@ var require_resolve_block_map = __commonJS((exports) => {
           if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
             onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
         }
-        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
+        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep3, null, valueProps, onError);
         if (ctx.schema.compat)
           utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
         offset = valueNode.range[2];
@@ -3770,7 +3770,7 @@ var require_resolve_block_map = __commonJS((exports) => {
   exports.resolveBlockMap = resolveBlockMap;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-block-seq.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-seq.js
 var require_resolve_block_seq = __commonJS((exports) => {
   var YAMLSeq = require_YAMLSeq();
   var resolveProps = require_resolve_props();
@@ -3818,13 +3818,13 @@ var require_resolve_block_seq = __commonJS((exports) => {
   exports.resolveBlockSeq = resolveBlockSeq;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-end.js
+// ../../../node_modules/yaml/dist/compose/resolve-end.js
 var require_resolve_end = __commonJS((exports) => {
   function resolveEnd(end, offset, reqSpace, onError) {
     let comment = "";
     if (end) {
       let hasSpace = false;
-      let sep2 = "";
+      let sep3 = "";
       for (const token of end) {
         const { source, type } = token;
         switch (type) {
@@ -3838,13 +3838,13 @@ var require_resolve_end = __commonJS((exports) => {
             if (!comment)
               comment = cb;
             else
-              comment += sep2 + cb;
-            sep2 = "";
+              comment += sep3 + cb;
+            sep3 = "";
             break;
           }
           case "newline":
             if (comment)
-              sep2 += source;
+              sep3 += source;
             hasSpace = true;
             break;
           default:
@@ -3858,7 +3858,7 @@ var require_resolve_end = __commonJS((exports) => {
   exports.resolveEnd = resolveEnd;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-flow-collection.js
+// ../../../node_modules/yaml/dist/compose/resolve-flow-collection.js
 var require_resolve_flow_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Pair = require_Pair();
@@ -3884,18 +3884,18 @@ var require_resolve_flow_collection = __commonJS((exports) => {
     let offset = fc.offset + fc.start.source.length;
     for (let i = 0;i < fc.items.length; ++i) {
       const collItem = fc.items[i];
-      const { start, key, sep: sep2, value } = collItem;
+      const { start, key, sep: sep3, value } = collItem;
       const props = resolveProps.resolveProps(start, {
         flow: fcName,
         indicator: "explicit-key-ind",
-        next: key ?? sep2?.[0],
+        next: key ?? sep3?.[0],
         offset,
         onError,
         parentIndent: fc.indent,
         startOnNewline: false
       });
       if (!props.found) {
-        if (!props.anchor && !props.tag && !sep2 && !value) {
+        if (!props.anchor && !props.tag && !sep3 && !value) {
           if (i === 0 && props.comma)
             onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
           else if (i < fc.items.length - 1)
@@ -3947,8 +3947,8 @@ var require_resolve_flow_collection = __commonJS((exports) => {
           }
         }
       }
-      if (!isMap && !sep2 && !props.found) {
-        const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
+      if (!isMap && !sep3 && !props.found) {
+        const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep3, null, props, onError);
         coll.items.push(valueNode);
         offset = valueNode.range[2];
         if (isBlock(value))
@@ -3960,7 +3960,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
         if (isBlock(key))
           onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
         ctx.atKey = false;
-        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep3 ?? [], {
           flow: fcName,
           indicator: "map-value-ind",
           next: value,
@@ -3971,8 +3971,8 @@ var require_resolve_flow_collection = __commonJS((exports) => {
         });
         if (valueProps.found) {
           if (!isMap && !props.found && ctx.options.strict) {
-            if (sep2)
-              for (const st of sep2) {
+            if (sep3)
+              for (const st of sep3) {
                 if (st === valueProps.found)
                   break;
                 if (st.type === "newline") {
@@ -3989,7 +3989,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
           else
             onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
         }
-        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
+        const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep3, null, valueProps, onError) : null;
         if (valueNode) {
           if (isBlock(value))
             onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4049,7 +4049,7 @@ var require_resolve_flow_collection = __commonJS((exports) => {
   exports.resolveFlowCollection = resolveFlowCollection;
 });
 
-// ../../node_modules/yaml/dist/compose/compose-collection.js
+// ../../../node_modules/yaml/dist/compose/compose-collection.js
 var require_compose_collection = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -4111,7 +4111,7 @@ var require_compose_collection = __commonJS((exports) => {
   exports.composeCollection = composeCollection;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-block-scalar.js
+// ../../../node_modules/yaml/dist/compose/resolve-block-scalar.js
 var require_resolve_block_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   function resolveBlockScalar(ctx, scalar, onError) {
@@ -4166,7 +4166,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
         chompStart = i + 1;
     }
     let value = "";
-    let sep2 = "";
+    let sep3 = "";
     let prevMoreIndented = false;
     for (let i = 0;i < contentStart; ++i)
       value += lines[i][0].slice(trimIndent) + `
@@ -4184,33 +4184,33 @@ var require_resolve_block_scalar = __commonJS((exports) => {
         indent = "";
       }
       if (type === Scalar.Scalar.BLOCK_LITERAL) {
-        value += sep2 + indent.slice(trimIndent) + content;
-        sep2 = `
+        value += sep3 + indent.slice(trimIndent) + content;
+        sep3 = `
 `;
       } else if (indent.length > trimIndent || content[0] === "\t") {
-        if (sep2 === " ")
-          sep2 = `
+        if (sep3 === " ")
+          sep3 = `
 `;
-        else if (!prevMoreIndented && sep2 === `
+        else if (!prevMoreIndented && sep3 === `
 `)
-          sep2 = `
+          sep3 = `
 
 `;
-        value += sep2 + indent.slice(trimIndent) + content;
-        sep2 = `
+        value += sep3 + indent.slice(trimIndent) + content;
+        sep3 = `
 `;
         prevMoreIndented = true;
       } else if (content === "") {
-        if (sep2 === `
+        if (sep3 === `
 `)
           value += `
 `;
         else
-          sep2 = `
+          sep3 = `
 `;
       } else {
-        value += sep2 + content;
-        sep2 = " ";
+        value += sep3 + content;
+        sep3 = " ";
         prevMoreIndented = false;
       }
     }
@@ -4304,7 +4304,7 @@ var require_resolve_block_scalar = __commonJS((exports) => {
   exports.resolveBlockScalar = resolveBlockScalar;
 });
 
-// ../../node_modules/yaml/dist/compose/resolve-flow-scalar.js
+// ../../../node_modules/yaml/dist/compose/resolve-flow-scalar.js
 var require_resolve_flow_scalar = __commonJS((exports) => {
   var Scalar = require_Scalar();
   var resolveEnd = require_resolve_end();
@@ -4391,27 +4391,27 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
     if (!match)
       return source;
     let res = match[1];
-    let sep2 = " ";
+    let sep3 = " ";
     let pos = first.lastIndex;
     line.lastIndex = pos;
     while (match = line.exec(source)) {
       if (match[1] === "") {
-        if (sep2 === `
+        if (sep3 === `
 `)
-          res += sep2;
+          res += sep3;
         else
-          sep2 = `
+          sep3 = `
 `;
       } else {
-        res += sep2 + match[1];
-        sep2 = " ";
+        res += sep3 + match[1];
+        sep3 = " ";
       }
       pos = line.lastIndex;
     }
     const last = /[ \t]*(.*)/sy;
     last.lastIndex = pos;
     match = last.exec(source);
-    return res + sep2 + (match?.[1] ?? "");
+    return res + sep3 + (match?.[1] ?? "");
   }
   function doubleQuotedValue(source, onError) {
     let res = "";
@@ -4521,7 +4521,7 @@ var require_resolve_flow_scalar = __commonJS((exports) => {
   exports.resolveFlowScalar = resolveFlowScalar;
 });
 
-// ../../node_modules/yaml/dist/compose/compose-scalar.js
+// ../../../node_modules/yaml/dist/compose/compose-scalar.js
 var require_compose_scalar = __commonJS((exports) => {
   var identity = require_identity();
   var Scalar = require_Scalar();
@@ -4599,7 +4599,7 @@ var require_compose_scalar = __commonJS((exports) => {
   exports.composeScalar = composeScalar;
 });
 
-// ../../node_modules/yaml/dist/compose/util-empty-scalar-position.js
+// ../../../node_modules/yaml/dist/compose/util-empty-scalar-position.js
 var require_util_empty_scalar_position = __commonJS((exports) => {
   function emptyScalarPosition(offset, before, pos) {
     if (before) {
@@ -4626,7 +4626,7 @@ var require_util_empty_scalar_position = __commonJS((exports) => {
   exports.emptyScalarPosition = emptyScalarPosition;
 });
 
-// ../../node_modules/yaml/dist/compose/compose-node.js
+// ../../../node_modules/yaml/dist/compose/compose-node.js
 var require_compose_node = __commonJS((exports) => {
   var Alias = require_Alias();
   var identity = require_identity();
@@ -4729,7 +4729,7 @@ var require_compose_node = __commonJS((exports) => {
   exports.composeNode = composeNode;
 });
 
-// ../../node_modules/yaml/dist/compose/compose-doc.js
+// ../../../node_modules/yaml/dist/compose/compose-doc.js
 var require_compose_doc = __commonJS((exports) => {
   var Document = require_Document();
   var composeNode = require_compose_node();
@@ -4769,7 +4769,7 @@ var require_compose_doc = __commonJS((exports) => {
   exports.composeDoc = composeDoc;
 });
 
-// ../../node_modules/yaml/dist/compose/composer.js
+// ../../../node_modules/yaml/dist/compose/composer.js
 var require_composer = __commonJS((exports) => {
   var node_process = __require("process");
   var directives = require_directives();
@@ -4960,7 +4960,7 @@ ${end.comment}` : end.comment;
   exports.Composer = Composer;
 });
 
-// ../../node_modules/yaml/dist/parse/cst-scalar.js
+// ../../../node_modules/yaml/dist/parse/cst-scalar.js
 var require_cst_scalar = __commonJS((exports) => {
   var resolveBlockScalar = require_resolve_block_scalar();
   var resolveFlowScalar = require_resolve_flow_scalar();
@@ -5150,7 +5150,7 @@ var require_cst_scalar = __commonJS((exports) => {
   exports.setScalarValue = setScalarValue;
 });
 
-// ../../node_modules/yaml/dist/parse/cst-stringify.js
+// ../../../node_modules/yaml/dist/parse/cst-stringify.js
 var require_cst_stringify = __commonJS((exports) => {
   var stringify = (cst) => ("type" in cst) ? stringifyToken(cst) : stringifyItem(cst);
   function stringifyToken(token) {
@@ -5192,14 +5192,14 @@ var require_cst_stringify = __commonJS((exports) => {
       }
     }
   }
-  function stringifyItem({ start, key, sep: sep2, value }) {
+  function stringifyItem({ start, key, sep: sep3, value }) {
     let res = "";
     for (const st of start)
       res += st.source;
     if (key)
       res += stringifyToken(key);
-    if (sep2)
-      for (const st of sep2)
+    if (sep3)
+      for (const st of sep3)
         res += st.source;
     if (value)
       res += stringifyToken(value);
@@ -5208,7 +5208,7 @@ var require_cst_stringify = __commonJS((exports) => {
   exports.stringify = stringify;
 });
 
-// ../../node_modules/yaml/dist/parse/cst-visit.js
+// ../../../node_modules/yaml/dist/parse/cst-visit.js
 var require_cst_visit = __commonJS((exports) => {
   var BREAK = Symbol("break visit");
   var SKIP = Symbol("skip children");
@@ -5267,7 +5267,7 @@ var require_cst_visit = __commonJS((exports) => {
   exports.visit = visit;
 });
 
-// ../../node_modules/yaml/dist/parse/cst.js
+// ../../../node_modules/yaml/dist/parse/cst.js
 var require_cst = __commonJS((exports) => {
   var cstScalar = require_cst_scalar();
   var cstStringify = require_cst_stringify();
@@ -5368,7 +5368,7 @@ var require_cst = __commonJS((exports) => {
   exports.tokenType = tokenType;
 });
 
-// ../../node_modules/yaml/dist/parse/lexer.js
+// ../../../node_modules/yaml/dist/parse/lexer.js
 var require_lexer = __commonJS((exports) => {
   var cst = require_cst();
   function isEmpty(ch) {
@@ -5965,7 +5965,7 @@ var require_lexer = __commonJS((exports) => {
   exports.Lexer = Lexer;
 });
 
-// ../../node_modules/yaml/dist/parse/line-counter.js
+// ../../../node_modules/yaml/dist/parse/line-counter.js
 var require_line_counter = __commonJS((exports) => {
   class LineCounter {
     constructor() {
@@ -5993,7 +5993,7 @@ var require_line_counter = __commonJS((exports) => {
   exports.LineCounter = LineCounter;
 });
 
-// ../../node_modules/yaml/dist/parse/parser.js
+// ../../../node_modules/yaml/dist/parse/parser.js
 var require_parser = __commonJS((exports) => {
   var node_process = __require("process");
   var cst = require_cst();
@@ -6347,18 +6347,18 @@ var require_parser = __commonJS((exports) => {
       if (this.type === "map-value-ind") {
         const prev = getPrevProps(this.peek(2));
         const start = getFirstKeyStartProps(prev);
-        let sep2;
+        let sep3;
         if (scalar.end) {
-          sep2 = scalar.end;
-          sep2.push(this.sourceToken);
+          sep3 = scalar.end;
+          sep3.push(this.sourceToken);
           delete scalar.end;
         } else
-          sep2 = [this.sourceToken];
+          sep3 = [this.sourceToken];
         const map = {
           type: "block-map",
           offset: scalar.offset,
           indent: scalar.indent,
-          items: [{ start, key: scalar, sep: sep2 }]
+          items: [{ start, key: scalar, sep: sep3 }]
         };
         this.onKeyLine = true;
         this.stack[this.stack.length - 1] = map;
@@ -6512,15 +6512,15 @@ var require_parser = __commonJS((exports) => {
               } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                 const start2 = getFirstKeyStartProps(it.start);
                 const key = it.key;
-                const sep2 = it.sep;
-                sep2.push(this.sourceToken);
+                const sep3 = it.sep;
+                sep3.push(this.sourceToken);
                 delete it.key;
                 delete it.sep;
                 this.stack.push({
                   type: "block-map",
                   offset: this.offset,
                   indent: this.indent,
-                  items: [{ start: start2, key, sep: sep2 }]
+                  items: [{ start: start2, key, sep: sep3 }]
                 });
               } else if (start.length > 0) {
                 it.sep = it.sep.concat(start, this.sourceToken);
@@ -6714,13 +6714,13 @@ var require_parser = __commonJS((exports) => {
           const prev = getPrevProps(parent);
           const start = getFirstKeyStartProps(prev);
           fixFlowSeqItems(fc);
-          const sep2 = fc.end.splice(1, fc.end.length);
-          sep2.push(this.sourceToken);
+          const sep3 = fc.end.splice(1, fc.end.length);
+          sep3.push(this.sourceToken);
           const map = {
             type: "block-map",
             offset: fc.offset,
             indent: fc.indent,
-            items: [{ start, key: fc, sep: sep2 }]
+            items: [{ start, key: fc, sep: sep3 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6849,7 +6849,7 @@ var require_parser = __commonJS((exports) => {
   exports.Parser = Parser;
 });
 
-// ../../node_modules/yaml/dist/public-api.js
+// ../../../node_modules/yaml/dist/public-api.js
 var require_public_api = __commonJS((exports) => {
   var composer = require_composer();
   var Document = require_Document();
@@ -6944,3467 +6944,201 @@ var require_public_api = __commonJS((exports) => {
 });
 
 // src/specialist/script-runner.ts
-import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { readFileSync as readFileSync2 } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { spawn as spawn2 } from "node:child_process";
+import { createHash as createHash2, randomUUID } from "node:crypto";
+import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { isAbsolute as isAbsolute2, join as join4, relative, resolve as resolve4 } from "node:path";
 
-// src/specialist/templateEngine.ts
-function renderTemplate(template, variables) {
-  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
-    return variables[key] !== undefined ? variables[key] : match;
-  });
-}
+// src/pi/session.ts
+import { createHash } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync as existsSync2, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { isAbsolute, resolve, sep, join, dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 
-// src/specialist/observability-sqlite.ts
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join as join2 } from "node:path";
-
-// src/specialist/observability-db.ts
-import { spawnSync } from "node:child_process";
-import { join, sep } from "node:path";
-var OBSERVABILITY_DB_FILENAME = "observability.db";
-var DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
-function resolveGitRootFrom(cwd) {
-  const commonDirResult = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (commonDirResult.status === 0) {
-    const commonDir = commonDirResult.stdout.trim();
-    if (commonDir.length > 0 && commonDir.endsWith(`${sep}.git`)) {
-      return commonDir.slice(0, -4);
-    }
-  }
-  const fallbackResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-    cwd,
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "ignore"]
-  });
-  if (fallbackResult.status !== 0)
-    return cwd;
-  const gitRoot = fallbackResult.stdout.trim();
-  return gitRoot.length > 0 ? gitRoot : cwd;
-}
-function resolveDbDirectory(gitRoot) {
-  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
-  if (xdgDataHome) {
-    return { directory: join(xdgDataHome, "specialists"), source: "xdg-data-home" };
-  }
-  return {
-    directory: join(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
-    source: "git-root"
-  };
-}
-function resolveObservabilityDbLocation(cwd = process.cwd()) {
-  const gitRoot = resolveGitRootFrom(cwd);
-  const resolved = resolveDbDirectory(gitRoot);
-  const dbPath = join(resolved.directory, OBSERVABILITY_DB_FILENAME);
-  return {
-    gitRoot,
-    dbDirectory: resolved.directory,
-    dbPath,
-    dbWalPath: `${dbPath}-wal`,
-    dbShmPath: `${dbPath}-shm`,
-    source: resolved.source
-  };
-}
-
-// src/specialist/forensic-events.ts
-var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1";
-var FORBIDDEN_PROMETHEUS_LABELS = new Set([
-  "participant_id",
-  "job_id",
-  "bead_id",
-  "issue_id",
-  "container_id",
-  "chain_id",
-  "chain_root_job_id",
-  "chain_root_bead_id",
-  "epic_id",
-  "node_id",
-  "pulse_id",
-  "turn_id",
-  "tool_call_id",
-  "trace_id",
-  "span_id",
-  "parent_span_id",
-  "session_id",
-  "conversation_id",
-  "mcp_session_id",
-  "jsonrpc_request_id",
-  "eval_id",
-  "policy_decision_id",
-  "identity_request_id",
-  "commit_sha",
-  "raw_path",
-  "raw_command",
-  "raw_error",
-  "raw_diff",
-  "raw_url",
-  "prompt",
-  "model_output",
-  "user_id",
-  "email",
-  "token",
-  "credential"
-]);
-var DEFAULT_LABEL_ALLOWLIST = new Set([
-  "service_namespace",
-  "service_name",
-  "service_component",
-  "deployment_environment",
-  "repo",
-  "participant_kind",
-  "participant_role",
-  "event_family",
-  "severity",
-  "state",
-  "status",
-  "result",
-  "model_provider",
-  "model",
-  "tool_name",
-  "mcp_server",
-  "mcp_method",
-  "error_type",
-  "drift_tier",
-  "pulse_kind",
-  "policy_kind",
-  "action_kind",
-  "resource_kind",
-  "credential_kind",
-  "eval_kind",
-  "chain_template",
-  "gate_kind",
-  "verdict",
-  "severity_level",
-  "direction",
-  "reason",
-  "process_kind",
-  "evidence_kind",
-  "target",
-  "highest_risk"
-]);
-var ALLOWED_TOP_LEVEL_FIELDS = new Set([
-  "schema_version",
-  "timestamp",
-  "t_unix_ms",
-  "seq",
-  "severity",
-  "event_family",
-  "event_name",
-  "event_version",
-  "resource",
-  "correlation",
-  "body",
-  "redaction",
-  "trace",
-  "otel",
-  "links",
-  "diagnostics"
-]);
-var REDACTED = "[REDACTED]";
-var REDACTION_RULES = {
-  sensitiveField: "sensitive-field-name",
-  secretPattern: "secret-pattern"
+// src/pi/backendMap.ts
+var BACKEND_MAP = {
+  gemini: "google-gemini-cli",
+  google: "google-gemini-cli",
+  claude: "anthropic",
+  anthropic: "anthropic",
+  openai: "openai",
+  qwen: "openai",
+  openrouter: "openrouter",
+  groq: "groq"
 };
-var SENSITIVE_FIELD_RE = /(^|_)(password|secret|credential|api_?key|access_?token|refresh_?token|auth_?token|bearer|email|prompt|model_?output|raw_?command|raw_?url|raw_?error|stderr|stdout|args|arguments|input|output|content)$/i;
-var SECRET_VALUE_RE = /(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|xox[baprs]-[a-z0-9-]{12,}|bearer\s+[a-z0-9._-]{12,})/i;
-function redactForensicValue(value, path = "body") {
-  const fields = new Set;
-  const rules = new Set;
-  function visit(input, currentPath) {
-    if (Array.isArray(input))
-      return input.map((item, index) => visit(item, `${currentPath}[${index}]`));
-    if (input && typeof input === "object") {
-      const output = {};
-      for (const [key, nested] of Object.entries(input)) {
-        const nextPath = `${currentPath}.${key}`;
-        if (isSensitiveField(key)) {
-          output[key] = REDACTED;
-          fields.add(nextPath);
-          rules.add(REDACTION_RULES.sensitiveField);
-          continue;
-        }
-        output[key] = visit(nested, nextPath);
-      }
-      return output;
-    }
-    if (typeof input === "string" && SECRET_VALUE_RE.test(input)) {
-      fields.add(currentPath);
-      rules.add(REDACTION_RULES.secretPattern);
-      return input.replace(SECRET_VALUE_RE, REDACTED);
-    }
-    return input;
+function mapSpecialistBackend(model) {
+  const provider = BACKEND_MAP[model.toLowerCase()];
+  if (!provider) {
+    return model.toLowerCase();
   }
-  return {
-    value: visit(value, path),
-    fields: Array.from(fields).sort(),
-    rules: Array.from(rules).sort()
-  };
+  return provider;
 }
-var NON_SENSITIVE_TELEMETRY_BODY_FIELDS = new Set([
-  "input_tokens",
-  "output_tokens",
-  "cache_read_tokens",
-  "cache_creation_tokens",
-  "reasoning_tokens",
-  "tool_tokens",
-  "total_tokens",
-  "usage_source",
-  "credential_kind",
-  "policy_kind",
-  "action_kind",
-  "resource_kind",
-  "eval_kind",
-  "target_kind",
-  "scope_kind",
-  "provider",
-  "ttl_seconds",
-  "retryable",
-  "result",
-  "score",
-  "threshold",
-  "scale",
-  "severity",
-  "reason_code",
-  "mismatch_kind"
-]);
-function isSensitiveField(key) {
-  if (NON_SENSITIVE_TELEMETRY_BODY_FIELDS.has(key))
-    return false;
-  return SENSITIVE_FIELD_RE.test(key);
-}
-function mergeRedaction(explicit, result) {
-  const fields = [...new Set([...explicit?.fields ?? [], ...result.fields])].sort();
-  const rules = [...new Set([...explicit?.rules ?? [], ...result.rules])].sort();
-  const status = explicit?.status === "unknown" ? "unknown" : explicit?.status === "redacted" || fields.length > 0 ? "redacted" : "clean";
-  return {
-    status,
-    ...fields.length > 0 ? { fields } : {},
-    ...rules.length > 0 ? { rules } : {}
-  };
-}
-function createForensicEvent(options) {
-  const tUnixMs = options.t_unix_ms ?? Date.now();
-  const redactionResult = redactForensicValue(options.body ?? {}, "body");
-  const explicitRedaction = options.redaction;
-  const event = {
-    schema_version: FORENSIC_SCHEMA_VERSION,
-    timestamp: options.timestamp ?? new Date(tUnixMs).toISOString(),
-    t_unix_ms: tUnixMs,
-    severity: options.severity ?? "info",
-    event_family: options.event_family,
-    event_name: options.event_name,
-    event_version: options.event_version ?? 1,
-    resource: normalizeResource(options.resource),
-    correlation: options.correlation ?? {},
-    body: redactionResult.value,
-    redaction: mergeRedaction(explicitRedaction, redactionResult)
-  };
-  if (options.seq !== undefined)
-    event.seq = options.seq;
-  if (options.trace)
-    event.trace = options.trace;
-  if (options.otel)
-    event.otel = options.otel;
-  if (options.links)
-    event.links = options.links;
-  if (options.diagnostics)
-    event.diagnostics = options.diagnostics;
-  assertKnownTopLevelFields(event);
-  return event;
-}
-function normalizeResource(resource) {
-  const normalized = { ...resource };
-  const legacySpecialist = normalized.specialist;
-  if (!normalized.participant_kind && typeof legacySpecialist === "string") {
-    normalized.participant_kind = "specialist";
+function getProviderArgs(model) {
+  const m = model.toLowerCase();
+  if (m === "qwen") {
+    return ["--api-key", process.env.DASHSCOPE_API_KEY ?? process.env.OPENAI_API_KEY ?? ""];
   }
-  if (!normalized.participant_role && typeof legacySpecialist === "string") {
-    normalized.participant_role = legacySpecialist;
-  }
-  delete normalized.specialist;
-  return normalized;
-}
-function deriveParticipantId(input) {
-  const kind = input.participant_kind ?? "specialist";
-  if (kind === "specialist" && input.chain_id)
-    return `${input.chain_id}::${input.participant_role}`;
-  if (kind === "orchestrator" && input.session_uuid)
-    return `orch::${input.session_uuid}`;
-  if (kind === "pulse_emitter" && input.container_id)
-    return `${input.container_id}::emitter::${input.participant_role}`;
-  if (kind === "node_member" && input.node_id)
-    return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
-  if (kind === "adapter" && input.adapter_id)
-    return input.adapter_id;
-  return;
-}
-function assertKnownTopLevelFields(event) {
-  for (const key of Object.keys(event)) {
-    if (!ALLOWED_TOP_LEVEL_FIELDS.has(key)) {
-      throw new Error(`Unknown forensic event top-level field: ${key}`);
-    }
-  }
-}
-function forensicEventFromTimelineEvent(event, context) {
-  const participantRole = context.specialist;
-  const participantKind = context.nodeId ? "node_member" : "specialist";
-  const participantId = deriveParticipantId({
-    participant_kind: participantKind,
-    participant_role: participantRole,
-    chain_id: context.chainId,
-    node_id: context.nodeId
-  });
-  return createForensicEvent({
-    event_family: familyForTimelineType(event.type),
-    event_name: eventNameForTimelineEvent(event),
-    severity: severityForTimelineEvent(event),
-    resource: {
-      service_namespace: "xtrm",
-      service_name: "specialists",
-      service_component: context.serviceComponent ?? "runtime",
-      deployment_environment: "local",
-      repo: context.repo ?? "unknown",
-      participant_kind: participantKind,
-      participant_role: participantRole,
-      model_provider: context.backend,
-      model: context.model,
-      chain_kind: context.chainKind
-    },
-    correlation: {
-      participant_id: participantId,
-      job_id: context.jobId,
-      bead_id: context.beadId,
-      node_id: context.nodeId,
-      chain_id: context.chainId,
-      chain_root_job_id: context.chainRootJobId,
-      chain_root_bead_id: context.chainRootBeadId,
-      epic_id: context.epicId,
-      session_id: context.sessionId ?? stringField(event, "session_id"),
-      conversation_id: context.conversationId ?? stringField(event, "conversation_id"),
-      trace_id: context.traceId ?? stringField(event, "trace_id") ?? metaStringField(event, "trace_id"),
-      span_id: context.spanId ?? stringField(event, "span_id") ?? metaStringField(event, "span_id"),
-      parent_span_id: context.parentSpanId ?? stringField(event, "parent_span_id") ?? metaStringField(event, "parent_span_id"),
-      mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
-      jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
-      tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
-      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
-    },
-    body: bodyForTimelineEvent(event),
-    otel: otelForTimelineEvent(event),
-    redaction: { status: redactionStatusForTimelineEvent(event) },
-    t_unix_ms: event.t,
-    seq: event.seq
-  });
-}
-function stringField(source, key) {
-  const value = source[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-function metaStringField(source, key) {
-  const meta = source._meta;
-  if (!meta || typeof meta !== "object")
-    return;
-  return stringField(meta, key);
-}
-function numberField(source, key) {
-  const value = Number(source[key]);
-  return Number.isFinite(value) ? value : undefined;
-}
-function booleanField(source, key) {
-  const value = source[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-function bodyForTimelineEvent(event) {
-  if (event.type === "mcp") {
-    return {
-      legacy_timeline_event: event,
-      mcp_server: stringField(event, "mcp_server") ?? stringField(event, "server") ?? "unknown",
-      mcp_method: stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call",
-      tool_name: stringField(event, "tool_name") ?? stringField(event, "tool"),
-      network_transport: stringField(event, "network_transport") ?? stringField(event, "transport"),
-      duration_ms: numberField(event, "duration_ms"),
-      error_type: stringField(event, "error_type"),
-      status_code: stringField(event, "status_code"),
-      duplicate_span_suppressed: booleanField(event, "duplicate_span_suppressed"),
-      trace_carrier: metaStringField(event, "trace_carrier") ?? (event._meta && typeof event._meta === "object" ? "_meta" : undefined)
-    };
-  }
-  if (event.type === "token_usage") {
-    return {
-      legacy_timeline_event: event,
-      input_tokens: numberField(event, "input_tokens") ?? numberField(event, "input"),
-      output_tokens: numberField(event, "output_tokens") ?? numberField(event, "output"),
-      cache_read_tokens: numberField(event, "cache_read_tokens") ?? numberField(event, "cache_read"),
-      cache_creation_tokens: numberField(event, "cache_creation_tokens") ?? numberField(event, "cache_creation"),
-      reasoning_tokens: numberField(event, "reasoning_tokens") ?? numberField(event, "reasoning") ?? numberField(event, "thinking_tokens"),
-      tool_tokens: numberField(event, "tool_tokens") ?? numberField(event, "tool") ?? numberField(event, "tool_use_tokens"),
-      total_tokens: numberField(event, "total_tokens") ?? numberField(event, "total"),
-      usage_source: stringField(event, "usage_source") ?? stringField(event, "source") ?? "runtime_event"
-    };
-  }
-  if (event.type === "run_complete") {
-    return {
-      legacy_timeline_event: event,
-      status: stringField(event, "status"),
-      output: stringField(event, "output"),
-      error: stringField(event, "error"),
-      commit_sha: stringField(event, "commit_sha"),
-      evidence_refs: evidenceRefsForTimelineEvent(event)
-    };
-  }
-  if (event.type === "auto_commit_success" || event.type === "auto_commit_skipped" || event.type === "auto_commit_failed") {
-    const committedFiles = Array.isArray(event.committed_files) ? event.committed_files.filter((file) => typeof file === "string") : [];
-    return {
-      legacy_timeline_event: event,
-      evidence_kind: event.type === "auto_commit_success" ? "commit" : "report",
-      result: event.type === "auto_commit_success" ? "success" : event.type === "auto_commit_failed" ? "error" : "skipped",
-      commit_sha: stringField(event, "commit_sha"),
-      changed_paths_count: committedFiles.length,
-      changed_paths: committedFiles,
-      evidence_refs: evidenceRefsForTimelineEvent(event),
-      reason: stringField(event, "reason")
-    };
-  }
-  if (event.type === "command_completed" || event.type === "command_failed") {
-    return {
-      legacy_timeline_event: event,
-      command_kind: stringField(event, "command_kind") ?? "unknown",
-      duration_ms: numberField(event, "duration_ms"),
-      status: event.type === "command_completed" ? "success" : "error",
-      command: stringField(event, "command"),
-      args: Array.isArray(event.args) ? event.args.filter((arg) => typeof arg === "string") : undefined,
-      exit_code: numberField(event, "exit_code"),
-      stderr: stringField(event, "stderr"),
-      redacted: booleanField(event, "redacted")
-    };
-  }
-  if (event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived") {
-    return {
-      legacy_timeline_event: event,
-      verdict: event.type.replace("review_verdict_", ""),
-      chain_template: stringField(event, "chain_template"),
-      changed_paths_count: numberField(event, "changed_paths_count"),
-      terminal_state: stringField(event, "terminal_state"),
-      result: stringField(event, "result")
-    };
-  }
-  if (event.type === "chain_ready_for_review" || event.type === "chain_finalized") {
-    return {
-      legacy_timeline_event: event,
-      chain_template: stringField(event, "chain_template"),
-      changed_paths_count: numberField(event, "changed_paths_count"),
-      terminal_state: stringField(event, "terminal_state"),
-      result: stringField(event, "result")
-    };
-  }
-  if (event.type === "worktree_merged") {
-    return {
-      legacy_timeline_event: event,
-      changed_paths_count: numberField(event, "changed_paths_count"),
-      merge_ref: stringField(event, "merge_ref"),
-      source_ref: stringField(event, "source_ref"),
-      target_ref: stringField(event, "target_ref"),
-      result: stringField(event, "result")
-    };
-  }
-  return { legacy_timeline_event: event };
-}
-function evidenceRefsForTimelineEvent(event) {
-  if (!Array.isArray(event.evidence))
-    return;
-  const refs = event.evidence.filter((entry) => !!entry && typeof entry === "object" && !Array.isArray(entry));
-  return refs.length > 0 ? refs : undefined;
-}
-function otelForTimelineEvent(event) {
-  if (event.type !== "mcp")
-    return;
-  const method = stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call";
-  return {
-    "mcp.method.name": method,
-    "mcp.session.id": stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
-    "jsonrpc.request.id": stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
-    "network.transport": stringField(event, "network_transport") ?? stringField(event, "transport"),
-    "gen_ai.operation.name": "execute_tool",
-    "gen_ai.tool.name": stringField(event, "tool_name") ?? stringField(event, "tool")
-  };
-}
-function familyForTimelineType(type) {
-  if (type === "run_start" || type === "run_complete" || type === "status_change" || type === "payload_breakdown")
-    return "job";
-  if (type === "mcp")
-    return "mcp";
-  if (type === "tool")
-    return "tool";
-  if (type === "turn" || type === "turn_summary" || type === "message" || type === "text" || type === "thinking")
-    return "turn";
-  if (type === "token_usage" || type === "finish_reason" || type === "model_change" || type === "meta")
-    return "model";
-  if (type === "control_signal")
-    return "control";
-  if (type === "retry")
-    return "retry";
-  if (type === "compaction")
-    return "compaction";
-  if (type === "error" || type === "extension_error")
-    return "error";
-  if (type === "auto_commit_success" || type === "auto_commit_skipped" || type === "auto_commit_failed")
-    return "git";
-  if (type === "command_completed" || type === "command_failed")
-    return "command";
-  if (type === "review_verdict_pass" || type === "review_verdict_partial" || type === "review_verdict_fail" || type === "review_verdict_waived")
-    return "review";
-  if (type === "chain_ready_for_review" || type === "chain_finalized")
-    return "chain";
-  if (type === "worktree_merged")
-    return "worktree";
-  if (type === "stale_warning")
-    return "process_health";
-  return "job";
-}
-function eventNameForTimelineEvent(event) {
-  if (event.type === "run_start")
-    return "job.started";
-  if (event.type === "run_complete") {
-    if (event.status === "ERROR")
-      return "job.failed";
-    if (event.status === "CANCELLED")
-      return "job.cancelled";
-    return "job.completed";
-  }
-  if (event.type === "status_change")
-    return "job.status_changed";
-  if (event.type === "mcp")
-    return mcpEventNameForTimelineEvent(event);
-  if (event.type === "tool") {
-    if (event.phase === "start")
-      return "tool.call.started";
-    if (event.is_error)
-      return "tool.call.failed";
-    return "tool.call.completed";
-  }
-  if (event.type === "turn_summary")
-    return "turn.summarized";
-  if (event.type === "token_usage")
-    return "model.token_usage.recorded";
-  if (event.type === "finish_reason")
-    return "model.finish_reason.recorded";
-  if (event.type === "model_change")
-    return "model.changed";
-  if (event.type === "control_signal")
-    return `control.${String(event.action ?? "signal")}.recorded`;
-  if (event.type === "retry")
-    return `retry.${String(event.phase ?? "recorded")}`;
-  if (event.type === "compaction")
-    return `compaction.${String(event.phase ?? "recorded")}`;
-  if (event.type === "extension_error")
-    return "error.extension";
-  if (event.type === "error")
-    return "error.rpc";
-  if (event.type === "auto_commit_success")
-    return "git.auto_commit.succeeded";
-  if (event.type === "auto_commit_skipped")
-    return "git.auto_commit.skipped";
-  if (event.type === "auto_commit_failed")
-    return "git.auto_commit.failed";
-  if (event.type === "command_completed")
-    return "command.completed";
-  if (event.type === "command_failed")
-    return "command.failed";
-  if (event.type === "review_verdict_pass")
-    return "review.verdict.pass";
-  if (event.type === "review_verdict_partial")
-    return "review.verdict.partial";
-  if (event.type === "review_verdict_fail")
-    return "review.verdict.fail";
-  if (event.type === "review_verdict_waived")
-    return "review.verdict.waived";
-  if (event.type === "chain_ready_for_review")
-    return "chain.ready_for_review";
-  if (event.type === "chain_finalized")
-    return "chain.finalized";
-  if (event.type === "worktree_merged")
-    return "worktree.merged";
-  if (event.type === "stale_warning")
-    return "process_health.stale_detected";
-  return `${familyForTimelineType(event.type)}.${event.type}`;
-}
-function mcpEventNameForTimelineEvent(event) {
-  const explicit = stringField(event, "event_name");
-  if (explicit?.startsWith("mcp."))
-    return explicit;
-  const action = stringField(event, "action") ?? stringField(event, "phase") ?? stringField(event, "status");
-  if (action === "connected")
-    return "mcp.connected";
-  if (action === "disconnected")
-    return "mcp.disconnected";
-  if (action === "auth_failed")
-    return "mcp.auth.failed";
-  if (action === "rate_limited")
-    return "mcp.rate_limited";
-  if (action === "latency_observed")
-    return "mcp.latency.observed";
-  if (action === "start" || action === "started")
-    return "mcp.call.started";
-  if (event.is_error || action === "failed" || action === "error")
-    return "mcp.call.failed";
-  return "mcp.call.completed";
-}
-function severityForTimelineEvent(event) {
-  if (event.type === "error" || event.type === "extension_error" || event.type === "auto_commit_failed" || event.type === "command_failed")
-    return "error";
-  if (event.type === "mcp" && (event.is_error || mcpEventNameForTimelineEvent(event).endsWith(".failed") || mcpEventNameForTimelineEvent(event) === "mcp.auth.failed"))
-    return "error";
-  if (event.type === "mcp" && mcpEventNameForTimelineEvent(event) === "mcp.rate_limited")
-    return "warn";
-  if (event.type === "stale_warning" || event.type === "control_signal")
-    return "warn";
-  if (event.type === "run_complete" && event.status === "ERROR")
-    return "error";
-  if (event.type === "tool" && event.is_error)
-    return "error";
-  return "info";
-}
-function redactionStatusForTimelineEvent(event) {
-  if (event.type === "tool" || event.type === "turn_summary" || event.type === "run_complete" || event.type === "command_completed" || event.type === "command_failed" || event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived" || event.type === "chain_ready_for_review" || event.type === "chain_finalized" || event.type === "worktree_merged")
-    return "redacted";
-  return "clean";
+  return [];
 }
 
-// src/specialist/observability-sqlite.ts
-var _BunDatabase = null;
-var _probed = false;
-function loadBunDatabase() {
-  if (_probed)
-    return _BunDatabase;
-  _probed = true;
-  try {
-    _BunDatabase = __require("bun:sqlite").Database;
-  } catch {
-    _BunDatabase = null;
-  }
-  return _BunDatabase;
-}
-var BUSY_TIMEOUT_MS = 5000;
-var MAX_RETRY_ATTEMPTS = 5;
-var BASE_RETRY_DELAY_MS = 50;
-function calculateRetryDelay(attempt) {
-  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
-  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
-  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
-}
-function withRetry(operation, context) {
-  let lastError;
-  for (let attempt = 0;attempt < MAX_RETRY_ATTEMPTS; attempt++) {
-    try {
-      return operation();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (lastError.message.includes("Cannot use a closed database")) {
-        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
-      }
-      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
-      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
-        break;
-      }
-      const delayMs = calculateRetryDelay(attempt);
-      Bun.sleepSync(delayMs);
-    }
-  }
-  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? "unknown error"}`);
-}
-function parseJournalMode(mode) {
-  if (!mode)
-    return null;
-  return mode.toLowerCase();
-}
-function enforceWalMode(db) {
-  const result = db.query("PRAGMA journal_mode=WAL").get();
-  const mode = parseJournalMode(result?.journal_mode);
-  if (mode !== "wal") {
-    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? "null"})`);
-  }
-}
-function verifyWalMode(db) {
-  const result = db.query("PRAGMA journal_mode").get();
-  const mode = parseJournalMode(result?.journal_mode);
-  if (mode !== "wal") {
-    throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
-  }
-}
-function migrateToV2(db) {
-  const hasV2 = db.query("SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1").get();
-  if (hasV2) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
-      job_id          TEXT PRIMARY KEY,
-      specialist      TEXT NOT NULL,
-      worktree_column TEXT,
-      status_json     TEXT NOT NULL,
-      bead_id         TEXT,
-      updated_at_ms   INTEGER NOT NULL,
-      last_output     TEXT,
-      startup_payload_json TEXT
-    );
-    INSERT OR IGNORE INTO specialist_jobs_v2
-      SELECT
-        job_id,
-        specialist,
-        worktree_column,
-        status_json,
-        JSON_EXTRACT(status_json, '$.bead_id'),
-        updated_at_ms,
-        last_output,
-        startup_payload_json
-      FROM specialist_jobs;
-    DROP TABLE IF EXISTS specialist_jobs;
-    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
-    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (2, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV3(db) {
-  const hasV3 = db.query("SELECT 1 FROM schema_version WHERE version = 3 LIMIT 1").get();
-  if (hasV3) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL");
-    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC)");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_jobs_v3 (
-      job_id          TEXT PRIMARY KEY,
-      specialist      TEXT NOT NULL,
-      worktree_column TEXT,
-      bead_id         TEXT,
-      node_id         TEXT,
-      status          TEXT NOT NULL,
-      status_json     TEXT NOT NULL,
-      updated_at_ms   INTEGER NOT NULL,
-      last_output     TEXT,
-      startup_payload_json TEXT
-    );
-    INSERT OR IGNORE INTO specialist_jobs_v3
-      SELECT
-        job_id,
-        specialist,
-        worktree_column,
-        bead_id,
-        NULL,
-        COALESCE(JSON_EXTRACT(status_json, '$.status'), 'starting'),
-        status_json,
-        updated_at_ms,
-        last_output,
-        startup_payload_json
-      FROM specialist_jobs;
-    DROP TABLE IF EXISTS specialist_jobs;
-    ALTER TABLE specialist_jobs_v3 RENAME TO specialist_jobs;
-    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status);
-    CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC);
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (3, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV11(db) {
-  const hasV11 = db.query("SELECT 1 FROM schema_version WHERE version = 11 LIMIT 1").get();
-  if (hasV11) {
-    const metricsColumns = new Set(db.query("PRAGMA table_info(specialist_job_metrics)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-    for (const column of [
-      { name: "active_runtime_ms", definition: "INTEGER" },
-      { name: "waiting_ms", definition: "INTEGER" }
-    ]) {
-      if (!metricsColumns.has(column.name)) {
-        db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
-      }
-    }
-    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC)");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_job_metrics (
-      job_id TEXT PRIMARY KEY,
-      specialist TEXT NOT NULL,
-      model TEXT,
-      status TEXT NOT NULL,
-      chain_kind TEXT,
-      chain_id TEXT,
-      bead_id TEXT,
-      node_id TEXT,
-      epic_id TEXT,
-      started_at_ms INTEGER,
-      completed_at_ms INTEGER,
-      elapsed_ms INTEGER,
-      active_runtime_ms INTEGER,
-      waiting_ms INTEGER,
-      total_turns INTEGER NOT NULL DEFAULT 0,
-      total_tools INTEGER NOT NULL DEFAULT 0,
-      tool_call_counts_json TEXT NOT NULL,
-      token_trajectory_json TEXT NOT NULL,
-      context_trajectory_json TEXT NOT NULL,
-      stall_gaps_json TEXT NOT NULL,
-      run_complete_json TEXT,
-      updated_at_ms INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
-    CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC);
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (11, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV12(db) {
-  const hasV12 = db.query("SELECT 1 FROM schema_version WHERE version = 12 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS specialist_forensic_events (
-      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id             TEXT NOT NULL,
-      seq                INTEGER NOT NULL,
-      t                  INTEGER NOT NULL,
-      schema_version     TEXT NOT NULL,
-      event_family       TEXT NOT NULL,
-      event_name         TEXT NOT NULL,
-      participant_kind   TEXT,
-      participant_role   TEXT,
-      participant_id     TEXT,
-      redaction_status   TEXT NOT NULL,
-      event_json         TEXT NOT NULL
-    );
-  `);
-  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_forensic_events_job_seq ON specialist_forensic_events(job_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_t ON specialist_forensic_events(job_id, t, seq, id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_family ON specialist_forensic_events(event_family, event_name, t)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_participant ON specialist_forensic_events(participant_kind, participant_role, t)");
-  if (hasV12)
-    return;
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (12, strftime('%s', 'now') * 1000);
-  `);
-}
-function parseJsonRecord(input) {
-  if (!input)
-    return {};
-  try {
-    const parsed = JSON.parse(input);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-function stringifyJson(value) {
-  return JSON.stringify(value);
-}
-function migrateToV4(db) {
-  const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
-  if (hasV4) {
-    db.run("CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)");
-    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL");
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)");
-    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)");
-    db.run("CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL");
-    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_memory_run_entry ON node_memory(node_run_id, entry_id) WHERE entry_id IS NOT NULL");
-    return;
-  }
-  db.run(`
-    CREATE TABLE IF NOT EXISTS node_runs (
-      id                 TEXT PRIMARY KEY,
-      node_name          TEXT NOT NULL,
-      status             TEXT NOT NULL,
-      coordinator_job_id TEXT,
-      started_at_ms      INTEGER,
-      updated_at_ms      INTEGER NOT NULL,
-      waiting_on         TEXT,
-      error              TEXT,
-      memory_namespace   TEXT,
-      status_json        TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status);
-
-    CREATE TABLE IF NOT EXISTS node_members (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id  TEXT NOT NULL,
-      member_id    TEXT NOT NULL,
-      job_id       TEXT,
-      specialist   TEXT NOT NULL,
-      model        TEXT,
-      role         TEXT,
-      status       TEXT NOT NULL,
-      enabled      INTEGER NOT NULL DEFAULT 1,
-      generation   INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
-    CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id);
-
-    CREATE TABLE IF NOT EXISTS node_events (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id  TEXT NOT NULL,
-      seq          INTEGER NOT NULL,
-      t            INTEGER NOT NULL,
-      type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
-    CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
-
-    CREATE TABLE IF NOT EXISTS node_memory (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_run_id      TEXT NOT NULL,
-      namespace        TEXT,
-      entry_type       TEXT,
-      entry_id         TEXT,
-      summary          TEXT,
-      source_member_id TEXT,
-      confidence       REAL,
-      provenance_json  TEXT,
-      created_at_ms    INTEGER,
-      updated_at_ms    INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id);
-    CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL;
-
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (4, strftime('%s', 'now') * 1000);
-  `);
-}
-function initSchema(db) {
-  enforceWalMode(db);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS schema_version (
-      version     INTEGER PRIMARY KEY,
-      applied_at_ms INTEGER NOT NULL
-    );
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (1, strftime('%s', 'now') * 1000);
-
-    -- Ensure specialist_jobs exists with at least the base columns so the
-    -- migration INSERT below can always SELECT from it.
-    CREATE TABLE IF NOT EXISTS specialist_jobs (
-      job_id       TEXT PRIMARY KEY,
-      specialist   TEXT NOT NULL,
-      status_json  TEXT NOT NULL,
-      updated_at_ms INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS specialist_events (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id       TEXT NOT NULL,
-      seq          INTEGER NOT NULL,
-      specialist   TEXT NOT NULL,
-      bead_id      TEXT,
-      t            INTEGER NOT NULL,
-      type         TEXT NOT NULL,
-      event_json   TEXT NOT NULL
-    );
-    -- seq-dependent indexes are created/maintained by migrateToV6 to handle
-    -- existing DBs where specialist_events was created without the seq column.
-    CREATE INDEX IF NOT EXISTS idx_specialist_events_type ON specialist_events(type);
-
-    CREATE TABLE IF NOT EXISTS specialist_results (
-      job_id        TEXT PRIMARY KEY,
-      output        TEXT NOT NULL,
-      updated_at_ms INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  const missingSpecialistJobsColumns = [
-    { name: "worktree_column", definition: "TEXT" },
-    { name: "bead_id", definition: "TEXT" },
-    { name: "node_id", definition: "TEXT" },
-    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
-    { name: "chain_id", definition: "TEXT" },
-    { name: "chain_root_job_id", definition: "TEXT" },
-    { name: "chain_root_bead_id", definition: "TEXT" },
-    { name: "epic_id", definition: "TEXT" },
-    { name: "status", definition: "TEXT NOT NULL DEFAULT 'starting'" },
-    { name: "last_output", definition: "TEXT" },
-    { name: "startup_payload_json", definition: "TEXT" }
-  ].filter(({ name }) => !specialistJobsColumns.has(name));
-  for (const missingColumn of missingSpecialistJobsColumns) {
-    db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
-  }
-  const shouldRebuildSpecialistJobs = missingSpecialistJobsColumns.length > 0;
-  if (shouldRebuildSpecialistJobs) {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS specialist_jobs_new (
-        job_id          TEXT PRIMARY KEY,
-        specialist      TEXT NOT NULL,
-        worktree_column TEXT,
-        bead_id         TEXT,
-        node_id         TEXT,
-        chain_kind      TEXT NOT NULL DEFAULT 'prep',
-        chain_id        TEXT,
-        chain_root_job_id TEXT,
-        chain_root_bead_id TEXT,
-        epic_id         TEXT,
-        status          TEXT NOT NULL,
-        status_json     TEXT NOT NULL,
-        updated_at_ms   INTEGER NOT NULL,
-        last_output     TEXT,
-        startup_payload_json TEXT
-      );
-      INSERT OR IGNORE INTO specialist_jobs_new
-        SELECT
-          job_id,
-          specialist,
-          worktree_column,
-          bead_id,
-          node_id,
-          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
-          chain_id,
-          COALESCE(chain_root_job_id, chain_id),
-          chain_root_bead_id,
-          epic_id,
-          COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
-          status_json,
-          updated_at_ms,
-          last_output,
-          startup_payload_json
-        FROM specialist_jobs;
-      DROP TABLE IF EXISTS specialist_jobs;
-      ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
-    `);
-  }
-  migrateToV2(db);
-  migrateToV3(db);
-  migrateToV4(db);
-  migrateToV5(db);
-  migrateToV6(db);
-  migrateToV7(db);
-  migrateToV8(db);
-  migrateToV9(db);
-  migrateToV10(db);
-  migrateToV11(db);
-  migrateToV12(db);
-  verifyWalMode(db);
-}
-function migrateToV5(db) {
-  const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
-  if (!hasV5) {
-    const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-    if (!nodeMemberColumns.has("generation")) {
-      db.run("ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0");
-    }
-    db.run(`
-      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-        VALUES (5, strftime('%s', 'now') * 1000);
-    `);
-  }
-}
-function migrateToV6(db) {
-  const hasV6 = db.query("SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1").get();
-  if (hasV6) {
-    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
-    return;
-  }
-  const specialistEventColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  if (!specialistEventColumns.has("seq")) {
-    db.run("ALTER TABLE specialist_events ADD COLUMN seq INTEGER");
-  }
-  db.run(`
-    UPDATE specialist_events
-    SET seq = (
-      SELECT COUNT(*)
-      FROM specialist_events prior
-      WHERE prior.job_id = specialist_events.job_id
-        AND prior.id <= specialist_events.id
-    )
-    WHERE seq IS NULL OR seq <= 0
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
-  const nodeEventColumns = new Set(db.query("PRAGMA table_info(node_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  if (!nodeEventColumns.has("seq")) {
-    db.run("ALTER TABLE node_events ADD COLUMN seq INTEGER");
-  }
-  db.run(`
-    UPDATE node_events
-    SET seq = (
-      SELECT COUNT(*)
-      FROM node_events prior
-      WHERE prior.node_run_id = node_events.node_run_id
-        AND prior.id <= node_events.id
-    )
-    WHERE seq IS NULL OR seq <= 0
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (6, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV7(db) {
-  const hasV7 = db.query("SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1").get();
-  const nodeRunColumns = new Set(db.query("PRAGMA table_info(node_runs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "pr_number", definition: "INTEGER" },
-    { name: "pr_url", definition: "TEXT" },
-    { name: "pr_head_sha", definition: "TEXT" },
-    { name: "gate_results", definition: "TEXT" },
-    { name: "completion_strategy", definition: "TEXT" }
-  ]) {
-    if (!nodeRunColumns.has(column.name)) {
-      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "worktree_path", definition: "TEXT" },
-    { name: "parent_member_id", definition: "TEXT" },
-    { name: "replaced_member_id", definition: "TEXT" },
-    { name: "phase_id", definition: "TEXT" }
-  ]) {
-    if (!nodeMemberColumns.has(column.name)) {
-      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  if (hasV7) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (7, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV8(db) {
-  const hasV8 = db.query("SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1").get();
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "chain_id", definition: "TEXT" },
-    { name: "epic_id", definition: "TEXT" }
-  ]) {
-    if (!specialistJobsColumns.has(column.name)) {
-      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL");
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL");
-  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_bead_specialist ON specialist_jobs(bead_id, specialist) WHERE bead_id IS NOT NULL AND status IN ('starting', 'running')");
-  db.run(`
-    CREATE TABLE IF NOT EXISTS epic_runs (
-      epic_id         TEXT PRIMARY KEY,
-      status          TEXT NOT NULL,
-      status_json     TEXT NOT NULL,
-      updated_at_ms   INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS epic_chain_membership (
-      chain_id            TEXT PRIMARY KEY,
-      epic_id             TEXT NOT NULL,
-      chain_root_bead_id  TEXT,
-      chain_root_job_id   TEXT,
-      updated_at_ms       INTEGER NOT NULL
-    );
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL");
-  if (hasV8) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (8, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV9(db) {
-  const hasV9 = db.query("SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1").get();
-  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
-  for (const column of [
-    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
-    { name: "chain_root_job_id", definition: "TEXT" },
-    { name: "chain_root_bead_id", definition: "TEXT" }
-  ]) {
-    if (!specialistJobsColumns.has(column.name)) {
-      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
-  db.run(`
-    UPDATE specialist_jobs
-    SET chain_kind = CASE
-      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
-      ELSE 'prep'
-    END
-    WHERE chain_kind IS NULL OR chain_kind = ''
-  `);
-  db.run(`
-    UPDATE specialist_jobs
-    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
-    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
-  `);
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL");
-  if (hasV9) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (9, strftime('%s', 'now') * 1000);
-  `);
-}
-function migrateToV10(db) {
-  const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache (
-      memory_key           TEXT PRIMARY KEY,
-      memory_value         TEXT NOT NULL,
-      updated_at_ms        INTEGER NOT NULL,
-      last_accessed_at_ms  INTEGER,
-      access_count         INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  db.run(`
-    CREATE TABLE IF NOT EXISTS memories_cache_meta (
-      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
-      last_sync_at_ms  INTEGER NOT NULL,
-      memory_count     INTEGER NOT NULL
-    );
-  `);
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      key,
-      content,
-      tokenize='porter ascii'
-    );
-  `);
-  if (hasV10) {
-    return;
-  }
-  db.run(`
-    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
-      VALUES (10, strftime('%s', 'now') * 1000);
-  `);
-}
-var STALE_CLAIM_AGE_MS = 60000;
-function defaultIsPidAlive(pid) {
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
-    return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function claimJobStartWithStore(store, status, event, options = {}) {
-  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
-  const nowMs = options.nowMs ?? Date.now;
-  const staleAgeMs = options.staleClaimAgeMs ?? STALE_CLAIM_AGE_MS;
-  return withRetry(() => store.transaction(() => {
-    const existing = store.findActiveJob(status.bead_id ?? null, status.specialist);
-    if (existing?.job_id && existing.job_id !== status.id) {
-      const updatedAtMs = existing.updated_at_ms ?? 0;
-      const isStale = updatedAtMs > 0 && nowMs() - updatedAtMs > staleAgeMs && !isPidAlive(existing.pid);
-      if (isStale && store.cancelStaleClaim) {
-        store.cancelStaleClaim(existing.job_id);
-      } else {
-        return { ok: false, existingJobId: existing.job_id, existingStatus: existing.status ?? "starting" };
-      }
-    }
-    store.writeStatusRow(status);
-    store.writeEventRow(status.id, status.specialist, status.bead_id, event);
-    return { ok: true };
-  }), "claimJobStart");
-}
-
-class SqliteClient {
-  db;
-  dbPath;
-  constructor(dbPath) {
-    this.dbPath = dbPath;
-    const Ctor = loadBunDatabase();
-    this.db = new Ctor(dbPath);
-    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
-    this.db.run("PRAGMA journal_mode=WAL");
-  }
-  writeStatusRow(status, lastOutput) {
-    const statusJson = JSON.stringify(status);
-    this.db.run(`
-      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(job_id) DO UPDATE SET
-        specialist = excluded.specialist,
-        worktree_column = excluded.worktree_column,
-        bead_id = excluded.bead_id,
-        node_id = excluded.node_id,
-        chain_kind = excluded.chain_kind,
-        chain_id = excluded.chain_id,
-        chain_root_job_id = excluded.chain_root_job_id,
-        chain_root_bead_id = excluded.chain_root_bead_id,
-        epic_id = excluded.epic_id,
-        status = excluded.status,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms,
-        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
-        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
-    `, [
-      status.id,
-      status.specialist,
-      status.worktree_path ?? null,
-      status.bead_id ?? null,
-      status.node_id ?? null,
-      status.chain_kind ?? (status.chain_id ? "chain" : "prep"),
-      status.chain_id ?? null,
-      status.chain_root_job_id ?? null,
-      status.chain_root_bead_id ?? null,
-      status.epic_id ?? null,
-      status.status,
-      statusJson,
-      Date.now(),
-      lastOutput ?? null,
-      status.startup_payload_json ?? null
-    ]);
-  }
-  writeEpicRunRow(epic) {
-    this.db.run(`
-      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(epic_id) DO UPDATE SET
-        status = excluded.status,
-        status_json = excluded.status_json,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
-  }
-  writeEpicChainMembershipRow(chain) {
-    this.db.run(`
-      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(chain_id) DO UPDATE SET
-        epic_id = excluded.epic_id,
-        chain_root_bead_id = excluded.chain_root_bead_id,
-        chain_root_job_id = excluded.chain_root_job_id,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [
-      chain.chain_id,
-      chain.epic_id,
-      chain.chain_root_bead_id ?? null,
-      chain.chain_root_job_id ?? null,
-      chain.updated_at_ms
-    ]);
-  }
-  getNextSpecialistEventSeq(jobId) {
-    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
-    return row?.next_seq ?? 1;
-  }
-  getNextNodeEventSeq(nodeRunId) {
-    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
-    return row?.next_seq ?? 1;
-  }
-  writeEventRow(jobId, specialist, beadId, event) {
-    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
-    const sequencedEvent = { ...event, seq };
-    const eventJson = JSON.stringify(sequencedEvent);
-    this.db.run(`
-      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
-    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
-  }
-  writeForensicEventRow(jobId, specialist, beadId, event) {
-    const context = this.readForensicContext(jobId);
-    const forensicEvent = forensicEventFromTimelineEvent(event, {
-      jobId,
-      specialist,
-      beadId: context.beadId ?? beadId,
-      nodeId: context.nodeId,
-      repo: context.repo,
-      serviceComponent: "runtime",
-      model: context.model,
-      backend: context.backend,
-      chainKind: context.chainKind,
-      chainId: context.chainId,
-      chainRootJobId: context.chainRootJobId,
-      chainRootBeadId: context.chainRootBeadId,
-      epicId: context.epicId,
-      sessionId: context.sessionId,
-      conversationId: context.conversationId,
-      traceId: context.traceId,
-      spanId: context.spanId,
-      parentSpanId: context.parentSpanId
-    });
-    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
-  }
-  readForensicContext(jobId) {
-    const row = this.db.query(`
-      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
-      FROM specialist_jobs
-      WHERE job_id = ?
-      LIMIT 1
-    `).get(jobId);
-    const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
-    return {
-      beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
-      nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
-      repo: typeof statusJson.repo === "string" ? statusJson.repo : undefined,
-      model: typeof statusJson.model === "string" ? statusJson.model : undefined,
-      backend: typeof statusJson.backend === "string" ? statusJson.backend : undefined,
-      chainKind: typeof row?.chain_kind === "string" ? row.chain_kind : undefined,
-      chainId: typeof row?.chain_id === "string" ? row.chain_id : undefined,
-      chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
-      chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
-      epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
-      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
-      conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
-      traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
-      spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
-      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
-    };
-  }
-  insertForensicEventRow(jobId, seq, forensicEvent) {
-    this.db.run(`
-      INSERT OR REPLACE INTO specialist_forensic_events (
-        job_id, seq, t, schema_version, event_family, event_name,
-        participant_kind, participant_role, participant_id, redaction_status, event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      jobId,
-      seq,
-      forensicEvent.t_unix_ms,
-      forensicEvent.schema_version,
-      forensicEvent.event_family,
-      forensicEvent.event_name,
-      forensicEvent.resource.participant_kind ?? null,
-      forensicEvent.resource.participant_role ?? null,
-      typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
-      forensicEvent.redaction.status,
-      JSON.stringify(forensicEvent)
-    ]);
-  }
-  findActiveJob(beadId, specialist) {
-    return this.db.query(`
-      SELECT
-        job_id,
-        status,
-        updated_at_ms,
-        CAST(JSON_EXTRACT(status_json, '$.pid') AS INTEGER) AS pid
-      FROM specialist_jobs
-      WHERE bead_id = ?
-        AND specialist = ?
-        AND status IN ('starting', 'running', 'waiting')
-      ORDER BY updated_at_ms DESC
-      LIMIT 1
-    `).get(beadId, specialist);
-  }
-  claimJobStart(status, event) {
-    return claimJobStartWithStore({
-      transaction: (callback) => this.db.transaction(callback)(),
-      findActiveJob: (beadId, specialist) => this.findActiveJob(beadId, specialist),
-      writeStatusRow: (nextStatus) => this.writeStatusRow(nextStatus),
-      writeEventRow: (jobId, specialist, beadId, nextEvent) => this.writeEventRow(jobId, specialist, beadId, nextEvent),
-      cancelStaleClaim: (jobId) => {
-        const nowMs = Date.now();
-        this.db.run(`
-            UPDATE specialist_jobs
-            SET status = 'cancelled',
-                status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', 'orphan-claim-stale')),
-                updated_at_ms = ?
-            WHERE job_id = ?
-          `, [nowMs, jobId]);
-      }
-    }, status, event);
-  }
-  writeResultRow(jobId, output) {
-    this.db.run(`
-      INSERT INTO specialist_results (job_id, output, updated_at_ms)
-      VALUES (?, ?, ?)
-      ON CONFLICT(job_id) DO UPDATE SET
-        output = excluded.output,
-        updated_at_ms = excluded.updated_at_ms;
-    `, [jobId, output, Date.now()]);
-  }
-  writeNodeRunRow(nodeRun) {
-    this.db.run(`
-      INSERT INTO node_runs (
-        id,
-        node_name,
-        status,
-        coordinator_job_id,
-        started_at_ms,
-        updated_at_ms,
-        waiting_on,
-        error,
-        memory_namespace,
-        status_json,
-        pr_number,
-        pr_url,
-        pr_head_sha,
-        gate_results,
-        completion_strategy
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        node_name = excluded.node_name,
-        status = excluded.status,
-        coordinator_job_id = excluded.coordinator_job_id,
-        started_at_ms = excluded.started_at_ms,
-        updated_at_ms = excluded.updated_at_ms,
-        waiting_on = excluded.waiting_on,
-        error = excluded.error,
-        memory_namespace = excluded.memory_namespace,
-        status_json = excluded.status_json,
-        pr_number = excluded.pr_number,
-        pr_url = excluded.pr_url,
-        pr_head_sha = excluded.pr_head_sha,
-        gate_results = excluded.gate_results,
-        completion_strategy = excluded.completion_strategy;
-    `, [
-      nodeRun.id,
-      nodeRun.node_name,
-      nodeRun.status,
-      nodeRun.coordinator_job_id ?? null,
-      nodeRun.started_at_ms ?? null,
-      nodeRun.updated_at_ms,
-      nodeRun.waiting_on ?? null,
-      nodeRun.error ?? null,
-      nodeRun.memory_namespace ?? null,
-      nodeRun.status_json,
-      nodeRun.pr_number ?? null,
-      nodeRun.pr_url ?? null,
-      nodeRun.pr_head_sha ?? null,
-      nodeRun.gate_results ?? null,
-      nodeRun.completion_strategy ?? null
-    ]);
-  }
-  writeNodeMemberRow(member) {
-    this.db.run(`
-      INSERT INTO node_members (
-        node_run_id,
-        member_id,
-        job_id,
-        specialist,
-        model,
-        role,
-        status,
-        enabled,
-        generation,
-        worktree_path,
-        parent_member_id,
-        replaced_member_id,
-        phase_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(node_run_id, member_id) DO UPDATE SET
-        job_id = excluded.job_id,
-        specialist = excluded.specialist,
-        model = excluded.model,
-        role = excluded.role,
-        status = excluded.status,
-        enabled = excluded.enabled,
-        generation = excluded.generation,
-        worktree_path = excluded.worktree_path,
-        parent_member_id = excluded.parent_member_id,
-        replaced_member_id = excluded.replaced_member_id,
-        phase_id = excluded.phase_id;
-    `, [
-      member.node_run_id,
-      member.member_id,
-      member.job_id ?? null,
-      member.specialist,
-      member.model ?? null,
-      member.role ?? null,
-      member.status,
-      member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
-      member.generation ?? 0,
-      member.worktree_path ?? null,
-      member.parent_member_id ?? null,
-      member.replaced_member_id ?? null,
-      member.phase_id ?? null
-    ]);
-  }
-  writeNodeEventRow(nodeRunId, t, type, eventJson) {
-    const seq = this.getNextNodeEventSeq(nodeRunId);
-    const payload = typeof eventJson === "object" && eventJson !== null ? { ...eventJson, seq } : { value: eventJson, seq };
-    this.db.run(`
-      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
-      VALUES (?, ?, ?, ?, ?)
-    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
-  }
-  writeNodeMemoryRow(entry) {
-    const now = Date.now();
-    const createdAtMs = entry.created_at_ms ?? now;
-    const updatedAtMs = entry.updated_at_ms ?? now;
-    if (entry.entry_id) {
-      this.db.run(`
-        INSERT INTO node_memory (
-          node_run_id,
-          namespace,
-          entry_type,
-          entry_id,
-          summary,
-          source_member_id,
-          confidence,
-          provenance_json,
-          created_at_ms,
-          updated_at_ms
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(node_run_id, entry_id) DO UPDATE SET
-          namespace = excluded.namespace,
-          entry_type = excluded.entry_type,
-          summary = excluded.summary,
-          source_member_id = excluded.source_member_id,
-          confidence = excluded.confidence,
-          provenance_json = excluded.provenance_json,
-          created_at_ms = excluded.created_at_ms,
-          updated_at_ms = excluded.updated_at_ms
-      `, [
-        entry.node_run_id,
-        entry.namespace ?? null,
-        entry.entry_type ?? null,
-        entry.entry_id,
-        entry.summary ?? null,
-        entry.source_member_id ?? null,
-        entry.confidence ?? null,
-        entry.provenance_json ?? null,
-        createdAtMs,
-        updatedAtMs
-      ]);
-      return;
-    }
-    this.db.run(`
-      INSERT INTO node_memory (
-        node_run_id,
-        namespace,
-        entry_type,
-        entry_id,
-        summary,
-        source_member_id,
-        confidence,
-        provenance_json,
-        created_at_ms,
-        updated_at_ms
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      entry.node_run_id,
-      entry.namespace ?? null,
-      entry.entry_type ?? null,
-      null,
-      entry.summary ?? null,
-      entry.source_member_id ?? null,
-      entry.confidence ?? null,
-      entry.provenance_json ?? null,
-      createdAtMs,
-      updatedAtMs
-    ]);
-  }
-  upsertStatus(status) {
-    withRetry(() => {
-      this.writeStatusRow(status);
-    }, "upsertStatus");
-  }
-  markSpecialistJobCancelled(jobId, reason) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        const nowMs = Date.now();
-        this.db.run(`
-          UPDATE specialist_jobs
-          SET status = 'cancelled',
-              status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', ?)),
-              updated_at_ms = ?
-          WHERE job_id = ?
-        `, [reason, nowMs, jobId]);
-      });
-      transaction();
-    }, "markSpecialistJobCancelled");
-  }
-  upsertEpicRun(epic) {
-    withRetry(() => {
-      this.writeEpicRunRow(epic);
-    }, "upsertEpicRun");
-  }
-  upsertEpicChainMembership(chain) {
-    withRetry(() => {
-      this.writeEpicChainMembershipRow(chain);
-    }, "upsertEpicChainMembership");
-  }
-  upsertStatusWithEvent(status, event) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
-      });
-      transaction();
-    }, "upsertStatusWithEvent");
-  }
-  upsertStatusWithEventAndResult(status, event, output) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeStatusRow(status, output);
-        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
-        this.writeResultRow(status.id, output);
-      });
-      transaction();
-    }, "upsertStatusWithEventAndResult");
-  }
-  appendEvent(jobId, specialist, beadId, event) {
-    withRetry(() => {
-      this.writeEventRow(jobId, specialist, beadId, event);
-    }, "appendEvent");
-  }
-  appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
-    withRetry(() => {
-      const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
-      this.insertForensicEventRow(jobId, seq, forensicEvent);
-    }, "appendForensicEvent");
-  }
-  upsertResult(jobId, output) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeResultRow(jobId, output);
-        this.db.run(`
-          UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
-        `, [output, jobId]);
-      });
-      transaction();
-    }, "upsertResult");
-  }
-  bootstrapNode(nodeRunId, nodeName, memoryNamespace) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        const now = Date.now();
-        this.writeNodeRunRow({
-          id: nodeRunId,
-          node_name: nodeName,
-          status: "created",
-          started_at_ms: now,
-          updated_at_ms: now,
-          memory_namespace: memoryNamespace,
-          status_json: JSON.stringify({ status: "created" })
-        });
-        this.writeNodeEventRow(nodeRunId, now, "node_created", { node_run_id: nodeRunId, node_name: nodeName });
-        this.writeNodeEventRow(nodeRunId, now + 1, "node_started", { node_run_id: nodeRunId, node_name: nodeName });
-      });
-      transaction();
-    }, "bootstrapNode");
-  }
-  upsertNodeRun(nodeRun) {
-    withRetry(() => {
-      this.writeNodeRunRow(nodeRun);
-    }, "upsertNodeRun");
-  }
-  upsertNodeMember(member) {
-    withRetry(() => {
-      this.writeNodeMemberRow(member);
-    }, "upsertNodeMember");
-  }
-  appendNodeEvent(nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-    }, "appendNodeEvent");
-  }
-  upsertNodeMemory(entry) {
-    withRetry(() => {
-      this.writeNodeMemoryRow(entry);
-    }, "upsertNodeMemory");
-  }
-  upsertNodeRunWithEvent(nodeRun, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeRunRow(nodeRun);
-        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeRunWithEvent");
-  }
-  upsertNodeMemberWithEvent(member, nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeMemberRow(member);
-        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeMemberWithEvent");
-  }
-  upsertNodeMemoryWithEvent(entry, nodeRunId, t, type, eventJson) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.writeNodeMemoryRow(entry);
-        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
-      });
-      transaction();
-    }, "upsertNodeMemoryWithEvent");
-  }
-  readNodeRun(nodeRunId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT * FROM node_runs WHERE id = ? LIMIT 1").get(nodeRunId);
-      if (!row)
-        return null;
-      return {
-        ...row,
-        status: row.status
-      };
-    }, "readNodeRun");
-  }
-  listNodeRuns(filter) {
-    return withRetry(() => {
-      const query = filter?.status ? "SELECT * FROM node_runs WHERE status = ? ORDER BY updated_at_ms DESC" : "SELECT * FROM node_runs ORDER BY updated_at_ms DESC";
-      const rows = filter?.status ? this.db.query(query).all(filter.status) : this.db.query(query).all();
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRuns");
-  }
-  listNodeRunsByRef(partialRef, statuses) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      const query = `
-        SELECT *
-        FROM node_runs
-        WHERE status IN (${placeholders})
-          AND (id LIKE ? OR node_name LIKE ?)
-        ORDER BY updated_at_ms DESC
-      `;
-      const prefix = `${partialRef}%`;
-      const rows = this.db.query(query).all(...statuses, prefix, prefix);
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRunsByRef");
-  }
-  listNodeRunsByStatuses(statuses) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      const query = `
-        SELECT *
-        FROM node_runs
-        WHERE status IN (${placeholders})
-        ORDER BY updated_at_ms DESC
-      `;
-      const rows = this.db.query(query).all(...statuses);
-      return rows.map((row) => ({
-        ...row,
-        status: row.status
-      }));
-    }, "listNodeRunsByStatuses");
-  }
-  readNodeMembers(nodeRunId) {
-    return withRetry(() => {
-      const rows = this.db.query("SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC").all(nodeRunId);
-      return rows.map((row) => ({
-        node_run_id: row.node_run_id,
-        member_id: row.member_id,
-        job_id: row.job_id ?? undefined,
-        specialist: row.specialist,
-        model: row.model ?? undefined,
-        role: row.role ?? undefined,
-        status: row.status,
-        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
-        generation: row.generation ?? 0,
-        worktree_path: row.worktree_path ?? undefined,
-        parent_member_id: row.parent_member_id ?? undefined,
-        replaced_member_id: row.replaced_member_id ?? undefined,
-        phase_id: row.phase_id ?? undefined
-      }));
-    }, "readNodeMembers");
-  }
-  readNodeEvents(nodeRunId, opts) {
-    return withRetry(() => {
-      const whereClauses = ["node_run_id = ?"];
-      const params = [nodeRunId];
-      if (opts?.type) {
-        whereClauses.push("type = ?");
-        params.push(opts.type);
-      }
-      let query = `
-        SELECT id, seq, t, type, event_json
-        FROM node_events
-        WHERE ${whereClauses.join(" AND ")}
-        ORDER BY seq ASC, id ASC
-      `;
-      if (opts?.limit !== undefined) {
-        query += " LIMIT ?";
-        params.push(opts.limit);
-      }
-      return this.db.query(query).all(...params);
-    }, "readNodeEvents");
-  }
-  readNodeMemory(nodeRunId, opts) {
-    return withRetry(() => {
-      const whereClauses = ["node_run_id = ?"];
-      const params = [nodeRunId];
-      if (opts?.namespace) {
-        whereClauses.push("namespace = ?");
-        params.push(opts.namespace);
-      }
-      if (opts?.entry_type) {
-        whereClauses.push("entry_type = ?");
-        params.push(opts.entry_type);
-      }
-      const query = `
-        SELECT *
-        FROM node_memory
-        WHERE ${whereClauses.join(" AND ")}
-        ORDER BY created_at_ms ASC
-      `;
-      return this.db.query(query).all(...params);
-    }, "readNodeMemory");
-  }
-  queryMemberContextHealth(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT json_extract(event_json, '$.context_pct') AS context_pct
-        FROM specialist_events
-        WHERE job_id = ? AND type = 'turn_summary'
-        ORDER BY seq DESC, id DESC
-        LIMIT 1
-      `).get(jobId);
-      if (!row || row.context_pct === null || row.context_pct === undefined) {
-        return null;
-      }
-      const contextPct = typeof row.context_pct === "number" ? row.context_pct : Number(row.context_pct);
-      return Number.isFinite(contextPct) ? contextPct : null;
-    }, "queryMemberContextHealth");
-  }
-  readStatus(jobId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
-      if (!row?.status_json)
-        return null;
-      return JSON.parse(row.status_json);
-    }, "readStatus");
-  }
-  listStatuses() {
-    return withRetry(() => {
-      const rows = this.db.query("SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC").all();
-      const statuses = [];
-      for (const row of rows) {
-        if (!row.status_json)
-          continue;
-        try {
-          statuses.push(JSON.parse(row.status_json));
-        } catch {}
-      }
-      return statuses;
-    }, "listStatuses");
-  }
-  removeJobs(jobIds) {
-    return withRetry(() => {
-      if (jobIds.length === 0)
-        return 0;
-      const placeholders = jobIds.map(() => "?").join(", ");
-      const result = this.db.query(`DELETE FROM specialist_jobs WHERE job_id IN (${placeholders})`).run(...jobIds);
-      return result.changes ?? 0;
-    }, "removeJobs");
-  }
-  readEpicRun(epicId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1").get(epicId);
-      return row ?? null;
-    }, "readEpicRun");
-  }
-  listEpicRuns() {
-    return withRetry(() => {
-      return this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC").all();
-    }, "listEpicRuns");
-  }
-  resolveEpicByChainId(chainId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1").get(chainId);
-      return row ?? null;
-    }, "resolveEpicByChainId");
-  }
-  resolveEpicByChainRootBeadId(chainRootBeadId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1").get(chainRootBeadId);
-      return row ?? null;
-    }, "resolveEpicByChainRootBeadId");
-  }
-  listEpicChains(epicId) {
-    return withRetry(() => {
-      return this.db.query(`
-        SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms
-        FROM epic_chain_membership
-        WHERE epic_id = ?
-        ORDER BY updated_at_ms DESC
-      `).all(epicId);
-    }, "listEpicChains");
-  }
-  deleteEpicChainMembership(epicId, chainIds) {
-    if (chainIds.length === 0)
-      return [];
-    return withRetry(() => {
-      const existing = new Set(this.db.query("SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?").all(epicId).map((row) => row.chain_id));
-      const removable = chainIds.filter((chainId) => existing.has(chainId));
-      if (removable.length === 0)
-        return [];
-      const placeholders = removable.map(() => "?").join(", ");
-      this.db.query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`).run(epicId, ...removable);
-      return removable;
-    }, "deleteEpicChainMembership");
-  }
-  listReferencedChainRootJobIds() {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT DISTINCT chain_root_job_id
-        FROM epic_chain_membership
-        WHERE chain_root_job_id IS NOT NULL AND chain_root_job_id != ''
-      `).all();
-      return rows.map((row) => row.chain_root_job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listReferencedChainRootJobIds");
-  }
-  listEpicChainsWithLatestJob(epicId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        WITH ranked_jobs AS (
-          SELECT
-            jobs.chain_id AS chain_id,
-            membership.epic_id AS epic_id,
-            membership.chain_root_bead_id AS chain_root_bead_id,
-            membership.chain_root_job_id AS chain_root_job_id,
-            jobs.job_id AS job_id,
-            jobs.status AS status,
-            json_extract(jobs.status_json, '$.branch') AS branch,
-            jobs.updated_at_ms AS updated_at_ms,
-            ROW_NUMBER() OVER (
-              PARTITION BY jobs.chain_id
-              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
-            ) AS row_rank
-          FROM epic_chain_membership membership
-          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
-          WHERE membership.epic_id = ?
-            AND jobs.chain_kind = 'chain'
-        )
-        SELECT
-          chain_id,
-          epic_id,
-          chain_root_bead_id,
-          chain_root_job_id,
-          job_id,
-          status,
-          branch,
-          updated_at_ms
-        FROM ranked_jobs
-        WHERE row_rank = 1
-        ORDER BY updated_at_ms DESC, job_id DESC
-      `).all(epicId);
-      return rows.map((row) => ({
-        chain_id: row.chain_id,
-        epic_id: row.epic_id,
-        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
-        chain_root_job_id: row.chain_root_job_id ?? undefined,
-        job_id: row.job_id,
-        status: row.status ?? undefined,
-        branch: row.branch ?? undefined,
-        updated_at_ms: row.updated_at_ms
-      }));
-    }, "listEpicChainsWithLatestJob");
-  }
-  readChainIdentity(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
-        FROM specialist_jobs
-        WHERE job_id = ?
-        LIMIT 1
-      `).get(jobId);
-      if (!row?.chain_kind || row.chain_kind.trim().length === 0) {
-        return { chain_kind: "prep" };
-      }
-      return {
-        chain_kind: row.chain_kind === "chain" ? "chain" : "prep",
-        chain_id: row.chain_id ?? undefined,
-        chain_root_job_id: row.chain_root_job_id ?? undefined,
-        chain_root_bead_id: row.chain_root_bead_id ?? undefined
-      };
-    }, "readChainIdentity");
-  }
-  listChainJobIds(chainId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT job_id
-        FROM specialist_jobs
-        WHERE chain_id = ?
-        ORDER BY updated_at_ms ASC
-      `).all(chainId);
-      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listChainJobIds");
-  }
-  listLiveJobsForBead(beadId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT job_id
-        FROM specialist_jobs
-        WHERE bead_id = ?
-          AND status IN ('starting', 'running', 'waiting')
-        ORDER BY updated_at_ms ASC
-      `).all(beadId);
-      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
-    }, "listLiveJobsForBead");
-  }
-  resolveChainEpicLinkByJobId(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT
-          jobs.chain_id AS chain_id,
-          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
-          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
-          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
-        FROM specialist_jobs jobs
-        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
-        WHERE jobs.job_id = ?
-          AND jobs.chain_kind = 'chain'
-          AND jobs.chain_id IS NOT NULL
-        LIMIT 1
-      `).get(jobId);
-      return row ?? null;
-    }, "resolveChainEpicLinkByJobId");
-  }
-  readEvents(jobId) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ?
-        ORDER BY seq ASC, id ASC;
-      `).all(jobId);
-      const events = [];
-      for (const row of rows) {
-        if (!row.event_json)
-          continue;
-        try {
-          const parsed = JSON.parse(row.event_json);
-          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
-        } catch {}
-      }
-      return events;
-    }, "readEvents");
-  }
-  readEventsAfterSeq(jobId, afterSeq) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ? AND seq > ?
-        ORDER BY seq ASC, id ASC;
-      `).all(jobId, afterSeq);
-      const events = [];
-      for (const row of rows) {
-        if (!row.event_json)
-          continue;
-        try {
-          const parsed = JSON.parse(row.event_json);
-          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
-        } catch {}
-      }
-      return events;
-    }, "readEventsAfterSeq");
-  }
-  readForensicEvents(filters = {}) {
-    return withRetry(() => {
-      const clauses = [];
-      const params = [];
-      if (filters.jobId) {
-        clauses.push("job_id = ?");
-        params.push(filters.jobId);
-      }
-      if (filters.sinceMs !== undefined) {
-        clauses.push("t >= ?");
-        params.push(filters.sinceMs);
-      }
-      if (filters.eventFamily) {
-        clauses.push("event_family = ?");
-        params.push(filters.eventFamily);
-      }
-      if (filters.eventName) {
-        clauses.push("event_name = ?");
-        params.push(filters.eventName);
-      }
-      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-      const limit = Math.max(1, Math.min(filters.limit ?? 1000, 1e4));
-      const dir = filters.order === "desc" ? "DESC" : "ASC";
-      return this.db.query(`
-        SELECT id, job_id, seq, t, schema_version, event_family, event_name,
-               participant_kind, participant_role, participant_id, redaction_status, event_json
-        FROM specialist_forensic_events
-        ${where}
-        ORDER BY t ${dir}, seq ${dir}, id ${dir}
-        LIMIT ?
-      `).all(...params, limit);
-    }, "readForensicEvents");
-  }
-  readLatestToolEvent(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT seq, event_json FROM specialist_events
-        WHERE job_id = ? AND type = 'tool'
-        ORDER BY seq DESC, id DESC
-        LIMIT 1;
-      `).get(jobId);
-      if (!row?.event_json)
-        return null;
-      try {
-        const parsed = JSON.parse(row.event_json);
-        if (parsed.type !== "tool")
-          return null;
-        return typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq };
-      } catch {
-        return null;
-      }
-    }, "readLatestToolEvent");
-  }
-  getLastActivityTimestampMs(jobId) {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT MAX(t) AS last_activity_ms
-        FROM specialist_events
-        WHERE job_id = ? AND type IN ('tool', 'think')
-      `).get(jobId);
-      return typeof row?.last_activity_ms === "number" ? row.last_activity_ms : null;
-    }, "getLastActivityTimestampMs");
-  }
-  aggregateJobMetrics(jobId) {
-    return withRetry(() => {
-      const jobRow = this.db.query(`
-        SELECT job_id, specialist, status, chain_kind, chain_id, bead_id, node_id, epic_id, updated_at_ms, startup_payload_json
-        FROM specialist_jobs
-        WHERE job_id = ?
-      `).get(jobId);
-      if (!jobRow)
-        return null;
-      const events = this.readEvents(jobId);
-      const toolCallCounts = {};
-      const tokenTrajectory = [];
-      const contextTrajectory = [];
-      const stallGaps = [];
-      let totalTools = 0;
-      let totalTurns = 0;
-      let startedAtMs = null;
-      let completedAtMs = null;
-      let runCompleteJson = null;
-      let model = null;
-      let elapsedMs = null;
-      let activeRuntimeMs = 0;
-      let waitingMs = 0;
-      let phase = null;
-      let phaseStartedAtMs = null;
-      const closePhase = (endAtMs) => {
-        if (phase === null || phaseStartedAtMs === null || endAtMs < phaseStartedAtMs)
-          return;
-        const durationMs = endAtMs - phaseStartedAtMs;
-        if (phase === "running") {
-          activeRuntimeMs += durationMs;
-        } else {
-          waitingMs += durationMs;
-        }
-      };
-      for (const event of events) {
-        startedAtMs = startedAtMs === null ? event.t : Math.min(startedAtMs, event.t);
-        if (event.type === "tool") {
-          totalTools += 1;
-          toolCallCounts[event.tool] = (toolCallCounts[event.tool] ?? 0) + 1;
-          continue;
-        }
-        if (event.type === "turn_summary") {
-          totalTurns += 1;
-          if (event.token_usage)
-            tokenTrajectory.push({ turn_index: event.turn_index, t: event.t, token_usage: event.token_usage });
-          if (event.context_pct !== undefined)
-            contextTrajectory.push({ turn_index: event.turn_index, t: event.t, context_pct: event.context_pct });
-          continue;
-        }
-        if (event.type === "token_usage") {
-          tokenTrajectory.push({ t: event.t, source: event.source, token_usage: event.token_usage });
-          continue;
-        }
-        if (event.type === "run_start") {
-          phase = "running";
-          phaseStartedAtMs = event.t;
-          continue;
-        }
-        if (event.type === "status_change") {
-          if (event.status === "running" || event.status === "waiting") {
-            closePhase(event.t);
-            phase = event.status;
-            phaseStartedAtMs = event.t;
-            continue;
-          }
-          if (event.status === "done" || event.status === "error" || event.status === "cancelled") {
-            closePhase(event.t);
-            phase = null;
-            phaseStartedAtMs = null;
-          }
-          continue;
-        }
-        if (event.type === "run_complete") {
-          closePhase(event.t);
-          completedAtMs = event.t;
-          runCompleteJson = JSON.stringify(event);
-          model = event.model ?? model;
-          elapsedMs = Math.round(event.elapsed_s * 1000);
-          phase = null;
-          phaseStartedAtMs = null;
-          continue;
-        }
-        if (event.type === "stale_warning" && event.reason === "tool_duration") {
-          stallGaps.push({ t: event.t, tool: event.tool ?? null, silence_ms: event.silence_ms, threshold_ms: event.threshold_ms });
-        }
-      }
-      if (startedAtMs !== null && completedAtMs === null) {
-        completedAtMs = events.length > 0 ? events[events.length - 1].t : startedAtMs;
-      }
-      if (elapsedMs === null && startedAtMs !== null && completedAtMs !== null) {
-        elapsedMs = Math.max(0, completedAtMs - startedAtMs);
-      }
-      const record = {
-        job_id: jobRow.job_id,
-        specialist: jobRow.specialist,
-        model,
-        status: jobRow.status,
-        chain_kind: jobRow.chain_kind ?? null,
-        chain_id: jobRow.chain_id ?? null,
-        bead_id: jobRow.bead_id ?? null,
-        node_id: jobRow.node_id ?? null,
-        epic_id: jobRow.epic_id ?? null,
-        started_at_ms: startedAtMs,
-        completed_at_ms: completedAtMs,
-        elapsed_ms: elapsedMs,
-        active_runtime_ms: activeRuntimeMs,
-        waiting_ms: waitingMs,
-        total_turns: totalTurns,
-        total_tools: totalTools,
-        tool_call_counts_json: stringifyJson(toolCallCounts),
-        token_trajectory_json: stringifyJson(tokenTrajectory),
-        context_trajectory_json: stringifyJson(contextTrajectory),
-        stall_gaps_json: stringifyJson(stallGaps),
-        run_complete_json: runCompleteJson,
-        startup_payload_json: jobRow.startup_payload_json ?? null,
-        updated_at_ms: jobRow.updated_at_ms
-      };
-      this.db.run(`
-        INSERT INTO specialist_job_metrics (
-          job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
-          started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
-          tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
-          run_complete_json, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(job_id) DO UPDATE SET
-          specialist = excluded.specialist,
-          model = excluded.model,
-          status = excluded.status,
-          chain_kind = excluded.chain_kind,
-          chain_id = excluded.chain_id,
-          bead_id = excluded.bead_id,
-          node_id = excluded.node_id,
-          epic_id = excluded.epic_id,
-          started_at_ms = excluded.started_at_ms,
-          completed_at_ms = excluded.completed_at_ms,
-          elapsed_ms = excluded.elapsed_ms,
-          active_runtime_ms = excluded.active_runtime_ms,
-          waiting_ms = excluded.waiting_ms,
-          total_turns = excluded.total_turns,
-          total_tools = excluded.total_tools,
-          tool_call_counts_json = excluded.tool_call_counts_json,
-          token_trajectory_json = excluded.token_trajectory_json,
-          context_trajectory_json = excluded.context_trajectory_json,
-          stall_gaps_json = excluded.stall_gaps_json,
-          run_complete_json = excluded.run_complete_json,
-          updated_at_ms = excluded.updated_at_ms;
-      `, [
-        record.job_id,
-        record.specialist,
-        record.model,
-        record.status,
-        record.chain_kind,
-        record.chain_id,
-        record.bead_id,
-        record.node_id,
-        record.epic_id,
-        record.started_at_ms,
-        record.completed_at_ms,
-        record.elapsed_ms,
-        record.active_runtime_ms,
-        record.waiting_ms,
-        record.total_turns,
-        record.total_tools,
-        record.tool_call_counts_json,
-        record.token_trajectory_json,
-        record.context_trajectory_json,
-        record.stall_gaps_json,
-        record.run_complete_json,
-        record.updated_at_ms
-      ]);
-      return record;
-    }, "aggregateJobMetrics");
-  }
-  listJobMetrics(filters) {
-    return withRetry(() => {
-      const clauses = [];
-      const params = [];
-      if (filters?.spec) {
-        clauses.push("specialist = ?");
-        params.push(filters.spec);
-      }
-      if (filters?.model) {
-        clauses.push("model LIKE ?");
-        params.push(filters.model.replace(/\*/g, "%"));
-      }
-      if (filters?.sinceMs !== undefined) {
-        clauses.push("updated_at_ms >= ?");
-        params.push(filters.sinceMs);
-      }
-      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-      return this.db.query(`SELECT * FROM specialist_job_metrics ${where} ORDER BY updated_at_ms DESC, job_id DESC`).all(...params);
-    }, "listJobMetrics");
-  }
-  listElapsedMsBySpecialist(sinceMs, limitPerSpecialist = 200) {
-    return withRetry(() => {
-      const rows = this.db.query(`
-        WITH ranked AS (
-          SELECT specialist, elapsed_ms,
-                 ROW_NUMBER() OVER (PARTITION BY specialist ORDER BY updated_at_ms DESC) AS rn
-          FROM specialist_job_metrics
-          WHERE status = 'completed' AND updated_at_ms >= ? AND elapsed_ms IS NOT NULL
-        )
-        SELECT specialist, elapsed_ms
-        FROM ranked
-        WHERE rn <= ?
-        ORDER BY specialist, rn
-      `).all(sinceMs, limitPerSpecialist);
-      const bySpecialist = {};
-      for (const row of rows) {
-        if (!row.specialist || typeof row.elapsed_ms !== "number" || !Number.isFinite(row.elapsed_ms))
-          continue;
-        (bySpecialist[row.specialist] ??= []).push(row.elapsed_ms);
-      }
-      return bySpecialist;
-    }, "listElapsedMsBySpecialist");
-  }
-  readResult(jobId) {
-    return withRetry(() => {
-      const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
-      return row?.output ?? null;
-    }, "readResult");
-  }
-  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        const upsertMemory = this.db.query(`
-          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
-          VALUES (?, ?, ?)
-          ON CONFLICT(memory_key) DO UPDATE SET
-            memory_value = excluded.memory_value,
-            updated_at_ms = excluded.updated_at_ms
-        `);
-        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
-        const seen = new Set;
-        for (const memory of memories) {
-          if (!memory.key || seen.has(memory.key))
-            continue;
-          seen.add(memory.key);
-          upsertMemory.run(memory.key, memory.value, syncedAtMs);
-          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
-        }
-        if (seen.size > 0) {
-          const placeholders = [...seen].map(() => "?").join(", ");
-          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
-        } else {
-          this.db.run("DELETE FROM memories_cache");
-        }
-        this.db.query(`
-          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
-          VALUES (1, ?, ?)
-          ON CONFLICT(singleton_key) DO UPDATE SET
-            last_sync_at_ms = excluded.last_sync_at_ms,
-            memory_count = excluded.memory_count
-        `).run(syncedAtMs, seen.size);
-      });
-      transaction();
-    }, "syncMemoriesCache");
-  }
-  getMemoriesCacheState() {
-    return withRetry(() => {
-      const row = this.db.query(`
-        SELECT last_sync_at_ms, memory_count
-        FROM memories_cache_meta
-        WHERE singleton_key = 1
-        LIMIT 1
-      `).get();
-      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
-        return null;
-      }
-      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
-    }, "getMemoriesCacheState");
-  }
-  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
-    return withRetry(() => {
-      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
-      if (cleanedKeywords.length === 0)
-        return [];
-      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
-      const rows = this.db.query(`
-        SELECT
-          cache.memory_key,
-          cache.memory_value,
-          bm25(memories_fts) AS bm25_score,
-          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
-          cache.access_count
-        FROM memories_fts
-        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
-        WHERE memories_fts MATCH ?
-        ORDER BY bm25_score ASC
-        LIMIT ?
-      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
-      const ranked = rows.map((row) => {
-        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
-        const bm25Norm = 1 / (1 + Math.max(0, bm25));
-        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
-        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
-        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
-        return {
-          key: row.memory_key,
-          value: row.memory_value,
-          bm25,
-          recency,
-          accessFrequency,
-          score
-        };
-      });
-      ranked.sort((left, right) => right.score - left.score);
-      const selected = ranked.slice(0, Math.max(1, limit));
-      if (selected.length === 0)
-        return [];
-      const accessStmt = this.db.query(`
-        UPDATE memories_cache
-        SET access_count = access_count + 1,
-            last_accessed_at_ms = ?
-        WHERE memory_key = ?
-      `);
-      for (const memory of selected) {
-        accessStmt.run(nowMs, memory.key);
-      }
-      return selected;
-    }, "queryRelevantMemories");
-  }
-  invalidateMemoriesCache() {
-    withRetry(() => {
-      const transaction = this.db.transaction(() => {
-        this.db.run("DELETE FROM memories_fts");
-        this.db.run("DELETE FROM memories_cache");
-        this.db.run("DELETE FROM memories_cache_meta");
-      });
-      transaction();
-    }, "invalidateMemoriesCache");
-  }
-  hasActiveJobs(statuses = ["running", "starting"]) {
-    return this.listActiveJobs(statuses).length > 0;
-  }
-  listActiveJobs(statuses = ["running", "starting"]) {
-    return withRetry(() => {
-      if (statuses.length === 0)
-        return [];
-      const placeholders = statuses.map(() => "?").join(", ");
-      return this.db.query(`
-        SELECT job_id, specialist, status
-        FROM specialist_jobs
-        WHERE status IN (${placeholders})
-        ORDER BY updated_at_ms DESC
-      `).all(...statuses);
-    }, "listActiveJobs");
-  }
-  getDatabaseSizeBytes() {
-    try {
-      return statSync(this.dbPath).size;
-    } catch {
-      return 0;
-    }
-  }
-  vacuumDatabase() {
-    return withRetry(() => {
-      const beforeBytes = this.getDatabaseSizeBytes();
-      this.db.run("VACUUM");
-      const afterBytes = this.getDatabaseSizeBytes();
-      return { beforeBytes, afterBytes };
-    }, "vacuumDatabase");
-  }
-  pruneObservabilityData(options) {
-    return withRetry(() => {
-      const nowMs = options.nowMs ?? Date.now();
-      const eventsRetentionMs = options.eventsRetentionMs ?? 30 * 24 * 60 * 60 * 1000;
-      const eventsCutoffMs = nowMs - eventsRetentionMs;
-      const terminalStatuses = ["done", "error", "stopped"];
-      const activeStatuses = ["running", "starting", "waiting"];
-      const skippedActiveChainJobs = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_jobs stale
-        WHERE stale.updated_at_ms < ?
-          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND stale.chain_id IS NOT NULL
-          AND EXISTS (
-            SELECT 1
-            FROM specialist_jobs active
-            WHERE active.chain_id = stale.chain_id
-              AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-          )
-      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
-      const resultCandidates = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_results results
-        LEFT JOIN specialist_jobs jobs ON jobs.job_id = results.job_id
-        WHERE results.updated_at_ms < ?
-          AND (
-            jobs.job_id IS NULL
-            OR jobs.chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = jobs.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `).get(options.beforeMs, ...activeStatuses)?.count ?? 0;
-      const jobCandidates = this.db.query(`
-        SELECT COUNT(*) AS count
-        FROM specialist_jobs stale
-        WHERE stale.updated_at_ms < ?
-          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND (
-            stale.chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = stale.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
-      const extractCandidates = options.skipExtract ? 0 : this.db.query(`
-          SELECT COUNT(DISTINCT job_id) AS count
-          FROM specialist_events
-          WHERE t < ?
-        `).get(eventsCutoffMs)?.count ?? 0;
-      const eventsCandidates = this.db.query("SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?").get(eventsCutoffMs)?.count ?? 0;
-      const epicCandidates = options.includeEpics ? this.db.query(`
-          SELECT COUNT(*) AS count
-          FROM epic_runs epic
-          WHERE epic.updated_at_ms < ?
-            AND epic.status IN ('merged', 'failed', 'abandoned')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM epic_chain_membership membership
-              WHERE membership.epic_id = epic.epic_id
-            )
-        `).get(options.beforeMs)?.count ?? 0 : 0;
-      if (!options.apply) {
-        return {
-          dryRun: true,
-          beforeMs: options.beforeMs,
-          eventsCutoffMs,
-          includeEpics: options.includeEpics,
-          deletedEvents: eventsCandidates,
-          deletedResults: resultCandidates,
-          deletedJobs: jobCandidates,
-          deletedEpicRuns: epicCandidates,
-          skippedActiveChainJobs,
-          extractedJobs: extractCandidates
-        };
-      }
-      let extractedJobs = 0;
-      if (!options.skipExtract) {
-        const jobsToExtract = this.db.query(`
-          SELECT DISTINCT stale.job_id
-          FROM specialist_events stale
-          WHERE stale.t < ?
-        `).all(eventsCutoffMs);
-        for (const row of jobsToExtract) {
-          if (!row.job_id)
-            continue;
-          const metrics = this.aggregateJobMetrics(row.job_id);
-          if (!metrics) {
-            throw new Error(`Failed to aggregate metrics for job ${row.job_id}`);
-          }
-          extractedJobs += 1;
-        }
-      }
-      const deleteResults = this.db.query(`
-        DELETE FROM specialist_results
-        WHERE updated_at_ms < ?
-          AND (
-            job_id NOT IN (SELECT job_id FROM specialist_jobs WHERE chain_id IS NOT NULL)
-            OR job_id IN (
-              SELECT jobs.job_id
-              FROM specialist_jobs jobs
-              WHERE jobs.chain_id IS NULL
-                 OR NOT EXISTS (
-                    SELECT 1
-                    FROM specialist_jobs active
-                    WHERE active.chain_id = jobs.chain_id
-                      AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-                 )
-            )
-          )
-      `);
-      const deletedResults = deleteResults.run(options.beforeMs, ...activeStatuses).changes ?? 0;
-      const deleteEvents = this.db.query("DELETE FROM specialist_events WHERE t < ?");
-      const deletedEvents = deleteEvents.run(eventsCutoffMs).changes ?? 0;
-      const deleteJobs = this.db.query(`
-        DELETE FROM specialist_jobs
-        WHERE updated_at_ms < ?
-          AND status IN (${terminalStatuses.map(() => "?").join(", ")})
-          AND (
-            chain_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM specialist_jobs active
-              WHERE active.chain_id = specialist_jobs.chain_id
-                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
-            )
-          )
-      `);
-      const deletedJobs = deleteJobs.run(options.beforeMs, ...terminalStatuses, ...activeStatuses).changes ?? 0;
-      let deletedEpicRuns = 0;
-      if (options.includeEpics) {
-        const deleteEpics = this.db.query(`
-          DELETE FROM epic_runs
-          WHERE updated_at_ms < ?
-            AND status IN ('merged', 'failed', 'abandoned')
-            AND NOT EXISTS (
-              SELECT 1
-              FROM epic_chain_membership membership
-              WHERE membership.epic_id = epic_runs.epic_id
-            )
-        `);
-        deletedEpicRuns = deleteEpics.run(options.beforeMs).changes ?? 0;
-      }
-      return {
-        dryRun: false,
-        beforeMs: options.beforeMs,
-        eventsCutoffMs,
-        includeEpics: options.includeEpics,
-        deletedEvents,
-        deletedResults,
-        deletedJobs,
-        deletedEpicRuns,
-        skippedActiveChainJobs,
-        extractedJobs
-      };
-    }, "pruneObservabilityData");
-  }
-  scanOrphans() {
-    return withRetry(() => {
-      const findings = [];
-      const chainMembershipWithoutJobs = this.db.query(`
-        SELECT membership.chain_id, membership.epic_id
-        FROM epic_chain_membership membership
-        LEFT JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
-        WHERE jobs.job_id IS NULL
-      `).all();
-      for (const row of chainMembershipWithoutJobs) {
-        findings.push({
-          kind: "orphan",
-          code: "chain_membership_without_jobs",
-          message: `chain ${row.chain_id} has epic membership but no jobs`,
-          details: { chain_id: row.chain_id, epic_id: row.epic_id }
-        });
-      }
-      const epicsWithoutChains = this.db.query(`
-        SELECT epic.epic_id, epic.status
-        FROM epic_runs epic
-        LEFT JOIN epic_chain_membership membership ON membership.epic_id = epic.epic_id
-        WHERE membership.chain_id IS NULL
-      `).all();
-      for (const row of epicsWithoutChains) {
-        findings.push({
-          kind: "orphan",
-          code: "epic_without_chains",
-          message: `epic ${row.epic_id} has no chain membership`,
-          details: { epic_id: row.epic_id, status: row.status }
-        });
-      }
-      const jobEpicWithoutMembership = this.db.query(`
-        SELECT jobs.job_id, jobs.epic_id, jobs.chain_id
-        FROM specialist_jobs jobs
-        LEFT JOIN epic_chain_membership membership
-          ON membership.chain_id = jobs.chain_id
-         AND membership.epic_id = jobs.epic_id
-        WHERE jobs.epic_id IS NOT NULL
-          AND (jobs.chain_id IS NULL OR membership.chain_id IS NULL)
-      `).all();
-      for (const row of jobEpicWithoutMembership) {
-        findings.push({
-          kind: "integrity-violation",
-          code: "job_epic_without_membership",
-          message: `job ${row.job_id} references epic without chain membership link`,
-          details: { job_id: row.job_id, epic_id: row.epic_id, chain_id: row.chain_id ?? null }
-        });
-      }
-      const worktreeRows = this.db.query(`
-        SELECT DISTINCT job_id, worktree_column
-        FROM specialist_jobs
-        WHERE worktree_column IS NOT NULL AND worktree_column != ''
-      `).all();
-      for (const row of worktreeRows) {
-        if (existsSync(row.worktree_column))
-          continue;
-        findings.push({
-          kind: "stale-pointer",
-          code: "worktree_missing_on_disk",
-          message: `job ${row.job_id} points to missing worktree path`,
-          details: { job_id: row.job_id, worktree_path: row.worktree_column }
-        });
-      }
-      return findings;
-    }, "scanOrphans");
-  }
-  close() {
-    this.db.close();
-  }
-}
-function openObservabilitySqliteClient(dbPath) {
-  if (!loadBunDatabase())
-    return null;
-  try {
-    const Ctor = loadBunDatabase();
-    const initDb = new Ctor(dbPath);
-    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
-    initSchema(initDb);
-    initDb.close();
-    return new SqliteClient(dbPath);
-  } catch {
-    return null;
-  }
-}
-function createObservabilitySqliteClient(cwd = process.cwd()) {
-  const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync(location.dbPath))
-    return null;
-  return openObservabilitySqliteClient(location.dbPath);
-}
-function createObservabilitySqliteClientAtPath(dbPath) {
-  mkdirSync(dirname(dbPath), { recursive: true });
-  return openObservabilitySqliteClient(dbPath);
-}
-
-// src/specialist/model-chain.ts
-function resolveModelChain(execution) {
-  const primary = normalizeModel(execution.model);
-  const fallbacks = resolveFallbackModels(execution);
-  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
-}
-function resolveFallbackModels(execution) {
-  if (execution.fallback_models && execution.fallback_models.length > 0) {
-    if (normalizeModel(execution.fallback_model ?? null)) {
-      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
-    }
-    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
-  }
-  const fallback = normalizeModel(execution.fallback_model ?? null);
-  return fallback ? [fallback] : [];
-}
-function normalizeModel(model) {
-  const trimmed = model?.trim();
-  return trimmed ? trimmed : null;
-}
-function dedupeModels(models) {
-  return [...new Set(models)];
-}
-
-// src/specialist/script-runner.ts
-class CompatGuardError extends Error {
-  field;
-  constructor(field, message) {
-    super(message);
-    this.field = field;
-    this.name = "CompatGuardError";
-  }
-}
-function isPathWithinRoot(candidatePath, rootPath) {
-  const candidate = resolve(candidatePath);
-  const root = resolve(rootPath);
-  const rel = relative(root, candidate);
-  return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute(rel);
-}
-function assertSkillPathWithinRoots(field, path, roots) {
-  const allowed = roots.some((root) => isPathWithinRoot(path, root));
-  if (!allowed) {
-    throw new CompatGuardError(field, `skill path '${path}' not under any --allow-skills-roots entry`);
-  }
-}
-function hasUnsubstitutedVariables(template, variables) {
-  const matches = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g) ?? [];
-  for (const match of matches) {
-    const key = match.slice(1);
-    if (variables[key] === undefined)
-      return key;
-  }
+// src/specialist/canonical-asset-resolver.ts
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+function resolveCanonicalAssetDir(relativePath) {
+  const configPath = `config/${relativePath}`;
+  let resolved = fileURLToPath(new URL(`../${configPath}`, import.meta.url));
+  if (existsSync(resolved))
+    return resolved;
+  resolved = fileURLToPath(new URL(`../../${configPath}`, import.meta.url));
+  if (existsSync(resolved))
+    return resolved;
   return null;
 }
-function compatGuard(spec, trust) {
-  const execution = spec.specialist.execution;
-  if (execution.interactive)
-    throw new CompatGuardError("execution.interactive", "interactive specialists are not allowed");
-  if (execution.requires_worktree)
-    throw new CompatGuardError("execution.requires_worktree", "worktree specialists are not allowed");
-  if (execution.permission_required !== "READ_ONLY")
-    throw new CompatGuardError("execution.permission_required", "permission_required must be READ_ONLY");
-  const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
-  if (hasScripts) {
-    throw new CompatGuardError("skills.scripts", "local scripts are not supported in script-class specialists");
-  }
-  const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
-  const hasSkillInherit = Boolean(spec.specialist.prompt.skill_inherit);
-  if (hasPaths && !trust?.allowSkills) {
-    throw new CompatGuardError("skills.paths", "skills not allowed (enable with --allow-skills)");
-  }
-  if (hasSkillInherit && !trust?.allowSkills) {
-    throw new CompatGuardError("prompt.skill_inherit", "skills not allowed (enable with --allow-skills)");
-  }
-  if (trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
-    const paths = spec.specialist.skills?.paths ?? [];
-    for (const path of paths)
-      assertSkillPathWithinRoots("skills.paths", path, trust.allowSkillsRoots);
-    if (typeof spec.specialist.prompt.skill_inherit === "string") {
-      assertSkillPathWithinRoots("prompt.skill_inherit", spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots);
-    }
-  }
-}
-function collectSkillPathEntries(spec) {
-  return [
-    ...(spec.specialist.skills?.paths ?? []).map((path) => ({ path, source: "skills.paths" })),
-    ...typeof spec.specialist.prompt.skill_inherit === "string" ? [{ path: spec.specialist.prompt.skill_inherit, source: "prompt.skill_inherit" }] : []
-  ];
-}
-function collectSkillPaths(spec) {
-  return collectSkillPathEntries(spec).map((entry) => entry.path);
-}
-function computeSkillSources(spec) {
-  const entries = collectSkillPathEntries(spec);
-  const sources = [];
-  for (const { path, source } of entries) {
-    try {
-      const content = readFileSync2(path);
-      const sha256 = createHash("sha256").update(content).digest("hex");
-      sources.push({ path, sha256, source });
-    } catch {
-      sources.push({ path, sha256: "unreadable", source });
-    }
-  }
-  return sources;
-}
-function renderTaskTemplate(template, variables) {
-  const missing = hasUnsubstitutedVariables(template, variables);
-  if (missing)
-    throw new Error(`Missing template variable: ${missing}`);
-  return renderTemplate(template, variables);
-}
-function truncateForPrompt(value, limitBytes) {
-  if (Buffer.byteLength(value, "utf8") <= limitBytes)
-    return value;
-  return `${value.slice(0, limitBytes)}
-... truncated ...`;
-}
-function buildJsonOutputContract(spec) {
-  if (spec.specialist.execution.response_format !== "json")
-    return;
-  const schema = spec.specialist.prompt.output_schema;
-  const required = Array.isArray(schema?.required) ? schema.required.filter((value) => typeof value === "string") : [];
-  const lines = [
-    "Output contract:",
-    "- Return only valid JSON. Do not include Markdown fences, prose, or commentary."
-  ];
-  if (required.length > 0)
-    lines.push(`- Include these required top-level keys: ${required.join(", ")}.`);
-  if (schema)
-    lines.push(`- JSON schema: ${truncateForPrompt(JSON.stringify(schema), 4096)}`);
-  return lines.join(`
-`);
-}
-function applyOutputContract(prompt, spec) {
-  const contract = buildJsonOutputContract(spec);
-  return contract ? `${prompt}
 
-${contract}` : prompt;
-}
-function mapErrorType(message) {
-  const normalizedMessage = message.toLowerCase();
-  if (message.includes("Specialist not found"))
-    return "specialist_not_found";
-  if (normalizedMessage.includes("interactive") || normalizedMessage.includes("worktree") || normalizedMessage.includes("permission_required") || normalizedMessage.includes("scripts not allowed"))
-    return "specialist_load_error";
-  if (message.includes("Missing template variable"))
-    return "template_variable_missing";
-  if (normalizedMessage.includes("prompt too large"))
-    return "prompt_too_large";
-  if (normalizedMessage.includes("output too large"))
-    return "output_too_large";
-  if (isAuthFailureMessage(normalizedMessage))
-    return "auth";
-  if (normalizedMessage.includes("quota") || normalizedMessage.includes("rate limit") || normalizedMessage.includes("out of extra usage") || normalizedMessage.includes("insufficient_quota") || normalizedMessage.includes("429"))
-    return "quota";
-  if (normalizedMessage.includes("timeout"))
-    return "timeout";
-  if (normalizedMessage.includes("network") || message.includes("ECONN"))
-    return "network";
-  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
-    return "invalid_json";
-  return "internal";
-}
-function textFromMessage(message) {
-  if (!message || message.role !== "assistant")
-    return "";
-  if (!Array.isArray(message.content))
-    return "";
-  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
-}
-function extractAssistantTextFromEvent(event) {
-  if (event.type === "message_end") {
-    const text = textFromMessage(event.message);
-    if (text)
-      return text;
+// src/specialist/manifest-resolver.ts
+var HEALTHY = ["loaded_healthy"];
+var GITNEXUS_BASE_TIER = "READ_ONLY";
+function uniqueOrdered(values) {
+  const seen = new Set;
+  const ordered = [];
+  for (const value of values) {
+    if (seen.has(value))
+      continue;
+    seen.add(value);
+    ordered.push(value);
   }
-  if (event.type === "agent_end" && Array.isArray(event.messages)) {
-    for (let j = event.messages.length - 1;j >= 0; j--) {
-      const text = textFromMessage(event.messages[j]);
-      if (text)
-        return text;
-    }
-  }
-  if (event.type === "assistant" && typeof event.data?.text === "string")
-    return event.data.text;
-  const legacyContent = event.data?.content?.[0]?.text;
-  if (typeof legacyContent === "string")
-    return legacyContent;
-  return;
+  return ordered;
 }
-function stripMarkdownFences(text) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return fenced ? fenced[1].trim() : trimmed;
+function getCatalog(catalogs, name) {
+  return catalogs.find((catalog) => catalog.catalog === name);
 }
-function writeTraceRow(client, specialist, model, traceId, output, durationMs, skillSources, onAuditFailure) {
-  if (!client)
-    return;
-  const status = {
-    id: traceId,
-    specialist,
-    status: "done",
-    model,
-    started_at_ms: Date.now() - durationMs,
-    elapsed_s: durationMs / 1000,
-    last_event_at_ms: Date.now(),
-    surface: "script_specialist",
-    ...skillSources && skillSources.length > 0 ? { skill_sources: skillSources } : {}
+function mergeTierPolicy(input) {
+  const catalogPolicy = input.catalogDefaultOverrides?.[input.tier];
+  const tierPolicy = input.manifestPolicy?.permissions?.[input.tier];
+  const overridePolicy = input.specialistOverride;
+  const specialistDenied = input.specialistExclusions?.deniedNatives ?? [];
+  return {
+    denied_natives_when_extension: uniqueOrdered([
+      ...catalogPolicy?.denied_natives_when_extension ?? [],
+      ...tierPolicy?.denied_natives_when_extension ?? [],
+      ...overridePolicy?.denied_natives_when_extension ?? [],
+      ...specialistDenied
+    ]),
+    denied_natives_mode: overridePolicy?.denied_natives_mode ?? tierPolicy?.denied_natives_mode ?? catalogPolicy?.denied_natives_mode ?? "soft"
   };
-  try {
-    client.upsertStatus(status);
-    client.upsertResult(traceId, output);
-  } catch (error) {
-    onAuditFailure?.(error);
-  }
 }
-var DEFAULT_PENDING_LINE_LIMIT_BYTES = 16 * 1024 * 1024;
-var DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES = 4 * 1024 * 1024;
-var DEFAULT_STDERR_LIMIT_BYTES = 1 * 1024 * 1024;
-var DEFAULT_PROMPT_LIMIT_BYTES = 4 * 1024 * 1024;
-function resolvePromptLimitBytes(spec) {
-  return spec.specialist.execution.prompt_limit_bytes ?? resolveEnvPromptLimitBytes() ?? DEFAULT_PROMPT_LIMIT_BYTES;
-}
-function resolveEnvPromptLimitBytes() {
-  const raw = process.env.SPECIALISTS_SCRIPT_PROMPT_LIMIT_BYTES;
-  if (raw === undefined)
-    return;
-  const envLimit = Number(raw);
-  if (!Number.isFinite(envLimit) || envLimit <= 0)
-    return;
-  return Math.floor(envLimit);
-}
-function resolveAssistantTextLimitBytes(spec) {
-  return spec.specialist.execution.stdout_limit_bytes ?? resolveEnvAssistantTextLimitBytes() ?? DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES;
-}
-function resolveEnvAssistantTextLimitBytes() {
-  const raw = process.env.SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES;
-  if (raw === undefined)
-    return;
-  const envLimit = Number(raw);
-  if (!Number.isFinite(envLimit) || envLimit <= 0)
-    return;
-  process.stderr.write(`warning: SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES is deprecated; applies to assistant text cap
-`);
-  return Math.floor(envLimit);
-}
-function openObservabilityClient(options) {
-  if (options.observabilityDbPath)
-    return createObservabilitySqliteClientAtPath(options.observabilityDbPath);
-  return createObservabilitySqliteClient(options.projectDir);
-}
-function resolveScriptSpecialistName(name) {
-  if (name === "changelog-keeper")
-    return "changelog-drafter";
-  return name;
-}
-var TEMPLATE_FIELD_MISUSE_MAX_LEN = 30;
-var TEMPLATE_FIELD_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
-function collectRequiredOutputKeys(spec) {
-  const keys = new Set;
-  const declared = spec.specialist.execution.expected_output_keys;
-  if (Array.isArray(declared)) {
-    for (const value of declared) {
-      if (typeof value === "string" && value.length > 0)
-        keys.add(value);
-    }
-  }
-  if (spec.specialist.execution.response_format === "json") {
-    const required = spec.specialist.prompt.output_schema?.required;
-    if (Array.isArray(required)) {
-      for (const value of required) {
-        if (typeof value === "string" && value.length > 0)
-          keys.add(value);
-      }
-    }
-  }
-  return Array.from(keys);
-}
-function detectTemplateFieldMisuse(template, specPrompt) {
-  if (!specPrompt)
-    return null;
-  if (template.length > TEMPLATE_FIELD_MISUSE_MAX_LEN)
-    return null;
-  if (!TEMPLATE_FIELD_IDENTIFIER_RE.test(template))
-    return null;
-  if (!Object.prototype.hasOwnProperty.call(specPrompt, template))
-    return null;
-  return template;
-}
-async function runScriptSpecialist(input, options) {
-  const traceId = randomUUID();
-  const startedAt = Date.now();
-  try {
-    const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
-    const spec = await options.loader.get(resolvedSpecialist);
-    compatGuard(spec, options.trust);
-    const skillPaths = options.trust?.allowSkills ? collectSkillPaths(spec) : [];
-    const skillSources = options.trust?.allowSkills ? computeSkillSources(spec) : undefined;
-    const template = input.template ?? spec.specialist.prompt.task_template;
-    if (input.template !== undefined) {
-      const misusedField = detectTemplateFieldMisuse(input.template, spec.specialist.prompt);
-      if (misusedField !== null) {
-        const modelCandidates2 = collectModelCandidates(input, spec, options);
-        return {
-          success: false,
-          error: `template field misuse: input.template equals spec.prompt.${misusedField} key name (${input.template.length} chars). The 'template' input field expects the literal template body, not a spec key. To use the spec's default, omit 'template'; to use a non-default template body, pass its full text inline.`,
-          error_type: "template_field_misuse",
-          meta: {
-            specialist: resolvedSpecialist,
-            requested_specialist: input.requested_specialist ?? input.specialist,
-            resolved_specialist: resolvedSpecialist,
-            model: modelCandidates2[0],
-            duration_ms: Date.now() - startedAt,
-            trace_id: traceId
-          }
-        };
-      }
-    }
-    const prompt = applyOutputContract(renderTaskTemplate(template, input.variables ?? {}), spec);
-    const modelCandidates = collectModelCandidates(input, spec, options);
-    const promptLimitBytes = resolvePromptLimitBytes(spec);
-    const promptBytes = Buffer.byteLength(prompt, "utf8");
-    if (promptBytes > promptLimitBytes) {
-      return {
-        success: false,
-        error: `prompt too large: ${promptBytes} bytes exceeds limit ${promptLimitBytes} bytes`,
-        error_type: "prompt_too_large",
-        meta: {
-          specialist: resolvedSpecialist,
-          requested_specialist: input.requested_specialist ?? input.specialist,
-          resolved_specialist: resolvedSpecialist,
-          model: modelCandidates[0],
-          duration_ms: Date.now() - startedAt,
-          trace_id: traceId
-        }
-      };
-    }
-    if (process.env.SPECIALISTS_SCRIPT_STUB_OUTPUT) {
-      return {
-        success: true,
-        output: prompt,
-        meta: {
-          specialist: resolvedSpecialist,
-          requested_specialist: input.requested_specialist ?? input.specialist,
-          resolved_specialist: resolvedSpecialist,
-          model: "stub",
-          duration_ms: Date.now() - startedAt,
-          trace_id: traceId
-        }
-      };
-    }
-    const timeoutMs = input.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
-    const assistantTextLimitBytes = resolveAssistantTextLimitBytes(spec);
-    const attempts = [];
-    for (const model of modelCandidates) {
-      const systemPrompt = spec.specialist.prompt.system || undefined;
-      const systemPromptMode = spec.specialist.prompt.system_prompt_mode;
-      const attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths);
-      attempts.push(attempt);
-      const parsed = classifyAttempt(attempt);
-      if (parsed.retryable && parsed.errorType !== "auth")
-        continue;
-      const durationMs2 = Date.now() - startedAt;
-      const observability2 = openObservabilityClient(options);
-      if (input.trace !== false && observability2)
-        writeTraceRow(observability2, resolvedSpecialist, model, traceId, parsed.text, durationMs2, skillSources, options.onAuditFailure);
-      if (parsed.kind === "success") {
-        let parsed_json;
-        const expectedKeys = collectRequiredOutputKeys(spec);
-        const shouldParseJson = spec.specialist.execution.response_format === "json" || expectedKeys.length > 0;
-        if (shouldParseJson) {
-          try {
-            parsed_json = JSON.parse(stripMarkdownFences(parsed.text));
-            for (const key of expectedKeys) {
-              if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json))
-                throw new Error(`Missing required output field: ${key}`);
-            }
-          } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : String(error), error_type: "invalid_json", meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
-          }
-        }
-        return { success: true, output: parsed.text, parsed_json, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
-      }
-      return { success: false, error: parsed.error, error_type: parsed.errorType, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
-    }
-    const lastAttempt = attempts.at(-1);
-    const durationMs = Date.now() - startedAt;
-    const observability = openObservabilityClient(options);
-    if (input.trace !== false && observability)
-      writeTraceRow(observability, resolvedSpecialist, modelCandidates.at(-1) ?? "unknown", traceId, lastAttempt?.text ?? "", durationMs, skillSources, options.onAuditFailure);
-    return { success: false, error: lastAttempt?.stderr || "pi produced no assistant text", error_type: "internal", meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model: modelCandidates.at(-1) ?? "unknown", duration_ms: durationMs, trace_id: traceId } };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
-    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
-  }
-}
-function collectModelCandidates(input, spec, options) {
-  const executionChain = resolveModelChain(spec.specialist.execution);
-  const candidates = [input.model_override, ...executionChain, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
-  return [...new Set(candidates)];
-}
-function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, systemPrompt, systemPromptMode, skillPaths = []) {
-  return new Promise((resolve2, reject) => {
-    const args = ["--mode", "json", "--no-session", "--no-extensions", "--no-tools", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
-    if (skillPaths.length === 0)
-      args.push("--no-skills");
-    for (const skillPath of skillPaths)
-      args.push("--skill", skillPath);
-    args.push("--model", model);
-    if (thinkingLevel)
-      args.push("--thinking", thinkingLevel);
-    if (systemPrompt)
-      args.push(systemPromptMode === "append" ? "--append-system-prompt" : "--system-prompt", systemPrompt);
-    const pi = spawn("pi", args, { stdio: ["pipe", "pipe", "pipe"], cwd: options.projectDir ?? process.cwd() });
-    options.onChild?.(pi);
-    pi.stdin?.on("error", () => {});
-    pi.stdin?.write(prompt);
-    pi.stdin?.end();
-    let stderr = "";
-    let timedOut = false;
-    let outputTooLarge = false;
-    let outputTooLargeReason;
-    let pending = "";
-    let assistantText = "";
-    let pendingBytes = 0;
-    let stderrBytes = 0;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      pi.kill("SIGTERM");
-      setTimeout(() => pi.kill("SIGKILL"), 2000);
-    }, timeoutMs);
-    pi.stdout.on("data", (chunk) => {
-      if (outputTooLarge)
-        return;
-      const buffer = Buffer.from(chunk);
-      pending += buffer.toString("utf-8");
-      pendingBytes += buffer.length;
-      if (pendingBytes > DEFAULT_PENDING_LINE_LIMIT_BYTES) {
-        outputTooLarge = true;
-        outputTooLargeReason = "malformed_line_too_large";
-        pi.kill("SIGTERM");
-        setTimeout(() => pi.kill("SIGKILL"), 2000);
-        return;
-      }
-      const lines = pending.split(/\r?\n/);
-      pending = lines.pop() ?? "";
-      pendingBytes = Buffer.byteLength(pending);
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line)
-          continue;
-        try {
-          const event = JSON.parse(line);
-          const nextAssistantText = extractAssistantTextFromEvent(event);
-          if (nextAssistantText !== undefined) {
-            if (Buffer.byteLength(nextAssistantText, "utf8") > assistantTextLimitBytes) {
-              outputTooLarge = true;
-              outputTooLargeReason = "assistant_text_too_large";
-              pi.kill("SIGTERM");
-              setTimeout(() => pi.kill("SIGKILL"), 2000);
-              return;
-            }
-            assistantText = nextAssistantText;
-          }
-        } catch {
-          continue;
-        }
-      }
-    });
-    pi.stderr.on("data", (chunk) => {
-      if (outputTooLarge)
-        return;
-      const text = String(chunk);
-      stderr += text;
-      stderrBytes += Buffer.byteLength(text, "utf8");
-      if (stderrBytes > DEFAULT_STDERR_LIMIT_BYTES) {
-        outputTooLarge = true;
-        outputTooLargeReason = "stderr_too_large";
-        stderr = stderr.slice(0, DEFAULT_STDERR_LIMIT_BYTES);
-        pi.kill("SIGTERM");
-        setTimeout(() => pi.kill("SIGKILL"), 2000);
-      }
-    });
-    pi.on("error", reject);
-    pi.on("close", (code) => {
-      clearTimeout(timer);
-      resolve2({
-        model,
-        text: assistantText,
-        stderr,
-        exitCode: code ?? 0,
-        timedOut,
-        outputTooLarge,
-        outputTooLargeReason
-      });
-    });
-  });
-}
-function classifyAttempt(attempt) {
-  if (attempt.outputTooLarge) {
-    if (attempt.outputTooLargeReason === "assistant_text_too_large")
-      return { retryable: false, kind: "failure", error: "assistant message too large", errorType: "output_too_large", text: attempt.text };
-    if (attempt.outputTooLargeReason === "stderr_too_large")
-      return { retryable: false, kind: "failure", error: "stderr too large", errorType: "output_too_large", text: attempt.text };
-    if (attempt.outputTooLargeReason === "malformed_line_too_large")
-      return { retryable: false, kind: "failure", error: "malformed line too large", errorType: "output_too_large", text: attempt.text };
-    return { retryable: false, kind: "failure", error: "output exceeded cap", errorType: "output_too_large", text: attempt.text };
-  }
-  if (attempt.timedOut)
-    return { retryable: false, kind: "failure", error: attempt.stderr || "timed out", errorType: "timeout", text: attempt.text };
-  const errorType = mapErrorType(attempt.stderr);
-  const retryable = errorType !== "auth" && isRetryableModelFailure(attempt.stderr, attempt.text);
-  if (attempt.exitCode !== 0) {
-    return { retryable, kind: "failure", error: attempt.stderr || `pi exit ${attempt.exitCode}`, errorType, text: attempt.text };
-  }
-  if (!attempt.text) {
-    return { retryable, kind: "failure", error: attempt.stderr || "pi produced no assistant text", errorType, text: attempt.text };
-  }
-  return { retryable: false, kind: "success", error: "", errorType: "internal", text: attempt.text };
-}
-function isRetryableModelFailure(stderr, text) {
-  const normalizedStderr = stderr.toLowerCase();
-  if (isAuthFailureMessage(normalizedStderr))
+function shouldIncludeExtensionTools(name, input) {
+  if (input.specialistExclusions?.disabledExtensions?.includes(name))
     return false;
-  return normalizedStderr.includes("0 tokens") || normalizedStderr.includes("quota") || normalizedStderr.includes("rate limit") || normalizedStderr.includes("insufficient_quota") || !text && !normalizedStderr.trim();
+  const state = input.extensionState?.[name];
+  if (!state)
+    return true;
+  if (state.enabled === false)
+    return false;
+  return state.health !== "not_installed" && state.health !== "disabled";
 }
-function isAuthFailureMessage(message) {
-  return /\b(401|403)\b/.test(message) || message.includes("auth") || message.includes("unauthorized") || message.includes("forbidden") || message.includes("invalid_api_key") || message.includes("authentication failed") || message.includes("credentials");
+function getTierTools(catalogs, name, tier) {
+  const catalog = getCatalog(catalogs, name);
+  return catalog?.source_tiers[tier] ?? [];
 }
-// src/specialist/loader.ts
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join as join5 } from "node:path";
-import { existsSync as existsSync5 } from "node:fs";
+function canEnforceHardDeny(state) {
+  if (!state)
+    return true;
+  if (!HEALTHY.includes(state.health))
+    return false;
+  return state.catalogCompatible !== false;
+}
+function resolveManifestTools(input) {
+  const policy = mergeTierPolicy(input);
+  const warnings = [];
+  const attribution = [];
+  const downgradeReasons = [];
+  const effectiveDenied = new Set(policy.denied_natives_when_extension ?? []);
+  const deniedNatives = [];
+  const nativeTools = getTierTools(input.catalogs, "native", input.tier);
+  const gitnexusBase = getTierTools(input.catalogs, "gitnexus", GITNEXUS_BASE_TIER);
+  const gitnexusExtras = input.tier === "MEDIUM" || input.tier === "HIGH" ? getTierTools(input.catalogs, "gitnexus", input.tier).filter((tool) => !gitnexusBase.includes(tool)) : [];
+  const serenaTools = getTierTools(input.catalogs, "serena", input.tier);
+  const gitnexusState = input.extensionState?.gitnexus;
+  const serenaState = input.extensionState?.serena;
+  const healthyGitnexus = canEnforceHardDeny(gitnexusState);
+  const healthySerena = canEnforceHardDeny(serenaState);
+  const hardDenyAllowed = policy.denied_natives_mode === "hard" && healthyGitnexus && healthySerena;
+  const finalNativeTools = nativeTools.filter((tool) => {
+    if (!effectiveDenied.has(tool))
+      return true;
+    if (!hardDenyAllowed)
+      return true;
+    deniedNatives.push(tool);
+    return false;
+  });
+  const toolsList = uniqueOrdered([
+    ...finalNativeTools,
+    ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusBase,
+    ...input.specialistExclusions?.disabledExtensions?.includes("serena") ? [] : serenaTools,
+    ...input.specialistExclusions?.disabledExtensions?.includes("gitnexus") ? [] : gitnexusExtras
+  ]);
+  if (!shouldIncludeExtensionTools("gitnexus", input))
+    warnings.push("gitnexus tools excluded by extension state");
+  if (!shouldIncludeExtensionTools("serena", input))
+    warnings.push("serena tools excluded by extension state");
+  if ((input.specialistExclusions?.disabledExtensions ?? []).length > 0) {
+    warnings.push(`specialist exclusions: ${(input.specialistExclusions?.disabledExtensions ?? []).join(", ")}`);
+    attribution.push({ layer: "specialist_exclusion", source: "specialist.json", tools: [] });
+  }
+  attribution.push({ layer: "catalog", source: "tool catalogs", tools: nativeTools });
+  if (input.catalogDefaultOverrides?.[input.tier]) {
+    attribution.push({
+      layer: "catalog_default",
+      source: "tool catalog defaults",
+      tools: input.catalogDefaultOverrides[input.tier]?.denied_natives_when_extension ?? []
+    });
+  }
+  if (input.manifestPolicy?.permissions?.[input.tier]) {
+    attribution.push({
+      layer: "tier_policy",
+      source: "manifest policy",
+      tools: input.manifestPolicy.permissions[input.tier]?.denied_natives_when_extension ?? []
+    });
+  }
+  if (input.specialistOverride) {
+    attribution.push({
+      layer: "specialist_override",
+      source: "specialist YAML",
+      tools: input.specialistOverride.denied_natives_when_extension ?? []
+    });
+  }
+  if (!hardDenyAllowed && policy.denied_natives_mode === "hard" && effectiveDenied.size > 0) {
+    const restoredNatives = nativeTools.filter((tool) => effectiveDenied.has(tool));
+    const reasonParts = [gitnexusState, serenaState].filter((state) => Boolean(state)).flatMap((state) => {
+      if (!HEALTHY.includes(state.health))
+        return [state.health];
+      if (state.catalogCompatible === false)
+        return ["catalog_incompatible"];
+      return [];
+    });
+    const reason = reasonParts.length > 0 ? reasonParts.join(",") : "unknown";
+    warnings.push(`hard deny restored native fallback: ${reason}`);
+    downgradeReasons.push(`restored native fallback for ${restoredNatives.join(",") || "(none)"} due to ${reason}`);
+    attribution.push({ layer: "runtime_health", source: "fallback", tools: restoredNatives });
+  }
+  const preferenceSignals = policy.denied_natives_mode === "soft" && effectiveDenied.size > 0 ? [`soft deny prefers extension tools for: ${Array.from(effectiveDenied).join(",")}`] : [];
+  return {
+    tools: toolsList.join(","),
+    toolsList,
+    deniedNatives,
+    deniedNativesMode: policy.denied_natives_mode ?? "soft",
+    preferenceSignals,
+    downgradeReasons,
+    warnings,
+    attribution
+  };
+}
 
-// ../../node_modules/yaml/dist/index.js
-var composer = require_composer();
-var Document = require_Document();
-var Schema = require_Schema();
-var errors = require_errors();
-var Alias = require_Alias();
-var identity = require_identity();
-var Pair = require_Pair();
-var Scalar = require_Scalar();
-var YAMLMap = require_YAMLMap();
-var YAMLSeq = require_YAMLSeq();
-var cst = require_cst();
-var lexer = require_lexer();
-var lineCounter = require_line_counter();
-var parser = require_parser();
-var publicApi = require_public_api();
-var visit = require_visit();
-var $Composer = composer.Composer;
-var $Document = Document.Document;
-var $Schema = Schema.Schema;
-var $YAMLError = errors.YAMLError;
-var $YAMLParseError = errors.YAMLParseError;
-var $YAMLWarning = errors.YAMLWarning;
-var $Alias = Alias.Alias;
-var $isAlias = identity.isAlias;
-var $isCollection = identity.isCollection;
-var $isDocument = identity.isDocument;
-var $isMap = identity.isMap;
-var $isNode = identity.isNode;
-var $isPair = identity.isPair;
-var $isScalar = identity.isScalar;
-var $isSeq = identity.isSeq;
-var $Pair = Pair.Pair;
-var $Scalar = Scalar.Scalar;
-var $YAMLMap = YAMLMap.YAMLMap;
-var $YAMLSeq = YAMLSeq.YAMLSeq;
-var $Lexer = lexer.Lexer;
-var $LineCounter = lineCounter.LineCounter;
-var $Parser = parser.Parser;
-var $parse = publicApi.parse;
-var $parseAllDocuments = publicApi.parseAllDocuments;
-var $parseDocument = publicApi.parseDocument;
-var $stringify = publicApi.stringify;
-var $visit = visit.visit;
-var $visitAsync = visit.visitAsync;
-
-// ../../node_modules/zod/v3/helpers/util.js
+// ../../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {};
@@ -10535,7 +7269,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../node_modules/zod/v3/ZodError.js
+// ../../../node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -10649,7 +7383,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../node_modules/zod/v3/locales/en.js
+// ../../../node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -10752,13 +7486,13 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../node_modules/zod/v3/errors.js
+// ../../../node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../node_modules/zod/v3/helpers/parseUtil.js
+// ../../../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -10864,14 +7598,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../node_modules/zod/v3/helpers/errorUtil.js
+// ../../../node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../node_modules/zod/v3/types.js
+// ../../../node_modules/zod/v3/types.js
 class ParseInputLazyPath {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -14215,6 +10949,5718 @@ var nullableType = ZodNullable.create;
 var preprocessType = ZodEffects.createWithPreprocess;
 var pipelineType = ZodPipeline.create;
 
+// src/specialist/tool-catalog.ts
+var TierSchema = enumType(["READ_ONLY", "LOW", "MEDIUM", "HIGH"]);
+var LayerSchema = enumType(["native", "gitnexus", "serena"]);
+var ToolTierMapSchema = recordType(TierSchema, arrayType(stringType()));
+var ToolCatalogSchema = objectType({
+  catalog: LayerSchema,
+  package: stringType(),
+  version: stringType(),
+  precedence: numberType().int().nonnegative(),
+  source_tiers: ToolTierMapSchema
+}).passthrough();
+var ManifestPolicyTierSchema = objectType({
+  denied_natives_when_extension: arrayType(stringType()).optional(),
+  denied_natives_mode: enumType(["soft", "hard"]).optional()
+}).passthrough();
+var ToolCatalogIndexSchema = objectType({
+  precedence_order: arrayType(LayerSchema),
+  default_overrides: recordType(TierSchema, ManifestPolicyTierSchema).optional(),
+  catalogs: arrayType(ToolCatalogSchema)
+}).passthrough();
+function validateToolCatalogIndex(value) {
+  return ToolCatalogIndexSchema.parse(value);
+}
+function loadToolCatalogIndex(jsonText) {
+  return validateToolCatalogIndex(JSON.parse(jsonText));
+}
+
+// src/pi/session.ts
+class SessionKilledError extends Error {
+  constructor() {
+    super("Session was killed");
+    this.name = "SessionKilledError";
+  }
+}
+
+class StallTimeoutError extends Error {
+  constructor(timeoutMs) {
+    super(`Session stalled: no activity for ${timeoutMs}ms`);
+    this.name = "StallTimeoutError";
+  }
+}
+var TEST_COMMAND_STALL_TIMEOUT_MS = 300000;
+var GITNEXUS_IMPACT_STALL_TIMEOUT_MS = 300000;
+var TEST_COMMAND_PATTERNS = [
+  /(?:^|\s)(?:bun\s+--bun\s+)?vitest(?:\s|$)/i,
+  /(?:^|\s)bun\s+test(?:\s|$)/i,
+  /(?:^|\s)npm\s+test(?:\s|$)/i,
+  /(?:^|\s)(?:pnpm|yarn)\s+test(?:\s|$)/i,
+  /(?:^|\s)(?:node\s+)?jest(?:\s|$)/i,
+  /(?:^|\s)pytest(?:\s|$)/i
+];
+var cachedToolCatalogIndex;
+function loadSharedToolCatalogIndex() {
+  if (cachedToolCatalogIndex)
+    return cachedToolCatalogIndex;
+  const overridePath = resolve(process.cwd(), ".specialists", "catalog", "index.json");
+  try {
+    cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(overridePath, "utf8"));
+    return cachedToolCatalogIndex;
+  } catch {
+    try {
+      const canonicalDir = resolveCanonicalAssetDir("catalog");
+      if (!canonicalDir)
+        return;
+      const canonicalPath = resolve(canonicalDir, "index.json");
+      cachedToolCatalogIndex = loadToolCatalogIndex(readFileSync(canonicalPath, "utf8"));
+      return cachedToolCatalogIndex;
+    } catch {
+      return;
+    }
+  }
+}
+function probeExtensionHealth(packageName) {
+  const globalDir = resolveGlobalNodeModulesDir();
+  if (globalDir && existsSync2(join(globalDir, packageName, "package.json"))) {
+    return "loaded_healthy";
+  }
+  return "not_installed";
+}
+function resolvePermissionTools(options) {
+  const catalogIndex = loadSharedToolCatalogIndex();
+  if (!catalogIndex)
+    return;
+  const tier = options.level?.toUpperCase();
+  if (tier !== "READ_ONLY" && tier !== "LOW" && tier !== "MEDIUM" && tier !== "HIGH")
+    return;
+  const specialistOverride = options.specialistPermissions?.[tier];
+  return resolveManifestTools({
+    tier,
+    catalogs: catalogIndex.catalogs,
+    catalogDefaultOverrides: catalogIndex.default_overrides,
+    specialistOverride,
+    extensionState: {
+      gitnexus: { enabled: true, health: probeExtensionHealth("pi-gitnexus") },
+      serena: { enabled: true, health: probeExtensionHealth("pi-serena-tools") }
+    }
+  }).tools || undefined;
+}
+function resolveGlobalNodeModulesDir() {
+  const candidates = [
+    process.env.PI_NPM_GLOBAL_DIR,
+    process.env.NPM_CONFIG_PREFIX ? join(process.env.NPM_CONFIG_PREFIX, "lib", "node_modules") : undefined,
+    process.env.npm_config_prefix ? join(process.env.npm_config_prefix, "lib", "node_modules") : undefined,
+    process.env.NVM_BIN ? join(dirname(process.env.NVM_BIN), "lib", "node_modules") : undefined,
+    join(homedir(), ".nvm/versions/node", process.version, "lib", "node_modules")
+  ].filter((candidate) => Boolean(candidate));
+  return candidates.find((candidate) => existsSync2(candidate));
+}
+function asNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value))
+    return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return;
+}
+function normalizeUsageSource(value) {
+  if (value === "provider_usage" || value === "runtime_estimate" || value === "local_estimate" || value === "unknown")
+    return value;
+  return "unknown";
+}
+function pickFirstNumber(record, keys) {
+  for (const key of keys) {
+    const value = asNumber(record[key]);
+    if (value !== undefined)
+      return value;
+  }
+  return;
+}
+function normalizeTokenUsage(candidate) {
+  if (!candidate || typeof candidate !== "object")
+    return;
+  const usage = candidate;
+  const normalized = {
+    input_tokens: pickFirstNumber(usage, ["input_tokens", "inputTokens", "prompt_tokens", "promptTokens", "input"]),
+    output_tokens: pickFirstNumber(usage, ["output_tokens", "outputTokens", "completion_tokens", "completionTokens", "output"]),
+    cache_creation_tokens: pickFirstNumber(usage, ["cache_creation_tokens", "cacheCreationTokens", "cache_write_tokens", "cacheWrite"]),
+    cache_read_tokens: pickFirstNumber(usage, ["cache_read_tokens", "cacheReadTokens", "cache_hit_tokens", "cacheRead"]),
+    reasoning_tokens: pickFirstNumber(usage, ["reasoning_tokens", "reasoningTokens", "thinking_tokens", "thinkingTokens"]),
+    tool_tokens: pickFirstNumber(usage, ["tool_tokens", "toolTokens", "tool_use_tokens", "toolUseTokens"]),
+    total_tokens: pickFirstNumber(usage, ["total_tokens", "totalTokens"]),
+    usage_source: typeof usage.usage_source === "string" ? normalizeUsageSource(usage.usage_source) : "provider_usage"
+  };
+  const hasAny = Object.values(normalized).some((value) => value !== undefined);
+  if (!hasAny)
+    return;
+  if (normalized.total_tokens === undefined) {
+    const components = [
+      normalized.input_tokens,
+      normalized.output_tokens,
+      normalized.cache_creation_tokens,
+      normalized.cache_read_tokens
+    ].filter((value) => value !== undefined);
+    if (components.length > 0) {
+      normalized.total_tokens = components.reduce((sum, value) => sum + value, 0);
+    }
+  }
+  return Object.fromEntries(Object.entries(normalized).filter(([, value]) => value !== undefined));
+}
+function findFinishReason(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  const direct = record.stopReason ?? record.finishReason ?? record.finish_reason ?? record.reason;
+  if (typeof direct === "string" && direct.trim().length > 0)
+    return direct;
+  return;
+}
+function findTokenUsage(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  const message = record.message && typeof record.message === "object" ? record.message : undefined;
+  const assistantMessage = Array.isArray(record.messages) ? [...record.messages].reverse().find((m) => !!m && typeof m === "object" && m.role === "assistant") : undefined;
+  const candidates = [
+    record.usage,
+    record.tokenUsage,
+    record.token_usage,
+    message?.usage,
+    message?.tokenUsage,
+    message?.token_usage,
+    assistantMessage?.usage,
+    assistantMessage?.tokenUsage,
+    assistantMessage?.token_usage,
+    record.stats?.usage,
+    record.stats?.tokenUsage,
+    record.result?.usage,
+    record.result?.tokenUsage,
+    record.assistantMessageEvent?.usage,
+    record.assistantMessageEvent?.tokenUsage
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeTokenUsage(candidate);
+    if (normalized)
+      return normalized;
+  }
+  return normalizeTokenUsage(record);
+}
+function findApiErrorMessage(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  const direct = [record.errorMessage, record.error_message, record.error, record.message].find((value) => typeof value === "string" && value.trim().length > 0);
+  if (typeof direct === "string")
+    return direct.trim();
+  const nestedError = record.error;
+  if (nestedError && typeof nestedError === "object") {
+    const nested = nestedError;
+    const nestedMessage = [nested.message, nested.errorMessage, nested.error_message].find((value) => typeof value === "string" && value.trim().length > 0);
+    if (typeof nestedMessage === "string")
+      return nestedMessage.trim();
+  }
+  const message = record.assistantMessageEvent;
+  if (message && typeof message === "object") {
+    const nested = message;
+    const nestedMessage = [nested.errorMessage, nested.error_message, nested.error, nested.message].find((value) => typeof value === "string" && value.trim().length > 0);
+    if (typeof nestedMessage === "string")
+      return nestedMessage.trim();
+  }
+  return;
+}
+function extractApiErrorFromStderr(stderr) {
+  const compact = stderr.trim();
+  if (!compact)
+    return;
+  const patterns = [
+    /You have hit your ChatGPT usage limit[^\n]*/i,
+    /rate limit[^\n]*/i,
+    /quota[^\n]*/i,
+    /auth(?:entication)?[^\n]*/i,
+    /unauthori[sz]ed[^\n]*/i,
+    /forbidden[^\n]*/i,
+    /overloaded[^\n]*/i
+  ];
+  for (const pattern of patterns) {
+    const match = compact.match(pattern);
+    if (match)
+      return match[0].trim();
+  }
+  return;
+}
+function normalizeToolResultPart(contentPart) {
+  if (!contentPart || typeof contentPart !== "object")
+    return;
+  const part = contentPart;
+  const text = part.text;
+  if (typeof text === "string" && text.trim().length > 0)
+    return text;
+  const content = part.content;
+  if (typeof content === "string" && content.trim().length > 0)
+    return content;
+  const output = part.output;
+  if (typeof output === "string" && output.trim().length > 0)
+    return output;
+  return;
+}
+function findToolResultContent(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  const result = record.result;
+  if (!result || typeof result !== "object")
+    return;
+  const resultRecord = result;
+  const content = resultRecord.content;
+  if (Array.isArray(content)) {
+    const parts = content.map(normalizeToolResultPart).filter((value) => typeof value === "string" && value.length > 0);
+    if (parts.length > 0)
+      return parts.join(`
+`);
+  }
+  if (typeof resultRecord.content === "string" && resultRecord.content.trim().length > 0) {
+    return resultRecord.content;
+  }
+  if (typeof resultRecord.output === "string" && resultRecord.output.trim().length > 0) {
+    return resultRecord.output;
+  }
+  return;
+}
+function findToolResultRaw(payload) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  const result = record.result;
+  if (!result || typeof result !== "object" || Array.isArray(result))
+    return;
+  return result;
+}
+function findStringValue(payload, keys) {
+  if (!payload || typeof payload !== "object")
+    return;
+  const record = payload;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0)
+      return value;
+  }
+  return;
+}
+function extractBashCommand(args) {
+  if (!args)
+    return;
+  const command = args.command ?? args.cmd ?? args.script;
+  if (typeof command !== "string")
+    return;
+  const normalizedCommand = command.trim();
+  return normalizedCommand.length > 0 ? normalizedCommand : undefined;
+}
+function isTestCommand(command) {
+  return TEST_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
+}
+var WRITE_BOUNDARY_TOOL_NAMES = new Set(["edit", "write", "multiEdit", "notebookEdit"]);
+var WORKTREE_BOUNDARY_ENV_KEY = "SPECIALISTS_WORKTREE_BOUNDARY";
+function getWorktreeBoundaryExtensionPath(worktreeBoundary) {
+  const boundaryHash = createHash("sha256").update(resolve(worktreeBoundary)).digest("hex").slice(0, 16);
+  const extensionsDir = join(tmpdir(), "specialists-pi-extensions");
+  try {
+    mkdirSync(extensionsDir, { recursive: true });
+  } catch (err) {
+    process.stderr.write(`[worktree-boundary] WARN: could not create extensions directory at ${extensionsDir}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
+`);
+    return null;
+  }
+  const extensionPath = join(extensionsDir, `worktree-boundary-${boundaryHash}.mjs`);
+  if (existsSync2(extensionPath))
+    return extensionPath;
+  const extensionSource = `
+import { isAbsolute, resolve } from 'node:path';
+
+const WRITE_TOOLS = new Set(['edit', 'write', 'multiEdit', 'notebookEdit']);
+const WORKTREE_BOUNDARY_ENV_KEY = '${WORKTREE_BOUNDARY_ENV_KEY}';
+
+function isPathWithinBoundary(path, boundary) {
+  const resolvedPath = resolve(path);
+  const resolvedBoundary = resolve(boundary);
+  if (resolvedPath === resolvedBoundary) return true;
+  return resolvedPath.startsWith(resolvedBoundary.endsWith('/') ? resolvedBoundary : resolvedBoundary + '/');
+}
+
+export default function(pi) {
+  const worktreeBoundary = process.env[WORKTREE_BOUNDARY_ENV_KEY];
+  if (!worktreeBoundary) return;
+
+  pi.on('tool_call', (event) => {
+    if (!WRITE_TOOLS.has(event.toolName)) return undefined;
+
+    const input = event.input && typeof event.input === 'object' ? event.input : {};
+    const rawPath = typeof input.path === 'string'
+      ? input.path
+      : (typeof input.file_path === 'string' ? input.file_path : undefined);
+
+    if (!rawPath || !isAbsolute(rawPath)) return undefined;
+
+    if (isPathWithinBoundary(rawPath, worktreeBoundary)) return undefined;
+
+    return {
+      block: true,
+      reason: \`Path '\${rawPath}' is outside worktree boundary ('\${resolve(worktreeBoundary)}'). Use a relative path or a path within the worktree.\`,
+    };
+  });
+}
+`.trimStart();
+  try {
+    writeFileSync(extensionPath, extensionSource, "utf-8");
+  } catch (err) {
+    process.stderr.write(`[worktree-boundary] WARN: could not write extension file at ${extensionPath}: ${err.message}. ` + `Boundary enforcement will NOT apply for this session.
+`);
+    return null;
+  }
+  return extensionPath;
+}
+function ensureSerenaForRootInSubprocess(serenaPoolPath, projectRoot, env) {
+  const helperScript = [
+    "const [moduleUrl, cwd] = process.argv.slice(1);",
+    "const mod = await import(moduleUrl);",
+    "const ensure = mod?.ensureSerenaForRoot;",
+    'const port = typeof ensure === "function" ? await ensure(cwd) : null;',
+    "if (port != null) process.stdout.write(String(port));"
+  ].join(" ");
+  const helperArgs = process.versions.bun ? ["-e", helperScript, pathToFileURL(serenaPoolPath).href, projectRoot] : ["--input-type=module", "-e", helperScript, pathToFileURL(serenaPoolPath).href, projectRoot];
+  const output = execFileSync(process.execPath, helperArgs, {
+    encoding: "utf8",
+    env,
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
+  if (!output)
+    return null;
+  const port = Number(output);
+  if (!Number.isFinite(port))
+    throw new Error(`serena-pool helper returned invalid port: ${output}`);
+  return port;
+}
+
+class PiAgentSession {
+  options;
+  proc;
+  _lastOutput = "";
+  _donePromise;
+  _doneResolve;
+  _doneReject;
+  _agentEndReceived = false;
+  _killed = false;
+  _lineBuffer = "";
+  _pendingRequests = new Map;
+  _nextRequestId = 1;
+  _stderrBuffer = "";
+  _apiError;
+  _stallTimer;
+  _stallError;
+  _testWindowToolCallIds = new Set;
+  _testWindowWithoutIdCount = 0;
+  _impactWindowToolCallIds = new Set;
+  _impactWindowWithoutIdCount = 0;
+  _metrics = {
+    turns: 0,
+    tool_calls: 0,
+    auto_compactions: 0,
+    auto_retries: 0
+  };
+  meta;
+  constructor(options, meta) {
+    this.options = options;
+    this.meta = meta;
+  }
+  static async create(options) {
+    const meta = {
+      backend: options.model.includes("/") ? options.model.split("/")[0] : mapSpecialistBackend(options.model),
+      model: options.model,
+      sessionId: crypto.randomUUID(),
+      startedAt: new Date
+    };
+    return new PiAgentSession(options, meta);
+  }
+  async start() {
+    const model = this.options.model;
+    const extraArgs = getProviderArgs(model);
+    const providerArgs = model.includes("/") ? ["--model", model] : ["--provider", mapSpecialistBackend(model)];
+    const args = [
+      "--mode",
+      "rpc",
+      "--no-extensions",
+      ...providerArgs,
+      "--no-session",
+      "--offline",
+      "--no-context-files",
+      "--no-prompt-templates",
+      "--no-themes",
+      ...extraArgs
+    ];
+    const toolsFlag = resolvePermissionTools({
+      level: this.options.permissionLevel,
+      specialistName: this.options.specialistName,
+      specialistPermissions: this.options.specialistPermissions
+    });
+    if (toolsFlag)
+      args.push("--tools", toolsFlag);
+    if (this.options.thinkingLevel) {
+      args.push("--thinking", this.options.thinkingLevel);
+    }
+    for (const skillPath of this.options.skillPaths ?? []) {
+      args.push("--skill", skillPath);
+    }
+    const piExtDir = join(homedir(), ".pi", "agent", "extensions");
+    const permLevel = (this.options.permissionLevel ?? "").toUpperCase();
+    if (permLevel !== "READ_ONLY") {
+      const qgPath = join(piExtDir, "quality-gates");
+      if (existsSync2(qgPath))
+        args.push("-e", qgPath);
+    }
+    const ssPath = join(piExtDir, "service-skills");
+    if (existsSync2(ssPath))
+      args.push("-e", ssPath);
+    const cavemanPath = join(piExtDir, "caveman");
+    if (existsSync2(cavemanPath))
+      args.push("-e", cavemanPath);
+    const npmGlobalDir = resolveGlobalNodeModulesDir();
+    const excludedExtensions = new Set(this.options.excludeExtensions ?? []);
+    if (npmGlobalDir) {
+      const gitnexusPackageName = "pi-gitnexus";
+      if (!excludedExtensions.has(gitnexusPackageName)) {
+        const gitnexusPath = join(npmGlobalDir, gitnexusPackageName);
+        if (existsSync2(gitnexusPath))
+          args.push("-e", gitnexusPath);
+      }
+      const serenaPackageName = "pi-serena-tools";
+      if (!excludedExtensions.has(serenaPackageName)) {
+        const serenaPath = join(npmGlobalDir, serenaPackageName);
+        if (existsSync2(serenaPath))
+          args.push("-e", serenaPath);
+      }
+    }
+    if (this.options.systemPrompt) {
+      const systemPromptFlag = this.options.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt";
+      args.push(systemPromptFlag, this.options.systemPrompt);
+    }
+    const worktreeBoundary = this.options.worktreeBoundary ? resolve(this.options.worktreeBoundary) : undefined;
+    if (worktreeBoundary) {
+      const boundaryExtPath = getWorktreeBoundaryExtensionPath(worktreeBoundary);
+      if (boundaryExtPath) {
+        args.push("-e", boundaryExtPath);
+      }
+    }
+    const sessionCwd = resolve(this.options.cwd ?? process.cwd());
+    const hookEnv = {
+      ...process.env,
+      ...this.options.env ?? {},
+      CAVEMAN_LEVEL: "full"
+    };
+    let serenaPoolPort = null;
+    if (npmGlobalDir && !excludedExtensions.has("pi-serena-tools")) {
+      const serenaPoolPath = join(npmGlobalDir, "@jaggerxtrm", "pi-extensions", "extensions", "serena-pool", "index.ts");
+      if (existsSync2(serenaPoolPath)) {
+        try {
+          serenaPoolPort = ensureSerenaForRootInSubprocess(serenaPoolPath, sessionCwd, hookEnv);
+        } catch (err) {
+          console.warn("[serena-pool] pre-spawn ensure failed:", err);
+        }
+      }
+    }
+    const baseEnv = {
+      ...hookEnv,
+      ...serenaPoolPort != null ? { SERENA_MCP_PORT: String(serenaPoolPort) } : {}
+    };
+    this.proc = spawn("pi", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: sessionCwd,
+      env: worktreeBoundary ? { ...baseEnv, [WORKTREE_BOUNDARY_ENV_KEY]: worktreeBoundary } : baseEnv,
+      detached: true
+    });
+    const donePromise = new Promise((resolve2, reject) => {
+      this._doneResolve = resolve2;
+      this._doneReject = reject;
+    });
+    donePromise.catch(() => {});
+    this._donePromise = donePromise;
+    this.proc.stderr?.on("data", (chunk) => {
+      const text = chunk.toString();
+      this._stderrBuffer += text;
+      this._apiError ??= extractApiErrorFromStderr(this._stderrBuffer) ?? extractApiErrorFromStderr(text);
+    });
+    this.proc.stdout?.on("data", (chunk) => {
+      this._lineBuffer += chunk.toString();
+      const lines = this._lineBuffer.split(`
+`);
+      this._lineBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim())
+          this._handleEvent(line);
+      }
+    });
+    this.proc.stdout?.on("end", () => {
+      if (this._lineBuffer.trim()) {
+        this._handleEvent(this._lineBuffer);
+        this._lineBuffer = "";
+      }
+    });
+    this.proc.on("close", (code) => {
+      this._clearStallTimer();
+      if (this._agentEndReceived || this._killed) {
+        this._doneResolve?.();
+      } else if (code === 0 || code === null) {
+        this._doneResolve?.();
+      } else {
+        this._doneReject?.(new Error(`pi process exited with code ${code}`));
+      }
+    });
+  }
+  _clearStallTimer() {
+    if (this._stallTimer) {
+      clearTimeout(this._stallTimer);
+      this._stallTimer = undefined;
+    }
+  }
+  _isTestWindowActive() {
+    return this._testWindowToolCallIds.size > 0 || this._testWindowWithoutIdCount > 0;
+  }
+  _isImpactWindowActive() {
+    return this._impactWindowToolCallIds.size > 0 || this._impactWindowWithoutIdCount > 0;
+  }
+  _resolveStallTimeoutMs() {
+    const baseTimeoutMs = this.options.stallTimeoutMs;
+    if (!baseTimeoutMs || baseTimeoutMs <= 0)
+      return;
+    let timeoutMs = baseTimeoutMs;
+    if (this._isTestWindowActive()) {
+      const testCommandTimeoutMs = this.options.testCommandStallTimeoutMs ?? TEST_COMMAND_STALL_TIMEOUT_MS;
+      timeoutMs = Math.max(timeoutMs, testCommandTimeoutMs);
+    }
+    if (this._isImpactWindowActive()) {
+      timeoutMs = Math.max(timeoutMs, GITNEXUS_IMPACT_STALL_TIMEOUT_MS);
+    }
+    return timeoutMs;
+  }
+  _activateTestWindow(toolCallId) {
+    if (toolCallId) {
+      this._testWindowToolCallIds.add(toolCallId);
+      return;
+    }
+    this._testWindowWithoutIdCount += 1;
+  }
+  _deactivateTestWindow(toolCallId) {
+    if (toolCallId) {
+      this._testWindowToolCallIds.delete(toolCallId);
+      return;
+    }
+    if (this._testWindowWithoutIdCount > 0) {
+      this._testWindowWithoutIdCount -= 1;
+    }
+  }
+  _activateImpactWindow(toolCallId) {
+    if (toolCallId) {
+      this._impactWindowToolCallIds.add(toolCallId);
+      return;
+    }
+    this._impactWindowWithoutIdCount += 1;
+  }
+  _deactivateImpactWindow(toolCallId) {
+    if (toolCallId) {
+      this._impactWindowToolCallIds.delete(toolCallId);
+      return;
+    }
+    if (this._impactWindowWithoutIdCount > 0) {
+      this._impactWindowWithoutIdCount -= 1;
+    }
+  }
+  _markActivity() {
+    const timeoutMs = this._resolveStallTimeoutMs();
+    if (!timeoutMs || this._killed || this._agentEndReceived)
+      return;
+    this._clearStallTimer();
+    this._stallTimer = setTimeout(() => {
+      if (this._killed || this._agentEndReceived)
+        return;
+      const err = new StallTimeoutError(timeoutMs);
+      this._stallError = err;
+      this.kill(err);
+    }, timeoutMs);
+  }
+  _updateTokenUsage(tokenUsage, source) {
+    if (!tokenUsage)
+      return;
+    this._metrics.token_usage = {
+      ...this._metrics.token_usage,
+      ...tokenUsage
+    };
+    this.options.onMetric?.({ type: "token_usage", token_usage: tokenUsage, source });
+  }
+  _updateFinishReason(finishReason, source) {
+    if (!finishReason)
+      return;
+    this._metrics.finish_reason = finishReason;
+    this.options.onMetric?.({ type: "finish_reason", finish_reason: finishReason, source });
+  }
+  _handleEvent(line) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    this._markActivity();
+    const { type } = event;
+    if (type === "response") {
+      const id = event.id;
+      if (id !== undefined) {
+        const entry = this._pendingRequests.get(id);
+        if (entry) {
+          clearTimeout(entry.timer);
+          this._pendingRequests.delete(id);
+          entry.resolve(event);
+        }
+      }
+      return;
+    }
+    if (type === "message_start") {
+      const role = event.message?.role;
+      if (role === "assistant") {
+        this.options.onEvent?.("message_start_assistant");
+        const { provider, model } = event.message ?? {};
+        if (provider || model) {
+          this.options.onMeta?.({ backend: provider ?? "", model: model ?? "", sessionId: this.meta.sessionId });
+        }
+      } else if (role === "toolResult") {
+        this.options.onEvent?.("message_start_tool_result");
+      }
+      return;
+    }
+    if (type === "message_end") {
+      const role = event.message?.role;
+      if (role === "assistant") {
+        this.options.onEvent?.("message_end_assistant");
+      } else if (role === "toolResult") {
+        this.options.onEvent?.("message_end_tool_result");
+      }
+      return;
+    }
+    if (type === "turn_start") {
+      this._metrics.turns = (this._metrics.turns ?? 0) + 1;
+      this.options.onEvent?.("turn_start");
+      return;
+    }
+    if (type === "turn_end") {
+      const tokenUsage = findTokenUsage(event);
+      const finishReason = findFinishReason(event);
+      this._updateTokenUsage(tokenUsage, "turn_end");
+      this._updateFinishReason(finishReason, "turn_end");
+      this.options.onMetric?.({
+        type: "turn_summary",
+        turn_index: this._metrics.turns ?? 0,
+        ...tokenUsage ? { token_usage: tokenUsage } : {},
+        ...finishReason ? { finish_reason: finishReason } : {}
+      });
+      this.options.onEvent?.("turn_end");
+      return;
+    }
+    if (type === "agent_end") {
+      const messages = event.messages ?? [];
+      const last = [...messages].reverse().find((m) => m.role === "assistant");
+      if (last) {
+        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+      }
+      this._updateTokenUsage(findTokenUsage(event), "agent_end");
+      this._updateFinishReason(findFinishReason(event), "agent_end");
+      const apiError = findApiErrorMessage(event) ?? this._apiError ?? extractApiErrorFromStderr(this._stderrBuffer);
+      if (apiError) {
+        this._apiError = apiError;
+        this._metrics.api_error = apiError;
+        this.options.onMetric?.({ type: "api_error", source: "stderr", errorMessage: apiError });
+      }
+      this._agentEndReceived = true;
+      this._clearStallTimer();
+      this.options.onEvent?.("agent_end");
+      this._doneResolve?.();
+      return;
+    }
+    if (type === "tool_execution_start") {
+      this._metrics.tool_calls = (this._metrics.tool_calls ?? 0) + 1;
+      const toolName = event.toolName ?? event.name ?? "tool";
+      const toolArgs = event.args;
+      const toolCallId = event.toolCallId;
+      const command = toolName === "bash" ? extractBashCommand(toolArgs) : undefined;
+      if (command && isTestCommand(command)) {
+        this._activateTestWindow(toolCallId);
+        this._markActivity();
+      }
+      if (toolName === "gitnexus_impact") {
+        this._activateImpactWindow(toolCallId);
+        this._markActivity();
+      }
+      this.options.onToolStart?.(toolName, toolArgs, toolCallId);
+      this.options.onEvent?.("tool_execution_start", { toolCallId });
+      return;
+    }
+    if (type === "tool_execution_update") {
+      this.options.onEvent?.("tool_execution_update", { toolCallId: event.toolCallId });
+      return;
+    }
+    if (type === "tool_execution_end") {
+      const toolName = event.toolName ?? event.name ?? "tool";
+      const toolCallId = event.toolCallId;
+      this.options.onToolEnd?.(toolName, event.isError ?? false, toolCallId, findToolResultContent(event), findToolResultRaw(event));
+      if (toolName === "bash") {
+        this._deactivateTestWindow(toolCallId);
+        this._markActivity();
+      }
+      if (toolName === "gitnexus_impact") {
+        this._deactivateImpactWindow(toolCallId);
+        this._markActivity();
+      }
+      this.options.onEvent?.("tool_execution_end", { toolCallId });
+      return;
+    }
+    if (type === "auto_compaction_start" || type === "auto_compaction_end") {
+      if (type === "auto_compaction_end") {
+        this._metrics.auto_compactions = (this._metrics.auto_compactions ?? 0) + 1;
+      }
+      const compactionDetails = {
+        tokensBefore: asNumber(event.tokensBefore ?? event.tokens_before),
+        summary: findStringValue(event, ["summary"]),
+        firstKeptEntryId: findStringValue(event, ["firstKeptEntryId", "first_kept_entry_id"])
+      };
+      this.options.onMetric?.({
+        type: "compaction",
+        phase: type === "auto_compaction_start" ? "start" : "end",
+        ...compactionDetails
+      });
+      this.options.onEvent?.(type, compactionDetails);
+      return;
+    }
+    if (type === "auto_retry_start" || type === "auto_retry_end") {
+      if (type === "auto_retry_end") {
+        this._metrics.auto_retries = (this._metrics.auto_retries ?? 0) + 1;
+      }
+      const retryDetails = {
+        attempt: asNumber(event.attempt),
+        maxAttempts: asNumber(event.maxAttempts ?? event.max_attempts),
+        delayMs: asNumber(event.delayMs ?? event.delay_ms),
+        errorMessage: findStringValue(event, ["errorMessage", "error_message", "error"])
+      };
+      this.options.onMetric?.({
+        type: "retry",
+        phase: type === "auto_retry_start" ? "start" : "end",
+        ...retryDetails
+      });
+      this.options.onEvent?.(type, retryDetails);
+      return;
+    }
+    if (type === "set_model" || type === "cycle_model") {
+      const modelChange = {
+        action: type,
+        model: findStringValue(event, ["model", "newModel", "new_model"]),
+        previousModel: findStringValue(event, ["previousModel", "previous_model", "oldModel", "old_model"])
+      };
+      this.options.onMetric?.({ type: "model_change", ...modelChange });
+      this.options.onEvent?.(type, modelChange);
+      return;
+    }
+    if (type === "extension_error") {
+      const extensionError = {
+        extension: findStringValue(event, ["extension", "extensionName", "name"]),
+        errorMessage: findStringValue(event, ["errorMessage", "error_message", "error"])
+      };
+      this.options.onMetric?.({ type: "extension_error", ...extensionError });
+      this.options.onEvent?.("extension_error", extensionError);
+      return;
+    }
+    if (type === "message_update") {
+      const ae = event.assistantMessageEvent;
+      if (!ae)
+        return;
+      switch (ae.type) {
+        case "text_delta": {
+          const delta = typeof ae.delta === "string" ? ae.delta : "";
+          if (delta)
+            this.options.onToken?.(delta);
+          this.options.onEvent?.("text", { charCount: delta.length });
+          break;
+        }
+        case "thinking_start":
+          this.options.onEvent?.("thinking", { charCount: 0 });
+          break;
+        case "thinking_delta": {
+          const delta = typeof ae.delta === "string" ? ae.delta : "";
+          if (delta)
+            this.options.onThinking?.(delta);
+          this.options.onEvent?.("thinking", { charCount: delta.length });
+          break;
+        }
+        case "toolcall_start":
+          this.options.onToolStart?.(ae.name ?? ae.toolName ?? "tool");
+          this.options.onEvent?.("toolcall");
+          break;
+        case "toolcall_end":
+          this.options.onEvent?.("toolcall");
+          break;
+        case "done": {
+          const tokenUsage = findTokenUsage(ae);
+          const finishReason = findFinishReason(ae);
+          this._updateTokenUsage(tokenUsage, "message_done");
+          this._updateFinishReason(finishReason, "message_done");
+          this.options.onEvent?.("message_done");
+          break;
+        }
+        case "error": {
+          const apiError = findApiErrorMessage(ae) ?? findApiErrorMessage(event);
+          if (apiError) {
+            this._apiError = apiError;
+            this._metrics.api_error = apiError;
+            this.options.onMetric?.({ type: "api_error", source: "rpc", errorMessage: apiError });
+          }
+          this.options.onEvent?.("message_error");
+          break;
+        }
+      }
+    }
+  }
+  sendCommand(cmd, timeoutMs = 30000) {
+    return new Promise((resolve2, reject) => {
+      if (!this.proc?.stdin) {
+        reject(new Error("No stdin available"));
+        return;
+      }
+      const id = this._nextRequestId++;
+      const timer = setTimeout(() => {
+        this._pendingRequests.delete(id);
+        reject(new Error(`RPC timeout: no response for command id=${id} after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this._pendingRequests.set(id, { resolve: resolve2, reject, timer });
+      this.proc.stdin.write(JSON.stringify({ ...cmd, id }) + `
+`, (err) => {
+        if (err) {
+          const entry = this._pendingRequests.get(id);
+          if (entry) {
+            clearTimeout(entry.timer);
+            this._pendingRequests.delete(id);
+          }
+          reject(err);
+        }
+      });
+    });
+  }
+  async prompt(task) {
+    this._stallError = undefined;
+    this._markActivity();
+    const response = await this.sendCommand({ type: "prompt", message: task });
+    if (response?.success === false) {
+      throw new Error(`Prompt rejected by pi: ${response.error ?? "already streaming"}`);
+    }
+  }
+  async waitForDone(timeout) {
+    const donePromise = this._donePromise ?? Promise.resolve();
+    if (!timeout)
+      return donePromise;
+    return Promise.race([
+      donePromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Specialist timed out after ${timeout}ms`)), timeout))
+    ]);
+  }
+  async getLastOutput() {
+    if (!this.proc?.stdin || !this.proc.stdin.writable) {
+      return this._lastOutput;
+    }
+    try {
+      const response = await Promise.race([
+        this.sendCommand({ type: "get_last_assistant_text" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))
+      ]);
+      return response?.data?.text ?? this._lastOutput;
+    } catch {
+      return this._lastOutput;
+    }
+  }
+  async getState() {
+    try {
+      const response = await Promise.race([
+        this.sendCommand({ type: "get_state" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))
+      ]);
+      return response?.data;
+    } catch {
+      return null;
+    }
+  }
+  getMetrics() {
+    return { ...this._metrics, ...this._metrics.token_usage ? { token_usage: { ...this._metrics.token_usage } } : {} };
+  }
+  async close() {
+    if (this._killed)
+      return;
+    this._clearStallTimer();
+    this.proc?.stdin?.end();
+    if (this.proc) {
+      const proc = this.proc;
+      await new Promise((resolve2) => {
+        proc.on("close", () => resolve2());
+        setTimeout(() => {
+          if (proc.exitCode === null && proc.pid != null) {
+            try {
+              process.kill(-proc.pid, "SIGKILL");
+            } catch {}
+          }
+          resolve2();
+        }, 8000);
+      });
+    }
+  }
+  kill(reason) {
+    if (this._killed)
+      return;
+    this._killed = true;
+    this._clearStallTimer();
+    if (this.proc?.stdin?.writable) {
+      try {
+        this.proc.stdin.write(JSON.stringify({ type: "abort" }) + `
+`);
+      } catch {}
+    }
+    const killError = reason ?? this._stallError ?? new SessionKilledError;
+    for (const [, entry] of this._pendingRequests) {
+      clearTimeout(entry.timer);
+      entry.reject(killError);
+    }
+    this._pendingRequests.clear();
+    const proc = this.proc;
+    this.proc = undefined;
+    proc?.kill();
+    const pid = proc?.pid;
+    if (pid != null) {
+      setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {}
+      }, 8000).unref();
+    }
+    this._doneReject?.(killError);
+  }
+  getStderr() {
+    return this._stderrBuffer;
+  }
+  async steer(message) {
+    if (this._killed || !this.proc?.stdin) {
+      throw new Error("Session is not active");
+    }
+    const response = await this.sendCommand({ type: "steer", message });
+    if (response?.success === false) {
+      throw new Error(`Steer rejected by pi: ${response.error ?? "steer failed"}`);
+    }
+  }
+  followUp(_task) {
+    throw new Error("followUp() is not yet implemented. Use resume() to send a next-turn prompt to a waiting session.");
+  }
+  async resume(task, timeout) {
+    if (this._killed || !this.proc?.stdin) {
+      throw new Error("Session is not active");
+    }
+    this._agentEndReceived = false;
+    const donePromise = new Promise((resolve2, reject) => {
+      this._doneResolve = resolve2;
+      this._doneReject = reject;
+    });
+    donePromise.catch(() => {});
+    this._donePromise = donePromise;
+    await this.prompt(task);
+    await this.waitForDone(timeout);
+  }
+}
+
+// src/specialist/mandatory-rules.ts
+import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
+import { resolve as resolve2 } from "node:path";
+
+// src/specialist/observability-sqlite.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync3, statSync } from "node:fs";
+import { dirname as dirname2, join as join3 } from "node:path";
+
+// src/specialist/observability-db.ts
+import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { join as join2, sep as sep2 } from "node:path";
+var OBSERVABILITY_DB_FILENAME = "observability.db";
+var DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT = [".specialists", "db"];
+function resolveGitRootFrom(cwd) {
+  const commonDirResult = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (commonDirResult.status === 0) {
+    const commonDir = commonDirResult.stdout.trim();
+    if (commonDir.length > 0 && commonDir.endsWith(`${sep2}.git`)) {
+      return commonDir.slice(0, -4);
+    }
+  }
+  const fallbackResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  if (fallbackResult.status !== 0)
+    return cwd;
+  const gitRoot = fallbackResult.stdout.trim();
+  return gitRoot.length > 0 ? gitRoot : cwd;
+}
+function resolveDbDirectory(gitRoot) {
+  const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
+  if (xdgDataHome) {
+    return { directory: join2(xdgDataHome, "specialists"), source: "xdg-data-home" };
+  }
+  return {
+    directory: join2(gitRoot, ...DEFAULT_DB_DIRECTORY_RELATIVE_TO_GIT_ROOT),
+    source: "git-root"
+  };
+}
+function resolveObservabilityDbLocation(cwd = process.cwd()) {
+  const gitRoot = resolveGitRootFrom(cwd);
+  const resolved = resolveDbDirectory(gitRoot);
+  const dbPath = join2(resolved.directory, OBSERVABILITY_DB_FILENAME);
+  return {
+    gitRoot,
+    dbDirectory: resolved.directory,
+    dbPath,
+    dbWalPath: `${dbPath}-wal`,
+    dbShmPath: `${dbPath}-shm`,
+    source: resolved.source
+  };
+}
+function ensureObservabilityDbFile(location) {
+  mkdirSync2(location.dbDirectory, { recursive: true });
+  const alreadyExists = existsSync3(location.dbPath);
+  if (!alreadyExists) {
+    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+  }
+  chmodSync(location.dbPath, 420);
+  return { created: !alreadyExists };
+}
+
+// src/specialist/forensic-events.ts
+var FORENSIC_SCHEMA_VERSION = "xtrm.forensic.v1";
+var FORBIDDEN_PROMETHEUS_LABELS = new Set([
+  "participant_id",
+  "job_id",
+  "bead_id",
+  "issue_id",
+  "container_id",
+  "chain_id",
+  "chain_root_job_id",
+  "chain_root_bead_id",
+  "epic_id",
+  "node_id",
+  "pulse_id",
+  "turn_id",
+  "tool_call_id",
+  "trace_id",
+  "span_id",
+  "parent_span_id",
+  "session_id",
+  "conversation_id",
+  "mcp_session_id",
+  "jsonrpc_request_id",
+  "eval_id",
+  "policy_decision_id",
+  "identity_request_id",
+  "commit_sha",
+  "raw_path",
+  "raw_command",
+  "raw_error",
+  "raw_diff",
+  "raw_url",
+  "prompt",
+  "model_output",
+  "user_id",
+  "email",
+  "token",
+  "credential"
+]);
+var DEFAULT_LABEL_ALLOWLIST = new Set([
+  "service_namespace",
+  "service_name",
+  "service_component",
+  "deployment_environment",
+  "repo",
+  "participant_kind",
+  "participant_role",
+  "event_family",
+  "severity",
+  "state",
+  "status",
+  "result",
+  "model_provider",
+  "model",
+  "tool_name",
+  "mcp_server",
+  "mcp_method",
+  "error_type",
+  "drift_tier",
+  "pulse_kind",
+  "policy_kind",
+  "action_kind",
+  "resource_kind",
+  "credential_kind",
+  "eval_kind",
+  "chain_template",
+  "gate_kind",
+  "verdict",
+  "severity_level",
+  "direction",
+  "reason",
+  "process_kind",
+  "evidence_kind",
+  "target",
+  "highest_risk"
+]);
+var ALLOWED_TOP_LEVEL_FIELDS = new Set([
+  "schema_version",
+  "timestamp",
+  "t_unix_ms",
+  "seq",
+  "severity",
+  "event_family",
+  "event_name",
+  "event_version",
+  "resource",
+  "correlation",
+  "body",
+  "redaction",
+  "trace",
+  "otel",
+  "links",
+  "diagnostics"
+]);
+var REDACTED = "[REDACTED]";
+var REDACTION_RULES = {
+  sensitiveField: "sensitive-field-name",
+  secretPattern: "secret-pattern"
+};
+var SENSITIVE_FIELD_RE = /(^|_)(password|secret|credential|api_?key|access_?token|refresh_?token|auth_?token|bearer|email|prompt|model_?output|raw_?command|raw_?url|raw_?error|stderr|stdout|args|arguments|input|output|content)$/i;
+var SECRET_VALUE_RE = /(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|xox[baprs]-[a-z0-9-]{12,}|bearer\s+[a-z0-9._-]{12,})/i;
+function redactForensicValue(value, path = "body") {
+  const fields = new Set;
+  const rules = new Set;
+  function visit(input, currentPath) {
+    if (Array.isArray(input))
+      return input.map((item, index) => visit(item, `${currentPath}[${index}]`));
+    if (input && typeof input === "object") {
+      const output = {};
+      for (const [key, nested] of Object.entries(input)) {
+        const nextPath = `${currentPath}.${key}`;
+        if (isSensitiveField(key)) {
+          output[key] = REDACTED;
+          fields.add(nextPath);
+          rules.add(REDACTION_RULES.sensitiveField);
+          continue;
+        }
+        output[key] = visit(nested, nextPath);
+      }
+      return output;
+    }
+    if (typeof input === "string" && SECRET_VALUE_RE.test(input)) {
+      fields.add(currentPath);
+      rules.add(REDACTION_RULES.secretPattern);
+      return input.replace(SECRET_VALUE_RE, REDACTED);
+    }
+    return input;
+  }
+  return {
+    value: visit(value, path),
+    fields: Array.from(fields).sort(),
+    rules: Array.from(rules).sort()
+  };
+}
+var NON_SENSITIVE_TELEMETRY_BODY_FIELDS = new Set([
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_creation_tokens",
+  "reasoning_tokens",
+  "tool_tokens",
+  "total_tokens",
+  "usage_source",
+  "credential_kind",
+  "policy_kind",
+  "action_kind",
+  "resource_kind",
+  "eval_kind",
+  "target_kind",
+  "scope_kind",
+  "provider",
+  "ttl_seconds",
+  "retryable",
+  "result",
+  "score",
+  "threshold",
+  "scale",
+  "severity",
+  "reason_code",
+  "mismatch_kind"
+]);
+function isSensitiveField(key) {
+  if (NON_SENSITIVE_TELEMETRY_BODY_FIELDS.has(key))
+    return false;
+  return SENSITIVE_FIELD_RE.test(key);
+}
+function mergeRedaction(explicit, result) {
+  const fields = [...new Set([...explicit?.fields ?? [], ...result.fields])].sort();
+  const rules = [...new Set([...explicit?.rules ?? [], ...result.rules])].sort();
+  const status = explicit?.status === "unknown" ? "unknown" : explicit?.status === "redacted" || fields.length > 0 ? "redacted" : "clean";
+  return {
+    status,
+    ...fields.length > 0 ? { fields } : {},
+    ...rules.length > 0 ? { rules } : {}
+  };
+}
+function createForensicEvent(options) {
+  const tUnixMs = options.t_unix_ms ?? Date.now();
+  const redactionResult = redactForensicValue(options.body ?? {}, "body");
+  const explicitRedaction = options.redaction;
+  const event = {
+    schema_version: FORENSIC_SCHEMA_VERSION,
+    timestamp: options.timestamp ?? new Date(tUnixMs).toISOString(),
+    t_unix_ms: tUnixMs,
+    severity: options.severity ?? "info",
+    event_family: options.event_family,
+    event_name: options.event_name,
+    event_version: options.event_version ?? 1,
+    resource: normalizeResource(options.resource),
+    correlation: options.correlation ?? {},
+    body: redactionResult.value,
+    redaction: mergeRedaction(explicitRedaction, redactionResult)
+  };
+  if (options.seq !== undefined)
+    event.seq = options.seq;
+  if (options.trace)
+    event.trace = options.trace;
+  if (options.otel)
+    event.otel = options.otel;
+  if (options.links)
+    event.links = options.links;
+  if (options.diagnostics)
+    event.diagnostics = options.diagnostics;
+  assertKnownTopLevelFields(event);
+  return event;
+}
+function normalizeResource(resource) {
+  const normalized = { ...resource };
+  const legacySpecialist = normalized.specialist;
+  if (!normalized.participant_kind && typeof legacySpecialist === "string") {
+    normalized.participant_kind = "specialist";
+  }
+  if (!normalized.participant_role && typeof legacySpecialist === "string") {
+    normalized.participant_role = legacySpecialist;
+  }
+  delete normalized.specialist;
+  return normalized;
+}
+function deriveParticipantId(input) {
+  const kind = input.participant_kind ?? "specialist";
+  if (kind === "specialist" && input.chain_id)
+    return `${input.chain_id}::${input.participant_role}`;
+  if (kind === "orchestrator" && input.session_uuid)
+    return `orch::${input.session_uuid}`;
+  if (kind === "pulse_emitter" && input.container_id)
+    return `${input.container_id}::emitter::${input.participant_role}`;
+  if (kind === "node_member" && input.node_id)
+    return `node::${input.node_id}::${input.participant_role}::${input.member_index ?? 0}`;
+  if (kind === "adapter" && input.adapter_id)
+    return input.adapter_id;
+  return;
+}
+function assertKnownTopLevelFields(event) {
+  for (const key of Object.keys(event)) {
+    if (!ALLOWED_TOP_LEVEL_FIELDS.has(key)) {
+      throw new Error(`Unknown forensic event top-level field: ${key}`);
+    }
+  }
+}
+function forensicEventFromTimelineEvent(event, context) {
+  const participantRole = context.specialist;
+  const participantKind = context.nodeId ? "node_member" : "specialist";
+  const participantId = deriveParticipantId({
+    participant_kind: participantKind,
+    participant_role: participantRole,
+    chain_id: context.chainId,
+    node_id: context.nodeId
+  });
+  return createForensicEvent({
+    event_family: familyForTimelineType(event.type),
+    event_name: eventNameForTimelineEvent(event),
+    severity: severityForTimelineEvent(event),
+    resource: {
+      service_namespace: "xtrm",
+      service_name: "specialists",
+      service_component: context.serviceComponent ?? "runtime",
+      deployment_environment: "local",
+      repo: context.repo ?? "unknown",
+      participant_kind: participantKind,
+      participant_role: participantRole,
+      model_provider: context.backend,
+      model: context.model,
+      chain_kind: context.chainKind
+    },
+    correlation: {
+      participant_id: participantId,
+      job_id: context.jobId,
+      bead_id: context.beadId,
+      node_id: context.nodeId,
+      chain_id: context.chainId,
+      chain_root_job_id: context.chainRootJobId,
+      chain_root_bead_id: context.chainRootBeadId,
+      epic_id: context.epicId,
+      session_id: context.sessionId ?? stringField(event, "session_id"),
+      conversation_id: context.conversationId ?? stringField(event, "conversation_id"),
+      trace_id: context.traceId ?? stringField(event, "trace_id") ?? metaStringField(event, "trace_id"),
+      span_id: context.spanId ?? stringField(event, "span_id") ?? metaStringField(event, "span_id"),
+      parent_span_id: context.parentSpanId ?? stringField(event, "parent_span_id") ?? metaStringField(event, "parent_span_id"),
+      mcp_session_id: stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
+      jsonrpc_request_id: stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
+      tool_call_id: typeof event.tool_call_id === "string" ? event.tool_call_id : undefined,
+      commit_sha: typeof event.commit_sha === "string" ? event.commit_sha : undefined
+    },
+    body: bodyForTimelineEvent(event),
+    otel: otelForTimelineEvent(event),
+    redaction: { status: redactionStatusForTimelineEvent(event) },
+    t_unix_ms: event.t,
+    seq: event.seq
+  });
+}
+function stringField(source, key) {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+function metaStringField(source, key) {
+  const meta = source._meta;
+  if (!meta || typeof meta !== "object")
+    return;
+  return stringField(meta, key);
+}
+function numberField(source, key) {
+  const value = Number(source[key]);
+  return Number.isFinite(value) ? value : undefined;
+}
+function booleanField(source, key) {
+  const value = source[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+function bodyForTimelineEvent(event) {
+  if (event.type === "mcp") {
+    return {
+      legacy_timeline_event: event,
+      mcp_server: stringField(event, "mcp_server") ?? stringField(event, "server") ?? "unknown",
+      mcp_method: stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call",
+      tool_name: stringField(event, "tool_name") ?? stringField(event, "tool"),
+      network_transport: stringField(event, "network_transport") ?? stringField(event, "transport"),
+      duration_ms: numberField(event, "duration_ms"),
+      error_type: stringField(event, "error_type"),
+      status_code: stringField(event, "status_code"),
+      duplicate_span_suppressed: booleanField(event, "duplicate_span_suppressed"),
+      trace_carrier: metaStringField(event, "trace_carrier") ?? (event._meta && typeof event._meta === "object" ? "_meta" : undefined)
+    };
+  }
+  if (event.type === "token_usage") {
+    return {
+      legacy_timeline_event: event,
+      input_tokens: numberField(event, "input_tokens") ?? numberField(event, "input"),
+      output_tokens: numberField(event, "output_tokens") ?? numberField(event, "output"),
+      cache_read_tokens: numberField(event, "cache_read_tokens") ?? numberField(event, "cache_read"),
+      cache_creation_tokens: numberField(event, "cache_creation_tokens") ?? numberField(event, "cache_creation"),
+      reasoning_tokens: numberField(event, "reasoning_tokens") ?? numberField(event, "reasoning") ?? numberField(event, "thinking_tokens"),
+      tool_tokens: numberField(event, "tool_tokens") ?? numberField(event, "tool") ?? numberField(event, "tool_use_tokens"),
+      total_tokens: numberField(event, "total_tokens") ?? numberField(event, "total"),
+      usage_source: stringField(event, "usage_source") ?? stringField(event, "source") ?? "runtime_event"
+    };
+  }
+  if (event.type === "run_complete") {
+    return {
+      legacy_timeline_event: event,
+      status: stringField(event, "status"),
+      output: stringField(event, "output"),
+      error: stringField(event, "error"),
+      commit_sha: stringField(event, "commit_sha"),
+      evidence_refs: evidenceRefsForTimelineEvent(event)
+    };
+  }
+  if (event.type === "auto_commit_success" || event.type === "auto_commit_skipped" || event.type === "auto_commit_failed") {
+    const committedFiles = Array.isArray(event.committed_files) ? event.committed_files.filter((file) => typeof file === "string") : [];
+    return {
+      legacy_timeline_event: event,
+      evidence_kind: event.type === "auto_commit_success" ? "commit" : "report",
+      result: event.type === "auto_commit_success" ? "success" : event.type === "auto_commit_failed" ? "error" : "skipped",
+      commit_sha: stringField(event, "commit_sha"),
+      changed_paths_count: committedFiles.length,
+      changed_paths: committedFiles,
+      evidence_refs: evidenceRefsForTimelineEvent(event),
+      reason: stringField(event, "reason")
+    };
+  }
+  if (event.type === "command_completed" || event.type === "command_failed") {
+    return {
+      legacy_timeline_event: event,
+      command_kind: stringField(event, "command_kind") ?? "unknown",
+      duration_ms: numberField(event, "duration_ms"),
+      status: event.type === "command_completed" ? "success" : "error",
+      command: stringField(event, "command"),
+      args: Array.isArray(event.args) ? event.args.filter((arg) => typeof arg === "string") : undefined,
+      exit_code: numberField(event, "exit_code"),
+      stderr: stringField(event, "stderr"),
+      redacted: booleanField(event, "redacted")
+    };
+  }
+  if (event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived") {
+    return {
+      legacy_timeline_event: event,
+      verdict: event.type.replace("review_verdict_", ""),
+      chain_template: stringField(event, "chain_template"),
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      terminal_state: stringField(event, "terminal_state"),
+      result: stringField(event, "result")
+    };
+  }
+  if (event.type === "chain_ready_for_review" || event.type === "chain_finalized") {
+    return {
+      legacy_timeline_event: event,
+      chain_template: stringField(event, "chain_template"),
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      terminal_state: stringField(event, "terminal_state"),
+      result: stringField(event, "result")
+    };
+  }
+  if (event.type === "worktree_merged") {
+    return {
+      legacy_timeline_event: event,
+      changed_paths_count: numberField(event, "changed_paths_count"),
+      merge_ref: stringField(event, "merge_ref"),
+      source_ref: stringField(event, "source_ref"),
+      target_ref: stringField(event, "target_ref"),
+      result: stringField(event, "result")
+    };
+  }
+  return { legacy_timeline_event: event };
+}
+function evidenceRefsForTimelineEvent(event) {
+  if (!Array.isArray(event.evidence))
+    return;
+  const refs = event.evidence.filter((entry) => !!entry && typeof entry === "object" && !Array.isArray(entry));
+  return refs.length > 0 ? refs : undefined;
+}
+function otelForTimelineEvent(event) {
+  if (event.type !== "mcp")
+    return;
+  const method = stringField(event, "mcp_method") ?? stringField(event, "method") ?? "tools/call";
+  return {
+    "mcp.method.name": method,
+    "mcp.session.id": stringField(event, "mcp_session_id") ?? metaStringField(event, "mcp_session_id") ?? metaStringField(event, "mcp.session.id"),
+    "jsonrpc.request.id": stringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc_request_id") ?? metaStringField(event, "jsonrpc.request.id"),
+    "network.transport": stringField(event, "network_transport") ?? stringField(event, "transport"),
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.name": stringField(event, "tool_name") ?? stringField(event, "tool")
+  };
+}
+function familyForTimelineType(type) {
+  if (type === "run_start" || type === "run_complete" || type === "status_change" || type === "payload_breakdown")
+    return "job";
+  if (type === "mcp")
+    return "mcp";
+  if (type === "tool")
+    return "tool";
+  if (type === "turn" || type === "turn_summary" || type === "message" || type === "text" || type === "thinking")
+    return "turn";
+  if (type === "token_usage" || type === "finish_reason" || type === "model_change" || type === "meta")
+    return "model";
+  if (type === "control_signal")
+    return "control";
+  if (type === "retry")
+    return "retry";
+  if (type === "compaction")
+    return "compaction";
+  if (type === "error" || type === "extension_error")
+    return "error";
+  if (type === "auto_commit_success" || type === "auto_commit_skipped" || type === "auto_commit_failed")
+    return "git";
+  if (type === "command_completed" || type === "command_failed")
+    return "command";
+  if (type === "review_verdict_pass" || type === "review_verdict_partial" || type === "review_verdict_fail" || type === "review_verdict_waived")
+    return "review";
+  if (type === "chain_ready_for_review" || type === "chain_finalized")
+    return "chain";
+  if (type === "worktree_merged")
+    return "worktree";
+  if (type === "stale_warning")
+    return "process_health";
+  return "job";
+}
+function eventNameForTimelineEvent(event) {
+  if (event.type === "run_start")
+    return "job.started";
+  if (event.type === "run_complete") {
+    if (event.status === "ERROR")
+      return "job.failed";
+    if (event.status === "CANCELLED")
+      return "job.cancelled";
+    return "job.completed";
+  }
+  if (event.type === "status_change")
+    return "job.status_changed";
+  if (event.type === "mcp")
+    return mcpEventNameForTimelineEvent(event);
+  if (event.type === "tool") {
+    if (event.phase === "start")
+      return "tool.call.started";
+    if (event.is_error)
+      return "tool.call.failed";
+    return "tool.call.completed";
+  }
+  if (event.type === "turn_summary")
+    return "turn.summarized";
+  if (event.type === "token_usage")
+    return "model.token_usage.recorded";
+  if (event.type === "finish_reason")
+    return "model.finish_reason.recorded";
+  if (event.type === "model_change")
+    return "model.changed";
+  if (event.type === "control_signal")
+    return `control.${String(event.action ?? "signal")}.recorded`;
+  if (event.type === "retry")
+    return `retry.${String(event.phase ?? "recorded")}`;
+  if (event.type === "compaction")
+    return `compaction.${String(event.phase ?? "recorded")}`;
+  if (event.type === "extension_error")
+    return "error.extension";
+  if (event.type === "error")
+    return "error.rpc";
+  if (event.type === "auto_commit_success")
+    return "git.auto_commit.succeeded";
+  if (event.type === "auto_commit_skipped")
+    return "git.auto_commit.skipped";
+  if (event.type === "auto_commit_failed")
+    return "git.auto_commit.failed";
+  if (event.type === "command_completed")
+    return "command.completed";
+  if (event.type === "command_failed")
+    return "command.failed";
+  if (event.type === "review_verdict_pass")
+    return "review.verdict.pass";
+  if (event.type === "review_verdict_partial")
+    return "review.verdict.partial";
+  if (event.type === "review_verdict_fail")
+    return "review.verdict.fail";
+  if (event.type === "review_verdict_waived")
+    return "review.verdict.waived";
+  if (event.type === "chain_ready_for_review")
+    return "chain.ready_for_review";
+  if (event.type === "chain_finalized")
+    return "chain.finalized";
+  if (event.type === "worktree_merged")
+    return "worktree.merged";
+  if (event.type === "stale_warning")
+    return "process_health.stale_detected";
+  return `${familyForTimelineType(event.type)}.${event.type}`;
+}
+function mcpEventNameForTimelineEvent(event) {
+  const explicit = stringField(event, "event_name");
+  if (explicit?.startsWith("mcp."))
+    return explicit;
+  const action = stringField(event, "action") ?? stringField(event, "phase") ?? stringField(event, "status");
+  if (action === "connected")
+    return "mcp.connected";
+  if (action === "disconnected")
+    return "mcp.disconnected";
+  if (action === "auth_failed")
+    return "mcp.auth.failed";
+  if (action === "rate_limited")
+    return "mcp.rate_limited";
+  if (action === "latency_observed")
+    return "mcp.latency.observed";
+  if (action === "start" || action === "started")
+    return "mcp.call.started";
+  if (event.is_error || action === "failed" || action === "error")
+    return "mcp.call.failed";
+  return "mcp.call.completed";
+}
+function severityForTimelineEvent(event) {
+  if (event.type === "error" || event.type === "extension_error" || event.type === "auto_commit_failed" || event.type === "command_failed")
+    return "error";
+  if (event.type === "mcp" && (event.is_error || mcpEventNameForTimelineEvent(event).endsWith(".failed") || mcpEventNameForTimelineEvent(event) === "mcp.auth.failed"))
+    return "error";
+  if (event.type === "mcp" && mcpEventNameForTimelineEvent(event) === "mcp.rate_limited")
+    return "warn";
+  if (event.type === "stale_warning" || event.type === "control_signal")
+    return "warn";
+  if (event.type === "run_complete" && event.status === "ERROR")
+    return "error";
+  if (event.type === "tool" && event.is_error)
+    return "error";
+  return "info";
+}
+function redactionStatusForTimelineEvent(event) {
+  if (event.type === "tool" || event.type === "turn_summary" || event.type === "run_complete" || event.type === "command_completed" || event.type === "command_failed" || event.type === "review_verdict_pass" || event.type === "review_verdict_partial" || event.type === "review_verdict_fail" || event.type === "review_verdict_waived" || event.type === "chain_ready_for_review" || event.type === "chain_finalized" || event.type === "worktree_merged")
+    return "redacted";
+  return "clean";
+}
+
+// src/specialist/observability-sqlite.ts
+var _BunDatabase = null;
+var _probed = false;
+function loadBunDatabase() {
+  if (_probed)
+    return _BunDatabase;
+  _probed = true;
+  try {
+    _BunDatabase = __require("bun:sqlite").Database;
+  } catch {
+    _BunDatabase = null;
+  }
+  return _BunDatabase;
+}
+var BUSY_TIMEOUT_MS = 5000;
+var MAX_RETRY_ATTEMPTS = 5;
+var BASE_RETRY_DELAY_MS = 50;
+function calculateRetryDelay(attempt) {
+  const exponentialDelay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * BASE_RETRY_DELAY_MS;
+  return Math.min(exponentialDelay + jitter, BUSY_TIMEOUT_MS);
+}
+function withRetry(operation, context) {
+  let lastError;
+  for (let attempt = 0;attempt < MAX_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (lastError.message.includes("Cannot use a closed database")) {
+        throw new Error(`[observability-sqlite] SQLite client is closed (${context})`);
+      }
+      const isRetryable = lastError.message.includes("SQLITE_BUSY") || lastError.message.includes("SQLITE_LOCKED") || lastError.message.includes("database is locked") || lastError.message.includes("database is busy");
+      if (!isRetryable || attempt === MAX_RETRY_ATTEMPTS - 1) {
+        break;
+      }
+      const delayMs = calculateRetryDelay(attempt);
+      Bun.sleepSync(delayMs);
+    }
+  }
+  throw new Error(`Failed after ${MAX_RETRY_ATTEMPTS} attempts (${context}): ${lastError?.message ?? "unknown error"}`);
+}
+function parseJournalMode(mode) {
+  if (!mode)
+    return null;
+  return mode.toLowerCase();
+}
+function enforceWalMode(db) {
+  const result = db.query("PRAGMA journal_mode=WAL").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`Failed to enable WAL journal mode (got: ${mode ?? "null"})`);
+  }
+}
+function verifyWalMode(db) {
+  const result = db.query("PRAGMA journal_mode").get();
+  const mode = parseJournalMode(result?.journal_mode);
+  if (mode !== "wal") {
+    throw new Error(`WAL journal mode is not active (got: ${mode ?? "null"})`);
+  }
+}
+function migrateToV2(db) {
+  const hasV2 = db.query("SELECT 1 FROM schema_version WHERE version = 2 LIMIT 1").get();
+  if (hasV2) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v2 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      status_json     TEXT NOT NULL,
+      bead_id         TEXT,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT,
+      startup_payload_json TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v2
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        status_json,
+        JSON_EXTRACT(status_json, '$.bead_id'),
+        updated_at_ms,
+        last_output,
+        startup_payload_json
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v2 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (2, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV3(db) {
+  const hasV3 = db.query("SELECT 1 FROM schema_version WHERE version = 3 LIMIT 1").get();
+  if (hasV3) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL");
+    db.run("CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC)");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_jobs_v3 (
+      job_id          TEXT PRIMARY KEY,
+      specialist      TEXT NOT NULL,
+      worktree_column TEXT,
+      bead_id         TEXT,
+      node_id         TEXT,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL,
+      last_output     TEXT,
+      startup_payload_json TEXT
+    );
+    INSERT OR IGNORE INTO specialist_jobs_v3
+      SELECT
+        job_id,
+        specialist,
+        worktree_column,
+        bead_id,
+        NULL,
+        COALESCE(JSON_EXTRACT(status_json, '$.status'), 'starting'),
+        status_json,
+        updated_at_ms,
+        last_output,
+        startup_payload_json
+      FROM specialist_jobs;
+    DROP TABLE IF EXISTS specialist_jobs;
+    ALTER TABLE specialist_jobs_v3 RENAME TO specialist_jobs;
+    CREATE INDEX IF NOT EXISTS idx_jobs_bead ON specialist_jobs(bead_id) WHERE bead_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON specialist_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_node ON specialist_jobs(node_id) WHERE node_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_jobs_status_updated ON specialist_jobs(status, updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (3, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV11(db) {
+  const hasV11 = db.query("SELECT 1 FROM schema_version WHERE version = 11 LIMIT 1").get();
+  if (hasV11) {
+    const metricsColumns = new Set(db.query("PRAGMA table_info(specialist_job_metrics)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+    for (const column of [
+      { name: "active_runtime_ms", definition: "INTEGER" },
+      { name: "waiting_ms", definition: "INTEGER" }
+    ]) {
+      if (!metricsColumns.has(column.name)) {
+        db.run(`ALTER TABLE specialist_job_metrics ADD COLUMN ${column.name} ${column.definition}`);
+      }
+    }
+    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC)");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_job_metrics (
+      job_id TEXT PRIMARY KEY,
+      specialist TEXT NOT NULL,
+      model TEXT,
+      status TEXT NOT NULL,
+      chain_kind TEXT,
+      chain_id TEXT,
+      bead_id TEXT,
+      node_id TEXT,
+      epic_id TEXT,
+      started_at_ms INTEGER,
+      completed_at_ms INTEGER,
+      elapsed_ms INTEGER,
+      active_runtime_ms INTEGER,
+      waiting_ms INTEGER,
+      total_turns INTEGER NOT NULL DEFAULT 0,
+      total_tools INTEGER NOT NULL DEFAULT 0,
+      tool_call_counts_json TEXT NOT NULL,
+      token_trajectory_json TEXT NOT NULL,
+      context_trajectory_json TEXT NOT NULL,
+      stall_gaps_json TEXT NOT NULL,
+      run_complete_json TEXT,
+      updated_at_ms INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_spec_model_updated ON specialist_job_metrics(specialist, model, updated_at_ms DESC);
+    CREATE INDEX IF NOT EXISTS idx_job_metrics_updated ON specialist_job_metrics(updated_at_ms DESC);
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (11, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV12(db) {
+  const hasV12 = db.query("SELECT 1 FROM schema_version WHERE version = 12 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS specialist_forensic_events (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id             TEXT NOT NULL,
+      seq                INTEGER NOT NULL,
+      t                  INTEGER NOT NULL,
+      schema_version     TEXT NOT NULL,
+      event_family       TEXT NOT NULL,
+      event_name         TEXT NOT NULL,
+      participant_kind   TEXT,
+      participant_role   TEXT,
+      participant_id     TEXT,
+      redaction_status   TEXT NOT NULL,
+      event_json         TEXT NOT NULL
+    );
+  `);
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_forensic_events_job_seq ON specialist_forensic_events(job_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_job_t ON specialist_forensic_events(job_id, t, seq, id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_family ON specialist_forensic_events(event_family, event_name, t)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_forensic_events_participant ON specialist_forensic_events(participant_kind, participant_role, t)");
+  if (hasV12)
+    return;
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (12, strftime('%s', 'now') * 1000);
+  `);
+}
+function parseJsonRecord(input) {
+  if (!input)
+    return {};
+  try {
+    const parsed = JSON.parse(input);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function stringifyJson(value) {
+  return JSON.stringify(value);
+}
+function migrateToV4(db) {
+  const hasV4 = db.query("SELECT 1 FROM schema_version WHERE version = 4 LIMIT 1").get();
+  if (hasV4) {
+    db.run("CREATE TABLE IF NOT EXISTS node_runs (id TEXT PRIMARY KEY, node_name TEXT NOT NULL, status TEXT NOT NULL, coordinator_job_id TEXT, started_at_ms INTEGER, updated_at_ms INTEGER NOT NULL, waiting_on TEXT, error TEXT, memory_namespace TEXT, status_json TEXT NOT NULL)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status)");
+    db.run("CREATE TABLE IF NOT EXISTS node_members (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, member_id TEXT NOT NULL, job_id TEXT, specialist TEXT NOT NULL, model TEXT, role TEXT, status TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL");
+    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id)");
+    db.run("CREATE TABLE IF NOT EXISTS node_events (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, seq INTEGER NOT NULL, t INTEGER NOT NULL, type TEXT NOT NULL, event_json TEXT NOT NULL)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type)");
+    db.run("CREATE TABLE IF NOT EXISTS node_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, node_run_id TEXT NOT NULL, namespace TEXT, entry_type TEXT, entry_id TEXT, summary TEXT, source_member_id TEXT, confidence REAL, provenance_json TEXT, created_at_ms INTEGER, updated_at_ms INTEGER)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL");
+    db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_node_memory_run_entry ON node_memory(node_run_id, entry_id) WHERE entry_id IS NOT NULL");
+    return;
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS node_runs (
+      id                 TEXT PRIMARY KEY,
+      node_name          TEXT NOT NULL,
+      status             TEXT NOT NULL,
+      coordinator_job_id TEXT,
+      started_at_ms      INTEGER,
+      updated_at_ms      INTEGER NOT NULL,
+      waiting_on         TEXT,
+      error              TEXT,
+      memory_namespace   TEXT,
+      status_json        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_runs_status ON node_runs(status);
+
+    CREATE TABLE IF NOT EXISTS node_members (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      member_id    TEXT NOT NULL,
+      job_id       TEXT,
+      specialist   TEXT NOT NULL,
+      model        TEXT,
+      role         TEXT,
+      status       TEXT NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      generation   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_members_run ON node_members(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_members_job ON node_members(job_id) WHERE job_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_node_members_run_member ON node_members(node_run_id, member_id);
+
+    CREATE TABLE IF NOT EXISTS node_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id  TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id);
+    CREATE INDEX IF NOT EXISTS idx_node_events_type ON node_events(type);
+
+    CREATE TABLE IF NOT EXISTS node_memory (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_run_id      TEXT NOT NULL,
+      namespace        TEXT,
+      entry_type       TEXT,
+      entry_id         TEXT,
+      summary          TEXT,
+      source_member_id TEXT,
+      confidence       REAL,
+      provenance_json  TEXT,
+      created_at_ms    INTEGER,
+      updated_at_ms    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_node_memory_run ON node_memory(node_run_id);
+    CREATE INDEX IF NOT EXISTS idx_node_memory_entry_id ON node_memory(entry_id) WHERE entry_id IS NOT NULL;
+
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (4, strftime('%s', 'now') * 1000);
+  `);
+}
+function initSchema(db) {
+  enforceWalMode(db);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version     INTEGER PRIMARY KEY,
+      applied_at_ms INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (1, strftime('%s', 'now') * 1000);
+
+    -- Ensure specialist_jobs exists with at least the base columns so the
+    -- migration INSERT below can always SELECT from it.
+    CREATE TABLE IF NOT EXISTS specialist_jobs (
+      job_id       TEXT PRIMARY KEY,
+      specialist   TEXT NOT NULL,
+      status_json  TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS specialist_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id       TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
+      specialist   TEXT NOT NULL,
+      bead_id      TEXT,
+      t            INTEGER NOT NULL,
+      type         TEXT NOT NULL,
+      event_json   TEXT NOT NULL
+    );
+    -- seq-dependent indexes are created/maintained by migrateToV6 to handle
+    -- existing DBs where specialist_events was created without the seq column.
+    CREATE INDEX IF NOT EXISTS idx_specialist_events_type ON specialist_events(type);
+
+    CREATE TABLE IF NOT EXISTS specialist_results (
+      job_id        TEXT PRIMARY KEY,
+      output        TEXT NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  const missingSpecialistJobsColumns = [
+    { name: "worktree_column", definition: "TEXT" },
+    { name: "bead_id", definition: "TEXT" },
+    { name: "node_id", definition: "TEXT" },
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_id", definition: "TEXT" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" },
+    { name: "status", definition: "TEXT NOT NULL DEFAULT 'starting'" },
+    { name: "last_output", definition: "TEXT" },
+    { name: "startup_payload_json", definition: "TEXT" }
+  ].filter(({ name }) => !specialistJobsColumns.has(name));
+  for (const missingColumn of missingSpecialistJobsColumns) {
+    db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${missingColumn.name} ${missingColumn.definition}`);
+  }
+  const shouldRebuildSpecialistJobs = missingSpecialistJobsColumns.length > 0;
+  if (shouldRebuildSpecialistJobs) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS specialist_jobs_new (
+        job_id          TEXT PRIMARY KEY,
+        specialist      TEXT NOT NULL,
+        worktree_column TEXT,
+        bead_id         TEXT,
+        node_id         TEXT,
+        chain_kind      TEXT NOT NULL DEFAULT 'prep',
+        chain_id        TEXT,
+        chain_root_job_id TEXT,
+        chain_root_bead_id TEXT,
+        epic_id         TEXT,
+        status          TEXT NOT NULL,
+        status_json     TEXT NOT NULL,
+        updated_at_ms   INTEGER NOT NULL,
+        last_output     TEXT,
+        startup_payload_json TEXT
+      );
+      INSERT OR IGNORE INTO specialist_jobs_new
+        SELECT
+          job_id,
+          specialist,
+          worktree_column,
+          bead_id,
+          node_id,
+          COALESCE(chain_kind, CASE WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain' ELSE 'prep' END),
+          chain_id,
+          COALESCE(chain_root_job_id, chain_id),
+          chain_root_bead_id,
+          epic_id,
+          COALESCE(status, JSON_EXTRACT(status_json, '$.status'), 'starting'),
+          status_json,
+          updated_at_ms,
+          last_output,
+          startup_payload_json
+        FROM specialist_jobs;
+      DROP TABLE IF EXISTS specialist_jobs;
+      ALTER TABLE specialist_jobs_new RENAME TO specialist_jobs;
+    `);
+  }
+  migrateToV2(db);
+  migrateToV3(db);
+  migrateToV4(db);
+  migrateToV5(db);
+  migrateToV6(db);
+  migrateToV7(db);
+  migrateToV8(db);
+  migrateToV9(db);
+  migrateToV10(db);
+  migrateToV11(db);
+  migrateToV12(db);
+  verifyWalMode(db);
+}
+function migrateToV5(db) {
+  const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
+  if (!hasV5) {
+    const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+    if (!nodeMemberColumns.has("generation")) {
+      db.run("ALTER TABLE node_members ADD COLUMN generation INTEGER NOT NULL DEFAULT 0");
+    }
+    db.run(`
+      INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+        VALUES (5, strftime('%s', 'now') * 1000);
+    `);
+  }
+}
+function migrateToV6(db) {
+  const hasV6 = db.query("SELECT 1 FROM schema_version WHERE version = 6 LIMIT 1").get();
+  if (hasV6) {
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+    return;
+  }
+  const specialistEventColumns = new Set(db.query("PRAGMA table_info(specialist_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!specialistEventColumns.has("seq")) {
+    db.run("ALTER TABLE specialist_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE specialist_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM specialist_events prior
+      WHERE prior.job_id = specialist_events.job_id
+        AND prior.id <= specialist_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_seq ON specialist_events(job_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_specialist_events_job_t ON specialist_events(job_id, t, seq, id)");
+  const nodeEventColumns = new Set(db.query("PRAGMA table_info(node_events)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  if (!nodeEventColumns.has("seq")) {
+    db.run("ALTER TABLE node_events ADD COLUMN seq INTEGER");
+  }
+  db.run(`
+    UPDATE node_events
+    SET seq = (
+      SELECT COUNT(*)
+      FROM node_events prior
+      WHERE prior.node_run_id = node_events.node_run_id
+        AND prior.id <= node_events.id
+    )
+    WHERE seq IS NULL OR seq <= 0
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_seq ON node_events(node_run_id, seq)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_node_events_run_t ON node_events(node_run_id, t, seq, id)");
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (6, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV7(db) {
+  const hasV7 = db.query("SELECT 1 FROM schema_version WHERE version = 7 LIMIT 1").get();
+  const nodeRunColumns = new Set(db.query("PRAGMA table_info(node_runs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "pr_number", definition: "INTEGER" },
+    { name: "pr_url", definition: "TEXT" },
+    { name: "pr_head_sha", definition: "TEXT" },
+    { name: "gate_results", definition: "TEXT" },
+    { name: "completion_strategy", definition: "TEXT" }
+  ]) {
+    if (!nodeRunColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_runs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  const nodeMemberColumns = new Set(db.query("PRAGMA table_info(node_members)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "worktree_path", definition: "TEXT" },
+    { name: "parent_member_id", definition: "TEXT" },
+    { name: "replaced_member_id", definition: "TEXT" },
+    { name: "phase_id", definition: "TEXT" }
+  ]) {
+    if (!nodeMemberColumns.has(column.name)) {
+      db.run(`ALTER TABLE node_members ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  if (hasV7) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (7, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV8(db) {
+  const hasV8 = db.query("SELECT 1 FROM schema_version WHERE version = 8 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_id", definition: "TEXT" },
+    { name: "epic_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain ON specialist_jobs(chain_id) WHERE chain_id IS NOT NULL");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_epic ON specialist_jobs(epic_id) WHERE epic_id IS NOT NULL");
+  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_bead_specialist ON specialist_jobs(bead_id, specialist) WHERE bead_id IS NOT NULL AND status IN ('starting', 'running')");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_runs (
+      epic_id         TEXT PRIMARY KEY,
+      status          TEXT NOT NULL,
+      status_json     TEXT NOT NULL,
+      updated_at_ms   INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS epic_chain_membership (
+      chain_id            TEXT PRIMARY KEY,
+      epic_id             TEXT NOT NULL,
+      chain_root_bead_id  TEXT,
+      chain_root_job_id   TEXT,
+      updated_at_ms       INTEGER NOT NULL
+    );
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_runs_status ON epic_runs(status)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_epic ON epic_chain_membership(epic_id)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_epic_chain_membership_bead ON epic_chain_membership(chain_root_bead_id) WHERE chain_root_bead_id IS NOT NULL");
+  if (hasV8) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (8, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV9(db) {
+  const hasV9 = db.query("SELECT 1 FROM schema_version WHERE version = 9 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "chain_kind", definition: "TEXT NOT NULL DEFAULT 'prep'" },
+    { name: "chain_root_job_id", definition: "TEXT" },
+    { name: "chain_root_bead_id", definition: "TEXT" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_kind = CASE
+      WHEN chain_id IS NOT NULL OR worktree_column IS NOT NULL THEN 'chain'
+      ELSE 'prep'
+    END
+    WHERE chain_kind IS NULL OR chain_kind = ''
+  `);
+  db.run(`
+    UPDATE specialist_jobs
+    SET chain_root_job_id = COALESCE(chain_root_job_id, chain_id)
+    WHERE chain_kind = 'chain' AND chain_root_job_id IS NULL
+  `);
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_kind ON specialist_jobs(chain_kind)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_jobs_chain_root_job ON specialist_jobs(chain_root_job_id) WHERE chain_root_job_id IS NOT NULL");
+  if (hasV9) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (9, strftime('%s', 'now') * 1000);
+  `);
+}
+function migrateToV10(db) {
+  const hasV10 = db.query("SELECT 1 FROM schema_version WHERE version = 10 LIMIT 1").get();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache (
+      memory_key           TEXT PRIMARY KEY,
+      memory_value         TEXT NOT NULL,
+      updated_at_ms        INTEGER NOT NULL,
+      last_accessed_at_ms  INTEGER,
+      access_count         INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS memories_cache_meta (
+      singleton_key    INTEGER PRIMARY KEY CHECK (singleton_key = 1),
+      last_sync_at_ms  INTEGER NOT NULL,
+      memory_count     INTEGER NOT NULL
+    );
+  `);
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      key,
+      content,
+      tokenize='porter ascii'
+    );
+  `);
+  if (hasV10) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (10, strftime('%s', 'now') * 1000);
+  `);
+}
+var STALE_CLAIM_AGE_MS = 60000;
+function defaultIsPidAlive(pid) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function claimJobStartWithStore(store, status, event, options = {}) {
+  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+  const nowMs = options.nowMs ?? Date.now;
+  const staleAgeMs = options.staleClaimAgeMs ?? STALE_CLAIM_AGE_MS;
+  return withRetry(() => store.transaction(() => {
+    const existing = store.findActiveJob(status.bead_id ?? null, status.specialist);
+    if (existing?.job_id && existing.job_id !== status.id) {
+      const updatedAtMs = existing.updated_at_ms ?? 0;
+      const isStale = updatedAtMs > 0 && nowMs() - updatedAtMs > staleAgeMs && !isPidAlive(existing.pid);
+      if (isStale && store.cancelStaleClaim) {
+        store.cancelStaleClaim(existing.job_id);
+      } else {
+        return { ok: false, existingJobId: existing.job_id, existingStatus: existing.status ?? "starting" };
+      }
+    }
+    store.writeStatusRow(status);
+    store.writeEventRow(status.id, status.specialist, status.bead_id, event);
+    return { ok: true };
+  }), "claimJobStart");
+}
+
+class SqliteClient {
+  db;
+  dbPath;
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    const Ctor = loadBunDatabase();
+    this.db = new Ctor(dbPath);
+    this.db.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    this.db.run("PRAGMA journal_mode=WAL");
+  }
+  writeStatusRow(status, lastOutput) {
+    const statusJson = JSON.stringify(status);
+    this.db.run(`
+      INSERT INTO specialist_jobs (job_id, specialist, worktree_column, bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status, status_json, updated_at_ms, last_output, startup_payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        specialist = excluded.specialist,
+        worktree_column = excluded.worktree_column,
+        bead_id = excluded.bead_id,
+        node_id = excluded.node_id,
+        chain_kind = excluded.chain_kind,
+        chain_id = excluded.chain_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        epic_id = excluded.epic_id,
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms,
+        last_output = COALESCE(excluded.last_output, specialist_jobs.last_output),
+        startup_payload_json = COALESCE(excluded.startup_payload_json, specialist_jobs.startup_payload_json);
+    `, [
+      status.id,
+      status.specialist,
+      status.worktree_path ?? null,
+      status.bead_id ?? null,
+      status.node_id ?? null,
+      status.chain_kind ?? (status.chain_id ? "chain" : "prep"),
+      status.chain_id ?? null,
+      status.chain_root_job_id ?? null,
+      status.chain_root_bead_id ?? null,
+      status.epic_id ?? null,
+      status.status,
+      statusJson,
+      Date.now(),
+      lastOutput ?? null,
+      status.startup_payload_json ?? null
+    ]);
+  }
+  writeEpicRunRow(epic) {
+    this.db.run(`
+      INSERT INTO epic_runs (epic_id, status, status_json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(epic_id) DO UPDATE SET
+        status = excluded.status,
+        status_json = excluded.status_json,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [epic.epic_id, epic.status, epic.status_json, epic.updated_at_ms]);
+  }
+  writeEpicChainMembershipRow(chain) {
+    this.db.run(`
+      INSERT INTO epic_chain_membership (chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chain_id) DO UPDATE SET
+        epic_id = excluded.epic_id,
+        chain_root_bead_id = excluded.chain_root_bead_id,
+        chain_root_job_id = excluded.chain_root_job_id,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [
+      chain.chain_id,
+      chain.epic_id,
+      chain.chain_root_bead_id ?? null,
+      chain.chain_root_job_id ?? null,
+      chain.updated_at_ms
+    ]);
+  }
+  getNextSpecialistEventSeq(jobId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM specialist_events WHERE job_id = ?").get(jobId);
+    return row?.next_seq ?? 1;
+  }
+  getNextNodeEventSeq(nodeRunId) {
+    const row = this.db.query("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM node_events WHERE node_run_id = ?").get(nodeRunId);
+    return row?.next_seq ?? 1;
+  }
+  writeEventRow(jobId, specialist, beadId, event) {
+    const seq = typeof event.seq === "number" && event.seq > 0 ? event.seq : this.getNextSpecialistEventSeq(jobId);
+    const sequencedEvent = { ...event, seq };
+    const eventJson = JSON.stringify(sequencedEvent);
+    this.db.run(`
+      INSERT INTO specialist_events (job_id, seq, specialist, bead_id, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [jobId, seq, specialist, beadId ?? null, event.t, event.type, eventJson]);
+    this.writeForensicEventRow(jobId, specialist, beadId, sequencedEvent);
+  }
+  writeForensicEventRow(jobId, specialist, beadId, event) {
+    const context = this.readForensicContext(jobId);
+    const forensicEvent = forensicEventFromTimelineEvent(event, {
+      jobId,
+      specialist,
+      beadId: context.beadId ?? beadId,
+      nodeId: context.nodeId,
+      repo: context.repo,
+      serviceComponent: "runtime",
+      model: context.model,
+      backend: context.backend,
+      chainKind: context.chainKind,
+      chainId: context.chainId,
+      chainRootJobId: context.chainRootJobId,
+      chainRootBeadId: context.chainRootBeadId,
+      epicId: context.epicId,
+      sessionId: context.sessionId,
+      conversationId: context.conversationId,
+      traceId: context.traceId,
+      spanId: context.spanId,
+      parentSpanId: context.parentSpanId
+    });
+    this.insertForensicEventRow(jobId, event.seq, forensicEvent);
+  }
+  readForensicContext(jobId) {
+    const row = this.db.query(`
+      SELECT bead_id, node_id, chain_kind, chain_id, chain_root_job_id, chain_root_bead_id, epic_id, status_json
+      FROM specialist_jobs
+      WHERE job_id = ?
+      LIMIT 1
+    `).get(jobId);
+    const statusJson = parseJsonRecord(typeof row?.status_json === "string" ? row.status_json : undefined);
+    return {
+      beadId: typeof row?.bead_id === "string" ? row.bead_id : undefined,
+      nodeId: typeof row?.node_id === "string" ? row.node_id : undefined,
+      repo: typeof statusJson.repo === "string" ? statusJson.repo : undefined,
+      model: typeof statusJson.model === "string" ? statusJson.model : undefined,
+      backend: typeof statusJson.backend === "string" ? statusJson.backend : undefined,
+      chainKind: typeof row?.chain_kind === "string" ? row.chain_kind : undefined,
+      chainId: typeof row?.chain_id === "string" ? row.chain_id : undefined,
+      chainRootJobId: typeof row?.chain_root_job_id === "string" ? row.chain_root_job_id : undefined,
+      chainRootBeadId: typeof row?.chain_root_bead_id === "string" ? row.chain_root_bead_id : undefined,
+      epicId: typeof row?.epic_id === "string" ? row.epic_id : undefined,
+      sessionId: typeof statusJson.session_id === "string" ? statusJson.session_id : undefined,
+      conversationId: typeof statusJson.conversation_id === "string" ? statusJson.conversation_id : undefined,
+      traceId: typeof statusJson.trace_id === "string" ? statusJson.trace_id : undefined,
+      spanId: typeof statusJson.span_id === "string" ? statusJson.span_id : undefined,
+      parentSpanId: typeof statusJson.parent_span_id === "string" ? statusJson.parent_span_id : undefined
+    };
+  }
+  insertForensicEventRow(jobId, seq, forensicEvent) {
+    this.db.run(`
+      INSERT OR REPLACE INTO specialist_forensic_events (
+        job_id, seq, t, schema_version, event_family, event_name,
+        participant_kind, participant_role, participant_id, redaction_status, event_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      jobId,
+      seq,
+      forensicEvent.t_unix_ms,
+      forensicEvent.schema_version,
+      forensicEvent.event_family,
+      forensicEvent.event_name,
+      forensicEvent.resource.participant_kind ?? null,
+      forensicEvent.resource.participant_role ?? null,
+      typeof forensicEvent.correlation.participant_id === "string" ? forensicEvent.correlation.participant_id : null,
+      forensicEvent.redaction.status,
+      JSON.stringify(forensicEvent)
+    ]);
+  }
+  findActiveJob(beadId, specialist) {
+    return this.db.query(`
+      SELECT
+        job_id,
+        status,
+        updated_at_ms,
+        CAST(JSON_EXTRACT(status_json, '$.pid') AS INTEGER) AS pid
+      FROM specialist_jobs
+      WHERE bead_id = ?
+        AND specialist = ?
+        AND status IN ('starting', 'running', 'waiting')
+      ORDER BY updated_at_ms DESC
+      LIMIT 1
+    `).get(beadId, specialist);
+  }
+  claimJobStart(status, event) {
+    return claimJobStartWithStore({
+      transaction: (callback) => this.db.transaction(callback)(),
+      findActiveJob: (beadId, specialist) => this.findActiveJob(beadId, specialist),
+      writeStatusRow: (nextStatus) => this.writeStatusRow(nextStatus),
+      writeEventRow: (jobId, specialist, beadId, nextEvent) => this.writeEventRow(jobId, specialist, beadId, nextEvent),
+      cancelStaleClaim: (jobId) => {
+        const nowMs = Date.now();
+        this.db.run(`
+            UPDATE specialist_jobs
+            SET status = 'cancelled',
+                status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', 'orphan-claim-stale')),
+                updated_at_ms = ?
+            WHERE job_id = ?
+          `, [nowMs, jobId]);
+      }
+    }, status, event);
+  }
+  writeResultRow(jobId, output) {
+    this.db.run(`
+      INSERT INTO specialist_results (job_id, output, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        output = excluded.output,
+        updated_at_ms = excluded.updated_at_ms;
+    `, [jobId, output, Date.now()]);
+  }
+  writeNodeRunRow(nodeRun) {
+    this.db.run(`
+      INSERT INTO node_runs (
+        id,
+        node_name,
+        status,
+        coordinator_job_id,
+        started_at_ms,
+        updated_at_ms,
+        waiting_on,
+        error,
+        memory_namespace,
+        status_json,
+        pr_number,
+        pr_url,
+        pr_head_sha,
+        gate_results,
+        completion_strategy
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        node_name = excluded.node_name,
+        status = excluded.status,
+        coordinator_job_id = excluded.coordinator_job_id,
+        started_at_ms = excluded.started_at_ms,
+        updated_at_ms = excluded.updated_at_ms,
+        waiting_on = excluded.waiting_on,
+        error = excluded.error,
+        memory_namespace = excluded.memory_namespace,
+        status_json = excluded.status_json,
+        pr_number = excluded.pr_number,
+        pr_url = excluded.pr_url,
+        pr_head_sha = excluded.pr_head_sha,
+        gate_results = excluded.gate_results,
+        completion_strategy = excluded.completion_strategy;
+    `, [
+      nodeRun.id,
+      nodeRun.node_name,
+      nodeRun.status,
+      nodeRun.coordinator_job_id ?? null,
+      nodeRun.started_at_ms ?? null,
+      nodeRun.updated_at_ms,
+      nodeRun.waiting_on ?? null,
+      nodeRun.error ?? null,
+      nodeRun.memory_namespace ?? null,
+      nodeRun.status_json,
+      nodeRun.pr_number ?? null,
+      nodeRun.pr_url ?? null,
+      nodeRun.pr_head_sha ?? null,
+      nodeRun.gate_results ?? null,
+      nodeRun.completion_strategy ?? null
+    ]);
+  }
+  writeNodeMemberRow(member) {
+    this.db.run(`
+      INSERT INTO node_members (
+        node_run_id,
+        member_id,
+        job_id,
+        specialist,
+        model,
+        role,
+        status,
+        enabled,
+        generation,
+        worktree_path,
+        parent_member_id,
+        replaced_member_id,
+        phase_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(node_run_id, member_id) DO UPDATE SET
+        job_id = excluded.job_id,
+        specialist = excluded.specialist,
+        model = excluded.model,
+        role = excluded.role,
+        status = excluded.status,
+        enabled = excluded.enabled,
+        generation = excluded.generation,
+        worktree_path = excluded.worktree_path,
+        parent_member_id = excluded.parent_member_id,
+        replaced_member_id = excluded.replaced_member_id,
+        phase_id = excluded.phase_id;
+    `, [
+      member.node_run_id,
+      member.member_id,
+      member.job_id ?? null,
+      member.specialist,
+      member.model ?? null,
+      member.role ?? null,
+      member.status,
+      member.enabled === undefined ? 1 : member.enabled ? 1 : 0,
+      member.generation ?? 0,
+      member.worktree_path ?? null,
+      member.parent_member_id ?? null,
+      member.replaced_member_id ?? null,
+      member.phase_id ?? null
+    ]);
+  }
+  writeNodeEventRow(nodeRunId, t, type, eventJson) {
+    const seq = this.getNextNodeEventSeq(nodeRunId);
+    const payload = typeof eventJson === "object" && eventJson !== null ? { ...eventJson, seq } : { value: eventJson, seq };
+    this.db.run(`
+      INSERT INTO node_events (node_run_id, seq, t, type, event_json)
+      VALUES (?, ?, ?, ?, ?)
+    `, [nodeRunId, seq, t, type, JSON.stringify(payload)]);
+  }
+  writeNodeMemoryRow(entry) {
+    const now = Date.now();
+    const createdAtMs = entry.created_at_ms ?? now;
+    const updatedAtMs = entry.updated_at_ms ?? now;
+    if (entry.entry_id) {
+      this.db.run(`
+        INSERT INTO node_memory (
+          node_run_id,
+          namespace,
+          entry_type,
+          entry_id,
+          summary,
+          source_member_id,
+          confidence,
+          provenance_json,
+          created_at_ms,
+          updated_at_ms
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(node_run_id, entry_id) DO UPDATE SET
+          namespace = excluded.namespace,
+          entry_type = excluded.entry_type,
+          summary = excluded.summary,
+          source_member_id = excluded.source_member_id,
+          confidence = excluded.confidence,
+          provenance_json = excluded.provenance_json,
+          created_at_ms = excluded.created_at_ms,
+          updated_at_ms = excluded.updated_at_ms
+      `, [
+        entry.node_run_id,
+        entry.namespace ?? null,
+        entry.entry_type ?? null,
+        entry.entry_id,
+        entry.summary ?? null,
+        entry.source_member_id ?? null,
+        entry.confidence ?? null,
+        entry.provenance_json ?? null,
+        createdAtMs,
+        updatedAtMs
+      ]);
+      return;
+    }
+    this.db.run(`
+      INSERT INTO node_memory (
+        node_run_id,
+        namespace,
+        entry_type,
+        entry_id,
+        summary,
+        source_member_id,
+        confidence,
+        provenance_json,
+        created_at_ms,
+        updated_at_ms
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      entry.node_run_id,
+      entry.namespace ?? null,
+      entry.entry_type ?? null,
+      null,
+      entry.summary ?? null,
+      entry.source_member_id ?? null,
+      entry.confidence ?? null,
+      entry.provenance_json ?? null,
+      createdAtMs,
+      updatedAtMs
+    ]);
+  }
+  upsertStatus(status) {
+    withRetry(() => {
+      this.writeStatusRow(status);
+    }, "upsertStatus");
+  }
+  markSpecialistJobCancelled(jobId, reason) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        const nowMs = Date.now();
+        this.db.run(`
+          UPDATE specialist_jobs
+          SET status = 'cancelled',
+              status_json = JSON_PATCH(status_json, JSON_OBJECT('status', 'cancelled', 'cancelled_reason', ?)),
+              updated_at_ms = ?
+          WHERE job_id = ?
+        `, [reason, nowMs, jobId]);
+      });
+      transaction();
+    }, "markSpecialistJobCancelled");
+  }
+  upsertEpicRun(epic) {
+    withRetry(() => {
+      this.writeEpicRunRow(epic);
+    }, "upsertEpicRun");
+  }
+  upsertEpicChainMembership(chain) {
+    withRetry(() => {
+      this.writeEpicChainMembershipRow(chain);
+    }, "upsertEpicChainMembership");
+  }
+  upsertStatusWithEvent(status, event) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+      });
+      transaction();
+    }, "upsertStatusWithEvent");
+  }
+  upsertStatusWithEventAndResult(status, event, output) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeStatusRow(status, output);
+        this.writeEventRow(status.id, status.specialist, status.bead_id, event);
+        this.writeResultRow(status.id, output);
+      });
+      transaction();
+    }, "upsertStatusWithEventAndResult");
+  }
+  appendEvent(jobId, specialist, beadId, event) {
+    withRetry(() => {
+      this.writeEventRow(jobId, specialist, beadId, event);
+    }, "appendEvent");
+  }
+  appendForensicEvent(jobId, specialist, beadId, forensicEvent) {
+    withRetry(() => {
+      const seq = typeof forensicEvent.seq === "number" && forensicEvent.seq > 0 ? forensicEvent.seq : this.getNextSpecialistEventSeq(jobId);
+      this.insertForensicEventRow(jobId, seq, forensicEvent);
+    }, "appendForensicEvent");
+  }
+  upsertResult(jobId, output) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeResultRow(jobId, output);
+        this.db.run(`
+          UPDATE specialist_jobs SET last_output = ? WHERE job_id = ?
+        `, [output, jobId]);
+      });
+      transaction();
+    }, "upsertResult");
+  }
+  bootstrapNode(nodeRunId, nodeName, memoryNamespace) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        const now = Date.now();
+        this.writeNodeRunRow({
+          id: nodeRunId,
+          node_name: nodeName,
+          status: "created",
+          started_at_ms: now,
+          updated_at_ms: now,
+          memory_namespace: memoryNamespace,
+          status_json: JSON.stringify({ status: "created" })
+        });
+        this.writeNodeEventRow(nodeRunId, now, "node_created", { node_run_id: nodeRunId, node_name: nodeName });
+        this.writeNodeEventRow(nodeRunId, now + 1, "node_started", { node_run_id: nodeRunId, node_name: nodeName });
+      });
+      transaction();
+    }, "bootstrapNode");
+  }
+  upsertNodeRun(nodeRun) {
+    withRetry(() => {
+      this.writeNodeRunRow(nodeRun);
+    }, "upsertNodeRun");
+  }
+  upsertNodeMember(member) {
+    withRetry(() => {
+      this.writeNodeMemberRow(member);
+    }, "upsertNodeMember");
+  }
+  appendNodeEvent(nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+    }, "appendNodeEvent");
+  }
+  upsertNodeMemory(entry) {
+    withRetry(() => {
+      this.writeNodeMemoryRow(entry);
+    }, "upsertNodeMemory");
+  }
+  upsertNodeRunWithEvent(nodeRun, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeRunRow(nodeRun);
+        this.writeNodeEventRow(nodeRun.id, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeRunWithEvent");
+  }
+  upsertNodeMemberWithEvent(member, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemberRow(member);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemberWithEvent");
+  }
+  upsertNodeMemoryWithEvent(entry, nodeRunId, t, type, eventJson) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.writeNodeMemoryRow(entry);
+        this.writeNodeEventRow(nodeRunId, t, type, eventJson);
+      });
+      transaction();
+    }, "upsertNodeMemoryWithEvent");
+  }
+  readNodeRun(nodeRunId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT * FROM node_runs WHERE id = ? LIMIT 1").get(nodeRunId);
+      if (!row)
+        return null;
+      return {
+        ...row,
+        status: row.status
+      };
+    }, "readNodeRun");
+  }
+  listNodeRuns(filter) {
+    return withRetry(() => {
+      const query = filter?.status ? "SELECT * FROM node_runs WHERE status = ? ORDER BY updated_at_ms DESC" : "SELECT * FROM node_runs ORDER BY updated_at_ms DESC";
+      const rows = filter?.status ? this.db.query(query).all(filter.status) : this.db.query(query).all();
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRuns");
+  }
+  listNodeRunsByRef(partialRef, statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+          AND (id LIKE ? OR node_name LIKE ?)
+        ORDER BY updated_at_ms DESC
+      `;
+      const prefix = `${partialRef}%`;
+      const rows = this.db.query(query).all(...statuses, prefix, prefix);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByRef");
+  }
+  listNodeRunsByStatuses(statuses) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const query = `
+        SELECT *
+        FROM node_runs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `;
+      const rows = this.db.query(query).all(...statuses);
+      return rows.map((row) => ({
+        ...row,
+        status: row.status
+      }));
+    }, "listNodeRunsByStatuses");
+  }
+  readNodeMembers(nodeRunId) {
+    return withRetry(() => {
+      const rows = this.db.query("SELECT * FROM node_members WHERE node_run_id = ? ORDER BY id ASC").all(nodeRunId);
+      return rows.map((row) => ({
+        node_run_id: row.node_run_id,
+        member_id: row.member_id,
+        job_id: row.job_id ?? undefined,
+        specialist: row.specialist,
+        model: row.model ?? undefined,
+        role: row.role ?? undefined,
+        status: row.status,
+        enabled: row.enabled === undefined ? undefined : Boolean(row.enabled),
+        generation: row.generation ?? 0,
+        worktree_path: row.worktree_path ?? undefined,
+        parent_member_id: row.parent_member_id ?? undefined,
+        replaced_member_id: row.replaced_member_id ?? undefined,
+        phase_id: row.phase_id ?? undefined
+      }));
+    }, "readNodeMembers");
+  }
+  readNodeEvents(nodeRunId, opts) {
+    return withRetry(() => {
+      const whereClauses = ["node_run_id = ?"];
+      const params = [nodeRunId];
+      if (opts?.type) {
+        whereClauses.push("type = ?");
+        params.push(opts.type);
+      }
+      let query = `
+        SELECT id, seq, t, type, event_json
+        FROM node_events
+        WHERE ${whereClauses.join(" AND ")}
+        ORDER BY seq ASC, id ASC
+      `;
+      if (opts?.limit !== undefined) {
+        query += " LIMIT ?";
+        params.push(opts.limit);
+      }
+      return this.db.query(query).all(...params);
+    }, "readNodeEvents");
+  }
+  readNodeMemory(nodeRunId, opts) {
+    return withRetry(() => {
+      const whereClauses = ["node_run_id = ?"];
+      const params = [nodeRunId];
+      if (opts?.namespace) {
+        whereClauses.push("namespace = ?");
+        params.push(opts.namespace);
+      }
+      if (opts?.entry_type) {
+        whereClauses.push("entry_type = ?");
+        params.push(opts.entry_type);
+      }
+      const query = `
+        SELECT *
+        FROM node_memory
+        WHERE ${whereClauses.join(" AND ")}
+        ORDER BY created_at_ms ASC
+      `;
+      return this.db.query(query).all(...params);
+    }, "readNodeMemory");
+  }
+  queryMemberContextHealth(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT json_extract(event_json, '$.context_pct') AS context_pct
+        FROM specialist_events
+        WHERE job_id = ? AND type = 'turn_summary'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1
+      `).get(jobId);
+      if (!row || row.context_pct === null || row.context_pct === undefined) {
+        return null;
+      }
+      const contextPct = typeof row.context_pct === "number" ? row.context_pct : Number(row.context_pct);
+      return Number.isFinite(contextPct) ? contextPct : null;
+    }, "queryMemberContextHealth");
+  }
+  readStatus(jobId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT status_json FROM specialist_jobs WHERE job_id = ? LIMIT 1").get(jobId);
+      if (!row?.status_json)
+        return null;
+      return JSON.parse(row.status_json);
+    }, "readStatus");
+  }
+  listStatuses() {
+    return withRetry(() => {
+      const rows = this.db.query("SELECT status_json FROM specialist_jobs ORDER BY updated_at_ms DESC").all();
+      const statuses = [];
+      for (const row of rows) {
+        if (!row.status_json)
+          continue;
+        try {
+          statuses.push(JSON.parse(row.status_json));
+        } catch {}
+      }
+      return statuses;
+    }, "listStatuses");
+  }
+  removeJobs(jobIds) {
+    return withRetry(() => {
+      if (jobIds.length === 0)
+        return 0;
+      const placeholders = jobIds.map(() => "?").join(", ");
+      const result = this.db.query(`DELETE FROM specialist_jobs WHERE job_id IN (${placeholders})`).run(...jobIds);
+      return result.changes ?? 0;
+    }, "removeJobs");
+  }
+  readEpicRun(epicId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs WHERE epic_id = ? LIMIT 1").get(epicId);
+      return row ?? null;
+    }, "readEpicRun");
+  }
+  listEpicRuns() {
+    return withRetry(() => {
+      return this.db.query("SELECT epic_id, status, status_json, updated_at_ms FROM epic_runs ORDER BY updated_at_ms DESC").all();
+    }, "listEpicRuns");
+  }
+  resolveEpicByChainId(chainId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_id = ? LIMIT 1").get(chainId);
+      return row ?? null;
+    }, "resolveEpicByChainId");
+  }
+  resolveEpicByChainRootBeadId(chainRootBeadId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms FROM epic_chain_membership WHERE chain_root_bead_id = ? LIMIT 1").get(chainRootBeadId);
+      return row ?? null;
+    }, "resolveEpicByChainRootBeadId");
+  }
+  listEpicChains(epicId) {
+    return withRetry(() => {
+      return this.db.query(`
+        SELECT chain_id, epic_id, chain_root_bead_id, chain_root_job_id, updated_at_ms
+        FROM epic_chain_membership
+        WHERE epic_id = ?
+        ORDER BY updated_at_ms DESC
+      `).all(epicId);
+    }, "listEpicChains");
+  }
+  deleteEpicChainMembership(epicId, chainIds) {
+    if (chainIds.length === 0)
+      return [];
+    return withRetry(() => {
+      const existing = new Set(this.db.query("SELECT chain_id FROM epic_chain_membership WHERE epic_id = ?").all(epicId).map((row) => row.chain_id));
+      const removable = chainIds.filter((chainId) => existing.has(chainId));
+      if (removable.length === 0)
+        return [];
+      const placeholders = removable.map(() => "?").join(", ");
+      this.db.query(`DELETE FROM epic_chain_membership WHERE epic_id = ? AND chain_id IN (${placeholders})`).run(epicId, ...removable);
+      return removable;
+    }, "deleteEpicChainMembership");
+  }
+  listReferencedChainRootJobIds() {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT DISTINCT chain_root_job_id
+        FROM epic_chain_membership
+        WHERE chain_root_job_id IS NOT NULL AND chain_root_job_id != ''
+      `).all();
+      return rows.map((row) => row.chain_root_job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listReferencedChainRootJobIds");
+  }
+  listEpicChainsWithLatestJob(epicId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked_jobs AS (
+          SELECT
+            jobs.chain_id AS chain_id,
+            membership.epic_id AS epic_id,
+            membership.chain_root_bead_id AS chain_root_bead_id,
+            membership.chain_root_job_id AS chain_root_job_id,
+            jobs.job_id AS job_id,
+            jobs.status AS status,
+            json_extract(jobs.status_json, '$.branch') AS branch,
+            jobs.updated_at_ms AS updated_at_ms,
+            ROW_NUMBER() OVER (
+              PARTITION BY jobs.chain_id
+              ORDER BY jobs.updated_at_ms DESC, jobs.rowid DESC
+            ) AS row_rank
+          FROM epic_chain_membership membership
+          INNER JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+          WHERE membership.epic_id = ?
+            AND jobs.chain_kind = 'chain'
+        )
+        SELECT
+          chain_id,
+          epic_id,
+          chain_root_bead_id,
+          chain_root_job_id,
+          job_id,
+          status,
+          branch,
+          updated_at_ms
+        FROM ranked_jobs
+        WHERE row_rank = 1
+        ORDER BY updated_at_ms DESC, job_id DESC
+      `).all(epicId);
+      return rows.map((row) => ({
+        chain_id: row.chain_id,
+        epic_id: row.epic_id,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        job_id: row.job_id,
+        status: row.status ?? undefined,
+        branch: row.branch ?? undefined,
+        updated_at_ms: row.updated_at_ms
+      }));
+    }, "listEpicChainsWithLatestJob");
+  }
+  readChainIdentity(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT chain_kind, chain_id, chain_root_job_id, chain_root_bead_id
+        FROM specialist_jobs
+        WHERE job_id = ?
+        LIMIT 1
+      `).get(jobId);
+      if (!row?.chain_kind || row.chain_kind.trim().length === 0) {
+        return { chain_kind: "prep" };
+      }
+      return {
+        chain_kind: row.chain_kind === "chain" ? "chain" : "prep",
+        chain_id: row.chain_id ?? undefined,
+        chain_root_job_id: row.chain_root_job_id ?? undefined,
+        chain_root_bead_id: row.chain_root_bead_id ?? undefined
+      };
+    }, "readChainIdentity");
+  }
+  listChainJobIds(chainId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE chain_id = ?
+        ORDER BY updated_at_ms ASC
+      `).all(chainId);
+      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listChainJobIds");
+  }
+  listLiveJobsForBead(beadId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT job_id
+        FROM specialist_jobs
+        WHERE bead_id = ?
+          AND status IN ('starting', 'running', 'waiting')
+        ORDER BY updated_at_ms ASC
+      `).all(beadId);
+      return rows.map((row) => row.job_id).filter((jobId) => typeof jobId === "string" && jobId.length > 0);
+    }, "listLiveJobsForBead");
+  }
+  resolveChainEpicLinkByJobId(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT
+          jobs.chain_id AS chain_id,
+          COALESCE(membership.epic_id, jobs.epic_id) AS epic_id,
+          COALESCE(jobs.chain_root_job_id, membership.chain_root_job_id, jobs.chain_id) AS chain_root_job_id,
+          COALESCE(jobs.chain_root_bead_id, membership.chain_root_bead_id) AS chain_root_bead_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership ON membership.chain_id = jobs.chain_id
+        WHERE jobs.job_id = ?
+          AND jobs.chain_kind = 'chain'
+          AND jobs.chain_id IS NOT NULL
+        LIMIT 1
+      `).get(jobId);
+      return row ?? null;
+    }, "resolveChainEpicLinkByJobId");
+  }
+  readEvents(jobId) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ?
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId);
+      const events = [];
+      for (const row of rows) {
+        if (!row.event_json)
+          continue;
+        try {
+          const parsed = JSON.parse(row.event_json);
+          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
+        } catch {}
+      }
+      return events;
+    }, "readEvents");
+  }
+  readEventsAfterSeq(jobId, afterSeq) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND seq > ?
+        ORDER BY seq ASC, id ASC;
+      `).all(jobId, afterSeq);
+      const events = [];
+      for (const row of rows) {
+        if (!row.event_json)
+          continue;
+        try {
+          const parsed = JSON.parse(row.event_json);
+          events.push(typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq });
+        } catch {}
+      }
+      return events;
+    }, "readEventsAfterSeq");
+  }
+  readForensicEvents(filters = {}) {
+    return withRetry(() => {
+      const clauses = [];
+      const params = [];
+      if (filters.jobId) {
+        clauses.push("job_id = ?");
+        params.push(filters.jobId);
+      }
+      if (filters.sinceMs !== undefined) {
+        clauses.push("t >= ?");
+        params.push(filters.sinceMs);
+      }
+      if (filters.eventFamily) {
+        clauses.push("event_family = ?");
+        params.push(filters.eventFamily);
+      }
+      if (filters.eventName) {
+        clauses.push("event_name = ?");
+        params.push(filters.eventName);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const limit = Math.max(1, Math.min(filters.limit ?? 1000, 1e4));
+      const dir = filters.order === "desc" ? "DESC" : "ASC";
+      return this.db.query(`
+        SELECT id, job_id, seq, t, schema_version, event_family, event_name,
+               participant_kind, participant_role, participant_id, redaction_status, event_json
+        FROM specialist_forensic_events
+        ${where}
+        ORDER BY t ${dir}, seq ${dir}, id ${dir}
+        LIMIT ?
+      `).all(...params, limit);
+    }, "readForensicEvents");
+  }
+  readLatestToolEvent(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT seq, event_json FROM specialist_events
+        WHERE job_id = ? AND type = 'tool'
+        ORDER BY seq DESC, id DESC
+        LIMIT 1;
+      `).get(jobId);
+      if (!row?.event_json)
+        return null;
+      try {
+        const parsed = JSON.parse(row.event_json);
+        if (parsed.type !== "tool")
+          return null;
+        return typeof parsed.seq === "number" ? parsed : { ...parsed, seq: row.seq };
+      } catch {
+        return null;
+      }
+    }, "readLatestToolEvent");
+  }
+  getLastActivityTimestampMs(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT MAX(t) AS last_activity_ms
+        FROM specialist_events
+        WHERE job_id = ? AND type IN ('tool', 'think')
+      `).get(jobId);
+      return typeof row?.last_activity_ms === "number" ? row.last_activity_ms : null;
+    }, "getLastActivityTimestampMs");
+  }
+  aggregateJobMetrics(jobId) {
+    return withRetry(() => {
+      const jobRow = this.db.query(`
+        SELECT job_id, specialist, status, chain_kind, chain_id, bead_id, node_id, epic_id, updated_at_ms, startup_payload_json
+        FROM specialist_jobs
+        WHERE job_id = ?
+      `).get(jobId);
+      if (!jobRow)
+        return null;
+      const events = this.readEvents(jobId);
+      const toolCallCounts = {};
+      const tokenTrajectory = [];
+      const contextTrajectory = [];
+      const stallGaps = [];
+      let totalTools = 0;
+      let totalTurns = 0;
+      let startedAtMs = null;
+      let completedAtMs = null;
+      let runCompleteJson = null;
+      let model = null;
+      let elapsedMs = null;
+      let activeRuntimeMs = 0;
+      let waitingMs = 0;
+      let phase = null;
+      let phaseStartedAtMs = null;
+      const closePhase = (endAtMs) => {
+        if (phase === null || phaseStartedAtMs === null || endAtMs < phaseStartedAtMs)
+          return;
+        const durationMs = endAtMs - phaseStartedAtMs;
+        if (phase === "running") {
+          activeRuntimeMs += durationMs;
+        } else {
+          waitingMs += durationMs;
+        }
+      };
+      for (const event of events) {
+        startedAtMs = startedAtMs === null ? event.t : Math.min(startedAtMs, event.t);
+        if (event.type === "tool") {
+          totalTools += 1;
+          toolCallCounts[event.tool] = (toolCallCounts[event.tool] ?? 0) + 1;
+          continue;
+        }
+        if (event.type === "turn_summary") {
+          totalTurns += 1;
+          if (event.token_usage)
+            tokenTrajectory.push({ turn_index: event.turn_index, t: event.t, token_usage: event.token_usage });
+          if (event.context_pct !== undefined)
+            contextTrajectory.push({ turn_index: event.turn_index, t: event.t, context_pct: event.context_pct });
+          continue;
+        }
+        if (event.type === "token_usage") {
+          tokenTrajectory.push({ t: event.t, source: event.source, token_usage: event.token_usage });
+          continue;
+        }
+        if (event.type === "run_start") {
+          phase = "running";
+          phaseStartedAtMs = event.t;
+          continue;
+        }
+        if (event.type === "status_change") {
+          if (event.status === "running" || event.status === "waiting") {
+            closePhase(event.t);
+            phase = event.status;
+            phaseStartedAtMs = event.t;
+            continue;
+          }
+          if (event.status === "done" || event.status === "error" || event.status === "cancelled") {
+            closePhase(event.t);
+            phase = null;
+            phaseStartedAtMs = null;
+          }
+          continue;
+        }
+        if (event.type === "run_complete") {
+          closePhase(event.t);
+          completedAtMs = event.t;
+          runCompleteJson = JSON.stringify(event);
+          model = event.model ?? model;
+          elapsedMs = Math.round(event.elapsed_s * 1000);
+          phase = null;
+          phaseStartedAtMs = null;
+          continue;
+        }
+        if (event.type === "stale_warning" && event.reason === "tool_duration") {
+          stallGaps.push({ t: event.t, tool: event.tool ?? null, silence_ms: event.silence_ms, threshold_ms: event.threshold_ms });
+        }
+      }
+      if (startedAtMs !== null && completedAtMs === null) {
+        completedAtMs = events.length > 0 ? events[events.length - 1].t : startedAtMs;
+      }
+      if (elapsedMs === null && startedAtMs !== null && completedAtMs !== null) {
+        elapsedMs = Math.max(0, completedAtMs - startedAtMs);
+      }
+      const record = {
+        job_id: jobRow.job_id,
+        specialist: jobRow.specialist,
+        model,
+        status: jobRow.status,
+        chain_kind: jobRow.chain_kind ?? null,
+        chain_id: jobRow.chain_id ?? null,
+        bead_id: jobRow.bead_id ?? null,
+        node_id: jobRow.node_id ?? null,
+        epic_id: jobRow.epic_id ?? null,
+        started_at_ms: startedAtMs,
+        completed_at_ms: completedAtMs,
+        elapsed_ms: elapsedMs,
+        active_runtime_ms: activeRuntimeMs,
+        waiting_ms: waitingMs,
+        total_turns: totalTurns,
+        total_tools: totalTools,
+        tool_call_counts_json: stringifyJson(toolCallCounts),
+        token_trajectory_json: stringifyJson(tokenTrajectory),
+        context_trajectory_json: stringifyJson(contextTrajectory),
+        stall_gaps_json: stringifyJson(stallGaps),
+        run_complete_json: runCompleteJson,
+        startup_payload_json: jobRow.startup_payload_json ?? null,
+        updated_at_ms: jobRow.updated_at_ms
+      };
+      this.db.run(`
+        INSERT INTO specialist_job_metrics (
+          job_id, specialist, model, status, chain_kind, chain_id, bead_id, node_id, epic_id,
+          started_at_ms, completed_at_ms, elapsed_ms, active_runtime_ms, waiting_ms, total_turns, total_tools,
+          tool_call_counts_json, token_trajectory_json, context_trajectory_json, stall_gaps_json,
+          run_complete_json, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          specialist = excluded.specialist,
+          model = excluded.model,
+          status = excluded.status,
+          chain_kind = excluded.chain_kind,
+          chain_id = excluded.chain_id,
+          bead_id = excluded.bead_id,
+          node_id = excluded.node_id,
+          epic_id = excluded.epic_id,
+          started_at_ms = excluded.started_at_ms,
+          completed_at_ms = excluded.completed_at_ms,
+          elapsed_ms = excluded.elapsed_ms,
+          active_runtime_ms = excluded.active_runtime_ms,
+          waiting_ms = excluded.waiting_ms,
+          total_turns = excluded.total_turns,
+          total_tools = excluded.total_tools,
+          tool_call_counts_json = excluded.tool_call_counts_json,
+          token_trajectory_json = excluded.token_trajectory_json,
+          context_trajectory_json = excluded.context_trajectory_json,
+          stall_gaps_json = excluded.stall_gaps_json,
+          run_complete_json = excluded.run_complete_json,
+          updated_at_ms = excluded.updated_at_ms;
+      `, [
+        record.job_id,
+        record.specialist,
+        record.model,
+        record.status,
+        record.chain_kind,
+        record.chain_id,
+        record.bead_id,
+        record.node_id,
+        record.epic_id,
+        record.started_at_ms,
+        record.completed_at_ms,
+        record.elapsed_ms,
+        record.active_runtime_ms,
+        record.waiting_ms,
+        record.total_turns,
+        record.total_tools,
+        record.tool_call_counts_json,
+        record.token_trajectory_json,
+        record.context_trajectory_json,
+        record.stall_gaps_json,
+        record.run_complete_json,
+        record.updated_at_ms
+      ]);
+      return record;
+    }, "aggregateJobMetrics");
+  }
+  listJobMetrics(filters) {
+    return withRetry(() => {
+      const clauses = [];
+      const params = [];
+      if (filters?.spec) {
+        clauses.push("specialist = ?");
+        params.push(filters.spec);
+      }
+      if (filters?.model) {
+        clauses.push("model LIKE ?");
+        params.push(filters.model.replace(/\*/g, "%"));
+      }
+      if (filters?.sinceMs !== undefined) {
+        clauses.push("updated_at_ms >= ?");
+        params.push(filters.sinceMs);
+      }
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      return this.db.query(`SELECT * FROM specialist_job_metrics ${where} ORDER BY updated_at_ms DESC, job_id DESC`).all(...params);
+    }, "listJobMetrics");
+  }
+  listElapsedMsBySpecialist(sinceMs, limitPerSpecialist = 200) {
+    return withRetry(() => {
+      const rows = this.db.query(`
+        WITH ranked AS (
+          SELECT specialist, elapsed_ms,
+                 ROW_NUMBER() OVER (PARTITION BY specialist ORDER BY updated_at_ms DESC) AS rn
+          FROM specialist_job_metrics
+          WHERE status = 'completed' AND updated_at_ms >= ? AND elapsed_ms IS NOT NULL
+        )
+        SELECT specialist, elapsed_ms
+        FROM ranked
+        WHERE rn <= ?
+        ORDER BY specialist, rn
+      `).all(sinceMs, limitPerSpecialist);
+      const bySpecialist = {};
+      for (const row of rows) {
+        if (!row.specialist || typeof row.elapsed_ms !== "number" || !Number.isFinite(row.elapsed_ms))
+          continue;
+        (bySpecialist[row.specialist] ??= []).push(row.elapsed_ms);
+      }
+      return bySpecialist;
+    }, "listElapsedMsBySpecialist");
+  }
+  readResult(jobId) {
+    return withRetry(() => {
+      const row = this.db.query("SELECT output FROM specialist_results WHERE job_id = ? LIMIT 1").get(jobId);
+      return row?.output ?? null;
+    }, "readResult");
+  }
+  syncMemoriesCache(memories, syncedAtMs = Date.now()) {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        const upsertMemory = this.db.query(`
+          INSERT INTO memories_cache (memory_key, memory_value, updated_at_ms)
+          VALUES (?, ?, ?)
+          ON CONFLICT(memory_key) DO UPDATE SET
+            memory_value = excluded.memory_value,
+            updated_at_ms = excluded.updated_at_ms
+        `);
+        const insertFts = this.db.query("INSERT INTO memories_fts (key, content) VALUES (?, ?)");
+        const seen = new Set;
+        for (const memory of memories) {
+          if (!memory.key || seen.has(memory.key))
+            continue;
+          seen.add(memory.key);
+          upsertMemory.run(memory.key, memory.value, syncedAtMs);
+          insertFts.run(memory.key, `${memory.key} ${memory.value}`);
+        }
+        if (seen.size > 0) {
+          const placeholders = [...seen].map(() => "?").join(", ");
+          this.db.query(`DELETE FROM memories_cache WHERE memory_key NOT IN (${placeholders})`).run(...seen);
+        } else {
+          this.db.run("DELETE FROM memories_cache");
+        }
+        this.db.query(`
+          INSERT INTO memories_cache_meta (singleton_key, last_sync_at_ms, memory_count)
+          VALUES (1, ?, ?)
+          ON CONFLICT(singleton_key) DO UPDATE SET
+            last_sync_at_ms = excluded.last_sync_at_ms,
+            memory_count = excluded.memory_count
+        `).run(syncedAtMs, seen.size);
+      });
+      transaction();
+    }, "syncMemoriesCache");
+  }
+  getMemoriesCacheState() {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT last_sync_at_ms, memory_count
+        FROM memories_cache_meta
+        WHERE singleton_key = 1
+        LIMIT 1
+      `).get();
+      if (!row || typeof row.last_sync_at_ms !== "number" || typeof row.memory_count !== "number") {
+        return null;
+      }
+      return { lastSyncAtMs: row.last_sync_at_ms, memoryCount: row.memory_count };
+    }, "getMemoriesCacheState");
+  }
+  queryRelevantMemories(keywords, limit = 10, nowMs = Date.now()) {
+    return withRetry(() => {
+      const cleanedKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 0))];
+      if (cleanedKeywords.length === 0)
+        return [];
+      const matchQuery = cleanedKeywords.map((keyword) => `"${keyword.replace(/"/g, '""')}"`).join(" OR ");
+      const rows = this.db.query(`
+        SELECT
+          cache.memory_key,
+          cache.memory_value,
+          bm25(memories_fts) AS bm25_score,
+          COALESCE((? - cache.updated_at_ms) / 3600000.0, 999999.0) AS age_hours,
+          cache.access_count
+        FROM memories_fts
+        JOIN memories_cache cache ON cache.memory_key = memories_fts.key
+        WHERE memories_fts MATCH ?
+        ORDER BY bm25_score ASC
+        LIMIT ?
+      `).all(nowMs, matchQuery, Math.max(1, limit * 3));
+      const ranked = rows.map((row) => {
+        const bm25 = Number.isFinite(row.bm25_score) ? row.bm25_score : 100;
+        const bm25Norm = 1 / (1 + Math.max(0, bm25));
+        const recency = Math.exp(-Math.max(0, row.age_hours) / 72);
+        const accessFrequency = Math.min(1, Math.log1p(Math.max(0, row.access_count)) / Math.log(10));
+        const score = 0.5 * bm25Norm + 0.3 * recency + 0.2 * accessFrequency;
+        return {
+          key: row.memory_key,
+          value: row.memory_value,
+          bm25,
+          recency,
+          accessFrequency,
+          score
+        };
+      });
+      ranked.sort((left, right) => right.score - left.score);
+      const selected = ranked.slice(0, Math.max(1, limit));
+      if (selected.length === 0)
+        return [];
+      const accessStmt = this.db.query(`
+        UPDATE memories_cache
+        SET access_count = access_count + 1,
+            last_accessed_at_ms = ?
+        WHERE memory_key = ?
+      `);
+      for (const memory of selected) {
+        accessStmt.run(nowMs, memory.key);
+      }
+      return selected;
+    }, "queryRelevantMemories");
+  }
+  invalidateMemoriesCache() {
+    withRetry(() => {
+      const transaction = this.db.transaction(() => {
+        this.db.run("DELETE FROM memories_fts");
+        this.db.run("DELETE FROM memories_cache");
+        this.db.run("DELETE FROM memories_cache_meta");
+      });
+      transaction();
+    }, "invalidateMemoriesCache");
+  }
+  hasActiveJobs(statuses = ["running", "starting"]) {
+    return this.listActiveJobs(statuses).length > 0;
+  }
+  listActiveJobs(statuses = ["running", "starting"]) {
+    return withRetry(() => {
+      if (statuses.length === 0)
+        return [];
+      const placeholders = statuses.map(() => "?").join(", ");
+      return this.db.query(`
+        SELECT job_id, specialist, status
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+        ORDER BY updated_at_ms DESC
+      `).all(...statuses);
+    }, "listActiveJobs");
+  }
+  getDatabaseSizeBytes() {
+    try {
+      return statSync(this.dbPath).size;
+    } catch {
+      return 0;
+    }
+  }
+  vacuumDatabase() {
+    return withRetry(() => {
+      const beforeBytes = this.getDatabaseSizeBytes();
+      this.db.run("VACUUM");
+      const afterBytes = this.getDatabaseSizeBytes();
+      return { beforeBytes, afterBytes };
+    }, "vacuumDatabase");
+  }
+  pruneObservabilityData(options) {
+    return withRetry(() => {
+      const nowMs = options.nowMs ?? Date.now();
+      const eventsRetentionMs = options.eventsRetentionMs ?? 30 * 24 * 60 * 60 * 1000;
+      const eventsCutoffMs = nowMs - eventsRetentionMs;
+      const terminalStatuses = ["done", "error", "stopped"];
+      const activeStatuses = ["running", "starting", "waiting"];
+      const skippedActiveChainJobs = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND stale.chain_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM specialist_jobs active
+            WHERE active.chain_id = stale.chain_id
+              AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
+      const resultCandidates = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_results results
+        LEFT JOIN specialist_jobs jobs ON jobs.job_id = results.job_id
+        WHERE results.updated_at_ms < ?
+          AND (
+            jobs.job_id IS NULL
+            OR jobs.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `).get(options.beforeMs, ...activeStatuses)?.count ?? 0;
+      const jobCandidates = this.db.query(`
+        SELECT COUNT(*) AS count
+        FROM specialist_jobs stale
+        WHERE stale.updated_at_ms < ?
+          AND stale.status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND (
+            stale.chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = stale.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `).get(options.beforeMs, ...terminalStatuses, ...activeStatuses)?.count ?? 0;
+      const extractCandidates = options.skipExtract ? 0 : this.db.query(`
+          SELECT COUNT(DISTINCT job_id) AS count
+          FROM specialist_events
+          WHERE t < ?
+        `).get(eventsCutoffMs)?.count ?? 0;
+      const eventsCandidates = this.db.query("SELECT COUNT(*) AS count FROM specialist_events WHERE t < ?").get(eventsCutoffMs)?.count ?? 0;
+      const epicCandidates = options.includeEpics ? this.db.query(`
+          SELECT COUNT(*) AS count
+          FROM epic_runs epic
+          WHERE epic.updated_at_ms < ?
+            AND epic.status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic.epic_id
+            )
+        `).get(options.beforeMs)?.count ?? 0 : 0;
+      if (!options.apply) {
+        return {
+          dryRun: true,
+          beforeMs: options.beforeMs,
+          eventsCutoffMs,
+          includeEpics: options.includeEpics,
+          deletedEvents: eventsCandidates,
+          deletedResults: resultCandidates,
+          deletedJobs: jobCandidates,
+          deletedEpicRuns: epicCandidates,
+          skippedActiveChainJobs,
+          extractedJobs: extractCandidates
+        };
+      }
+      let extractedJobs = 0;
+      if (!options.skipExtract) {
+        const jobsToExtract = this.db.query(`
+          SELECT DISTINCT stale.job_id
+          FROM specialist_events stale
+          WHERE stale.t < ?
+        `).all(eventsCutoffMs);
+        for (const row of jobsToExtract) {
+          if (!row.job_id)
+            continue;
+          const metrics = this.aggregateJobMetrics(row.job_id);
+          if (!metrics) {
+            throw new Error(`Failed to aggregate metrics for job ${row.job_id}`);
+          }
+          extractedJobs += 1;
+        }
+      }
+      const deleteResults = this.db.query(`
+        DELETE FROM specialist_results
+        WHERE updated_at_ms < ?
+          AND (
+            job_id NOT IN (SELECT job_id FROM specialist_jobs WHERE chain_id IS NOT NULL)
+            OR job_id IN (
+              SELECT jobs.job_id
+              FROM specialist_jobs jobs
+              WHERE jobs.chain_id IS NULL
+                 OR NOT EXISTS (
+                    SELECT 1
+                    FROM specialist_jobs active
+                    WHERE active.chain_id = jobs.chain_id
+                      AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+                 )
+            )
+          )
+      `);
+      const deletedResults = deleteResults.run(options.beforeMs, ...activeStatuses).changes ?? 0;
+      const deleteEvents = this.db.query("DELETE FROM specialist_events WHERE t < ?");
+      const deletedEvents = deleteEvents.run(eventsCutoffMs).changes ?? 0;
+      const deleteJobs = this.db.query(`
+        DELETE FROM specialist_jobs
+        WHERE updated_at_ms < ?
+          AND status IN (${terminalStatuses.map(() => "?").join(", ")})
+          AND (
+            chain_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM specialist_jobs active
+              WHERE active.chain_id = specialist_jobs.chain_id
+                AND active.status IN (${activeStatuses.map(() => "?").join(", ")})
+            )
+          )
+      `);
+      const deletedJobs = deleteJobs.run(options.beforeMs, ...terminalStatuses, ...activeStatuses).changes ?? 0;
+      let deletedEpicRuns = 0;
+      if (options.includeEpics) {
+        const deleteEpics = this.db.query(`
+          DELETE FROM epic_runs
+          WHERE updated_at_ms < ?
+            AND status IN ('merged', 'failed', 'abandoned')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM epic_chain_membership membership
+              WHERE membership.epic_id = epic_runs.epic_id
+            )
+        `);
+        deletedEpicRuns = deleteEpics.run(options.beforeMs).changes ?? 0;
+      }
+      return {
+        dryRun: false,
+        beforeMs: options.beforeMs,
+        eventsCutoffMs,
+        includeEpics: options.includeEpics,
+        deletedEvents,
+        deletedResults,
+        deletedJobs,
+        deletedEpicRuns,
+        skippedActiveChainJobs,
+        extractedJobs
+      };
+    }, "pruneObservabilityData");
+  }
+  scanOrphans() {
+    return withRetry(() => {
+      const findings = [];
+      const chainMembershipWithoutJobs = this.db.query(`
+        SELECT membership.chain_id, membership.epic_id
+        FROM epic_chain_membership membership
+        LEFT JOIN specialist_jobs jobs ON jobs.chain_id = membership.chain_id
+        WHERE jobs.job_id IS NULL
+      `).all();
+      for (const row of chainMembershipWithoutJobs) {
+        findings.push({
+          kind: "orphan",
+          code: "chain_membership_without_jobs",
+          message: `chain ${row.chain_id} has epic membership but no jobs`,
+          details: { chain_id: row.chain_id, epic_id: row.epic_id }
+        });
+      }
+      const epicsWithoutChains = this.db.query(`
+        SELECT epic.epic_id, epic.status
+        FROM epic_runs epic
+        LEFT JOIN epic_chain_membership membership ON membership.epic_id = epic.epic_id
+        WHERE membership.chain_id IS NULL
+      `).all();
+      for (const row of epicsWithoutChains) {
+        findings.push({
+          kind: "orphan",
+          code: "epic_without_chains",
+          message: `epic ${row.epic_id} has no chain membership`,
+          details: { epic_id: row.epic_id, status: row.status }
+        });
+      }
+      const jobEpicWithoutMembership = this.db.query(`
+        SELECT jobs.job_id, jobs.epic_id, jobs.chain_id
+        FROM specialist_jobs jobs
+        LEFT JOIN epic_chain_membership membership
+          ON membership.chain_id = jobs.chain_id
+         AND membership.epic_id = jobs.epic_id
+        WHERE jobs.epic_id IS NOT NULL
+          AND (jobs.chain_id IS NULL OR membership.chain_id IS NULL)
+      `).all();
+      for (const row of jobEpicWithoutMembership) {
+        findings.push({
+          kind: "integrity-violation",
+          code: "job_epic_without_membership",
+          message: `job ${row.job_id} references epic without chain membership link`,
+          details: { job_id: row.job_id, epic_id: row.epic_id, chain_id: row.chain_id ?? null }
+        });
+      }
+      const worktreeRows = this.db.query(`
+        SELECT DISTINCT job_id, worktree_column
+        FROM specialist_jobs
+        WHERE worktree_column IS NOT NULL AND worktree_column != ''
+      `).all();
+      for (const row of worktreeRows) {
+        if (existsSync4(row.worktree_column))
+          continue;
+        findings.push({
+          kind: "stale-pointer",
+          code: "worktree_missing_on_disk",
+          message: `job ${row.job_id} points to missing worktree path`,
+          details: { job_id: row.job_id, worktree_path: row.worktree_column }
+        });
+      }
+      return findings;
+    }, "scanOrphans");
+  }
+  close() {
+    this.db.close();
+  }
+}
+function openObservabilitySqliteClient(dbPath) {
+  if (!loadBunDatabase())
+    return null;
+  try {
+    const Ctor = loadBunDatabase();
+    const initDb = new Ctor(dbPath);
+    initDb.run(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`);
+    initSchema(initDb);
+    initDb.close();
+    return new SqliteClient(dbPath);
+  } catch {
+    return null;
+  }
+}
+function createObservabilitySqliteClient(cwd = process.cwd()) {
+  const location = resolveObservabilityDbLocation(cwd);
+  if (!existsSync4(location.dbPath))
+    return null;
+  return openObservabilitySqliteClient(location.dbPath);
+}
+function createObservabilitySqliteClientAtPath(dbPath) {
+  mkdirSync3(dirname2(dbPath), { recursive: true });
+  return openObservabilitySqliteClient(dbPath);
+}
+
+// src/specialist/memory-retrieval.ts
+var DEFAULT_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "if",
+  "in",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "we",
+  "with",
+  "you",
+  "your",
+  "replace",
+  "implement",
+  "task",
+  "run",
+  "add",
+  "new",
+  "use",
+  "using",
+  "into",
+  "when",
+  "what",
+  "not",
+  "only"
+]);
+var CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+var STATIC_WORKFLOW_RULES_BLOCK = `
+## Beads Workflow Quick Rules
+- Claim work: \`bd update <id> --claim\`
+- Append progress notes: \`bd update <id> --notes "..."\`
+- Store reusable insight: \`bd remember "insight"\`
+- Close completed issue: \`bd close <id> --reason "done"\`
+
+## Session close checklist
+1. \`git add <files>\`
+2. \`git commit -m "..."\`
+3. \`git push\`
+`.trim();
+
+// src/specialist/mandatory-rules.ts
+function readJsonFile(filePath) {
+  return JSON.parse(readFileSync4(filePath, "utf8"));
+}
+function mergeIndex(base, overlay) {
+  const dedupe = (values) => values ? Array.from(new Set(values)) : undefined;
+  return {
+    required_template_sets: dedupe([
+      ...base.required_template_sets ?? [],
+      ...overlay.required_template_sets ?? []
+    ]),
+    default_template_sets: dedupe([
+      ...base.default_template_sets ?? [],
+      ...overlay.default_template_sets ?? []
+    ])
+  };
+}
+function loadMandatoryRulesIndex(cwd) {
+  const sourcePath = resolve2(cwd, "config/mandatory-rules/index.json");
+  const canonicalCopyPath = resolve2(cwd, ".specialists/default/mandatory-rules/index.json");
+  const userOverlayPath = resolve2(cwd, ".specialists/user/mandatory-rules/index.json");
+  const packageLivePath = resolveCanonicalAssetDir("mandatory-rules");
+  const overlayPath = resolve2(cwd, ".specialists/mandatory-rules/index.json");
+  const packageLiveIndexPath = packageLivePath ? resolve2(packageLivePath, "index.json") : null;
+  const tierPaths = [userOverlayPath, sourcePath, canonicalCopyPath, overlayPath].filter((value) => Boolean(value));
+  const tiers = [];
+  for (const path of tierPaths) {
+    if (existsSync5(path))
+      tiers.push(readJsonFile(path));
+  }
+  if (tiers.length === 0 && packageLiveIndexPath && existsSync5(packageLiveIndexPath)) {
+    tiers.push(readJsonFile(packageLiveIndexPath));
+  }
+  if (tiers.length === 0) {
+    console.warn("[specialist runner] Missing mandatory-rules index (checked config/, .specialists/default/, .specialists/); skipping MANDATORY_RULES injection");
+    return null;
+  }
+  return tiers.reduce((acc, next) => mergeIndex(acc, next));
+}
+function parseQuotedScalar(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') || trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+function parseRuleEntry(lines, startIndex) {
+  const entryLine = lines[startIndex]?.trim();
+  if (!entryLine?.startsWith("- "))
+    return null;
+  const firstLine = entryLine.slice(2).trim();
+  const inlineFields = {};
+  if (firstLine.length > 0 && !firstLine.includes(":")) {
+    inlineFields.text = parseQuotedScalar(firstLine);
+  } else if (firstLine.length > 0) {
+    const [key, ...rest] = firstLine.split(":");
+    inlineFields[key.trim()] = parseQuotedScalar(rest.join(":"));
+  }
+  let nextIndex = startIndex + 1;
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex];
+    if (!line.trim()) {
+      nextIndex += 1;
+      continue;
+    }
+    if (/^\s*-\s+/.test(line))
+      break;
+    if (!/^\s+/.test(line))
+      break;
+    const trimmed = line.trim();
+    const match = trimmed.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!match) {
+      nextIndex += 1;
+      continue;
+    }
+    inlineFields[match[1]] = parseQuotedScalar(match[2]);
+    nextIndex += 1;
+  }
+  if (!inlineFields.text)
+    return null;
+  return {
+    rule: {
+      id: inlineFields.id ?? "",
+      level: inlineFields.level ?? "required",
+      text: inlineFields.text,
+      ...inlineFields.when ? { when: inlineFields.when } : {}
+    },
+    nextIndex
+  };
+}
+function parseMandatoryRulesFrontmatter(content, setId) {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!frontmatterMatch)
+    return [];
+  const lines = frontmatterMatch[1].split(`
+`);
+  const rulesHeaderIndex = lines.findIndex((line) => /^rules:\s*$/.test(line.trim()));
+  if (rulesHeaderIndex === -1)
+    return [];
+  const rules = [];
+  let index = rulesHeaderIndex + 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    if (!/^\s*-\s+/.test(line))
+      break;
+    const parsed = parseRuleEntry(lines, index);
+    if (!parsed)
+      break;
+    const ruleIndex = rules.length + 1;
+    rules.push({
+      id: parsed.rule.id || `${setId}-${ruleIndex}`,
+      level: parsed.rule.level,
+      text: parsed.rule.text,
+      ...parsed.rule.when ? { when: parsed.rule.when } : {}
+    });
+    index = parsed.nextIndex;
+  }
+  return rules;
+}
+function readMandatoryRuleSet(cwd, id) {
+  const packageCanonicalDir = resolveCanonicalAssetDir("mandatory-rules");
+  const candidates = [
+    resolve2(cwd, `.specialists/user/mandatory-rules/${id}.md`),
+    resolve2(cwd, `.specialists/mandatory-rules/${id}.md`),
+    resolve2(cwd, `.specialists/default/mandatory-rules/${id}.md`),
+    resolve2(cwd, `config/mandatory-rules/${id}.md`),
+    ...packageCanonicalDir ? [resolve2(packageCanonicalDir, `${id}.md`)] : []
+  ];
+  const filePath = candidates.find((path) => existsSync5(path));
+  if (!filePath)
+    return null;
+  const content = readFileSync4(filePath, "utf8");
+  const rules = parseMandatoryRulesFrontmatter(content, id);
+  if (rules.length > 0)
+    return { id, rules };
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+  if (!body)
+    return null;
+  return {
+    id,
+    rules: [{ id: `${id}-1`, level: "required", text: body.replace(/\s+/g, " ") }]
+  };
+}
+function formatMandatoryRulesBlock(sets, inlineRules = []) {
+  if (sets.length === 0 && inlineRules.length === 0)
+    return { block: "", sections: [] };
+  const sections = [
+    ...sets.map((set) => {
+      const rules = set.rules.map((rule) => `- [${rule.level}] ${rule.text}`).join(`
+`);
+      return { setId: set.id, block: `### ${set.id}
+${rules}` };
+    }),
+    ...inlineRules.length > 0 ? [
+      {
+        setId: "specialist-inline-rules",
+        block: `### specialist-inline-rules
+${inlineRules.map((rule, index) => `- [${rule.level}] ${rule.text}${rule.id ? ` (id: ${rule.id})` : ` (id: inline-${index + 1})`}`).join(`
+`)}`
+      }
+    ] : []
+  ];
+  return { block: `## MANDATORY_RULES
+${sections.map((section) => section.block).join(`
+
+`)}`, sections };
+}
+function collectMandatoryRuleSets(cwd, setIds) {
+  const seen = new Set;
+  const sets = [];
+  for (const id of setIds) {
+    if (seen.has(id))
+      continue;
+    seen.add(id);
+    const set = readMandatoryRuleSet(cwd, id);
+    if (!set) {
+      console.warn(`[specialist runner] Missing mandatory-rules set: ${id}`);
+      continue;
+    }
+    sets.push(set);
+  }
+  return sets;
+}
+function buildMandatoryRulesInjection(specialistConfig) {
+  const cwd = specialistConfig.cwd ?? process.cwd();
+  const index = loadMandatoryRulesIndex(cwd);
+  const mandatoryRules = specialistConfig.specialist?.mandatory_rules;
+  const setIds = [
+    ...index?.required_template_sets ?? [],
+    ...index?.default_template_sets ?? [],
+    ...mandatoryRules?.template_sets ?? []
+  ];
+  const sets = collectMandatoryRuleSets(cwd, setIds);
+  const inlineRules = mandatoryRules?.inline_rules ?? [];
+  const globalsDisabled = mandatoryRules?.disable_default_globals ?? false;
+  const globals = globalsDisabled ? [] : [{
+    id: "workflow-quick-rules",
+    rules: [{ id: "workflow-quick-rules-1", level: "required", text: STATIC_WORKFLOW_RULES_BLOCK.trim().replace(/^##\s+Beads Workflow Quick Rules\n/, "") }]
+  }];
+  const formatted = formatMandatoryRulesBlock([...globals, ...sets], inlineRules);
+  return {
+    block: formatted.block,
+    sections: formatted.sections,
+    setsLoaded: [...globals.map((set) => set.id), ...sets.map((set) => set.id)],
+    ruleCount: [...globals, ...sets].reduce((count, set) => count + set.rules.length, 0) + inlineRules.length,
+    inlineRulesCount: inlineRules.length,
+    globalsDisabled
+  };
+}
+
+// src/specialist/model-chain.ts
+function resolveModelChain(execution) {
+  const primary = normalizeModel(execution.model);
+  const fallbacks = resolveFallbackModels(execution);
+  return dedupeModels([primary, ...fallbacks].filter((model) => model !== null));
+}
+function resolveFallbackModels(execution) {
+  if (execution.fallback_models && execution.fallback_models.length > 0) {
+    if (normalizeModel(execution.fallback_model ?? null)) {
+      console.debug(`[model-chain] plural fallback_models wins; ignoring fallback_model=${execution.fallback_model}`);
+    }
+    return execution.fallback_models.map(normalizeModel).filter((model) => model !== null);
+  }
+  const fallback = normalizeModel(execution.fallback_model ?? null);
+  return fallback ? [fallback] : [];
+}
+function normalizeModel(model) {
+  const trimmed = model?.trim();
+  return trimmed ? trimmed : null;
+}
+function dedupeModels(models) {
+  return [...new Set(models)];
+}
+
+// src/specialist/templateEngine.ts
+function renderTemplate(template, variables) {
+  return template.replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, key) => {
+    return variables[key] !== undefined ? variables[key] : match;
+  });
+}
+
+// src/utils/circuitBreaker.ts
+class CircuitBreaker {
+  states = new Map;
+  threshold;
+  cooldownMs;
+  constructor(options = {}) {
+    this.threshold = options.failureThreshold ?? 3;
+    this.cooldownMs = options.cooldownMs ?? 60000;
+  }
+  getState(backend) {
+    const entry = this.states.get(backend);
+    if (!entry)
+      return "CLOSED";
+    if (entry.state === "OPEN" && Date.now() - entry.openedAt > this.cooldownMs) {
+      entry.state = "HALF_OPEN";
+    }
+    return entry.state;
+  }
+  isAvailable(backend) {
+    return this.getState(backend) !== "OPEN";
+  }
+  recordSuccess(backend) {
+    this.states.set(backend, { state: "CLOSED", failures: 0 });
+  }
+  recordFailure(backend) {
+    const entry = this.states.get(backend) ?? { state: "CLOSED", failures: 0 };
+    entry.failures++;
+    if (entry.failures >= this.threshold) {
+      entry.state = "OPEN";
+      entry.openedAt = Date.now();
+    }
+    this.states.set(backend, entry);
+  }
+}
+
+// src/specialist/runner.ts
+import { execSync, spawnSync as spawnSync2 } from "node:child_process";
+import { existsSync as existsSync6, readFileSync as readFileSync5 } from "node:fs";
+import { basename, resolve as resolve3 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+function runScript(command, cwd) {
+  const run = (command ?? "").trim();
+  if (!run) {
+    return { name: "unknown", output: "Missing script command (expected `run` or legacy `path`).", exitCode: 1 };
+  }
+  const scriptName = basename(run.split(" ")[0]);
+  try {
+    const output = execSync(run, { encoding: "utf8", timeout: 30000, cwd });
+    return { name: scriptName, output, exitCode: 0 };
+  } catch (e) {
+    return { name: scriptName, output: e.stdout ?? e.message ?? "", exitCode: e.status ?? 1 };
+  }
+}
+function formatScriptOutput(results) {
+  const withOutput = results.filter((r) => r.output.trim());
+  if (withOutput.length === 0)
+    return "";
+  const blocks = withOutput.map((r) => {
+    const status = r.exitCode === 0 ? "" : ` exit_code="${r.exitCode}"`;
+    return `<script name="${r.name}"${status}>
+${r.output.trim()}
+</script>`;
+  }).join(`
+`);
+  return `<pre_flight_context>
+${blocks}
+</pre_flight_context>`;
+}
+function resolvePath(p) {
+  return p.startsWith("~/") ? resolve3(homedir2(), p.slice(2)) : resolve3(p);
+}
+function commandExists(cmd) {
+  const result = spawnSync2("which", [cmd], { stdio: "ignore" });
+  return result.status === 0;
+}
+var SHELL_BUILTINS = new Set([
+  "if",
+  "then",
+  "else",
+  "elif",
+  "fi",
+  "for",
+  "while",
+  "until",
+  "do",
+  "done",
+  "case",
+  "esac",
+  "select",
+  "in",
+  "function",
+  "return",
+  "break",
+  "continue",
+  ":",
+  ".",
+  "true",
+  "false",
+  "[",
+  "[[",
+  "{",
+  "("
+]);
+function validateShebang(filePath, errors) {
+  try {
+    const head = readFileSync5(filePath, "utf-8").slice(0, 120);
+    if (!head.startsWith("#!"))
+      return;
+    const shebang = head.split(`
+`)[0].toLowerCase();
+    const typos = [
+      [/pytho[^n]|pyton|pyhon/, "python"],
+      [/nod[^e]b/, "node"],
+      [/bsh$|bas$/, "bash"],
+      [/rub[^y]/, "ruby"]
+    ];
+    for (const [pattern, correct] of typos) {
+      if (pattern.test(shebang)) {
+        errors.push(`  ✗ ${filePath}: shebang looks wrong — did you mean '${correct}'? (got: ${shebang})`);
+      }
+    }
+  } catch {}
+}
+var PERMISSION_GATED_TOOLS = {
+  bash: ["LOW", "MEDIUM", "HIGH"],
+  edit: ["MEDIUM", "HIGH"],
+  write: ["HIGH"]
+};
+function isToolAvailable(tool, permissionLevel) {
+  const normalized = permissionLevel.toUpperCase();
+  const gatedLevels = PERMISSION_GATED_TOOLS[tool.toLowerCase()];
+  if (!gatedLevels)
+    return true;
+  return gatedLevels.includes(normalized);
+}
+function validateBeforeRun(spec, permissionLevel) {
+  const errors = [];
+  const warnings = [];
+  for (const p of spec.specialist.skills?.paths ?? []) {
+    const abs = resolvePath(p);
+    if (!existsSync6(abs))
+      warnings.push(`  ⚠ skills.paths: file not found: ${p}`);
+  }
+  for (const script of spec.specialist.skills?.scripts ?? []) {
+    const run = script.run ?? script.path;
+    if (!run)
+      continue;
+    const isFilePath = run.startsWith("./") || run.startsWith("../") || run.startsWith("/") || run.startsWith("~/");
+    if (isFilePath) {
+      const abs = resolvePath(run);
+      if (!existsSync6(abs)) {
+        errors.push(`  ✗ skills.scripts: script not found: ${run}`);
+      } else {
+        validateShebang(abs, errors);
+      }
+    } else {
+      const binary = run.split(" ")[0];
+      if (binary && !SHELL_BUILTINS.has(binary) && !commandExists(binary)) {
+        errors.push(`  ✗ skills.scripts: command not found on PATH: ${binary}`);
+      }
+    }
+  }
+  for (const cmd of spec.specialist.capabilities?.external_commands ?? []) {
+    if (!commandExists(cmd)) {
+      errors.push(`  ✗ capabilities.external_commands: not found on PATH: ${cmd}`);
+    }
+  }
+  for (const tool of spec.specialist.capabilities?.required_tools ?? []) {
+    if (!isToolAvailable(tool, permissionLevel)) {
+      errors.push(`  ✗ capabilities.required_tools: tool "${tool}" requires higher permission than "${permissionLevel}"`);
+    }
+  }
+  if (warnings.length > 0) {
+    process.stderr.write(`[specialists] pre-run warnings:
+${warnings.join(`
+`)}
+`);
+  }
+  if (errors.length > 0) {
+    throw new Error(`Specialist pre-run validation failed:
+${errors.join(`
+`)}`);
+  }
+}
+
+// src/specialist/timeline-events.ts
+var TIMELINE_EVENT_TYPES = {
+  RUN_START: "run_start",
+  META: "meta",
+  PAYLOAD_BREAKDOWN: "payload_breakdown",
+  THINKING: "thinking",
+  TOOL: "tool",
+  TEXT: "text",
+  MESSAGE: "message",
+  TURN: "turn",
+  STATUS_CHANGE: "status_change",
+  RUN_COMPLETE: "run_complete",
+  STALE_WARNING: "stale_warning",
+  TOKEN_USAGE: "token_usage",
+  FINISH_REASON: "finish_reason",
+  TURN_SUMMARY: "turn_summary",
+  COMPACTION: "compaction",
+  RETRY: "retry",
+  MODEL_CHANGE: "model_change",
+  EXTENSION_ERROR: "extension_error",
+  ERROR: "error",
+  AUTO_COMMIT_SUCCESS: "auto_commit_success",
+  AUTO_COMMIT_SKIPPED: "auto_commit_skipped",
+  AUTO_COMMIT_FAILED: "auto_commit_failed",
+  COMMAND_COMPLETED: "command_completed",
+  COMMAND_FAILED: "command_failed",
+  REVIEW_VERDICT_PASS: "review_verdict_pass",
+  REVIEW_VERDICT_PARTIAL: "review_verdict_partial",
+  REVIEW_VERDICT_FAIL: "review_verdict_fail",
+  REVIEW_VERDICT_WAIVED: "review_verdict_waived",
+  CHAIN_READY_FOR_REVIEW: "chain_ready_for_review",
+  CHAIN_FINALIZED: "chain_finalized",
+  WORKTREE_MERGED: "worktree_merged",
+  CONTROL_SIGNAL: "control_signal",
+  DONE: "done",
+  AGENT_END: "agent_end"
+};
+var TOOL_RESULT_SUMMARY_LIMIT = 500;
+function summarizeToolResult(resultContent) {
+  if (!resultContent)
+    return;
+  const compact = resultContent.trim();
+  if (!compact)
+    return;
+  if (compact.length <= TOOL_RESULT_SUMMARY_LIMIT)
+    return compact;
+  return `${compact.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}…`;
+}
+function mapCallbackEventToTimelineEvent(callbackEvent, context) {
+  const t = Date.now();
+  switch (callbackEvent) {
+    case "payload_breakdown":
+      return { t, type: "payload_breakdown", payload_breakdown: context.payloadBreakdown ?? { components: [], totals: { tokens: 0, bytes: 0 } } };
+    case "thinking":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.THINKING,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "tool_execution_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "start",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        args: context.args,
+        started_at: new Date(t).toISOString()
+      };
+    case "tool_execution_update":
+    case "tool_execution":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "update",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true }
+      };
+    case "tool_execution_end": {
+      const resultSummary = summarizeToolResult(context.resultContent);
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TOOL,
+        tool: context.tool ?? "unknown",
+        phase: "end",
+        tool_call_id: context.toolCallId,
+        ...context.toolCallId ? {} : { uncorrelated: true },
+        is_error: context.isError,
+        ...resultSummary ? { result_summary: resultSummary } : {},
+        ...context.resultRaw ? { result_raw: context.resultRaw } : {}
+      };
+    }
+    case "message_start_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "assistant" };
+    case "message_end_assistant":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "assistant" };
+    case "message_start_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "start", role: "toolResult" };
+    case "message_end_tool_result":
+      return { t, type: TIMELINE_EVENT_TYPES.MESSAGE, phase: "end", role: "toolResult" };
+    case "turn_start":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "start" };
+    case "turn_end":
+      return { t, type: TIMELINE_EVENT_TYPES.TURN, phase: "end" };
+    case "auto_compaction_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "start",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_compaction_end":
+    case "auto_compaction":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.COMPACTION,
+        phase: "end",
+        ...context.compaction?.tokensBefore !== undefined ? { tokens_before: context.compaction.tokensBefore } : {},
+        ...context.compaction?.summary ? { summary: context.compaction.summary } : {},
+        ...context.compaction?.firstKeptEntryId ? { first_kept_entry_id: context.compaction.firstKeptEntryId } : {}
+      };
+    case "auto_retry_start":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "start",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "auto_retry_end":
+    case "auto_retry":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.RETRY,
+        phase: "end",
+        ...context.retry?.attempt !== undefined ? { attempt: context.retry.attempt } : {},
+        ...context.retry?.maxAttempts !== undefined ? { max_attempts: context.retry.maxAttempts } : {},
+        ...context.retry?.delayMs !== undefined ? { delay_ms: context.retry.delayMs } : {},
+        ...context.retry?.errorMessage ? { error_message: context.retry.errorMessage } : {}
+      };
+    case "set_model":
+    case "cycle_model":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.MODEL_CHANGE,
+        action: callbackEvent,
+        ...context.modelChange?.model ? { model: context.modelChange.model } : {},
+        ...context.modelChange?.previousModel ? { previous_model: context.modelChange.previousModel } : {}
+      };
+    case "extension_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.EXTENSION_ERROR,
+        ...context.extensionError?.extension ? { extension: context.extensionError.extension } : {},
+        ...context.extensionError?.errorMessage ? { error_message: context.extensionError.errorMessage } : {}
+      };
+    case "api_error":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.ERROR,
+        source: context.apiError?.source ?? "rpc",
+        error_message: context.apiError?.errorMessage ?? "Unknown API error"
+      };
+    case "memory_injection":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: "memory_injection",
+        backend: "injected",
+        ...context.memoryInjection ? { memory_injection: context.memoryInjection } : {}
+      };
+    case "meta": {
+      const payload = context.metaPayload;
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.META,
+        model: payload?.model ?? "meta",
+        backend: payload?.backend ?? "injected",
+        ...payload?.source ? { source: payload.source } : {},
+        ...payload?.data ? { data: payload.data } : {}
+      };
+    }
+    case "text":
+      return {
+        t,
+        type: TIMELINE_EVENT_TYPES.TEXT,
+        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
+      };
+    case "agent_end":
+    case "message_done":
+    case "done":
+      return null;
+    default:
+      return null;
+  }
+}
+function createRunStartEvent(specialist, beadId, startupSnapshot) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_START,
+    specialist,
+    bead_id: beadId,
+    ...startupSnapshot ? { startup_snapshot: startupSnapshot } : {}
+  };
+}
+function createMetaEvent(model, backend) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.META,
+    model,
+    backend
+  };
+}
+function createTokenUsageEvent(token_usage, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TOKEN_USAGE,
+    token_usage,
+    source
+  };
+}
+function createFinishReasonEvent(finish_reason, source) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.FINISH_REASON,
+    finish_reason,
+    source
+  };
+}
+function createTurnSummaryEvent(turn_index, token_usage, finish_reason, textContent, contextPct, contextHealth) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.TURN_SUMMARY,
+    turn_index,
+    ...token_usage ? { token_usage } : {},
+    ...finish_reason ? { finish_reason } : {},
+    ...textContent ? { text_content: textContent } : {},
+    ...contextPct !== undefined ? { context_pct: contextPct } : {},
+    ...contextHealth ? { context_health: contextHealth } : {}
+  };
+}
+function createRunCompleteEvent(status, elapsed_s, options) {
+  return {
+    t: Date.now(),
+    type: TIMELINE_EVENT_TYPES.RUN_COMPLETE,
+    status,
+    elapsed_s,
+    ...options
+  };
+}
+
+// src/specialist/script-runner.ts
+class CompatGuardError extends Error {
+  field;
+  constructor(field, message) {
+    super(message);
+    this.field = field;
+    this.name = "CompatGuardError";
+  }
+}
+function normalizePath(path, baseDir) {
+  if (isAbsolute2(path))
+    return path;
+  return resolve4(baseDir ?? process.cwd(), path);
+}
+function isPathWithinRoot(candidatePath, rootPath) {
+  const candidate = resolve4(candidatePath);
+  const root = resolve4(rootPath);
+  const rel = relative(root, candidate);
+  return rel === "" || rel.length > 0 && !rel.startsWith("..") && !isAbsolute2(rel);
+}
+function assertSkillPathWithinRoots(field, path, roots, baseDir) {
+  const candidate = normalizePath(path, baseDir);
+  const allowed = roots.some((root) => isPathWithinRoot(candidate, root));
+  if (!allowed) {
+    throw new CompatGuardError(field, `skill path '${path}' not under any --allow-skills-roots entry`);
+  }
+}
+function hasUnsubstitutedVariables(template, variables) {
+  const matches = template.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g) ?? [];
+  for (const match of matches) {
+    const key = match.slice(1);
+    if (variables[key] === undefined)
+      return key;
+  }
+  return null;
+}
+function compatGuard(spec, trust) {
+  const execution = spec.specialist.execution;
+  if (execution.interactive)
+    throw new CompatGuardError("execution.interactive", "interactive specialists are not allowed");
+  if (execution.requires_worktree)
+    throw new CompatGuardError("execution.requires_worktree", "worktree specialists are not allowed");
+  if (execution.permission_required !== "READ_ONLY" && !trust?.allowWriteCapable) {
+    throw new CompatGuardError("execution.permission_required", "permission_required must be READ_ONLY unless trusted local script mode is enabled");
+  }
+  const hasScripts = (spec.specialist.skills?.scripts?.length ?? 0) > 0;
+  if (hasScripts && !trust?.allowLocalScripts) {
+    throw new CompatGuardError("skills.scripts", "local scripts are not supported in this script surface");
+  }
+  const hasPaths = (spec.specialist.skills?.paths?.length ?? 0) > 0;
+  const hasSkillInherit = Boolean(spec.specialist.prompt.skill_inherit);
+  if (hasPaths && !trust?.allowSkills) {
+    throw new CompatGuardError("skills.paths", "skills not allowed (enable with --allow-skills)");
+  }
+  if (hasSkillInherit && !trust?.allowSkills) {
+    throw new CompatGuardError("prompt.skill_inherit", "skills not allowed (enable with --allow-skills)");
+  }
+  if (trust?.allowSkills && trust.allowSkillsRoots && trust.allowSkillsRoots.length > 0) {
+    const paths = spec.specialist.skills?.paths ?? [];
+    for (const path of paths)
+      assertSkillPathWithinRoots("skills.paths", path, trust.allowSkillsRoots, trust.baseDir);
+    if (typeof spec.specialist.prompt.skill_inherit === "string") {
+      assertSkillPathWithinRoots("prompt.skill_inherit", spec.specialist.prompt.skill_inherit, trust.allowSkillsRoots, trust.baseDir);
+    }
+  }
+}
+function collectSkillPathEntries(spec, baseDir) {
+  return [
+    ...(spec.specialist.skills?.paths ?? []).map((path) => ({ path: normalizePath(path, baseDir), source: "skills.paths" })),
+    ...typeof spec.specialist.prompt.skill_inherit === "string" ? [{ path: normalizePath(spec.specialist.prompt.skill_inherit, baseDir), source: "prompt.skill_inherit" }] : []
+  ];
+}
+function collectSkillPaths(spec, baseDir) {
+  return collectSkillPathEntries(spec, baseDir).map((entry) => entry.path);
+}
+function computeSkillSources(spec, baseDir) {
+  const entries = collectSkillPathEntries(spec, baseDir);
+  const sources = [];
+  for (const { path, source } of entries) {
+    try {
+      const content = readFileSync6(path);
+      const sha256 = createHash2("sha256").update(content).digest("hex");
+      sources.push({ path, sha256, source });
+    } catch {
+      sources.push({ path, sha256: "unreadable", source });
+    }
+  }
+  return sources;
+}
+function renderTaskTemplate(template, variables) {
+  const missing = hasUnsubstitutedVariables(template, variables);
+  if (missing)
+    throw new Error(`Missing template variable: ${missing}`);
+  return renderTemplate(template, variables);
+}
+function truncateForPrompt(value, limitBytes) {
+  if (Buffer.byteLength(value, "utf8") <= limitBytes)
+    return value;
+  return `${value.slice(0, limitBytes)}
+... truncated ...`;
+}
+function buildJsonOutputContract(spec) {
+  if (spec.specialist.execution.response_format !== "json")
+    return;
+  const schema = spec.specialist.prompt.output_schema;
+  const required = Array.isArray(schema?.required) ? schema.required.filter((value) => typeof value === "string") : [];
+  const lines = [
+    "Output contract:",
+    "- Return only valid JSON. Do not include Markdown fences, prose, or commentary."
+  ];
+  if (required.length > 0)
+    lines.push(`- Include these required top-level keys: ${required.join(", ")}.`);
+  if (schema)
+    lines.push(`- JSON schema: ${truncateForPrompt(JSON.stringify(schema), 4096)}`);
+  return lines.join(`
+`);
+}
+function applyOutputContract(prompt, spec) {
+  const contract = buildJsonOutputContract(spec);
+  return contract ? `${prompt}
+
+${contract}` : prompt;
+}
+function mapErrorType(message) {
+  const normalizedMessage = message.toLowerCase();
+  if (message.includes("Specialist not found"))
+    return "specialist_not_found";
+  if (normalizedMessage.includes("interactive") || normalizedMessage.includes("worktree") || normalizedMessage.includes("permission_required") || normalizedMessage.includes("scripts not allowed"))
+    return "specialist_load_error";
+  if (message.includes("Missing template variable"))
+    return "template_variable_missing";
+  if (normalizedMessage.includes("prompt too large"))
+    return "prompt_too_large";
+  if (normalizedMessage.includes("output too large"))
+    return "output_too_large";
+  if (isAuthFailureMessage(normalizedMessage))
+    return "auth";
+  if (normalizedMessage.includes("quota") || normalizedMessage.includes("rate limit") || normalizedMessage.includes("out of extra usage") || normalizedMessage.includes("insufficient_quota") || normalizedMessage.includes("429"))
+    return "quota";
+  if (normalizedMessage.includes("timeout"))
+    return "timeout";
+  if (normalizedMessage.includes("network") || message.includes("ECONN"))
+    return "network";
+  if (message.includes("invalid JSON") || message.includes("Unexpected token"))
+    return "invalid_json";
+  return "internal";
+}
+function textFromMessage(message) {
+  if (!message || message.role !== "assistant")
+    return "";
+  if (!Array.isArray(message.content))
+    return "";
+  return message.content.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("");
+}
+function extractAssistantTextFromEvent(event) {
+  if (event.type === "message_end") {
+    const text = textFromMessage(event.message);
+    if (text)
+      return text;
+  }
+  if (event.type === "agent_end" && Array.isArray(event.messages)) {
+    for (let j = event.messages.length - 1;j >= 0; j--) {
+      const text = textFromMessage(event.messages[j]);
+      if (text)
+        return text;
+    }
+  }
+  if (event.type === "assistant" && typeof event.data?.text === "string")
+    return event.data.text;
+  const legacyContent = event.data?.content?.[0]?.text;
+  if (typeof legacyContent === "string")
+    return legacyContent;
+  return;
+}
+function extractJsonPayload(text) {
+  const trimmed = text.trim();
+  const wholeFenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (wholeFenced)
+    return wholeFenced[1].trim();
+  const fencedBlocks = [...trimmed.matchAll(/```(?:json|JSON)\s*\n([\s\S]*?)\n```/g)];
+  if (fencedBlocks.length === 1)
+    return fencedBlocks[0][1].trim();
+  return trimmed;
+}
+function appendScriptEvent(client, options) {
+  if (!client || !options.event)
+    return;
+  try {
+    client.appendEvent(options.traceId, options.specialist, undefined, options.event);
+  } catch (error) {
+    options.onAuditFailure?.(error);
+  }
+}
+function createScriptTimelineAppender(client, options) {
+  if (!client)
+    return;
+  return (event) => appendScriptEvent(client, { ...options, event });
+}
+function deriveBackendFromModel(model) {
+  return model.includes("/") ? model.split("/")[0] : undefined;
+}
+function buildScriptStatus(options) {
+  const backend = deriveBackendFromModel(options.model);
+  return {
+    id: options.traceId,
+    specialist: options.specialist,
+    status: options.status,
+    model: options.model,
+    ...backend ? { backend } : {},
+    ...options.outputType ? { output_type: options.outputType } : {},
+    started_at_ms: options.startedAtMs,
+    elapsed_s: Math.max(0, (Date.now() - options.startedAtMs) / 1000),
+    last_event_at_ms: Date.now(),
+    trace_id: options.traceId,
+    ...options.error ? { error: options.error } : {},
+    startup_context: {
+      job_id: options.traceId,
+      specialist_name: options.specialist,
+      variables_keys: options.variablesKeys ?? [],
+      ...options.skillPaths ? { skills: { count: options.skillPaths.length, activated: options.skillPaths } } : {}
+    },
+    surface: "script_specialist",
+    ...options.skillSources && options.skillSources.length > 0 ? { skill_sources: options.skillSources } : {},
+    ...options.errorType ? { error_type: options.errorType } : {},
+    ...options.parsedJson !== undefined ? { parsed_json: options.parsedJson } : {},
+    ...options.outputSizeBytes !== undefined ? { output_size_bytes: options.outputSizeBytes } : {}
+  };
+}
+function persistScriptStart(client, options) {
+  if (!client)
+    return;
+  try {
+    const status = buildScriptStatus({
+      traceId: options.traceId,
+      specialist: options.specialist,
+      model: options.model,
+      startedAtMs: options.startedAtMs,
+      status: "running",
+      outputType: options.outputType,
+      skillSources: options.skillSources,
+      variablesKeys: options.variablesKeys,
+      skillPaths: options.skillPaths
+    });
+    client.upsertStatusWithEvent(status, createRunStartEvent(options.specialist, undefined, status.startup_context));
+    const backend = deriveBackendFromModel(options.model);
+    if (backend)
+      client.appendEvent(options.traceId, options.specialist, undefined, createMetaEvent(options.model, backend));
+  } catch (error) {
+    options.onAuditFailure?.(error);
+  }
+}
+function persistScriptTerminal(client, options) {
+  if (!client)
+    return;
+  try {
+    const status = buildScriptStatus({
+      traceId: options.traceId,
+      specialist: options.specialist,
+      model: options.model,
+      startedAtMs: options.startedAtMs,
+      status: options.finalStatus,
+      outputType: options.outputType,
+      error: options.error,
+      errorType: options.errorType,
+      parsedJson: options.parsedJson,
+      outputSizeBytes: Buffer.byteLength(options.output, "utf8"),
+      skillSources: options.skillSources,
+      variablesKeys: options.variablesKeys,
+      skillPaths: options.skillPaths
+    });
+    const backend = deriveBackendFromModel(options.model);
+    const runComplete = createRunCompleteEvent(options.finalStatus === "done" ? "COMPLETE" : "ERROR", Math.max(0, Math.round((Date.now() - options.startedAtMs) / 1000)), {
+      model: options.model,
+      ...backend ? { backend } : {},
+      ...options.error ? { error: options.error } : {},
+      output: options.output
+    });
+    client.upsertStatusWithEventAndResult(status, runComplete, options.output);
+  } catch (error) {
+    options.onAuditFailure?.(error);
+  }
+}
+var DEFAULT_PENDING_LINE_LIMIT_BYTES = 16 * 1024 * 1024;
+var DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES = 4 * 1024 * 1024;
+var DEFAULT_STDERR_LIMIT_BYTES = 1 * 1024 * 1024;
+var DEFAULT_PROMPT_LIMIT_BYTES = 4 * 1024 * 1024;
+function resolvePromptLimitBytes(spec) {
+  return spec.specialist.execution.prompt_limit_bytes ?? resolveEnvPromptLimitBytes() ?? DEFAULT_PROMPT_LIMIT_BYTES;
+}
+function resolveEnvPromptLimitBytes() {
+  const raw = process.env.SPECIALISTS_SCRIPT_PROMPT_LIMIT_BYTES;
+  if (raw === undefined)
+    return;
+  const envLimit = Number(raw);
+  if (!Number.isFinite(envLimit) || envLimit <= 0)
+    return;
+  return Math.floor(envLimit);
+}
+function resolveAssistantTextLimitBytes(spec) {
+  return spec.specialist.execution.stdout_limit_bytes ?? resolveEnvAssistantTextLimitBytes() ?? DEFAULT_ASSISTANT_TEXT_LIMIT_BYTES;
+}
+function resolveEnvAssistantTextLimitBytes() {
+  const raw = process.env.SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES;
+  if (raw === undefined)
+    return;
+  const envLimit = Number(raw);
+  if (!Number.isFinite(envLimit) || envLimit <= 0)
+    return;
+  process.stderr.write(`warning: SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES is deprecated; applies to assistant text cap
+`);
+  return Math.floor(envLimit);
+}
+function openObservabilityClient(options) {
+  if (options.observabilityDbPath)
+    return createObservabilitySqliteClientAtPath(options.observabilityDbPath);
+  const projectDir = options.projectDir ?? process.cwd();
+  try {
+    ensureObservabilityDbFile(resolveObservabilityDbLocation(projectDir));
+  } catch {
+    return null;
+  }
+  return createObservabilitySqliteClient(projectDir);
+}
+function resolveScriptSpecialistName(name) {
+  if (name === "changelog-keeper")
+    return "changelog-drafter";
+  return name;
+}
+var TEMPLATE_FIELD_MISUSE_MAX_LEN = 30;
+var TEMPLATE_FIELD_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+function collectRequiredOutputKeys(spec) {
+  const keys = new Set;
+  const declared = spec.specialist.execution.expected_output_keys;
+  if (Array.isArray(declared)) {
+    for (const value of declared) {
+      if (typeof value === "string" && value.length > 0)
+        keys.add(value);
+    }
+  }
+  if (spec.specialist.execution.response_format === "json") {
+    const required = spec.specialist.prompt.output_schema?.required;
+    if (Array.isArray(required)) {
+      for (const value of required) {
+        if (typeof value === "string" && value.length > 0)
+          keys.add(value);
+      }
+    }
+  }
+  return Array.from(keys);
+}
+function outputSatisfiesJsonContract(text, requiredKeys) {
+  try {
+    const parsed = JSON.parse(extractJsonPayload(text));
+    return requiredKeys.every((key) => parsed !== null && typeof parsed === "object" && (key in parsed));
+  } catch {
+    return false;
+  }
+}
+function containsToolCallMarkup(text) {
+  return /<\|tool_calls_section_(?:begin|end)\|>|<\|tool_call_(?:begin|argument_begin|end)\|>/.test(text);
+}
+function preferAssistantText(options) {
+  const rpcText = options.rpcText.trim();
+  const streamedText = options.streamedText.trim();
+  if (!streamedText)
+    return rpcText;
+  if (!rpcText)
+    return streamedText;
+  const rpcHasMarkup = containsToolCallMarkup(rpcText);
+  const streamedHasMarkup = containsToolCallMarkup(streamedText);
+  if (rpcHasMarkup && !streamedHasMarkup)
+    return streamedText;
+  if (options.requiredJsonKeys.length > 0) {
+    const rpcValid = outputSatisfiesJsonContract(rpcText, options.requiredJsonKeys);
+    const streamedValid = outputSatisfiesJsonContract(streamedText, options.requiredJsonKeys);
+    if (!rpcValid && streamedValid)
+      return streamedText;
+  }
+  return rpcText;
+}
+function detectTemplateFieldMisuse(template, specPrompt) {
+  if (!specPrompt)
+    return null;
+  if (template.length > TEMPLATE_FIELD_MISUSE_MAX_LEN)
+    return null;
+  if (!TEMPLATE_FIELD_IDENTIFIER_RE.test(template))
+    return null;
+  if (!Object.prototype.hasOwnProperty.call(specPrompt, template))
+    return null;
+  return template;
+}
+function getLocalScripts(spec) {
+  return spec.specialist.skills?.scripts ?? [];
+}
+function getLocalScriptCommand(script) {
+  return script.run || script.path;
+}
+function buildValidationSpec(spec, scripts) {
+  return {
+    specialist: {
+      skills: {
+        paths: spec.specialist.skills?.paths,
+        scripts
+      },
+      capabilities: spec.specialist.capabilities
+    }
+  };
+}
+function resolveRequestedTemplate(input, spec) {
+  if (input.template !== undefined && input.template_field !== undefined) {
+    throw new Error("template and template_field are mutually exclusive");
+  }
+  if (input.template_field !== undefined) {
+    const candidate = spec.specialist.prompt[input.template_field];
+    if (typeof candidate !== "string" || candidate.length === 0) {
+      throw new Error(`template field not found or not a string: spec.prompt.${input.template_field}`);
+    }
+    return candidate;
+  }
+  const template = input.template ?? spec.specialist.prompt.task_template;
+  if (input.template !== undefined) {
+    const misusedField = detectTemplateFieldMisuse(input.template, spec.specialist.prompt);
+    if (misusedField !== null) {
+      throw new Error(`template field misuse: input.template equals spec.prompt.${misusedField} key name (${input.template.length} chars). ` + `The 'template' input field expects the literal template body, not a spec key. ` + `To use a named template field, pass template_field=${misusedField}; ` + `to use the spec's default, omit both fields; to use a non-default template body, pass its full text inline.`);
+    }
+  }
+  return template;
+}
+async function runScriptSpecialist(input, options) {
+  const traceId = randomUUID();
+  const startedAt = Date.now();
+  try {
+    const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
+    const spec = await options.loader.get(resolvedSpecialist);
+    const baseDir = options.projectDir ?? options.trust?.baseDir ?? process.cwd();
+    const trust = { ...options.trust, baseDir };
+    compatGuard(spec, trust);
+    const skillPaths = trust.allowSkills ? collectSkillPaths(spec, baseDir) : [];
+    const skillSources = trust.allowSkills ? computeSkillSources(spec, baseDir) : undefined;
+    const localScripts = getLocalScripts(spec);
+    validateBeforeRun(buildValidationSpec(spec, localScripts), spec.specialist.execution.permission_required);
+    const executableScripts = trust.allowLocalScripts ? localScripts : [];
+    const preScripts = executableScripts.filter((script) => script.phase === "pre");
+    const postScripts = executableScripts.filter((script) => script.phase === "post");
+    const runPostScripts = () => {
+      for (const script of postScripts)
+        runScript(getLocalScriptCommand(script), baseDir);
+    };
+    const preScriptOutput = formatScriptOutput(preScripts.map((script) => runScript(getLocalScriptCommand(script), baseDir)).filter((_, index) => preScripts[index].inject_output));
+    let template;
+    try {
+      template = resolveRequestedTemplate(input, spec);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const modelCandidates2 = collectModelCandidates(input, spec, options);
+      return {
+        success: false,
+        error: message,
+        error_type: message.startsWith("template field misuse:") ? "template_field_misuse" : "specialist_load_error",
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input.requested_specialist ?? input.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: modelCandidates2[0],
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId
+        }
+      };
+    }
+    const variables = {
+      cwd: baseDir,
+      bead_id: "",
+      pre_script_output: preScriptOutput,
+      ...input.variables ?? {}
+    };
+    let prompt = applyOutputContract(renderTaskTemplate(template, variables), spec);
+    if (!spec.specialist.execution.bare) {
+      try {
+        const mandatoryRulesBlock = buildMandatoryRulesInjection({ cwd: baseDir, specialist: spec.specialist }).block;
+        if (mandatoryRulesBlock.trim())
+          prompt = `${prompt}
+
+${mandatoryRulesBlock}`;
+      } catch (error) {
+        console.warn(`[script-runner] Skipping MANDATORY_RULES injection: ${String(error)}`);
+      }
+    }
+    const modelCandidates = collectModelCandidates(input, spec, options);
+    const promptLimitBytes = resolvePromptLimitBytes(spec);
+    const promptBytes = Buffer.byteLength(prompt, "utf8");
+    if (promptBytes > promptLimitBytes) {
+      return {
+        success: false,
+        error: `prompt too large: ${promptBytes} bytes exceeds limit ${promptLimitBytes} bytes`,
+        error_type: "prompt_too_large",
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input.requested_specialist ?? input.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: modelCandidates[0],
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId
+        }
+      };
+    }
+    if (process.env.SPECIALISTS_SCRIPT_STUB_OUTPUT) {
+      return {
+        success: true,
+        output: prompt,
+        meta: {
+          specialist: resolvedSpecialist,
+          requested_specialist: input.requested_specialist ?? input.specialist,
+          resolved_specialist: resolvedSpecialist,
+          model: "stub",
+          duration_ms: Date.now() - startedAt,
+          trace_id: traceId
+        }
+      };
+    }
+    const timeoutMs = input.timeout_ms ?? spec.specialist.execution.timeout_ms ?? 120000;
+    const assistantTextLimitBytes = resolveAssistantTextLimitBytes(spec);
+    const expectedKeys = collectRequiredOutputKeys(spec);
+    const shouldParseJson = spec.specialist.execution.response_format === "json" || expectedKeys.length > 0;
+    const observability = input.trace !== false ? openObservabilityClient(options) : null;
+    const scriptRunStartedAt = Date.now();
+    if (observability) {
+      persistScriptStart(observability, {
+        traceId,
+        specialist: resolvedSpecialist,
+        model: modelCandidates[0] ?? "unknown",
+        startedAtMs: scriptRunStartedAt,
+        outputType: spec.specialist.execution.output_type,
+        skillSources,
+        variablesKeys: Object.keys(input.variables ?? {}),
+        skillPaths,
+        onAuditFailure: options.onAuditFailure
+      });
+    }
+    const appendTimelineEvent = createScriptTimelineAppender(observability, {
+      traceId,
+      specialist: resolvedSpecialist,
+      onAuditFailure: options.onAuditFailure
+    });
+    let terminalPersisted = false;
+    let cleanupExitHandler;
+    const persistTerminalOnce = (terminal) => {
+      if (terminalPersisted)
+        return;
+      terminalPersisted = true;
+      cleanupExitHandler?.();
+      persistScriptTerminal(observability, terminal);
+    };
+    if (observability) {
+      const handleExit = () => {
+        if (terminalPersisted)
+          return;
+        terminalPersisted = true;
+        persistScriptTerminal(observability, {
+          traceId,
+          specialist: resolvedSpecialist,
+          model: modelCandidates[0] ?? "unknown",
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: "error",
+          outputType: spec.specialist.execution.output_type,
+          output: "script-specialist interrupted before terminal result",
+          error: "script-specialist interrupted before terminal result",
+          errorType: "internal",
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure
+        });
+      };
+      process.once("exit", handleExit);
+      cleanupExitHandler = () => process.off("exit", handleExit);
+    }
+    const attempts = [];
+    for (const model of modelCandidates) {
+      const systemPrompt = spec.specialist.prompt.system || undefined;
+      const systemPromptMode = spec.specialist.prompt.system_prompt_mode;
+      let attempt;
+      try {
+        attempt = await runSingleAttempt(prompt, model, input.thinking_level ?? spec.specialist.execution.thinking_level, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths, shouldParseJson ? expectedKeys : [], appendTimelineEvent);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        persistTerminalOnce({
+          traceId,
+          specialist: resolvedSpecialist,
+          model,
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: "error",
+          outputType: spec.specialist.execution.output_type,
+          output: message,
+          error: message,
+          errorType: mapErrorType(message),
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure
+        });
+        throw error;
+      }
+      attempts.push(attempt);
+      const parsed = classifyAttempt(attempt);
+      if (parsed.retryable && parsed.errorType !== "auth")
+        continue;
+      const durationMs2 = Date.now() - startedAt;
+      if (parsed.kind === "success") {
+        let parsed_json;
+        if (shouldParseJson) {
+          try {
+            parsed_json = JSON.parse(extractJsonPayload(parsed.text));
+            for (const key of expectedKeys) {
+              if (parsed_json === null || typeof parsed_json !== "object" || !(key in parsed_json))
+                throw new Error(`Missing required output field: ${key}`);
+            }
+          } catch (error) {
+            if (observability) {
+              persistTerminalOnce({
+                traceId,
+                specialist: resolvedSpecialist,
+                model,
+                startedAtMs: scriptRunStartedAt,
+                finalStatus: "error",
+                outputType: spec.specialist.execution.output_type,
+                output: parsed.text || (error instanceof Error ? error.message : String(error)),
+                error: error instanceof Error ? error.message : String(error),
+                errorType: "invalid_json",
+                skillSources,
+                variablesKeys: Object.keys(input.variables ?? {}),
+                skillPaths,
+                onAuditFailure: options.onAuditFailure
+              });
+            }
+            runPostScripts();
+            return { success: false, error: error instanceof Error ? error.message : String(error), error_type: "invalid_json", meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
+          }
+        }
+        if (observability) {
+          persistTerminalOnce({
+            traceId,
+            specialist: resolvedSpecialist,
+            model,
+            startedAtMs: scriptRunStartedAt,
+            finalStatus: "done",
+            outputType: spec.specialist.execution.output_type,
+            output: parsed.text,
+            parsedJson: parsed_json,
+            skillSources,
+            variablesKeys: Object.keys(input.variables ?? {}),
+            skillPaths,
+            onAuditFailure: options.onAuditFailure
+          });
+        }
+        runPostScripts();
+        return { success: true, output: parsed.text, parsed_json, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
+      }
+      if (observability) {
+        persistTerminalOnce({
+          traceId,
+          specialist: resolvedSpecialist,
+          model,
+          startedAtMs: scriptRunStartedAt,
+          finalStatus: "error",
+          outputType: spec.specialist.execution.output_type,
+          output: parsed.text || parsed.error,
+          error: parsed.error,
+          errorType: parsed.errorType,
+          skillSources,
+          variablesKeys: Object.keys(input.variables ?? {}),
+          skillPaths,
+          onAuditFailure: options.onAuditFailure
+        });
+      }
+      runPostScripts();
+      return { success: false, error: parsed.error, error_type: parsed.errorType, meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model, duration_ms: durationMs2, trace_id: traceId } };
+    }
+    const lastAttempt = attempts.at(-1);
+    const durationMs = Date.now() - startedAt;
+    if (observability) {
+      persistTerminalOnce({
+        traceId,
+        specialist: resolvedSpecialist,
+        model: modelCandidates.at(-1) ?? "unknown",
+        startedAtMs: scriptRunStartedAt,
+        finalStatus: "error",
+        outputType: spec.specialist.execution.output_type,
+        output: lastAttempt?.text || lastAttempt?.stderr || "pi produced no assistant text",
+        error: lastAttempt?.stderr || "pi produced no assistant text",
+        errorType: "internal",
+        skillSources,
+        variablesKeys: Object.keys(input.variables ?? {}),
+        skillPaths,
+        onAuditFailure: options.onAuditFailure
+      });
+    }
+    runPostScripts();
+    return { success: false, error: lastAttempt?.stderr || "pi produced no assistant text", error_type: "internal", meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, model: modelCandidates.at(-1) ?? "unknown", duration_ms: durationMs, trace_id: traceId } };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const resolvedSpecialist = resolveScriptSpecialistName(input.specialist);
+    return { success: false, error: message, error_type: mapErrorType(message), meta: { specialist: resolvedSpecialist, requested_specialist: input.requested_specialist ?? input.specialist, resolved_specialist: resolvedSpecialist, duration_ms: Date.now() - startedAt, trace_id: traceId } };
+  }
+}
+function collectModelCandidates(input, spec, options) {
+  const executionChain = resolveModelChain(spec.specialist.execution);
+  const candidates = [input.model_override, ...executionChain, options.fallbackModel].filter((value) => typeof value === "string" && value.length > 0);
+  return [...new Set(candidates)];
+}
+function appendExtensionArgs(args, spec) {
+  const permissionLevel = spec.specialist.execution.permission_required.toUpperCase();
+  const piExtDir = join4(homedir3(), ".pi", "agent", "extensions");
+  if (permissionLevel !== "READ_ONLY") {
+    const qualityGatesPath = join4(piExtDir, "quality-gates");
+    if (existsSync7(qualityGatesPath))
+      args.push("-e", qualityGatesPath);
+  }
+  const serviceSkillsPath = join4(piExtDir, "service-skills");
+  if (existsSync7(serviceSkillsPath))
+    args.push("-e", serviceSkillsPath);
+  const cavemanPath = join4(piExtDir, "caveman");
+  if (existsSync7(cavemanPath))
+    args.push("-e", cavemanPath);
+  const npmGlobalDir = resolveGlobalNodeModulesDir();
+  const excludedExtensions = new Set([
+    spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined,
+    spec.specialist.execution.extensions?.serena === false ? "pi-serena-tools" : undefined
+  ].filter((value) => Boolean(value)));
+  if (!npmGlobalDir)
+    return;
+  if (!excludedExtensions.has("pi-gitnexus")) {
+    const gitnexusPath = join4(npmGlobalDir, "pi-gitnexus");
+    if (existsSync7(gitnexusPath))
+      args.push("-e", gitnexusPath);
+  }
+  if (!excludedExtensions.has("pi-serena-tools")) {
+    const serenaPath = join4(npmGlobalDir, "pi-serena-tools");
+    if (existsSync7(serenaPath))
+      args.push("-e", serenaPath);
+  }
+}
+async function runSingleAttempt(prompt, model, thinkingLevel, timeoutMs, assistantTextLimitBytes, options, spec, systemPrompt, systemPromptMode, skillPaths = [], requiredJsonKeys = [], appendTimelineEvent) {
+  if (options.surface === "script" && spec.specialist.execution.permission_required !== "READ_ONLY") {
+    const session = await PiAgentSession.create({
+      model,
+      systemPrompt,
+      systemPromptMode,
+      permissionLevel: spec.specialist.execution.permission_required,
+      specialistName: spec.specialist.metadata.name,
+      skillPaths,
+      thinkingLevel,
+      cwd: options.projectDir ?? process.cwd(),
+      stallTimeoutMs: spec.specialist.execution.stall_timeout_ms ?? timeoutMs,
+      excludeExtensions: [
+        spec.specialist.execution.extensions?.gitnexus === false ? "pi-gitnexus" : undefined,
+        spec.specialist.execution.extensions?.serena === false ? "pi-serena-tools" : undefined
+      ].filter((value) => Boolean(value)),
+      onToken: (delta) => {
+        recordAssistantDelta(delta);
+        appendTimelineEvent?.({ t: Date.now(), type: "text", char_count: delta.length });
+      },
+      onThinking: (delta) => appendTimelineEvent?.({ t: Date.now(), type: "thinking", char_count: delta.length }),
+      onToolStart: (tool, args, toolCallId) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent("tool_execution_start", { tool, args, toolCallId })),
+      onToolEnd: (tool, isError, toolCallId, resultContent, resultRaw) => appendTimelineEvent?.(mapCallbackEventToTimelineEvent("tool_execution_end", { tool, isError, toolCallId, resultContent, resultRaw })),
+      onEvent: (type, details) => {
+        if (type === "message_start_assistant")
+          markAssistantMessageStart();
+        if (type === "message_end_assistant")
+          markAssistantMessageEnd();
+        appendTimelineEvent?.(mapCallbackEventToTimelineEvent(type, {
+          charCount: details?.charCount,
+          toolCallId: details?.toolCallId,
+          compaction: details,
+          retry: details,
+          modelChange: details?.action ? { action: details.action, model: details.model, previousModel: details.previousModel } : undefined,
+          extensionError: details
+        }));
+      },
+      onMetric: (event) => {
+        if (event.type === "token_usage")
+          appendTimelineEvent?.(createTokenUsageEvent(event.token_usage, event.source));
+        if (event.type === "finish_reason")
+          appendTimelineEvent?.(createFinishReasonEvent(event.finish_reason, event.source));
+        if (event.type === "turn_summary")
+          appendTimelineEvent?.(createTurnSummaryEvent(event.turn_index, event.token_usage, event.finish_reason));
+        if (event.type === "api_error")
+          appendTimelineEvent?.(mapCallbackEventToTimelineEvent("api_error", { apiError: event }));
+        if (event.type === "compaction")
+          appendTimelineEvent?.(mapCallbackEventToTimelineEvent(event.phase === "start" ? "auto_compaction_start" : "auto_compaction_end", { compaction: event }));
+        if (event.type === "retry")
+          appendTimelineEvent?.(mapCallbackEventToTimelineEvent(event.phase === "start" ? "auto_retry_start" : "auto_retry_end", { retry: event }));
+        if (event.type === "extension_error")
+          appendTimelineEvent?.(mapCallbackEventToTimelineEvent("extension_error", { extensionError: event }));
+      },
+      onMeta: (meta) => appendTimelineEvent?.(createMetaEvent(meta.model, meta.backend))
+    });
+    let assistantText = "";
+    let stderr = "";
+    let timedOut = false;
+    let outputTooLarge = false;
+    let outputTooLargeReason;
+    let currentAssistantMessage = "";
+    let lastCompletedAssistantMessage = "";
+    const markAssistantMessageStart = () => {
+      currentAssistantMessage = "";
+    };
+    const markAssistantMessageEnd = () => {
+      if (currentAssistantMessage.trim())
+        lastCompletedAssistantMessage = currentAssistantMessage;
+      currentAssistantMessage = "";
+    };
+    const recordAssistantDelta = (delta) => {
+      if (!delta)
+        return;
+      currentAssistantMessage += delta;
+    };
+    const resolveAssistantText = async () => {
+      const rpcText = await session.getLastOutput();
+      return preferAssistantText({
+        rpcText,
+        streamedText: lastCompletedAssistantMessage,
+        requiredJsonKeys
+      });
+    };
+    try {
+      await session.start();
+      await session.prompt(prompt);
+      await session.waitForDone(timeoutMs);
+      assistantText = await resolveAssistantText();
+      stderr = session.getStderr();
+      if (requiredJsonKeys.length > 0 && !outputSatisfiesJsonContract(assistantText, requiredJsonKeys)) {
+        const repairPrompt = [
+          "Return FINAL answer now as JSON only.",
+          `Required top-level keys: ${requiredJsonKeys.join(", ")}.`,
+          "No prose. No markdown fences. No tool-call markup. No preamble or commentary.",
+          "Use work already completed in this session. Do not restart from scratch. Avoid more tools unless strictly necessary."
+        ].join(" ");
+        markAssistantMessageStart();
+        await session.resume(repairPrompt, timeoutMs);
+        assistantText = await resolveAssistantText();
+        stderr = session.getStderr();
+      }
+      if (Buffer.byteLength(assistantText, "utf8") > assistantTextLimitBytes) {
+        outputTooLarge = true;
+        outputTooLargeReason = "assistant_text_too_large";
+      }
+      return {
+        model,
+        text: assistantText,
+        stderr,
+        exitCode: 0,
+        timedOut,
+        outputTooLarge,
+        outputTooLargeReason
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      timedOut = message.toLowerCase().includes("timed out");
+      if (timedOut)
+        session.kill(error instanceof Error ? error : new Error(message));
+      assistantText = await session.getLastOutput().catch(() => "");
+      stderr = session.getStderr() || message;
+      return {
+        model,
+        text: assistantText,
+        stderr,
+        exitCode: 1,
+        timedOut,
+        outputTooLarge,
+        outputTooLargeReason
+      };
+    } finally {
+      await session.close().catch(() => {
+        return;
+      });
+    }
+  }
+  return await new Promise((resolve5, reject) => {
+    const args = ["--mode", "json", "--no-session", "--no-extensions", "--offline", "--no-context-files", "--no-prompt-templates", "--no-themes"];
+    const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
+    if (toolsFlag)
+      args.push("--tools", toolsFlag);
+    if (skillPaths.length === 0)
+      args.push("--no-skills");
+    for (const skillPath of skillPaths)
+      args.push("--skill", skillPath);
+    args.push("--model", model);
+    if (thinkingLevel)
+      args.push("--thinking", thinkingLevel);
+    if (systemPrompt)
+      args.push(systemPromptMode === "append" ? "--append-system-prompt" : "--system-prompt", systemPrompt);
+    appendExtensionArgs(args, spec);
+    const pi = spawn2("pi", args, { stdio: ["pipe", "pipe", "pipe"], cwd: options.projectDir ?? process.cwd() });
+    options.onChild?.(pi);
+    pi.stdin?.on("error", () => {});
+    pi.stdin?.write(prompt);
+    pi.stdin?.end();
+    let stderr = "";
+    let timedOut = false;
+    let outputTooLarge = false;
+    let outputTooLargeReason;
+    let pending = "";
+    let assistantText = "";
+    let pendingBytes = 0;
+    let stderrBytes = 0;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      pi.kill("SIGTERM");
+      setTimeout(() => pi.kill("SIGKILL"), 2000);
+    }, timeoutMs);
+    pi.stdout.on("data", (chunk) => {
+      if (outputTooLarge)
+        return;
+      const buffer = Buffer.from(chunk);
+      pending += buffer.toString("utf-8");
+      pendingBytes += buffer.length;
+      if (pendingBytes > DEFAULT_PENDING_LINE_LIMIT_BYTES) {
+        outputTooLarge = true;
+        outputTooLargeReason = "malformed_line_too_large";
+        pi.kill("SIGTERM");
+        setTimeout(() => pi.kill("SIGKILL"), 2000);
+        return;
+      }
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      pendingBytes = Buffer.byteLength(pending);
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line)
+          continue;
+        try {
+          const event = JSON.parse(line);
+          const nextAssistantText = extractAssistantTextFromEvent(event);
+          if (nextAssistantText !== undefined) {
+            if (Buffer.byteLength(nextAssistantText, "utf8") > assistantTextLimitBytes) {
+              outputTooLarge = true;
+              outputTooLargeReason = "assistant_text_too_large";
+              pi.kill("SIGTERM");
+              setTimeout(() => pi.kill("SIGKILL"), 2000);
+              return;
+            }
+            assistantText = nextAssistantText;
+          }
+        } catch {
+          continue;
+        }
+      }
+    });
+    pi.stderr.on("data", (chunk) => {
+      if (outputTooLarge)
+        return;
+      const text = String(chunk);
+      stderr += text;
+      stderrBytes += Buffer.byteLength(text, "utf8");
+      if (stderrBytes > DEFAULT_STDERR_LIMIT_BYTES) {
+        outputTooLarge = true;
+        outputTooLargeReason = "stderr_too_large";
+        stderr = stderr.slice(0, DEFAULT_STDERR_LIMIT_BYTES);
+        pi.kill("SIGTERM");
+        setTimeout(() => pi.kill("SIGKILL"), 2000);
+      }
+    });
+    pi.on("error", reject);
+    pi.on("close", (code) => {
+      clearTimeout(timer);
+      resolve5({
+        model,
+        text: assistantText,
+        stderr,
+        exitCode: code ?? 0,
+        timedOut,
+        outputTooLarge,
+        outputTooLargeReason
+      });
+    });
+  });
+}
+function classifyAttempt(attempt) {
+  if (attempt.outputTooLarge) {
+    if (attempt.outputTooLargeReason === "assistant_text_too_large")
+      return { retryable: false, kind: "failure", error: "assistant message too large", errorType: "output_too_large", text: attempt.text };
+    if (attempt.outputTooLargeReason === "stderr_too_large")
+      return { retryable: false, kind: "failure", error: "stderr too large", errorType: "output_too_large", text: attempt.text };
+    if (attempt.outputTooLargeReason === "malformed_line_too_large")
+      return { retryable: false, kind: "failure", error: "malformed line too large", errorType: "output_too_large", text: attempt.text };
+    return { retryable: false, kind: "failure", error: "output exceeded cap", errorType: "output_too_large", text: attempt.text };
+  }
+  if (attempt.timedOut)
+    return { retryable: false, kind: "failure", error: attempt.stderr || "timed out", errorType: "timeout", text: attempt.text };
+  const errorType = mapErrorType(attempt.stderr);
+  const retryable = errorType !== "auth" && isRetryableModelFailure(attempt.stderr, attempt.text);
+  if (attempt.exitCode !== 0) {
+    return { retryable, kind: "failure", error: attempt.stderr || `pi exit ${attempt.exitCode}`, errorType, text: attempt.text };
+  }
+  if (!attempt.text) {
+    return { retryable, kind: "failure", error: attempt.stderr || "pi produced no assistant text", errorType, text: attempt.text };
+  }
+  return { retryable: false, kind: "success", error: "", errorType: "internal", text: attempt.text };
+}
+function isRetryableModelFailure(stderr, text) {
+  const normalizedStderr = stderr.toLowerCase();
+  if (isAuthFailureMessage(normalizedStderr))
+    return false;
+  return normalizedStderr.includes("0 tokens") || normalizedStderr.includes("quota") || normalizedStderr.includes("rate limit") || normalizedStderr.includes("insufficient_quota") || !text && !normalizedStderr.trim();
+}
+function isAuthFailureMessage(message) {
+  return /\b(401|403)\b/.test(message) || message.includes("auth") || message.includes("unauthorized") || message.includes("forbidden") || message.includes("invalid_api_key") || message.includes("authentication failed") || message.includes("credentials");
+}
+// src/specialist/loader.ts
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename as basename2, join as join7 } from "node:path";
+import { existsSync as existsSync10 } from "node:fs";
+
+// ../../../node_modules/yaml/dist/index.js
+var composer = require_composer();
+var Document = require_Document();
+var Schema = require_Schema();
+var errors = require_errors();
+var Alias = require_Alias();
+var identity = require_identity();
+var Pair = require_Pair();
+var Scalar = require_Scalar();
+var YAMLMap = require_YAMLMap();
+var YAMLSeq = require_YAMLSeq();
+var cst = require_cst();
+var lexer = require_lexer();
+var lineCounter = require_line_counter();
+var parser = require_parser();
+var publicApi = require_public_api();
+var visit = require_visit();
+var $Composer = composer.Composer;
+var $Document = Document.Document;
+var $Schema = Schema.Schema;
+var $YAMLError = errors.YAMLError;
+var $YAMLParseError = errors.YAMLParseError;
+var $YAMLWarning = errors.YAMLWarning;
+var $Alias = Alias.Alias;
+var $isAlias = identity.isAlias;
+var $isCollection = identity.isCollection;
+var $isDocument = identity.isDocument;
+var $isMap = identity.isMap;
+var $isNode = identity.isNode;
+var $isPair = identity.isPair;
+var $isScalar = identity.isScalar;
+var $isSeq = identity.isSeq;
+var $Pair = Pair.Pair;
+var $Scalar = Scalar.Scalar;
+var $YAMLMap = YAMLMap.YAMLMap;
+var $YAMLSeq = YAMLSeq.YAMLSeq;
+var $Lexer = lexer.Lexer;
+var $LineCounter = lineCounter.LineCounter;
+var $Parser = parser.Parser;
+var $parse = publicApi.parse;
+var $parseAllDocuments = publicApi.parseAllDocuments;
+var $parseDocument = publicApi.parseDocument;
+var $stringify = publicApi.stringify;
+var $visit = visit.visit;
+var $visitAsync = visit.visitAsync;
+
 // src/specialist/schema.ts
 var KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
 var Semver = stringType().regex(/^\d+\.\d+\.\d+$/, "Must be semver (e.g. 1.0.0)");
@@ -14418,46 +16864,32 @@ ${result.warnings.map((w) => `  ⚠ ${w}`).join(`
   return SpecialistSchema.parseAsync(raw);
 }
 
-// src/specialist/canonical-asset-resolver.ts
-import { existsSync as existsSync2 } from "node:fs";
-import { fileURLToPath } from "node:url";
-function resolveCanonicalAssetDir(relativePath) {
-  const configPath = `config/${relativePath}`;
-  let resolved = fileURLToPath(new URL(`../${configPath}`, import.meta.url));
-  if (existsSync2(resolved))
-    return resolved;
-  resolved = fileURLToPath(new URL(`../../${configPath}`, import.meta.url));
-  if (existsSync2(resolved))
-    return resolved;
-  return null;
-}
-
 // src/specialist/global-config.ts
 import {
-  existsSync as existsSync3,
-  mkdirSync as mkdirSync2,
-  readFileSync as readFileSync3,
+  existsSync as existsSync8,
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync7,
   renameSync,
   rmSync,
-  writeFileSync
+  writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname2, join as join3 } from "node:path";
-import { homedir } from "node:os";
+import { dirname as dirname3, join as join5 } from "node:path";
+import { homedir as homedir4 } from "node:os";
 var CONFIG_FILENAME = "user.json";
 var SPECIALISTS_SUBDIR = "specialists";
 function getGlobalUserConfigPath() {
-  const home = process.env.HOME?.trim() || homedir();
+  const home = process.env.HOME?.trim() || homedir4();
   const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
-    const xdgPath = join3(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-    return { path: xdgPath, exists: existsSync3(xdgPath), source: "xdg" };
+    const xdgPath = join5(xdgConfigHome, SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+    return { path: xdgPath, exists: existsSync8(xdgPath), source: "xdg" };
   }
-  const configHomePath = join3(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
-  if (existsSync3(configHomePath)) {
+  const configHomePath = join5(home, ".config", SPECIALISTS_SUBDIR, CONFIG_FILENAME);
+  if (existsSync8(configHomePath)) {
     return { path: configHomePath, exists: true, source: "config-home" };
   }
-  const legacyPath = join3(home, ".specialists", CONFIG_FILENAME);
-  if (existsSync3(legacyPath)) {
+  const legacyPath = join5(home, ".specialists", CONFIG_FILENAME);
+  if (existsSync8(legacyPath)) {
     return { path: legacyPath, exists: true, source: "legacy" };
   }
   return { path: configHomePath, exists: false, source: "config-home" };
@@ -14500,13 +16932,13 @@ var GlobalUserConfigSchema = preprocessType((value) => {
 function readGlobalUserConfig(location) {
   if (!location.exists)
     return null;
-  const content = readFileSync3(location.path, "utf-8");
+  const content = readFileSync7(location.path, "utf-8");
   return JSON.parse(content);
 }
 
 // src/specialist/preset-resolver.ts
-import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync8 } from "node:fs";
+import { join as join6 } from "node:path";
 var PRESET_REFERENCE_PREFIX = "@preset/";
 var PRESET_REFERENCE_MAX_DEPTH = 4;
 var presetsCache = null;
@@ -14588,14 +17020,14 @@ function loadPresets(options = {}) {
   if (presetsCache && presetsCacheBaseDir === baseDir && !options.force)
     return presetsCache;
   const paths = [
-    join4(baseDir, "config", "presets.json"),
-    join4(baseDir, "config", "specialists", "presets.json")
+    join6(baseDir, "config", "presets.json"),
+    join6(baseDir, "config", "specialists", "presets.json")
   ];
   for (const path of paths) {
-    if (!existsSync4(path))
+    if (!existsSync9(path))
       continue;
     try {
-      presetsCache = JSON.parse(readFileSync4(path, "utf-8"));
+      presetsCache = JSON.parse(readFileSync8(path, "utf-8"));
       presetsCacheBaseDir = baseDir;
       return presetsCache;
     } catch (error) {
@@ -14711,12 +17143,12 @@ class SpecialistLoader {
   }
   getScanDirs() {
     const dirs = [
-      { path: join5(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
-      { path: join5(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
-      { path: join5(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
+      { path: join7(this.projectDir, ".specialists", "user"), scope: "user", source: "user" },
+      { path: join7(this.projectDir, ".specialists", "user", "specialists"), scope: "user", source: "legacy" },
+      { path: join7(this.projectDir, "config", "specialists"), scope: "package", source: "package-fallback" },
       { path: resolveCanonicalAssetDir("specialists") ?? "", scope: "package", source: "package-live" }
     ];
-    return dirs.filter((d) => d.path && existsSync5(d.path));
+    return dirs.filter((d) => d.path && existsSync10(d.path));
   }
   toJson(content, isYaml) {
     if (!isYaml)
@@ -14724,12 +17156,12 @@ class SpecialistLoader {
     return JSON.stringify($parse(content));
   }
   resolveSpecialistPath(dirPath, specialistName) {
-    const jsonPath = join5(dirPath, `${specialistName}.specialist.json`);
-    if (existsSync5(jsonPath)) {
+    const jsonPath = join7(dirPath, `${specialistName}.specialist.json`);
+    if (existsSync10(jsonPath)) {
       return { filePath: jsonPath, deprecatedYaml: false };
     }
-    const yamlPath = join5(dirPath, `${specialistName}.specialist.yaml`);
-    if (existsSync5(yamlPath)) {
+    const yamlPath = join7(dirPath, `${specialistName}.specialist.yaml`);
+    if (existsSync10(yamlPath)) {
       return { filePath: yamlPath, deprecatedYaml: true };
     }
     return null;
@@ -14899,7 +17331,7 @@ class SpecialistLoader {
     for (const dir of this.getScanDirs()) {
       const files = await readdir(dir.path).catch(() => []);
       for (const file of files.filter((f) => f.endsWith(".specialist.json") || f.endsWith(".specialist.yaml"))) {
-        const specialistName = basename(file).replace(/\.specialist\.(json|yaml)$/, "");
+        const specialistName = basename2(file).replace(/\.specialist\.(json|yaml)$/, "");
         if (seen.has(specialistName))
           continue;
         try {
@@ -15032,9 +17464,9 @@ function resolveSkillsPaths(spec, fileDir) {
     return;
   const resolved = rawPaths.map((p) => {
     if (p.startsWith("~/"))
-      return join5(process.env.HOME || "", p.slice(2));
+      return join7(process.env.HOME || "", p.slice(2));
     if (p.startsWith("./"))
-      return join5(fileDir, p.slice(2));
+      return join7(fileDir, p.slice(2));
     return p;
   });
   spec.specialist.skills.paths = resolved;
