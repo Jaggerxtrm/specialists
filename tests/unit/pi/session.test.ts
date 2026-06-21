@@ -11,7 +11,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { spawn } from 'node:child_process';
-import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary } from '../../../src/pi/session.js';
+import { PiAgentSession, StallTimeoutError, validateWriteToolPathAgainstBoundary, withProcessEnvOverride } from '../../../src/pi/session.js';
 
 const mockSpawn = spawn as ReturnType<typeof vi.fn>;
 
@@ -93,6 +93,54 @@ function getToolsArg(args: readonly string[]): string | undefined {
   const toolsIdx = args.indexOf('--tools');
   return toolsIdx >= 0 ? args[toolsIdx + 1] : undefined;
 }
+
+
+describe('withProcessEnvOverride', () => {
+  it('exposes injected PATH/env to pre-spawn hooks and restores process.env afterward', async () => {
+    const previousEnv = { ...process.env };
+    process.env.PATH = '/original/bin';
+    process.env.HOME = '/original/home';
+    delete process.env.SERENA_TEST_ENV;
+
+    const seenEnv = await withProcessEnvOverride(
+      {
+        ...process.env,
+        PATH: '/injected/bin:/original/bin',
+        HOME: '/injected/home',
+        SERENA_TEST_ENV: 'visible-to-hook',
+      },
+      async () => ({
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        SERENA_TEST_ENV: process.env.SERENA_TEST_ENV,
+      }),
+    );
+
+    expect(seenEnv).toEqual({
+      PATH: '/injected/bin:/original/bin',
+      HOME: '/injected/home',
+      SERENA_TEST_ENV: 'visible-to-hook',
+    });
+    expect(process.env.PATH).toBe('/original/bin');
+    expect(process.env.HOME).toBe('/original/home');
+    expect(process.env.SERENA_TEST_ENV).toBeUndefined();
+
+    process.env = previousEnv;
+  });
+
+  it('restores process.env after hook failure', async () => {
+    const previousEnv = { ...process.env };
+    process.env.PATH = '/original/bin';
+
+    await expect(withProcessEnvOverride(
+      { ...process.env, PATH: '/injected/bin' },
+      async () => { throw new Error('hook failed'); },
+    )).rejects.toThrow('hook failed');
+
+    expect(process.env.PATH).toBe('/original/bin');
+    process.env = previousEnv;
+  });
+});
 
 // ── RPC protocol parsing tests ────────────────────────────────────────────────
 

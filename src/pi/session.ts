@@ -539,6 +539,17 @@ export default function(pi) {
   return extensionPath;
 }
 
+
+export async function withProcessEnvOverride<T>(env: NodeJS.ProcessEnv, fn: () => Promise<T>): Promise<T> {
+  const previousEnv = { ...process.env };
+  process.env = { ...env };
+  try {
+    return await fn();
+  } finally {
+    process.env = previousEnv;
+  }
+}
+
 export class PiAgentSession {
   private proc?: ChildProcess;
   private _lastOutput = '';
@@ -670,6 +681,12 @@ export class PiAgentSession {
 
     const sessionCwd = resolve(this.options.cwd ?? process.cwd());
 
+    const hookEnv = {
+      ...process.env,
+      ...(this.options.env ?? {}),
+      CAVEMAN_LEVEL: 'full',
+    };
+
     // serena-pool pre-spawn hook: ensure a shared Serena daemon is running for
     // this repo root and set SERENA_MCP_PORT so pi-serena-tools (which reads
     // the env at construction time) reuses it instead of spawning its own.
@@ -680,7 +697,7 @@ export class PiAgentSession {
         try {
           const mod = await import(serenaPoolPath);
           if (typeof mod.ensureSerenaForRoot === 'function') {
-            serenaPoolPort = await mod.ensureSerenaForRoot(sessionCwd);
+            serenaPoolPort = await withProcessEnvOverride(hookEnv, () => mod.ensureSerenaForRoot(sessionCwd));
           }
         } catch (err) {
           console.warn('[serena-pool] pre-spawn ensure failed:', err);
@@ -689,9 +706,7 @@ export class PiAgentSession {
     }
 
     const baseEnv = {
-      ...process.env,
-      ...(this.options.env ?? {}),
-      CAVEMAN_LEVEL: 'full',
+      ...hookEnv,
       ...(serenaPoolPort != null ? { SERENA_MCP_PORT: String(serenaPoolPort) } : {}),
     };
     // `detached: true` puts pi in its own process group so we can later
