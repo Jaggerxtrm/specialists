@@ -1143,4 +1143,51 @@ Catalog vs substrate §6.9.10: substrate names **six archetypes** as a floor; th
 | Planning intent dropped on the floor | `planning` (planner alone, output is bd issue board) |
 | Risky design committed without devil's-advocate | `premortem` (overthinker alone, type=decision) |
 | Doc drift accumulates | `doc-sync` (single-doc drift update) |
-| Stale memory pollutes future sessions | `memory-hygiene` (memory-processor consolidation) |
+| Stale memory pollutes future sessions | `memory-hygiene` (memory-processor consolidation) |---
+
+## §A. Bridge cost/retirement framework (added 2026-06-13, premortem R3)
+
+> **Pair canonical:** [[substrate_design_it]] §13.8 (substrate-side invariant + MOC update trigger) and [[monorepo-migration]] §5.1 (migration-side bridge whitelist + per-Stage rollback). This section is the **economics layer** the other two reference — the runway-recalibration math from §0 made operational: when does a bridge repay its cost, when must it retire, who pays the carrying cost while it lives.
+
+### §A.1 Why bridges exist (and why they must be honest about it)
+
+The §0 runway recalibration assumed bridges repay themselves: "friction-removed-per-day × days-until-substrate × repos-affected is large, so even an honest throwaway bridge repays its cost many times over before it retires." That math only holds when three properties are explicit:
+
+1. **The bridge is scoped to a known failure mode** — not "general coexistence", which always overruns.
+2. **The bridge has a named owner-of-cutover** — a participant (operator + sub-agent) on the hook for retirement, not "we'll get to it."
+3. **Retirement is data-driven** — measurable forensic-event predicate, not vibes.
+
+Without these three, the bridge stops being a throwaway and becomes permanent. Permanent bridges are what the premortem R3 ("the clean cutover never cuts") warned about — operators choose the bridge because the bridge works, then the bridge becomes load-bearing, then the cutover quietly never happens.
+
+### §A.2 The three classes of bridges
+
+| Class | Lifespan budget | Carrying cost | Retirement gate |
+|---|---|---|---|
+| **Migration bridge** (mirrors substrate §13.8 + monorepo §5.1) | Days to weeks | Operator cognitive load + duplicated forensic stream | Data-driven predicate per whitelist row (forensic events drop below threshold) |
+| **bd-layer keeper patch** (the unusual class — see §0 runway recalibration) | Months — retires only at substrate §13.7 bd→substrate data migration | Maintenance against drift in bd's own evolution | Substrate Stage 13 lands successfully |
+| **Throwaway diagnostic** (sp merge dirty-index diagnostic, the warn-only pre-dispatch checks, error-surfacing patches) | Until substrate ships the entity that replaces the diagnostic | Build/test cost + one-line-change risk per release | Substrate ships the replacement entity (Opp 1/2/3 etc per §3); the patch is deleted in the same commit that consumes the new entity |
+
+The middle row is the unusual one. The §0 recalibration explicitly notes "bd-layer patches are keepers" — they don't retire at substrate landing, they retire at the substrate §13.7 migration which is later. This is the only class where the bridge survives the substrate landing event; everything else retires at or before that event.
+
+### §A.3 Carrying-cost ledger (owner-of-cutover responsibilities)
+
+Every active bridge requires the owner-of-cutover to maintain three things continuously, not just at creation:
+
+1. **Forensic instrumentation.** The bridge must emit telemetry that makes its usage measurable. Migration-bridge usage emits whatever event family the bridge is mediating (e.g. `bd-mirror.query` per monorepo §5.1's `bd` read-only mirror); throwaway diagnostics emit `error.process` or `process_health.*` so usage trends are visible. No instrumentation = no retirement gate possible = bridge becomes permanent by default.
+2. **Drift checks against the canonical it shadows.** If the bridge claims to mirror behavior X, a periodic check (CI job or `xt doctor`) confirms it. When the bridge and the canonical diverge silently, you have two systems, not one bridge.
+3. **Deprecation visibility.** The bridge is logged to operators on use ("you are using bridge X; retirement criterion is Y; current state of criterion is Z%") so operators see the gradient toward retirement, not just the binary "still on / off."
+
+### §A.4 Retirement decision protocol
+
+Retirement is **not** operator opinion. The retirement gate's data-driven predicate (per monorepo §5.1 whitelist or per substrate §13.8 stage table) is evaluated automatically; when the predicate passes, the bridge enters a 7-day announcement window (operator warning surface + last chance for objections with explicit "I rely on this because X" forensic evidence). After 7 days with no objection, the bridge is retired in the next release. The retirement itself is a `migration.rollback.completed` event with `bridge_class` in the body — the lineage of the bridge's existence and retirement is permanent.
+
+If an operator objects during the announcement window, the objection itself becomes a substrate issue (auto-created `class: followup` with the operator's reason) — the bridge is extended only as long as the issue stays open. This prevents the "I'll get to it later" silent extension that turned every previous bridge into a permanent fixture.
+
+### §A.5 What this section operationalizes
+
+| Premortem warning | Defense in this framework |
+|---|---|
+| R3: "the clean cutover never cuts; operators will pick bd because work cannot pause" | §A.2 explicitly models the in-cutover bridges so operators can pick the bridge AND see its retirement gate; bridge use is normal, silent permanence is not |
+| R3 follow-on: "each gap blocks cutover instead of becoming one bridged edge" | §A.4 makes objections substrate issues, so blocked-by-gap becomes tracked work, not a stall |
+| Synthesis cross-cutting A: "deferral compound" | §A.3 carrying-cost ledger surfaces the cost of each deferred retirement so the compound cost is visible per-release, not hidden |
+| Synthesis cross-cutting D: "stage acceptance ≠ operator adoption" | §A.3 forensic instrumentation makes adoption measurable — a Stage isn't done when its code ships, it's done when bridges retire because operators stopped using them |
