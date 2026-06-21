@@ -7,6 +7,7 @@ export interface ScriptGenerateRequest {
     requested_specialist?: string;
     variables?: Record<string, string>;
     template?: string;
+    template_field?: string;
     model_override?: string;
     thinking_level?: string;
     timeout_ms?: number;
@@ -43,6 +44,8 @@ export interface TrustOptions {
     allowSkills?: boolean;
     allowSkillsRoots?: string[];
     allowLocalScripts?: boolean;
+    allowWriteCapable?: boolean;
+    baseDir?: string;
 }
 export declare class CompatGuardError extends Error {
     readonly field: 'execution.interactive' | 'execution.requires_worktree' | 'execution.permission_required' | 'skills.scripts' | 'skills.paths' | 'prompt.skill_inherit';
@@ -61,9 +64,10 @@ export interface ScriptRunnerOptions {
     onChild?: (child: ChildProcess) => void;
     onAuditFailure?: (error: unknown) => void;
     trust?: TrustOptions;
+    surface?: 'script' | 'serve';
 }
 export declare function compatGuard(spec: Specialist, trust?: TrustOptions): void;
-export declare function computeSkillSources(spec: Specialist): SkillSource[];
+export declare function computeSkillSources(spec: Specialist, baseDir?: string): SkillSource[];
 export declare function renderTaskTemplate(template: string, variables: Record<string, string>): string;
 export declare function applyOutputContract(prompt: string, spec: Specialist): string;
 export declare const DEFAULT_PENDING_LINE_LIMIT_BYTES: number;

@@ -3,6 +3,7 @@ interface ScriptArgs {
     specialist: string;
     variables: Record<string, string>;
     template?: string;
+    templateField?: string;
     modelOverride?: string;
     thinking?: string;
     projectDir: string;
@@ -11,6 +12,8 @@ interface ScriptArgs {
     json: boolean;
     singleInstance?: string;
     trace: boolean;
+    allowLocalScripts: boolean;
+    allowWriteCapable: boolean;
 }
 export declare function parseArgs(argv: string[]): ScriptArgs;
 export declare function mapExitCode(result: ScriptGenerateResult): number;

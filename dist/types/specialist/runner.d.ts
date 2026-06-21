@@ -74,6 +74,30 @@ interface RunnerDeps {
     /** Optional beads client for specialist run tracking */
     beadsClient?: BeadsClientType;
 }
+interface ScriptResult {
+    name: string;
+    output: string;
+    exitCode: number;
+}
+export declare function runScript(command: string | undefined, cwd: string): ScriptResult;
+export declare function formatScriptOutput(results: ScriptResult[]): string;
+export declare function validateBeforeRun(spec: {
+    specialist: {
+        skills?: {
+            paths?: string[];
+            scripts?: Array<{
+                run?: string;
+                path?: string;
+                phase: string;
+                inject_output: boolean;
+            }>;
+        };
+        capabilities?: {
+            external_commands?: string[];
+            required_tools?: string[];
+        };
+    };
+}, permissionLevel: string): void;
 export declare class SpecialistRunner {
     private deps;
     private sessionFactory;

@@ -308,3 +308,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 ## 2026-06-21 — unitAI-q5t29 security hardening
 - `sp script` dangerous trust is now default-off; `--allow-local-scripts` and `--allow-write-capable` are required for trusted local script specialists such as `service-skills-sync`.
 - Serena pre-spawn env passthrough now uses an isolated helper subprocess, preserving the uvx/PATH fix without mutating process-global `process.env` across async waits.
+
+## 2026-06-21 — qrr21 streamed assistant fallback for script JSON
+- Trusted local `sp script` can leak raw `<|tool_calls_section_begin|>` markup through `PiAgentSession.getLastOutput()` even when the real final assistant message was streamed correctly.
+- Safe fix point is `src/specialist/script-runner.ts`, not `src/pi/session.ts`: record the last completed streamed assistant message and prefer it over RPC last-output when RPC text contains tool-call markup or loses the required JSON contract.

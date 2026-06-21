@@ -1,3 +1,4 @@
+> Manual update: 2026-06-21T22:55:20Z — unitAI-qrr21 hardens trusted script-specialist terminal JSON recovery: when PiAgentSession getLastOutput() returns raw tool-call markup, script-runner now prefers the last streamed assistant message and preserves one-turn JSON repair semantics.
 > Manual update: 2026-06-21T02:41:59Z — unitAI-q5t29 security hardening: sp script now requires explicit opt-ins for local scripts/write-capable specialists, and PiAgentSession Serena pre-spawn now uses an isolated helper subprocess instead of async global process.env mutation.
 # anatomy.md
 > Manual update: 2026-05-26T23:12:00Z — unitAI-dkhi3 fixed PR #99 follow-up: package overrides now force qs 6.15.2 in bun.lock, and supervisor stop/resume telemetry is best-effort so SQLite failures do not block control actions.

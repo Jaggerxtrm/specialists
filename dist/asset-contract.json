@@ -160,6 +160,9 @@
       "path": "config/mandatory-rules/index.json"
     },
     {
+      "path": "config/mandatory-rules/json-only-final-output.md"
+    },
+    {
       "path": "config/mandatory-rules/overthinker-4phase.md"
     },
     {

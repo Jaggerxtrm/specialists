@@ -131,7 +131,14 @@ export interface PiSessionOptions {
     /** Extended stall timeout used while known test commands run via bash tool */
     testCommandStallTimeoutMs?: number;
 }
+export declare function resolvePermissionTools(options: {
+    level?: string;
+    specialistName?: string;
+    specialistPermissions?: ManifestPolicy['permissions'];
+}): string | undefined;
+export declare function resolveGlobalNodeModulesDir(): string | undefined;
 export declare function validateWriteToolPathAgainstBoundary(toolName: string, toolArgs: Record<string, unknown> | undefined, worktreeBoundary: string | undefined): string | undefined;
+export declare function ensureSerenaForRootInSubprocess(serenaPoolPath: string, projectRoot: string, env: NodeJS.ProcessEnv): number | null;
 export declare class PiAgentSession {
     private options;
     private proc?;

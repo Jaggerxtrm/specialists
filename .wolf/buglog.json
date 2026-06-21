@@ -773,6 +773,26 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-21T02:41:59Z"
+    },
+    {
+      "id": "bug-049",
+      "timestamp": "2026-06-21T22:55:20Z",
+      "error_message": "Trusted local script-specialist terminal JSON path could persist raw tool-call markup from getLastOutput() instead of the final assistant JSON message",
+      "file": "src/specialist/script-runner.ts",
+      "root_cause": "The PiAgentSession-backed script path trusted RPC getLastOutput() as authoritative even when it returned tool-call transcript markup; the runner did not preserve the last completed streamed assistant message as a cleaner terminal source.",
+      "fix": "Track streamed assistant-message boundaries in script-runner and prefer the last completed streamed assistant text when RPC last-output contains tool-call markup or fails the required JSON contract; regression test covers repair-turn recovery.",
+      "tags": [
+        "bugfix",
+        "script-runner",
+        "json",
+        "tool-markup",
+        "pi-session"
+      ],
+      "related_bugs": [
+        "bug-048"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-21T22:55:20Z"
     }
   ]
 }
