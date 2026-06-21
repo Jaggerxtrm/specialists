@@ -1,3 +1,4 @@
+> Manual update: 2026-06-21T02:41:59Z — unitAI-q5t29 security hardening: sp script now requires explicit opt-ins for local scripts/write-capable specialists, and PiAgentSession Serena pre-spawn now uses an isolated helper subprocess instead of async global process.env mutation.
 # anatomy.md
 > Manual update: 2026-05-26T23:12:00Z — unitAI-dkhi3 fixed PR #99 follow-up: package overrides now force qs 6.15.2 in bun.lock, and supervisor stop/resume telemetry is best-effort so SQLite failures do not block control actions.
 > Manual update: 2026-05-27T00:00:00Z — unitAI-q5slu added docs/design/substrate-review.md with substrate review decisions covering turn/tick hierarchy, issue-backed workflow steps, channels, pulses, and dispatch examples.

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 describe('script CLI', () => {
   it('parses flags and variables (--project-dir)', async () => {
     const { parseArgs } = await import('../../../src/cli/script.js');
-    const parsed = parseArgs(['echo', '--vars', 'name=world', '--template', 'hi', '--model', 'mock/model', '--thinking', 'low', '--project-dir', '/tmp/proj', '--db-path', '/tmp/db/observability.db', '--timeout-ms', '2500', '--json', '--single-instance', '/tmp/lock', '--no-trace']);
+    const parsed = parseArgs(['echo', '--vars', 'name=world', '--template', 'hi', '--model', 'mock/model', '--thinking', 'low', '--project-dir', '/tmp/proj', '--db-path', '/tmp/db/observability.db', '--timeout-ms', '2500', '--json', '--allow-local-scripts', '--allow-write-capable', '--single-instance', '/tmp/lock', '--no-trace']);
 
     expect(parsed).toMatchObject({
       specialist: 'echo',
@@ -17,7 +17,16 @@ describe('script CLI', () => {
       json: true,
       singleInstance: '/tmp/lock',
       trace: false,
+      allowLocalScripts: true,
+      allowWriteCapable: true,
     });
+  });
+
+  it('defaults dangerous trust flags off', async () => {
+    const { parseArgs } = await import('../../../src/cli/script.js');
+    const parsed = parseArgs(['echo', '--project-dir', '/tmp/proj']);
+    expect(parsed.allowLocalScripts).toBe(false);
+    expect(parsed.allowWriteCapable).toBe(false);
   });
 
   it('accepts --user-dir as a deprecated alias for --project-dir', async () => {

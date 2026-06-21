@@ -379,6 +379,31 @@ describe('runScriptSpecialist expected_output_keys validation', () => {
     expect(result).toMatchObject({ success: false, error_type: 'invalid_json' });
   });
 
+
+
+  it('passes when required JSON is returned in one fenced JSON block after prose', async () => {
+    const spec = textSpecWithKeys(['summary', 'services', 'actions']);
+    const child = createSpawnMock();
+    const resultPromise = runScriptSpecialist(
+      { specialist: 'service-skills-sync', template: 'render $name', variables: { name: 'x' } },
+      { loader: makeLoader(spec as never) as never, projectDir: '.' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const text = [
+      'I audited the service skills and here is the machine-readable result:',
+      '```json',
+      JSON.stringify({ summary: 'ok', services: [], actions: [] }),
+      '```',
+    ].join('\n');
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }] } })}\n`));
+    child.emit('close', 0);
+
+    const result = await resultPromise;
+    expect(result).toMatchObject({ success: true });
+    if (result.success) {
+      expect(result.parsed_json).toMatchObject({ summary: 'ok', services: [], actions: [] });
+    }
+  });
   it('passes when text-format output contains every expected_output_keys entry', async () => {
     const spec = textSpecWithKeys(['summary', 'tags']);
     const child = createSpawnMock();

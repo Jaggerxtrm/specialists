@@ -738,6 +738,41 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-06-04T06:41:07.715202Z"
+    },
+    {
+      "id": "bug-046",
+      "timestamp": "2026-06-21T02:41:59Z",
+      "error_message": "sp script implicitly trusted repo-defined local scripts and MEDIUM-capable specialists without explicit CLI opt-in.",
+      "file": "src/cli/script.ts",
+      "root_cause": "The script CLI unconditionally enabled allowLocalScripts and allowWriteCapable for every script invocation, turning trusted-local mode into the default instead of an explicit operator decision.",
+      "fix": "Added explicit `--allow-local-scripts` and `--allow-write-capable` opt-ins and regression coverage proving they default off while trusted local mode still works when requested.",
+      "tags": [
+        "security",
+        "script-cli",
+        "trust",
+        "unitAI-q5t29"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-21T02:41:59Z"
+    },
+    {
+      "id": "bug-047",
+      "timestamp": "2026-06-21T02:41:59Z",
+      "error_message": "PiAgentSession temporarily replaced global process.env across an awaited Serena pre-spawn hook, allowing cross-session env bleed.",
+      "file": "src/pi/session.ts",
+      "root_cause": "The uvx/PATH hotfix used an async helper that reassigned process.env before awaiting ensureSerenaForRoot, so concurrent starts in the same process could observe each other's temporary env.",
+      "fix": "Replaced the async global env override with an isolated helper subprocess that runs serena-pool with the merged env and returns SERENA_MCP_PORT without mutating parent process.env.",
+      "tags": [
+        "security",
+        "env",
+        "serena-pool",
+        "session-start",
+        "unitAI-q5t29"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-21T02:41:59Z"
     }
   ]
 }

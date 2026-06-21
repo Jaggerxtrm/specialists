@@ -15,6 +15,8 @@ interface ScriptArgs {
   json: boolean;
   singleInstance?: string;
   trace: boolean;
+  allowLocalScripts: boolean;
+  allowWriteCapable: boolean;
 }
 
 function parseVar(entry: string): [string, string] {
@@ -37,6 +39,8 @@ export function parseArgs(argv: string[]): ScriptArgs {
   let json = false;
   let singleInstance: string | undefined;
   let trace = true;
+  let allowLocalScripts = false;
+  let allowWriteCapable = false;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -51,6 +55,8 @@ export function parseArgs(argv: string[]): ScriptArgs {
     else if (token === '--db-path' && argv[i + 1]) dbPath = argv[++i];
     else if (token === '--timeout-ms' && argv[i + 1]) timeoutMs = Number(argv[++i]);
     else if (token === '--json') json = true;
+    else if (token === '--allow-local-scripts') allowLocalScripts = true;
+    else if (token === '--allow-write-capable') allowWriteCapable = true;
     else if (token === '--single-instance' && argv[i + 1]) singleInstance = argv[++i];
     else if (token === '--no-trace') trace = false;
     else if (token === '--vars') throw new Error('Missing value for --vars');
@@ -63,7 +69,22 @@ export function parseArgs(argv: string[]): ScriptArgs {
   if (Number.isNaN(timeoutMs)) throw new Error('Invalid --timeout-ms value');
   if (template !== undefined && templateField !== undefined) throw new Error('--template and --template-field are mutually exclusive');
 
-  return { specialist, variables, template, templateField, modelOverride, thinking, projectDir, dbPath, timeoutMs, json, singleInstance, trace };
+  return {
+    specialist,
+    variables,
+    template,
+    templateField,
+    modelOverride,
+    thinking,
+    projectDir,
+    dbPath,
+    timeoutMs,
+    json,
+    singleInstance,
+    trace,
+    allowLocalScripts,
+    allowWriteCapable,
+  };
 }
 
 function buildRequest(args: ScriptArgs): ScriptGenerateRequest {
@@ -132,8 +153,8 @@ export async function run(argv: string[] = process.argv.slice(3)): Promise<void>
     trust: {
       allowSkills: true,
       allowSkillsRoots: [args.projectDir],
-      allowLocalScripts: true,
-      allowWriteCapable: true,
+      allowLocalScripts: args.allowLocalScripts,
+      allowWriteCapable: args.allowWriteCapable,
       baseDir: args.projectDir,
     },
     ...(args.dbPath ? { observabilityDbPath: args.dbPath } : {}),

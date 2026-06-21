@@ -301,10 +301,15 @@ function extractAssistantTextFromEvent(event: PiEvent): string | undefined {
   return undefined;
 }
 
-function stripMarkdownFences(text: string): string {
+function extractJsonPayload(text: string): string {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
-  return fenced ? fenced[1].trim() : trimmed;
+  const wholeFenced = trimmed.match(/^```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (wholeFenced) return wholeFenced[1].trim();
+
+  const fencedBlocks = [...trimmed.matchAll(/```(?:json|JSON)\s*\n([\s\S]*?)\n```/g)];
+  if (fencedBlocks.length === 1) return fencedBlocks[0][1].trim();
+
+  return trimmed;
 }
 
 function extractPiErrorMessage(lines: string[]): string | null {
@@ -555,7 +560,7 @@ export function collectRequiredOutputKeys(spec: { specialist: { execution: { res
 
 function outputSatisfiesJsonContract(text: string, requiredKeys: string[]): boolean {
   try {
-    const parsed = JSON.parse(stripMarkdownFences(text));
+    const parsed = JSON.parse(extractJsonPayload(text));
     return requiredKeys.every((key) => parsed !== null && typeof parsed === 'object' && key in parsed);
   } catch {
     return false;
@@ -814,7 +819,7 @@ export async function runScriptSpecialist(input: ScriptGenerateRequest, options:
         let parsed_json: unknown;
         if (shouldParseJson) {
           try {
-            parsed_json = JSON.parse(stripMarkdownFences(parsed.text));
+            parsed_json = JSON.parse(extractJsonPayload(parsed.text));
             for (const key of expectedKeys) {
               if (parsed_json === null || typeof parsed_json !== 'object' || !(key in parsed_json)) throw new Error(`Missing required output field: ${key}`);
             }

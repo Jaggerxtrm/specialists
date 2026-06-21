@@ -304,3 +304,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 - Prometheus projection now emits bounded chain aggregate metrics (`xtrm_chains_total`, `xtrm_chain_duration_seconds`) and projects review gate verdict/evidence-ref forensic counters without job/chain/trace/file/diff labels.
 - Token usage timeline events now normalize explicit split fields plus `usage_source`; git auto-commit events carry commit/changed-path evidence in forensic body/correlation only.
 - Regression caught: `sp serve` exited immediately after listening because top-level subcommand auto-exit did not exempt long-running serve mode; entrypoint now excludes `serve` from successful-subcommand `process.exit`.
+
+## 2026-06-21 — unitAI-q5t29 security hardening
+- `sp script` dangerous trust is now default-off; `--allow-local-scripts` and `--allow-write-capable` are required for trusted local script specialists such as `service-skills-sync`.
+- Serena pre-spawn env passthrough now uses an isolated helper subprocess, preserving the uvx/PATH fix without mutating process-global `process.env` across async waits.
