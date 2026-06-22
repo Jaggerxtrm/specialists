@@ -1,3 +1,4 @@
+> Manual update: 2026-06-22T11:42:39Z — unitAI-u3vjh bumps hono to 4.12.26 and vite to 8.0.16; package-lock regeneration required moving vite to devDependencies and removing direct-dep overrides that conflicted with npm package-lock-only regeneration.
 > Manual update: 2026-06-21T22:55:20Z — unitAI-qrr21 hardens trusted script-specialist terminal JSON recovery: when PiAgentSession getLastOutput() returns raw tool-call markup, script-runner now prefers the last streamed assistant message and preserves one-turn JSON repair semantics.
 > Manual update: 2026-06-21T02:41:59Z — unitAI-q5t29 security hardening: sp script now requires explicit opt-ins for local scripts/write-capable specialists, and PiAgentSession Serena pre-spawn now uses an isolated helper subprocess instead of async global process.env mutation.
 # anatomy.md

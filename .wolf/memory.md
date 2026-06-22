@@ -312,3 +312,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 ## 2026-06-21 — qrr21 streamed assistant fallback for script JSON
 - Trusted local `sp script` can leak raw `<|tool_calls_section_begin|>` markup through `PiAgentSession.getLastOutput()` even when the real final assistant message was streamed correctly.
 - Safe fix point is `src/specialist/script-runner.ts`, not `src/pi/session.ts`: record the last completed streamed assistant message and prefer it over RPC last-output when RPC text contains tool-call markup or loses the required JSON contract.
+
+## 2026-06-22 — u3vjh dependency bump gotcha
+- `bun update hono vite` may promote `vite` into runtime `dependencies` when the project does not already declare it directly. For this repo, keep `hono` in runtime deps but move `vite` to `devDependencies` before regenerating lockfiles.
+- `npm install --package-lock-only` will reject overrides that duplicate direct dependencies (`EOVERRIDE`). Remove direct-dependency overrides (or use npm-supported indirection) before regenerating `package-lock.json`.

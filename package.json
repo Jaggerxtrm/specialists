@@ -1,7 +1,7 @@
 {
   "name": "@jaggerxtrm/specialists",
   "version": "3.17.0",
-  "description": "OmniSpecialist — 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
+  "description": "OmniSpecialist \u2014 7-tool MCP orchestration layer powered by the Specialist System. Discover and execute .specialist.yaml files across project/user/system scopes via pi.",
   "main": "dist/index.js",
   "types": "dist/types/lib.d.ts",
   "type": "module",
@@ -76,7 +76,7 @@
   "dependencies": {
     "@earendil-works/pi-tui": "0.75.5",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "hono": "^4.12.21",
+    "hono": "4.12.26",
     "qs": "6.15.2",
     "yaml": "2.9.0",
     "zod": "3.25.76",
@@ -88,7 +88,8 @@
     "@vitest/coverage-v8": "4.1.7",
     "tsx": "4.22.3",
     "typescript": "5.9.3",
-    "vitest": "4.1.7"
+    "vitest": "4.1.7",
+    "vite": "8.0.16"
   },
   "engines": {
     "bun": ">=1.0.0"
@@ -97,7 +98,6 @@
     "@hono/node-server": "^1.19.13",
     "esbuild": "^0.28.1",
     "fast-uri": "^3.1.2",
-    "hono": "^4.12.21",
     "ip-address": "^10.2.0",
     "path-to-regexp": "^8.4.0",
     "qs": "6.15.2"

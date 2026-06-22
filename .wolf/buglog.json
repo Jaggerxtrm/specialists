@@ -793,6 +793,24 @@
       ],
       "occurrences": 1,
       "last_seen": "2026-06-21T22:55:20Z"
+    },
+    {
+      "id": "bug-050",
+      "timestamp": "2026-06-22T11:42:39Z",
+      "error_message": "bun update hono vite promoted vite to runtime dependencies and npm package-lock regeneration failed with EOVERRIDE on direct-dependency overrides",
+      "file": "package.json",
+      "root_cause": "The repo uses Bun as canonical manager but still validates a generated package-lock. bun update added a direct vite dependency, while npm rejects override entries that conflict with direct dependencies during package-lock regeneration.",
+      "fix": "Move vite to devDependencies, keep hono as the runtime dependency, and remove direct-dependency overrides before running npm install --package-lock-only.",
+      "tags": [
+        "bugfix",
+        "dependencies",
+        "package-lock",
+        "bun",
+        "npm"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-22T11:42:39Z"
     }
   ]
 }
