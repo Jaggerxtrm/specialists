@@ -68,6 +68,19 @@ describe('override allowlist contract', () => {
       expect(OVERRIDE_ALLOWED_STALL_DETECTION_PATHS).toContain('waiting_auto_close_ms');
     });
 
+    it('parses null waiting_auto_close_ms in package specialist specs', async () => {
+      const spec = createValidSpec() as ReturnType<typeof createValidSpec> & {
+        specialist: ReturnType<typeof createValidSpec>['specialist'] & {
+          stall_detection: { waiting_auto_close_ms: null };
+        };
+      };
+      spec.specialist.stall_detection = { waiting_auto_close_ms: null };
+
+      const result = await parseSpecialist(toJson(spec));
+
+      expect(result.specialist.stall_detection?.waiting_auto_close_ms).toBeNull();
+    });
+
     it('includes new nested execution extension leaf paths in OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS', () => {
       expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.serena');
       expect(OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS).toContain('extensions.gitnexus');

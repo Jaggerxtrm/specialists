@@ -16735,7 +16735,7 @@ var StallDetectionSchema = objectType({
   running_silence_warn_ms: numberType().optional(),
   running_silence_error_ms: numberType().optional(),
   waiting_stale_ms: numberType().optional(),
-  waiting_auto_close_ms: numberType().optional(),
+  waiting_auto_close_ms: numberType().nullable().optional(),
   tool_duration_warn_ms: numberType().optional()
 }).passthrough().optional();
 var SpecialistSchema = objectType({

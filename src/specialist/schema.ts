@@ -112,7 +112,7 @@ const StallDetectionSchema = z.object({
   /** ms in waiting state before emitting warning (default 3_600_000) */
   waiting_stale_ms: z.number().optional(),
   /** ms in waiting state before attempting graceful auto-close (default disabled) */
-  waiting_auto_close_ms: z.number().optional(),
+  waiting_auto_close_ms: z.number().nullable().optional(),
   /** ms a single tool execution may run before warning (default 120_000) */
   tool_duration_warn_ms: z.number().optional(),
 }).passthrough().optional();

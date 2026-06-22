@@ -1086,9 +1086,10 @@ export class Supervisor {
   /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
     if (!existsSync(this.resolvedJobsDir)) return;
-    const thresholds: Required<StallDetectionConfig> = {
+    const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms,
     };
     const now = Date.now();
     const shouldUseFiles = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase() !== 'off';
@@ -1786,9 +1787,10 @@ export class Supervisor {
     };
 
     // Stuck detection: thresholds, local tracking state, and periodic checker
-    const thresholds: Required<StallDetectionConfig> = {
+    const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms,
     };
     let lastActivityMs = startedAtMs;
     let silenceWarnEmitted = false;
@@ -1820,14 +1822,15 @@ export class Supervisor {
           clearInterval(stuckIntervalId);
         }
       }
+      const waitingAutoCloseThresholdMs = thresholds.waiting_auto_close_ms ?? 0;
       if (
         !waitingAutoCloseInFlight
-        && thresholds.waiting_auto_close_ms > 0
+        && waitingAutoCloseThresholdMs > 0
         && statusSnapshot.status === 'waiting'
       ) {
         const waitingSinceMs = statusSnapshot.last_event_at_ms ?? startedAtMs;
         const waitingSilenceMs = now - waitingSinceMs;
-        if (waitingSilenceMs > thresholds.waiting_auto_close_ms) {
+        if (waitingSilenceMs > waitingAutoCloseThresholdMs) {
           waitingAutoCloseInFlight = true;
           appendTimelineEvent(createControlSignalEvent('waiting_auto_close_requested', {
             source: 'watchdog',
@@ -1835,7 +1838,7 @@ export class Supervisor {
             reason: 'waiting threshold exceeded',
             metadata: {
               silence_ms: waitingSilenceMs,
-              threshold_ms: thresholds.waiting_auto_close_ms,
+              threshold_ms: waitingAutoCloseThresholdMs,
             },
           }));
           setStatus({ current_event: 'waiting_auto_close', last_event_at_ms: now });
@@ -1851,7 +1854,7 @@ export class Supervisor {
                 reason: 'close_fn_resolved',
                 metadata: {
                   silence_ms: waitingSilenceMs,
-                  threshold_ms: thresholds.waiting_auto_close_ms,
+                  threshold_ms: waitingAutoCloseThresholdMs,
                 },
               }));
             },
@@ -1864,7 +1867,7 @@ export class Supervisor {
                 reason: error.message,
                 metadata: {
                   silence_ms: waitingSilenceMs,
-                  threshold_ms: thresholds.waiting_auto_close_ms,
+                  threshold_ms: waitingAutoCloseThresholdMs,
                   graceful_timeout_ms: WAITING_AUTO_CLOSE_GRACE_MS,
                 },
               }));

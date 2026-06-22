@@ -20704,7 +20704,7 @@ var init_schema = __esm(() => {
     running_silence_warn_ms: numberType().optional(),
     running_silence_error_ms: numberType().optional(),
     waiting_stale_ms: numberType().optional(),
-    waiting_auto_close_ms: numberType().optional(),
+    waiting_auto_close_ms: numberType().nullable().optional(),
     tool_duration_warn_ms: numberType().optional()
   }).passthrough().optional();
   SpecialistSchema = objectType({
@@ -26905,7 +26905,8 @@ class Supervisor {
       return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
+      ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms
     };
     const now = Date.now();
     const shouldUseFiles = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? "").trim().toLowerCase() !== "off";
@@ -27497,7 +27498,8 @@ ${appendError}
     };
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
+      ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms
     };
     let lastActivityMs = startedAtMs;
     let silenceWarnEmitted = false;
@@ -27528,10 +27530,11 @@ ${appendError}
           clearInterval(stuckIntervalId);
         }
       }
-      if (!waitingAutoCloseInFlight && thresholds.waiting_auto_close_ms > 0 && statusSnapshot.status === "waiting") {
+      const waitingAutoCloseThresholdMs = thresholds.waiting_auto_close_ms ?? 0;
+      if (!waitingAutoCloseInFlight && waitingAutoCloseThresholdMs > 0 && statusSnapshot.status === "waiting") {
         const waitingSinceMs = statusSnapshot.last_event_at_ms ?? startedAtMs;
         const waitingSilenceMs = now - waitingSinceMs;
-        if (waitingSilenceMs > thresholds.waiting_auto_close_ms) {
+        if (waitingSilenceMs > waitingAutoCloseThresholdMs) {
           waitingAutoCloseInFlight = true;
           appendTimelineEvent(createControlSignalEvent("waiting_auto_close_requested", {
             source: "watchdog",
@@ -27539,7 +27542,7 @@ ${appendError}
             reason: "waiting threshold exceeded",
             metadata: {
               silence_ms: waitingSilenceMs,
-              threshold_ms: thresholds.waiting_auto_close_ms
+              threshold_ms: waitingAutoCloseThresholdMs
             }
           }));
           setStatus({ current_event: "waiting_auto_close", last_event_at_ms: now });
@@ -27555,7 +27558,7 @@ ${appendError}
                 reason: "close_fn_resolved",
                 metadata: {
                   silence_ms: waitingSilenceMs,
-                  threshold_ms: thresholds.waiting_auto_close_ms
+                  threshold_ms: waitingAutoCloseThresholdMs
                 }
               }));
             },
@@ -27568,7 +27571,7 @@ ${appendError}
                 reason: error2.message,
                 metadata: {
                   silence_ms: waitingSilenceMs,
-                  threshold_ms: thresholds.waiting_auto_close_ms,
+                  threshold_ms: waitingAutoCloseThresholdMs,
                   graceful_timeout_ms: WAITING_AUTO_CLOSE_GRACE_MS
                 }
               }));

@@ -4,7 +4,7 @@ export interface StallDetectionConfig {
     running_silence_warn_ms?: number;
     running_silence_error_ms?: number;
     waiting_stale_ms?: number;
-    waiting_auto_close_ms?: number;
+    waiting_auto_close_ms?: number | null;
     tool_duration_warn_ms?: number;
 }
 export interface SpecialistSummary {

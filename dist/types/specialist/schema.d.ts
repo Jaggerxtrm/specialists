@@ -267,7 +267,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -278,7 +278,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -289,7 +289,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -623,7 +623,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -634,7 +634,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -645,7 +645,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -979,7 +979,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -990,7 +990,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -1001,7 +1001,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -1337,7 +1337,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -1348,7 +1348,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -1359,7 +1359,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -1693,7 +1693,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -1704,7 +1704,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -1715,7 +1715,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -2049,7 +2049,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -2060,7 +2060,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -2071,7 +2071,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -2407,7 +2407,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -2418,7 +2418,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -2429,7 +2429,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -2763,7 +2763,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -2774,7 +2774,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -2785,7 +2785,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
@@ -3119,7 +3119,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
@@ -3130,7 +3130,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
@@ -3141,7 +3141,7 @@ export declare const SpecialistSchema: z.ZodObject<{
             /** ms in waiting state before emitting warning (default 3_600_000) */
             waiting_stale_ms: z.ZodOptional<z.ZodNumber>;
             /** ms in waiting state before attempting graceful auto-close (default disabled) */
-            waiting_auto_close_ms: z.ZodOptional<z.ZodNumber>;
+            waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             /** ms a single tool execution may run before warning (default 120_000) */
             tool_duration_warn_ms: z.ZodOptional<z.ZodNumber>;
         }, z.ZodTypeAny, "passthrough">>>;
