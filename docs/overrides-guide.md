@@ -6,12 +6,13 @@ This guide is the canonical reference for `~/.config/specialists/user.json`, cre
 
 The global override surface includes:
 
-- Six allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
+- KAN-91 allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
+- Additional runtime-default knobs: `execution.interactive` (default keep-alive behavior) and `stall_detection.waiting_auto_close_ms` (opt-in waiting auto-close threshold).
 - Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
 - Preset references like `@preset/cheap` for model and fallback entries.
 - A top-level `_doc` sentinel in generated `user.json` pointing back to this guide. Keys starting with `_` are metadata, not specialist names.
 
-The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
+The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `stall_detection`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
 
 ## Per-field reference
 
@@ -30,6 +31,22 @@ The examples below are delta snippets to add inside an existing specialist entry
 ```
 
 Pitfall: this controls composition mode only. It does not let `user.json` replace `prompt.system`; prompt content remains blocked.
+
+### `execution.interactive`
+
+- Type: `boolean | null`
+- Default semantics: `null` inherits the merged specialist default. This is the default keep-alive/resume behavior when the operator does **not** pass `--keep-alive` or `--no-keep-alive`.
+- Example:
+
+```json
+{
+  "reviewer": {
+    "execution": { "interactive": false }
+  }
+}
+```
+
+Pitfall: CLI flags still win. Effective precedence is `--no-keep-alive` > `--keep-alive` > merged `execution.interactive`.
 
 ### `execution.extensions.serena`
 
@@ -62,6 +79,22 @@ Pitfall: extension overrides are per-key overlays. Setting `serena: false` does 
 ```
 
 Pitfall: disabling GitNexus removes graph tooling from that specialist run. Use only when project indexing is unavailable or too expensive.
+
+### `stall_detection.waiting_auto_close_ms`
+
+- Type: `number | null`
+- Default semantics: `null` inherits or disables the behavior. `0` also means disabled.
+- Example:
+
+```json
+{
+  "reviewer": {
+    "stall_detection": { "waiting_auto_close_ms": 3600000 }
+  }
+}
+```
+
+Pitfall: this is **opt-in** and applies only after a specialist is already in `waiting`. The runtime attempts graceful close first; forced termination is fallback-only if the session refuses to exit.
 
 ### `notes_mode`
 
@@ -234,6 +267,7 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
       ],
       "timeout_ms": null,
       "stall_timeout_ms": null,
+      "interactive": true,
       "thinking_level": null,
       "max_retries": null,
       "prompt_limit_bytes": 8388608,
@@ -245,6 +279,9 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
     },
     "prompt": {
       "system_prompt_mode": "replace"
+    },
+    "stall_detection": {
+      "waiting_auto_close_ms": 3600000
     },
     "beads_write_notes": null,
     "notes_mode": "final-only",

@@ -150,8 +150,8 @@ Notes:
 - `--force-stale-base` bypasses the stale-base guard for worktree provisioning.
 - `--force-job` bypasses the concurrency guard for `--job` reuse.
 - `--no-worktree` was removed.
-- Keep-alive default follows specialist YAML `execution.interactive` (default `false`).
-- Precedence: `--no-keep-alive` > `--keep-alive` > `execution.interactive`.
+- Keep-alive default follows the merged specialist config `execution.interactive` (package / global user.json / repo override; default `false`).
+- Precedence: `--no-keep-alive` > `--keep-alive` > merged `execution.interactive`.
 - `--background` is removed and exits with error.
 - **Auto-bead resolution**: When `--job <id>` is used without `--bead`, bead_id is inferred from the target job's `status.json.bead_id`. Precedence: explicit `--bead` > inferred bead from job > none. A stderr notice indicates when inference occurs.
 
@@ -946,6 +946,8 @@ specialists edit executor specialist.execution.model openai-codex/gpt-5.5
 # Global override examples
 specialists edit --global executor.execution.model openai-codex/gpt-5.5
 specialists edit --global --get executor.execution.model
+specialists edit --global --set reviewer.execution.interactive false
+specialists edit --global --set reviewer.stall_detection.waiting_auto_close_ms 3600000
 
 # Legacy alias (compat)
 specialists edit executor --model openai-codex/gpt-5.5
@@ -1066,7 +1068,7 @@ specialists init [--global] [--sync-defaults] [--sync-skills] [--no-xtrm-check]
 
 | Flag | Description |
 |------|-------------|
-| `--global` | Initialize/update global override layer at `~/.config/specialists/user.json` for cross-repo defaults and model fallback edits. |
+| `--global` | Initialize/update global override layer at `~/.config/specialists/user.json` for cross-repo defaults, keep-alive defaults, waiting auto-close thresholds, and model fallback edits. |
 | `--sync-defaults` | Compatibility/operator path: copy canonical Category A assets into `.specialists/default/`. Not the default install model. |
 | `--sync-skills` | Re-sync skills only through the xtrm-managed skill surface. |
 | `--no-xtrm-check` | Skip `.xtrm/` / `xt` prerequisite checks for CI or tests. |

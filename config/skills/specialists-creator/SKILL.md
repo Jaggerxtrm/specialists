@@ -266,7 +266,7 @@ Avoid vague descriptions like "general purpose assistant" or "helps with code". 
 | `mode` | enum | `auto` | `tool` \| `skill` \| `auto` |
 | `timeout_ms` | number | `120000` | ms |
 | `stall_timeout_ms` | number | — | kill if no event for N ms |
-| `interactive` | boolean | `false` | enable multi-turn keep-alive by default |
+| `interactive` | boolean | `false` | enable multi-turn keep-alive by default (also overridable globally via `~/.config/specialists/user.json`) |
 | `response_format` | enum | `text` | `text` \| `json` \| `markdown` |
 | `output_type` | enum | `custom` | `codegen` \| `analysis` \| `review` \| `synthesis` \| `orchestration` \| `workflow` \| `research` \| `custom` |
 | `permission_required` | enum | `READ_ONLY` | see tier table below |
@@ -281,7 +281,8 @@ Avoid vague descriptions like "general purpose assistant" or "helps with code". 
 - Run-level overrides still apply:
   - CLI: `--keep-alive` enables, `--no-keep-alive` disables.
   - MCP `start_specialist`: `keep_alive` enables, `no_keep_alive` disables.
-- Effective precedence: explicit disable (`--no-keep-alive` / `no_keep_alive`) → explicit enable (`--keep-alive` / `keep_alive`) → `execution.interactive` → one-shot default.
+- Effective precedence: explicit disable (`--no-keep-alive` / `no_keep_alive`) → explicit enable (`--keep-alive` / `keep_alive`) → merged `execution.interactive` (package / global user.json / repo) → one-shot default.
+- When the operator wants a cross-repo default, prefer `sp edit --global --set <name>.execution.interactive true|false` over forking per-repo specs.
 
 **Permission tiers** — controls the *native* pi tools the specialist gets. The full resolved tool set also includes catalog-defined GitNexus and Serena tools per tier; see [docs/manifest.md](../../../docs/manifest.md) for the complete picture.
 
@@ -697,12 +698,13 @@ write:
 ```ts
 OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'model', 'fallback_model', 'fallback_models',
-  'timeout_ms', 'stall_timeout_ms', 'thinking_level',
+  'timeout_ms', 'stall_timeout_ms', 'interactive', 'thinking_level',
   'max_retries', 'prompt_limit_bytes', 'stdout_limit_bytes',
 ]
 OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
   'extensions.serena', 'extensions.gitnexus',
 ]
+OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = ['waiting_auto_close_ms']
 OVERRIDE_ALLOWED_PROMPT_FIELDS = ['system_prompt_mode']
 OVERRIDE_ALLOWED_TOP_FIELDS = ['beads_write_notes', 'notes_mode', 'output_file']
 ```
@@ -728,6 +730,12 @@ sp edit --global --set sync-docs.output_file ".specialists/sync-docs-result.md"
 
 # Opt out of Serena MCP injection on a read-only specialist (RAM saver)
 sp edit --global --set overthinker.execution.extensions.serena false
+
+# Set the default keep-alive behavior globally for one specialist
+sp edit --global --set reviewer.execution.interactive false
+
+# Auto-close forgotten waiting sessions after 1h (graceful close first)
+sp edit --global --set reviewer.stall_detection.waiting_auto_close_ms 3600000
 
 # Set system_prompt_mode to replace globally for a bare specialist
 sp edit --global --set my-bare-spec.prompt.system_prompt_mode replace
@@ -912,6 +920,7 @@ Quality degrades as the context grows — compressed early context causes incons
 
 **Rules when authoring a specialist:**
 - Set `stall_timeout_ms` explicitly for any specialist that may idle between turns (keep-alive/interactive). Without it, a stuck session holds resources indefinitely.
+- If the operator wants forgotten waiting sessions to retire automatically, set `stall_detection.waiting_auto_close_ms` explicitly; keep it unset/0 when human follow-up should remain indefinitely resumable.
 - Use `thinking_level: low` for orchestration/coordinator specialists that emit structured JSON output — thinking tokens cost context budget without improving structured output quality.
 - For research/explorer specialists: bounded scope per session + `handoff_summary` in `output_schema` > one unbounded session.
 - `interactive: true` specialists must define what "done" looks like in their system prompt — otherwise they drift.
@@ -945,6 +954,7 @@ Before finalising a specialist that uses `interactive: true` or is expected to r
 
 ```
 [ ] stall_timeout_ms set (not relying on timeout_ms alone)
+[ ] waiting_auto_close_ms decision made (unset/0 for indefinite waiting, explicit ms for auto-retire)
 [ ] thinking_level set appropriately for the output type
 [ ] output_schema includes handoff_summary or equivalent for rotation
 [ ] system prompt has explicit termination condition ("you are done when...")

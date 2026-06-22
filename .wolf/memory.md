@@ -316,3 +316,9 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 ## 2026-06-22 — u3vjh dependency bump gotcha
 - `bun update hono vite` may promote `vite` into runtime `dependencies` when the project does not already declare it directly. For this repo, keep `hono` in runtime deps but move `vite` to `devDependencies` before regenerating lockfiles.
 - `npm install --package-lock-only` will reject overrides that duplicate direct dependencies (`EOVERRIDE`). Remove direct-dependency overrides (or use npm-supported indirection) before regenerating `package-lock.json`.
+
+## 2026-06-22T22:16:32Z — global interactive + waiting auto-close E2E
+- ~/.config/specialists/user.json now supports execution.interactive and stall_detection.waiting_auto_close_ms as machine-wide sparse overrides.
+- Supervisor now emits waiting_auto_close_requested / waiting_auto_close_completed control-signal events for stale waiting keep-alive sessions and uses graceful close before forced termination fallback.
+- Real smoke pattern for linked sp: isolate XDG_CONFIG_HOME but keep the real HOME, otherwise Pi provider auth disappears and smoke runs fail with missing API key/provider auth.
+- Concrete smoke evidence used a temporary package-layer smoke-waiter specialist, sp init --global, sp edit --global --set smoke-waiter.execution.interactive true, sp edit --global --set smoke-waiter.stall_detection.waiting_auto_close_ms 1000, then sp feed <job> --json to verify persisted waiting_auto_close_* events.

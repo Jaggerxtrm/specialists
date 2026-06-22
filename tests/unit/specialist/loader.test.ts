@@ -732,6 +732,32 @@ describe('KAN-90 — global override layer + null-model hard fail', () => {
     expect(spec.specialist.execution.model).toBe('pkg/base-model'); // identity unchanged
   });
 
+  it('global layer overrides execution.interactive and stall_detection.waiting_auto_close_ms', async () => {
+    await writeFile(
+      join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),
+      JSON.stringify({
+        specialist: {
+          metadata: { name: 'demo', version: '1.0.0', description: 'demo', category: 'test' },
+          execution: { model: 'pkg/base-model', permission_required: 'READ_ONLY', interactive: false },
+          prompt: { task_template: 'Do $prompt' },
+          stall_detection: { waiting_auto_close_ms: 1000 },
+        },
+      }),
+    );
+    await writeGlobalUserJson({
+      demo: {
+        execution: { interactive: true },
+        stall_detection: { waiting_auto_close_ms: 3600000 },
+      },
+    });
+
+    const spec = await loader.get('demo');
+
+    expect(spec.specialist.execution.interactive).toBe(true);
+    expect(spec.specialist.stall_detection?.waiting_auto_close_ms).toBe(3600000);
+    expect(spec.specialist.execution.model).toBe('pkg/base-model');
+  });
+
   it('null model in package + no global override throws SpecialistMissingModelError', async () => {
     await writeFile(
       join(tmpProject, 'config', 'specialists', 'demo.specialist.json'),

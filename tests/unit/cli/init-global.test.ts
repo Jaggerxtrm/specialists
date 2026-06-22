@@ -78,12 +78,28 @@ describe('override template + schema', () => {
       execution: {
         model: null,
         fallback_model: null,
+        fallback_models: null,
         timeout_ms: null,
         stall_timeout_ms: null,
+        interactive: null,
         thinking_level: null,
         max_retries: null,
+        prompt_limit_bytes: null,
+        stdout_limit_bytes: null,
+        extensions: {
+          serena: null,
+          gitnexus: null,
+        },
+      },
+      prompt: {
+        system_prompt_mode: null,
+      },
+      stall_detection: {
+        waiting_auto_close_ms: null,
       },
       beads_write_notes: null,
+      notes_mode: null,
+      output_file: null,
       skills: { paths: [] },
     });
   });
@@ -96,7 +112,7 @@ describe('override template + schema', () => {
 
   it('buildGlobalUserConfigTemplate keys every name', () => {
     const template = buildGlobalUserConfigTemplate(['executor', 'debugger', 'explorer']);
-    expect(Object.keys(template).sort()).toEqual(['debugger', 'executor', 'explorer']);
+    expect(Object.keys(template).sort()).toEqual(['_doc', 'debugger', 'executor', 'explorer']);
     expect(template.executor.execution.model).toBeNull();
   });
 
@@ -119,7 +135,7 @@ describe('mergeGlobalUserConfig — idempotent merge', () => {
     expect(result.added.sort()).toEqual(['debugger', 'executor']);
     expect(result.extended).toEqual([]);
     expect(result.removed).toEqual([]);
-    expect(Object.keys(result.config).sort()).toEqual(['debugger', 'executor']);
+    expect(Object.keys(result.config).sort()).toEqual(['_doc', 'debugger', 'executor']);
   });
 
   it('preserves user-filled values on re-run', () => {

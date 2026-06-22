@@ -126,7 +126,9 @@
       ],
       "stale_threshold_days": 30
     },
-    "stall_detection": {},
+    "stall_detection": {
+      "waiting_auto_close_ms": null
+    },
     "notes_mode": "final-only",
     "beads_integration": "auto",
     "beads_write_notes": true

@@ -59,7 +59,9 @@
       "required_tools": [],
       "external_commands": []
     },
-    "stall_detection": {},
+    "stall_detection": {
+      "waiting_auto_close_ms": null
+    },
     "beads_integration": "auto",
     "beads_write_notes": true
   }
