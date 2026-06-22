@@ -72,11 +72,10 @@ export function ensureObservabilityDbFile(location: ObservabilityDbLocation): { 
   mkdirSync(location.dbDirectory, { recursive: true });
 
   const alreadyExists = existsSync(location.dbPath);
-  if (!alreadyExists) {
-    writeFileSync(location.dbPath, '', { encoding: 'utf-8', flag: 'wx' });
+  if (alreadyExists) {
+    chmodSync(location.dbPath, 0o644);
   }
 
-  chmodSync(location.dbPath, 0o644);
   return { created: !alreadyExists };
 }
 

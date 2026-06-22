@@ -2900,7 +2900,8 @@ function openObservabilitySqliteClient(dbPath: string): ObservabilitySqliteClien
 
     // Create persistent client connection
     return new SqliteClient(dbPath);
-  } catch {
+  } catch (error) {
+    console.warn(`[observability-sqlite] Failed to open observability database at ${dbPath}: ${String(error)}`);
     return null;
   }
 }

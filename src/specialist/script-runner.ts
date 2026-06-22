@@ -515,11 +515,12 @@ function openObservabilityClient(options: ScriptRunnerOptions): ScriptObservabil
   if (options.observabilityDbPath) return createObservabilitySqliteClientAtPath(options.observabilityDbPath);
   const projectDir = options.projectDir ?? process.cwd();
   try {
-    ensureObservabilityDbFile(resolveObservabilityDbLocation(projectDir));
+    const location = resolveObservabilityDbLocation(projectDir);
+    ensureObservabilityDbFile(location);
+    return createObservabilitySqliteClientAtPath(location.dbPath);
   } catch {
     return null;
   }
-  return createObservabilitySqliteClient(projectDir);
 }
 
 function resolveScriptSpecialistName(name: string): string {

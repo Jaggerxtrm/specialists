@@ -48,10 +48,8 @@ describe('observability-sqlite', () => {
   const createClient = () => {
     const location = resolveObservabilityDbLocation(tempRoot);
     ensureObservabilityDbFile(location);
-    const seedDb = new Database(location.dbPath);
-    seedDb.close();
 
-    const client = createObservabilitySqliteClient(tempRoot);
+    const client = createObservabilitySqliteClientAtPath(location.dbPath);
     expect(client).not.toBeNull();
     sqliteClient = client;
     return client!;
@@ -68,6 +66,19 @@ describe('observability-sqlite', () => {
     db = new Database(explicitPath);
     const schemaVersion = db.query('SELECT MAX(version) AS version FROM schema_version').get() as { version?: number };
     expect(schemaVersion.version).toBe(OBSERVABILITY_SCHEMA_VERSION);
+  });
+
+  it('warns and leaves no zero-byte placeholder when sqlite open fails', () => {
+    const dbPath = join(tempRoot, 'not-a-database');
+    mkdirSync(dbPath, { recursive: true });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const client = createObservabilitySqliteClientAtPath(dbPath);
+
+    expect(client).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Failed to open observability database at ${dbPath}`));
+    expect(existsSync(join(tempRoot, 'not-a-database', 'observability.db'))).toBe(false);
+    warn.mockRestore();
   });
 
   describe('enforceWalMode', () => {

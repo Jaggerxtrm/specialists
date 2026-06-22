@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { Database } from 'bun:sqlite';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ObservabilityDbLocation } from '../../../src/specialist/observability-db.js';
@@ -117,23 +117,22 @@ describe('observability-db', () => {
   });
 
   describe('ensureObservabilityDbFile', () => {
-    it('creates db directory and file', async () => {
+    it('creates db directory without creating empty db file', async () => {
       const { ensureObservabilityDbFile } = await import('../../../src/specialist/observability-db.js');
       
       const result = ensureObservabilityDbFile(tempDbLocation);
       
       expect(result.created).toBe(true);
-      expect(existsSync(tempDbLocation.dbPath)).toBe(true);
+      expect(existsSync(tempDbLocation.dbPath)).toBe(false);
       expect(existsSync(tempDbLocation.dbDirectory)).toBe(true);
     });
 
     it('returns created=false when file already exists', async () => {
       const { ensureObservabilityDbFile } = await import('../../../src/specialist/observability-db.js');
       
-      // Create first time
-      ensureObservabilityDbFile(tempDbLocation);
+      mkdirSync(tempDbLocation.dbDirectory, { recursive: true });
+      writeFileSync(tempDbLocation.dbPath, 'sqlite data');
       
-      // Create second time
       const result = ensureObservabilityDbFile(tempDbLocation);
       
       expect(result.created).toBe(false);
@@ -143,6 +142,8 @@ describe('observability-db', () => {
       const { ensureObservabilityDbFile } = await import('../../../src/specialist/observability-db.js');
       const { statSync } = await import('node:fs');
       
+      mkdirSync(tempDbLocation.dbDirectory, { recursive: true });
+      writeFileSync(tempDbLocation.dbPath, 'sqlite data');
       ensureObservabilityDbFile(tempDbLocation);
       
       const mode = statSync(tempDbLocation.dbPath).mode & 0o777;

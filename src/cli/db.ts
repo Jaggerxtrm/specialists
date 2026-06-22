@@ -7,7 +7,7 @@ import {
   resolveObservabilityDbLocation,
 } from '../specialist/observability-db.js';
 import { resolveJobsDir } from '../specialist/job-root.js';
-import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath } from '../specialist/observability-sqlite.js';
 import type { SupervisorStatus } from '../specialist/supervisor.js';
 import { derivePersistedChainIdentity } from '../specialist/chain-identity.js';
 import { parseTimelineEvent, type TimelineEvent, type TimelineEventRunComplete } from '../specialist/timeline-events.js';
@@ -856,7 +856,7 @@ function runSetup(): void {
   }
 
   const setupResult = ensureObservabilityDbFile(location);
-  const sqliteClient = createObservabilitySqliteClient();
+  const sqliteClient = createObservabilitySqliteClientAtPath(location.dbPath);
   if (!sqliteClient) {
     throw new Error('Failed to initialize observability SQLite schema. Ensure sqlite3 is installed and retry.');
   }
