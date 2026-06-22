@@ -24,6 +24,7 @@ import {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
+  OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
   OVERRIDE_ALLOWED_TOP_FIELDS,
 } from './schema.js';
 
@@ -89,6 +90,7 @@ const OverrideExecutionSchema = z.object({
   fallback_models: z.array(z.string()).nullable().optional(),
   timeout_ms: z.number().nullable(),
   stall_timeout_ms: z.number().nullable(),
+  interactive: z.boolean().nullable().optional(),
   thinking_level: z
     .enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
     .nullable(),
@@ -102,6 +104,10 @@ const OverridePromptSchema = z.object({
   system_prompt_mode: z.enum(['append', 'replace']).nullable(),
 }).strict();
 
+const OverrideStallDetectionSchema = z.object({
+  waiting_auto_close_ms: z.number().nullable().optional(),
+}).strict();
+
 const OverrideSkillsSchema = z.object({
   paths: z.array(z.string()),
 }).strict();
@@ -109,6 +115,7 @@ const OverrideSkillsSchema = z.object({
 export const GlobalSpecialistOverrideSchema = z.object({
   execution: OverrideExecutionSchema,
   prompt: OverridePromptSchema.optional(),
+  stall_detection: OverrideStallDetectionSchema.optional(),
   beads_write_notes: z.boolean().nullable(),
   notes_mode: z.enum(['full-trail', 'final-only']).nullable().optional(),
   output_file: z.string().nullable().optional(),
@@ -122,6 +129,7 @@ export function getGlobalSpecialistOverrideLeafPaths(): readonly string[] {
     ...OVERRIDE_ALLOWED_EXECUTION_FIELDS.map(field => `execution.${field}`),
     ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
     ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
+    ...OVERRIDE_ALLOWED_STALL_DETECTION_PATHS.map(path => `stall_detection.${path}`),
     ...OVERRIDE_ALLOWED_TOP_FIELDS,
     'skills.paths',
   ];
@@ -157,6 +165,7 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
       fallback_models: null,
       timeout_ms: null,
       stall_timeout_ms: null,
+      interactive: null,
       thinking_level: null,
       max_retries: null,
       prompt_limit_bytes: null,
@@ -168,6 +177,9 @@ export function buildSpecialistOverrideTemplate(): GlobalSpecialistOverride {
     },
     prompt: {
       system_prompt_mode: null,
+    },
+    stall_detection: {
+      waiting_auto_close_ms: null,
     },
     beads_write_notes: null,
     notes_mode: null,

@@ -46,7 +46,9 @@
       ],
       "stale_threshold_days": 30
     },
-    "stall_detection": {},
+    "stall_detection": {
+      "waiting_auto_close_ms": null
+    },
     "mandatory_rules": {
       "template_sets": []
     },

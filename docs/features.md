@@ -207,7 +207,7 @@ Default behavior and precedence:
 
 1. `--no-keep-alive` / `no_keep_alive` forces one-shot mode
 2. `--keep-alive` / `keep_alive` forces keep-alive
-3. Otherwise, runner uses `execution.interactive`
+3. Otherwise, runner uses merged `execution.interactive` (package spec → `~/.config/specialists/user.json` → repo override)
 4. If unset, default is one-shot (`false`)
 
 Supervisor behavior in keep-alive mode:
@@ -375,6 +375,7 @@ specialist:
     running_silence_warn_ms: 60000
     running_silence_error_ms: 300000
     waiting_stale_ms: 3600000
+    waiting_auto_close_ms: 0
     tool_duration_warn_ms: 120000
 ```
 
@@ -383,6 +384,7 @@ Defaults (if omitted):
 - `running_silence_warn_ms`: 60s
 - `running_silence_error_ms`: 300s
 - `waiting_stale_ms`: 1h (3600s) — waiting jobs past this threshold emit `stale_warning` events
+- `waiting_auto_close_ms`: disabled by default — when set, stale waiting jobs attempt graceful close first, then forced termination fallback
 - `tool_duration_warn_ms`: 120s
 
 Supervisor outcomes:
@@ -1062,7 +1064,8 @@ const isChainJob = Boolean(
 
 **Dead waiting jobs**:
 - Emits `stale_warning` event if idle past `waiting_stale_ms` threshold
-- Does NOT auto-close waiting jobs — keep-alive sessions remain recoverable
+- If `waiting_auto_close_ms` is set, stale waiting jobs request graceful close first, then forced termination fallback if close hangs
+- Default remains recoverable waiting sessions when `waiting_auto_close_ms` is unset/0
 - Node members preserved for NodeSupervisor recovery
 
 **`hasRunCompleteEvent()`**:

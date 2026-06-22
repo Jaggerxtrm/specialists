@@ -25,6 +25,7 @@ describe('global specialist override config', () => {
         fallback_models: null,
         timeout_ms: null,
         stall_timeout_ms: null,
+        interactive: null,
         thinking_level: null,
         max_retries: null,
         prompt_limit_bytes: null,
@@ -36,6 +37,9 @@ describe('global specialist override config', () => {
       },
       prompt: {
         system_prompt_mode: null,
+      },
+      stall_detection: {
+        waiting_auto_close_ms: null,
       },
       beads_write_notes: null,
       notes_mode: null,
@@ -89,6 +93,7 @@ describe('global specialist override config', () => {
         fallback_models: null,
         timeout_ms: null,
         stall_timeout_ms: null,
+        interactive: null,
         thinking_level: null,
         max_retries: null,
         prompt_limit_bytes: null,
@@ -100,6 +105,9 @@ describe('global specialist override config', () => {
       },
       prompt: {
         system_prompt_mode: null,
+      },
+      stall_detection: {
+        waiting_auto_close_ms: null,
       },
       beads_write_notes: false,
       notes_mode: null,
@@ -182,6 +190,29 @@ describe('global specialist override config', () => {
         skills: { paths: [] },
         notes_mode: 'final-only',
         output_file: '/tmp/x.md',
+      },
+    };
+
+    expect(validateGlobalUserConfig(JSON.stringify(valid))).toEqual({ valid: true, errors: [] });
+  });
+
+  it('validateGlobalUserConfig accepts execution.interactive and stall_detection.waiting_auto_close_ms', () => {
+    const valid = {
+      demo: {
+        execution: {
+          model: 'global/glm-5.1',
+          fallback_model: null,
+          timeout_ms: null,
+          stall_timeout_ms: null,
+          interactive: true,
+          thinking_level: null,
+          max_retries: null,
+        },
+        stall_detection: {
+          waiting_auto_close_ms: 3600000,
+        },
+        beads_write_notes: false,
+        skills: { paths: [] },
       },
     };
 

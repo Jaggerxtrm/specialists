@@ -1419,3 +1419,4 @@
 - `src/specialist/forensic-events.ts` — token split body normalization, git commit evidence body/correlation, `chain_template` allowlist, `raw_diff` forbidden label.
 - `src/cli/serve.ts` / `src/index.ts` — adds per-job feed-events route and keeps `sp serve` long-running after listen.
 - `docs/telemetry/*.md` — console-safe forensic/Prometheus handoff updates.
+> Manual update: 2026-06-22T22:16:32Z — unitAI-pj2mm.1/.2/.3 shipped global override support for execution.interactive + stall_detection.waiting_auto_close_ms, added Supervisor waiting auto-close (graceful close first, forced termination fallback), updated specialists-creator/setup skills and canonical docs, and rebuilt dist for linked-bin testing.

@@ -29,6 +29,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
         timeout_ms: z.ZodNullable<z.ZodNumber>;
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
+        interactive: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         max_retries: z.ZodNullable<z.ZodNumber>;
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
@@ -55,6 +56,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }, {
@@ -69,6 +71,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }>;
@@ -78,6 +81,13 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
         system_prompt_mode: "replace" | "append" | null;
     }, {
         system_prompt_mode: "replace" | "append" | null;
+    }>>;
+    stall_detection: z.ZodOptional<z.ZodObject<{
+        waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    }, "strict", z.ZodTypeAny, {
+        waiting_auto_close_ms?: number | null | undefined;
+    }, {
+        waiting_auto_close_ms?: number | null | undefined;
     }>>;
     beads_write_notes: z.ZodNullable<z.ZodBoolean>;
     notes_mode: z.ZodOptional<z.ZodNullable<z.ZodEnum<["full-trail", "final-only"]>>>;
@@ -102,6 +112,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -111,6 +122,9 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     beads_write_notes: boolean | null;
     prompt?: {
         system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    stall_detection?: {
+        waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -127,6 +141,7 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -136,6 +151,9 @@ export declare const GlobalSpecialistOverrideSchema: z.ZodObject<{
     beads_write_notes: boolean | null;
     prompt?: {
         system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    stall_detection?: {
+        waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -150,6 +168,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         fallback_models: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
         timeout_ms: z.ZodNullable<z.ZodNumber>;
         stall_timeout_ms: z.ZodNullable<z.ZodNumber>;
+        interactive: z.ZodOptional<z.ZodNullable<z.ZodBoolean>>;
         thinking_level: z.ZodNullable<z.ZodEnum<["off", "minimal", "low", "medium", "high", "xhigh"]>>;
         max_retries: z.ZodNullable<z.ZodNumber>;
         prompt_limit_bytes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
@@ -176,6 +195,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }, {
@@ -190,6 +210,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     }>;
@@ -199,6 +220,13 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
         system_prompt_mode: "replace" | "append" | null;
     }, {
         system_prompt_mode: "replace" | "append" | null;
+    }>>;
+    stall_detection: z.ZodOptional<z.ZodObject<{
+        waiting_auto_close_ms: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    }, "strict", z.ZodTypeAny, {
+        waiting_auto_close_ms?: number | null | undefined;
+    }, {
+        waiting_auto_close_ms?: number | null | undefined;
     }>>;
     beads_write_notes: z.ZodNullable<z.ZodBoolean>;
     notes_mode: z.ZodOptional<z.ZodNullable<z.ZodEnum<["full-trail", "final-only"]>>>;
@@ -223,6 +251,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -232,6 +261,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     beads_write_notes: boolean | null;
     prompt?: {
         system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    stall_detection?: {
+        waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -248,6 +280,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -257,6 +290,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     beads_write_notes: boolean | null;
     prompt?: {
         system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    stall_detection?: {
+        waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;
@@ -273,6 +309,7 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
             serena: boolean | null;
         } | undefined;
         fallback_models?: string[] | null | undefined;
+        interactive?: boolean | null | undefined;
         stdout_limit_bytes?: number | null | undefined;
         prompt_limit_bytes?: number | null | undefined;
     };
@@ -282,6 +319,9 @@ export declare const GlobalUserConfigSchema: z.ZodEffects<z.ZodRecord<z.ZodStrin
     beads_write_notes: boolean | null;
     prompt?: {
         system_prompt_mode: "replace" | "append" | null;
+    } | undefined;
+    stall_detection?: {
+        waiting_auto_close_ms?: number | null | undefined;
     } | undefined;
     output_file?: string | null | undefined;
     notes_mode?: "full-trail" | "final-only" | null | undefined;

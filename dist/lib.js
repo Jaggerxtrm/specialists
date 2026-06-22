@@ -16735,6 +16735,7 @@ var StallDetectionSchema = objectType({
   running_silence_warn_ms: numberType().optional(),
   running_silence_error_ms: numberType().optional(),
   waiting_stale_ms: numberType().optional(),
+  waiting_auto_close_ms: numberType().nullable().optional(),
   tool_duration_warn_ms: numberType().optional()
 }).passthrough().optional();
 var SpecialistSchema = objectType({
@@ -16759,6 +16760,7 @@ var OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   "fallback_models",
   "timeout_ms",
   "stall_timeout_ms",
+  "interactive",
   "thinking_level",
   "max_retries",
   "prompt_limit_bytes",
@@ -16767,6 +16769,9 @@ var OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
 var OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
   "extensions.serena",
   "extensions.gitnexus"
+];
+var OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = [
+  "waiting_auto_close_ms"
 ];
 var OVERRIDE_ALLOWED_PROMPT_FIELDS = ["system_prompt_mode"];
 var OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes", "notes_mode", "output_file"];
@@ -16904,6 +16909,7 @@ var OverrideExecutionSchema = objectType({
   fallback_models: arrayType(stringType()).nullable().optional(),
   timeout_ms: numberType().nullable(),
   stall_timeout_ms: numberType().nullable(),
+  interactive: booleanType().nullable().optional(),
   thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
   max_retries: numberType().int().min(0).nullable(),
   prompt_limit_bytes: numberType().int().positive().nullable().optional(),
@@ -16913,12 +16919,16 @@ var OverrideExecutionSchema = objectType({
 var OverridePromptSchema = objectType({
   system_prompt_mode: enumType(["append", "replace"]).nullable()
 }).strict();
+var OverrideStallDetectionSchema = objectType({
+  waiting_auto_close_ms: numberType().nullable().optional()
+}).strict();
 var OverrideSkillsSchema = objectType({
   paths: arrayType(stringType())
 }).strict();
 var GlobalSpecialistOverrideSchema = objectType({
   execution: OverrideExecutionSchema,
   prompt: OverridePromptSchema.optional(),
+  stall_detection: OverrideStallDetectionSchema.optional(),
   beads_write_notes: booleanType().nullable(),
   notes_mode: enumType(["full-trail", "final-only"]).nullable().optional(),
   output_file: stringType().nullable().optional(),
@@ -17224,6 +17234,17 @@ class SpecialistLoader {
       basePrompt[field] = this.resolveOverrideValue(name, `specialist.prompt.${field}`, overrideValue);
     }
     baseSpec.prompt = basePrompt;
+    const overrideStallDetection = overrideSpec.stall_detection ?? {};
+    const baseStallDetection = baseSpec.stall_detection ?? {};
+    for (const path of OVERRIDE_ALLOWED_STALL_DETECTION_PATHS) {
+      const overrideValue = readDottedPath(overrideStallDetection, path);
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      writeDottedPath(baseStallDetection, path, this.resolveOverrideValue(name, `specialist.stall_detection.${path}`, overrideValue));
+    }
+    if (Object.keys(baseStallDetection).length > 0) {
+      baseSpec.stall_detection = baseStallDetection;
+    }
     for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
       if (!(field in overrideSpec))
         continue;

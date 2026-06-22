@@ -111,6 +111,8 @@ const StallDetectionSchema = z.object({
   running_silence_error_ms: z.number().optional(),
   /** ms in waiting state before emitting warning (default 3_600_000) */
   waiting_stale_ms: z.number().optional(),
+  /** ms in waiting state before attempting graceful auto-close (default disabled) */
+  waiting_auto_close_ms: z.number().nullable().optional(),
   /** ms a single tool execution may run before warning (default 120_000) */
   tool_duration_warn_ms: z.number().optional(),
 }).passthrough().optional();
@@ -150,6 +152,7 @@ export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
   'fallback_models',
   'timeout_ms',
   'stall_timeout_ms',
+  'interactive',
   'thinking_level',
   'max_retries',
   'prompt_limit_bytes',
@@ -160,6 +163,11 @@ export const OVERRIDE_ALLOWED_EXECUTION_FIELDS = [
 export const OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
   'extensions.serena',
   'extensions.gitnexus',
+] as const;
+
+/** Nested stall-detection leaf paths an override layer may set. Relative to `specialist.stall_detection`. */
+export const OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = [
+  'waiting_auto_close_ms',
 ] as const;
 
 /** Prompt sub-fields an override layer may set. Relative to `specialist.prompt`. */

@@ -3,6 +3,7 @@ import {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
+  OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
   OVERRIDE_ALLOWED_TOP_FIELDS,
   parseSpecialist,
 } from '../../../src/specialist/schema.js';
@@ -48,6 +49,7 @@ describe('override allowlist contract', () => {
       ...OVERRIDE_ALLOWED_EXECUTION_FIELDS.map(field => `execution.${field}`),
       ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map(path => `execution.${path}`),
       ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map(field => `prompt.${field}`),
+      ...OVERRIDE_ALLOWED_STALL_DETECTION_PATHS.map(path => `stall_detection.${path}`),
       ...OVERRIDE_ALLOWED_TOP_FIELDS,
       'skills.paths',
     ].sort();
@@ -59,6 +61,24 @@ describe('override allowlist contract', () => {
     it('includes new execution leaf fields in OVERRIDE_ALLOWED_EXECUTION_FIELDS', () => {
       expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('prompt_limit_bytes');
       expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('stdout_limit_bytes');
+      expect(OVERRIDE_ALLOWED_EXECUTION_FIELDS).toContain('interactive');
+    });
+
+    it('includes waiting_auto_close_ms in OVERRIDE_ALLOWED_STALL_DETECTION_PATHS', () => {
+      expect(OVERRIDE_ALLOWED_STALL_DETECTION_PATHS).toContain('waiting_auto_close_ms');
+    });
+
+    it('parses null waiting_auto_close_ms in package specialist specs', async () => {
+      const spec = createValidSpec() as ReturnType<typeof createValidSpec> & {
+        specialist: ReturnType<typeof createValidSpec>['specialist'] & {
+          stall_detection: { waiting_auto_close_ms: null };
+        };
+      };
+      spec.specialist.stall_detection = { waiting_auto_close_ms: null };
+
+      const result = await parseSpecialist(toJson(spec));
+
+      expect(result.specialist.stall_detection?.waiting_auto_close_ms).toBeNull();
     });
 
     it('includes new nested execution extension leaf paths in OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS', () => {

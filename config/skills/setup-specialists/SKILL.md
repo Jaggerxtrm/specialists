@@ -405,6 +405,7 @@ falls through to `$EDITOR` in some environments (open follow-up). Prefer
 | `<name>.execution.fallback_models` | string[] \| null | Plural chain (KAN-91 Phase 2). Walked **only on transient failures** (rate limits, network errors, 5xx). Plural wins over singular. |
 | `<name>.execution.timeout_ms` | number \| null | Per-spec timeout. |
 | `<name>.execution.stall_timeout_ms` | number \| null | Stall-detection threshold. |
+| `<name>.execution.interactive` | bool \| null | Global default keep-alive behavior. CLI still wins: `--no-keep-alive` > `--keep-alive` > merged `execution.interactive`. |
 | `<name>.execution.thinking_level` | enum \| null | `off \| minimal \| low \| medium \| high \| xhigh`. **Leave `null` to inherit pi's `defaultThinkingLevel` (typically `high`)**. Forcing `off` on Kimi-class models silently produces empty assistant text. |
 | `<name>.execution.max_retries` | number \| null | Transient-retry budget. |
 | `<name>.execution.prompt_limit_bytes` | number \| null | Script-runner prompt-size guard (~4 MB default). |
@@ -412,6 +413,7 @@ falls through to `$EDITOR` in some environments (open follow-up). Prefer
 | `<name>.execution.extensions.serena` | bool \| null | `false` to skip Serena MCP injection for this spec (RAM saver on non-LSP roles). |
 | `<name>.execution.extensions.gitnexus` | bool \| null | `false` to skip GitNexus MCP injection. |
 | `<name>.prompt.system_prompt_mode` | enum \| null | `append` (default for package specs) or `replace`. |
+| `<name>.stall_detection.waiting_auto_close_ms` | number \| null | Opt-in waiting auto-close threshold. Graceful close first; forced termination only if close hangs. |
 | `<name>.beads_write_notes` | bool \| null | `false` to disable auto-append to input bead notes. |
 | `<name>.notes_mode` | enum \| null | `full-trail` (default) or `final-only` — see [Handoff modes](#handoff-modes). |
 | `<name>.output_file` | string \| null | Path to write the rendered handoff block. **No env flag required** since `unitAI-f58ma`. |

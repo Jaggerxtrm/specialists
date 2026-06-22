@@ -20628,7 +20628,7 @@ ${result.warnings.map((w) => `  \u26A0 ${w}`).join(`
   const raw = JSON.parse(jsonContent);
   return SpecialistSchema.parseAsync(raw);
 }
-var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema, OVERRIDE_ALLOWED_EXECUTION_FIELDS, OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS, OVERRIDE_ALLOWED_PROMPT_FIELDS, OVERRIDE_ALLOWED_TOP_FIELDS, BLOCKED_OVERRIDE_FIELDS;
+var KebabCase, Semver, MetadataSchema, ExecutionSchema, PromptSchema2, ScriptEntrySchema, SkillsSchema, CapabilitiesSchema, ValidationSchema, MandatoryRuleSchema, MandatoryRulesSchema, StallDetectionSchema, SpecialistSchema, OVERRIDE_ALLOWED_EXECUTION_FIELDS, OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS, OVERRIDE_ALLOWED_STALL_DETECTION_PATHS, OVERRIDE_ALLOWED_PROMPT_FIELDS, OVERRIDE_ALLOWED_TOP_FIELDS, BLOCKED_OVERRIDE_FIELDS;
 var init_schema = __esm(() => {
   init_zod();
   KebabCase = stringType().regex(/^[a-z][a-z0-9-]*$/, "Must be kebab-case");
@@ -20704,6 +20704,7 @@ var init_schema = __esm(() => {
     running_silence_warn_ms: numberType().optional(),
     running_silence_error_ms: numberType().optional(),
     waiting_stale_ms: numberType().optional(),
+    waiting_auto_close_ms: numberType().nullable().optional(),
     tool_duration_warn_ms: numberType().optional()
   }).passthrough().optional();
   SpecialistSchema = objectType({
@@ -20728,6 +20729,7 @@ var init_schema = __esm(() => {
     "fallback_models",
     "timeout_ms",
     "stall_timeout_ms",
+    "interactive",
     "thinking_level",
     "max_retries",
     "prompt_limit_bytes",
@@ -20736,6 +20738,9 @@ var init_schema = __esm(() => {
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS = [
     "extensions.serena",
     "extensions.gitnexus"
+  ];
+  OVERRIDE_ALLOWED_STALL_DETECTION_PATHS = [
+    "waiting_auto_close_ms"
   ];
   OVERRIDE_ALLOWED_PROMPT_FIELDS = ["system_prompt_mode"];
   OVERRIDE_ALLOWED_TOP_FIELDS = ["beads_write_notes", "notes_mode", "output_file"];
@@ -20814,6 +20819,7 @@ function getGlobalSpecialistOverrideLeafPaths() {
     ...OVERRIDE_ALLOWED_EXECUTION_FIELDS.map((field) => `execution.${field}`),
     ...OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS.map((path) => `execution.${path}`),
     ...OVERRIDE_ALLOWED_PROMPT_FIELDS.map((field) => `prompt.${field}`),
+    ...OVERRIDE_ALLOWED_STALL_DETECTION_PATHS.map((path) => `stall_detection.${path}`),
     ...OVERRIDE_ALLOWED_TOP_FIELDS,
     "skills.paths"
   ];
@@ -20826,6 +20832,7 @@ function buildSpecialistOverrideTemplate() {
       fallback_models: null,
       timeout_ms: null,
       stall_timeout_ms: null,
+      interactive: null,
       thinking_level: null,
       max_retries: null,
       prompt_limit_bytes: null,
@@ -20837,6 +20844,9 @@ function buildSpecialistOverrideTemplate() {
     },
     prompt: {
       system_prompt_mode: null
+    },
+    stall_detection: {
+      waiting_auto_close_ms: null
     },
     beads_write_notes: null,
     notes_mode: null,
@@ -20942,7 +20952,7 @@ function writeGlobalUserConfig(location, config2) {
     throw renameError;
   }
 }
-var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", GLOBAL_USER_CONFIG_DOC = "./overrides-guide.md", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
+var CONFIG_FILENAME = "user.json", SPECIALISTS_SUBDIR = "specialists", GLOBAL_USER_CONFIG_DOC = "./overrides-guide.md", OverrideExtensionsSchema, OverrideExecutionSchema, OverridePromptSchema, OverrideStallDetectionSchema, OverrideSkillsSchema, GlobalSpecialistOverrideSchema, GlobalUserConfigSchema;
 var init_global_config = __esm(() => {
   init_zod();
   init_schema();
@@ -20956,6 +20966,7 @@ var init_global_config = __esm(() => {
     fallback_models: arrayType(stringType()).nullable().optional(),
     timeout_ms: numberType().nullable(),
     stall_timeout_ms: numberType().nullable(),
+    interactive: booleanType().nullable().optional(),
     thinking_level: enumType(["off", "minimal", "low", "medium", "high", "xhigh"]).nullable(),
     max_retries: numberType().int().min(0).nullable(),
     prompt_limit_bytes: numberType().int().positive().nullable().optional(),
@@ -20965,12 +20976,16 @@ var init_global_config = __esm(() => {
   OverridePromptSchema = objectType({
     system_prompt_mode: enumType(["append", "replace"]).nullable()
   }).strict();
+  OverrideStallDetectionSchema = objectType({
+    waiting_auto_close_ms: numberType().nullable().optional()
+  }).strict();
   OverrideSkillsSchema = objectType({
     paths: arrayType(stringType())
   }).strict();
   GlobalSpecialistOverrideSchema = objectType({
     execution: OverrideExecutionSchema,
     prompt: OverridePromptSchema.optional(),
+    stall_detection: OverrideStallDetectionSchema.optional(),
     beads_write_notes: booleanType().nullable(),
     notes_mode: enumType(["full-trail", "final-only"]).nullable().optional(),
     output_file: stringType().nullable().optional(),
@@ -21279,6 +21294,17 @@ class SpecialistLoader {
       basePrompt[field] = this.resolveOverrideValue(name, `specialist.prompt.${field}`, overrideValue);
     }
     baseSpec.prompt = basePrompt;
+    const overrideStallDetection = overrideSpec.stall_detection ?? {};
+    const baseStallDetection = baseSpec.stall_detection ?? {};
+    for (const path of OVERRIDE_ALLOWED_STALL_DETECTION_PATHS) {
+      const overrideValue = readDottedPath(overrideStallDetection, path);
+      if (overrideValue === null || overrideValue === undefined)
+        continue;
+      writeDottedPath(baseStallDetection, path, this.resolveOverrideValue(name, `specialist.stall_detection.${path}`, overrideValue));
+    }
+    if (Object.keys(baseStallDetection).length > 0) {
+      baseSpec.stall_detection = baseStallDetection;
+    }
     for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
       if (!(field in overrideSpec))
         continue;
@@ -26879,7 +26905,8 @@ class Supervisor {
       return;
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
+      ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms
     };
     const now = Date.now();
     const shouldUseFiles = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? "").trim().toLowerCase() !== "off";
@@ -27434,23 +27461,45 @@ ${appendError}
         finishKeepAlive({ kind: "fatal", error: error2 });
       }
     };
-    const closeKeepAliveSession = async () => {
+    let waitingAutoCloseInFlight = false;
+    const closeKeepAliveSession = async (options) => {
       if (!closeFn) {
+        options?.onGracefulClose?.();
         finishKeepAlive({ kind: "closed" });
         return;
       }
       try {
-        await closeFn();
+        if (options?.gracefulTimeoutMs && options.gracefulTimeoutMs > 0) {
+          await Promise.race([
+            closeFn(),
+            new Promise((_, reject) => {
+              setTimeout(() => {
+                reject(new Error(`waiting auto-close timed out after ${options.gracefulTimeoutMs}ms`));
+              }, options.gracefulTimeoutMs).unref();
+            })
+          ]);
+        } else {
+          await closeFn();
+        }
+        options?.onGracefulClose?.();
         finishKeepAlive({ kind: "closed" });
       } catch (err) {
         const error2 = err instanceof Error ? err : new Error(String(err));
+        if (options?.gracefulTimeoutMs && killFn) {
+          options.onForcedTermination?.(error2);
+          setStatus({ status: "error", error: `${error2.message}; forced termination requested` });
+          killFn();
+          finishKeepAlive({ kind: "fatal", error: new Error(`${error2.message}; forced termination requested`) });
+          return;
+        }
         setStatus({ status: "error", error: error2.message });
         finishKeepAlive({ kind: "fatal", error: error2 });
       }
     };
     const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
-      ...this.opts.stallDetection
+      ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms
     };
     let lastActivityMs = startedAtMs;
     let silenceWarnEmitted = false;
@@ -27479,6 +27528,55 @@ ${appendError}
           });
           killFn?.();
           clearInterval(stuckIntervalId);
+        }
+      }
+      const waitingAutoCloseThresholdMs = thresholds.waiting_auto_close_ms ?? 0;
+      if (!waitingAutoCloseInFlight && waitingAutoCloseThresholdMs > 0 && statusSnapshot.status === "waiting") {
+        const waitingSinceMs = statusSnapshot.last_event_at_ms ?? startedAtMs;
+        const waitingSilenceMs = now - waitingSinceMs;
+        if (waitingSilenceMs > waitingAutoCloseThresholdMs) {
+          waitingAutoCloseInFlight = true;
+          appendTimelineEvent(createControlSignalEvent("waiting_auto_close_requested", {
+            source: "watchdog",
+            previous_status: statusSnapshot.status,
+            reason: "waiting threshold exceeded",
+            metadata: {
+              silence_ms: waitingSilenceMs,
+              threshold_ms: waitingAutoCloseThresholdMs
+            }
+          }));
+          setStatus({ current_event: "waiting_auto_close", last_event_at_ms: now });
+          closeKeepAliveSession({
+            source: "watchdog",
+            reason: "waiting auto-close threshold exceeded",
+            gracefulTimeoutMs: WAITING_AUTO_CLOSE_GRACE_MS,
+            onGracefulClose: () => {
+              appendTimelineEvent(createControlSignalEvent("waiting_auto_close_completed", {
+                source: "watchdog",
+                previous_status: "waiting",
+                next_status: "done",
+                reason: "close_fn_resolved",
+                metadata: {
+                  silence_ms: waitingSilenceMs,
+                  threshold_ms: waitingAutoCloseThresholdMs
+                }
+              }));
+            },
+            onForcedTermination: (error2) => {
+              appendTimelineEvent(createControlSignalEvent("waiting_auto_close_force_requested", {
+                source: "watchdog",
+                previous_status: "waiting",
+                next_status: "error",
+                signal: "SIGTERM/SIGKILL",
+                reason: error2.message,
+                metadata: {
+                  silence_ms: waitingSilenceMs,
+                  threshold_ms: waitingAutoCloseThresholdMs,
+                  graceful_timeout_ms: WAITING_AUTO_CLOSE_GRACE_MS
+                }
+              }));
+            }
+          });
         }
       }
       if (toolStartMs !== undefined && !toolDurationWarnEmitted) {
@@ -28108,7 +28206,7 @@ ${appendError}
     }
   }
 }
-var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
+var JOB_TTL_DAYS, STALL_DETECTION_DEFAULTS, WAITING_AUTO_CLOSE_GRACE_MS = 5000, GITNEXUS_RISK_ORDER, MODEL_CONTEXT_WINDOWS, TERMINAL_COMPLIANCE_VERDICT_REGEX, PASS_COMPLIANCE_VERDICT_REGEX, REVIEW_VERDICT_REGEX, AUTO_COMMIT_NOISE_PREFIXES, STATUS_WATCHDOG_INTERVAL_MS = 5000, STATUS_WATCHDOG_STALE_AFTER_MS = 30000;
 var init_supervisor = __esm(() => {
   init_job_root();
   init_timeline_events();
@@ -28124,6 +28222,7 @@ var init_supervisor = __esm(() => {
     running_silence_warn_ms: 60000,
     running_silence_error_ms: 300000,
     waiting_stale_ms: 3600000,
+    waiting_auto_close_ms: 0,
     tool_duration_warn_ms: 120000
   };
   GITNEXUS_RISK_ORDER = {
@@ -46109,11 +46208,13 @@ var init_config_source = __esm(() => {
     "execution.fallback_models": 'JSON array \xB7 e.g. ["openai-codex/gpt-5.4-mini"]',
     "execution.timeout_ms": "ms \xB7 total cap; e.g. 120000 (2m); 0=disabled",
     "execution.stall_timeout_ms": "ms \xB7 idle cap; e.g. 300000 (5m); 0=disabled",
+    "execution.interactive": "true|false \xB7 default keep-alive/resume behavior",
     "execution.max_retries": "count \xB7 transient-error retries; e.g. 3",
     "execution.prompt_limit_bytes": "bytes \xB7 prompt cap; e.g. 4194304 (4 MiB)",
     "execution.stdout_limit_bytes": "bytes \xB7 stdout cap; e.g. 33554432 (32 MiB)",
     "execution.extensions.serena": "true|false \xB7 false disables Serena MCP (~80-150 MB)",
     "execution.extensions.gitnexus": "true|false \xB7 false disables GitNexus MCP",
+    "stall_detection.waiting_auto_close_ms": "ms \xB7 waiting auto-close; e.g. 3600000 (1h)",
     beads_write_notes: "true|false \xB7 false skips per-turn note append",
     output_file: "absolute path \xB7 always written when set",
     "skills.paths": "string[] \xB7 extra skill folders, appended to spec"

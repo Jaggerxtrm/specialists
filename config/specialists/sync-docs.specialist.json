@@ -76,7 +76,9 @@
     },
     "output_file": ".specialists/sync-docs-report.md",
     "beads_integration": "auto",
-    "stall_detection": {},
+    "stall_detection": {
+      "waiting_auto_close_ms": null
+    },
     "beads_write_notes": true
   }
 }

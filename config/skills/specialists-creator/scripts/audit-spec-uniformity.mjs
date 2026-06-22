@@ -27,7 +27,7 @@ const KNOWN = {
   capabilities: new Set(['required_tools','external_commands','diagnostic_scripts']),
   communication: new Set(['next_specialists','publishes']),
   validation: new Set(['files_to_watch','stale_threshold_days']),
-  stall_detection: new Set(['running_idle_warn_ms','running_idle_kill_ms','waiting_stale_ms','tool_duration_warn_ms']),
+  stall_detection: new Set(['running_idle_warn_ms','running_idle_kill_ms','waiting_stale_ms','waiting_auto_close_ms','tool_duration_warn_ms']),
 };
 
 function unknownKeys(obj, knownSet, path) {

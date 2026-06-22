@@ -231,7 +231,7 @@ Specialist resolution is implemented in `src/specialist/loader.ts` through a det
 
 ### Field governance
 
-- **Allowed override fields (global/repo):** `execution.*`, `prompt.system_prompt_mode`, `beads_write_notes`, `notes_mode`, `output_file`, and `skills.paths`.
+- **Allowed override fields (global/repo):** execution allowlist leaves (`model`, `fallback_model`, `fallback_models`, `timeout_ms`, `stall_timeout_ms`, `interactive`, `thinking_level`, `max_retries`, `prompt_limit_bytes`, `stdout_limit_bytes`), execution extension leaves, `prompt.system_prompt_mode`, `stall_detection.waiting_auto_close_ms`, `beads_write_notes`, `notes_mode`, `output_file`, and `skills.paths`.
 - **Blocked fields:** `execution.permission_required`, `execution.auto_commit`, `prompt.system`, `prompt.output_schema`, `skills.scripts`, `mandatory_rules`, `capabilities`.
 - **Severity model:**
   - Global blocked attempt: stripped (`severity: strip`) and surfaced only in diagnostic metadata.
@@ -531,7 +531,8 @@ Defaults (`STALL_DETECTION_DEFAULTS`):
 |-----------|---------|--------|
 | `running_silence_warn_ms` | 60s | Emit `stale_warning` event |
 | `running_silence_error_ms` | 300s | Transition to `error`, kill session |
-| `waiting_stale_ms` | 1h | Emit `stale_warning` event (do NOT auto-close) |
+| `waiting_stale_ms` | 1h | Emit `stale_warning` event |
+| `waiting_auto_close_ms` | disabled | Graceful close first; forced termination fallback only if close hangs |
 | `tool_duration_warn_ms` | 120s | Emit `stale_warning` with tool name |
 
 Periodic checker (10s interval) monitors silence duration and tool execution time.

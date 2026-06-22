@@ -9,6 +9,7 @@ import {
   OVERRIDE_ALLOWED_EXECUTION_FIELDS,
   OVERRIDE_ALLOWED_NESTED_EXECUTION_PATHS,
   OVERRIDE_ALLOWED_PROMPT_FIELDS,
+  OVERRIDE_ALLOWED_STALL_DETECTION_PATHS,
   OVERRIDE_ALLOWED_TOP_FIELDS,
   type ScriptEntry,
   type Specialist,
@@ -26,6 +27,7 @@ export interface StallDetectionConfig {
   running_silence_warn_ms?: number;
   running_silence_error_ms?: number;
   waiting_stale_ms?: number;
+  waiting_auto_close_ms?: number | null;
   tool_duration_warn_ms?: number;
 }
 
@@ -245,7 +247,19 @@ export class SpecialistLoader {
     }
     baseSpec.prompt = basePrompt;
 
-    // 4. Apply allowed top-level fields.
+    // 4. Apply allowed stall_detection fields.
+    const overrideStallDetection = (overrideSpec.stall_detection ?? {}) as Record<string, unknown>;
+    const baseStallDetection = (baseSpec.stall_detection ?? {}) as Record<string, unknown>;
+    for (const path of OVERRIDE_ALLOWED_STALL_DETECTION_PATHS) {
+      const overrideValue = readDottedPath(overrideStallDetection, path);
+      if (overrideValue === null || overrideValue === undefined) continue;
+      writeDottedPath(baseStallDetection, path, this.resolveOverrideValue(name, `specialist.stall_detection.${path}`, overrideValue));
+    }
+    if (Object.keys(baseStallDetection).length > 0) {
+      baseSpec.stall_detection = baseStallDetection;
+    }
+
+    // 5. Apply allowed top-level fields.
     for (const field of OVERRIDE_ALLOWED_TOP_FIELDS) {
       if (!(field in overrideSpec)) continue;
       const overrideValue = overrideSpec[field];
@@ -253,7 +267,7 @@ export class SpecialistLoader {
       baseSpec[field] = this.resolveOverrideValue(name, `specialist.${field}`, overrideValue);
     }
 
-    // 5. skills.paths: append + dedup. Other skills.* fields stay base.
+    // 6. skills.paths: append + dedup. Other skills.* fields stay base.
     const overrideSkills = (overrideSpec.skills ?? {}) as Record<string, unknown>;
     const overridePaths = Array.isArray(overrideSkills.paths) ? (overrideSkills.paths as string[]) : null;
     if (overridePaths && overridePaths.length) {

@@ -50,12 +50,21 @@ describe('describeLeaf — operationally-grounded hints (unitAI-ctb4u.31)', () =
     expect(describeLeaf('execution.timeout_ms').hint).toContain('120000');
     expect(describeLeaf('execution.stall_timeout_ms').hint).toContain('ms');
     expect(describeLeaf('execution.stall_timeout_ms').hint).toContain('300000');
+    expect(describeLeaf('stall_detection.waiting_auto_close_ms').hint).toContain('ms');
+    expect(describeLeaf('stall_detection.waiting_auto_close_ms').hint).toContain('3600000');
     expect(describeLeaf('execution.max_retries').hint).toContain('count');
     expect(describeLeaf('execution.max_retries').hint).toContain('e.g. 3');
     expect(describeLeaf('execution.prompt_limit_bytes').hint).toContain('bytes');
     expect(describeLeaf('execution.prompt_limit_bytes').hint).toContain('MiB');
     expect(describeLeaf('execution.stdout_limit_bytes').hint).toContain('bytes');
     expect(describeLeaf('execution.stdout_limit_bytes').hint).toContain('MiB');
+  });
+
+  it('interactive hint describes keep-alive default behavior', () => {
+    const hint = describeLeaf('execution.interactive').hint;
+    expect(hint).toContain('true|false');
+    expect(hint).toContain('keep-alive');
+    expect(hint).toContain('resume');
   });
 
   it('boolean hints name the OPERATIONAL effect of false, not the type', () => {
@@ -95,6 +104,7 @@ describe('describeLeaf — operationally-grounded hints (unitAI-ctb4u.31)', () =
       'execution.fallback_models',
       'execution.timeout_ms',
       'execution.stall_timeout_ms',
+      'execution.interactive',
       'execution.thinking_level',
       'execution.max_retries',
       'execution.prompt_limit_bytes',
@@ -102,6 +112,7 @@ describe('describeLeaf — operationally-grounded hints (unitAI-ctb4u.31)', () =
       'execution.extensions.serena',
       'execution.extensions.gitnexus',
       'prompt.system_prompt_mode',
+      'stall_detection.waiting_auto_close_ms',
       'beads_write_notes',
       'notes_mode',
       'output_file',

@@ -139,6 +139,9 @@
       ]
     },
     "beads_integration": "auto",
-    "beads_write_notes": true
+    "beads_write_notes": true,
+    "stall_detection": {
+      "waiting_auto_close_ms": null
+    }
   }
 }

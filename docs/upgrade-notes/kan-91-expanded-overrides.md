@@ -9,11 +9,12 @@ KAN-91 expands the KAN-90 global `user.json` layer from model-only tuning into a
 This expansion adds:
 
 - Six allowlisted user-environment fields: `prompt.system_prompt_mode`, `execution.extensions.serena`, `execution.extensions.gitnexus`, `notes_mode`, `output_file`, `execution.prompt_limit_bytes`, and `execution.stdout_limit_bytes`.
+- Follow-up fields now also exposed in the live global layer: `execution.interactive` and `stall_detection.waiting_auto_close_ms`.
 - Fallback chains via `execution.fallback_models` while keeping legacy `execution.fallback_model`.
 - Preset references like `@preset/cheap` for model and fallback entries.
 - A top-level `_doc` sentinel in generated `user.json` pointing back to this guide. Keys starting with `_` are metadata, not specialist names.
 
-The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
+The examples below are delta snippets to add inside an existing specialist entry from `sp init --global`; they are not complete standalone `user.json` files. Keep the surrounding generated entry shape, including its `execution`, `prompt`, `stall_detection`, `beads_write_notes`, and `skills` keys, and change only the highlighted field.
 
 ## Per-field reference
 
@@ -222,6 +223,7 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
       ],
       "timeout_ms": null,
       "stall_timeout_ms": null,
+      "interactive": true,
       "thinking_level": null,
       "max_retries": null,
       "prompt_limit_bytes": 8388608,
@@ -233,6 +235,9 @@ This is a complete `user.json` shape, not a delta snippet. It keeps every requir
     },
     "prompt": {
       "system_prompt_mode": "replace"
+    },
+    "stall_detection": {
+      "waiting_auto_close_ms": 3600000
     },
     "beads_write_notes": null,
     "notes_mode": "final-only",

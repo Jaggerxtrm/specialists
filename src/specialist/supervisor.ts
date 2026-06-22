@@ -62,8 +62,11 @@ export const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig> = {
   running_silence_warn_ms: 60_000,
   running_silence_error_ms: 300_000,
   waiting_stale_ms: 3_600_000,
+  waiting_auto_close_ms: 0,
   tool_duration_warn_ms: 120_000,
 };
+
+const WAITING_AUTO_CLOSE_GRACE_MS = 5_000;
 
 export type SupervisorJobStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
 
@@ -1083,9 +1086,10 @@ export class Supervisor {
   /** Crash recovery: mark running jobs with dead PID as error, and emit stale warnings. */
   private crashRecovery(): void {
     if (!existsSync(this.resolvedJobsDir)) return;
-    const thresholds: Required<StallDetectionConfig> = {
+    const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms,
     };
     const now = Date.now();
     const shouldUseFiles = String(process.env.SPECIALISTS_JOB_FILE_OUTPUT ?? '').trim().toLowerCase() !== 'off';
@@ -1740,25 +1744,53 @@ export class Supervisor {
       }
     };
 
-    const closeKeepAliveSession = async (): Promise<void> => {
+    let waitingAutoCloseInFlight = false;
+    const closeKeepAliveSession = async (options?: {
+      source?: 'cli' | 'supervisor' | 'watchdog' | 'runtime';
+      reason?: string;
+      gracefulTimeoutMs?: number;
+      onGracefulClose?: () => void;
+      onForcedTermination?: (error: Error) => void;
+    }): Promise<void> => {
       if (!closeFn) {
+        options?.onGracefulClose?.();
         finishKeepAlive({ kind: 'closed' });
         return;
       }
       try {
-        await closeFn();
+        if (options?.gracefulTimeoutMs && options.gracefulTimeoutMs > 0) {
+          await Promise.race([
+            closeFn(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => {
+                reject(new Error(`waiting auto-close timed out after ${options.gracefulTimeoutMs}ms`));
+              }, options.gracefulTimeoutMs).unref();
+            }),
+          ]);
+        } else {
+          await closeFn();
+        }
+        options?.onGracefulClose?.();
         finishKeepAlive({ kind: 'closed' });
       } catch (err: any) {
         const error = err instanceof Error ? err : new Error(String(err));
+        if (options?.gracefulTimeoutMs && killFn) {
+          options.onForcedTermination?.(error);
+          setStatus({ status: 'error', error: `${error.message}; forced termination requested` });
+          killFn();
+          finishKeepAlive({ kind: 'fatal', error: new Error(`${error.message}; forced termination requested`) });
+          return;
+        }
         setStatus({ status: 'error', error: error.message });
         finishKeepAlive({ kind: 'fatal', error });
       }
     };
 
     // Stuck detection: thresholds, local tracking state, and periodic checker
-    const thresholds: Required<StallDetectionConfig> = {
+    const thresholds = {
       ...STALL_DETECTION_DEFAULTS,
       ...this.opts.stallDetection,
+      waiting_auto_close_ms: this.opts.stallDetection?.waiting_auto_close_ms ?? STALL_DETECTION_DEFAULTS.waiting_auto_close_ms,
     };
     let lastActivityMs = startedAtMs;
     let silenceWarnEmitted = false;
@@ -1788,6 +1820,59 @@ export class Supervisor {
           });
           killFn?.();
           clearInterval(stuckIntervalId);
+        }
+      }
+      const waitingAutoCloseThresholdMs = thresholds.waiting_auto_close_ms ?? 0;
+      if (
+        !waitingAutoCloseInFlight
+        && waitingAutoCloseThresholdMs > 0
+        && statusSnapshot.status === 'waiting'
+      ) {
+        const waitingSinceMs = statusSnapshot.last_event_at_ms ?? startedAtMs;
+        const waitingSilenceMs = now - waitingSinceMs;
+        if (waitingSilenceMs > waitingAutoCloseThresholdMs) {
+          waitingAutoCloseInFlight = true;
+          appendTimelineEvent(createControlSignalEvent('waiting_auto_close_requested', {
+            source: 'watchdog',
+            previous_status: statusSnapshot.status,
+            reason: 'waiting threshold exceeded',
+            metadata: {
+              silence_ms: waitingSilenceMs,
+              threshold_ms: waitingAutoCloseThresholdMs,
+            },
+          }));
+          setStatus({ current_event: 'waiting_auto_close', last_event_at_ms: now });
+          void closeKeepAliveSession({
+            source: 'watchdog',
+            reason: 'waiting auto-close threshold exceeded',
+            gracefulTimeoutMs: WAITING_AUTO_CLOSE_GRACE_MS,
+            onGracefulClose: () => {
+              appendTimelineEvent(createControlSignalEvent('waiting_auto_close_completed', {
+                source: 'watchdog',
+                previous_status: 'waiting',
+                next_status: 'done',
+                reason: 'close_fn_resolved',
+                metadata: {
+                  silence_ms: waitingSilenceMs,
+                  threshold_ms: waitingAutoCloseThresholdMs,
+                },
+              }));
+            },
+            onForcedTermination: (error) => {
+              appendTimelineEvent(createControlSignalEvent('waiting_auto_close_force_requested', {
+                source: 'watchdog',
+                previous_status: 'waiting',
+                next_status: 'error',
+                signal: 'SIGTERM/SIGKILL',
+                reason: error.message,
+                metadata: {
+                  silence_ms: waitingSilenceMs,
+                  threshold_ms: waitingAutoCloseThresholdMs,
+                  graceful_timeout_ms: WAITING_AUTO_CLOSE_GRACE_MS,
+                },
+              }));
+            },
+          });
         }
       }
       if (toolStartMs !== undefined && !toolDurationWarnEmitted) {

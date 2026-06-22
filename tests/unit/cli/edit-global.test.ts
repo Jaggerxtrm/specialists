@@ -122,6 +122,26 @@ describe('edit CLI — --global --get / --set', () => {
     expect(parsed.executor.beads_write_notes).toBe(false);
   });
 
+  it('--set writes execution.interactive booleans', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.execution.interactive', 'true'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.execution.interactive).toBe(true);
+  });
+
+  it('--set writes stall_detection.waiting_auto_close_ms numbers', async () => {
+    await seedGlobalConfig(tempHome);
+    process.argv = ['node', 'sp', 'edit', '--global', '--set', 'executor.stall_detection.waiting_auto_close_ms', '3600000'];
+    const { run } = await importEdit();
+    await run();
+
+    const parsed = JSON.parse(await readFile(getGlobalUserConfigPath().path, 'utf-8'));
+    expect(parsed.executor.stall_detection.waiting_auto_close_ms).toBe(3600000);
+  });
+
   it('--set null clears a field back to inherit', async () => {
     await seedGlobalConfig(tempHome, {
       executor: {
