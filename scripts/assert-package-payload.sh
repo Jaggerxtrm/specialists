@@ -20,7 +20,14 @@ mapfile -t payload_files < <(
 )
 
 for asset in "$@"; do
-  if ! printf '%s\n' "${payload_files[@]}" | grep -Fxq "$asset"; then
+  found=false
+  for payload in "${payload_files[@]}"; do
+    if [[ "$payload" == "$asset" ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" != true ]]; then
     missing+=("$asset")
   fi
 done
