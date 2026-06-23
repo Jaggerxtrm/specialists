@@ -9,7 +9,7 @@ import {
   isPathInsideJobsDirectory,
   resolveObservabilityDbLocation,
 } from '../specialist/observability-db.js';
-import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { createObservabilitySqliteClientAtPath } from '../specialist/observability-sqlite.js';
 import { syncMemoriesCacheFromBd } from '../specialist/memory-retrieval.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -697,8 +697,8 @@ function ensureObservabilityDb(cwd: string): void {
     return;
   }
 
-  // Initialize schema on the freshly created file
-  const client = createObservabilitySqliteClient(cwd);
+  // Initialize schema at the resolved path.
+  const client = createObservabilitySqliteClientAtPath(location.dbPath);
   if (client) {
     client.close();
     ok('created observability database (.specialists/db/observability.db)');

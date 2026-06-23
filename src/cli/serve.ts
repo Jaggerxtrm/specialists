@@ -278,7 +278,7 @@ export async function startServe(argv: string[] = process.argv.slice(3)) {
   const dbPath = args.dbPath ?? dbLocation.dbPath;
   const db = args.dbPath ? createObservabilitySqliteClientAtPath(args.dbPath) : (() => {
     ensureObservabilityDbFile(dbLocation);
-    return createObservabilitySqliteClient(args.projectDir);
+    return createObservabilitySqliteClientAtPath(dbLocation.dbPath);
   })();
   const readinessState = createReadinessState();
   const userDir = join(args.projectDir, '.specialists', 'user');
