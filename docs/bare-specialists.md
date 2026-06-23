@@ -4,7 +4,7 @@ scope: authoring
 category: guide
 version: 1.0.0
 updated: 2026-05-23
-synced_at: c7d3d217
+synced_at: bf6baf7a
 description: How to author bare-mode specialists for non-coding LLM transforms.
 source_of_truth_for:
   - "config/specialists/bare.specialist.json"
