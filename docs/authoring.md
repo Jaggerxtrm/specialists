@@ -2,9 +2,9 @@
 title: Specialist Authoring
 scope: authoring
 category: guide
-version: 1.9.1
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 1.9.2
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: How to write, validate, place, and maintain specialist definition files.
 source_of_truth_for:
   - ".xtrm/skills/active/pi/specialists-creator/SKILL.md"
@@ -76,7 +76,7 @@ This guide is the user-facing reference for authoring `.specialist.json` files. 
 | `timeout_ms` | number | `120000` | run timeout (ms) |
 | `stall_timeout_ms` | number | unset | kill if no event for N ms |
 | `max_retries` | number | `0` | retry count on failure |
-| `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists |
+| `interactive` | boolean | `false` | keep-alive by default for multi-turn specialists; override layers may also set it |
 | `stdout_limit_bytes` | number | `33554432` | per-run stdout cap for script-class runtime; env `SPECIALISTS_SCRIPT_STDOUT_LIMIT_BYTES` overrides default, spec value overrides env |
 | `response_format` | `"text" \| "json" \| "markdown"` | `"text"` | output contract hint |
 | `expected_output_keys` | `string[]` | unset | required JSON keys the assistant output must contain; triggers required-keys check independent of `response_format` (use for text-format specs that ship a JSON contract inline in `task_template`); on miss returns `error_type: "invalid_json"` |
@@ -419,6 +419,7 @@ Controls stall detection warnings during specialist execution.
 | `running_silence_warn_ms` | number | `60000` | Warn if no events for N ms while running |
 | `running_silence_error_ms` | number | `300000` | Mark stale if no events for N ms while running |
 | `waiting_stale_ms` | number | `3600000` | Warn if waiting state lasts N ms |
+| `waiting_auto_close_ms` | `number \| null` | unset | ms in waiting state before attempting graceful auto-close; `null` clears inherited value |
 | `tool_duration_warn_ms` | number | `120000` | Warn if single tool runs longer than N ms |
 
 ```json
@@ -427,6 +428,7 @@ Controls stall detection warnings during specialist execution.
     "running_silence_warn_ms": 60000,
     "running_silence_error_ms": 300000,
     "waiting_stale_ms": 3600000,
+    "waiting_auto_close_ms": null,
     "tool_duration_warn_ms": 120000
   }
 }
