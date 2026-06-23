@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`sp console` v2 — full TUI rewrite (epic `unitAI-ctb4u`, PR #125).** Replaces the original prototype console with a complete multi-view terminal UI built on `@earendil-works/pi-tui`. Views: `ps` (live process list with tree depth, context %, status glyphs, column-adaptive layout), `feed` (live/forensic event stream with follow mode), `job` (inspect fields + action list), `result` (full job output), `bead` (linked bead doc + live state), `diff` (worktree + commit SHA fallback), `config` (global `user.json` override editor), `repoConfig` (repo registry management). 24-bit ANSI palette sourced from mock-v2 design doc. Keybindings: `↑↓`/`j/k` navigate, `↵` open feed, `r` result, `i` inspect, `b` bead, `d` diff, `g` config, `R` repos, `h` history, `a` all, `/` filter, `x` stop, `tab`/`1-9` switch repo, `0` ALL view, `q` quit.
+
+- **ALL view — aggregated cross-repo dashboard with cursor navigation.** Opening `sp console` now lands on an ALL view (`0` to return from any tab) showing active jobs across all configured repos sorted by activity, with per-repo section headers. `↑↓`/`j/k` moves a cursor through individual job rows; `↵` opens the selected job's feed, `r`/`i`/`b`/`d`/`g`/`R`/`x` work as in `ps` — automatically switching to the job's repo before opening the view. The stats bar always shows full ps-style metrics (health / rss / cpu / orphans) for the current repo on all tabs including ALL.
+
+- **`x` — stop job keybinding in `ps` and `all` views.** Pressing `x` on any selected or cursor job sends SIGTERM via `stopJob` in `control.ts`, using the job's own repo `jobsDir`. A brief confirmation message (`sent SIGTERM to <job-id>`) appears in the status bar. Works in both `ps` (selected row) and `all` (cursor row, cross-repo).
+
+- **Multi-repo auto-discovery and `console.json` persistence (PRs #141, #143).** `sp console` auto-discovers sibling repos up to depth 2 (worktree-safe: skips `.git/` trees and the `specialists` package itself) on first launch and persists the list to `~/.config/specialists/console.json`. Subsequent launches reload the saved list for instant startup. `--add-repo <path>` and `--remove-repo <name>` CLI flags manage the list without opening the TUI.
+
+- **`RepoConfigView` — interactive repo registry management inside the console (PR #142).** `R` from `ps` opens an in-TUI editor for `console.json`: `+` add a repo (path → name two-step), `d` remove, `e` edit path, `n` edit name, `r` rescan (depth-2 inline), `s` toggle inactive rows. All mutations share the same `RuntimeClient` persistence surface as the CLI flags.
+
+- **DiffView SHA fallback for dead-worktree jobs (`unitAI-ctb4u.29`, PR #135).** When a job's worktree has been removed, DiffView falls back to the recorded `git_commit_sha` from `supervisor_status`. The section title changes to `diff summary · @<sha7> (commit)` so operators know they are viewing a historical snapshot rather than a live worktree diff.
+
+- **`sp ps` gets TUI-themed rows and stats line (`unitAI-ugw4s`, PR #144).** The `sp ps` shell command now renders job rows using the same 24-bit ANSI palette, status glyphs, and column-adaptive layout as `sp console`. The stats line (`jobs N/M · running N waiting N · …`) is appended below the table in dim text. Non-TTY output falls back to plain text as before.
+
+- **Interactive `waiting_auto_close_ms` global override (`unitAI-pj2mm`, PR #152).** `waiting_auto_close_ms` is now settable via the global `~/.config/specialists/user.json` overlay without editing each package specialist JSON. `sp console`'s ConfigView (`g`) displays the effective default next to `inherit` (e.g. `inherit (120000)`) when no override is active. All 24 package specialist JSONs had their stale `null` placeholder removed (`null` triggered a schema validation error at dispatch; field is `number | undefined`).
+
+- **Snapshot-diff engine ported from gitboard (`unitAI-ctb4u.19`, PR #137).** `src/specialist/snapshot-diff.ts` provides stable SHA-256 hashing of job snapshots (`snapshotHash`) and upsert/tombstone delta computation (`snapshotDiff`). The console poll loop uses the hash to skip no-op dispatches and the delta to expire paint-cache entries for tombstoned jobs only, avoiding full-cache invalidation on every tick.
+
+### Changed
+- **Per-repo `SourceQueue` for poll isolation (`unitAI-ctb4u.20`, PR #138).** Each repo now gets its own `SourceQueue` (1 500ms coalesce) instead of a shared `setInterval`. Tab-switching cancels the prior repo's pending dispatch immediately; no stale poll from the previous repo can race the destination repo's first render.
+
+- **Per-row paint cache in `ProcessView` (`unitAI-ctb4u.21`, PR #139).** Rendered job-row strings are cached by composite key `jobId|status|ctxBucket|width|depth|selected|datePrefix`. A poll tick with unchanged rows skips all `renderJobRow` calls. Cache is bounded to `totalJobs × 2` and is cleared on repo switch and tombstone delivery, preventing cross-repo bleed and unbounded growth in long sessions.
+
+### Fixed
+- **Defensive render against malformed `status_json` rows (`unitAI-ctb4u.27`, PR #126).** Per-row `try/catch` in `renderProcessRows` prevents a single corrupt `status_json` entry from crashing the entire ProcessView paint loop; malformed rows render as `?? <malformed row dropped>` without disrupting adjacent rows.
+
+- **Generic `↑↓` keys gated to `ps`/scroll views only (`unitAI-ctb4u.30`, PR #127).** The generic `move` reducer action was consuming arrow keys even in `config` and `diff` views, which have their own cursor handlers. The gate prevents it from swallowing keys before view-specific handlers can win.
+
+- **`ConfigView` hint text enriched with operational guidance (`unitAI-ctb4u.31`, PR #128).** Each editable field's `allowedHint` now includes concrete examples and constraint descriptions so operators understand valid values without leaving the TUI.
+
+- **Scroll and `selectedRow` reset on back-from-detail (`unitAI-kz1ud`, PR #129).** Navigating back from feed/result/inspect/bead/diff to `ps` previously retained the scroll position from the detail view, leaving the cursor off-screen. The `back` action now resets both `scroll` and `selectedRow` to 0.
+
+- **Forensic feed `TYPE_W` column widened to 32 (`unitAI-3wm6x`, PR #130).** The type column in feed-event rows was truncated to 16 characters, cutting off longer forensic event type names such as `xtrm.forensic.v1.*`.
+
+- **`stderr` writes consolidated through `log.ts` single-sink (`unitAI-21sn4`, PR #131).** Four separate `process.stderr.write` call-sites in `runtime.ts` bypassed the structured `logError` sink, preventing log-level filtering and test interception.
+
+- **`sp console --help` updated to v2 keybindings with parity guard (`unitAI-ctb4u.23`, PR #132).** The help text now matches the live keymap; a compile-time parity check ensures the help string and `handleInput` handlers cannot silently diverge.
+
+- **Global-config writes use atomic `tmp + rename` (`unitAI-ctb4u.17`, PR #133).** Direct overwrite of `user.json` was susceptible to torn reads on interrupted writes. Writes now go to `user.json.tmp` followed by `fs.renameSync` — atomic on POSIX.
+
+- **`ps` default `historyMode` aligned with `sp ps` shell default (`unitAI-ctb4u.26`, PR #134).** `sp console` opened in `history` mode (all jobs) while `sp ps` defaulted to `default` (running + recent only). Both now default to `default`; `h` in the console cycles through modes as before.
+
 ### Fixed
 - **`supervisor.dispose()` now reaps the pi/Serena session (`unitAI-pjst5`, PR #150).** `dispose()` previously closed sqlite/tmux/FIFO only and never explicitly stopped the Serena extension subprocess attached via `script-runner.ts:977-979`. After worktree removal, Serena LSPs survived indefinitely; on the Mercury host this accumulated to 30+ stale processes (some 5+ days old) and was the structural driver of the 2026-06-22 host memory exhaustion incident (96.2% RAM, 23/23 GiB swap full). Validated end-to-end with operator-side defense-in-depth: `mercury-infra` ships a stopgap cron killer (`infra-4m7b`) reaping `serena start-mcp-server` etime > 6h plus a `mercury_specialists_orphan_count` Prometheus alert (`infra-3tvo`). After this fix is live the killer log should stay at 0 reaps; tracked by `mercury-infra` bead `infra-gty4` (7-day silent window → remove stopgap).
 - **`observability.db` no longer pre-creates a zero-byte placeholder (`unitAI-nuh7l`, PR #151).** Previous behavior: when `sqlite_open` failed during runtime startup, the path was left as a 0-byte file with the open error silently swallowed; subsequent invocations short-circuited on the empty file and never re-tried bootstrap. On the Mercury host this surfaced during the 2026-06-22 incident when `~/.specialists/observability.db` was 0 bytes, blocking PID/RSS-level forensic reconstruction during the 17:51–20:26 UTC window. Open failures are now surfaced explicitly so the orchestrator/operator can diagnose, and the bootstrap path no longer leaves the placeholder behind.
