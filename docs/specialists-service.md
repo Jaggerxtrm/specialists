@@ -2,9 +2,9 @@
 title: Specialists Service
 scope: specialists-service
 category: architecture
-version: 3.1.1
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 3.1.2
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Human SSOT for sp serve, sp script, script-class authoring, trust/readiness/hot-reload, and image release.
 source_of_truth_for:
   - src/cli/script.ts
@@ -59,6 +59,7 @@ Single SSOT for `sp serve` and `sp script`. This doc covers service contract, sc
   "specialist": "kebab-case-name",
   "variables": {"key": "value"},
   "template": "task_template",
+  "template_field": "task_template",
   "model_override": "anthropic/...",
   "timeout_ms": 60000,
   "trace": true
@@ -86,7 +87,7 @@ Failure response stays `200` with `success: false`. Closed `error_type` taxonomy
 - `specialist_not_found`
 - `specialist_load_error`
 - `template_variable_missing`
-- `template_field_misuse` — `input.template` was the literal name of a key on `spec.prompt` (e.g. `"task_template"`, `"normalize_template"`). Pass the template body or omit the field; do not pass a key name.
+- `template_field_misuse` — `input.template` was the literal name of a key on `spec.prompt` (e.g. `"task_template"`, `"normalize_template"`). Pass template body inline, or use `template_field` for named prompt field; do not pass key name.
 - `auth`
 - `quota`
 - `timeout`
@@ -199,6 +200,7 @@ One-shot CLI on same runtime path as `sp serve`.
 sp script <name> \
   [--vars k=v ...] \
   [--template <text>] \
+  [--template-field <name>] \
   [--model <override>] \
   [--thinking <level>] \
   [--project-dir <path>] \
@@ -206,7 +208,9 @@ sp script <name> \
   [--timeout-ms <n>] \
   [--json] \
   [--single-instance <lockpath>] \
-  [--no-trace]
+  [--no-trace] \
+  [--allow-local-scripts] \
+  [--allow-write-capable]
 ```
 
 Notes:
@@ -218,6 +222,7 @@ Notes:
 - default output = assistant text on stdout
 - `--json` returns full response payload
 - `--single-instance` uses `flock`; contention exits `75`
+- trusted local mode only on `sp script`: `--allow-local-scripts` enables `skills.scripts`; `--allow-write-capable` permits non-`READ_ONLY` specialists
 
 ### Exit codes
 
@@ -305,6 +310,7 @@ Rules:
 Current state:
 
 - build from repo
+- image build keeps `config/` and `scripts/generate-asset-contract.mjs` in context for asset-contract generation
 - publish to registry deferred
 - `Dockerfile` keeps `ARG PI_VERSION=latest`
 - CI canary lives in [`.github/workflows/pi-compat.yml`](../.github/workflows/pi-compat.yml)
