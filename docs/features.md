@@ -2,9 +2,9 @@
 title: Feature Guides
 scope: runtime-features
 category: guide
-version: 2.4.3
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 2.5.0
+updated: 2026-06-23
+synced_at: bf6baf7a
 description: Practical guides for structured output, job observation, bead-linked runs, keep-alive resume, worktree isolation, stuck detection, waiting state observability, auto gitnexus sync, specialist authoring, config presets, JSON-first configuration, context denormalization, and job lineage tracking.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -145,7 +145,38 @@ This prevents false-positive "hung job" diagnoses where `sp ps` showed a stale t
 
 ---
 
-## 3) Bead-linked runs (`--bead`)
+## 2a) Console TUI (`sp console`)
+
+`sp console` provides an interactive TUI for monitoring and controlling jobs across multiple repos.
+
+### ALL view (multi-repo overview)
+
+The ALL view shows active jobs from all configured repos in a single scrollable list.
+
+**Navigation:**
+- `↑↓` or `j/k` — move cursor through selectable job rows (skips headers/spacers)
+- `0` — reset cursor to top and switch to ALL view
+
+**Actions (cursor on job row):**
+- `↵` (Enter) — open feed for selected job
+- `r` — open result for selected job
+- `i` — inspect job details
+- `b` — open bead view for the job's input bead
+- `d` — open diff view for the job's worktree changes
+
+**Repo selection:**
+- `Tab` — cycle to next repo tab
+- `1-9` — jump to repo by index
+
+**Other keys:**
+- `q` — quit console
+- `g` — open global config view (from ps view)
+- `R` — open repo config view (from ps view)
+- `x` — stop selected job (from ps/all view)
+
+The ALL view auto-scrolls to keep the cursor visible and auto-advances off non-selectable rows (headers/spacers) on first render.
+
+---
 
 Use an existing bead as the run input source:
 
@@ -384,7 +415,7 @@ Defaults (if omitted):
 - `running_silence_warn_ms`: 60s
 - `running_silence_error_ms`: 300s
 - `waiting_stale_ms`: 1h (3600s) — waiting jobs past this threshold emit `stale_warning` events
-- `waiting_auto_close_ms`: disabled by default — when set, stale waiting jobs attempt graceful close first, then forced termination fallback
+- `waiting_auto_close_ms`: disabled by default (`0` or `null`) — when set to a positive number, stale waiting jobs attempt graceful close first, then forced termination fallback if graceful close times out
 - `tool_duration_warn_ms`: 120s
 
 Supervisor outcomes:
@@ -540,6 +571,12 @@ Blocked fields are still guarded:
 - `skills.scripts`
 - `mandatory_rules`
 - `capabilities`
+
+Allowed override fields include:
+- `execution.model`, `execution.fallback_model`, `execution.timeout_ms`, `execution.stall_timeout_ms`, `execution.interactive`, `execution.thinking_level`, `execution.max_retries`, `execution.response_format`
+- `execution.extensions.serena`, `execution.extensions.gitnexus`
+- `specialist.stall_detection.waiting_auto_close_ms`
+- `specialist.prompt.system_prompt_mode`
 
 Global-layer blocked attempts are stripped at merge time; repo-layer blocked attempts are surfaced in `sp doctor --specialists`.
 
