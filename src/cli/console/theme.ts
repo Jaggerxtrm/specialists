@@ -55,8 +55,6 @@ function paintBar(text: string, fgRgb: readonly [number, number, number], bgRgb:
   return `\x1b[38;2;${fr};${fg};${fb}m\x1b[48;2;${br};${bg};${bb}m${padded}\x1b[0m`;
 }
 
-const STATS_BAR_FG: readonly [number, number, number] = [0, 0, 0];       // black text
-const STATS_BAR_BG: readonly [number, number, number] = [184, 0, 0];     // #b80000
 const KEYBAR_FG: readonly [number, number, number] = [0, 0, 0];          // black text
 const KEYBAR_BG: readonly [number, number, number] = [255, 255, 255];    // white
 
@@ -325,37 +323,40 @@ const STATS_FIELD_ORDER = [
 type StatsKey = typeof STATS_FIELD_ORDER[number];
 
 export function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: number): string {
-  if (!snapshot) return paintBar('jobs --', STATS_BAR_FG, STATS_BAR_BG, width);
+  if (!snapshot) return paint('jobs --', 'dim');
 
   const fields: Partial<Record<StatsKey, string>> = {
-    jobs: `jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`,
-    runWait: `running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`,
+    jobs: paint(`jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`, 'dim'),
+    runWait: paint(`running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`, 'dim'),
   };
   if (snapshot.maxContextPct !== undefined) {
     const ctxPct = Math.round(snapshot.maxContextPct);
-    fields.ctx = `ctx max ${ctxPct}%`;
+    fields.ctx = paint('ctx max ', 'dim') + paint(`${ctxPct}%`, ctxColor(snapshot.maxContextPct));
   }
   if (snapshot.totalTokens > 0) {
-    fields.tokens = `tokens ${snapshot.totalTokens}`;
+    fields.tokens = paint(`tokens ${snapshot.totalTokens}`, 'dim');
   }
-  fields.enw = `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`;
+  fields.enw = paint(
+    `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`,
+    'dim',
+  );
   const health = snapshot.health;
   if (health) {
-    fields.health = `health ${health.status}`;
+    fields.health = paint(`health ${health.status}`, 'dim');
     const rssMb = (health.totalRssBytes / (1024 * 1024)).toFixed(0);
     const cpuPct = health.totalCpuPct.toFixed(1);
-    fields.rssCpu = `rss=${rssMb}MB cpu=${cpuPct}%`;
-    fields.orphans = `orphans ${health.orphanCount ?? 0}`;
+    fields.rssCpu = paint(`rss=${rssMb}MB cpu=${cpuPct}%`, 'dim');
+    fields.orphans = paint(`orphans ${health.orphanCount ?? 0}`, 'dim');
   }
 
   const sep = ' · ';
   const keys = STATS_FIELD_ORDER.filter((k) => fields[k] !== undefined) as StatsKey[];
   while (keys.length > 0) {
     const line = keys.map((k) => fields[k]!).join(sep);
-    if (line.length <= width) return paintBar(line, STATS_BAR_FG, STATS_BAR_BG, width);
+    if (visibleLength(line) <= width) return line;
     keys.pop();
   }
-  return paintBar('jobs --', STATS_BAR_FG, STATS_BAR_BG, width);
+  return paint('jobs --', 'dim');
 }
 
 // ---------- KeyBar ----------

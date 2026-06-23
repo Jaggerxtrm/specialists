@@ -45188,36 +45188,36 @@ function renderGroupRow(kind, label, width, depth) {
 }
 function renderStatsLine(snapshot, width) {
   if (!snapshot)
-    return paintBar("jobs --", STATS_BAR_FG, STATS_BAR_BG, width);
+    return paint("jobs --", "dim");
   const fields = {
-    jobs: `jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`,
-    runWait: `running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`
+    jobs: paint(`jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`, "dim"),
+    runWait: paint(`running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`, "dim")
   };
   if (snapshot.maxContextPct !== undefined) {
     const ctxPct = Math.round(snapshot.maxContextPct);
-    fields.ctx = `ctx max ${ctxPct}%`;
+    fields.ctx = paint("ctx max ", "dim") + paint(`${ctxPct}%`, ctxColor(snapshot.maxContextPct));
   }
   if (snapshot.totalTokens > 0) {
-    fields.tokens = `tokens ${snapshot.totalTokens}`;
+    fields.tokens = paint(`tokens ${snapshot.totalTokens}`, "dim");
   }
-  fields.enw = `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`;
+  fields.enw = paint(`epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`, "dim");
   const health = snapshot.health;
   if (health) {
-    fields.health = `health ${health.status}`;
+    fields.health = paint(`health ${health.status}`, "dim");
     const rssMb = (health.totalRssBytes / (1024 * 1024)).toFixed(0);
     const cpuPct = health.totalCpuPct.toFixed(1);
-    fields.rssCpu = `rss=${rssMb}MB cpu=${cpuPct}%`;
-    fields.orphans = `orphans ${health.orphanCount ?? 0}`;
+    fields.rssCpu = paint(`rss=${rssMb}MB cpu=${cpuPct}%`, "dim");
+    fields.orphans = paint(`orphans ${health.orphanCount ?? 0}`, "dim");
   }
   const sep3 = " \xB7 ";
   const keys = STATS_FIELD_ORDER.filter((k) => fields[k] !== undefined);
   while (keys.length > 0) {
     const line = keys.map((k) => fields[k]).join(sep3);
-    if (line.length <= width)
-      return paintBar(line, STATS_BAR_FG, STATS_BAR_BG, width);
+    if (visibleLength(line) <= width)
+      return line;
     keys.pop();
   }
-  return paintBar("jobs --", STATS_BAR_FG, STATS_BAR_BG, width);
+  return paint("jobs --", "dim");
 }
 function renderRepoSectionHeader(name, path3, activeCount, width) {
   const dot = activeCount > 0 ? paint("\u25CF", "running") : paint("\u25CB", "dim");
@@ -45381,7 +45381,7 @@ function renderBeadBodyLine(line, width) {
 function visibleLength(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
-var PALETTE, STATS_BAR_FG, STATS_BAR_BG, KEYBAR_FG, KEYBAR_BG, STATUS_GLYPH, CONTAINER_GLYPH, STATUS_COLOR, COLUMNS, JOB_COLUMN_ORDER, JOB_DROP_ORDER, STATS_FIELD_ORDER;
+var PALETTE, KEYBAR_FG, KEYBAR_BG, STATUS_GLYPH, CONTAINER_GLYPH, STATUS_COLOR, COLUMNS, JOB_COLUMN_ORDER, JOB_DROP_ORDER, STATS_FIELD_ORDER;
 var init_theme = __esm(() => {
   init_dist2();
   PALETTE = {
@@ -45397,8 +45397,6 @@ var init_theme = __esm(() => {
     idle: [74, 74, 74],
     blocked: [196, 128, 111]
   };
-  STATS_BAR_FG = [0, 0, 0];
-  STATS_BAR_BG = [184, 0, 0];
   KEYBAR_FG = [0, 0, 0];
   KEYBAR_BG = [255, 255, 255];
   STATUS_GLYPH = {
