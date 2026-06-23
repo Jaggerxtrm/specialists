@@ -4,7 +4,7 @@ scope: mcp-tools
 category: reference
 version: 2.1.1
 updated: 2026-05-15
-synced_at: b92a11ba
+synced_at: bf6baf7a
 description: MCP tool contract for the Specialists server.
 source_of_truth_for:
   - "src/server.ts"
