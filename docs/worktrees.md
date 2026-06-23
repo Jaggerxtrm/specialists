@@ -4,7 +4,7 @@ scope: worktrees
 category: reference
 version: 1.4.1
 updated: 2026-05-15
-synced_at: b92a11ba
+synced_at: bf6baf7a
 description: Technical reference for worktree-per-executor isolation — CLI flags, job registry, GC, and chained bead patterns.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
