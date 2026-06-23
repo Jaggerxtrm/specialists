@@ -322,3 +322,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 - Supervisor now emits waiting_auto_close_requested / waiting_auto_close_completed control-signal events for stale waiting keep-alive sessions and uses graceful close before forced termination fallback.
 - Real smoke pattern for linked sp: isolate XDG_CONFIG_HOME but keep the real HOME, otherwise Pi provider auth disappears and smoke runs fail with missing API key/provider auth.
 - Concrete smoke evidence used a temporary package-layer smoke-waiter specialist, sp init --global, sp edit --global --set smoke-waiter.execution.interactive true, sp edit --global --set smoke-waiter.stall_detection.waiting_auto_close_ms 1000, then sp feed <job> --json to verify persisted waiting_auto_close_* events.
+
+| 13:05 | Hardened dependency-bump CI workflows (A1+A2) | .github/workflows/osv-scanner.yml, .github/workflows/package-payload.yml, scripts/osv-security-forced-classifier.mjs, tests/unit/scripts/osv-security-forced-classifier.test.ts | PR OSV is advisory unless SECURITY_FORCED; payload contract isolated from harness failures | ~1800 |
+
+| 15:15 | Added dry-run dependency verdict materializer | scripts/materialize-dependency-verdict.mjs, tests/unit/scripts/materialize-dependency-verdict.test.ts, docs/devops/dependency-verdict-materialization.md | verdict JSON now maps to advisor/followup/gate bd issue plans without creating live beads unless --apply is used | ~1500 |
