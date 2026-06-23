@@ -214,6 +214,7 @@ export interface RuntimeClient {
         snapshot?: RepoConfigSnapshot;
         discoveredCount?: number;
     }>;
+    stopJob?(repo: RepoRef, jobId: string): Promise<void>;
     readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot>;
     writeGlobalConfig(rawObj: Record<string, unknown>, expectedMtimeMs?: number): Promise<import('./config-source.js').WriteOutcome>;
     readRawGlobalConfig(): Promise<{

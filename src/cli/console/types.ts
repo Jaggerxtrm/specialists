@@ -224,6 +224,7 @@ export interface RuntimeClient {
   removeRepoConfigEntry?(name: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }>;
   editRepoConfigEntry?(name: string, field: 'name' | 'path', value: string): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot }>;
   rescanRepoConfig?(): Promise<{ ok: boolean; error?: string; snapshot?: RepoConfigSnapshot; discoveredCount?: number }>;
+  stopJob?(repo: RepoRef, jobId: string): Promise<void>;
   readGlobalConfig(): Promise<import('./config-source.js').ConfigSnapshot>;
   writeGlobalConfig(
     rawObj: Record<string, unknown>,

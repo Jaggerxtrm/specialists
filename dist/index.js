@@ -45041,6 +45041,13 @@ function paint(text, color) {
   const [r, g, b] = PALETTE[color];
   return `\x1B[38;2;${r};${g};${b}m${text}\x1B[0m`;
 }
+function paintBar(text, fgRgb, bgRgb, width) {
+  const stripped = text.replace(/\x1b\[[0-9;]*m/g, "");
+  const padded = stripped.padEnd(width, " ").slice(0, width);
+  const [fr, fg, fb] = fgRgb;
+  const [br2, bg, bb] = bgRgb;
+  return `\x1B[38;2;${fr};${fg};${fb}m\x1B[48;2;${br2};${bg};${bb}m${padded}\x1B[0m`;
+}
 function statusColor(status, dead) {
   if (dead)
     return "blocked";
@@ -45181,36 +45188,36 @@ function renderGroupRow(kind, label, width, depth) {
 }
 function renderStatsLine(snapshot, width) {
   if (!snapshot)
-    return paint("jobs --", "dim");
+    return paintBar("jobs --", STATS_BAR_FG, STATS_BAR_BG, width);
   const fields = {
-    jobs: paint(`jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`, "dim"),
-    runWait: paint(`running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`, "dim")
+    jobs: `jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`,
+    runWait: `running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`
   };
   if (snapshot.maxContextPct !== undefined) {
     const ctxPct = Math.round(snapshot.maxContextPct);
-    fields.ctx = paint("ctx max ", "dim") + paint(`${ctxPct}%`, ctxColor(snapshot.maxContextPct));
+    fields.ctx = `ctx max ${ctxPct}%`;
   }
   if (snapshot.totalTokens > 0) {
-    fields.tokens = paint(`tokens ${snapshot.totalTokens}`, "dim");
+    fields.tokens = `tokens ${snapshot.totalTokens}`;
   }
-  fields.enw = paint(`epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`, "dim");
+  fields.enw = `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`;
   const health = snapshot.health;
   if (health) {
-    fields.health = paint(`health ${health.status}`, "dim");
+    fields.health = `health ${health.status}`;
     const rssMb = (health.totalRssBytes / (1024 * 1024)).toFixed(0);
     const cpuPct = health.totalCpuPct.toFixed(1);
-    fields.rssCpu = paint(`rss=${rssMb}MB cpu=${cpuPct}%`, "dim");
-    fields.orphans = paint(`orphans ${health.orphanCount ?? 0}`, "dim");
+    fields.rssCpu = `rss=${rssMb}MB cpu=${cpuPct}%`;
+    fields.orphans = `orphans ${health.orphanCount ?? 0}`;
   }
   const sep3 = " \xB7 ";
   const keys = STATS_FIELD_ORDER.filter((k) => fields[k] !== undefined);
   while (keys.length > 0) {
     const line = keys.map((k) => fields[k]).join(sep3);
-    if (visibleLength(line) <= width)
-      return line;
+    if (line.length <= width)
+      return paintBar(line, STATS_BAR_FG, STATS_BAR_BG, width);
     keys.pop();
   }
-  return paint("jobs --", "dim");
+  return paintBar("jobs --", STATS_BAR_FG, STATS_BAR_BG, width);
 }
 function renderRepoSectionHeader(name, path3, activeCount, width) {
   const dot = activeCount > 0 ? paint("\u25CF", "running") : paint("\u25CB", "dim");
@@ -45222,8 +45229,8 @@ function renderRepoSectionHeader(name, path3, activeCount, width) {
   return truncateToWidth(`${dot} ${label}${pathStr}${countStr}`, width);
 }
 function renderKeyBar(view, follow, width, feedSource = "forensic") {
-  const line = view === "all" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  g config  R repos  tab/1-9 repo  q quit" : view === "ps" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit" : view === "feed" ? `\u2191\u2193 scroll  PgUp/PgDn page  f follow:${follow ? "on" : "off"}  t ${feedSource === "forensic" ? "legacy" : "forensic"}  \u232B back  g/G top/end  q quit` : view === "bead" ? "\u2191\u2193 scroll  PgUp/PgDn page  \u232B back  g/G top/end  q quit" : view === "diff" ? "\u2191\u2193 nav  \u21B5 open file  r refresh  \u232B back  q quit" : view === "config" ? "\u2191\u2193 field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  \u232B back  q quit" : view === "repoConfig" ? "\u2191\u2193 nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  \u232B back  q quit" : "\u2191\u2193 scroll  \u232B back  g/G top/end  q quit";
-  return paint(truncateToWidth(line, width), "dim");
+  const line = view === "all" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  x stop  g config  R repos  tab/1-9 repo  q quit" : view === "ps" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  x stop  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit" : view === "feed" ? `\u2191\u2193 scroll  PgUp/PgDn page  f follow:${follow ? "on" : "off"}  t ${feedSource === "forensic" ? "legacy" : "forensic"}  \u232B back  g/G top/end  q quit` : view === "bead" ? "\u2191\u2193 scroll  PgUp/PgDn page  \u232B back  g/G top/end  q quit" : view === "diff" ? "\u2191\u2193 nav  \u21B5 open file  r refresh  \u232B back  q quit" : view === "config" ? "\u2191\u2193 field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  \u232B back  q quit" : view === "repoConfig" ? "\u2191\u2193 nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  \u232B back  q quit" : "\u2191\u2193 scroll  \u232B back  g/G top/end  q quit";
+  return paintBar(truncateToWidth(line, width), KEYBAR_FG, KEYBAR_BG, width);
 }
 function renderTabs(repos, currentIndex, width, currentView) {
   if (repos.length === 0)
@@ -45374,7 +45381,7 @@ function renderBeadBodyLine(line, width) {
 function visibleLength(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
-var PALETTE, STATUS_GLYPH, CONTAINER_GLYPH, STATUS_COLOR, COLUMNS, JOB_COLUMN_ORDER, JOB_DROP_ORDER, STATS_FIELD_ORDER;
+var PALETTE, STATS_BAR_FG, STATS_BAR_BG, KEYBAR_FG, KEYBAR_BG, STATUS_GLYPH, CONTAINER_GLYPH, STATUS_COLOR, COLUMNS, JOB_COLUMN_ORDER, JOB_DROP_ORDER, STATS_FIELD_ORDER;
 var init_theme = __esm(() => {
   init_dist2();
   PALETTE = {
@@ -45390,6 +45397,10 @@ var init_theme = __esm(() => {
     idle: [74, 74, 74],
     blocked: [196, 128, 111]
   };
+  STATS_BAR_FG = [0, 0, 0];
+  STATS_BAR_BG = [184, 0, 0];
+  KEYBAR_FG = [0, 0, 0];
+  KEYBAR_BG = [255, 255, 255];
   STATUS_GLYPH = {
     running: "\u25CF",
     waiting: "\u25D0",
@@ -46418,6 +46429,10 @@ class LocalRuntimeClient {
     }
     return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd), discoveredCount: added };
   }
+  async stopJob(repo, jobId) {
+    const jobsDir = resolveJobsDir(repo.path);
+    await stopJob(jobId, { jobsDir });
+  }
   async listProcessSnapshot(repo, filter) {
     const raw = readStatuses(repo).map(enrichJob);
     const statuses = raw.filter(isWellFormedJob);
@@ -47384,6 +47399,7 @@ var init_runtime = __esm(() => {
   init_observability_db();
   init_observability_sqlite();
   init_job_root();
+  init_control2();
   init_process_health();
   init_supervisor();
   init_timeline_events();
@@ -48059,6 +48075,10 @@ class ConsoleApp {
       this.open("bead", selected.id);
     else if (data === "d" && this.state.view === "ps" && selected)
       this.open("diff", selected.id);
+    else if (data === "x" && this.state.view === "ps" && selected)
+      this.stopSelectedJob(selected.id);
+    else if (data === "x" && this.state.view === "all")
+      this.stopSelectedAllViewJob();
     else if (data === "g" && this.state.view === "ps")
       this.open("config", selected?.id ?? "");
     else if (data === "R" && this.state.view === "ps")
@@ -48153,24 +48173,13 @@ class ConsoleApp {
     while (mainRows.length < viewportRows)
       mainRows.push(fillerLine(width));
     lines.push(...mainRows);
-    lines.push(this.state.view === "all" ? this.renderAllStatsLine(width) : renderStatsLine(this.state.snapshot, width));
+    lines.push(renderStatsLine(this.state.snapshot, width));
     lines.push(renderKeyBar(this.state.view, this.state.follow, width, this.state.feedSource));
     if (this.state.filtering)
       lines.push(renderFilterPrompt(`/${this.state.filter}_`, width));
     if (this.state.message)
       lines.push(renderMessage(this.state.message, width));
     return fitFrame(lines, width, height);
-  }
-  renderAllStatsLine(width) {
-    let running = 0, waiting = 0, total = 0;
-    for (const snap of this.allSnapshots.values()) {
-      running += snap.runningJobs;
-      waiting += snap.waitingJobs ?? 0;
-      total += snap.totalJobs;
-    }
-    const n = this.state.repos.length;
-    const text = `${n} repos  jobs ${total}  running ${running}  waiting ${waiting}`;
-    return paint(truncateToWidth(text, width), "dim");
   }
   metersInput() {
     if (this.state.view === "all") {
@@ -48608,6 +48617,39 @@ class ConsoleApp {
       return;
     this.refreshAfter({ type: "selectRepo", index: repoIdx });
     this.open(view, entry.jobId);
+  }
+  async stopSelectedJob(jobId) {
+    const repo = currentRepo(this.state);
+    const runtime = this.options.runtime;
+    if (!repo || typeof runtime.stopJob !== "function")
+      return;
+    try {
+      this.dispatch({ type: "message", message: `stopping ${jobId}\u2026` });
+      await runtime.stopJob(repo, jobId);
+      this.dispatch({ type: "message", message: `sent SIGTERM to ${jobId}` });
+    } catch (error2) {
+      this.dispatch({ type: "message", message: error2 instanceof Error ? error2.message : String(error2) });
+    } finally {
+      this.refresh();
+    }
+  }
+  async stopSelectedAllViewJob() {
+    const entry = this.allViewRowMap[this.allViewCursor];
+    if (!entry)
+      return;
+    const repo = this.state.repos.find((r) => r.id === entry.repoId);
+    const runtime = this.options.runtime;
+    if (!repo || typeof runtime.stopJob !== "function")
+      return;
+    try {
+      this.dispatch({ type: "message", message: `stopping ${entry.jobId}\u2026` });
+      await runtime.stopJob(repo, entry.jobId);
+      this.dispatch({ type: "message", message: `sent SIGTERM to ${entry.jobId}` });
+    } catch (error2) {
+      this.dispatch({ type: "message", message: error2 instanceof Error ? error2.message : String(error2) });
+    } finally {
+      this.refresh();
+    }
   }
   renderAllRows(width, viewportRows) {
     const repos = this.state.repos;

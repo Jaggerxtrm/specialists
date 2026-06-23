@@ -47,6 +47,19 @@ export function paintBg(text: string, color: ThemeColor): string {
   return `\x1b[48;2;${r};${g};${b}m${text}\x1b[0m`;
 }
 
+function paintBar(text: string, fgRgb: readonly [number, number, number], bgRgb: readonly [number, number, number], width: number): string {
+  const stripped = text.replace(/\x1b\[[0-9;]*m/g, '');
+  const padded = stripped.padEnd(width, ' ').slice(0, width);
+  const [fr, fg, fb] = fgRgb;
+  const [br, bg, bb] = bgRgb;
+  return `\x1b[38;2;${fr};${fg};${fb}m\x1b[48;2;${br};${bg};${bb}m${padded}\x1b[0m`;
+}
+
+const STATS_BAR_FG: readonly [number, number, number] = [0, 0, 0];       // black text
+const STATS_BAR_BG: readonly [number, number, number] = [184, 0, 0];     // #b80000
+const KEYBAR_FG: readonly [number, number, number] = [0, 0, 0];          // black text
+const KEYBAR_BG: readonly [number, number, number] = [255, 255, 255];    // white
+
 // ---------- Glyphs (mock-v2 §3.2; D2 resolved: node label, ▦ glyph) ----------
 
 export const STATUS_GLYPH = {
@@ -312,40 +325,37 @@ const STATS_FIELD_ORDER = [
 type StatsKey = typeof STATS_FIELD_ORDER[number];
 
 export function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: number): string {
-  if (!snapshot) return paint('jobs --', 'dim');
+  if (!snapshot) return paintBar('jobs --', STATS_BAR_FG, STATS_BAR_BG, width);
 
   const fields: Partial<Record<StatsKey, string>> = {
-    jobs: paint(`jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`, 'dim'),
-    runWait: paint(`running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`, 'dim'),
+    jobs: `jobs ${snapshot.visibleJobs}/${snapshot.totalJobs}`,
+    runWait: `running ${snapshot.runningJobs} waiting ${snapshot.waitingJobs}`,
   };
   if (snapshot.maxContextPct !== undefined) {
     const ctxPct = Math.round(snapshot.maxContextPct);
-    fields.ctx = paint('ctx max ', 'dim') + paint(`${ctxPct}%`, ctxColor(snapshot.maxContextPct));
+    fields.ctx = `ctx max ${ctxPct}%`;
   }
   if (snapshot.totalTokens > 0) {
-    fields.tokens = paint(`tokens ${snapshot.totalTokens}`, 'dim');
+    fields.tokens = `tokens ${snapshot.totalTokens}`;
   }
-  fields.enw = paint(
-    `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`,
-    'dim',
-  );
+  fields.enw = `epics ${snapshot.epics} nodes ${snapshot.nodes} worktrees ${snapshot.worktrees}`;
   const health = snapshot.health;
   if (health) {
-    fields.health = paint(`health ${health.status}`, 'dim');
+    fields.health = `health ${health.status}`;
     const rssMb = (health.totalRssBytes / (1024 * 1024)).toFixed(0);
     const cpuPct = health.totalCpuPct.toFixed(1);
-    fields.rssCpu = paint(`rss=${rssMb}MB cpu=${cpuPct}%`, 'dim');
-    fields.orphans = paint(`orphans ${health.orphanCount ?? 0}`, 'dim');
+    fields.rssCpu = `rss=${rssMb}MB cpu=${cpuPct}%`;
+    fields.orphans = `orphans ${health.orphanCount ?? 0}`;
   }
 
   const sep = ' · ';
   const keys = STATS_FIELD_ORDER.filter((k) => fields[k] !== undefined) as StatsKey[];
   while (keys.length > 0) {
     const line = keys.map((k) => fields[k]!).join(sep);
-    if (visibleLength(line) <= width) return line;
+    if (line.length <= width) return paintBar(line, STATS_BAR_FG, STATS_BAR_BG, width);
     keys.pop();
   }
-  return paint('jobs --', 'dim');
+  return paintBar('jobs --', STATS_BAR_FG, STATS_BAR_BG, width);
 }
 
 // ---------- KeyBar ----------
@@ -373,9 +383,9 @@ export function renderKeyBar(
 ): string {
   const line =
     view === 'all'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  tab/1-9 repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  x stop  g config  R repos  tab/1-9 repo  q quit'
       : view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  x stop  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
@@ -387,7 +397,7 @@ export function renderKeyBar(
               : view === 'repoConfig'
                 ? '↑↓ nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  ⌫ back  q quit'
                 : '↑↓ scroll  ⌫ back  g/G top/end  q quit';
-  return paint(truncateToWidth(line, width), 'dim');
+  return paintBar(truncateToWidth(line, width), KEYBAR_FG, KEYBAR_BG, width);
 }
 
 // ---------- Top chrome (tabs / meters / viewtag) ----------

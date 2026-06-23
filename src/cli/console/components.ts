@@ -191,6 +191,10 @@ export class ConsoleApp implements Component {
     // from enter in pi-tui input stream, so 'b' is the documented keybind.
     else if (data === 'b' && this.state.view === 'ps' && selected) this.open('bead', selected.id);
     else if (data === 'd' && this.state.view === 'ps' && selected) this.open('diff', selected.id);
+    else if (data === 'x' && this.state.view === 'ps' && selected)
+      void this.stopSelectedJob(selected.id);
+    else if (data === 'x' && this.state.view === 'all')
+      void this.stopSelectedAllViewJob();
     else if (data === 'g' && this.state.view === 'ps') this.open('config', selected?.id ?? '');
     else if (data === 'R' && this.state.view === 'ps') this.openRepoConfig();
     else if (this.state.view === 'repoConfig' && this.state.repoConfig.edit.mode !== 'none') {
@@ -277,24 +281,14 @@ export class ConsoleApp implements Component {
     while (mainRows.length < viewportRows) mainRows.push(fillerLine(width));
     lines.push(...mainRows);
 
-    lines.push(this.state.view === 'all' ? this.renderAllStatsLine(width) : renderStatsLine(this.state.snapshot, width));
+    lines.push(renderStatsLine(this.state.snapshot, width));
     lines.push(renderKeyBar(this.state.view, this.state.follow, width, this.state.feedSource));
     if (this.state.filtering) lines.push(renderFilterPrompt(`/${this.state.filter}_`, width));
     if (this.state.message) lines.push(renderMessage(this.state.message, width));
     return fitFrame(lines, width, height);
   }
 
-  private renderAllStatsLine(width: number): string {
-    let running = 0, waiting = 0, total = 0;
-    for (const snap of this.allSnapshots.values()) {
-      running += snap.runningJobs;
-      waiting += snap.waitingJobs ?? 0;
-      total += snap.totalJobs;
-    }
-    const n = this.state.repos.length;
-    const text = `${n} repos  jobs ${total}  running ${running}  waiting ${waiting}`;
-    return paint(truncateToWidth(text, width), 'dim');
-  }
+
 
   private metersInput() {
     if (this.state.view === 'all') {
@@ -778,6 +772,38 @@ export class ConsoleApp implements Component {
     if (repoIdx < 0) return;
     this.refreshAfter({ type: 'selectRepo', index: repoIdx });
     this.open(view, entry.jobId);
+  }
+
+  private async stopSelectedJob(jobId: string): Promise<void> {
+    const repo = currentRepo(this.state);
+    const runtime = this.options.runtime;
+    if (!repo || typeof runtime.stopJob !== 'function') return;
+    try {
+      this.dispatch({ type: 'message', message: `stopping ${jobId}…` });
+      await runtime.stopJob(repo, jobId);
+      this.dispatch({ type: 'message', message: `sent SIGTERM to ${jobId}` });
+    } catch (error) {
+      this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      void this.refresh();
+    }
+  }
+
+  private async stopSelectedAllViewJob(): Promise<void> {
+    const entry = this.allViewRowMap[this.allViewCursor];
+    if (!entry) return;
+    const repo = this.state.repos.find(r => r.id === entry.repoId);
+    const runtime = this.options.runtime;
+    if (!repo || typeof runtime.stopJob !== 'function') return;
+    try {
+      this.dispatch({ type: 'message', message: `stopping ${entry.jobId}…` });
+      await runtime.stopJob(repo, entry.jobId);
+      this.dispatch({ type: 'message', message: `sent SIGTERM to ${entry.jobId}` });
+    } catch (error) {
+      this.dispatch({ type: 'message', message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      void this.refresh();
+    }
   }
 
   private renderAllRows(width: number, viewportRows: number): string[] {

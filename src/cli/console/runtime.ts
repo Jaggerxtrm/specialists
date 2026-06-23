@@ -5,6 +5,7 @@ import { JobColorMap, bold, formatElapsed, formatEventLine, formatTokenUsageSumm
 import { resolveObservabilityDbLocation } from '../../specialist/observability-db.js';
 import { createObservabilitySqliteClient, createObservabilitySqliteClientAtPath, type ObservabilitySqliteClient } from '../../specialist/observability-sqlite.js';
 import { resolveJobsDir } from '../../specialist/job-root.js';
+import { stopJob as stopJobControl } from '../../specialist/control.js';
 import { collectProcessHealth } from '../../specialist/process-health.js';
 import { aggregateLiveSnapshot } from '../../specialist/live-aggregates.js';
 import { isJobDead } from '../../specialist/supervisor.js';
@@ -224,6 +225,11 @@ class LocalRuntimeClient implements RuntimeClient {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
     return { ok: true, snapshot: buildRepoConfigSnapshot(this.cwd), discoveredCount: added };
+  }
+
+  async stopJob(repo: RepoRef, jobId: string): Promise<void> {
+    const jobsDir = resolveJobsDir(repo.path);
+    await stopJobControl(jobId, { jobsDir });
   }
 
   async listProcessSnapshot(repo: RepoRef, filter: ProcessFilter): Promise<ProcessSnapshot> {

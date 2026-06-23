@@ -29,7 +29,6 @@ export declare class ConsoleApp implements Component {
     invalidate(): void;
     handleInput(data: string): void;
     render(width: number): string[];
-    private renderAllStatsLine;
     private metersInput;
     private loadRepos;
     private refreshAllView;
@@ -52,6 +51,8 @@ export declare class ConsoleApp implements Component {
     private back;
     private moveAllViewCursor;
     private openFromAllView;
+    private stopSelectedJob;
+    private stopSelectedAllViewJob;
     private renderAllRows;
     private renderMain;
     private cycleConfigSpecialist;
