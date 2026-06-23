@@ -322,3 +322,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 - Supervisor now emits waiting_auto_close_requested / waiting_auto_close_completed control-signal events for stale waiting keep-alive sessions and uses graceful close before forced termination fallback.
 - Real smoke pattern for linked sp: isolate XDG_CONFIG_HOME but keep the real HOME, otherwise Pi provider auth disappears and smoke runs fail with missing API key/provider auth.
 - Concrete smoke evidence used a temporary package-layer smoke-waiter specialist, sp init --global, sp edit --global --set smoke-waiter.execution.interactive true, sp edit --global --set smoke-waiter.stall_detection.waiting_auto_close_ms 1000, then sp feed <job> --json to verify persisted waiting_auto_close_* events.
+
+## 2026-06-22T23:04:28Z — Codex nullable package-default fix
+- Package specialist validation must accept sparse null defaults that shipped config/specialists entries seed intentionally; otherwise sp list/run breaks before global overrides can merge.
+- When a schema leaf becomes nullable for package/global parity, runtime threshold code must normalize null before numeric comparisons to preserve disabled/inherit semantics.

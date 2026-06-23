@@ -829,6 +829,26 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-22T22:16:33.087Z"
+    },
+    {
+      "id": "bug-051",
+      "timestamp": "2026-06-22T23:04:28.571Z",
+      "error_message": "Shipped specialist JSON seeded stall_detection.waiting_auto_close_ms as null, but package parseSpecialist schema and shared stall-detection typing rejected/null-broke that sparse default",
+      "file": "src/specialist/schema.ts, src/specialist/loader.ts, src/specialist/supervisor.ts",
+      "root_cause": "The new waiting_auto_close_ms leaf was added to shipped configs/global override template with null=infer/disabled semantics, but the package Specialist schema still required a number and the shared StallDetectionConfig/runtime threshold code still assumed number-only values.",
+      "fix": "Allowed null in StallDetectionSchema for waiting_auto_close_ms, widened the shared StallDetectionConfig leaf to number|null, and normalized supervisor threshold handling so null resolves to disabled (0) before numeric comparisons.",
+      "tags": [
+        "bugfix",
+        "schema",
+        "stall-detection",
+        "nullability",
+        "codex-review"
+      ],
+      "related_bugs": [
+        "bug-051"
+      ],
+      "occurrences": 1,
+      "last_seen": "2026-06-22T23:04:28.576Z"
     }
   ]
 }
