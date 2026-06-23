@@ -2,9 +2,9 @@
 title: Background Jobs
 scope: background-jobs
 category: guide
-version: 1.7.1
-updated: 2026-05-22
-synced_at: b92a11ba
+version: 1.8.0
+updated: 2026-06-23
+synced_at: bf6baf7a
 description: Supervisor-backed job model, keep-alive semantics, and monitoring commands.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -65,6 +65,8 @@ specialist:
 ```
 
 After the first turn, keep-alive jobs transition to `waiting` and preserve full conversation context for future turns.
+
+Keep-alive sessions support automatic cleanup via `waiting_auto_close_ms` in stall detection configuration. When configured (value > 0), waiting sessions automatically close after the specified silence threshold. The close attempt has a 5-second graceful timeout; if the session close hangs, forced termination is triggered.
 
 Run-time precedence:
 - `--no-keep-alive` / `no_keep_alive` forces one-shot mode
@@ -172,6 +174,26 @@ Ready markers:
 
 ```text
 .specialists/ready/
+```
+
+## Stall detection thresholds
+
+Background jobs support configurable stall detection via `specialist.stall_detection` in specialist YAML:
+
+| Option | Default | Description |
+|---|---|---|
+| `running_silence_warn_ms` | 60000 | Warn when no output received during running state |
+| `running_silence_error_ms` | 300000 | Error/cancel when running silence exceeds threshold |
+| `waiting_stale_ms` | 3600000 | Warn when waiting job has no activity |
+| `waiting_auto_close_ms` | 0 | Auto-close waiting sessions after N ms (0 = disabled) |
+| `tool_duration_warn_ms` | 120000 | Warn when tool call exceeds duration |
+
+YAML example:
+
+```yaml
+specialist:
+  stall_detection:
+    waiting_auto_close_ms: 1800000  # Auto-close after 30 min idle
 ```
 
 ## See also
