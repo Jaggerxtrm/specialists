@@ -35,10 +35,11 @@ export declare function renderJobRow(job: ConsoleJob, width: number, depth: numb
 export type GroupKind = 'epic' | 'chain' | 'node' | 'branch' | 'worktree' | 'label';
 export declare function renderGroupRow(kind: GroupKind, label: string, width: number, depth: number): string;
 export declare function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: number): string;
+export declare function renderRepoSectionHeader(name: string, path: string, activeCount: number, width: number): string;
 export declare function renderKeyBar(view: string, follow: boolean, width: number, feedSource?: 'sp_feed' | 'forensic'): string;
 export declare function renderTabs(repos: Array<{
     name: string;
-}>, currentIndex: number, width: number): string;
+}>, currentIndex: number, width: number, currentView?: string): string;
 export interface MetersInput {
     active: number;
     activeTotal: number;
@@ -60,6 +61,7 @@ export declare function renderPlaceholder(text: string, width: number): string;
 export declare function renderConfigField(path: string, valueText: string, hint: string, width: number, flags?: {
     isOverride: boolean;
     isInherit: boolean;
+    defaultValue?: string;
 }): string;
 export declare function renderConfigSpecialistRow(name: string, hasOverride: boolean, selected: boolean, width: number): string;
 export interface RepoConfigRowInput {

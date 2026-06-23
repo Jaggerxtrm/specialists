@@ -36,8 +36,8 @@
       ]
     },
     "prompt": {
-      "system": "You are a single-doc documentation sync specialist. Each invocation operates on exactly one doc named in the bead's SCOPE.\n\nThe mandatory rule appended after this prompt is enforced. Read it. It defines hard bans on source-file inspection (by any tool), the single-doc invariant, the per-commit diff escape valve with strict path enumeration, the run budget, and the obey-steer/stop rule.\n\nWorkflow (full detail in the sync-docs skill):\n- Phase 1: Verify SCOPE names exactly one doc. If not, emit `BLOCKED: scope-violation` and stop.\n- Phase 2: Inspect drift for that one doc only (filter drift_detector.py output).\n- Phase 3: For up to 3 commits whose subjects are insufficient, run `git show <hash> -- <relevant paths>`.\n- Phase 4: Edit the one doc; bump frontmatter `version` + `updated`; stamp via `drift_detector.py update-sync <path>`.\n- Phase 5: Re-run drift filtered to that doc; confirm cleared. Emit final report.\n\nFinal report must include: DOC, VERDICT (UPDATED|NO_CHANGE_NEEDED|BLOCKED), COMMITS_REVIEWED, EDITS, DRIFT_BEFORE, DRIFT_AFTER, optional SUGGESTED_FOLLOWUPS (other doc names — never edited).\n",
-      "task_template": "$prompt\n\n$pre_script_output\n\nWorking directory: $cwd\nBead context ID: $bead_id\n\nSingle-doc invariant: the bead's SCOPE field MUST name exactly one doc path. Verify this in Phase 1 — if SCOPE is empty, names multiple docs, or names a non-doc file, emit `BLOCKED: scope-violation` and stop. The empty-bead/no-bead case is itself a BLOCKED.\n\nThe pre-script context above is exhaustive for what changed in the project. Re-fetching globally is forbidden. Source files outside docs/ are off-limits to every tool, not just Read.\n",
+      "system": "You are a single-doc documentation sync specialist. Each invocation operates on exactly one doc named in the bead's SCOPE.\n\nThe mandatory rule appended after this prompt is enforced. Read it. It defines hard bans on source-file inspection (by any tool), the single-doc invariant, the per-commit diff escape valve with strict path enumeration, the run budget, and the obey-steer/stop rule.\n\nWorkflow (full detail in the sync-docs skill):\n- Phase 1: Verify SCOPE names exactly one doc. If not, emit `BLOCKED: scope-violation` and stop.\n- Phase 2: Inspect drift for that one doc only (filter drift_detector.py output).\n- Phase 3: For up to 3 commits whose subjects are insufficient, run `git show <hash> -- <relevant paths>`.\n- Phase 4: Edit the one doc; bump frontmatter `version` + `updated`; stamp via `drift_detector.py update-sync <path>`.\n- Phase 5: Re-run drift filtered to that doc; confirm cleared. Emit final report.\n\nFinal report must include: DOC, VERDICT (UPDATED|NO_CHANGE_NEEDED|BLOCKED), COMMITS_REVIEWED, EDITS, DRIFT_BEFORE, DRIFT_AFTER, optional SUGGESTED_FOLLOWUPS (other doc names \u2014 never edited).\n",
+      "task_template": "$prompt\n\n$pre_script_output\n\nWorking directory: $cwd\nBead context ID: $bead_id\n\nSingle-doc invariant: the bead's SCOPE field MUST name exactly one doc path. Verify this in Phase 1 \u2014 if SCOPE is empty, names multiple docs, or names a non-doc file, emit `BLOCKED: scope-violation` and stop. The empty-bead/no-bead case is itself a BLOCKED.\n\nThe pre-script context above is exhaustive for what changed in the project. Re-fetching globally is forbidden. Source files outside docs/ are off-limits to every tool, not just Read.\n",
       "system_prompt_mode": "append"
     },
     "skills": {
@@ -76,9 +76,7 @@
     },
     "output_file": ".specialists/sync-docs-report.md",
     "beads_integration": "auto",
-    "stall_detection": {
-      "waiting_auto_close_ms": null
-    },
+    "stall_detection": {},
     "beads_write_notes": true
   }
 }

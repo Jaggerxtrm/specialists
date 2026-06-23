@@ -2,6 +2,10 @@ import type { SpecialistRunner, RunOptions } from './runner.js';
 import type { BeadsClient } from './beads.js';
 import { type TimelineEvent, type TimelineEventControlSignal } from './timeline-events.js';
 import type { SessionRunMetrics, SessionTokenUsage } from '../pi/session.js';
+type ActivePiSession = {
+    close(): Promise<void>;
+    kill(reason?: Error): void;
+};
 import type { StallDetectionConfig } from './loader.js';
 export declare const STALL_DETECTION_DEFAULTS: Required<StallDetectionConfig>;
 export type SupervisorJobStatus = 'starting' | 'running' | 'waiting' | 'done' | 'error' | 'cancelled';
@@ -139,12 +143,15 @@ export declare class Supervisor {
     private disposePromise;
     private pendingSqliteOperations;
     private readonly pendingSqliteDrainResolvers;
+    private activeSession;
     private readonly isJobFileOutputEnabled;
     constructor(opts: SupervisorOptions);
     private createDisposedSqliteError;
     private withSqliteOperation;
     private waitForPendingSqliteOperations;
+    setActiveSession(session: ActivePiSession): void;
     dispose(): Promise<void>;
+    private closeActiveSession;
     private jobDir;
     private statusPath;
     private resultPath;

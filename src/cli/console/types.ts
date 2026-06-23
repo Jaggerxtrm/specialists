@@ -1,7 +1,7 @@
 import type { ProcessHealthReport } from '../../specialist/process-health.js';
 import type { SupervisorStatus } from '../../specialist/supervisor.js';
 
-export type ConsoleView = 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config' | 'repoConfig';
+export type ConsoleView = 'all' | 'ps' | 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config' | 'repoConfig';
 export type HistoryMode = 'default' | 'history' | 'all';
 export type FeedSource = 'sp_feed' | 'forensic';
 

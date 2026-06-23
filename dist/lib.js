@@ -12039,10 +12039,9 @@ function resolveObservabilityDbLocation(cwd = process.cwd()) {
 function ensureObservabilityDbFile(location) {
   mkdirSync2(location.dbDirectory, { recursive: true });
   const alreadyExists = existsSync3(location.dbPath);
-  if (!alreadyExists) {
-    writeFileSync2(location.dbPath, "", { encoding: "utf-8", flag: "wx" });
+  if (alreadyExists) {
+    chmodSync(location.dbPath, 420);
   }
-  chmodSync(location.dbPath, 420);
   return { created: !alreadyExists };
 }
 
@@ -14842,15 +14841,10 @@ function openObservabilitySqliteClient(dbPath) {
     initSchema(initDb);
     initDb.close();
     return new SqliteClient(dbPath);
-  } catch {
+  } catch (error) {
+    console.warn(`[observability-sqlite] Failed to open observability database at ${dbPath}: ${String(error)}`);
     return null;
   }
-}
-function createObservabilitySqliteClient(cwd = process.cwd()) {
-  const location = resolveObservabilityDbLocation(cwd);
-  if (!existsSync4(location.dbPath))
-    return null;
-  return openObservabilitySqliteClient(location.dbPath);
 }
 function createObservabilitySqliteClientAtPath(dbPath) {
   mkdirSync3(dirname2(dbPath), { recursive: true });
@@ -15919,11 +15913,12 @@ function openObservabilityClient(options) {
     return createObservabilitySqliteClientAtPath(options.observabilityDbPath);
   const projectDir = options.projectDir ?? process.cwd();
   try {
-    ensureObservabilityDbFile(resolveObservabilityDbLocation(projectDir));
+    const location = resolveObservabilityDbLocation(projectDir);
+    ensureObservabilityDbFile(location);
+    return createObservabilitySqliteClientAtPath(location.dbPath);
   } catch {
     return null;
   }
-  return createObservabilitySqliteClient(projectDir);
 }
 function resolveScriptSpecialistName(name) {
   if (name === "changelog-keeper")

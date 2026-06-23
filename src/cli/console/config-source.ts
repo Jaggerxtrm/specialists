@@ -6,7 +6,9 @@
 // READ-ONLY. writeGlobalUserConfig is intentionally NOT imported here.
 
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { resolveCanonicalAssetDir } from '../../specialist/canonical-asset-resolver.js';
 import { z } from 'zod';
 import {
   getGlobalSpecialistOverrideLeafPaths,
@@ -25,6 +27,7 @@ export type ConfigFieldHint = string;
 export interface ConfigField {
   path: string;
   value: unknown;
+  defaultValue?: unknown;
   allowedHint: ConfigFieldHint;
   isEnum: boolean;
   enumValues?: string[];
@@ -141,6 +144,18 @@ export function readGlobalConfigSnapshot(loader?: SpecialistLoader): ConfigSnaps
   };
 }
 
+function readPackageSpec(name: string): unknown {
+  try {
+    const dir = resolveCanonicalAssetDir('specialists');
+    if (!dir) return undefined;
+    const specPath = join(dir, `${name}.specialist.json`);
+    if (!existsSync(specPath)) return undefined;
+    return JSON.parse(readFileSync(specPath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
+}
+
 function collectSpecialists(
   parsedConfig: unknown,
   loader?: SpecialistLoader,
@@ -156,12 +171,17 @@ function collectSpecialists(
   return allNames.map((name) => {
     const overrideObj = isRecord(parsedConfig) ? parsedConfig[name] : undefined;
     const hasOverride = isRecord(overrideObj);
+    const packageSpec = readPackageSpec(name);
     const fields: ConfigField[] = leafPaths.map((path) => {
       const value = hasOverride ? readLeaf(overrideObj as Record<string, unknown>, path) : undefined;
       const { hint, isEnum, enumValues } = describeLeaf(path);
+      const defaultValue = packageSpec !== undefined
+        ? readLeaf(packageSpec as Record<string, unknown>, `specialist.${path}`)
+        : undefined;
       return {
         path,
         value,
+        defaultValue,
         allowedHint: hint,
         isEnum,
         enumValues,

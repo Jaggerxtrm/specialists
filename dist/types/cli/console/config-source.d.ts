@@ -5,6 +5,7 @@ export type ConfigFieldHint = string;
 export interface ConfigField {
     path: string;
     value: unknown;
+    defaultValue?: unknown;
     allowedHint: ConfigFieldHint;
     isEnum: boolean;
     enumValues?: string[];

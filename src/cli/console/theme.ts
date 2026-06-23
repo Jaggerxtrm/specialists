@@ -350,6 +350,21 @@ export function renderStatsLine(snapshot: ProcessSnapshot | undefined, width: nu
 
 // ---------- KeyBar ----------
 
+export function renderRepoSectionHeader(
+  name: string,
+  path: string,
+  activeCount: number,
+  width: number,
+): string {
+  const dot = activeCount > 0 ? paint('●', 'running') : paint('○', 'dim');
+  const label = paint(name, activeCount > 0 ? 'bright' : 'dim');
+  const home = process.env['HOME'] ?? '';
+  const shortPath = home && path.startsWith(home) ? path.replace(home, '~') : path;
+  const pathStr = paint(`  ${shortPath}`, 'dim');
+  const countStr = activeCount > 0 ? paint(`  ${activeCount} active`, 'running') : paint('  idle', 'dim');
+  return truncateToWidth(`${dot} ${label}${pathStr}${countStr}`, width);
+}
+
 export function renderKeyBar(
   view: string,
   follow: boolean,
@@ -357,8 +372,10 @@ export function renderKeyBar(
   feedSource: 'sp_feed' | 'forensic' = 'forensic',
 ): string {
   const line =
-    view === 'ps'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  tab repo  q quit'
+    view === 'all'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  tab/1-9 repo  q quit'
+      : view === 'ps'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit'
       : view === 'feed'
         ? `↑↓ scroll  PgUp/PgDn page  f follow:${follow ? 'on' : 'off'}  t ${feedSource === 'forensic' ? 'legacy' : 'forensic'}  ⌫ back  g/G top/end  q quit`
         : view === 'bead'
@@ -379,13 +396,15 @@ export function renderTabs(
   repos: Array<{ name: string }>,
   currentIndex: number,
   width: number,
+  currentView?: string,
 ): string {
   if (repos.length === 0) return paint('(no repos)', 'dim');
+  const allTab = currentView === 'all' ? paint('[0] ALL', 'bright') : paint('[0] ALL', 'dim');
   const parts = repos.map((r, i) => {
     const label = `[${i + 1}] ${r.name}`;
-    return i === currentIndex ? paint(label, 'bright') : paint(label, 'dim');
+    return (currentView !== 'all' && i === currentIndex) ? paint(label, 'bright') : paint(label, 'dim');
   });
-  return truncateToWidth(parts.join('  '), width);
+  return truncateToWidth([allTab, ...parts].join('  '), width);
 }
 
 export interface MetersInput {
@@ -466,11 +485,14 @@ export function renderConfigField(
   valueText: string,
   hint: string,
   width: number,
-  flags: { isOverride: boolean; isInherit: boolean } = { isOverride: false, isInherit: true },
+  flags: { isOverride: boolean; isInherit: boolean; defaultValue?: string } = { isOverride: false, isInherit: true },
 ): string {
   const keyText = padR(path, 28);
   const head = paint(keyText, flags.isOverride ? 'bright' : 'dim');
-  const value = paint(flags.isInherit ? 'inherit' : valueText, flags.isInherit ? 'dim' : 'txt');
+  const inheritText = flags.isInherit && flags.defaultValue !== undefined
+    ? `inherit (${flags.defaultValue})`
+    : 'inherit';
+  const value = paint(flags.isInherit ? inheritText : valueText, flags.isInherit ? 'dim' : 'txt');
   const minBody = visibleLength(head) + 1 + visibleLength(value) + 1;
   const hintWidth = Math.max(0, width - minBody);
   const hintText = hintWidth > 0

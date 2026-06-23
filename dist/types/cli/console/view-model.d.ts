@@ -237,6 +237,8 @@ export type ConsoleAction = {
 } | {
     type: 'selectRepo';
     index: number;
+} | {
+    type: 'viewAll';
 };
 export declare function initialConsoleState(): ConsoleState;
 export declare function initialRepoConfigState(): RepoConfigViewState;

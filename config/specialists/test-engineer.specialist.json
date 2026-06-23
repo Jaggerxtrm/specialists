@@ -3,7 +3,7 @@
     "metadata": {
       "name": "test-engineer",
       "version": "1.0.0",
-      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree via --job because authoring NEW test/fixture files needs the `write` tool (runtime: write→HIGH, edit→MEDIUM; MEDIUM cannot create files); prompt forbids production source edits unless bead explicitly authorizes test-helper/export changes.",
+      "description": "Post-implementation test authoring from actual diff. Use for adding/updating tests, fixtures, smoke/E2E harnesses, and telemetry assertions before test-runner. Not for production fixes, broad test execution, generic QA review, or release blessing. HIGH worktree via --job because authoring NEW test/fixture files needs the `write` tool (runtime: write\u2192HIGH, edit\u2192MEDIUM; MEDIUM cannot create files); prompt forbids production source edits unless bead explicitly authorizes test-helper/export changes.",
       "category": "testing",
       "tags": [
         "tests",
@@ -126,9 +126,7 @@
       ],
       "stale_threshold_days": 30
     },
-    "stall_detection": {
-      "waiting_auto_close_ms": null
-    },
+    "stall_detection": {},
     "notes_mode": "final-only",
     "beads_integration": "auto",
     "beads_write_notes": true

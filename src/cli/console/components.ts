@@ -36,6 +36,7 @@ import {
   renderMeters,
   renderPlaceholder,
   renderRepoConfigRow,
+  renderRepoSectionHeader,
   renderResultFooter,
   renderResultTitle,
   renderSectionTitle,
@@ -56,7 +57,7 @@ const COALESCE_MS = 50; // ~20Hz dispatch cap (spec §10)
 const TOP_CHROME_ROWS = 4; // tabs + meters + viewtag + header
 const BOTTOM_CHROME_ROWS = 2; // stats + keys
 const CHROME_ROWS = TOP_CHROME_ROWS + BOTTOM_CHROME_ROWS;
-const VIEWS: readonly string[] = ['ps', 'feed', 'job', 'result', 'bead', 'diff', 'config', 'repoConfig'];
+const VIEWS: readonly string[] = ['all', 'ps', 'feed', 'job', 'result', 'bead', 'diff', 'config', 'repoConfig'];
 
 interface ConsoleAppOptions {
   runtime: RuntimeClient;
@@ -89,6 +90,10 @@ export class ConsoleApp implements Component {
   // would be wrong) and is bounded to totalJobs * 2 to prevent unbounded
   // growth in long sessions (unitAI-ctb4u.21).
   private processRowCache = new Map<string, string>();
+  private allSnapshots = new Map<string, import('./types.js').ProcessSnapshot>();
+  private lastAllRefreshMs = 0;
+  private allViewCursor = 0;
+  private allViewRowMap: Array<{ repoId: string; jobId: string } | null> = [];
   private coalesceTimer: ReturnType<typeof setTimeout> | null = null;
   private resizeHandler: (() => void) | null = null;
 
@@ -152,6 +157,7 @@ export class ConsoleApp implements Component {
     // view-specific shortcuts: ps `d`=diff / `g`=config, config `u`=undo.
     // Key.pageDown/Key.pageUp keyboard events still fire everywhere.
     const isScrollView =
+      this.state.view === 'all' ||
       this.state.view === 'feed' ||
       this.state.view === 'job' ||
       this.state.view === 'result' ||
@@ -163,7 +169,11 @@ export class ConsoleApp implements Component {
     // unitAI-ctb4u.25 (d/u/g/G gate). unitAI-ctb4u.30.
     const isArrowMoveView = isScrollView || this.state.view === 'ps';
 
-    if ((matchesKey(data, Key.down) || data === 'j') && isArrowMoveView)
+    if ((matchesKey(data, Key.down) || data === 'j') && this.state.view === 'all')
+      this.moveAllViewCursor(1);
+    else if ((matchesKey(data, Key.up) || data === 'k') && this.state.view === 'all')
+      this.moveAllViewCursor(-1);
+    else if ((matchesKey(data, Key.down) || data === 'j') && isArrowMoveView)
       this.dispatch({ type: 'move', delta: 1, viewportRows, totalRows });
     else if ((matchesKey(data, Key.up) || data === 'k') && isArrowMoveView)
       this.dispatch({ type: 'move', delta: -1, viewportRows, totalRows });
@@ -219,9 +229,15 @@ export class ConsoleApp implements Component {
       this.dispatch({ type: 'diffBack' });
       void this.refresh();
     }
+    else if (matchesKey(data, Key.enter) && this.state.view === 'all')
+      this.openFromAllView('feed');
+    else if (data === 'r' && this.state.view === 'all') this.openFromAllView('result');
+    else if (data === 'i' && this.state.view === 'all') this.openFromAllView('job');
+    else if (data === 'b' && this.state.view === 'all') this.openFromAllView('bead');
+    else if (data === 'd' && this.state.view === 'all') this.openFromAllView('diff');
     else if (
       (matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) &&
-      this.state.view !== 'ps'
+      this.state.view !== 'ps' && this.state.view !== 'all'
     )
       this.back();
     else if (data === 'h' && this.state.view === 'ps') this.refreshAfter({ type: 'cycleHistory' });
@@ -230,6 +246,7 @@ export class ConsoleApp implements Component {
     else if (data === '/' && this.state.view === 'ps') this.dispatch({ type: 'startFilter' });
     else if (data === 'f' && this.state.view === 'feed') this.refreshAfter({ type: 'toggleFollow' });
     else if (data === 't' && this.state.view === 'feed') this.refreshAfter({ type: 'toggleFeedSource' });
+    else if (data === '0') { this.allViewCursor = 0; this.refreshAfter({ type: 'viewAll' }); }
     else if (matchesKey(data, Key.tab)) this.refreshAfter({ type: 'nextRepo' });
     else if (/^[1-9]$/.test(data)) this.refreshAfter({ type: 'selectRepo', index: Number(data) - 1 });
   }
@@ -239,16 +256,18 @@ export class ConsoleApp implements Component {
     const height = Math.max(1, this.options.rows());
     const repo = currentRepo(this.state);
     const lines: string[] = [];
-    lines.push(renderTabs(this.state.repos, this.state.repoIndex, width));
+    lines.push(renderTabs(this.state.repos, this.state.repoIndex, width, this.state.view));
     lines.push(renderMeters(this.metersInput(), width));
     lines.push(renderViewtag(VIEWS, this.state.view, width));
     lines.push(
-      renderHeader(
-        this.detailJobLabel() ?? this.state.view,
-        repo?.name ?? 'specialists',
-        repo?.path ?? process.cwd(),
-        width,
-      ),
+      this.state.view === 'all'
+        ? renderHeader('all', `${this.state.repos.length} repos`, '', width)
+        : renderHeader(
+            this.detailJobLabel() ?? this.state.view,
+            repo?.name ?? 'specialists',
+            repo?.path ?? process.cwd(),
+            width,
+          ),
     );
 
     const viewportRows = this.mainViewportRows();
@@ -256,14 +275,34 @@ export class ConsoleApp implements Component {
     while (mainRows.length < viewportRows) mainRows.push(fillerLine(width));
     lines.push(...mainRows);
 
-    lines.push(renderStatsLine(this.state.snapshot, width));
+    lines.push(this.state.view === 'all' ? this.renderAllStatsLine(width) : renderStatsLine(this.state.snapshot, width));
     lines.push(renderKeyBar(this.state.view, this.state.follow, width, this.state.feedSource));
     if (this.state.filtering) lines.push(renderFilterPrompt(`/${this.state.filter}_`, width));
     if (this.state.message) lines.push(renderMessage(this.state.message, width));
     return fitFrame(lines, width, height);
   }
 
+  private renderAllStatsLine(width: number): string {
+    let running = 0, waiting = 0, total = 0;
+    for (const snap of this.allSnapshots.values()) {
+      running += snap.runningJobs;
+      waiting += snap.waitingJobs ?? 0;
+      total += snap.totalJobs;
+    }
+    const n = this.state.repos.length;
+    const text = `${n} repos  jobs ${total}  running ${running}  waiting ${waiting}`;
+    return paint(truncateToWidth(text, width), 'dim');
+  }
+
   private metersInput() {
+    if (this.state.view === 'all') {
+      let active = 0, activeTotal = 0;
+      for (const snap of this.allSnapshots.values()) {
+        active += snap.runningJobs;
+        activeTotal += snap.totalJobs;
+      }
+      return { active, activeTotal, leases: 1, leaseCapacity: 4, budgetPct: 61 };
+    }
     const snap = this.state.snapshot;
     const active = snap ? snap.runningJobs : 0;
     const activeTotal = snap ? snap.totalJobs : 0;
@@ -290,10 +329,34 @@ export class ConsoleApp implements Component {
     }
   }
 
+  private async refreshAllView(): Promise<void> {
+    const repos = this.state.repos;
+    if (repos.length === 0) return;
+    const now = Date.now();
+    if (now - this.lastAllRefreshMs < 5000 && this.lastAllRefreshMs > 0) return;
+    this.lastAllRefreshMs = now;
+    const results = await Promise.allSettled(
+      repos.map((repo) =>
+        this.options.runtime.listProcessSnapshot(repo, {
+          historyMode: 'default',
+          includeCleaned: false,
+          textFilter: '',
+        }).then((snap) => ({ id: repo.id, snap }))
+      )
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') this.allSnapshots.set(r.value.id, r.value.snap);
+    }
+  }
+
   private async refresh(): Promise<void> {
     if (this.refreshInFlight || this.disposed) return;
     this.refreshInFlight = true;
     try {
+      if (this.state.view === 'all') {
+        await this.refreshAllView();
+        return;
+      }
       const repo = currentRepo(this.state);
       if (!repo) return;
       let snapshot;
@@ -687,7 +750,86 @@ export class ConsoleApp implements Component {
     void this.refresh();
   }
 
+  private moveAllViewCursor(delta: number): void {
+    const selectable: number[] = [];
+    this.allViewRowMap.forEach((e, i) => { if (e !== null) selectable.push(i); });
+    if (!selectable.length) return;
+    const cur = selectable.indexOf(this.allViewCursor);
+    const curIdx = cur >= 0 ? cur : 0;
+    const nextIdx = Math.max(0, Math.min(selectable.length - 1, curIdx + delta));
+    this.allViewCursor = selectable[nextIdx] ?? 0;
+    const viewportRows = this.mainViewportRows();
+    const scroll = this.state.scroll;
+    if (this.allViewCursor < scroll) {
+      this.dispatch({ type: 'move', delta: this.allViewCursor - scroll, viewportRows, totalRows: this.renderedDetailRows });
+    } else if (this.allViewCursor >= scroll + viewportRows) {
+      this.dispatch({ type: 'move', delta: this.allViewCursor - (scroll + viewportRows - 1), viewportRows, totalRows: this.renderedDetailRows });
+    } else {
+      this.scheduleRender();
+    }
+  }
+
+  private openFromAllView(view: 'feed' | 'job' | 'result' | 'bead' | 'diff'): void {
+    const entry = this.allViewRowMap[this.allViewCursor];
+    if (!entry) return;
+    const repoIdx = this.state.repos.findIndex(r => r.id === entry.repoId);
+    if (repoIdx < 0) return;
+    this.refreshAfter({ type: 'selectRepo', index: repoIdx });
+    this.open(view, entry.jobId);
+  }
+
+  private renderAllRows(width: number, viewportRows: number): string[] {
+    const repos = this.state.repos;
+    if (repos.length === 0) return [renderPlaceholder('no repos configured', width)];
+
+    const rows: string[] = [];
+    const newRowMap: Array<{ repoId: string; jobId: string } | null> = [];
+    const sorted = [...repos].sort((a, b) => {
+      const aActive = this.allSnapshots.get(a.id)?.runningJobs ?? 0;
+      const bActive = this.allSnapshots.get(b.id)?.runningJobs ?? 0;
+      return bActive - aActive;
+    });
+
+    for (const repo of sorted) {
+      const snap = this.allSnapshots.get(repo.id);
+      const activeRows = (snap?.rows ?? []).filter(
+        (r): r is Extract<typeof r, { kind: 'job' }> =>
+          r.kind === 'job' && (r.job.status === 'running' || r.job.status === 'waiting'),
+      );
+      newRowMap.push(null); // section header is not selectable
+      rows.push(renderRepoSectionHeader(repo.name, repo.path, activeRows.length, width));
+      if (activeRows.length === 0) {
+        newRowMap.push(null);
+        rows.push(renderPlaceholder('  no active jobs', width));
+      } else {
+        for (const row of activeRows) {
+          const rowIdx = rows.length;
+          const isSelected = rowIdx === this.allViewCursor;
+          newRowMap.push({ repoId: repo.id, jobId: row.job.id });
+          const prefix = isSelected ? '› ' : '  ';
+          rows.push(prefix + renderJobRow(row.job, Math.max(1, width - 2), 0, false));
+        }
+      }
+      newRowMap.push(null); // spacer
+      rows.push('');
+    }
+
+    this.allViewRowMap = newRowMap;
+    // Auto-advance cursor off non-selectable rows (headers/spacers) on first render
+    if (this.allViewRowMap[this.allViewCursor] === null) {
+      const first = this.allViewRowMap.findIndex(e => e !== null);
+      if (first >= 0) this.allViewCursor = first;
+    }
+
+    const total = rows.length;
+    this.renderedDetailRows = total;
+    const maxScroll = Math.max(0, total - Math.max(1, viewportRows));
+    const scroll = Math.min(this.state.scroll, maxScroll);
+    return [...visibleSlice(rows, scroll, viewportRows)];
+  }
+
   private renderMain(width: number, viewportRows: number): string[] {
+    if (this.state.view === 'all') return this.renderAllRows(width, viewportRows);
     if (this.state.view === 'ps') return this.renderProcessRows(width, viewportRows);
     if (this.state.view === 'feed') return this.renderFeedRows(width, viewportRows);
     if (this.state.view === 'job') return this.renderJobRows(width, viewportRows);
@@ -894,7 +1036,13 @@ export class ConsoleApp implements Component {
           formatConfigValue(field.value),
           field.allowedHint,
           width - 2,
-          { isOverride: field.isOverride, isInherit },
+          {
+            isOverride: field.isOverride,
+            isInherit,
+            defaultValue: isInherit && field.defaultValue !== undefined && field.defaultValue !== null
+              ? formatConfigValue(field.defaultValue)
+              : undefined,
+          },
         );
         rows.push(`${cursor} ${row}`);
         if (this.state.configEdit.active

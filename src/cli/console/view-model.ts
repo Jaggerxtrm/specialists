@@ -137,13 +137,14 @@ export type ConsoleAction =
   | { type: 'filterBackspace' }
   | { type: 'finishFilter'; clear?: boolean }
   | { type: 'nextRepo' }
-  | { type: 'selectRepo'; index: number };
+  | { type: 'selectRepo'; index: number }
+  | { type: 'viewAll' };
 
 export function initialConsoleState(): ConsoleState {
   return {
     repos: [],
     repoIndex: 0,
-    view: 'ps',
+    view: 'all',
     selectedRow: 0,
     scroll: 0,
     filter: '',
@@ -570,6 +571,8 @@ export function reduceConsoleState(state: ConsoleState, action: ConsoleAction): 
     }
     case 'repoConfigMessage':
       return { ...state, repoConfig: { ...state.repoConfig, message: action.message } };
+    case 'viewAll':
+      return { ...state, view: 'all', scroll: 0, selectedRow: 0 };
   }
 }
 

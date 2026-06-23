@@ -3,7 +3,7 @@
     "metadata": {
       "name": "bare",
       "version": "1.0.0",
-      "description": "TEMPLATE — do not dispatch. Copy from the installed @jaggerxtrm/specialists package to .specialists/user/<your-name>.specialist.json and customize for your own task. Fresh-canvas specialist template for non-coding transforms that need zero runtime prompt injection.",
+      "description": "TEMPLATE \u2014 do not dispatch. Copy from the installed @jaggerxtrm/specialists package to .specialists/user/<your-name>.specialist.json and customize for your own task. Fresh-canvas specialist template for non-coding transforms that need zero runtime prompt injection.",
       "category": "template",
       "tags": [
         "template",
@@ -46,9 +46,7 @@
       ],
       "stale_threshold_days": 30
     },
-    "stall_detection": {
-      "waiting_auto_close_ms": null
-    },
+    "stall_detection": {},
     "mandatory_rules": {
       "template_sets": []
     },

@@ -123,7 +123,7 @@ export declare class SpecialistRunner {
         backend: string;
         model: string;
         sessionId?: string;
-    }) => void, onKillRegistered?: (killFn: () => void) => void, onBeadCreated?: (beadId: string) => void, onSteerRegistered?: (steerFn: (msg: string) => Promise<void>) => void, onResumeReady?: (resumeFn: (msg: string) => Promise<string>, closeFn: () => Promise<void>) => void, onToolStartCallback?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void, onToolEndCallback?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string, resultRaw?: Record<string, unknown>) => void): Promise<RunResult>;
+    }) => void, onKillRegistered?: (killFn: () => void) => void, onSessionRegistered?: (session: SessionLike) => void, onBeadCreated?: (beadId: string) => void, onSteerRegistered?: (steerFn: (msg: string) => Promise<void>) => void, onResumeReady?: (resumeFn: (msg: string) => Promise<string>, closeFn: () => Promise<void>) => void, onToolStartCallback?: (tool: string, args?: Record<string, unknown>, toolCallId?: string) => void, onToolEndCallback?: (tool: string, isError: boolean, toolCallId?: string, resultContent?: string, resultRaw?: Record<string, unknown>) => void): Promise<RunResult>;
     /**
      * @deprecated Legacy in-memory async path.
      * Now uses Supervisor-backed jobs under .specialists/jobs.

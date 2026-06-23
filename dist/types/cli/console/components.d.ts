@@ -17,6 +17,10 @@ export declare class ConsoleApp implements Component {
     private lastSnapshotHash;
     private lastSnapshotJobs;
     private processRowCache;
+    private allSnapshots;
+    private lastAllRefreshMs;
+    private allViewCursor;
+    private allViewRowMap;
     private coalesceTimer;
     private resizeHandler;
     constructor(options: ConsoleAppOptions);
@@ -25,8 +29,10 @@ export declare class ConsoleApp implements Component {
     invalidate(): void;
     handleInput(data: string): void;
     render(width: number): string[];
+    private renderAllStatsLine;
     private metersInput;
     private loadRepos;
+    private refreshAllView;
     private refresh;
     private logViewKey;
     private dispatch;
@@ -44,6 +50,9 @@ export declare class ConsoleApp implements Component {
     private rescanRepoConfig;
     private selectedRepoConfigName;
     private back;
+    private moveAllViewCursor;
+    private openFromAllView;
+    private renderAllRows;
     private renderMain;
     private cycleConfigSpecialist;
     private selectedConfigField;
