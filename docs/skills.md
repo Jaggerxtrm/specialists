@@ -2,9 +2,9 @@
 title: Skills Catalog
 scope: skills
 category: overview
-version: 2.0.0
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 2.0.1
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Skills shipped in this repo and how they are distributed.
 source_of_truth_for:
   - "config/skills/**/*.md"
@@ -83,6 +83,12 @@ Reconciles specialists/xtrm drift. Current model:
 Location: `config/skills/specialists-creator/SKILL.md`
 
 Guides creation and repair of `.specialist.json` files. Use `sp edit`, presets, `sp view`, and validation instead of hand-written ad-hoc JSON. Always choose models from live `pi --list-models`; do not cargo-cult old examples.
+
+### `setup-specialists`
+
+Location: `config/skills/setup-specialists/SKILL.md`
+
+First-run Specialists setup workflow. Bootstraps `~/.config/specialists/user.json`, checks local Pi models, applies cross-repo `sp edit --global` overrides, and now covers interactive keep-alive defaults plus waiting auto-close settings.
 
 ### Other package skills
 
