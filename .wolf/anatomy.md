@@ -1420,3 +1420,8 @@
 - `src/cli/serve.ts` / `src/index.ts` — adds per-job feed-events route and keeps `sp serve` long-running after listen.
 - `docs/telemetry/*.md` — console-safe forensic/Prometheus handoff updates.
 > Manual update: 2026-06-22T22:16:32Z — unitAI-pj2mm.1/.2/.3 shipped global override support for execution.interactive + stall_detection.waiting_auto_close_ms, added Supervisor waiting auto-close (graceful close first, forced termination fallback), updated specialists-creator/setup skills and canonical docs, and rebuilt dist for linked-bin testing.
+
+> Manual update: 2026-06-23T13:05:16Z — unitAI-c7zdy.1 reworked .github/workflows/osv-scanner.yml into PR-advisory vs push/schedule-hard-gate jobs, added scripts/osv-security-forced-classifier.mjs, and added tests/unit/scripts/osv-security-forced-classifier.test.ts for CVSS/KEV/active-exploit classification.
+> Manual update: 2026-06-23T13:05:16Z — unitAI-c7zdy.2 reworked .github/workflows/package-payload.yml so payload-contract now isolates install, build, pack-manifest, and assert into separate named steps while preserving the exact required asset list.
+
+> Manual update: 2026-06-23T13:15:21Z — unitAI-c7zdy.3 added scripts/materialize-dependency-verdict.mjs, tests/unit/scripts/materialize-dependency-verdict.test.ts, and docs/devops/dependency-verdict-materialization.md for dry-run-first dependency verdict → substrate issue materialization (advisor/followup/gate with discovered-from/validates/blocks edge conventions).

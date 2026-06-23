@@ -39,11 +39,24 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Pack payload contract
         run: |
+          echo 'package-payload: installing dependencies with frozen lockfile'
+          bun install --frozen-lockfile
+          echo 'package-payload: install succeeded'
+      - name: Build package payload
+        run: |
+          echo 'package-payload: building distributable payload before contract assertion'
+          bun run build
+          echo 'package-payload: build succeeded'
+      - name: Generate npm pack manifest
+        run: |
+          echo 'package-payload: generating npm pack dry-run manifest'
           npm pack --dry-run --json > /tmp/package-payload.json
-          scripts/assert-package-payload.sh /tmp/package-payload.json \
+          echo 'package-payload: pack manifest generated'
+      - name: Assert payload contract
+        run: |
+          echo 'package-payload: asserting required payload assets'
+          if ! scripts/assert-package-payload.sh /tmp/package-payload.json \
             dist/index.js \
             dist/lib.js \
             dist/types/lib.d.ts \
@@ -59,7 +72,11 @@ jobs:
             config/catalog/gitnexus.json \
             config/catalog/serena.json \
             dist/asset-contract.json \
-            LICENSE
+            LICENSE; then
+            echo 'package-payload: CONTRACT FAILURE — asserted asset missing from successfully-built payload' >&2
+            exit 1
+          fi
+          echo 'package-payload: contract assertion passed'
 
   packed-smoke:
     needs: changes
