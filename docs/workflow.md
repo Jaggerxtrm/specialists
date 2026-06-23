@@ -2,9 +2,9 @@
 title: Bead-First Workflow
 scope: workflow
 category: guide
-version: 1.4.1
-updated: 2026-05-22
-synced_at: b92a11ba
+version: 1.4.2
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Canonical tracked and ad-hoc workflow for Specialists.
 source_of_truth_for:
   - "src/cli/run.ts"
@@ -38,7 +38,7 @@ Key behavior for `--bead` runs:
 - Bead content is the prompt source.
 - Runner injects bead context variables (`$bead_context`, `$bead_id`).
 - Runner applies a bead-aware system override to prevent sub-bead creation.
-- Supervisor appends specialist output back to the input bead. Terminal bead closure still follows the current workflow gates and memory-ack rules; verify bead state before committing or publishing.
+- Supervisor appends specialist output back to the input bead. Terminal bead closure still follows the current workflow gates and memory-ack rules; if `waiting_auto_close_ms` is configured, waiting keep-alive jobs can also close automatically after silence. Verify bead state before committing or publishing.
 
 ## Ad-hoc work
 
