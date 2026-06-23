@@ -2,10 +2,10 @@
 title: Installation and Distribution
 scope: installation
 category: guide
-version: 1.0.1
-updated: 2026-05-15
-synced_at: b92a11ba
-description: Canonical-from-package install model, user overlays, and managed xtrm assets.
+version: 1.0.2
+updated: 2026-06-24
+synced_at: bf6baf7a
+description: Canonical-from-package install model, global user config, user overlays, and managed xtrm assets.
 source_of_truth_for:
   - package.json
   - src/specialist/canonical-asset-resolver.ts
@@ -49,7 +49,8 @@ Ordered install flow:
 3. Run `xt install`
 4. Run `xt init` in this repo
 5. Install Specialists: `npm install -g @jaggerxtrm/specialists`
-6. Run `sp init`
+6. Run `sp init --global` if you want machine-level user config
+7. Run `sp init`
 
 Category A and bootstrap note:
 - `sp list`, `sp doctor --check-drift`, and `sp prune-stale-defaults` are Category A commands.
@@ -60,6 +61,7 @@ Category A and bootstrap note:
 - Specialists ships as the scoped package `@jaggerxtrm/specialists`. Binaries: `specialists` and `sp` (alias).
 - xtrm-tools is a separate published package; the canonical name is `xtrm-tools` and its CLI is `xt`.
 - Specialists does NOT declare xtrm-tools as a normal dependency, devDependency, or peerDependency. It is recorded as a runtime prerequisite in the underscore-prefixed `_runtime_prerequisites` field in `package.json` (npm ignores underscore-prefixed top-level fields), and enforced at runtime by `sp init` via `assertXtrmPrerequisites` in `src/cli/init.ts`.
+- `sp init --global` sets up machine-level user config. Use it once per operator account when you want shared personal defaults; plain `sp init` stays repo-local.
 - Rationale: a normal/peer dependency on xtrm-tools would couple specialists publishes to xtrm-tools version cuts and risk transitive-bin ambiguity. Operators install both packages globally; `xt --version` is the source of truth for xtrm CLI presence.
 - Migration: legacy installs that depended on `xtrm-tools` transitively should switch to explicit global install per the ordered flow above.
 
@@ -80,7 +82,7 @@ The loader resolves them live from the installed package when a repo has no inte
 .specialists/user/ > .specialists/default/ > config/<kind>/ > package canonical > legacy
 ```
 
-For new repositories this means no default snapshot is required. Pin the canonical version with `package.json` / lockfile by depending on the desired `@jaggerxtrm/specialists` version. Put custom project definitions in `.specialists/user/`; they intentionally outrank package canonical assets.
+For new repositories this means no default snapshot is required. Pin the canonical runtime version with `package.json` / lockfile by depending on the desired `@jaggerxtrm/specialists` version; global installs only choose which package version is active on the machine. Put custom project definitions in `.specialists/user/`; they intentionally outrank package canonical assets.
 
 `sp init --sync-defaults` is deprecated. It still works as a compatibility alias, but it prints a loud warning because it creates drift debt.
 
@@ -135,6 +137,6 @@ Do not move user-authored specialists, skills, or hooks into default mirrors. Us
 
 - [authoring.md](authoring.md)
 - [manifest.md](manifest.md)
-- [skills.md](skills.md)
+- [skills.md](skills.md) — xtrm-managed skill install and update flow
 - [hooks.md](hooks.md)
 - [cli-reference.md](cli-reference.md)
