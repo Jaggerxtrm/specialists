@@ -968,6 +968,7 @@ export class SpecialistRunner {
     onMetric?: (event: SessionMetricEvent) => void,
     onMeta?: (meta: { backend: string; model: string; sessionId?: string }) => void,
     onKillRegistered?: (killFn: () => void) => void,
+    onSessionRegistered?: (session: SessionLike) => void,
     onBeadCreated?: (beadId: string) => void,
     onSteerRegistered?: (steerFn: (msg: string) => Promise<void>) => void,
     onResumeReady?: (
@@ -1417,6 +1418,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
         await session.start();
 
         onKillRegistered?.(session.kill.bind(session));
+        onSessionRegistered?.(session);
         onSteerRegistered?.((msg) => session!.steer(msg));
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -1583,6 +1585,7 @@ _This project is indexed by GitNexus. You MUST use these tools — do NOT fall b
       undefined,
       (meta)      => registry.setMeta(jobId, meta),
       (killFn)    => registry.setKillFn(jobId, killFn),
+      (_session)  => {},
       (beadId)    => registry.setBeadId(jobId, beadId),
       (steerFn)   => registry.setSteerFn(jobId, steerFn),
       (resumeFn, closeFn) => registry.setResumeFn(jobId, resumeFn, closeFn),

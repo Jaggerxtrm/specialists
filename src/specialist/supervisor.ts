@@ -47,6 +47,11 @@ import {
 } from './timeline-events.js';
 import { buildGitDiffEvidence, willHunksBeInline, writeGitDiffHunksArtifact } from './git-diff-evidence.js';
 import type { SessionMetricEvent, SessionRunMetrics, SessionTokenUsage } from '../pi/session.js';
+
+type ActivePiSession = {
+  close(): Promise<void>;
+  kill(reason?: Error): void;
+};
 import type { StallDetectionConfig } from './loader.js';
 import { createObservabilitySqliteClient, type ObservabilitySqliteClient } from './observability-sqlite.js';
 import { resolveObservabilityDbLocation } from './observability-db.js';
@@ -631,6 +636,7 @@ export class Supervisor {
   private disposePromise: Promise<void> | null = null;
   private pendingSqliteOperations = 0;
   private readonly pendingSqliteDrainResolvers = new Set<() => void>();
+  private activeSession: ActivePiSession | null = null;
   private readonly isJobFileOutputEnabled: boolean;
 
   constructor(private opts: SupervisorOptions) {
@@ -673,6 +679,10 @@ export class Supervisor {
     });
   }
 
+  setActiveSession(session: ActivePiSession): void {
+    this.activeSession = session;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposePromise) {
       await this.disposePromise;
@@ -682,6 +692,7 @@ export class Supervisor {
     this.isDisposed = true;
     this.disposePromise = (async () => {
       await this.waitForPendingSqliteOperations();
+      await this.closeActiveSession();
       if (!this.sqliteClient) return;
       try {
         this.sqliteClient.close();
@@ -691,6 +702,20 @@ export class Supervisor {
     })();
 
     await this.disposePromise;
+  }
+
+  private async closeActiveSession(): Promise<void> {
+    const session = this.activeSession;
+    if (!session) return;
+
+    this.activeSession = null;
+    try {
+      // Flush pending SQLite writes before closing pi so terminal telemetry from the session is durable.
+      await session.close();
+    } catch (error: unknown) {
+      console.warn(`[supervisor] Failed to close active pi session: ${String(error)}`);
+      session.kill(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private jobDir(id: string): string {
@@ -2213,6 +2238,7 @@ export class Supervisor {
         },
         // onKillRegistered — capture so SIGTERM can kill the Pi session cleanly
         (fn) => { killFn = fn; },
+        (session) => { this.setActiveSession(session); },
         // onBeadCreated
         (beadId) => {
           setStatus({ bead_id: beadId });
