@@ -2,9 +2,9 @@
 title: Specialists Catalog
 scope: specialists-catalog
 category: overview
-version: 2.0.0
-updated: 2026-05-31
-synced_at: b92a11ba
+version: 2.1.0
+updated: 2026-06-23
+synced_at: bf6baf7a
 description: Current package-canonical specialists and what each one is for.
 source_of_truth_for:
   - "config/specialists/*.specialist.json"
@@ -29,36 +29,45 @@ Fresh repositories normally do not need `.specialists/default/` populated. Use `
 
 Run `sp list` for the live merged registry, including user-local specialists. The table below reflects package-canonical `config/specialists/*.specialist.json` at the current release.
 
-| Name | Version | Primary model | Permission | Keep-alive | Typical use |
+| Name | Version | Model | Permission | Keep-alive | Typical use |
 |---|---:|---|---|---|---|
-| `changelog-drafter` | 1.0.0 | `openai-codex/gpt-5.4-mini` | READ_ONLY | no | Read-only bundle synthesis for `xt release prepare`; no publishing or edits. |
-| `changelog-keeper` | 3.0.0 | `openai-codex/gpt-5.4-mini` | MEDIUM | yes | Fill sparse `[Unreleased]` sections from xt reports and commits; edits `CHANGELOG.md` only. |
-| `seconder` | 1.0.0 | `openai-codex/gpt-5.4-mini` | READ_ONLY | yes | Smell pass after executor and before reviewer. |
-| `debugger` | 2.0.0 | `openai-codex/gpt-5.3-codex` | HIGH | yes | Root-cause symptoms, regressions, flaky tests, and unknown-cause bugs before executor. |
-| `executor` | 1.0.0 | `openai-codex/gpt-5.4-mini` | HIGH | yes | Implement already-scoped code or docs changes in an isolated worktree. |
-| `explorer` | 1.1.0 | `nano-gpt/zai-org/glm-5` | READ_ONLY | yes | Map architecture, call flows, dependencies, and implementation options without edits. |
-| `memory-processor` | 1.1.0 | `openai-codex/gpt-5.3-codex` | MEDIUM | no | Curate persistent project memory into `.xtrm/memory.md`. |
-| `node-coordinator` | 1.3.0 | `openai-codex/gpt-5.4` | LOW | yes | Drive NodeSupervisor research-node runs through `sp node` commands. |
-| `overthinker` | 1.0.0 | `openai-codex/gpt-5.5` | READ_ONLY | yes | Deep reasoning, tradeoff review, premortems, architecture critique. |
-| `planner` | 1.1.0 | `openai-codex/gpt-5.4` | HIGH | yes | Turn broad initiatives into phased bead boards with dependencies and tests. |
-| `researcher` | 1.2.0 | `openai-codex/gpt-5.4-mini` | MEDIUM | yes | Current library/API docs, GitHub examples, and ecosystem evidence. |
-| `reviewer` | 1.0.0 | `openai-codex/gpt-5.3-codex` | MEDIUM | yes | Compliance review of executor/debugger output via `--job`; emits PASS/PARTIAL/FAIL. |
-| `security-auditor` | 1.0.0 | `openai-codex/gpt-5.4` | LOW | yes | Threat modeling, secure-code review, dependency advisory triage; recommendations only. |
-| `specialists-creator` | 1.3.0 | `openai-codex/gpt-5.5` | HIGH | no | Create/fix `.specialist.json` definitions and validate schema/model choices. |
-| `sync-docs` | 3.1.0 | `nano-gpt/zai-org/glm-5` | MEDIUM | yes | Sync exactly one documentation file from scoped report/commit context. |
-| `test-engineer` | 1.0.0 | `openai-codex/gpt-5.5` | HIGH | no | Write/update tests, fixtures, smoke/E2E harnesses, and telemetry assertions from actual implementation diff; no production fixes. |
-| `test-runner` | 2.0.1 | `openai-codex/gpt-5.4-mini` | LOW | no | Execute exact requested test commands first, fall back to manifest-detected suites only when needed, capture evidence, classify failures by owner; no fixes. |
-| `xt-merge` | 1.1.0 | `openai-codex/gpt-5.4-mini` | MEDIUM | no | Drain xt worktree PR queues with CI/rebase/conflict handling. |
+| `bare` | 1.0.0 | user-configured | READ_ONLY | user-configured | Minimal read-only specialist for trusted-mode RPC; no mandatory rules. |
+| `changelog-drafter` | 1.0.0 | user-configured | READ_ONLY | user-configured | Read-only bundle synthesis for `xt release prepare`; no publishing or edits. |
+| `changelog-keeper` | 3.0.0 | user-configured | MEDIUM | user-configured | Fill sparse `[Unreleased]` sections from xt reports and commits; edits `CHANGELOG.md` only. |
+| `debugger` | 2.0.0 | user-configured | HIGH | user-configured | Root-cause symptoms, regressions, flaky tests, and unknown-cause bugs before executor. |
+| `executor` | 1.0.0 | user-configured | HIGH | user-configured | Implement already-scoped code or docs changes in an isolated worktree. |
+| `explorer` | 1.1.0 | user-configured | READ_ONLY | user-configured | Map architecture, call flows, dependencies, and implementation options without edits. |
+| `memory-processor` | 1.1.0 | user-configured | MEDIUM | user-configured | Curate persistent project memory into `.xtrm/memory.md`. |
+| `node-coordinator` | 1.3.0 | user-configured | LOW | user-configured | Drive NodeSupervisor research-node runs through `sp node` commands. |
+| `obligations-scanner` | 1.0.0 | user-configured | READ_ONLY | user-configured | Scan source for unmet obligations (TODO, FIXME, XXX, HACK) and emit actionable reports. |
+| `overthinker` | 1.0.0 | user-configured | READ_ONLY | user-configured | Deep reasoning, tradeoff review, premortems, architecture critique. |
+| `planner` | 1.1.0 | user-configured | HIGH | user-configured | Turn broad initiatives into phased bead boards with dependencies and tests. |
+| `quant-methodologist` | 1.0.0 | user-configured | LOW | user-configured | Design quantitative research methodologies, backtesting frameworks, and statistical validation. |
+| `quant-researcher` | 1.0.0 | user-configured | LOW | user-configured | Research quantitative models, market microstructure, and alpha signals. |
+| `researcher` | 1.3.0 | user-configured | MEDIUM | user-configured | Current library/API docs, GitHub examples, and ecosystem evidence. |
+| `reviewer` | 2.0.0 | user-configured | MEDIUM | user-configured | Compliance review of executor/debugger output via `--job`; emits PASS/PARTIAL/FAIL. |
+| `seconder` | 1.0.0 | user-configured | READ_ONLY | user-configured | Smell pass after executor and before reviewer. |
+| `security-auditor` | 1.0.0 | user-configured | LOW | user-configured | Threat modeling, secure-code review, dependency advisory triage; recommendations only. |
+| `service-skills-sync` | 1.6.0 | user-configured | MEDIUM | user-configured | Sync service-oriented skill packages and drift detection across service boundaries. |
+| `specialists-creator` | 1.4.1 | user-configured | HIGH | user-configured | Create/fix `.specialist.json` definitions and validate schema/model choices. |
+| `sync-docs` | 3.1.0 | user-configured | MEDIUM | user-configured | Sync exactly one documentation file from scoped report/commit context. |
+| `test-engineer` | 1.0.0 | user-configured | HIGH | user-configured | Write/update tests, fixtures, smoke/E2E harnesses, and telemetry assertions from actual implementation diff; no production fixes. |
+| `test-runner` | 2.0.1 | user-configured | LOW | user-configured | Execute exact requested test commands first, fall back to manifest-detected suites only when needed, capture evidence, classify failures by owner; no fixes. |
+| `transcriber` | 1.6.0 | user-configured | MEDIUM | user-configured | Transcribe audio/video content and generate searchable structured output. |
+| `xt-merge` | 1.1.0 | user-configured | MEDIUM | user-configured | Drain xt worktree PR queues with CI/rebase/conflict handling. |
 
 ## Notable release highlights
 
-- **No package specialist uses Anthropic Claude as primary.** v3.15 moved package specialists off Anthropic-only defaults for operator environments where those models are unavailable. Fallback diversity is handled through Gemini/GLM/openai-codex models.
+- **Package specialists ship with `null` model and keep-alive.** v3.16+ (commit `60b33412`) removed hardcoded models and keep-alive from all package-canonical specialist definitions. Model selection and session persistence are now user-environment-specific via orchestrator config merge; see [KAN-90 upgrade notes](upgrade-notes/kan-90-global-user-config.md).
+- **`reviewer` v2.0 is phase-2-only.** The former phase-1 reviewer responsibilities merged into `seconder` v1.0; reviewer now handles only final compliance sign-off.
+- **`researcher` v1.3 adds web pipeline (Mode 4).** Includes DDGS + agent-browser for current web queries beyond static library docs.
+- **New quantitative specialists** `quant-methodologist` and `quant-researcher` v1.0.0 added for financial/quantitative research workflows.
+- **New supporting specialists:** `transcriber` v1.6.0 (media transcription), `service-skills-sync` v1.6.0 (cross-service drift detection), `obligations-scanner` v1.0.0 (TODO/FIXME tracking), and `bare` v1.0.0 (minimal trusted-mode RPC).
 - **`sync-docs` v3.1 is single-doc only.** One bead scope must name exactly one doc. It is not a broad docs-tree auditor.
 - **`test-engineer` v1 writes tests from actual diff evidence.** It is ambidextrous for `test-only` and `code-with-tests` chains, creates/updates test assets only, emits exact `test-runner` commands, and routes source bugs back to debugger/executor.
 - **`test-runner` v2.0.1 is exact-command first.** It prefers orchestrator/test-engineer command lists, falls back to manifest-detected suites only when no exact command is provided, and reports owner-routed failures with evidence.
 - **`test-runner` v2 is polyglot.** It detects `package.json`, Python, Rust, and Go manifests and runs the appropriate test command.
 - **`changelog-keeper` v3 is file-scoped.** It fills `CHANGELOG.md` gaps only; version bump/build/tag/publish are owned by the release skill flow.
-- **`researcher` v1.2 is for external truth.** Use it before answering library/API/framework/CLI questions from memory.
 - **`seconder` and `security-auditor` are advisory passes.** They provide evidence and findings before final reviewer PASS.
 
 ## Discover current runtime catalog
