@@ -2,9 +2,9 @@
 title: Specialists Bootstrap
 scope: bootstrap
 category: guide
-version: 1.6.0
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 1.6.1
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Project bootstrap and installation flow for Specialists.
 source_of_truth_for:
   - "src/cli/init.ts"
@@ -33,7 +33,7 @@ domain:
 
 > **Alias:** `sp` is a shorter alias for `specialists` — `sp run`, `sp list`, `sp feed` etc. work identically.
 
-`specialists init` is the **sole** project bootstrap command.
+`specialists init` is the **sole** project bootstrap command. `specialists init --global` manages a separate XDG-aware global override layer in `~/.config/specialists/user.json`.
 
 Specialists is built on the **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** and is designed to run alongside **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)**. pi provides the multi-provider execution layer, lifecycle events, and RPC protocol; xtrm-tools provides the surrounding worktree/session workflow and hook environment. Specialists bootstraps the project-local specialist runtime, workflow instructions, and MCP registration on top of that stack.
 
@@ -69,6 +69,15 @@ What it does (always safe, idempotent):
 7. wires hook commands in `.claude/settings.json`
 8. installs canonical skills into `.xtrm/skills/default/`, verifies `.xtrm/skills/active/` symlinks, and ensures `.claude/skills` + `.pi/skills` root symlinks
 9. runs full FTS memory cache sync from `bd memories` (non-fatal if unavailable)
+
+## Global override layer
+
+```bash
+specialists init --global
+specialists edit --global <name>.execution.model <value>
+```
+
+`--global` manages `~/.config/specialists/user.json`, seeds every shipped specialist with override-allowed defaults, and preserves user-filled values on rerun. It does not bootstrap a repo or touch `.specialists/default/`.
 
 ## Package-canonical defaults and drift repair
 
