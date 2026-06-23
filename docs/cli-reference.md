@@ -2,9 +2,9 @@
 title: CLI Reference
 scope: cli
 category: reference
-version: 2.8.1
-updated: 2026-05-22
-synced_at: b92a11ba
+version: 2.9.0
+updated: 2026-06-23
+synced_at: bf6baf7a
 description: Complete command reference for the Specialists CLI, generated from current source.
 source_of_truth_for:
   - src/index.ts
