@@ -235,6 +235,8 @@ export class ConsoleApp implements Component {
     else if (data === 'i' && this.state.view === 'all') this.openFromAllView('job');
     else if (data === 'b' && this.state.view === 'all') this.openFromAllView('bead');
     else if (data === 'd' && this.state.view === 'all') this.openFromAllView('diff');
+    else if (data === 'g' && this.state.view === 'all') this.openFromAllView('config');
+    else if (data === 'R' && this.state.view === 'all') this.openRepoConfig();
     else if (
       (matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) &&
       this.state.view !== 'ps' && this.state.view !== 'all'
@@ -769,7 +771,7 @@ export class ConsoleApp implements Component {
     }
   }
 
-  private openFromAllView(view: 'feed' | 'job' | 'result' | 'bead' | 'diff'): void {
+  private openFromAllView(view: 'feed' | 'job' | 'result' | 'bead' | 'diff' | 'config'): void {
     const entry = this.allViewRowMap[this.allViewCursor];
     if (!entry) return;
     const repoIdx = this.state.repos.findIndex(r => r.id === entry.repoId);

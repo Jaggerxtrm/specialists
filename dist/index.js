@@ -45222,7 +45222,7 @@ function renderRepoSectionHeader(name, path3, activeCount, width) {
   return truncateToWidth(`${dot} ${label}${pathStr}${countStr}`, width);
 }
 function renderKeyBar(view, follow, width, feedSource = "forensic") {
-  const line = view === "all" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  tab/1-9 repo  q quit" : view === "ps" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit" : view === "feed" ? `\u2191\u2193 scroll  PgUp/PgDn page  f follow:${follow ? "on" : "off"}  t ${feedSource === "forensic" ? "legacy" : "forensic"}  \u232B back  g/G top/end  q quit` : view === "bead" ? "\u2191\u2193 scroll  PgUp/PgDn page  \u232B back  g/G top/end  q quit" : view === "diff" ? "\u2191\u2193 nav  \u21B5 open file  r refresh  \u232B back  q quit" : view === "config" ? "\u2191\u2193 field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  \u232B back  q quit" : view === "repoConfig" ? "\u2191\u2193 nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  \u232B back  q quit" : "\u2191\u2193 scroll  \u232B back  g/G top/end  q quit";
+  const line = view === "all" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  g config  R repos  tab/1-9 repo  q quit" : view === "ps" ? "\u2191\u2193 nav  \u21B5 feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit" : view === "feed" ? `\u2191\u2193 scroll  PgUp/PgDn page  f follow:${follow ? "on" : "off"}  t ${feedSource === "forensic" ? "legacy" : "forensic"}  \u232B back  g/G top/end  q quit` : view === "bead" ? "\u2191\u2193 scroll  PgUp/PgDn page  \u232B back  g/G top/end  q quit" : view === "diff" ? "\u2191\u2193 nav  \u21B5 open file  r refresh  \u232B back  q quit" : view === "config" ? "\u2191\u2193 field  [/] specialist  e edit  u undo  b $EDITOR  r refresh  \u232B back  q quit" : view === "repoConfig" ? "\u2191\u2193 nav  + add  d remove  e edit-path  n edit-name  r rescan  s show-inactive  \u232B back  q quit" : "\u2191\u2193 scroll  \u232B back  g/G top/end  q quit";
   return paint(truncateToWidth(line, width), "dim");
 }
 function renderTabs(repos, currentIndex, width, currentView) {
@@ -48113,6 +48113,10 @@ class ConsoleApp {
       this.openFromAllView("bead");
     else if (data === "d" && this.state.view === "all")
       this.openFromAllView("diff");
+    else if (data === "g" && this.state.view === "all")
+      this.openFromAllView("config");
+    else if (data === "R" && this.state.view === "all")
+      this.openRepoConfig();
     else if ((matchesKey(data, Key.escape) || matchesKey(data, Key.backspace) || matchesKey(data, Key.left)) && this.state.view !== "ps" && this.state.view !== "all")
       this.back();
     else if (data === "h" && this.state.view === "ps")

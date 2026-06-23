@@ -373,7 +373,7 @@ export function renderKeyBar(
 ): string {
   const line =
     view === 'all'
-      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  tab/1-9 repo  q quit'
+      ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  tab/1-9 repo  q quit'
       : view === 'ps'
       ? '↑↓ nav  ↵ feed  r result  i inspect  b bead  d diff  g config  R repos  h history  a all  / filter  0 ALL  tab repo  q quit'
       : view === 'feed'
