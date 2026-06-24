@@ -4,7 +4,7 @@ scope: installation
 category: guide
 version: 1.0.2
 updated: 2026-06-24
-synced_at: bf6baf7a
+synced_at: 833bc435
 description: Canonical-from-package install model, global user config, user overlays, and managed xtrm assets.
 source_of_truth_for:
   - package.json
