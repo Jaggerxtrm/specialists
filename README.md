@@ -4,24 +4,114 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-**Specialists turns a project into a team of scoped AI experts.**
+**Specialists is an agent-mind runtime for getting real work done.**
 
-Instead of keeping one overloaded chat alive for hours, you write a task once in a bead, dispatch the right expert role, collect evidence/results, and decide whether to continue, review, merge, or close. Each specialist has its own prompt, model policy, tools, permission tier, output contract, skills, timeout policy, and worktree behavior.
+It is not just “run many agents”. The core idea is that a long single-agent chat becomes cognitively contaminated: old hypotheses, abandoned plans, tool residue, self-review bias, forgotten constraints, and context-window noise all accumulate in one mind. Quality drops because the same context tries to be explorer, implementer, tester, reviewer, security auditor, memory keeper, and release operator at once.
 
-Use it when you want AI assistance that is:
+Specialists gives an AI workflow a healthier shape:
 
-- **task-tracked** — every substantial run can start from a bead issue and write results back to it;
-- **role-scoped** — explorer, debugger, executor, reviewer, test-engineer, sync-docs, researcher, and other roles get different instructions and permissions;
-- **workspace-safe** — edit-capable work happens in isolated branches/worktrees with review/merge gates;
-- **observable** — jobs, feeds, logs, forensic events, metrics, and results are persisted in SQLite;
-- **operator-friendly** — run from CLI, MCP, TUI console, scripts, CI, or HTTP sidecars;
-- **configurable per machine** — package specialists ship model-free; your global config supplies provider/model choices.
+- the **orchestrator** stays the central executive — it owns the user intent, task identity, evidence, and publication decision;
+- the **bead** is the contract and durable working memory — problem, scope, success criteria, validation, dependencies, and handoffs live there;
+- **specialists** are fresh, scoped cognitive faculties — explorer, debugger, executor, test-engineer, reviewer, sync-docs, researcher, and domain roles each get only the context, tools, rules, and output contract they need;
+- **structured handoffs** flow back to the orchestrator — results are evidence to consume, not conversational vibes to remember;
+- **workspaces and gates** keep changes publishable — edit-capable roles work in branches/worktrees, reviewer/QA/security roles judge against the contract.
 
-Specialists is part of the xt/xtrm stack:
+The result is a shared project mind: continuity without hoarding every detail in one agent’s context.
+
+Specialists sits in the xt/xtrm stack:
 
 - **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** executes model sessions and exposes tool events/RPC boundaries.
-- **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)** provides the surrounding operator workflow: worktree sessions, `.xtrm/` skills/hooks, reports, update tooling, and gates.
+- **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)** provides operator workflow: worktree sessions, `.xtrm/` skills/hooks, reports, update tooling, and gates.
 - **[beads](https://github.com/steveyegge/beads)** provides issue IDs, claims, dependencies, task contracts, and durable notes.
+
+See [specialists.scheme.md](specialists.scheme.md) for the full rationale.
+
+---
+
+## Why not one big agent chat?
+
+```mermaid
+flowchart LR
+  Long[One long agent session] --> Residue[Context residue]
+  Long --> Bias[Self-review bias]
+  Long --> Drift[Goal drift]
+  Long --> Noise[Tool/output noise]
+  Long --> Fatigue[Instruction fatigue]
+
+  Residue --> Bad[Lower-quality decisions]
+  Bias --> Bad
+  Drift --> Bad
+  Noise --> Bad
+  Fatigue --> Bad
+
+  Bad --> Symptoms[Symptoms]
+  Symptoms --> Vibes[Reviews become vibes]
+  Symptoms --> Mirrors[Tests mirror implementation]
+  Symptoms --> Scope[Scope silently widens]
+  Symptoms --> Forgotten[Constraints disappear]
+```
+
+The problem is not only token count. It is **cognitive contamination**. A single context window carries every role’s history, including false starts and stale assumptions. The agent starts defending its own implementation, testing what it built instead of what was requested, and treating completion claims as proof.
+
+Specialists replaces context hoarding with **contract-bound cognition**.
+
+---
+
+## The common-mind model
+
+```mermaid
+flowchart TD
+  U[User / project need] --> O[Orchestrator\ncentral executive]
+  O --> B[Bead contract\nproblem · scope · success · validation]
+  B --> Check{Contract ready?}
+  Check -->|repair needed| Refine[Refine scope / constraints / outputs]
+  Refine --> B
+  Check -->|ready| O
+
+  O --> Choose{Choose faculty}
+  Choose --> E[Explorer\nfresh read-only context]
+  Choose --> D[Debugger\nfresh root-cause context]
+  Choose --> X[Executor\nfresh implementation context]
+  Choose --> QA[Test-engineer / test-runner\nfresh validation context]
+  Choose --> R[Seconder / reviewer\nfresh judgment context]
+  Choose --> Docs[Sync-docs / service-skills\nfresh documentation context]
+  Choose --> Research[Researcher / domain specialist\nfresh external evidence]
+
+  B --> E
+  B --> D
+  B --> X
+  B --> QA
+  B --> R
+  B --> Docs
+  B --> Research
+
+  Rules[Mandatory rules\npermissions · tools · output schema] --> E
+  Rules --> D
+  Rules --> X
+  Rules --> QA
+  Rules --> R
+  Rules --> Docs
+  Rules --> Research
+
+  E --> H[Structured handoff / evidence]
+  D --> H
+  X --> H
+  QA --> H
+  R --> H
+  Docs --> H
+  Research --> H
+
+  H --> O
+  O --> Decision{Next decision}
+  Decision -->|resume / steer| Choose
+  Decision -->|fix loop| B
+  Decision -->|publish| Merge[Merge / PR / release]
+  Decision -->|done| Close[Close bead + durable notes]
+```
+
+This is close to how a human mind works: a central executive does not consciously compute every perception, motor skill, language move, and memory lookup at once. It activates specialized faculties, receives summaries/evidence, and decides what to do next.
+
+Specialists gives an AI workflow the same structure. The orchestrator remains the “self”; specialists are bounded capabilities that can be activated without permanently polluting the central context.
 
 ---
 
@@ -29,20 +119,21 @@ Specialists is part of the xt/xtrm stack:
 
 | Need | Use |
 |---|---|
-| Understand unfamiliar code | `sp run explorer --bead <id>` |
+| Turn vague work into an executable task contract | bead + planner / orchestrator |
+| Map unfamiliar local code | `sp run explorer --bead <id>` |
 | Diagnose a bug with unknown cause | `sp run debugger --bead <id>` |
-| Implement a scoped change | `sp run executor --bead <id> --worktree` |
-| Review an implementation against the contract | `sp run reviewer --bead <id> --job <exec-job>` |
-| Add behavioral tests from an implementation diff | `test-engineer` |
-| Run/classify exact validation commands | `test-runner` |
-| Catch scope/quality issues before review | `seconder` |
-| Research APIs, repos, papers, or current docs | `researcher` |
+| Implement a scoped change in an isolated workspace | `sp run executor --bead <id> --worktree` |
+| Add tests from the actual implementation diff | `test-engineer` |
+| Run and classify validation commands | `test-runner` |
+| Check scope/quality before final review | `seconder` |
+| Review implementation evidence against the bead contract | `sp run reviewer --bead <id> --job <exec-job>` |
+| Research current docs, repos, APIs, papers, or domain evidence | `researcher`, `quant-researcher`, `transcriber` |
 | Sync one stale doc safely | `sync-docs` |
-| Sync service-expert skill docs from code drift | `service-skills-sync` |
+| Keep service-expert skill docs aligned with code drift | `service-skills-sync` |
 | Generate immediate JSON/text from a specialist | `sp script` or `sp serve` |
-| Watch all specialists across repos | `sp console` |
+| Watch all active specialist work across repos | `sp console` |
 | Inspect runtime evidence and telemetry | `sp feed`, `sp log`, `sp forensic`, `sp metrics` |
-| Configure package specialists globally | `sp init --global`, `sp edit --global`, `sp setup` |
+| Configure package specialists for your machine | `sp init --global`, `sp edit --global`, `sp setup` |
 
 The live catalog is authoritative:
 
@@ -52,38 +143,6 @@ sp list --compact
 sp list-rules
 sp help
 ```
-
----
-
-## The core model
-
-```mermaid
-flowchart TD
-  U[User / operator] --> B[Bead task contract]
-  B --> O[Orchestrator]
-  O --> S{Pick specialist role}
-
-  S --> E[Explorer\nread-only mapping]
-  S --> D[Debugger\nroot cause]
-  S --> X[Executor\nimplementation]
-  S --> T[Test engineer / runner\ncoverage + validation]
-  S --> R[Reviewer / seconder\ncontract + quality gate]
-  S --> Doc[Sync-docs / service-skills\ndocumentation drift]
-
-  E --> H[Evidence + handoff]
-  D --> H
-  X --> H
-  T --> H
-  R --> H
-  Doc --> H
-
-  H --> O
-  O --> P[Resume, steer, re-run, merge, or close]
-```
-
-A run usually starts from `--bead <id>`. The bead is the source of truth for the task: problem, success criteria, scope, constraints, validation, and outputs. Dependency context can be injected with `--context-depth`, and specialist output is appended back to the bead as durable project memory.
-
-For edit-capable work, Specialists creates a branch/worktree. Reviewers and follow-up specialists can reuse that same workspace via `--job <prior-job-id>`, so the whole chain stays attached to one implementation lineage.
 
 ---
 
