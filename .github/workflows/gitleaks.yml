@@ -1,8 +1,8 @@
 name: Gitleaks
 
-# Backstop scan for committed secrets (full history on push to main, diff on PRs).
-# GitHub push protection is the primary gate; this catches anything pre-existing
-# or pushed from a client without push protection enabled.
+# Backstop scan for committed secrets. PRs scan only the PR range; push/schedule
+# scan full history against a redacted baseline of acknowledged historical debt.
+# GitHub push protection is the primary gate for new secrets.
 
 on:
   push:
@@ -46,9 +46,16 @@ jobs:
               --log-opts "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
               --redact \
               --config .gitleaks.toml \
+              --baseline-path .gitleaks/baseline.json \
               --no-banner \
               --verbose \
               .
           else
-            gitleaks git --redact --config .gitleaks.toml --no-banner --verbose .
+            gitleaks git \
+              --redact \
+              --config .gitleaks.toml \
+              --baseline-path .gitleaks/baseline.json \
+              --no-banner \
+              --verbose \
+              .
           fi

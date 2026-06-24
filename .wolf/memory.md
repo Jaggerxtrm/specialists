@@ -335,3 +335,8 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 - `Jaggerxtrm/xtrm-tools` redirects to `xtrm-dev/core`; `peter-evans/repository-dispatch@v4` failed with `Request body length does not match content-length header` during v3.18.0 release.
 - Fix pattern: use `gh api repos/xtrm-dev/core/dispatches --method POST --input dispatch-payload.json --silent` with `GH_TOKEN=${{ secrets.XTRM_TOOLS_DISPATCH_PAT }}` and a Node-generated JSON payload.
 - Co-vendoring payload should send `specialists_tag` as `v<package_version>`, not `github.ref_name` (`master`) on release commits.
+
+## 2026-06-24 — unitAI-xsrpn Gitleaks historical baseline
+- Gitleaks CI was failing on full-history push scans because 24 historical 2025 findings remain in git history.
+- Non-destructive fix: generate `.gitleaks/baseline.json` with Gitleaks v8.30.1 using `--redact --report-format json --exit-code 0`, then pass `--baseline-path .gitleaks/baseline.json` for PR/push/scheduled scans.
+- Validation pattern: run both PR-range and full-history scans with Gitleaks v8.30.1 and assert baseline JSON has only `Secret: REDACTED` values.

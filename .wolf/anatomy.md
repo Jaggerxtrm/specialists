@@ -1,3 +1,4 @@
+> Manual update: 2026-06-24T18:06:42Z — unitAI-xsrpn added redacted Gitleaks historical baseline and wired CI scans to --baseline-path so new leaks still fail while acknowledged history debt no longer blocks push.
 > Manual update: 2026-06-24T14:12:00Z — unitAI-p1ecm fixed release-gate co-vendoring dispatch to xtrm-dev/core via gh api raw JSON and v<package_version> tag payload.
 > Manual update: 2026-06-24T13:17:54Z — unitAI-fgpxv corrected pi-coding-agent ownership/package references to earendil-works in README, bootstrap/service docs, and sp init prerequisite hints.
 > Manual update: 2026-06-22T11:42:39Z — unitAI-u3vjh bumps hono to 4.12.26 and vite to 8.0.16; package-lock regeneration required moving vite to devDependencies and removing direct-dep overrides that conflicted with npm package-lock-only regeneration.
