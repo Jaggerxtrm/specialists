@@ -902,6 +902,24 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-24T13:17:54Z"
+    },
+    {
+      "id": "bug-unitAI-p1ecm-release-gate-dispatch",
+      "timestamp": "2026-06-24T14:12:00Z",
+      "error_message": "release-gate failed during v3.18.0 with Request body length does not match content-length header in peter-evans/repository-dispatch.",
+      "file": ".github/workflows/release-gate.yml",
+      "root_cause": "Workflow still targeted the old Jaggerxtrm/xtrm-tools repository through peter-evans/repository-dispatch; the repo redirects to xtrm-dev/core, and the action failed on redirected POST content-length handling. The payload also reported github.ref_name (master) as specialists_tag on master pushes.",
+      "fix": "Dispatch directly to repos/xtrm-dev/core/dispatches with gh api and a Node-generated JSON body, using GH_TOKEN from XTRM_TOOLS_DISPATCH_PAT and specialists_tag=v<package_version>.",
+      "tags": [
+        "github-actions",
+        "release-gate",
+        "repository-dispatch",
+        "co-vendoring",
+        "xtrm-core"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-24T14:12:00Z"
     }
   ]
 }

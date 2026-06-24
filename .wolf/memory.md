@@ -330,3 +330,8 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 ## 2026-06-24 — unitAI-fgpxv pi ownership correction
 - Corrected live docs/runtime hints to attribute pi-coding-agent to `earendil-works`, not xtrm/Jaggerxtrm or mariozechner.
 - Live references now use `https://github.com/earendil-works/pi-coding-agent` and `@earendil-works/pi-coding-agent`; archived historical notes were left unchanged.
+
+## 2026-06-24 — unitAI-p1ecm release-gate dispatch fix
+- `Jaggerxtrm/xtrm-tools` redirects to `xtrm-dev/core`; `peter-evans/repository-dispatch@v4` failed with `Request body length does not match content-length header` during v3.18.0 release.
+- Fix pattern: use `gh api repos/xtrm-dev/core/dispatches --method POST --input dispatch-payload.json --silent` with `GH_TOKEN=${{ secrets.XTRM_TOOLS_DISPATCH_PAT }}` and a Node-generated JSON payload.
+- Co-vendoring payload should send `specialists_tag` as `v<package_version>`, not `github.ref_name` (`master`) on release commits.
