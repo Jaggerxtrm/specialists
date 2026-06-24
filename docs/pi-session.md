@@ -2,9 +2,9 @@
 title: Pi Subprocess Isolation
 scope: pi-session
 category: reference
-version: 1.2.1
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 1.3.0
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Why specialists spawns Pi with isolation flags and which extensions are selectively re-enabled.
 source_of_truth_for:
   - "src/pi/session.ts"
@@ -19,7 +19,9 @@ domain:
 | [Why `--no-extensions`](#why-no-extensions) | Pi auto-discovers xtrm extensions on startup from `~/ |
 | [Selective re-enable policy](#selective-re-enable-policy) | After disabling all extensions, `src/pi/session |
 | [How it maps from specialist YAML](#how-it-maps-from-specialist-yaml) | The specialist's `execution |
-| [Code location](#code-location) | `src/pi/session |
+| [Serena-pool integration](#serena-pool-integration) | Pre-spawn hook that starts/reuses a shared Serena daemon via `ensureSerenaForRootInSubprocess` |
+| [Telemetry bridging](#telemetry-bridging) | AgentOps-style metrics — token usage schema, `reasoning_tokens`, `tool_tokens`, `usage_source` |
+| [Code location](#code-location) | `src/pi/session.ts` — `start()` method, extension resolution section |
 | [Installing the selectively-loaded extensions](#installing-the-selectively-loaded-extensions) | Specialists does not install these — it only loads them if present |
 | [See also](#see-also) | - [pi-rpc |
 <!-- END INDEX -->
@@ -136,6 +138,45 @@ if (npmGlobalDir) {
   }
 }
 ```
+
+### serena-pool
+
+When `pi-serena-tools` is enabled, `session.ts` runs a **pre-spawn hook** to start or reuse a shared Serena MCP daemon for the same repo root:
+
+1. It locates the globally-installed `serena-pool` extension at `@jaggerxtrm/pi-extensions/extensions/serena-pool/index.ts`.
+2. If found, it calls `ensureSerenaForRootInSubprocess` (a Bun/Node `execFileSync`-wrapped helper that dynamic-imports the pool module and returns a deterministic TCP port).
+3. The resulting port is injected into the Pi process environment as `SERENA_MCP_PORT`.
+
+Because `pi-serena-tools` reads `SERENA_MCP_PORT` at **extension construction time** (not at session-start), the env must be set **before** Pi spawns. This avoids duplicate Serena daemons on random ports.
+
+| Property | Value |
+|---|---|
+| Pool extension path | `<global_node_modules>/@jaggerxtrm/pi-extensions/extensions/serena-pool/index.ts` |
+| Port determinism | Hash-based on `projectRoot` |
+| State file | `~/.local/share/pi-serena-pool/<hash>.json` |
+| Fallback if pool fails | Pi falls back to spawning its own Serena (may incur per-worktree overhead) |
+
+If the pool extension is not installed, or the specialist opts out with `"extensions": { "serena": false }`, Pi spawns its own Serena directly (or skips it entirely for read-only specialists).
+
+### agentops telemetry bridge
+
+`session.ts` collates streaming RPC events into structured **session metrics** consumed by the AgentOps telemetry bridge:
+
+- **`SessionRunMetrics`** — `events`, `tokens`, `tool_calls`, `tool_tokens`, `stall_warnings`, `execution_time_ms`, `cost_usd`.
+- **`SessionTokenUsage`** — `input_tokens`, `output_tokens`, `cache_creation_tokens`, `cache_read_tokens`, **`reasoning_tokens`**, **`tool_tokens`**, `total_tokens`, `usage_source`.
+
+`usage_source` tells downstream dashboards how reliable the token numbers are:
+
+| Value | Meaning |
+|---|---|
+| `provider_usage` | Exact numbers from the LLM provider (OpenAI / Anthropic usage block) |
+| `runtime_estimate` | Approximated from streaming chunk sizes when no provider usage arrived |
+| `local_estimate` | Fallback heuristic (e.g. character-count ÷ 4) |
+| `unknown` | No data available |
+
+Cost is derived from the mapped `backend` + `model` in the telemetry layer, not inside `session.ts`.
+
+`onMeta` callback now also receives `sessionId` so the telemetry bridge can correlate the Pi session with the specialist run record.
 
 ## Installing the selectively-loaded extensions
 

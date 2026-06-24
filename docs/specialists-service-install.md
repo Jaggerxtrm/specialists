@@ -2,9 +2,9 @@
 title: Specialists Service Install
 scope: specialists-service-install
 category: deployment
-version: 2.1.1
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 2.1.2
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: Install runbook for consumers who do not clone specialists source. Deployment steps, trust/readiness gates, hot-reload, common pitfalls.
 source_of_truth_for:
   - Dockerfile
@@ -110,8 +110,8 @@ No production deployment is implied by the local dev compose file.
 
 - `image`: published tag or local build tag
 - `user`: align host UID/GID with container UID label
-- `/.specialists:/work/.specialists`: shared state for specs and trace DB
-- `${HOME}/.pi:/pi-home/.pi:ro`: read-only pi auth mount
+- `.specialists:/work/.specialists:z` (omit `:z` on standard Docker; required on Fedora rootless Podman for SELinux relabel)
+- `${HOME}/.pi:/pi-home/.pi:ro` (add `:z` if SELinux blocks access)
 - `HOME=/pi-home`: makes pi resolve auth from mounted home
 - `working_dir: /work`: keeps relative specialist paths anchored to consumer project
 - `networks`: internal app network for sidecar calls

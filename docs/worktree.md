@@ -3,8 +3,8 @@ title: Worktree Integration
 scope: worktree
 category: guide
 version: 1.2.1
-updated: 2026-05-15
-synced_at: b92a11ba
+updated: 2026-06-24
+synced_at: bf6baf7a
 description: xtrm worktree usage alongside Specialists.
 source_of_truth_for:
   - "src/cli/help.ts"

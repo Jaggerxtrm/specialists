@@ -2,9 +2,9 @@
 title: Specialists Runtime Architecture
 scope: architecture
 category: reference
-version: 3.4.1
-updated: 2026-05-15
-synced_at: b92a11ba
+version: 3.4.2
+updated: 2026-06-23
+synced_at: bf6baf7a
 description: Event pipeline, Pi RPC adapter boundaries, Supervisor lifecycle ownership, schema v1→v4 migration chain, JSON-first dual-write persistence, node runtime tables, context window tracking, job lineage fields, context denormalization, sp ps CLI surface, worktree/bead ownership semantics, and worktree write-boundary enforcement via generated Pi extensions.
 source_of_truth_for:
   - "src/specialist/job-root.ts"
@@ -572,6 +572,7 @@ Supervisor's `dispose()` is now async to prevent "Cannot use a closed database" 
 async dispose(): Promise<void> {
   this._disposed = true;
   await this._pendingOpsTracker.flush();  // wait for in-flight SQLite ops
+  await this.closeActiveSession();        // close active pi/Serena session
   this.sqliteClient?.close();
 }
 ```
@@ -580,8 +581,10 @@ Root cause: async operations (stall detection interval, FIFO callbacks, Promise 
 
 Solution: a pending-operations tracker that:
 1. Wraps every SQLite operation in `_pendingOpsTracker.run(op)`
-2. `dispose()` awaits the tracker's flush before closing
+2. `dispose()` awaits the tracker's flush before closing the active session and SQLite client
 3. CLI entry points (`run`, `status`, `resume`, `steer`, `stop`) await `supervisor.dispose()` before exit
+
+**Active session lifecycle**: Supervisor tracks the active Pi session via `setActiveSession()`. During `dispose()`, `closeActiveSession()` attempts graceful `session.close()` first; on failure, it falls back to `session.kill()` to ensure the pi/Serena MCP server is reaped before process exit.
 
 ### Job reuse concurrency guard
 
