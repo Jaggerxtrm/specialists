@@ -920,6 +920,24 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-24T14:12:00Z"
+    },
+    {
+      "id": "bug-unitAI-xsrpn-gitleaks-history-baseline",
+      "timestamp": "2026-06-24T18:06:42Z",
+      "error_message": "Gitleaks push workflow failed on master because full-history scan reported 24 historical secret findings from 2025.",
+      "file": ".github/workflows/gitleaks.yml; .gitleaks/baseline.json; .gitleaks.toml",
+      "root_cause": "The workflow scanned the entire git history on every push without an acknowledged-debt baseline, so immutable historical leaks blocked unrelated current commits.",
+      "fix": "Generated a redacted Gitleaks v8.30.1 baseline and added --baseline-path .gitleaks/baseline.json to PR, push, and scheduled scans; documented the baseline in config/changelog/OpenWolf.",
+      "tags": [
+        "gitleaks",
+        "security-ci",
+        "historical-debt",
+        "baseline",
+        "github-actions"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-24T18:06:42Z"
     }
   ]
 }

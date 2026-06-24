@@ -7,7 +7,9 @@ useDefault = true
 [allowlist]
 description = "specialists repository allowlist"
 # Keep acknowledgments narrow. Do not blanket-allowlist generated findings
-# without a bead that explains why the debt is accepted.
+# without a bead that explains why the debt is accepted. Historical findings
+# are acknowledged in .gitleaks/baseline.json (unitAI-xsrpn) and still fail
+# if a new fingerprint appears outside the baseline.
 stopwords = []
 regexes = [
     '''uid:gid''',  # Docker --user placeholder in historical xtrm reports; not a credential.
