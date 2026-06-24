@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v3.18.0] — 2026-06-24
+
 ### Added
 - **`sp console` v2 — full TUI rewrite (epic `unitAI-ctb4u`, PR #125).** Replaces the original prototype console with a complete multi-view terminal UI built on `@earendil-works/pi-tui`. Views: `ps` (live process list with tree depth, context %, status glyphs, column-adaptive layout), `feed` (live/forensic event stream with follow mode), `job` (inspect fields + action list), `result` (full job output), `bead` (linked bead doc + live state), `diff` (worktree + commit SHA fallback), `config` (global `user.json` override editor), `repoConfig` (repo registry management). 24-bit ANSI palette sourced from mock-v2 design doc. Keybindings: `↑↓`/`j/k` navigate, `↵` open feed, `r` result, `i` inspect, `b` bead, `d` diff, `g` config, `R` repos, `h` history, `a` all, `/` filter, `x` stop, `tab`/`1-9` switch repo, `0` ALL view, `q` quit.
 - **ALL view — aggregated cross-repo dashboard with cursor navigation.** Opening `sp console` now lands on an ALL view (`0` to return from any tab) showing active jobs across all configured repos sorted by activity, with per-repo section headers. `↑↓`/`j/k` moves a cursor through individual job rows; `↵` opens the selected job's feed, `r`/`i`/`b`/`d`/`g`/`R`/`x` work as in `ps` — automatically switching to the job's repo before opening the view. The stats bar always shows full ps-style metrics (health / rss / cpu / orphans) for the current repo on all tabs including ALL.

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "package_version": "3.17.0",
+  "package_version": "3.18.0",
   "shipped_skills": [
     {
       "path": "config/skills/memory-audit-transaction/SKILL.md",
