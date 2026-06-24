@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **release-gate core co-vendoring dispatch (`unitAI-p1ecm`).** The release-gate workflow now dispatches asset-contract validation directly to `xtrm-dev/core` via `gh api` with raw JSON, avoiding the `peter-evans/repository-dispatch` redirect/content-length failure from the old `Jaggerxtrm/xtrm-tools` target. Payload now sends `specialists_tag` as `v<package_version>` instead of `master`.
+
 ## [v3.18.0] — 2026-06-24
 
 ### Added

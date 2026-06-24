@@ -55,16 +55,29 @@ jobs:
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       # XTRM_TOOLS_DISPATCH_PAT must be configured in repo secrets for repository_dispatch.
-      # Fine-grained PATs need Contents: write access on Jaggerxtrm/xtrm-tools.
-      - name: Dispatch xtrm-tools validation
-        uses: peter-evans/repository-dispatch@v4
-        with:
-          token: ${{ secrets.XTRM_TOOLS_DISPATCH_PAT }}
-          repository: Jaggerxtrm/xtrm-tools
-          event-type: specialists-asset-validation
-          client-payload: |
-            {
-              "specialists_sha": "${{ github.sha }}",
-              "specialists_tag": "${{ github.ref_name }}",
-              "specialists_package_version": "${{ steps.package.outputs.version }}"
-            }
+      # Fine-grained PATs need Contents: write access on xtrm-dev/core.
+      - name: Dispatch core asset validation
+        env:
+          GH_TOKEN: ${{ secrets.XTRM_TOOLS_DISPATCH_PAT }}
+          SPECIALISTS_SHA: ${{ github.sha }}
+          SPECIALISTS_TAG: v${{ steps.package.outputs.version }}
+          SPECIALISTS_PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN}" || {
+            echo 'XTRM_TOOLS_DISPATCH_PAT is required for core asset validation dispatch'
+            exit 1
+          }
+          node <<'NODE' > dispatch-payload.json
+          const fs = require('node:fs');
+          const payload = {
+            event_type: 'specialists-asset-validation',
+            client_payload: {
+              specialists_sha: process.env.SPECIALISTS_SHA,
+              specialists_tag: process.env.SPECIALISTS_TAG,
+              specialists_package_version: process.env.SPECIALISTS_PACKAGE_VERSION,
+            },
+          };
+          fs.writeFileSync('dispatch-payload.json', JSON.stringify(payload, null, 2) + '\n');
+          NODE
+          gh api repos/xtrm-dev/core/dispatches --method POST --input dispatch-payload.json --silent
