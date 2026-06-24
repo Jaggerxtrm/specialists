@@ -4,77 +4,47 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 
-Specialists is a project-scoped runtime for running focused AI agents from the CLI, MCP, scripts, CI, or HTTP sidecars. A specialist definition declares its model, tools, permission tier, prompt, skills, output contract, timeout/stall policy, worktree behavior, and tracking behavior. The orchestrator keeps task identity in a **bead**; specialists run as fresh scoped sessions that report evidence, changes, and results back to that bead.
+**Specialists turns a project into a team of scoped AI experts.**
 
-Specialists sits in the xt/xtrm stack:
+Instead of keeping one overloaded chat alive for hours, you write a task once in a bead, dispatch the right expert role, collect evidence/results, and decide whether to continue, review, merge, or close. Each specialist has its own prompt, model policy, tools, permission tier, output contract, skills, timeout policy, and worktree behavior.
 
-- **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** supplies the model/provider execution layer, JSONL/RPC subprocess boundary, tool events, and extension hooks.
-- **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)** supplies the surrounding operator workflow: worktree sessions, `.xtrm/` skills/hooks, session reports, update tooling, and workflow enforcement.
-- **[beads](https://github.com/steveyegge/beads)** supplies issue IDs, dependency edges, claims, and durable task/result notes.
+Use it when you want AI assistance that is:
 
-When a run starts from `--bead <id>`, the bead is the task prompt. Dependency context and relevant memory can be injected, the specialist output is appended back to the same bead, and edit-capable specialists work in isolated branches/worktrees that can be reviewed and merged through `sp merge` or `sp epic merge`.
+- **task-tracked** — every substantial run can start from a bead issue and write results back to it;
+- **role-scoped** — explorer, debugger, executor, reviewer, test-engineer, sync-docs, researcher, and other roles get different instructions and permissions;
+- **workspace-safe** — edit-capable work happens in isolated branches/worktrees with review/merge gates;
+- **observable** — jobs, feeds, logs, forensic events, metrics, and results are persisted in SQLite;
+- **operator-friendly** — run from CLI, MCP, TUI console, scripts, CI, or HTTP sidecars;
+- **configurable per machine** — package specialists ship model-free; your global config supplies provider/model choices.
+
+Specialists is part of the xt/xtrm stack:
+
+- **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** executes model sessions and exposes tool events/RPC boundaries.
+- **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)** provides the surrounding operator workflow: worktree sessions, `.xtrm/` skills/hooks, reports, update tooling, and gates.
+- **[beads](https://github.com/steveyegge/beads)** provides issue IDs, claims, dependencies, task contracts, and durable notes.
 
 ---
 
-## Vision
+## What Specialists lets you do
 
-Specialists turns one overloaded agent chat into a coordinated agent mind: a central orchestrator keeps task identity, evidence, and publication control, while fresh specialist sessions act as scoped capabilities with their own prompts, rules, tools, memory, and output contracts.
-
-The problem it solves is not just token count. Long single-agent sessions accumulate old hypotheses, partial plans, tool residue, self-review bias, and forgotten constraints. Specialists uses **contract-bound cognition** instead: write the task contract once, dispatch the right expert role with only the relevant context, require a structured handoff, and let the orchestrator decide the next step.
-
-See [specialists.scheme.md](specialists.scheme.md) for the full diagrams and rationale. The core shape is:
-
-```mermaid
-flowchart TD
-  U[User / project need] --> O[Orchestrator]
-  O --> B[Bead issue contract]
-  B --> C{Contract ready?}
-  C -->|no| R[Repair scope, success, constraints]
-  R --> B
-  C -->|yes| D[Dispatch specialist]
-
-  D --> E[Explorer\nfresh read-only context]
-  D --> G[Debugger\nfresh root-cause context]
-  D --> X[Executor\nfresh implementation context]
-  D --> T[Test-runner\nfresh validation context]
-  D --> S[Code-sanity / Security\nadvisory context]
-  D --> V[Reviewer\ncontract compliance context]
-
-  B --> E
-  B --> G
-  B --> X
-  B --> T
-  B --> S
-  B --> V
-
-  E --> H[Structured handoff / evidence]
-  G --> H
-  X --> H
-  T --> H
-  S --> H
-  V --> H
-  H --> O
-  O --> P[Merge, resume, re-review, or close]
-```
-
-## What you can run
-
-| Need | Specialist / surface |
+| Need | Use |
 |---|---|
-| Map unfamiliar local code | `explorer` |
-| Diagnose a bug with unknown cause | `debugger` |
-| Implement a scoped change | `executor` |
-| Review an executor/debugger result | `reviewer --job <exec-job>` |
-| Run/classify tests | `test-runner` |
-| Current library/API/GitHub research | `researcher` |
-| Plan a multi-file feature into beads | `planner` |
-| Check code shape before review | `code-sanity` |
-| Audit security-sensitive diffs | `security-auditor` |
-| Sync exactly one doc | `sync-docs` |
-| Draft changelog gaps | `changelog-keeper` |
-| One-shot script/HTTP generation | `sp script` / `sp serve` |
+| Understand unfamiliar code | `sp run explorer --bead <id>` |
+| Diagnose a bug with unknown cause | `sp run debugger --bead <id>` |
+| Implement a scoped change | `sp run executor --bead <id> --worktree` |
+| Review an implementation against the contract | `sp run reviewer --bead <id> --job <exec-job>` |
+| Add behavioral tests from an implementation diff | `test-engineer` |
+| Run/classify exact validation commands | `test-runner` |
+| Catch scope/quality issues before review | `seconder` |
+| Research APIs, repos, papers, or current docs | `researcher` |
+| Sync one stale doc safely | `sync-docs` |
+| Sync service-expert skill docs from code drift | `service-skills-sync` |
+| Generate immediate JSON/text from a specialist | `sp script` or `sp serve` |
+| Watch all specialists across repos | `sp console` |
+| Inspect runtime evidence and telemetry | `sp feed`, `sp log`, `sp forensic`, `sp metrics` |
+| Configure package specialists globally | `sp init --global`, `sp edit --global`, `sp setup` |
 
-The live registry is authoritative:
+The live catalog is authoritative:
 
 ```bash
 sp list
@@ -83,9 +53,43 @@ sp list-rules
 sp help
 ```
 
+---
+
+## The core model
+
+```mermaid
+flowchart TD
+  U[User / operator] --> B[Bead task contract]
+  B --> O[Orchestrator]
+  O --> S{Pick specialist role}
+
+  S --> E[Explorer\nread-only mapping]
+  S --> D[Debugger\nroot cause]
+  S --> X[Executor\nimplementation]
+  S --> T[Test engineer / runner\ncoverage + validation]
+  S --> R[Reviewer / seconder\ncontract + quality gate]
+  S --> Doc[Sync-docs / service-skills\ndocumentation drift]
+
+  E --> H[Evidence + handoff]
+  D --> H
+  X --> H
+  T --> H
+  R --> H
+  Doc --> H
+
+  H --> O
+  O --> P[Resume, steer, re-run, merge, or close]
+```
+
+A run usually starts from `--bead <id>`. The bead is the source of truth for the task: problem, success criteria, scope, constraints, validation, and outputs. Dependency context can be injected with `--context-depth`, and specialist output is appended back to the bead as durable project memory.
+
+For edit-capable work, Specialists creates a branch/worktree. Reviewers and follow-up specialists can reuse that same workspace via `--job <prior-job-id>`, so the whole chain stays attached to one implementation lineage.
+
+---
+
 ## Install and bootstrap
 
-Specialists is **Bun-only** and expects xtrm-tools to be installed explicitly. xtrm-tools is a runtime prerequisite, not an npm dependency of this package.
+Specialists is **Bun-first** and expects xtrm-tools to be installed explicitly. xtrm-tools is a runtime prerequisite, not an npm dependency of this package.
 
 ```bash
 # 1. Bun
@@ -99,95 +103,124 @@ xt init
 
 # 3. Specialists
 npm install -g @jaggerxtrm/specialists
-sp init --global   # first use: set machine-level defaults and model overrides once
-sp init            # per-repo bootstrap (project wiring, skills, db paths)
+sp init --global       # machine-level user config and model defaults
+sp setup --discovery   # inspect available models/config gaps
+sp setup --plan cheap  # optional: propose model assignments
+sp init                # per-repo wiring: MCP, hooks, skills, db paths
 sp doctor --specialists
-sp doctor
 sp list
 ```
 
 `sp` is an alias for `specialists`.
 
-`sp init` is an interactive, human-run bootstrap. It checks for `xt` and `.xtrm/`, wires project MCP registration, hooks, skill symlinks, `.specialists/` runtime directories, and the Specialists block in `AGENTS.md`. It does **not** require copying package-owned defaults into every repo.
+### Global model config
 
-## Update and drift repair
+Package specialist definitions ship with `execution.model = null`. This is intentional: the package defines roles, tools, contracts, and safety boundaries; your machine-level config defines provider/model choices.
 
-Specialists uses two distribution tracks:
-
-| Track | Owned by | What it covers | Check / update |
-|---|---|---|---|
-| **Category A** runtime assets | `@jaggerxtrm/specialists` package | specialist JSON, mandatory rules, catalog, nodes, hooks shipped with the package | `sp doctor --check-drift`, `sp prune-stale-defaults --dry-run`, `sp prune-stale-defaults` |
-| **Category B** filesystem assets | xtrm-tools | `.xtrm/skills`, `.claude/skills`, `.pi/skills`, hook snapshots read directly from disk | `xt doctor --cwd <repo> --json`, `xt update --repo <repo> --apply` |
-
-`.specialists/user/` is your customization layer. `.specialists/default/` is now only for intentional pins or compatibility snapshots; stale default files are drift debt and `sp prune-stale-defaults` removes them by default. `sp init --sync-defaults` remains as a compatibility path, but it is deprecated because it creates repo-local snapshots that can drift from the package-canonical source.
-
-For an interactive, agent-guided update flow that runs both tracks, diagnoses drift, and asks before applying destructive changes, invoke the `/update-specialists` skill in Claude Code instead of running the raw commands manually.
-
-## Operator skills
-
-These skills load into your Claude Code session on demand and guide the most common operator workflows:
-
-| Skill | Invoke | When to use |
-|---|---|---|
-| `using-specialists-v3` | `/using-specialists-v3` | **Canonical orchestration guide.** Use for any substantial delegated work: implementation, debugging, review, planning, security audit, doc sync, multi-chain epics. Covers bead contracts, role selection, chain lifecycle, merge path, and escalation. |
-| `using-specialists-auto` | `/using-specialists-auto` | **Autonomous / offline mode.** Activates when you hand over a multi-item list and step away ("auto mode", "run the list"). Layers pacing discipline and escalation triggers on top of `using-specialists-v3`. |
-| `update-specialists` | `/update-specialists` | **Guided drift repair.** Runs both Category A and Category B diagnostics, presents a combined plan, and asks before applying anything. Prefer this over running raw `sp`/`xt` commands directly. |
-
-## Core tracked workflow
+Use:
 
 ```bash
-bd create "Investigate auth bug" -t bug -p 1 --json
+sp init --global
+sp edit --global
+sp setup --fetch-benchmarks --json
+sp setup --plan <budget-preset>
+sp doctor --specialists
+```
+
+The loader merges configuration in this order:
+
+1. package canonical specialist JSON;
+2. `~/.config/specialists/user.json` global overrides;
+3. `.specialists/user/` repo-local overrides.
+
+See [docs/installation.md](docs/installation.md), [docs/bootstrap.md](docs/bootstrap.md), and [docs/authoring.md](docs/authoring.md).
+
+---
+
+## First tracked run
+
+```bash
+bd create "Investigate flaky checkout flow" -t bug -p 1 --json
 bd update <id> --claim --json
 
-sp run debugger --bead <id> --context-depth 3
-sp ps
+sp run explorer --bead <id> --context-depth 2
 sp feed <job-id> --follow
 sp result <job-id>
 
-# Human-in-the-loop alternative: launch with a live TUI
-sp chat debugger --bead <id>          # feed-style timeline + status + final result + input
+sp run debugger --bead <id> --context-depth 3
+sp run executor --bead <id> --worktree
+sp run reviewer --bead <id> --job <executor-job>
 
-# After implementation and reviewer PASS
-sp merge <chain-root-bead>          # standalone chain
-sp epic status <epic-id>            # multi-chain publication check
-sp epic merge <epic-id>             # canonical epic publication
-
-bd close <id> --reason "Done" --json
+bd close <id> --reason "Root cause found, fix reviewed" --json
 ```
 
-Ad-hoc work is still available, but tracked work should use beads:
+Ad-hoc one-offs are still supported, but tracked work should use beads:
 
 ```bash
 sp run explorer --prompt "Map the CLI architecture"
 ```
 
-## Background jobs and monitoring
+---
 
-Normal runtime is DB-first: `.specialists/db/observability.db` stores jobs, events, and results. File mirrors under `.specialists/jobs/` are legacy/operator recovery surfaces.
+## Operator console
 
-Useful commands:
+`sp console` is the multi-repo terminal dashboard for live specialist work.
+
+It provides:
+
+- an **ALL** view aggregating active jobs across configured repos;
+- per-repo tabs and persistent repo registry (`~/.config/specialists/console.json`);
+- job list, feed, result, bead, diff, config, and repo-config views;
+- cursor navigation and direct actions (`↵`, `r`, `i`, `b`, `d`, `g`, `R`, `x`, `0`, `tab`, `1-9`);
+- TUI-styled rows shared with `sp ps`.
 
 ```bash
-sp ps                         # actionable dashboard
-sp ps -f                      # TTY dashboard follow; pipes emit ANSI-free snapshots
-sp feed <job-id>              # compact DB-backed event replay
-sp feed -f                    # follow all active jobs
-sp log <job-id>               # lean runtime/control/error log; from a parent dir aggregates child repo DBs
-sp log --specialist reviewer -f
-sp chat explorer --bead <id>    # launch interactive TUI; input auto-steers/resumes
-sp result <job-id> --wait
-sp steer <job-id> "focus only on X"
-sp resume <job-id> "continue with these findings"
-sp finalize <any-chain-job>   # cascade-close waiting keep-alive chain after PASS if needed
-sp clean --reap-orphans --dry-run
-sp clean --ps                 # hide terminal dashboard history without deleting DB audit rows
+sp console
+sp console --add-repo ~/dev/my-project
+sp console --remove-repo old-project
 ```
 
-`sp chat` is for launching a new interactive specialist session. It renders the same normalized feed style as `sp feed -f`, shows startup/payload context and the final result, and maps typed input to `steer` while running or `resume` while waiting. `/quit` and Ctrl+C detach the TUI without stopping the job; use `/stop` when you intend to stop it. Current `sp attach <job-id>` remains the legacy tmux attach path; chat-style attach to an existing job is tracked separately.
+For shell-only workflows:
+
+```bash
+sp ps
+sp feed <job-id>
+sp feed -f
+sp result <job-id>
+sp log <job-id>
+sp steer <job-id> "focus only on the API boundary"
+sp resume <job-id> "continue with this additional evidence"
+sp stop <job-id>
+sp clean --reap-orphans --dry-run
+```
+
+---
+
+## Publication and review
+
+Specialists separates **doing work** from **publishing work**.
+
+- `executor`, `debugger`, `test-engineer`, and `sync-docs` may create changes.
+- `seconder`, `test-runner`, and `reviewer` produce evidence/verdicts.
+- Reviewer PASS is the normal publish gate for implementation work.
+- `sp merge` and `sp epic merge` are publication tools, not authoring tools.
+
+```bash
+# Standalone reviewed chain
+sp merge <chain-root-bead>
+
+# Multi-chain epic
+sp epic status <epic-id>
+sp epic merge <epic-id>
+```
+
+Keep-alive specialists may stop in `waiting` after producing a result. Use `sp result <job-id>` to read the handoff, then `sp stop <job-id>` when no follow-up is needed.
+
+---
 
 ## Script and service specialists
 
-Use `sp run` for interactive agent orchestration. Use the script/service surfaces when you need a synchronous, READ_ONLY, one-shot generation path:
+Use `sp run` for interactive agent orchestration. Use `sp script` / `sp serve` when you need an immediate one-shot generation contract from a specialist.
 
 ```bash
 sp script <name> --vars key=value --json
@@ -197,49 +230,82 @@ curl -sS http://localhost:8000/v1/generate \
   -d '{"specialist":"hello","variables":{"name":"world"}}'
 ```
 
-`sp serve` is intended as a sidecar for script-class specialists. For container deployments, mount the whole `.specialists/` directory read-write, set `HOME=/pi-home`, and align container UID/GID with the host user. See [docs/specialists-service.md](docs/specialists-service.md), [docs/specialists-service-install.md](docs/specialists-service-install.md), and [docs/deploying-alongside.md](docs/deploying-alongside.md).
+Script/service mode is useful for CI, internal services, deterministic JSON generation, and sidecar deployments. Trusted local-script or write-capable execution must be explicitly enabled with the relevant flags; it is not implicit.
+
+See [docs/specialists-service.md](docs/specialists-service.md) and [docs/specialists-service-install.md](docs/specialists-service-install.md).
+
+---
+
+## Observability and telemetry
+
+Specialists is DB-first. Runtime state lives in `.specialists/db/observability.db`; file mirrors under `.specialists/jobs/` are legacy/operator recovery surfaces.
+
+Useful surfaces:
+
+```bash
+sp ps                         # dashboard row view
+sp feed <job-id>              # event stream replay
+sp log <job-id>               # control/status/error log
+sp forensic <job-id> --json   # persisted forensic envelopes
+sp metrics --prometheus       # low-cardinality metrics
+sp serve --port 8000          # exposes /metrics and job feed endpoints
+```
+
+Telemetry uses bounded labels and avoids high-cardinality IDs in Prometheus labels. Forensic events retain drill-down detail in SQLite/JSON output where IDs are appropriate.
+
+---
+
+## Built-in specialist families
+
+| Family | Examples | Purpose |
+|---|---|---|
+| Exploration/debugging | `explorer`, `debugger`, `overthinker` | map systems, find root causes, reason deeply |
+| Implementation/review | `executor`, `reviewer`, `seconder` | write changes, verify scope, check quality |
+| QA | `test-engineer`, `test-runner`, `obligations-scanner` | create tests, run exact commands, track TODO/FIXME obligations |
+| Research | `researcher`, `github-researcher`, `transcriber` | gather current docs, code examples, papers, video transcripts |
+| Documentation/release | `sync-docs`, `service-skills-sync`, `changelog-keeper`, `changelog-drafter` | keep docs and release notes current |
+| Operations | `xt-merge`, `memory-processor`, `node-coordinator` | merge queues, curate memory, coordinate node workers |
+| Domain specialists | `quant-researcher`, `quant-methodologist` | market-data and quantitative-method evidence/methodology |
+
+Run `sp list --compact` for the exact installed catalog and versions.
+
+---
 
 ## Documentation map
 
 | Need | Doc |
 |---|---|
-| Install, update, and distribution model | [docs/installation.md](docs/installation.md) |
-| Project bootstrap and `sp init` | [docs/bootstrap.md](docs/bootstrap.md) |
+| Install, update, global config | [docs/installation.md](docs/installation.md) |
+| Bootstrap a project | [docs/bootstrap.md](docs/bootstrap.md) |
 | Bead-first workflow | [docs/workflow.md](docs/workflow.md) |
 | CLI commands and flags | [docs/cli-reference.md](docs/cli-reference.md) |
-| Background jobs / `ps` / `feed` / `result` | [docs/background-jobs.md](docs/background-jobs.md) |
+| Feature-level behavior | [docs/features.md](docs/features.md) |
+| Background jobs / feed / result | [docs/background-jobs.md](docs/background-jobs.md) |
 | Specialist JSON authoring | [docs/authoring.md](docs/authoring.md) |
-| Built-in specialists | [docs/specialists-catalog.md](docs/specialists-catalog.md) |
-| Tool catalog and permission resolver | [docs/manifest.md](docs/manifest.md) |
-| MCP registration and tool surface | [docs/mcp-servers.md](docs/mcp-servers.md), [docs/mcp-tools.md](docs/mcp-tools.md) |
-| Hooks | [docs/hooks.md](docs/hooks.md) |
-| Skills and operator skill reference | [docs/skills.md](docs/skills.md) |
-| Orchestration skill (`using-specialists-v3`) | [docs/skills.md#using-specialists-v3](docs/skills.md#using-specialists-v3) |
-| Auto mode skill (`using-specialists-auto`) | [docs/skills.md#using-specialists-auto](docs/skills.md#using-specialists-auto) |
-| Update / drift repair skill (`update-specialists`) | [docs/skills.md#update-specialists](docs/skills.md#update-specialists) |
-| Worktrees and session close | [docs/worktrees.md](docs/worktrees.md), [docs/worktree.md](docs/worktree.md) |
-| Runtime architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Pi subprocess isolation / RPC boundary | [docs/pi-session.md](docs/pi-session.md), [docs/pi-rpc-boundary.md](docs/pi-rpc-boundary.md) |
-| NodeSupervisor | [docs/nodes.md](docs/nodes.md) |
-| Service sidecar / HTTP contract | [docs/specialists-service.md](docs/specialists-service.md) |
-| Compose deployment recipe | [docs/deploying-alongside.md](docs/deploying-alongside.md) |
+| Built-in specialist catalog | [docs/specialists-catalog.md](docs/specialists-catalog.md) |
+| MCP server/tool surface | [docs/mcp-servers.md](docs/mcp-servers.md), [docs/mcp-tools.md](docs/mcp-tools.md) |
+| Pi subprocess isolation | [docs/pi-session.md](docs/pi-session.md), [docs/pi-rpc-boundary.md](docs/pi-rpc-boundary.md) |
+| Script/service sidecar | [docs/specialists-service.md](docs/specialists-service.md), [docs/specialists-service-install.md](docs/specialists-service-install.md) |
+| Worktrees and publication | [docs/worktrees.md](docs/worktrees.md), [docs/worktree.md](docs/worktree.md) |
+| Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Release notes | [CHANGELOG.md](CHANGELOG.md) |
 
-## Project structure
+---
+
+## Project layout
 
 ```text
 config/
-├── specialists/       package-canonical specialist definitions (.specialist.json)
-├── mandatory-rules/   package-canonical rule sets injected into specialist prompts
-├── catalog/           package-canonical tool catalog
-├── nodes/             package-canonical node configs
+├── specialists/       package-canonical specialist definitions
+├── mandatory-rules/   package-canonical rule sets injected into prompts
+├── catalog/           tool catalog and permission metadata
+├── nodes/             node coordinator configs
 ├── hooks/             bundled hook scripts
-└── skills/            repo-local skills shipped by this package
+└── skills/            package-shipped skills
 
 .specialists/
-├── user/              repo-owned specialists and overrides (highest precedence)
+├── user/              repo-local specialists and overrides
 ├── default/           optional pins / compatibility snapshots; prune stale files
-├── mandatory-rules/   legacy/repo rule overlay compatibility
 ├── db/                runtime SQLite state (gitignored)
 ├── jobs/              legacy runtime mirror (gitignored)
 └── ready/             legacy ready markers (gitignored)
@@ -251,24 +317,33 @@ config/
 src/                   CLI, server, loader, runner, supervisor, MCP tool
 ```
 
+---
+
 ## Core rules
 
 - Use `--bead` for tracked work; use `--prompt` only for quick untracked work.
-- `--context-depth` controls completed dependency context injection; default is 3 for bead runs.
-- `--no-beads` disables tracking bead creation/updates, but it does not disable reading the input bead when `--bead` is provided.
-- Edit-capable specialists run in isolated worktrees. Review/fix passes should use `--job <exec-job>` to reuse the same workspace.
-- Reviewer PASS is the publish gate. Code-sanity/security/test-runner outputs are advisory evidence, not merge approval.
-- Specialists are project-scoped. User-scope specialist discovery is deprecated.
+- Put scope, success criteria, constraints, validation, and output expectations in the bead before dispatch.
+- Use `--context-depth` to inject completed dependency context; default is 3 for bead runs.
+- Use `--job <prior-job>` when a follow-up role must reuse the same worktree.
+- Prefer `sp console`, `sp ps`, `sp feed`, `sp log`, and `sp result` for operations; inspect raw files only for recovery.
+- Keep package defaults canonical. Put machine preferences in `~/.config/specialists/user.json` and repo exceptions in `.specialists/user/`.
+- Run `sp doctor --specialists` and `xt update --apply` when runtime or xtrm-managed assets drift.
 
-## Deprecated commands
+---
 
-These commands are still recognized for migration guidance but are no longer onboarding paths:
+## Deprecated / compatibility surfaces
+
+These commands or paths may still exist for migration, but they are not the preferred onboarding path:
 
 - `specialists setup`
 - `specialists install`
-- `sp release prepare` / `sp release publish` (deprecated aliases; release flow is skill-driven)
+- `sp init --sync-defaults` for routine setup
+- `.specialists/default/` as an always-synced mirror
+- `sp release prepare` / `sp release publish` aliases (release flow is skill-driven)
 
-Use `sp init`, `xt update`, and the release skill flow instead.
+Use `sp init`, `sp init --global`, `sp setup`, `xt update`, and the release skill flow instead.
+
+---
 
 ## Development
 
