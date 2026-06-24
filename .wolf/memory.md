@@ -326,3 +326,7 @@ PR #99 failed GitHub OSV on `qs@6.15.1` in `bun.lock` (`GHSA-q8mj-m7cp-5q26`). F
 | 13:05 | Hardened dependency-bump CI workflows (A1+A2) | .github/workflows/osv-scanner.yml, .github/workflows/package-payload.yml, scripts/osv-security-forced-classifier.mjs, tests/unit/scripts/osv-security-forced-classifier.test.ts | PR OSV is advisory unless SECURITY_FORCED; payload contract isolated from harness failures | ~1800 |
 
 | 15:15 | Added dry-run dependency verdict materializer | scripts/materialize-dependency-verdict.mjs, tests/unit/scripts/materialize-dependency-verdict.test.ts, docs/devops/dependency-verdict-materialization.md | verdict JSON now maps to advisor/followup/gate bd issue plans without creating live beads unless --apply is used | ~1500 |
+
+## 2026-06-24 — unitAI-fgpxv pi ownership correction
+- Corrected live docs/runtime hints to attribute pi-coding-agent to `earendil-works`, not xtrm/Jaggerxtrm or mariozechner.
+- Live references now use `https://github.com/earendil-works/pi-coding-agent` and `@earendil-works/pi-coding-agent`; archived historical notes were left unchanged.

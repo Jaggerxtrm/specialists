@@ -20,7 +20,7 @@ The result is a shared project mind: continuity without hoarding every detail in
 
 Specialists sits in the xt/xtrm stack:
 
-- **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** executes model sessions and exposes tool events/RPC boundaries.
+- **[pi coding agent](https://github.com/earendil-works/pi-coding-agent)** executes model sessions and exposes tool events/RPC boundaries.
 - **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)** provides operator workflow: worktree sessions, `.xtrm/` skills/hooks, reports, update tooling, and gates.
 - **[beads](https://github.com/steveyegge/beads)** provides issue IDs, claims, dependencies, task contracts, and durable notes.
 

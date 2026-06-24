@@ -324,7 +324,7 @@ docker build -t specialists-service:local .
 ### Release intent
 
 - root `Dockerfile` is source of runtime image truth
-- pin `@mariozechner/pi-coding-agent` only in release pipeline if needed
+- pin `@earendil-works/pi-coding-agent` only in release pipeline if needed
 - keep canary green before bumping runtime dependency
 - registry publishing stays future work until release path lands
 

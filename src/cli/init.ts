@@ -60,7 +60,7 @@ function assertXtrmPrerequisites(cwd: string): void {
 
 function warnMissingOptionalPrerequisites(): void {
   const optionalTools: ReadonlyArray<{ name: string; install: string }> = [
-    { name: 'pi', install: 'npm install -g @mariozechner/pi-coding-agent' },
+    { name: 'pi', install: 'npm install -g @earendil-works/pi-coding-agent' },
     { name: 'bd', install: 'npm install -g @jaggerxtrm/beads' },
     { name: 'sp', install: 'npm install -g @jaggerxtrm/specialists' },
   ];

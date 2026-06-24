@@ -29144,7 +29144,7 @@ function assertXtrmPrerequisites(cwd) {
 }
 function warnMissingOptionalPrerequisites() {
   const optionalTools = [
-    { name: "pi", install: "npm install -g @mariozechner/pi-coding-agent" },
+    { name: "pi", install: "npm install -g @earendil-works/pi-coding-agent" },
     { name: "bd", install: "npm install -g @jaggerxtrm/beads" },
     { name: "sp", install: "npm install -g @jaggerxtrm/specialists" }
   ];

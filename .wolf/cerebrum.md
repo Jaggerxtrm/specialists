@@ -49,6 +49,9 @@
 
 ## Learned — 2026-05-22T13:43:53Z
 - Bare `sp attach` picker must use raw-mode `readline.emitKeypressEvents` with Up/Down/Enter handling; a blocking `readFileSync(0)` numeric reader makes the list non-interactive and breaks arrow selection UX.
+## User Corrections — 2026-06-24
+- [2026-06-24] pi-coding-agent ownership/package: do not attribute pi to xtrm/Jaggerxtrm or mariozechner. Use earendil-works (`https://github.com/earendil-works/pi-coding-agent`, `@earendil-works/pi-coding-agent`).
+
 ## User Corrections — 2026-06-03
 - Substrate design (`substrate_design_it.md`) is the broad xtrm product/runtime/collante: future system spanning core/substrate/channels/specialists/console. `devops-system.md` is specialists-owned vertical design that covers substrate touchpoints, future DevOps, AgentOps telemetry, MCP, IaC, and console; do not treat it as the substrate SSOT or let it override substrate boundaries.
 ## Decision Log — 2026-06-03

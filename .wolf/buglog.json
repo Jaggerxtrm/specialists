@@ -885,6 +885,23 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-23T13:15:21Z"
+    },
+    {
+      "id": "bug-unitAI-fgpxv-pi-ownership",
+      "timestamp": "2026-06-24T13:17:54Z",
+      "error_message": "README/docs/runtime hint incorrectly attributed pi-coding-agent to xtrm/Jaggerxtrm or old mariozechner package scope.",
+      "file": "README.md; docs/bootstrap.md; docs/specialists-service.md; docs/specialists-service-install.md; src/cli/init.ts",
+      "root_cause": "Release-prep README rewrite reused stale project/package ownership assumptions instead of the current earendil-works pi-coding-agent ownership/package.",
+      "fix": "Updated live docs and sp init optional prerequisite hint to use earendil-works GitHub/package references; recorded correction in .wolf/cerebrum.md.",
+      "tags": [
+        "user-reported",
+        "documentation",
+        "ownership",
+        "pi-coding-agent"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-24T13:17:54Z"
     }
   ]
 }

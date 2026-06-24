@@ -35,7 +35,7 @@ domain:
 
 `specialists init` is the **sole** project bootstrap command. `specialists init --global` manages a separate XDG-aware global override layer in `~/.config/specialists/user.json`.
 
-Specialists is built on the **[pi coding agent](https://github.com/Jaggerxtrm/pi-coding-agent)** and is designed to run alongside **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)**. pi provides the multi-provider execution layer, lifecycle events, and RPC protocol; xtrm-tools provides the surrounding worktree/session workflow and hook environment. Specialists bootstraps the project-local specialist runtime, workflow instructions, and MCP registration on top of that stack.
+Specialists is built on the **[pi coding agent](https://github.com/earendil-works/pi-coding-agent)** and is designed to run alongside **[xtrm-tools](https://github.com/Jaggerxtrm/xtrm-tools)**. pi provides the multi-provider execution layer, lifecycle events, and RPC protocol; xtrm-tools provides the surrounding worktree/session workflow and hook environment. Specialists bootstraps the project-local specialist runtime, workflow instructions, and MCP registration on top of that stack.
 
 ## Prerequisites
 
