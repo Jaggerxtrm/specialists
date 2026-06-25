@@ -45,7 +45,13 @@ import { isAbsolute, resolve, sep, join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mapSpecialistBackend, getProviderArgs } from './backendMap.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
-import { resolveManifestTools, type ManifestPolicy, type ManifestPolicyTier } from '../specialist/manifest-resolver.js';
+import {
+  resolveManifestTools,
+  type ExtensionState,
+  type ManifestPolicy,
+  type ManifestPolicyTier,
+  type ToolCatalogName,
+} from '../specialist/manifest-resolver.js';
 import { loadToolCatalogIndex, type ToolCatalogIndex } from '../specialist/tool-catalog.js';
 
 const TEST_COMMAND_STALL_TIMEOUT_MS = 300_000;
@@ -188,10 +194,18 @@ function probeExtensionHealth(packageName: string): 'loaded_healthy' | 'not_inst
   return 'not_installed';
 }
 
+// Package names (used by the spawn -e wiring) → resolver catalog names.
+// Keep in sync with the -e push paths in PiAgentSession.start() and appendExtensionArgs().
+const EXTENSION_PACKAGE_TO_CATALOG: Readonly<Record<string, ToolCatalogName>> = {
+  'pi-gitnexus': 'gitnexus',
+  'pi-serena-tools': 'serena',
+};
+
 export function resolvePermissionTools(options: {
   level?: string;
   specialistName?: string;
   specialistPermissions?: ManifestPolicy['permissions'];
+  excludeExtensions?: readonly string[];
 }): string | undefined {
   const catalogIndex = loadSharedToolCatalogIndex();
   if (!catalogIndex) return undefined;
@@ -199,15 +213,34 @@ export function resolvePermissionTools(options: {
   const tier = options.level?.toUpperCase();
   if (tier !== 'READ_ONLY' && tier !== 'LOW' && tier !== 'MEDIUM' && tier !== 'HIGH') return undefined;
 
+  // A specialist may exclude an extension via `execution.extensions.{serena|gitnexus}: false`,
+  // which the supervisor translates into `excludeExtensions: ['pi-serena-tools', ...]`.
+  // The spawn then skips pushing `-e <pkg>` to pi. Without this signal here the resolver
+  // (a) would still emit the excluded extension's tool names in --tools (pi sees names with no provider), and
+  // (b) would still let hardDeny strip natives because probeExtensionHealth only checks disk presence.
+  // Treat an excluded extension as { enabled:false, health:'disabled' } AND list it in
+  // specialistExclusions.disabledExtensions so both filtering paths trip.
+  const excludedPackages = new Set(options.excludeExtensions ?? []);
+  const disabledCatalogNames: ToolCatalogName[] = [];
+  for (const pkg of excludedPackages) {
+    const cat = EXTENSION_PACKAGE_TO_CATALOG[pkg];
+    if (cat) disabledCatalogNames.push(cat);
+  }
+  const extensionStateFor = (pkg: 'pi-gitnexus' | 'pi-serena-tools'): ExtensionState => {
+    if (excludedPackages.has(pkg)) return { enabled: false, health: 'disabled' };
+    return { enabled: true, health: probeExtensionHealth(pkg) };
+  };
+
   const specialistOverride: ManifestPolicyTier | undefined = options.specialistPermissions?.[tier];
   return resolveManifestTools({
     tier,
     catalogs: catalogIndex.catalogs as unknown as Parameters<typeof resolveManifestTools>[0]['catalogs'],
     catalogDefaultOverrides: catalogIndex.default_overrides,
     specialistOverride,
+    ...(disabledCatalogNames.length > 0 ? { specialistExclusions: { disabledExtensions: disabledCatalogNames } } : {}),
     extensionState: {
-      gitnexus: { enabled: true, health: probeExtensionHealth('pi-gitnexus') },
-      serena: { enabled: true, health: probeExtensionHealth('pi-serena-tools') },
+      gitnexus: extensionStateFor('pi-gitnexus'),
+      serena: extensionStateFor('pi-serena-tools'),
     },
   }).tools || undefined;
 }
@@ -629,11 +662,15 @@ export class PiAgentSession {
       ...extraArgs,
     ];
 
-    // Enforce permission level via --tools flag
+    // Enforce permission level via --tools flag.
+    // Pass excludeExtensions so the resolver matches the spawn's actual -e set
+    // (without this, excluded extensions' tool names leak into --tools AND hardDeny
+    // strips natives based on filesystem presence rather than effective load — see unitAI-7edw1).
     const toolsFlag = resolvePermissionTools({
       level: this.options.permissionLevel,
       specialistName: this.options.specialistName,
       specialistPermissions: this.options.specialistPermissions,
+      excludeExtensions: this.options.excludeExtensions,
     });
     if (toolsFlag) args.push('--tools', toolsFlag);
 

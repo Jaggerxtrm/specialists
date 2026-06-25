@@ -1111,7 +1111,16 @@ async function runSingleAttempt(prompt: string, model: string, thinkingLevel: st
 
   return await new Promise((resolve, reject) => {
     const args = ['--mode', 'json', '--no-session', '--no-extensions', '--offline', '--no-context-files', '--no-prompt-templates', '--no-themes'];
-    const toolsFlag = resolvePermissionTools({ level: spec.specialist.execution.permission_required });
+    // Build excludeExtensions inline from spec so the resolver matches the spawn's actual -e set
+    // (see unitAI-7edw1). appendExtensionArgs() below uses the same derivation.
+    const scriptExcludeExtensions = [
+      spec.specialist.execution.extensions?.gitnexus === false ? 'pi-gitnexus' : undefined,
+      spec.specialist.execution.extensions?.serena === false ? 'pi-serena-tools' : undefined,
+    ].filter((value): value is string => Boolean(value));
+    const toolsFlag = resolvePermissionTools({
+      level: spec.specialist.execution.permission_required,
+      excludeExtensions: scriptExcludeExtensions,
+    });
     if (toolsFlag) args.push('--tools', toolsFlag);
     if (skillPaths.length === 0) args.push('--no-skills');
     for (const skillPath of skillPaths) args.push('--skill', skillPath);
