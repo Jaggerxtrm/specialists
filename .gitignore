@@ -76,3 +76,21 @@ __pycache__/
 # Beads / Dolt files (added by bd init)
 .beads-credential-key
 .beads/proxieddb/
+
+# Local agent/runtime dotfile artifacts (generated per checkout, not source)
+.beads/
+.claude/
+.pi/
+.serena/
+.specialists/
+.triage/
+.wolf/
+.zed/
+.codex
+.session-meta.json
+.mcp\ copy.json
+
+# Local xtrm install/runtime tree; keep session reports as handoff history
+.xtrm/*
+!.xtrm/reports/
+!.xtrm/reports/**
