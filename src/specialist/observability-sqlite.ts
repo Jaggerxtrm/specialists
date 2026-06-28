@@ -1189,6 +1189,22 @@ export interface ObservabilitySqliteClient {
    *  passing `null` clears a field; omitting a field leaves it unchanged. Returns true on
    *  successful row touch, false when the job row does not exist. Updates `updated_at_ms`. */
   updatePrDriftState(jobId: string, drift: PrDriftStatePatch): boolean;
+  /** List stale specialist job rows that may be dead after container restart.
+   *  Core predicate: status IN ('starting','running','waiting') AND pid IS NOT NULL
+   *  AND updated_at_ms < (nowMs - minAgeMs).  ORDER BY updated_at_ms ASC LIMIT 200.
+   *  @param opts.minAgeMs minimum age in ms to consider a row stale. Default 60_000.
+   *  @param opts.nowMs epoch ms anchor. Default Date.now().
+   *  @returns rows with job_id, specialist, status, pid, updated_at_ms, bead_id, chain_id */
+  listStaleSpecialistJobs(opts?: { minAgeMs?: number; nowMs?: number }): Array<{
+    job_id: string;
+    specialist: string;
+    status: string;
+    pid: number;
+    updated_at_ms: number;
+    bead_id: string | null;
+    chain_id: string | null;
+  }>;
+
   /** List jobs with PR URLs that haven't been checked recently, ordered by
    *  pr_drift_checked_at_ms ascending (NULLs first). Limit 50.
    *  @param olderThanMs Epoch ms threshold; rows with pr_drift_checked_at_ms
@@ -2052,6 +2068,57 @@ class SqliteClient implements ObservabilitySqliteClient {
       const result = this.db.run(sql, params) as { changes?: number };
       return (result?.changes ?? 0) > 0;
     }, 'updatePrDriftState');
+  }
+
+  listStaleSpecialistJobs(opts?: { minAgeMs?: number; nowMs?: number }): Array<{
+    job_id: string;
+    specialist: string;
+    status: string;
+    pid: number;
+    updated_at_ms: number;
+    bead_id: string | null;
+    chain_id: string | null;
+  }> {
+    return withRetry(() => {
+      const nowMs = opts?.nowMs ?? Date.now();
+      const minAgeMs = opts?.minAgeMs ?? 60_000;
+      const cutoff = nowMs - minAgeMs;
+      const statuses = ['starting', 'running', 'waiting'];
+      const placeholders = statuses.map(() => '?').join(', ');
+      const rows = this.db.query(`
+        SELECT job_id, specialist, status, status_json,
+               JSON_EXTRACT(status_json, '$.pid') AS pid,
+               updated_at_ms,
+               bead_id,
+               chain_id
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+          AND pid IS NOT NULL
+          AND updated_at_ms < ?
+        ORDER BY updated_at_ms ASC
+        LIMIT 200
+      `).all(...statuses, cutoff) as Array<Record<string, unknown>>;
+
+      const num = (v: unknown): number =>
+        v === null || v === undefined ? 0 : typeof v === 'bigint' ? Number(v) : typeof v === 'number' ? v : 0;
+      const str = (v: unknown): string | null =>
+        v === null || v === undefined ? null : typeof v === 'string' ? v : null;
+
+      return rows
+        .filter((row) => {
+          const pid = num(row.pid);
+          return Number.isInteger(pid) && pid > 0;
+        })
+        .map((row) => ({
+          job_id: str(row.job_id) ?? '',
+          specialist: str(row.specialist) ?? '',
+          status: str(row.status) ?? '',
+          pid: num(row.pid),
+          updated_at_ms: num(row.updated_at_ms),
+          bead_id: str(row.bead_id),
+          chain_id: str(row.chain_id),
+        }));
+    }, 'listStaleSpecialistJobs');
   }
 
   listJobsNeedingPrDriftRefresh(olderThanMs?: number): Array<{
