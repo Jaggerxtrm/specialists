@@ -519,7 +519,47 @@ export function initSchema(db: BunDb): void {
   migrateToV10(db);
   migrateToV11(db);
   migrateToV12(db);
+  migrateToV13(db);
   verifyWalMode(db);
+}
+
+// V13 — durable PR/base drift fields on specialist_jobs. specialists-05q.1.
+// Additive nullable columns; bridge for substrate `containers.pr_*` /
+// `containers.base_sha_pinned*` rename (specialists-roadmap §B.3).
+function migrateToV13(db: BunDb): void {
+  const hasV13 = db.query('SELECT 1 FROM schema_version WHERE version = 13 LIMIT 1').get() as { 1?: number } | undefined;
+
+  const specialistJobsColumns = new Set(
+    (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  );
+
+  for (const column of [
+    { name: 'pr_url', definition: 'TEXT' },
+    { name: 'pr_head_sha', definition: 'TEXT' },
+    { name: 'pr_state', definition: 'TEXT' },
+    { name: 'pr_merge_state', definition: 'TEXT' },
+    { name: 'pr_classification', definition: 'TEXT' },
+    { name: 'pr_base_ref', definition: 'TEXT' },
+    { name: 'pr_base_sha', definition: 'TEXT' },
+    { name: 'pr_drift_checked_at_ms', definition: 'INTEGER' },
+    { name: 'base_sha_pinned', definition: 'TEXT' },
+    { name: 'base_sha_pinned_at_ms', definition: 'INTEGER' },
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+
+  if (hasV13) {
+    return;
+  }
+
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (13, strftime('%s', 'now') * 1000);
+  `);
 }
 
 function migrateToV5(db: BunDb): void {
@@ -1070,6 +1110,48 @@ export function claimJobStartWithStore(
   }), 'claimJobStart');
 }
 
+/**
+ * Durable PR/base drift state for a specialist job (specialists-05q.1).
+ *
+ * Bridge → substrate mapping (specialists-roadmap §B.3): every field renames 1:1 onto
+ * `containers.*` when the substrate daemon ships (`pr_*` → `containers.pr_*`,
+ * `base_sha_pinned*` → `containers.base_sha_pinned*`). Pre-substrate columns live on
+ * `specialist_jobs`; mirror on `SupervisorStatus` for serialization symmetry.
+ *
+ * Schema/model only — refresh logic (GitHub/git lookup, classification, attention scoring)
+ * is owned by specialists-05q.2. Fields are populated lazily; `null` is a meaningful "checked
+ * and unset" value, `undefined` is "never checked".
+ */
+export interface PrDriftState {
+  /** PR URL as recorded by xt at PR creation. */
+  pr_url: string | null;
+  /** Head SHA observed at last drift check. */
+  pr_head_sha: string | null;
+  /** Raw GitHub PR state (open / closed / merged / draft). */
+  pr_state: string | null;
+  /** Raw GitHub merge state (clean / dirty / blocked / behind / unstable / unknown / has_hooks). */
+  pr_merge_state: string | null;
+  /** Local classification derived from raw state (clean / behind / conflicted / unknown / dead).
+   *  Distinct from `pr_merge_state` so a future GitHub label change does not silently shift the
+   *  semantics specialists relies on for attention scoring. */
+  pr_classification: string | null;
+  /** Base branch ref (e.g. "master"). */
+  pr_base_ref: string | null;
+  /** Observed base tip SHA at last drift check — compared against `base_sha_pinned`
+   *  to detect commits-behind without re-fetching. */
+  pr_base_sha: string | null;
+  /** Epoch ms when drift state was last computed. */
+  pr_drift_checked_at_ms: number | null;
+  /** Base SHA pinned at chain start (specialists-05q.3 / Opp 7 extension). Used as the
+   *  authoritative "what this run measured against" reference. */
+  base_sha_pinned: string | null;
+  /** Epoch ms when the base SHA pin was set. */
+  base_sha_pinned_at_ms: number | null;
+}
+
+/** Partial update of {@link PrDriftState}. Omitted keys are left unchanged; explicit `null` clears. */
+export type PrDriftStatePatch = Partial<PrDriftState>;
+
 export interface ObservabilitySqliteClient {
   upsertStatus(status: SupervisorStatus): void;
   markSpecialistJobCancelled(jobId: string, reason: string): void;
@@ -1100,6 +1182,13 @@ export interface ObservabilitySqliteClient {
   queryMemberContextHealth(jobId: string): number | null;
   readStatus(jobId: string): SupervisorStatus | null;
   listStatuses(): SupervisorStatus[];
+  /** Read durable PR/base drift state for a job. Returns null when the job row is missing.
+   *  Specialists-05q.1: schema/model only — refresh logic lives in .2. */
+  readPrDriftState(jobId: string): PrDriftState | null;
+  /** Write durable PR/base drift state to specialist_jobs columns. Partial updates supported;
+   *  passing `null` clears a field; omitting a field leaves it unchanged. Returns true on
+   *  successful row touch, false when the job row does not exist. Updates `updated_at_ms`. */
+  updatePrDriftState(jobId: string, drift: PrDriftStatePatch): boolean;
   removeJobs(jobIds: readonly string[]): number;
   readEpicRun(epicId: string): EpicRunRecord | null;
   listEpicRuns(): EpicRunRecord[];
@@ -1895,6 +1984,63 @@ class SqliteClient implements ObservabilitySqliteClient {
       }
       return statuses;
     }, 'listStatuses');
+  }
+
+  readPrDriftState(jobId: string): PrDriftState | null {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT pr_url, pr_head_sha, pr_state, pr_merge_state, pr_classification,
+               pr_base_ref, pr_base_sha, pr_drift_checked_at_ms,
+               base_sha_pinned, base_sha_pinned_at_ms
+        FROM specialist_jobs WHERE job_id = ? LIMIT 1
+      `).get(jobId) as Record<keyof PrDriftState, unknown> | undefined;
+      if (!row) return null;
+      // Normalize SQLite return shape: missing → null. Numeric columns may come back as bigint
+      // depending on bun:sqlite mode; coerce to number for the timestamp fields.
+      const num = (v: unknown): number | null =>
+        v === null || v === undefined ? null : typeof v === 'bigint' ? Number(v) : typeof v === 'number' ? v : null;
+      const str = (v: unknown): string | null =>
+        v === null || v === undefined ? null : typeof v === 'string' ? v : null;
+      return {
+        pr_url: str(row.pr_url),
+        pr_head_sha: str(row.pr_head_sha),
+        pr_state: str(row.pr_state),
+        pr_merge_state: str(row.pr_merge_state),
+        pr_classification: str(row.pr_classification),
+        pr_base_ref: str(row.pr_base_ref),
+        pr_base_sha: str(row.pr_base_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        base_sha_pinned: str(row.base_sha_pinned),
+        base_sha_pinned_at_ms: num(row.base_sha_pinned_at_ms),
+      };
+    }, 'readPrDriftState');
+  }
+
+  updatePrDriftState(jobId: string, drift: PrDriftStatePatch): boolean {
+    return withRetry(() => {
+      // Build dynamic SET clause from only-present keys so callers can do partial updates.
+      const ALLOWED: ReadonlyArray<keyof PrDriftState> = [
+        'pr_url', 'pr_head_sha', 'pr_state', 'pr_merge_state', 'pr_classification',
+        'pr_base_ref', 'pr_base_sha', 'pr_drift_checked_at_ms',
+        'base_sha_pinned', 'base_sha_pinned_at_ms',
+      ];
+      const setClauses: string[] = [];
+      const params: Array<string | number | null> = [];
+      for (const key of ALLOWED) {
+        if (!Object.prototype.hasOwnProperty.call(drift, key)) continue;
+        setClauses.push(`${key} = ?`);
+        // SQLite normalizes undefined → null at binding; we accept both as "clear".
+        const value = (drift as Record<string, unknown>)[key];
+        params.push(value === undefined ? null : (value as string | number | null));
+      }
+      if (setClauses.length === 0) return false; // nothing to do — no-op
+      setClauses.push('updated_at_ms = ?');
+      params.push(Date.now());
+      params.push(jobId);
+      const sql = `UPDATE specialist_jobs SET ${setClauses.join(', ')} WHERE job_id = ?`;
+      const result = this.db.run(sql, params) as { changes?: number };
+      return (result?.changes ?? 0) > 0;
+    }, 'updatePrDriftState');
   }
 
   removeJobs(jobIds: readonly string[]): number {

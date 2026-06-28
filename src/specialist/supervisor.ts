@@ -148,6 +148,21 @@ export interface SupervisorStatus {
   auto_commit_count?: number;
   last_auto_commit_sha?: string;
   last_auto_commit_at_ms?: number;
+  // PR/base drift state (specialists-05q.1). Optional + nullable for back-compat with rows
+  // written before schema V13. Mirrored to specialist_jobs columns for queryability via
+  // ObservabilitySqliteClient.updatePrDriftState / readPrDriftState. Refresh logic lives in
+  // specialists-05q.2 (refresh/attention) — this bead only carries the durable shape.
+  // Bridge → substrate: each field renames 1:1 onto containers.* per specialists-roadmap §B.3.
+  pr_url?: string;
+  pr_head_sha?: string;
+  pr_state?: string;
+  pr_merge_state?: string;
+  pr_classification?: string;
+  pr_base_ref?: string;
+  pr_base_sha?: string;
+  pr_drift_checked_at_ms?: number;
+  base_sha_pinned?: string;
+  base_sha_pinned_at_ms?: number;
 }
 
 export type SupervisorStatusView = SupervisorStatus & { is_dead: boolean };

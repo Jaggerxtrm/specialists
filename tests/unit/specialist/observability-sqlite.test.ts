@@ -119,7 +119,7 @@ describe('observability-sqlite', () => {
       const tableRows = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('node_runs', 'node_members', 'node_events', 'node_memory') ORDER BY name").all() as Array<{ name: string }>;
       expect(tableRows.map((row) => row.name)).toEqual(['node_events', 'node_members', 'node_memory', 'node_runs']);
 
-      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(11);
+      expect(OBSERVABILITY_SCHEMA_VERSION).toBe(13);
 
       const schemaVersionRow = db.query('SELECT version FROM schema_version WHERE version = 10 LIMIT 1').get() as { version?: number };
       expect(schemaVersionRow.version).toBe(10);
@@ -1046,6 +1046,193 @@ describe('observability-sqlite', () => {
       expect(() => client.pruneObservabilityData({ beforeMs: 1000, includeEpics: false, apply: true })).toThrow(/fail metrics/);
       const remaining = db.query(`SELECT COUNT(*) AS count FROM specialist_events WHERE job_id = 'job-prune'`).get() as { count: number };
       expect(remaining.count).toBe(1);
+    });
+  });
+
+  // V13 — durable PR/base drift fields on specialist_jobs (specialists-05q.1).
+  describe('migrateToV13 — durable PR/base drift fields', () => {
+    const V13_COLUMNS = [
+      'pr_url', 'pr_head_sha', 'pr_state', 'pr_merge_state', 'pr_classification',
+      'pr_base_ref', 'pr_base_sha', 'pr_drift_checked_at_ms',
+      'base_sha_pinned', 'base_sha_pinned_at_ms',
+    ] as const;
+
+    it('adds all V13 PR/base drift columns to specialist_jobs on a fresh DB', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+
+      const cols = (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+        .map((c) => c.name)
+        .filter((n): n is string => typeof n === 'string');
+
+      for (const col of V13_COLUMNS) {
+        expect(cols).toContain(col);
+      }
+      const versionRow = db.query('SELECT version FROM schema_version WHERE version = 13 LIMIT 1').get() as { version?: number };
+      expect(versionRow?.version).toBe(13);
+    });
+
+    it('idempotent migration — running initSchema twice does not duplicate columns or fail', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      initSchema(db);
+
+      const cols = (db.query('PRAGMA table_info(specialist_jobs)').all() as Array<{ name?: string }>)
+        .map((c) => c.name)
+        .filter((n): n is string => typeof n === 'string');
+      // Each V13 column appears exactly once.
+      for (const col of V13_COLUMNS) {
+        expect(cols.filter((c) => c === col).length).toBe(1);
+      }
+    });
+
+    it('upgrades a legacy DB row (no PR fields written) without data loss; new columns default to NULL', () => {
+      // Build a V12-shape DB by initSchema then INSERT a row that does not touch any V13 column.
+      // The migration is additive so the row pre-dates V13 semantically even though we wrote it post-migration.
+      db = new Database(tempDbPath);
+      initSchema(db);
+      db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+        VALUES ('legacy-job', 'executor', 'starting', '{"id":"legacy-job","specialist":"executor","status":"starting","started_at_ms":1}', 1)
+      `);
+
+      const row = db.query(`
+        SELECT job_id, status_json,
+               pr_url, pr_head_sha, pr_state, pr_merge_state, pr_classification,
+               pr_base_ref, pr_base_sha, pr_drift_checked_at_ms,
+               base_sha_pinned, base_sha_pinned_at_ms
+        FROM specialist_jobs WHERE job_id = 'legacy-job'
+      `).get() as Record<string, unknown>;
+
+      // Identity columns preserved.
+      expect(row.job_id).toBe('legacy-job');
+      expect(typeof row.status_json).toBe('string');
+      // Drift columns NULL — back-compat: never written, never read.
+      for (const col of V13_COLUMNS) {
+        expect(row[col]).toBeNull();
+      }
+    });
+
+    it('readStatus on a legacy row returns SupervisorStatus with undefined PR drift fields', () => {
+      // The JSON blob has none of the new fields. The type widens via optional `?:`.
+      db = new Database(tempDbPath);
+      initSchema(db);
+      db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+        VALUES ('legacy-status', 'executor', 'starting', '{"id":"legacy-status","specialist":"executor","status":"starting","started_at_ms":1}', 1)
+      `);
+
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+      const status = client.readStatus('legacy-status');
+      expect(status).not.toBeNull();
+      // Pre-V13 fields preserved.
+      expect(status?.id).toBe('legacy-status');
+      // V13 PR drift fields stay `undefined` — never serialized into the blob.
+      expect(status?.pr_state).toBeUndefined();
+      expect(status?.pr_classification).toBeUndefined();
+      expect(status?.base_sha_pinned).toBeUndefined();
+    });
+
+    it('updatePrDriftState writes drift columns and readPrDriftState round-trips them', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+        VALUES ('full-drift', 'executor', 'running', '{"id":"full-drift","specialist":"executor","status":"running","started_at_ms":1}', 1)
+      `);
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+
+      const written = client.updatePrDriftState('full-drift', {
+        pr_url: 'https://github.com/o/r/pull/42',
+        pr_head_sha: 'aaa111',
+        pr_state: 'open',
+        pr_merge_state: 'clean',
+        pr_classification: 'clean',
+        pr_base_ref: 'master',
+        pr_base_sha: 'bbb222',
+        pr_drift_checked_at_ms: 5_000,
+        base_sha_pinned: 'bbb222',
+        base_sha_pinned_at_ms: 4_000,
+      });
+      expect(written).toBe(true);
+
+      const drift = client.readPrDriftState('full-drift');
+      expect(drift).toEqual({
+        pr_url: 'https://github.com/o/r/pull/42',
+        pr_head_sha: 'aaa111',
+        pr_state: 'open',
+        pr_merge_state: 'clean',
+        pr_classification: 'clean',
+        pr_base_ref: 'master',
+        pr_base_sha: 'bbb222',
+        pr_drift_checked_at_ms: 5_000,
+        base_sha_pinned: 'bbb222',
+        base_sha_pinned_at_ms: 4_000,
+      });
+    });
+
+    it('updatePrDriftState supports partial patches; omitted keys are unchanged; null clears', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+        VALUES ('partial', 'executor', 'running', '{"id":"partial","specialist":"executor","status":"running","started_at_ms":1}', 1)
+      `);
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+
+      client.updatePrDriftState('partial', {
+        pr_state: 'open',
+        pr_classification: 'behind',
+        base_sha_pinned: 'pin1',
+      });
+      let drift = client.readPrDriftState('partial');
+      expect(drift?.pr_state).toBe('open');
+      expect(drift?.pr_classification).toBe('behind');
+      expect(drift?.base_sha_pinned).toBe('pin1');
+      expect(drift?.pr_url).toBeNull();
+
+      // Patch: change classification, clear base_sha_pinned, leave pr_state alone.
+      client.updatePrDriftState('partial', {
+        pr_classification: 'clean',
+        base_sha_pinned: null,
+      });
+      drift = client.readPrDriftState('partial');
+      expect(drift?.pr_state).toBe('open');             // unchanged
+      expect(drift?.pr_classification).toBe('clean');   // updated
+      expect(drift?.base_sha_pinned).toBeNull();        // cleared
+    });
+
+    it('readPrDriftState returns null when the job row is missing', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+      expect(client.readPrDriftState('does-not-exist')).toBeNull();
+    });
+
+    it('updatePrDriftState returns false when the job row is missing', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+      const written = client.updatePrDriftState('missing-job', { pr_state: 'open' });
+      expect(written).toBe(false);
+    });
+
+    it('updatePrDriftState with an empty patch is a no-op and returns false', () => {
+      db = new Database(tempDbPath);
+      initSchema(db);
+      db.run(`
+        INSERT INTO specialist_jobs (job_id, specialist, status, status_json, updated_at_ms)
+        VALUES ('noop-job', 'executor', 'running', '{"id":"noop-job","specialist":"executor","status":"running","started_at_ms":1}', 1)
+      `);
+      const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+      sqliteClient = client;
+      const written = client.updatePrDriftState('noop-job', {});
+      expect(written).toBe(false);
     });
   });
 });
