@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { createObservabilitySqliteClient } from '../specialist/observability-sqlite.js';
+import { refreshPrDriftForJob } from '../specialist/pr-drift-refresh.js';
+import type { PrClassification } from '../specialist/pr-drift-refresh.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { detectDriftUnderRoot } from '../specialist/drift-detector.js';
 import { SpecialistLoader } from '../specialist/loader.js';
@@ -590,15 +592,17 @@ interface DoctorOptions {
   root?: string;
   drift: boolean;
   specialists: boolean;
+  pr_drift: boolean;
 }
 
 function parseDoctorArgs(argv: readonly string[]): DoctorOptions {
-  const opts: DoctorOptions = { json: false, drift: false, specialists: false };
+  const opts: DoctorOptions = { json: false, drift: false, specialists: false, pr_drift: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--json') { opts.json = true; continue; }
     if (token === '--check-drift' || token === '--drift') { opts.drift = true; continue; }
     if (token === '--specialists' || token === '--check-specialists') { opts.specialists = true; continue; }
+    if (token === '--pr-drift') { opts.pr_drift = true; continue; }
     if (token === '--root') { const value = argv[i + 1]; if (!value || value.startsWith('--')) throw new Error('--root requires a value'); opts.root = resolve(value); i += 1; continue; }
     if (token === '--help' || token === '-h') continue;
     throw new Error(`Unknown argument: ${token}`);
@@ -930,6 +934,100 @@ function checkZombieJobs(): boolean {
   return result.zombies === 0;
 }
 
+async function runDoctorPrDrift(json: boolean): Promise<void> {
+  const client = createObservabilitySqliteClient();
+  if (!client) {
+    if (json) {
+      console.log(JSON.stringify({ jobs: [], error: 'observability sqlite unavailable' }));
+    } else {
+      console.error('observability sqlite unavailable');
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const jobs = client.listJobsNeedingPrDriftRefresh();
+    const results: Array<{
+      job_id: string;
+      classification: PrClassification | 'unknown';
+      pr_url: string;
+      error_kind?: string;
+      duration_ms: number;
+    }> = [];
+
+    for (const job of jobs) {
+      const startedAt = Date.now();
+
+      // emit structured log: refresh_attempted
+      console.error(JSON.stringify({
+        component: 'pr_drift' as const,
+        event: 'refresh_attempted',
+        job_id: job.job_id,
+        duration_ms: 0,
+        gh_stderr_hash: '',
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt,
+      }));
+
+      const result = await refreshPrDriftForJob({
+        jobId: job.job_id,
+        prUrl: job.pr_url,
+        headSha: job.pr_head_sha ?? undefined,
+        client,
+      });
+
+      const durationMs = Date.now() - startedAt;
+      const classification = result.classification;
+      const ghStderrHash = result.error_summary ? result.error_summary.slice(0, 8) : '';
+
+      // emit structured log: refresh_completed or refresh_failed
+      const eventOut: Record<string, unknown> = {
+        component: 'pr_drift',
+        event: result.ok ? 'refresh_completed' : 'refresh_failed',
+        job_id: job.job_id,
+        duration_ms: durationMs,
+        gh_stderr_hash: ghStderrHash,
+        pr_classification: classification,
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt,
+      };
+      console.error(JSON.stringify(eventOut));
+
+      results.push({
+        job_id: job.job_id,
+        classification,
+        pr_url: job.pr_url,
+        ...(result.error_kind ? { error_kind: result.error_kind } : {}),
+        duration_ms: durationMs,
+      });
+    }
+
+    if (json) {
+      console.log(JSON.stringify({ jobs: results }, null, 2));
+    } else {
+      console.log(`\n${bold('specialists doctor --pr-drift')}\n`);
+      if (results.length === 0) {
+        ok('No PR-linked jobs need drift refresh');
+      } else {
+        for (const r of results) {
+          const icon = r.classification === 'clean' ? green('✓')
+            : r.classification === 'needs-rebase' ? yellow('○')
+            : r.classification === 'conflicted' ? red('✗')
+            : r.classification === 'blocked' ? yellow('■')
+            : r.classification === 'stale' ? dim('○')
+            : yellow('?');
+          const suffix = r.error_kind ? ` ${dim(`(${r.error_kind})`)}` : '';
+          console.log(`  ${icon} ${r.job_id}  ${r.classification}${suffix}`);
+        }
+      }
+      console.log('');
+    }
+  } finally {
+    client.close();
+  }
+}
+
 export async function run(argv: readonly string[] = process.argv.slice(3)): Promise<void> {
   const subcommand = argv[0];
   if (subcommand === 'orphans') {
@@ -940,6 +1038,11 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
   const opts = parseDoctorArgs(argv);
   if (opts.drift) {
     renderDriftTable(opts.root ?? process.cwd(), opts.json);
+    return;
+  }
+
+  if (opts.pr_drift) {
+    await runDoctorPrDrift(opts.json);
     return;
   }
 

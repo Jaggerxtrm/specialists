@@ -511,4 +511,88 @@ describe('ps CLI — run()', () => {
     expect(readEvents).toHaveBeenCalledWith('job-events-only');
   }, TEST_TIMEOUT_MS);
 
+  it('shows drift badge for conflicted job', async () => {
+    createJob(tempDir, 'drift01', {
+      pid: process.pid,
+      status: 'running',
+      pr_classification: 'conflicted',
+    });
+    process.argv = ['node', 'specialists', 'ps'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+    const clean = stripAnsi(output.join('\n'));
+    expect(clean).toContain('drift01');
+    expect(clean).toContain('[drift:conflicted]');
+  }, TEST_TIMEOUT_MS);
+
+  it('suppresses drift badge when classification is clean', async () => {
+    createJob(tempDir, 'drift02', {
+      pid: process.pid,
+      status: 'running',
+      pr_classification: 'clean',
+    });
+    process.argv = ['node', 'specialists', 'ps'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+    const clean = stripAnsi(output.join('\n'));
+    expect(clean).toContain('drift02');
+    expect(clean).not.toContain('[drift:clean]');
+  }, TEST_TIMEOUT_MS);
+
+  it('--needs-attention filters to actionable jobs only', async () => {
+    createJob(tempDir, 'attention01', {
+      pid: process.pid,
+      status: 'running',
+      pr_classification: 'needs-rebase',
+    });
+    createJob(tempDir, 'attention02', {
+      pid: process.pid,
+      status: 'running',
+      pr_classification: 'clean',
+    });
+    createJob(tempDir, 'attention03', {
+      pid: process.pid,
+      status: 'running',
+    });
+    process.argv = ['node', 'specialists', 'ps', '--needs-attention'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+    const clean = stripAnsi(output.join('\n'));
+    expect(clean).toContain('[drift:needs-rebase]');
+    expect(clean).not.toContain('attention02');
+    expect(clean).not.toContain('attention03');
+  }, TEST_TIMEOUT_MS);
+
+  it('--json includes attention_reasons array', async () => {
+    createJob(tempDir, 'json-drift', {
+      pid: process.pid,
+      status: 'running',
+      pr_classification: 'needs-rebase',
+    });
+    process.argv = ['node', 'specialists', 'ps', '--json'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+    const parsed = JSON.parse(output.join('\n'));
+    const job = parsed.flat.find((j: Record<string, unknown>) => j.id === 'json-drift');
+    expect(job).toBeDefined();
+    expect(Array.isArray(job.attention_reasons)).toBe(true);
+    expect(job.attention_reasons).toContain('pr_drift:needs-rebase');
+  }, TEST_TIMEOUT_MS);
+
 });

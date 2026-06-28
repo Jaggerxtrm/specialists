@@ -1189,6 +1189,17 @@ export interface ObservabilitySqliteClient {
    *  passing `null` clears a field; omitting a field leaves it unchanged. Returns true on
    *  successful row touch, false when the job row does not exist. Updates `updated_at_ms`. */
   updatePrDriftState(jobId: string, drift: PrDriftStatePatch): boolean;
+  /** List jobs with PR URLs that haven't been checked recently, ordered by
+   *  pr_drift_checked_at_ms ascending (NULLs first). Limit 50.
+   *  @param olderThanMs Epoch ms threshold; rows with pr_drift_checked_at_ms
+   *    >= olderThanMs are excluded. Defaults to Date.now() - 5*60*1000 (5 min). */
+  listJobsNeedingPrDriftRefresh(olderThanMs?: number): Array<{
+    job_id: string;
+    pr_url: string;
+    pr_head_sha: string | null;
+    pr_drift_checked_at_ms: number | null;
+    branch: string | null;
+  }>;
   removeJobs(jobIds: readonly string[]): number;
   readEpicRun(epicId: string): EpicRunRecord | null;
   listEpicRuns(): EpicRunRecord[];
@@ -2041,6 +2052,38 @@ class SqliteClient implements ObservabilitySqliteClient {
       const result = this.db.run(sql, params) as { changes?: number };
       return (result?.changes ?? 0) > 0;
     }, 'updatePrDriftState');
+  }
+
+  listJobsNeedingPrDriftRefresh(olderThanMs?: number): Array<{
+    job_id: string;
+    pr_url: string;
+    pr_head_sha: string | null;
+    pr_drift_checked_at_ms: number | null;
+    branch: string | null;
+  }> {
+    return withRetry(() => {
+      const threshold = olderThanMs ?? Date.now() - 5 * 60 * 1000;
+      const rows = this.db.query(`
+        SELECT job_id, pr_url, pr_head_sha, pr_drift_checked_at_ms,
+               JSON_EXTRACT(status_json, '$.branch') AS branch
+        FROM specialist_jobs
+        WHERE pr_url IS NOT NULL
+          AND (pr_drift_checked_at_ms IS NULL OR pr_drift_checked_at_ms < ?)
+        ORDER BY pr_drift_checked_at_ms ASC NULLS FIRST
+        LIMIT 50
+      `).all(threshold) as Array<Record<string, unknown>>;
+      const num = (v: unknown): number | null =>
+        v === null || v === undefined ? null : typeof v === 'bigint' ? Number(v) : typeof v === 'number' ? v : null;
+      const str = (v: unknown): string | null =>
+        v === null || v === undefined ? null : typeof v === 'string' ? v : null;
+      return rows.map((row) => ({
+        job_id: str(row.job_id) ?? '',
+        pr_url: str(row.pr_url) ?? '',
+        pr_head_sha: str(row.pr_head_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        branch: str(row.branch),
+      }));
+    }, 'listJobsNeedingPrDriftRefresh');
   }
 
   removeJobs(jobIds: readonly string[]): number {
