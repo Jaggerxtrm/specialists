@@ -8,6 +8,7 @@ import type { BeadsClient as BeadsClientType } from './beads.js';
 import type { RunArgs } from '../cli/run.js';
 import type { Specialist } from './schema.js';
 import { SpecialistRunner } from './runner.js';
+import { createObservabilitySqliteClient } from './observability-sqlite.js';
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -22,6 +23,14 @@ export interface LaunchSpecialistOptions {
   circuitBreaker: CircuitBreaker;
   beadsClient?: BeadsClientType;
   workingDirectory?: string;
+  basePin?: {
+    baseShaPinned: string;
+    baseShaObserved: string;
+    currentSha: string;
+    branch: string;
+    commitsBehind: number;
+    override: boolean;
+  };
   reusedFromJobId?: string;
   worktreeOwnerJobId?: string;
   effectiveBeadId?: string;
@@ -63,6 +72,8 @@ export async function launchSpecialist(opts: LaunchSpecialistOptions): Promise<v
       forceJob: opts.args.forceJob,
       permissionRequired: opts.perm,
       workingDirectory: opts.workingDirectory,
+      baseShaPinned: opts.basePin?.baseShaPinned,
+      baseShaPinnedAtMs: opts.basePin ? Date.now() : undefined,
       reusedFromJobId: opts.reusedFromJobId,
       worktreeOwnerJobId: opts.worktreeOwnerJobId,
       output_file: opts.specialist.specialist.output_file,
@@ -75,6 +86,19 @@ export async function launchSpecialist(opts: LaunchSpecialistOptions): Promise<v
       : undefined),
     onJobStarted: ({ id }) => {
       opts.onJobStarted?.({ id });
+      if (opts.basePin) {
+        const sqliteClient = createObservabilitySqliteClient(opts.workingDirectory);
+        try {
+          sqliteClient?.updatePrDriftState(id, {
+            pr_base_ref: opts.basePin.branch,
+            pr_base_sha: opts.basePin.baseShaObserved,
+            base_sha_pinned: opts.basePin.baseShaPinned,
+            base_sha_pinned_at_ms: Date.now(),
+          });
+        } finally {
+          sqliteClient?.close();
+        }
+      }
       process.stderr.write(dim(`[job started: ${id}]\n`));
       const handoffPath = process.env.SPECIALISTS_BG_JOB_ID_PATH;
       if (handoffPath) {

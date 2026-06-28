@@ -1252,6 +1252,8 @@ export class Supervisor {
         : {}),
       ...(runOptions.variables?.chain_root_bead_id ? { chain_root_bead_id: runOptions.variables.chain_root_bead_id } : {}),
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
+      ...(runOptions.baseShaPinned ? { base_sha_pinned: runOptions.baseShaPinned } : {}),
+      ...(runOptions.baseShaPinnedAtMs ? { base_sha_pinned_at_ms: runOptions.baseShaPinnedAtMs } : {}),
       ...(runOptions.workingDirectory
         ? { branch: resolveCurrentBranch(runOptions.workingDirectory) }
         : { branch: resolveCurrentBranch() }),
@@ -1281,6 +1283,8 @@ export class Supervisor {
       ...(runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {}),
       ...(runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {}),
       ...(runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {}),
+      ...(runOptions.baseShaPinned ? { base_sha_pinned: runOptions.baseShaPinned } : {}),
+      ...(runOptions.baseShaPinnedAtMs ? { base_sha_pinned_at_ms: runOptions.baseShaPinnedAtMs } : {}),
       ...((runOptions.worktreeOwnerJobId || runOptions.workingDirectory)
         ? {
             chain_kind: 'chain' as const,

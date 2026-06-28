@@ -10,7 +10,89 @@ import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
-import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, run } from '../../../src/cli/run.js';
+import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, resolveBasePin, run, type RunArgs } from '../../../src/cli/run.js';
+
+function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
+  return {
+    name: 'executor',
+    prompt: 'x',
+    noBeads: false,
+    noBeadNotes: false,
+    noKeepAlive: false,
+    background: false,
+    contextDepth: 3,
+    outputMode: 'human',
+    worktree: true,
+    forceJob: false,
+    forceStaleBase: false,
+    acceptStaleBase: false,
+    ...overrides,
+  };
+}
+
+function createBasePinRepo(): { repoDir: string; baseSha: string } {
+  const remoteDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+  const repoDir = childProcess.execSync('mktemp -d', { encoding: 'utf8' }).trim();
+  childProcess.execSync('git init --bare', { cwd: remoteDir });
+  childProcess.execSync('git init -b main', { cwd: repoDir });
+  childProcess.execSync('git config user.email test@example.com', { cwd: repoDir });
+  childProcess.execSync('git config user.name Test User', { cwd: repoDir });
+  fs.writeFileSync(`${repoDir}/README.md`, 'base\n');
+  childProcess.execSync('git add README.md && git commit -m base', { cwd: repoDir, shell: '/bin/bash' as never });
+  childProcess.execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, shell: '/bin/bash' as never });
+  childProcess.execSync('git push -u origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+  childProcess.execSync('git fetch origin main', { cwd: repoDir, shell: '/bin/bash' as never });
+  childProcess.execSync('git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main', { cwd: repoDir });
+  const baseSha = childProcess.execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+  return { repoDir, baseSha };
+}
+
+describe('run CLI base pinning', () => {
+  it('records matching declared base', () => {
+    const { repoDir, baseSha } = createBasePinRepo();
+    expect(resolveBasePin(makeRunArgs({ baseSha, baseRef: 'main' }), repoDir)).toEqual(expect.objectContaining({
+      baseShaPinned: baseSha,
+      baseShaObserved: baseSha,
+      currentSha: baseSha,
+      commitsBehind: 0,
+      override: false,
+    }));
+  });
+
+  it('refuses stale base by default', () => {
+    const { repoDir, baseSha } = createBasePinRepo();
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\nchange\n');
+    childProcess.execSync('git add README.md && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    expect(() => resolveBasePin(makeRunArgs({ baseSha, baseRef: 'main' }), repoDir)).toThrow('"error_code":"stale_base"');
+  });
+
+  it('accepts stale base with reason', () => {
+    const { repoDir, baseSha } = createBasePinRepo();
+    fs.writeFileSync(`${repoDir}/README.md`, 'base\nchange\n');
+    childProcess.execSync('git add README.md && git commit -m change', { cwd: repoDir, shell: '/bin/bash' as never });
+    expect(resolveBasePin(makeRunArgs({ baseSha, baseRef: 'main', acceptStaleBase: true, staleBaseReason: 'known divergence' }), repoDir)).toEqual(expect.objectContaining({
+      baseShaPinned: baseSha,
+      override: true,
+    }));
+  });
+
+  it('surfaces unknown base fetch failure', () => {
+    const { repoDir, baseSha } = createBasePinRepo();
+    expect(() => resolveBasePin(makeRunArgs({ baseSha, baseRef: 'missing' }), repoDir)).toThrow(/error_code.*base_fetch_failed/);
+
+    try {
+      resolveBasePin(makeRunArgs({ baseSha, baseRef: 'missing' }), repoDir);
+      throw new Error('expected base fetch refusal');
+    } catch (error) {
+      const envelope = JSON.parse((error as Error).message) as Record<string, unknown>;
+      expect(envelope.ok).toBe(false);
+      expect(envelope.error_code).toBe('base_fetch_failed');
+      expect(envelope.blocked_by).toEqual(['fetch_or_resolve_failure']);
+      expect(envelope.next_safe_action).toBe('verify network/remote/declared base ref is reachable, or rerun with --accept-stale-base --reason <text> if intentional');
+      expect(envelope.worktree_path).toBe(repoDir);
+    }
+  });
+});
 
 describe('run CLI', () => {
   const originalArgv = process.argv;
@@ -44,6 +126,33 @@ describe('run CLI', () => {
     process.argv = originalArgv;
     Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     vi.restoreAllMocks();
+  });
+
+  it('emits deprecation warning for --force-stale-base alias', async () => {
+    process.argv = ['node', 'specialists', 'run', 'code-review', '--prompt', 'hello', '--force-stale-base'];
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    vi.spyOn(BeadsClient.prototype, 'readBead').mockReturnValue(null);
+    vi.spyOn(SpecialistLoader.prototype, 'get').mockResolvedValue({
+      specialist: {
+        metadata: { name: 'code-review', version: '1.0.0' },
+        execution: { model: 'gemini', timeout_ms: 5000, mode: 'tool', permission_required: 'READ_ONLY' },
+        prompt: { task_template: 'Do $prompt' },
+      },
+    } as any);
+    vi.spyOn(SpecialistRunner.prototype, 'run').mockResolvedValue({
+      output: 'ok',
+      backend: 'test',
+      model: 'gemini',
+      durationMs: 1,
+      specialistVersion: '1.0.0',
+      promptHash: 'hash',
+    });
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await run();
+
+    expect(stderrWrite).toHaveBeenCalledWith('[deprecated] --force-stale-base is deprecated; use --accept-stale-base --reason <text>. Aliased for one release.\n');
   });
 
   it('falls through from noise-only unstaged files to branch-vs-base reviewer diff', () => {
