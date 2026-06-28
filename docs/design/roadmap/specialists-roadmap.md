@@ -215,6 +215,8 @@ Each opportunity (a) is implementable without the substrate daemon or `container
 
 **Opportunity 1 — Worktree lease shimmed onto chain-identity.** Add `worktree_lease_held_by` + `worktree_lease_state` to the chain-identity/status row (today jobs; later containers). Writer-step (executor, debugger) + lease `free` → acquire on dispatch, release on `agent_end` (supervisor.ts:1658). Writer-step + lease `held` → queue (`WAIT: lease held by <job>`). Read-only step → do not touch the lease; bind to the path (Opp 2). Closes Asymmetry 2 + much of 4/6; `--worktree`/`--job` mutual-exclusion becomes derivable from lease state. **Reads forward:** §6.9.6 *is* this column moved job→container; migration is rename + ownership transfer.
 
+> **[2026-06-28 ownership note — specialists-05q.5].** Lease arbitration itself is **not owned by specialists**. Container/worktree leasing belongs to **bd merge-slot / substrate lease** (substrate §6.9.6, exposed today via `bd merge-slot` semantics). Specialists does **not** introduce new `sp lease*` columns; the runtime row carries a foreign-key-style pointer to the lease owner (today: the chain-identity row references the bd-side slot; tomorrow: `containers.lease_*` per substrate). Specialists' role is to *observe* and *surface* lease state in `sp ps` / `sp doctor` / job feed, never to hold or arbitrate it. See §B for the full ownership split.
+
 **Opportunity 2 — READ_ONLY specialists bind by path, decoupled from owner keep-alive.** Today reviewer/code-sanity via `--job <owner>` requires the owner alive (waiting) — for the *workspace handle*, not LLM-state. Patch: when the dispatched specialist is `permission: READ_ONLY`, runner binds to the worktree **path** stored on `--job <owner>` (read once, cached) instead of requiring the owner live. Owner can be `done`/`closed`/killed; the read-only reviewer enters on its own pi session, reads the diff against the lease base, produces evidence. `--job` becomes a **workspace pointer**, not a **liveness pointer**, for read-only roles. Closes Asymmetry 6 + reduces the forgotten-`sp finalize` leak. **Reads forward:** §6.9.6 read-only steps don't acquire the lease and don't require a writer live — identical semantics; when containers land the lookup target moves job→container, surface identical. **This is the highest-leverage runtime patch. Land first.**
 
 **Opportunity 3 — Persist resolved chain shape as data.** Add a thin `chain_shapes` table (or `~/.specialists/chains/<chain-id>.json`). **[adjusted] The shape matches `resolved_chain_json` (§6.9.2): Layer-1 domain steps + Layer-2 overlaid gates, reached/pending per step** — so migration is a true rename, not a content transform:
@@ -269,6 +271,8 @@ The shape is persisted (Opp 3) on approve; dispatch follows it. Closes Asymmetry
 ```
 
 `--force-` taught "this is normal, override"; `--accept- --reason` makes it deliberate and audit-traceable. Closes B5. **Reads forward:** §6.4 precondition gate (precondition violation, not §5.10 recovery); the envelope matches channels.md §10.2; `--accept --reason` survives into `sb dispatch --allow-unready --reason`. **Stretch (non-blocking):** patch-id equivalence detection in `evaluateMergeWorthiness` — if the sibling's commits are patch-id-equal to commits already on master under a different SHA, the guard does not fire (addresses the over-fire root cause, §9.2).
+
+> **[2026-06-28 extension — specialists-05q.5, absorbs `specialists-05q.3`].** The stale-base gate also owns **fetch-and-pin base SHA** semantics — this is *not* a separate opportunity, it lives inside Opp 7. On dispatch the runtime runs `git fetch <remote> <base-branch>` once, resolves the tip to a SHA, and records that SHA on the chain-identity/observability row as `base_sha_pinned` + `base_sha_pinned_at_ms` (durable migration shape in §B). All subsequent staleness checks compare against the *pinned* SHA, not a re-read of `origin/master` HEAD — this eliminates the "base moved mid-chain → false stale" race that drove most over-firing. `--accept-stale-base --reason` continues to override; the refusal envelope gains `base_sha_pinned`, `base_sha_observed`, `commits_behind` fields. **Specialists owns the pinning** because it is a *job-observability* fact (which SHA this run measured against); the *fetch primitive* itself remains in xt (xtrm-tools epic `xtrm-lk4on`). No new bd column, no new substrate entity — pinning is an additive column on the existing job/observability row, mirrored later as `containers.base_sha_pinned` per the §B migration table.
 
 **Opportunity 8 — `step_completed` event with next-step recommendation.** On pi `agent_end`, extend the status row: look up Opp 3's resolved-shape row, find the just-completed step, compute the next from the template, emit `runner_event` kind `step_completed` with `{ completed, next, next_dispatch_command }`. `sp result` (§5.2) and `sp chain` (Opp 4) read it. **[recalibrated/principle]** This is also where **D2** lands: the `step_completed` for an executor carries the executor's *claimed* result, but the chain does not advance on it — it advances when the **independent gate** (code-sanity/local-validation) persists its verdict (§3.1). The executor's self-report is informational; the gate's evidence is authoritative. **[absorbed — bridge until channels v0]** Per `channels.md` §11, the channels-v0 `kind=verdict` discriminated-union message subsumes this event; when channels v0 ships, `step_completed` retires and the reviewer-↔-executor loop runs end-to-end via `verdict` + `finding` channel messages with no `sp resume`. Opp 8 supplies the same next-step recommendation in event form until then.
 
@@ -1191,3 +1195,64 @@ If an operator objects during the announcement window, the objection itself beco
 | R3 follow-on: "each gap blocks cutover instead of becoming one bridged edge" | §A.4 makes objections substrate issues, so blocked-by-gap becomes tracked work, not a stall |
 | Synthesis cross-cutting A: "deferral compound" | §A.3 carrying-cost ledger surfaces the cost of each deferred retirement so the compound cost is visible per-release, not hidden |
 | Synthesis cross-cutting D: "stage acceptance ≠ operator adoption" | §A.3 forensic instrumentation makes adoption measurable — a Stage isn't done when its code ships, it's done when bridges retire because operators stopped using them |
+
+## §B. Durable runtime track and PR/base drift ownership split (added 2026-06-28, specialists-05q)
+
+> Companion epic: **specialists-05q** (this repo). Children: `.1` durable PR/base drift fields, `.2` attention surface, `.3` fetch-and-pin (absorbed into Opp 7 per §3.2), `.4` dead-job audit, `.5` (this roadmap edit), `.6` validation suite. Paired upstream: **`xtrm-lk4on`** (xtrm-tools — git/worktree/PR primitives) and **`xtrm-2zd`** (xtrm/Mercury collaborator doc — container composition: webhooks, cron, bot identity, fork topology, see `~/dev/xtrm/docs/devops/mercury-devops-collaborator.md` §4–7).
+
+### §B.1 Why this section exists
+
+PR/base drift work straddles four owners. Without an explicit split it gravitates to specialists (because that's where operators feel the pain) and the durable home is missed — repeating the §A "permanent bridge" failure mode. This section pins ownership *before* any of the §3.2 work above lands new columns, refusal envelopes, or restart audits, so each child of `specialists-05q` knows whose surface it extends.
+
+### §B.2 Ownership split
+
+| Owner | Surface | What it owns | What it does NOT own |
+|---|---|---|---|
+| **xt (`xtrm-tools`, epic `xtrm-lk4on`)** | git, worktree, PR | git/worktree primitives, `xt end`, branch/PR creation, fetch-base, sibling-branch detection, patch-id equivalence | job-state observability, attention scoring, dead-job declaration |
+| **sp (specialists, epic `specialists-05q`)** | job runtime + observability | job-row PR/base drift fields, `sp ps` / `sp doctor` attention surface, base SHA pin recording, dead-job audit + restart, `--accept-stale-base --reason` UX | the lease itself, the merge slot, the fetch primitive, container composition |
+| **bd / substrate** | leases + slots | `bd merge-slot` lease, container lease (substrate §6.9.6), slot arbitration | telemetry, attention scoring, dispatch ergonomics |
+| **xtrm / Mercury collaborator doc (`~/dev/xtrm/docs/devops/mercury-devops-collaborator.md` §4–7, epic `xtrm-2zd`)** | container composition | webhook topology, cron triggers, bot identity, fork topology, what *constitutes* a container in the collaborator model | per-job lease state, per-job observability, per-job dispatch |
+
+**Reading rule.** When a child of `specialists-05q` (or any future drift bead) needs a primitive that is **not** in the sp column, it does NOT add the primitive to specialists. It (a) opens / extends a bead in the owning epic above, (b) cross-links via `bd dep add … --type tracks`, and (c) consumes the upstream surface read-only. This prevents the "specialists absorbs every adjacent concern" failure mode flagged in §A.1.
+
+### §B.3 Durable migration table
+
+Every row below states **bridge home** (where the data/behavior lives pre-substrate), **substrate target** (where it ends up per the §6.9 substrate model), and **migration shape** (`rename` / `attach` / `retire`) consistent with §11 and §A.2. No row introduces a new `sp lease*` column.
+
+| Concern | Bridge home (today) | Substrate target | Migration shape | Evidence surfaces | Owning epic |
+|---|---|---|---|---|---|
+| **PR drift fields** (PR #, head SHA, base ref, drift status, last-refresh ms) | additive columns on the job-observability row (specialists-side) | `containers.pr_*` (substrate §6.9.6 / §6.9.7) | **rename** (column-for-column; ownership transfers job→container) | `sp ps --json` (jobs with `pr_*` populated), `sp doctor` "PR drift" check, job feed `pr_drift_observed` event | `specialists-05q.1` |
+| **base_sha pin** (pinned SHA + pinned-at ms; refusal envelope fields `base_sha_pinned` / `base_sha_observed` / `commits_behind`) | additive columns on the job-observability row + refusal envelope fields per Opp 7 extension above | `containers.base_sha_pinned` + `containers.base_sha_pinned_at_ms`; refusal envelope unchanged | **rename** (column move job→container; refusal envelope shape stable) | `sp ps --json` (`base_sha_pinned`), `sp doctor` "stale base" check, `--accept-stale-base --reason` audit trail, `xtrm.forensic.v1` `precondition.stale_base.*` | `specialists-05q.3` (absorbed into Opp 7); fetch primitive in `xtrm-lk4on` |
+| **needs-attention view** (per-job attention score: stale base, drifted PR, dead-job suspect, missing lease holder) | derived view in `sp ps` / `sp doctor` reading existing job-observability columns; specialists computes; surfaces JSON + human | derived view in substrate console reading `containers.*`; the *score* is bridge-only — substrate may project a different attention model in §6.9.x | **retire** (specialists-side derived view retires when substrate console ships its own attention surface; specialists keeps the JSON contract while bridges exist per §A.3) | `sp ps --json` (`attention_reasons[]`), `sp doctor --attention`, job feed `attention_raised` / `attention_cleared` events, Prometheus low-cardinality projection (Opp 18) | `specialists-05q.2`; container-side composition in `xtrm-2zd` |
+| **dead-job audit** (restart-time scan: jobs marked running with no pi process, no recent heartbeat, no lease activity → declare `dead` and emit audit event) | restart-time hook in specialists runtime + audit table column on the job-observability row | substrate daemon's container-state reconciler (§6.9.x) absorbs the audit; the column moves job→container as `containers.lifecycle_audit_*` | **attach** then **retire** (today: specialists owns the audit because no daemon; once substrate daemon ships, the audit logic is retired — the column is renamed, the *logic* is dropped) | `sp ps --json` (`lifecycle_state=dead`, `lifecycle_audit_reason`), `sp doctor` "dead jobs" check, audit JSONL artifact, `xtrm.forensic.v1` `lifecycle.dead_declared` | `specialists-05q.4`; substrate daemon in `kj651` follow-up |
+
+**Cross-row invariant.** None of the four rows above introduces a new lease column on the specialists side. The lease holder, when needed, is **read** from the bd / substrate side (today: `bd merge-slot` query; tomorrow: `containers.lease_*`) and **mirrored read-only** onto the attention surface — not stored as authoritative state on the job row. This is the §B.2 ownership rule in schema form.
+
+### §B.4 Evidence surfaces (per §3 CONSTRAINTS)
+
+All child work under `specialists-05q` must name evidence in these surfaces before it can close:
+
+- **`sp ps`** — both human (terminal-aesthetic) and `--json` (machine-consumable) outputs surface the new fields under the existing tokens/cost/state line pattern (per §3.2 Opp 8 / Surface Coverage §v2.0).
+- **`sp doctor`** — gains the four checks named in §B.3 (PR drift, stale base, attention, dead jobs); each check is independently runnable and JSON-emitable.
+- **Job/specialist feed** — gains the additive forensic-event families in §B.3 right column; emitted under `xtrm.forensic.v1` envelopes per Opp 18 contract; persisted to `specialist_forensic_events`.
+- **Prometheus projection** — low-cardinality only per `docs/telemetry/prometheus-projection-contract.md`; never `job_id`/`bead_id` as labels; PR/base/attention/dead-job counters are by `event_family` + `outcome` only.
+
+### §B.5 Bridge cost per §A
+
+Each row in §B.3 carries a §A.3 carrying cost. Owners-of-cutover:
+
+| Bridge | Class (§A.2) | Owner-of-cutover | Retirement gate |
+|---|---|---|---|
+| Specialists-side PR drift columns | Migration bridge | specialists-runtime maintainer | `containers.pr_*` projection passes drift-check in CI; `xtrm.forensic.v1` `pr_drift_observed` event count from specialists-side projection drops below threshold for 7d |
+| Specialists-side base_sha pin columns | Migration bridge | specialists-runtime maintainer | `containers.base_sha_pinned` projection passes; refusal envelope unchanged across the cut |
+| Specialists-side attention view | Throwaway diagnostic | specialists-CLI maintainer | substrate console ships its own attention surface; operator adoption confirmed via `attention_*` event source-family shift |
+| Specialists-side dead-job audit logic | Throwaway diagnostic | specialists-runtime maintainer | substrate daemon ships container-state reconciler; `lifecycle.dead_declared` source-family shifts from specialists to substrate |
+
+Per §A.4 each retirement runs the 7-day announcement window; the column renames are atomic with the substrate landing commit so no row persists with both old and new column names live.
+
+### §B.6 What this section does NOT do
+
+- Does not modify the §3.2 Opp 1 / Opp 7 wording beyond the inline 2026-06-28 ownership / extension notes above.
+- Does not introduce a new opportunity number — fetch-and-pin is absorbed into Opp 7, lease ownership clarifies Opp 1, attention/audit ride existing Opp 8 / `sp doctor` surfaces.
+- Does not commit specialists to any new substrate-side schema; substrate targets are *informational* per §11 migration shape.
+- Does not transfer ownership of git/worktree/PR primitives to specialists; those stay in `xtrm-lk4on` (xt) and `xtrm-2zd` (collaborator doc).
