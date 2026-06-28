@@ -77,4 +77,33 @@ describe('doctor --pr-drift', () => {
     const parsed = JSON.parse(output.join('\n')) as { jobs: unknown[] };
     expect(parsed.jobs).toHaveLength(0);
   });
+
+  it('log emits gh_stderr_hash=empty on success, 8 hex chars on failure', async () => {
+    mockListJobsNeedingPrDriftRefresh.mockReturnValue([
+      { job_id: 'job-c', pr_url: 'https://github.com/o/r/pull/3', pr_head_sha: null, pr_drift_checked_at_ms: null, branch: 'main' },
+    ]);
+    vi.mocked(execSync).mockReturnValue(JSON.stringify({ state: 'OPEN', mergeStateStatus: 'CLEAN', url: 'https://github.com/o/r/pull/3' }));
+
+    const errs: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((msg: string) => errs.push(msg ?? ''));
+
+    const { run } = await import('../../../src/cli/doctor.js');
+    await run(['--pr-drift', '--json']);
+
+    // success path: gh_stderr_hash should be empty string
+    const successLog = errs.map((e) => { try { return JSON.parse(e); } catch { return null; } }).find((l) => l?.event === 'refresh_completed');
+    expect(successLog).toBeDefined();
+    expect(successLog!.gh_stderr_hash).toBe('');
+
+    vi.mocked(execSync).mockImplementation(() => { throw new Error('boom'); });
+    errs.length = 0;
+    vi.restoreAllMocks();
+    vi.spyOn(console, 'error').mockImplementation((msg: string) => errs.push(msg ?? ''));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await run(['--pr-drift', '--json']);
+    const failLog = errs.map((e) => { try { return JSON.parse(e); } catch { return null; } }).find((l) => l?.event === 'refresh_failed');
+    expect(failLog).toBeDefined();
+    expect(failLog!.gh_stderr_hash).toMatch(/^[0-9a-f]{8}$/);
+  });
 });

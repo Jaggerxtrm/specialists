@@ -83,4 +83,31 @@ describe('observability-sqlite — listJobsNeedingPrDriftRefresh', () => {
     const rows = client.listJobsNeedingPrDriftRefresh();
     expect(rows).toHaveLength(50);
   });
+
+  it('olderThanMs default excludes a job checked 1 minute ago', () => {
+    db = new Database(tempDbPath);
+    initSchema(db);
+    const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+    sqliteClient = client;
+
+    const now = Date.now();
+    seedJob(client, 'job-fresh', { pr_url: 'https://github.com/o/r/pull/9', pr_drift_checked_at_ms: now - 60_000 });
+
+    const rows = client.listJobsNeedingPrDriftRefresh();
+    expect(rows).toHaveLength(0);
+  });
+
+  it('olderThanMs explicit override includes a job checked 1 minute ago', () => {
+    db = new Database(tempDbPath);
+    initSchema(db);
+    const client = createObservabilitySqliteClientAtPath(tempDbPath)!;
+    sqliteClient = client;
+
+    const now = Date.now();
+    seedJob(client, 'job-fresh2', { pr_url: 'https://github.com/o/r/pull/10', pr_drift_checked_at_ms: now - 60_000 });
+
+    const rows = client.listJobsNeedingPrDriftRefresh(now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.job_id).toBe('job-fresh2');
+  });
 });

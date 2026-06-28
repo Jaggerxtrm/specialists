@@ -958,20 +958,15 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
 
     for (const job of jobs) {
       const startedAt = Date.now();
-      const eventBase = {
-        component: 'pr_drift' as const,
-        job_id: job.job_id,
-        branch: job.branch,
-        worktree_path: null,
-        xt_command: `gh pr view ${job.pr_url}`,
-        classification: 'unknown' as string,
-        action: 'refresh' as const,
-        outcome: 'unknown' as string,
-        checked_at_ms: startedAt,
-      };
 
       // emit structured log: refresh_attempted
-      console.error(JSON.stringify({ ...eventBase, event: 'refresh_attempted' }));
+      console.error(JSON.stringify({
+        component: 'pr_drift' as const,
+        event: 'refresh_attempted',
+        job_id: job.job_id,
+        duration_ms: 0,
+        gh_stderr_hash: '',
+      }));
 
       const result = await refreshPrDriftForJob({
         jobId: job.job_id,
@@ -982,16 +977,16 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
 
       const durationMs = Date.now() - startedAt;
       const classification = result.classification;
-      const outcome = result.ok ? 'completed' : 'failed';
+      const ghStderrHash = result.error_summary ? result.error_summary.slice(0, 8) : '';
 
       // emit structured log: refresh_completed or refresh_failed
-      const eventOut = {
-        ...eventBase,
-        event: result.ok ? ('refresh_completed' as const) : ('refresh_failed' as const),
-        classification,
-        outcome,
+      const eventOut: Record<string, unknown> = {
+        component: 'pr_drift',
+        event: result.ok ? 'refresh_completed' : 'refresh_failed',
+        job_id: job.job_id,
         duration_ms: durationMs,
-        ...(result.error_summary ? { error_summary: result.error_summary } : {}),
+        gh_stderr_hash: ghStderrHash,
+        pr_classification: classification,
       };
       console.error(JSON.stringify(eventOut));
 
