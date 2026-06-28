@@ -58,6 +58,10 @@ export interface RunArgs {
   epicId?: string;
   /** Allow provisioning from a potentially stale base branch. */
   forceStaleBase: boolean;
+  acceptStaleBase: boolean;
+  staleBaseReason?: string;
+  baseSha?: string;
+  baseRef?: string;
 }
 
 async function parseArgs(argv: string[]): Promise<RunArgs> {
@@ -65,7 +69,7 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   if (!name || name.startsWith('--')) {
     console.error(
       'Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' +
-      '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--force-stale-base] [--context-depth <n>] [--model <model>] ' +
+      '[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] ' +
       '[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]',
     );
     process.exit(1);
@@ -86,6 +90,10 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
   let forceJob = false;
   let epicId: string | undefined;
   let forceStaleBase = false;
+  let acceptStaleBase = false;
+  let staleBaseReason: string | undefined;
+  let baseSha: string | undefined;
+  let baseRef: string | undefined;
 
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
@@ -112,10 +120,25 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
     if (token === '--job'            && argv[i + 1]) { reuseJobId   = argv[++i]; continue; }
     if (token === '--force-job')     { forceJob     = true; continue; }
     if (token === '--epic'           && argv[i + 1]) { epicId       = argv[++i]; continue; }
-    if (token === '--force-stale-base') { forceStaleBase = true; continue; }
+    if (token === '--base-sha'       && argv[i + 1]) { baseSha      = argv[++i]; continue; }
+    if (token === '--base-ref'       && argv[i + 1]) { baseRef      = argv[++i]; continue; }
+    if (token === '--reason'         && argv[i + 1]) { staleBaseReason = argv[++i]; continue; }
+    if (token === '--accept-stale-base') { acceptStaleBase = true; continue; }
+    if (token === '--force-stale-base') {
+      process.stderr.write('[deprecated] --force-stale-base is deprecated; use --accept-stale-base --reason <text>. Aliased for one release.\n');
+      forceStaleBase = true;
+      acceptStaleBase = true;
+      staleBaseReason ??= 'deprecated --force-stale-base';
+      continue;
+    }
   }
 
   // ── Mutual exclusion ─────────────────────────────────────────────────────────
+  if (acceptStaleBase && !staleBaseReason?.trim()) {
+    console.error('Error: --accept-stale-base requires --reason <text>.');
+    process.exit(1);
+  }
+
   if (worktree && reuseJobId !== undefined) {
     console.error('Error: --worktree and --job are mutually exclusive. Use one or the other.');
     process.exit(1);
@@ -160,7 +183,8 @@ async function parseArgs(argv: string[]): Promise<RunArgs> {
 
   return {
     name, prompt, beadId, model, noBeads, noBeadNotes, keepAlive, noKeepAlive,
-    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, epicId, forceStaleBase,
+    background, contextDepth, outputMode, worktree, reuseJobId, forceJob, epicId,
+    forceStaleBase, acceptStaleBase, staleBaseReason, baseSha, baseRef,
   };
 }
 
@@ -305,7 +329,7 @@ function assertNoStaleBaseSiblings(beadId: string, forceStaleBase: boolean): voi
 
     if (staleSiblings.length === 0) return;
     if (forceStaleBase) {
-      process.stderr.write(dim(`[stale-base guard bypassed: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]\n`));
+      process.stderr.write(dim(`[stale-base guard accepted: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]\n`));
       return;
     }
 
@@ -317,7 +341,7 @@ function assertNoStaleBaseSiblings(beadId: string, forceStaleBase: boolean): voi
       `Refusing worktree dispatch for bead '${beadId}': epic '${epicId}' has unmerged sibling chains with substantive commits.\n` +
       `${lines}\n` +
       `Publish the epic first: sp epic merge ${epicId}\n` +
-      `If intentional, rerun with --force-stale-base.`,
+      `If intentional, rerun with --accept-stale-base --reason <text>.`, 
     );
   } finally {
     sqliteClient.close();
@@ -343,7 +367,7 @@ function resolveWorkingDirectory(
 } {
   if (args.worktree) {
     // args.beadId is guaranteed non-null here (parseArgs validates this)
-    assertNoStaleBaseSiblings(args.beadId!, args.forceStaleBase);
+    assertNoStaleBaseSiblings(args.beadId!, args.acceptStaleBase);
 
     const info = provisionWorktree({
       beadId: args.beadId!,
@@ -500,6 +524,83 @@ function formatFooterModel(backend: string | undefined, model: string | undefine
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+interface BasePinResult {
+  baseShaPinned: string;
+  baseShaObserved: string;
+  currentSha: string;
+  branch: string;
+  commitsBehind: number;
+  override: boolean;
+}
+
+function runGit(cwd: string, args: string[]): string {
+  return execSync(['git', ...args.map(shellQuote)].join(' '), {
+    cwd,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+    timeout: 10_000,
+  }).trim();
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function runGitForBasePin(cwd: string, args: string[], runArgs: RunArgs): string {
+  try {
+    return runGit(cwd, args);
+  } catch (error) {
+    const envelope = {
+      ok: false,
+      error_code: 'base_fetch_failed',
+      blocked_by: ['fetch_or_resolve_failure'],
+      next_safe_action: 'verify network/remote/declared base ref is reachable, or rerun with --accept-stale-base --reason <text> if intentional',
+      base_ref: runArgs.baseRef ?? null,
+      base_sha: runArgs.baseSha ?? null,
+      worktree_path: cwd,
+      underlying_error: formatErrorMessage(error),
+    };
+    throw new Error(JSON.stringify(envelope));
+  }
+}
+
+export function resolveBasePin(args: RunArgs, worktreePath?: string): BasePinResult | undefined {
+  if (!worktreePath || (!args.worktree && !args.baseSha)) return undefined;
+  const baseRef = args.baseRef?.trim();
+  if (baseRef) {
+    runGitForBasePin(worktreePath, ['fetch', 'origin', baseRef], args);
+  } else {
+    runGitForBasePin(worktreePath, ['fetch', 'origin'], args);
+  }
+  const baseShaObserved = runGitForBasePin(worktreePath, ['rev-parse', baseRef ? 'FETCH_HEAD' : 'refs/remotes/origin/HEAD'], args);
+  const baseShaPinned = args.baseSha ?? baseShaObserved;
+  const currentSha = runGitForBasePin(worktreePath, ['rev-parse', 'HEAD'], args);
+  const branch = runGitForBasePin(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'], args);
+  const commitsBehindText = runGitForBasePin(worktreePath, ['rev-list', '--count', `${currentSha}..${baseShaPinned}`], args);
+  const commitsBehind = Number.parseInt(commitsBehindText, 10) || 0;
+  const hasStaleBase = currentSha !== baseShaPinned || baseShaObserved !== baseShaPinned;
+  if (!hasStaleBase) {
+    return { baseShaPinned, baseShaObserved, currentSha, branch, commitsBehind, override: false };
+  }
+  if (args.acceptStaleBase) {
+    process.stderr.write(dim(`[stale-base guard accepted: base_sha_pinned=${baseShaPinned} current_sha=${currentSha} reason=${args.staleBaseReason}]\n`));
+    return { baseShaPinned, baseShaObserved, currentSha, branch, commitsBehind, override: true };
+  }
+  const envelope = {
+    ok: false,
+    error_code: 'stale_base',
+    blocked_by: ['worktree_base_mismatch'],
+    next_safe_action: 'Fetch/recreate worktree from declared base, or rerun with --accept-stale-base --reason <text> if divergence is intentional.',
+    base_sha_pinned: baseShaPinned,
+    base_sha_observed: baseShaObserved,
+    current_sha: currentSha,
+    branch,
+    worktree_path: worktreePath,
+    commits_behind: commitsBehind,
+  };
+  throw new Error(JSON.stringify(envelope));
 }
 
 function extractReviewedJobIdOverride(prompt: string): string | undefined {
@@ -837,12 +938,14 @@ export async function run(): Promise<void> {
     jobsDir,
   });
 
+  const effectiveArgs = { ...args, worktree: useWorktree };
   const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory(
-    { ...args, worktree: useWorktree },
+    effectiveArgs,
     jobsDir,
     perm,
     (jobId) => statusReader.readStatus(jobId),
   );
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory);
   await statusReader.dispose();
 
   if (!effectiveBeadId && inferredBeadId) {
@@ -901,6 +1004,7 @@ export async function run(): Promise<void> {
     circuitBreaker,
     beadsClient,
     workingDirectory,
+    basePin,
     reusedFromJobId,
     worktreeOwnerJobId,
     effectiveBeadId,
