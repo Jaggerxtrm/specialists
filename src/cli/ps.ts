@@ -30,6 +30,7 @@ interface PsArgs {
   active: boolean;
   running: boolean;
   mine: boolean;
+  needsAttention: boolean;
   beadFilter?: string;
   sinceMs?: number;
   nodeId?: string;
@@ -60,6 +61,7 @@ interface JobNode {
   startup_payload_json?: string | null;
   payload_kb?: string;
   payload_tokens?: string;
+  pr_classification?: string;
   children: JobNode[];
 }
 
@@ -145,7 +147,7 @@ function parseSinceArg(value: string): number | undefined {
 function parseArgs(argv: string[]): PsArgs {
   const allowedBooleanFlags = new Set([
     '--json', '--all', '--follow', '-f', '--include-terminal', '--include-merged',
-    '--include-cleaned', '--active', '--running', '--mine', '--health',
+    '--include-cleaned', '--active', '--running', '--mine', '--health', '--needs-attention',
   ]);
   const valueFlags = new Set(['--node', '--bead', '--since']);
   let nodeId: string | undefined;
@@ -194,6 +196,7 @@ function parseArgs(argv: string[]): PsArgs {
     running: argv.includes('--running') || argv.includes('--active'),
     mine: argv.includes('--mine'),
     health: argv.includes('--health'),
+    needsAttention: argv.includes('--needs-attention'),
     beadFilter,
     sinceMs,
     nodeId,
@@ -240,6 +243,7 @@ function toJobNode(job: SupervisorStatus & { is_dead?: boolean }): JobNode {
     context_health: job.context_health,
     metrics: job.metrics,
     startup_payload_json: job.startup_payload_json ?? null,
+    pr_classification: job.pr_classification,
     children: [],
   };
 }
@@ -630,7 +634,10 @@ function renderJobLine(
   // so strip that leading pair before grafting.
   const themed = themedJobRow(consoleJob, width, 0, false);
   const body = themed.startsWith('  ') ? themed.slice(2) : themed;
-  return `${prefix}${connector}${body}`;
+  const driftBadge = job.pr_classification && job.pr_classification !== 'clean'
+    ? red(` [drift:${job.pr_classification}]`)
+    : '';
+  return `${prefix}${connector}${body}${driftBadge}`;
 }
 
 function renderTreeNodes(
@@ -1067,6 +1074,9 @@ function renderJson(
       startup_payload_json: job.startup_payload_json ?? null,
       payload_kb: formatPayloadStats(job.startup_payload_json).payload_kb,
       payload_tokens: formatPayloadStats(job.startup_payload_json).payload_tokens,
+      attention_reasons: [
+        ...(job.pr_classification && job.pr_classification !== 'clean' ? [`pr_drift:${job.pr_classification}`] : []),
+      ],
     })),
     nodes,
     trees,
@@ -1110,6 +1120,7 @@ function render(args: PsArgs): void {
     if (args.sinceMs !== undefined && job.started_at_ms < args.sinceMs) return false;
     if (args.running && !ACTIVE_STATES.includes(job.status)) return false;
     if (mineBeadIds && (!job.bead_id || !mineBeadIds.has(job.bead_id))) return false;
+    if (args.needsAttention && (!job.pr_classification || job.pr_classification === 'clean')) return false;
 
     const cleaned = isPsCleaned(job);
 
