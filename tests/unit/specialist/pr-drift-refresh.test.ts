@@ -89,7 +89,7 @@ describe('pr-drift-refresh', () => {
     expect(result.error_kind).toBe('parse_error');
   });
 
-  it('mergeStateStatus=BEHIND → classification=behind', async () => {
+  it('mergeStateStatus=BEHIND → classification=needs-rebase', async () => {
     vi.mocked(execSync).mockReturnValue(JSON.stringify({
       state: 'OPEN',
       mergeStateStatus: 'BEHIND',
@@ -103,9 +103,9 @@ describe('pr-drift-refresh', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.classification).toBe('behind');
+    expect(result.classification).toBe('needs-rebase');
     const patch = mockUpdatePrDriftState.mock.calls[0]![1] as Record<string, unknown>;
-    expect(patch.pr_classification).toBe('behind');
+    expect(patch.pr_classification).toBe('needs-rebase');
   });
 
   it('mergeStateStatus=DIRTY → classification=conflicted', async () => {
@@ -127,7 +127,26 @@ describe('pr-drift-refresh', () => {
     expect(patch.pr_classification).toBe('conflicted');
   });
 
-  it('state=merged → classification=dead', async () => {
+  it('mergeStateStatus=BLOCKED → classification=blocked', async () => {
+    vi.mocked(execSync).mockReturnValue(JSON.stringify({
+      state: 'OPEN',
+      mergeStateStatus: 'BLOCKED',
+      url: 'https://github.com/owner/repo/pull/42',
+    }));
+
+    const result = await refreshPrDriftForJob({
+      jobId: 'job-blocked',
+      prUrl: 'https://github.com/owner/repo/pull/42',
+      client: mockClient as unknown as import('../../../src/specialist/observability-sqlite.js').ObservabilitySqliteClient,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.classification).toBe('blocked');
+    const patch = mockUpdatePrDriftState.mock.calls[0]![1] as Record<string, unknown>;
+    expect(patch.pr_classification).toBe('blocked');
+  });
+
+  it('state=MERGED → classification=stale', async () => {
     vi.mocked(execSync).mockReturnValue(JSON.stringify({
       state: 'MERGED',
       mergeStateStatus: 'CLEAN',
@@ -141,7 +160,24 @@ describe('pr-drift-refresh', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.classification).toBe('dead');
+    expect(result.classification).toBe('stale');
+  });
+
+  it('state=CLOSED → classification=stale', async () => {
+    vi.mocked(execSync).mockReturnValue(JSON.stringify({
+      state: 'CLOSED',
+      mergeStateStatus: 'CLEAN',
+      url: 'https://github.com/owner/repo/pull/42',
+    }));
+
+    const result = await refreshPrDriftForJob({
+      jobId: 'job-closed',
+      prUrl: 'https://github.com/owner/repo/pull/42',
+      client: mockClient as unknown as import('../../../src/specialist/observability-sqlite.js').ObservabilitySqliteClient,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.classification).toBe('stale');
   });
 
   it('unparseable prUrl → parse_error with hashed summary', async () => {

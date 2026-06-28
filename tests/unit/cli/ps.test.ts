@@ -551,7 +551,7 @@ describe('ps CLI — run()', () => {
     createJob(tempDir, 'attention01', {
       pid: process.pid,
       status: 'running',
-      pr_classification: 'behind',
+      pr_classification: 'needs-rebase',
     });
     createJob(tempDir, 'attention02', {
       pid: process.pid,
@@ -570,7 +570,7 @@ describe('ps CLI — run()', () => {
     const { run } = await import('../../../src/cli/ps.js');
     await run();
     const clean = stripAnsi(output.join('\n'));
-    expect(clean).toContain('[drift:behind]');
+    expect(clean).toContain('[drift:needs-rebase]');
     expect(clean).not.toContain('attention02');
     expect(clean).not.toContain('attention03');
   }, TEST_TIMEOUT_MS);
@@ -579,7 +579,7 @@ describe('ps CLI — run()', () => {
     createJob(tempDir, 'json-drift', {
       pid: process.pid,
       status: 'running',
-      pr_classification: 'behind',
+      pr_classification: 'needs-rebase',
     });
     process.argv = ['node', 'specialists', 'ps', '--json'];
     const output: string[] = [];
@@ -592,7 +592,7 @@ describe('ps CLI — run()', () => {
     const job = parsed.flat.find((j: Record<string, unknown>) => j.id === 'json-drift');
     expect(job).toBeDefined();
     expect(Array.isArray(job.attention_reasons)).toBe(true);
-    expect(job.attention_reasons).toContain('pr_drift:behind');
+    expect(job.attention_reasons).toContain('pr_drift:needs-rebase');
   }, TEST_TIMEOUT_MS);
 
 });

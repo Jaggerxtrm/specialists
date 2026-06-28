@@ -966,6 +966,8 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
         job_id: job.job_id,
         duration_ms: 0,
         gh_stderr_hash: '',
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt,
       }));
 
       const result = await refreshPrDriftForJob({
@@ -987,6 +989,8 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
         duration_ms: durationMs,
         gh_stderr_hash: ghStderrHash,
         pr_classification: classification,
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt,
       };
       console.error(JSON.stringify(eventOut));
 
@@ -1008,8 +1012,10 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
       } else {
         for (const r of results) {
           const icon = r.classification === 'clean' ? green('✓')
-            : r.classification === 'behind' ? yellow('○')
+            : r.classification === 'needs-rebase' ? yellow('○')
             : r.classification === 'conflicted' ? red('✗')
+            : r.classification === 'blocked' ? yellow('■')
+            : r.classification === 'stale' ? dim('○')
             : yellow('?');
           const suffix = r.error_kind ? ` ${dim(`(${r.error_kind})`)}` : '';
           console.log(`  ${icon} ${r.job_id}  ${r.classification}${suffix}`);

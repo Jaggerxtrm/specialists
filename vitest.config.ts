@@ -33,6 +33,7 @@ export default defineConfig({
       'dist',
       // bun:sqlite tests — run via `bun test` not vitest (bun: protocol unsupported in Node)
       'tests/unit/specialist/observability-sqlite.test.ts',
+      'tests/unit/specialist/observability-sqlite-pr-refresh.test.ts',
       'tests/unit/specialist/observability-db.test.ts',
       'tests/unit/cli/db.test.ts',
       // FIFO hang in worktree context — run in isolation.

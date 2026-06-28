@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { ObservabilitySqliteClient, PrDriftStatePatch } from './observability-sqlite.js';
 
-export type PrClassification = 'clean' | 'behind' | 'conflicted' | 'unknown' | 'dead';
+export type PrClassification = 'clean' | 'needs-rebase' | 'conflicted' | 'blocked' | 'stale' | 'unknown';
 
 export type PrDriftRefreshErrorKind = 'gh_unavailable' | 'no_pr' | 'parse_error' | 'network';
 
@@ -40,20 +40,19 @@ function deriveClassification(raw: GhPrViewJson): PrClassification {
   const mergeState = (raw.mergeStateStatus ?? '').toUpperCase();
   const state = (raw.state ?? '').toLowerCase();
 
-  if (state === 'merged') return 'dead';
-  if (state === 'closed') return 'dead';
+  if (state === 'merged' || state === 'closed') return 'stale';
 
   switch (mergeState) {
     case 'BEHIND':
-      return 'behind';
+      return 'needs-rebase';
     case 'DIRTY':
       return 'conflicted';
+    case 'BLOCKED':
+      return 'blocked';
     case 'CLEAN':
     case 'HAS_HOOKS':
     case 'UNSTABLE':
       return 'clean';
-    case 'BLOCKED':
-      return 'unknown';
     default:
       return 'unknown';
   }
