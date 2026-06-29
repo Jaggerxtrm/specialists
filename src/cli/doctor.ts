@@ -9,6 +9,7 @@ import { refreshPrDriftForJob } from '../specialist/pr-drift-refresh.js';
 import type { PrClassification } from '../specialist/pr-drift-refresh.js';
 import { resolveCanonicalAssetDir } from '../specialist/canonical-asset-resolver.js';
 import { detectDriftUnderRoot } from '../specialist/drift-detector.js';
+import { auditDeadJobs } from '../specialist/dead-job-audit.js';
 import { SpecialistLoader } from '../specialist/loader.js';
 import { formatVersionCheckNudge, getVersionCheckResult, localVersion, readCachedVersionCheck } from './version-check.js';
 
@@ -593,16 +594,20 @@ interface DoctorOptions {
   drift: boolean;
   specialists: boolean;
   pr_drift: boolean;
+  reap_dead_jobs: boolean;
+  dry_run: boolean;
 }
 
 function parseDoctorArgs(argv: readonly string[]): DoctorOptions {
-  const opts: DoctorOptions = { json: false, drift: false, specialists: false, pr_drift: false };
+  const opts: DoctorOptions = { json: false, drift: false, specialists: false, pr_drift: false, reap_dead_jobs: false, dry_run: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--json') { opts.json = true; continue; }
     if (token === '--check-drift' || token === '--drift') { opts.drift = true; continue; }
     if (token === '--specialists' || token === '--check-specialists') { opts.specialists = true; continue; }
     if (token === '--pr-drift') { opts.pr_drift = true; continue; }
+    if (token === '--reap-dead-jobs') { opts.reap_dead_jobs = true; continue; }
+    if (token === '--dry-run') { opts.dry_run = true; continue; }
     if (token === '--root') { const value = argv[i + 1]; if (!value || value.startsWith('--')) throw new Error('--root requires a value'); opts.root = resolve(value); i += 1; continue; }
     if (token === '--help' || token === '-h') continue;
     throw new Error(`Unknown argument: ${token}`);
@@ -1028,6 +1033,56 @@ async function runDoctorPrDrift(json: boolean): Promise<void> {
   }
 }
 
+async function runDoctorReapDeadJobs(opts: DoctorOptions): Promise<void> {
+  const client = createObservabilitySqliteClient();
+  if (!client) {
+    if (opts.json) {
+      console.log(JSON.stringify({ dryRun: opts.dry_run, found: [], cancelled: 0, error: 'observability sqlite unavailable' }));
+    } else {
+      console.error('observability sqlite unavailable');
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const result = auditDeadJobs({
+      client,
+      dryRun: opts.dry_run,
+      nowMs: Date.now(),
+    });
+
+    for (const finding of result.found) {
+      const structuredLog = {
+        component: 'dead_job_audit' as const,
+        event: 'dead_declared',
+        job_id: finding.job_id,
+        age_ms: finding.age_ms,
+        dry_run: opts.dry_run,
+      };
+      console.error(JSON.stringify(structuredLog));
+    }
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`\n${bold('specialists doctor --reap-dead-jobs')}\n`);
+      if (result.found.length === 0) {
+        ok('No dead running/waiting jobs found');
+      } else {
+        const action = opts.dry_run ? 'Would cancel' : 'Cancelled';
+        console.log(`  ${yellow('○')} ${result.found.length} dead job(s) found (${result.cancelled} ${action})`);
+        for (const f of result.found) {
+          console.log(`    - ${f.job_id} pid=${f.pid} age=${Math.round(f.age_ms / 1000)}s`);
+        }
+      }
+      console.log('');
+    }
+  } finally {
+    client.close();
+  }
+}
+
 export async function run(argv: readonly string[] = process.argv.slice(3)): Promise<void> {
   const subcommand = argv[0];
   if (subcommand === 'orphans') {
@@ -1052,6 +1107,11 @@ export async function run(argv: readonly string[] = process.argv.slice(3)): Prom
     const overridesOk = await checkSpecialistOverrides();
     console.log('');
     process.exitCode = overridesOk ? 0 : 1;
+    return;
+  }
+
+  if (opts.reap_dead_jobs) {
+    await runDoctorReapDeadJobs(opts);
     return;
   }
 
