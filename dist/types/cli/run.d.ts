@@ -26,7 +26,20 @@ export interface RunArgs {
     epicId?: string;
     /** Allow provisioning from a potentially stale base branch. */
     forceStaleBase: boolean;
+    acceptStaleBase: boolean;
+    staleBaseReason?: string;
+    baseSha?: string;
+    baseRef?: string;
 }
+interface BasePinResult {
+    baseShaPinned: string;
+    baseShaObserved: string;
+    currentSha: string;
+    branch: string;
+    commitsBehind: number;
+    override: boolean;
+}
+export declare function resolveBasePin(args: RunArgs, worktreePath?: string): BasePinResult | undefined;
 export declare function buildInjectedReviewerDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
 export declare function buildInjectedWriterDiffVariables(cwd: string, maxFiles?: number): Record<string, string>;
 export declare function run(): Promise<void>;

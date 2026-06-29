@@ -13047,7 +13047,35 @@ function initSchema(db) {
   migrateToV10(db);
   migrateToV11(db);
   migrateToV12(db);
+  migrateToV13(db);
   verifyWalMode(db);
+}
+function migrateToV13(db) {
+  const hasV13 = db.query("SELECT 1 FROM schema_version WHERE version = 13 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "pr_url", definition: "TEXT" },
+    { name: "pr_head_sha", definition: "TEXT" },
+    { name: "pr_state", definition: "TEXT" },
+    { name: "pr_merge_state", definition: "TEXT" },
+    { name: "pr_classification", definition: "TEXT" },
+    { name: "pr_base_ref", definition: "TEXT" },
+    { name: "pr_base_sha", definition: "TEXT" },
+    { name: "pr_drift_checked_at_ms", definition: "INTEGER" },
+    { name: "base_sha_pinned", definition: "TEXT" },
+    { name: "base_sha_pinned_at_ms", definition: "INTEGER" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  if (hasV13) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (13, strftime('%s', 'now') * 1000);
+  `);
 }
 function migrateToV5(db) {
   const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
@@ -13959,6 +13987,124 @@ class SqliteClient {
       }
       return statuses;
     }, "listStatuses");
+  }
+  readPrDriftState(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT pr_url, pr_head_sha, pr_state, pr_merge_state, pr_classification,
+               pr_base_ref, pr_base_sha, pr_drift_checked_at_ms,
+               base_sha_pinned, base_sha_pinned_at_ms
+        FROM specialist_jobs WHERE job_id = ? LIMIT 1
+      `).get(jobId);
+      if (!row)
+        return null;
+      const num = (v) => v === null || v === undefined ? null : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : null;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return {
+        pr_url: str(row.pr_url),
+        pr_head_sha: str(row.pr_head_sha),
+        pr_state: str(row.pr_state),
+        pr_merge_state: str(row.pr_merge_state),
+        pr_classification: str(row.pr_classification),
+        pr_base_ref: str(row.pr_base_ref),
+        pr_base_sha: str(row.pr_base_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        base_sha_pinned: str(row.base_sha_pinned),
+        base_sha_pinned_at_ms: num(row.base_sha_pinned_at_ms)
+      };
+    }, "readPrDriftState");
+  }
+  updatePrDriftState(jobId, drift) {
+    return withRetry(() => {
+      const ALLOWED = [
+        "pr_url",
+        "pr_head_sha",
+        "pr_state",
+        "pr_merge_state",
+        "pr_classification",
+        "pr_base_ref",
+        "pr_base_sha",
+        "pr_drift_checked_at_ms",
+        "base_sha_pinned",
+        "base_sha_pinned_at_ms"
+      ];
+      const setClauses = [];
+      const params = [];
+      for (const key of ALLOWED) {
+        if (!Object.prototype.hasOwnProperty.call(drift, key))
+          continue;
+        setClauses.push(`${key} = ?`);
+        const value = drift[key];
+        params.push(value === undefined ? null : value);
+      }
+      if (setClauses.length === 0)
+        return false;
+      setClauses.push("updated_at_ms = ?");
+      params.push(Date.now());
+      params.push(jobId);
+      const sql = `UPDATE specialist_jobs SET ${setClauses.join(", ")} WHERE job_id = ?`;
+      const result = this.db.run(sql, params);
+      return (result?.changes ?? 0) > 0;
+    }, "updatePrDriftState");
+  }
+  listStaleSpecialistJobs(opts) {
+    return withRetry(() => {
+      const nowMs = opts?.nowMs ?? Date.now();
+      const minAgeMs = opts?.minAgeMs ?? 60000;
+      const cutoff = nowMs - minAgeMs;
+      const statuses = ["starting", "running", "waiting"];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const rows = this.db.query(`
+        SELECT job_id, specialist, status, status_json,
+               JSON_EXTRACT(status_json, '$.pid') AS pid,
+               updated_at_ms,
+               bead_id,
+               chain_id
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+          AND pid IS NOT NULL
+          AND updated_at_ms < ?
+        ORDER BY updated_at_ms ASC
+        LIMIT 200
+      `).all(...statuses, cutoff);
+      const num = (v) => v === null || v === undefined ? 0 : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : 0;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return rows.filter((row) => {
+        const pid = num(row.pid);
+        return Number.isInteger(pid) && pid > 0;
+      }).map((row) => ({
+        job_id: str(row.job_id) ?? "",
+        specialist: str(row.specialist) ?? "",
+        status: str(row.status) ?? "",
+        pid: num(row.pid),
+        updated_at_ms: num(row.updated_at_ms),
+        bead_id: str(row.bead_id),
+        chain_id: str(row.chain_id)
+      }));
+    }, "listStaleSpecialistJobs");
+  }
+  listJobsNeedingPrDriftRefresh(olderThanMs) {
+    return withRetry(() => {
+      const threshold = olderThanMs ?? Date.now() - 5 * 60 * 1000;
+      const rows = this.db.query(`
+        SELECT job_id, pr_url, pr_head_sha, pr_drift_checked_at_ms,
+               JSON_EXTRACT(status_json, '$.branch') AS branch
+        FROM specialist_jobs
+        WHERE pr_url IS NOT NULL
+          AND (pr_drift_checked_at_ms IS NULL OR pr_drift_checked_at_ms < ?)
+        ORDER BY pr_drift_checked_at_ms ASC NULLS FIRST
+        LIMIT 50
+      `).all(threshold);
+      const num = (v) => v === null || v === undefined ? null : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : null;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return rows.map((row) => ({
+        job_id: str(row.job_id) ?? "",
+        pr_url: str(row.pr_url) ?? "",
+        pr_head_sha: str(row.pr_head_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        branch: str(row.branch)
+      }));
+    }, "listJobsNeedingPrDriftRefresh");
   }
   removeJobs(jobIds) {
     return withRetry(() => {

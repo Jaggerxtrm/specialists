@@ -188,6 +188,46 @@ export interface ClaimJobStartOptions {
     staleClaimAgeMs?: number;
 }
 export declare function claimJobStartWithStore(store: ClaimJobStartStore, status: SupervisorStatus, event: TimelineEvent, options?: ClaimJobStartOptions): ClaimJobStartResult;
+/**
+ * Durable PR/base drift state for a specialist job (specialists-05q.1).
+ *
+ * Bridge → substrate mapping (specialists-roadmap §B.3): every field renames 1:1 onto
+ * `containers.*` when the substrate daemon ships (`pr_*` → `containers.pr_*`,
+ * `base_sha_pinned*` → `containers.base_sha_pinned*`). Pre-substrate columns live on
+ * `specialist_jobs`; mirror on `SupervisorStatus` for serialization symmetry.
+ *
+ * Schema/model only — refresh logic (GitHub/git lookup, classification, attention scoring)
+ * is owned by specialists-05q.2. Fields are populated lazily; `null` is a meaningful "checked
+ * and unset" value, `undefined` is "never checked".
+ */
+export interface PrDriftState {
+    /** PR URL as recorded by xt at PR creation. */
+    pr_url: string | null;
+    /** Head SHA observed at last drift check. */
+    pr_head_sha: string | null;
+    /** Raw GitHub PR state (open / closed / merged / draft). */
+    pr_state: string | null;
+    /** Raw GitHub merge state (clean / dirty / blocked / behind / unstable / unknown / has_hooks). */
+    pr_merge_state: string | null;
+    /** Local classification derived from raw state (clean / behind / conflicted / unknown / dead).
+     *  Distinct from `pr_merge_state` so a future GitHub label change does not silently shift the
+     *  semantics specialists relies on for attention scoring. */
+    pr_classification: string | null;
+    /** Base branch ref (e.g. "master"). */
+    pr_base_ref: string | null;
+    /** Observed base tip SHA at last drift check — compared against `base_sha_pinned`
+     *  to detect commits-behind without re-fetching. */
+    pr_base_sha: string | null;
+    /** Epoch ms when drift state was last computed. */
+    pr_drift_checked_at_ms: number | null;
+    /** Base SHA pinned at chain start (specialists-05q.3 / Opp 7 extension). Used as the
+     *  authoritative "what this run measured against" reference. */
+    base_sha_pinned: string | null;
+    /** Epoch ms when the base SHA pin was set. */
+    base_sha_pinned_at_ms: number | null;
+}
+/** Partial update of {@link PrDriftState}. Omitted keys are left unchanged; explicit `null` clears. */
+export type PrDriftStatePatch = Partial<PrDriftState>;
 export interface ObservabilitySqliteClient {
     upsertStatus(status: SupervisorStatus): void;
     markSpecialistJobCancelled(jobId: string, reason: string): void;
@@ -243,6 +283,42 @@ export interface ObservabilitySqliteClient {
     queryMemberContextHealth(jobId: string): number | null;
     readStatus(jobId: string): SupervisorStatus | null;
     listStatuses(): SupervisorStatus[];
+    /** Read durable PR/base drift state for a job. Returns null when the job row is missing.
+     *  Specialists-05q.1: schema/model only — refresh logic lives in .2. */
+    readPrDriftState(jobId: string): PrDriftState | null;
+    /** Write durable PR/base drift state to specialist_jobs columns. Partial updates supported;
+     *  passing `null` clears a field; omitting a field leaves it unchanged. Returns true on
+     *  successful row touch, false when the job row does not exist. Updates `updated_at_ms`. */
+    updatePrDriftState(jobId: string, drift: PrDriftStatePatch): boolean;
+    /** List stale specialist job rows that may be dead after container restart.
+     *  Core predicate: status IN ('starting','running','waiting') AND pid IS NOT NULL
+     *  AND updated_at_ms < (nowMs - minAgeMs).  ORDER BY updated_at_ms ASC LIMIT 200.
+     *  @param opts.minAgeMs minimum age in ms to consider a row stale. Default 60_000.
+     *  @param opts.nowMs epoch ms anchor. Default Date.now().
+     *  @returns rows with job_id, specialist, status, pid, updated_at_ms, bead_id, chain_id */
+    listStaleSpecialistJobs(opts?: {
+        minAgeMs?: number;
+        nowMs?: number;
+    }): Array<{
+        job_id: string;
+        specialist: string;
+        status: string;
+        pid: number;
+        updated_at_ms: number;
+        bead_id: string | null;
+        chain_id: string | null;
+    }>;
+    /** List jobs with PR URLs that haven't been checked recently, ordered by
+     *  pr_drift_checked_at_ms ascending (NULLs first). Limit 50.
+     *  @param olderThanMs Epoch ms threshold; rows with pr_drift_checked_at_ms
+     *    >= olderThanMs are excluded. Defaults to Date.now() - 5*60*1000 (5 min). */
+    listJobsNeedingPrDriftRefresh(olderThanMs?: number): Array<{
+        job_id: string;
+        pr_url: string;
+        pr_head_sha: string | null;
+        pr_drift_checked_at_ms: number | null;
+        branch: string | null;
+    }>;
     removeJobs(jobIds: readonly string[]): number;
     readEpicRun(epicId: string): EpicRunRecord | null;
     listEpicRuns(): EpicRunRecord[];

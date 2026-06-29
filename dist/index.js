@@ -11712,7 +11712,35 @@ function initSchema(db) {
   migrateToV10(db);
   migrateToV11(db);
   migrateToV12(db);
+  migrateToV13(db);
   verifyWalMode(db);
+}
+function migrateToV13(db) {
+  const hasV13 = db.query("SELECT 1 FROM schema_version WHERE version = 13 LIMIT 1").get();
+  const specialistJobsColumns = new Set(db.query("PRAGMA table_info(specialist_jobs)").all().map((column) => column.name).filter((name) => typeof name === "string" && name.length > 0));
+  for (const column of [
+    { name: "pr_url", definition: "TEXT" },
+    { name: "pr_head_sha", definition: "TEXT" },
+    { name: "pr_state", definition: "TEXT" },
+    { name: "pr_merge_state", definition: "TEXT" },
+    { name: "pr_classification", definition: "TEXT" },
+    { name: "pr_base_ref", definition: "TEXT" },
+    { name: "pr_base_sha", definition: "TEXT" },
+    { name: "pr_drift_checked_at_ms", definition: "INTEGER" },
+    { name: "base_sha_pinned", definition: "TEXT" },
+    { name: "base_sha_pinned_at_ms", definition: "INTEGER" }
+  ]) {
+    if (!specialistJobsColumns.has(column.name)) {
+      db.run(`ALTER TABLE specialist_jobs ADD COLUMN ${column.name} ${column.definition}`);
+    }
+  }
+  if (hasV13) {
+    return;
+  }
+  db.run(`
+    INSERT OR IGNORE INTO schema_version (version, applied_at_ms)
+      VALUES (13, strftime('%s', 'now') * 1000);
+  `);
 }
 function migrateToV5(db) {
   const hasV5 = db.query("SELECT 1 FROM schema_version WHERE version = 5 LIMIT 1").get();
@@ -12623,6 +12651,124 @@ class SqliteClient {
       }
       return statuses;
     }, "listStatuses");
+  }
+  readPrDriftState(jobId) {
+    return withRetry(() => {
+      const row = this.db.query(`
+        SELECT pr_url, pr_head_sha, pr_state, pr_merge_state, pr_classification,
+               pr_base_ref, pr_base_sha, pr_drift_checked_at_ms,
+               base_sha_pinned, base_sha_pinned_at_ms
+        FROM specialist_jobs WHERE job_id = ? LIMIT 1
+      `).get(jobId);
+      if (!row)
+        return null;
+      const num = (v) => v === null || v === undefined ? null : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : null;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return {
+        pr_url: str(row.pr_url),
+        pr_head_sha: str(row.pr_head_sha),
+        pr_state: str(row.pr_state),
+        pr_merge_state: str(row.pr_merge_state),
+        pr_classification: str(row.pr_classification),
+        pr_base_ref: str(row.pr_base_ref),
+        pr_base_sha: str(row.pr_base_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        base_sha_pinned: str(row.base_sha_pinned),
+        base_sha_pinned_at_ms: num(row.base_sha_pinned_at_ms)
+      };
+    }, "readPrDriftState");
+  }
+  updatePrDriftState(jobId, drift) {
+    return withRetry(() => {
+      const ALLOWED = [
+        "pr_url",
+        "pr_head_sha",
+        "pr_state",
+        "pr_merge_state",
+        "pr_classification",
+        "pr_base_ref",
+        "pr_base_sha",
+        "pr_drift_checked_at_ms",
+        "base_sha_pinned",
+        "base_sha_pinned_at_ms"
+      ];
+      const setClauses = [];
+      const params = [];
+      for (const key of ALLOWED) {
+        if (!Object.prototype.hasOwnProperty.call(drift, key))
+          continue;
+        setClauses.push(`${key} = ?`);
+        const value = drift[key];
+        params.push(value === undefined ? null : value);
+      }
+      if (setClauses.length === 0)
+        return false;
+      setClauses.push("updated_at_ms = ?");
+      params.push(Date.now());
+      params.push(jobId);
+      const sql = `UPDATE specialist_jobs SET ${setClauses.join(", ")} WHERE job_id = ?`;
+      const result = this.db.run(sql, params);
+      return (result?.changes ?? 0) > 0;
+    }, "updatePrDriftState");
+  }
+  listStaleSpecialistJobs(opts) {
+    return withRetry(() => {
+      const nowMs = opts?.nowMs ?? Date.now();
+      const minAgeMs = opts?.minAgeMs ?? 60000;
+      const cutoff = nowMs - minAgeMs;
+      const statuses = ["starting", "running", "waiting"];
+      const placeholders = statuses.map(() => "?").join(", ");
+      const rows = this.db.query(`
+        SELECT job_id, specialist, status, status_json,
+               JSON_EXTRACT(status_json, '$.pid') AS pid,
+               updated_at_ms,
+               bead_id,
+               chain_id
+        FROM specialist_jobs
+        WHERE status IN (${placeholders})
+          AND pid IS NOT NULL
+          AND updated_at_ms < ?
+        ORDER BY updated_at_ms ASC
+        LIMIT 200
+      `).all(...statuses, cutoff);
+      const num = (v) => v === null || v === undefined ? 0 : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : 0;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return rows.filter((row) => {
+        const pid = num(row.pid);
+        return Number.isInteger(pid) && pid > 0;
+      }).map((row) => ({
+        job_id: str(row.job_id) ?? "",
+        specialist: str(row.specialist) ?? "",
+        status: str(row.status) ?? "",
+        pid: num(row.pid),
+        updated_at_ms: num(row.updated_at_ms),
+        bead_id: str(row.bead_id),
+        chain_id: str(row.chain_id)
+      }));
+    }, "listStaleSpecialistJobs");
+  }
+  listJobsNeedingPrDriftRefresh(olderThanMs) {
+    return withRetry(() => {
+      const threshold = olderThanMs ?? Date.now() - 5 * 60 * 1000;
+      const rows = this.db.query(`
+        SELECT job_id, pr_url, pr_head_sha, pr_drift_checked_at_ms,
+               JSON_EXTRACT(status_json, '$.branch') AS branch
+        FROM specialist_jobs
+        WHERE pr_url IS NOT NULL
+          AND (pr_drift_checked_at_ms IS NULL OR pr_drift_checked_at_ms < ?)
+        ORDER BY pr_drift_checked_at_ms ASC NULLS FIRST
+        LIMIT 50
+      `).all(threshold);
+      const num = (v) => v === null || v === undefined ? null : typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : null;
+      const str = (v) => v === null || v === undefined ? null : typeof v === "string" ? v : null;
+      return rows.map((row) => ({
+        job_id: str(row.job_id) ?? "",
+        pr_url: str(row.pr_url) ?? "",
+        pr_head_sha: str(row.pr_head_sha),
+        pr_drift_checked_at_ms: num(row.pr_drift_checked_at_ms),
+        branch: str(row.branch)
+      }));
+    }, "listJobsNeedingPrDriftRefresh");
   }
   removeJobs(jobIds) {
     return withRetry(() => {
@@ -27040,6 +27186,8 @@ class Supervisor {
       } : {},
       ...runOptions.variables?.chain_root_bead_id ? { chain_root_bead_id: runOptions.variables.chain_root_bead_id } : {},
       ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
+      ...runOptions.baseShaPinned ? { base_sha_pinned: runOptions.baseShaPinned } : {},
+      ...runOptions.baseShaPinnedAtMs ? { base_sha_pinned_at_ms: runOptions.baseShaPinnedAtMs } : {},
       ...runOptions.workingDirectory ? { branch: resolveCurrentBranch(runOptions.workingDirectory) } : { branch: resolveCurrentBranch() },
       variables_keys: variablesKeys,
       reviewed_job_id_present: variablesKeys.includes("reviewed_job_id"),
@@ -27064,6 +27212,8 @@ class Supervisor {
       ...runOptions.workingDirectory ? { worktree_path: runOptions.workingDirectory } : {},
       ...runOptions.reusedFromJobId ? { reused_from_job_id: runOptions.reusedFromJobId } : {},
       ...runOptions.worktreeOwnerJobId ? { worktree_owner_job_id: runOptions.worktreeOwnerJobId } : {},
+      ...runOptions.baseShaPinned ? { base_sha_pinned: runOptions.baseShaPinned } : {},
+      ...runOptions.baseShaPinnedAtMs ? { base_sha_pinned_at_ms: runOptions.baseShaPinnedAtMs } : {},
       ...runOptions.worktreeOwnerJobId || runOptions.workingDirectory ? {
         chain_kind: "chain",
         chain_id: runOptions.worktreeOwnerJobId ?? id,
@@ -33027,6 +33177,8 @@ async function launchSpecialist(opts) {
       forceJob: opts.args.forceJob,
       permissionRequired: opts.perm,
       workingDirectory: opts.workingDirectory,
+      baseShaPinned: opts.basePin?.baseShaPinned,
+      baseShaPinnedAtMs: opts.basePin ? Date.now() : undefined,
       reusedFromJobId: opts.reusedFromJobId,
       worktreeOwnerJobId: opts.worktreeOwnerJobId,
       output_file: opts.specialist.specialist.output_file
@@ -33040,6 +33192,19 @@ async function launchSpecialist(opts) {
 `)) : undefined),
     onJobStarted: ({ id }) => {
       opts.onJobStarted?.({ id });
+      if (opts.basePin) {
+        const sqliteClient = createObservabilitySqliteClient(opts.workingDirectory);
+        try {
+          sqliteClient?.updatePrDriftState(id, {
+            pr_base_ref: opts.basePin.branch,
+            pr_base_sha: opts.basePin.baseShaObserved,
+            base_sha_pinned: opts.basePin.baseShaPinned,
+            base_sha_pinned_at_ms: Date.now()
+          });
+        } finally {
+          sqliteClient?.close();
+        }
+      }
       process.stderr.write(dim8(`[job started: ${id}]
 `));
       const handoffPath = process.env.SPECIALISTS_BG_JOB_ID_PATH;
@@ -33114,6 +33279,7 @@ var bold10 = (s) => `\x1B[1m${s}\x1B[0m`, dim8 = (s) => `\x1B[2m${s}\x1B[0m`, gr
 var init_launch = __esm(() => {
   init_supervisor();
   init_runner();
+  init_observability_sqlite();
 });
 
 // node_modules/@earendil-works/pi-tui/dist/fuzzy.js
@@ -50367,6 +50533,7 @@ var init_merge = __esm(() => {
 var exports_run = {};
 __export(exports_run, {
   run: () => run16,
+  resolveBasePin: () => resolveBasePin,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables
 });
@@ -50377,7 +50544,7 @@ import { spawn as cpSpawn, execSync as execSync5 } from "child_process";
 async function parseArgs8(argv) {
   const name = argv[0];
   if (!name || name.startsWith("--")) {
-    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--force-stale-base] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
+    console.error('Usage: specialists|sp run <name> [--prompt "..."] [--bead <id>] ' + "[--worktree] [--job <id>] [--force-job] [--epic <id>] [--base-sha <sha>] [--base-ref <branch>] [--accept-stale-base --reason <text>] [--context-depth <n>] [--model <model>] " + "[--no-beads] [--no-bead-notes] [--keep-alive|--no-keep-alive] [--json|--raw]");
     process.exit(1);
   }
   let prompt = "";
@@ -50395,6 +50562,10 @@ async function parseArgs8(argv) {
   let forceJob = false;
   let epicId;
   let forceStaleBase = false;
+  let acceptStaleBase = false;
+  let staleBaseReason;
+  let baseSha;
+  let baseRef;
   for (let i = 1;i < argv.length; i++) {
     const token = argv[i];
     if (token === "--prompt" && argv[i + 1]) {
@@ -50463,10 +50634,34 @@ async function parseArgs8(argv) {
       epicId = argv[++i];
       continue;
     }
-    if (token === "--force-stale-base") {
-      forceStaleBase = true;
+    if (token === "--base-sha" && argv[i + 1]) {
+      baseSha = argv[++i];
       continue;
     }
+    if (token === "--base-ref" && argv[i + 1]) {
+      baseRef = argv[++i];
+      continue;
+    }
+    if (token === "--reason" && argv[i + 1]) {
+      staleBaseReason = argv[++i];
+      continue;
+    }
+    if (token === "--accept-stale-base") {
+      acceptStaleBase = true;
+      continue;
+    }
+    if (token === "--force-stale-base") {
+      process.stderr.write(`[deprecated] --force-stale-base is deprecated; use --accept-stale-base --reason <text>. Aliased for one release.
+`);
+      forceStaleBase = true;
+      acceptStaleBase = true;
+      staleBaseReason ??= "deprecated --force-stale-base";
+      continue;
+    }
+  }
+  if (acceptStaleBase && !staleBaseReason?.trim()) {
+    console.error("Error: --accept-stale-base requires --reason <text>.");
+    process.exit(1);
   }
   if (worktree && reuseJobId !== undefined) {
     console.error("Error: --worktree and --job are mutually exclusive. Use one or the other.");
@@ -50515,7 +50710,11 @@ async function parseArgs8(argv) {
     reuseJobId,
     forceJob,
     epicId,
-    forceStaleBase
+    forceStaleBase,
+    acceptStaleBase,
+    staleBaseReason,
+    baseSha,
+    baseRef
   };
 }
 function readBeadSummary(beadId) {
@@ -50621,7 +50820,7 @@ function assertNoStaleBaseSiblings(beadId, forceStaleBase) {
     if (staleSiblings.length === 0)
       return;
     if (forceStaleBase) {
-      process.stderr.write(dim11(`[stale-base guard bypassed: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]
+      process.stderr.write(dim11(`[stale-base guard accepted: ${staleSiblings.length} unmerged sibling chain(s) under epic ${epicId}]
 `));
       return;
     }
@@ -50630,14 +50829,14 @@ function assertNoStaleBaseSiblings(beadId, forceStaleBase) {
     throw new Error(`Refusing worktree dispatch for bead '${beadId}': epic '${epicId}' has unmerged sibling chains with substantive commits.
 ` + `${lines}
 ` + `Publish the epic first: sp epic merge ${epicId}
-` + `If intentional, rerun with --force-stale-base.`);
+` + `If intentional, rerun with --accept-stale-base --reason <text>.`);
   } finally {
     sqliteClient.close();
   }
 }
 function resolveWorkingDirectory(args, jobsDir, permissionRequired, readStatus) {
   if (args.worktree) {
-    assertNoStaleBaseSiblings(args.beadId, args.forceStaleBase);
+    assertNoStaleBaseSiblings(args.beadId, args.acceptStaleBase);
     const info = provisionWorktree({
       beadId: args.beadId,
       specialistName: args.name
@@ -50765,6 +50964,72 @@ function formatFooterModel2(backend, model) {
 }
 function shellQuote2(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function runGit2(cwd, args) {
+  return execSync5(["git", ...args.map(shellQuote2)].join(" "), {
+    cwd,
+    stdio: "pipe",
+    encoding: "utf-8",
+    timeout: 1e4
+  }).trim();
+}
+function formatErrorMessage(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+function runGitForBasePin(cwd, args, runArgs) {
+  try {
+    return runGit2(cwd, args);
+  } catch (error2) {
+    const envelope = {
+      ok: false,
+      error_code: "base_fetch_failed",
+      blocked_by: ["fetch_or_resolve_failure"],
+      next_safe_action: "verify network/remote/declared base ref is reachable, or rerun with --accept-stale-base --reason <text> if intentional",
+      base_ref: runArgs.baseRef ?? null,
+      base_sha: runArgs.baseSha ?? null,
+      worktree_path: cwd,
+      underlying_error: formatErrorMessage(error2)
+    };
+    throw new Error(JSON.stringify(envelope));
+  }
+}
+function resolveBasePin(args, worktreePath) {
+  if (!worktreePath || !args.worktree && !args.baseSha)
+    return;
+  const baseRef = args.baseRef?.trim();
+  if (baseRef) {
+    runGitForBasePin(worktreePath, ["fetch", "origin", baseRef], args);
+  } else {
+    runGitForBasePin(worktreePath, ["fetch", "origin"], args);
+  }
+  const baseShaObserved = runGitForBasePin(worktreePath, ["rev-parse", baseRef ? "FETCH_HEAD" : "refs/remotes/origin/HEAD"], args);
+  const baseShaPinned = args.baseSha ?? baseShaObserved;
+  const currentSha = runGitForBasePin(worktreePath, ["rev-parse", "HEAD"], args);
+  const branch = runGitForBasePin(worktreePath, ["rev-parse", "--abbrev-ref", "HEAD"], args);
+  const commitsBehindText = runGitForBasePin(worktreePath, ["rev-list", "--count", `${currentSha}..${baseShaPinned}`], args);
+  const commitsBehind = Number.parseInt(commitsBehindText, 10) || 0;
+  const hasStaleBase = currentSha !== baseShaPinned || baseShaObserved !== baseShaPinned;
+  if (!hasStaleBase) {
+    return { baseShaPinned, baseShaObserved, currentSha, branch, commitsBehind, override: false };
+  }
+  if (args.acceptStaleBase) {
+    process.stderr.write(dim11(`[stale-base guard accepted: base_sha_pinned=${baseShaPinned} current_sha=${currentSha} reason=${args.staleBaseReason}]
+`));
+    return { baseShaPinned, baseShaObserved, currentSha, branch, commitsBehind, override: true };
+  }
+  const envelope = {
+    ok: false,
+    error_code: "stale_base",
+    blocked_by: ["worktree_base_mismatch"],
+    next_safe_action: "Fetch/recreate worktree from declared base, or rerun with --accept-stale-base --reason <text> if divergence is intentional.",
+    base_sha_pinned: baseShaPinned,
+    base_sha_observed: baseShaObserved,
+    current_sha: currentSha,
+    branch,
+    worktree_path: worktreePath,
+    commits_behind: commitsBehind
+  };
+  throw new Error(JSON.stringify(envelope));
 }
 function extractReviewedJobIdOverride(prompt) {
   const match = prompt.match(/(?:^|\n)\s*reviewed_job_id\s*:\s*([^\n]+)/i);
@@ -51045,7 +51310,9 @@ async function run16() {
     runOptions: { name: args.name, prompt },
     jobsDir
   });
-  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory({ ...args, worktree: useWorktree }, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
+  const effectiveArgs = { ...args, worktree: useWorktree };
+  const { workingDirectory, reusedFromJobId, worktreeOwnerJobId, inferredBeadId } = resolveWorkingDirectory(effectiveArgs, jobsDir, perm, (jobId) => statusReader.readStatus(jobId));
+  const basePin = resolveBasePin(effectiveArgs, workingDirectory);
   await statusReader.dispose();
   if (!effectiveBeadId && inferredBeadId) {
     effectiveBeadId = inferredBeadId;
@@ -51098,6 +51365,7 @@ async function run16() {
     circuitBreaker,
     beadsClient,
     workingDirectory,
+    basePin,
     reusedFromJobId,
     worktreeOwnerJobId,
     effectiveBeadId,
@@ -55416,7 +55684,8 @@ function parseArgs9(argv) {
     "--active",
     "--running",
     "--mine",
-    "--health"
+    "--health",
+    "--needs-attention"
   ]);
   const valueFlags = new Set(["--node", "--bead", "--since"]);
   let nodeId;
@@ -55459,6 +55728,7 @@ function parseArgs9(argv) {
     running: argv.includes("--running") || argv.includes("--active"),
     mine: argv.includes("--mine"),
     health: argv.includes("--health"),
+    needsAttention: argv.includes("--needs-attention"),
     beadFilter,
     sinceMs,
     nodeId,
@@ -55495,6 +55765,7 @@ function toJobNode(job) {
     context_health: job.context_health,
     metrics: job.metrics,
     startup_payload_json: job.startup_payload_json ?? null,
+    pr_classification: job.pr_classification,
     children: []
   };
 }
@@ -55844,7 +56115,8 @@ function renderJobLine(job, beadTitles, prefix, connector) {
   const width = Math.max(80, (process.stdout.columns ?? 160) - prefix.length - connector.length);
   const themed = renderJobRow(consoleJob, width, 0, false);
   const body = themed.startsWith("  ") ? themed.slice(2) : themed;
-  return `${prefix}${connector}${body}`;
+  const driftBadge = job.pr_classification && job.pr_classification !== "clean" ? red2(` [drift:${job.pr_classification}]`) : "";
+  return `${prefix}${connector}${body}${driftBadge}`;
 }
 function renderTreeNodes(nodes, beadTitles, prefix, renderedJobIds) {
   for (let i = 0;i < nodes.length; i++) {
@@ -56232,7 +56504,10 @@ function renderJson(jobs, nodes, trees, _all, epicReadiness, args, health) {
       context_health: job.context_health,
       startup_payload_json: job.startup_payload_json ?? null,
       payload_kb: formatPayloadStats2(job.startup_payload_json).payload_kb,
-      payload_tokens: formatPayloadStats2(job.startup_payload_json).payload_tokens
+      payload_tokens: formatPayloadStats2(job.startup_payload_json).payload_tokens,
+      attention_reasons: [
+        ...job.pr_classification && job.pr_classification !== "clean" ? [`pr_drift:${job.pr_classification}`] : []
+      ]
     })),
     nodes,
     trees,
@@ -56271,6 +56546,8 @@ function render(args) {
     if (args.running && !ACTIVE_STATES2.includes(job.status))
       return false;
     if (mineBeadIds && (!job.bead_id || !mineBeadIds.has(job.bead_id)))
+      return false;
+    if (args.needsAttention && (!job.pr_classification || job.pr_classification === "clean"))
       return false;
     const cleaned = isPsCleaned2(job);
     if (args.all)
@@ -61000,6 +61277,162 @@ async function run34() {
 }
 var bold12 = (s) => `\x1B[1m${s}\x1B[0m`, dim13 = (s) => `\x1B[2m${s}\x1B[0m`, yellow11 = (s) => `\x1B[33m${s}\x1B[0m`, cyan7 = (s) => `\x1B[36m${s}\x1B[0m`, blue4 = (s) => `\x1B[34m${s}\x1B[0m`, green13 = (s) => `\x1B[32m${s}\x1B[0m`;
 
+// src/specialist/pr-drift-refresh.ts
+import { execSync as execSync6 } from "child_process";
+import { createHash as createHash6 } from "crypto";
+function hashSummary(input2) {
+  return createHash6("sha256").update(input2).digest("hex").slice(0, 16);
+}
+function parsePrNumberFromUrl(prUrl) {
+  const match = prUrl.match(/\/pull\/(\d+)$/);
+  if (match)
+    return match[1];
+  if (/^\d+$/.test(prUrl))
+    return prUrl;
+  return;
+}
+function deriveClassification(raw) {
+  const mergeState = (raw.mergeStateStatus ?? "").toUpperCase();
+  const state = (raw.state ?? "").toLowerCase();
+  if (state === "merged" || state === "closed")
+    return "stale";
+  switch (mergeState) {
+    case "BEHIND":
+      return "needs-rebase";
+    case "DIRTY":
+      return "conflicted";
+    case "BLOCKED":
+      return "blocked";
+    case "CLEAN":
+    case "HAS_HOOKS":
+    case "UNSTABLE":
+      return "clean";
+    default:
+      return "unknown";
+  }
+}
+function classifyError(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  if (lower.includes("enoent") || lower.includes("command not found") || lower.includes("no such file")) {
+    return { kind: "gh_unavailable", summary: hashSummary(msg) };
+  }
+  if (lower.includes("not found") || lower.includes("could not resolve")) {
+    return { kind: "no_pr", summary: hashSummary(msg) };
+  }
+  if (lower.includes("json") || lower.includes("parse")) {
+    return { kind: "parse_error", summary: hashSummary(msg) };
+  }
+  if (lower.includes("timeout") || lower.includes("econnrefused") || lower.includes("network")) {
+    return { kind: "network", summary: hashSummary(msg) };
+  }
+  return { kind: "network", summary: hashSummary(msg) };
+}
+async function refreshPrDriftForJob(opts) {
+  const { jobId, prUrl, headSha, client } = opts;
+  const now = Date.now();
+  const prNumber = parsePrNumberFromUrl(prUrl);
+  if (!prNumber) {
+    const patch2 = { pr_classification: "unknown", pr_drift_checked_at_ms: now };
+    client.updatePrDriftState(jobId, patch2);
+    return { ok: false, classification: "unknown", error_kind: "parse_error", error_summary: hashSummary("unparseable-pr-url") };
+  }
+  let stdout;
+  try {
+    stdout = execSync6(`gh pr view ${prNumber} --json state,mergeable,mergeStateStatus,baseRefName,baseRefOid,headRefOid,url`, { encoding: "utf8", timeout: 1e4, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    const { kind, summary } = classifyError(err);
+    const patch2 = { pr_classification: "unknown", pr_drift_checked_at_ms: now };
+    client.updatePrDriftState(jobId, patch2);
+    return { ok: false, classification: "unknown", error_kind: kind, error_summary: summary };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(stdout.trim());
+  } catch (err) {
+    const summary = hashSummary(err instanceof Error ? err.message : String(err));
+    const patch2 = { pr_classification: "unknown", pr_drift_checked_at_ms: now };
+    client.updatePrDriftState(jobId, patch2);
+    return { ok: false, classification: "unknown", error_kind: "parse_error", error_summary: summary };
+  }
+  const classification = deriveClassification(raw);
+  const patch = {
+    pr_url: raw.url ?? prUrl,
+    pr_head_sha: raw.headRefOid ?? headSha ?? null,
+    pr_state: raw.state ?? null,
+    pr_merge_state: raw.mergeStateStatus ?? null,
+    pr_classification: classification,
+    pr_base_ref: raw.baseRefName ?? null,
+    pr_base_sha: raw.baseRefOid ?? null,
+    pr_drift_checked_at_ms: now
+  };
+  client.updatePrDriftState(jobId, patch);
+  return { ok: true, classification, raw };
+}
+var init_pr_drift_refresh = () => {};
+
+// src/specialist/dead-job-audit.ts
+function defaultIsPidAlive2(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error2) {
+    if (error2 instanceof Error && "code" in error2 && error2.code === "ESRCH") {
+      return false;
+    }
+    return true;
+  }
+}
+function auditDeadJobs(opts) {
+  const dryRun = opts.dryRun ?? false;
+  const nowMs = opts.nowMs ?? Date.now();
+  const isPidAlive2 = opts.isPidAlive ?? defaultIsPidAlive2;
+  const minAgeMs = opts.minAgeMs ?? 60000;
+  const rows = opts.client.listStaleSpecialistJobs({ minAgeMs, nowMs });
+  const found = [];
+  let cancelled = 0;
+  for (const row of rows) {
+    if (isPidAlive2(row.pid))
+      continue;
+    const age_ms = Math.max(0, nowMs - row.updated_at_ms);
+    found.push({
+      job_id: row.job_id,
+      pid: row.pid,
+      reason: "container-restart-orphan",
+      age_ms
+    });
+    if (!dryRun) {
+      opts.client.markSpecialistJobCancelled(row.job_id, "container-restart-orphan");
+      cancelled += 1;
+      opts.client.appendForensicEvent(row.job_id, row.specialist, row.bead_id ?? undefined, createForensicEvent({
+        event_family: "lifecycle",
+        event_name: "dead_declared",
+        resource: {
+          service_namespace: "xtrm",
+          service_name: "specialists",
+          service_component: "dead-job-audit",
+          deployment_environment: "development",
+          repo: "specialists",
+          participant_kind: "specialist",
+          participant_role: row.specialist
+        },
+        correlation: { job_id: row.job_id, bead_id: row.bead_id ?? undefined },
+        body: {
+          job_id: row.job_id,
+          pid: row.pid,
+          age_ms,
+          reason: "container-restart-orphan",
+          dry_run: dryRun
+        }
+      }));
+    }
+  }
+  return { dryRun, found, cancelled };
+}
+var init_dead_job_audit = __esm(() => {
+  init_forensic_events();
+});
+
 // src/cli/doctor.ts
 var exports_doctor = {};
 __export(exports_doctor, {
@@ -61011,7 +61444,7 @@ __export(exports_doctor, {
   compareVersions: () => compareVersions2,
   cleanupProcesses: () => cleanupProcesses
 });
-import { createHash as createHash6 } from "crypto";
+import { createHash as createHash7 } from "crypto";
 import { spawnSync as spawnSync23 } from "child_process";
 import { existsSync as existsSync39, lstatSync as lstatSync2, mkdirSync as mkdirSync15, readdirSync as readdirSync20, readFileSync as readFileSync36, readlinkSync as readlinkSync3, writeFileSync as writeFileSync19 } from "fs";
 import { dirname as dirname16, join as join44, relative as relative4, resolve as resolve13 } from "path";
@@ -61191,7 +61624,7 @@ function checkVersion() {
   return true;
 }
 function hashFile(path3) {
-  const hash = createHash6("sha256");
+  const hash = createHash7("sha256");
   hash.update(readFileSync36(path3));
   return hash.digest("hex");
 }
@@ -61524,7 +61957,7 @@ function checkClaudeMdFragments() {
   return allOk;
 }
 function parseDoctorArgs(argv) {
-  const opts = { json: false, drift: false, specialists: false };
+  const opts = { json: false, drift: false, specialists: false, pr_drift: false, reap_dead_jobs: false, dry_run: false };
   for (let i = 0;i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--json") {
@@ -61537,6 +61970,18 @@ function parseDoctorArgs(argv) {
     }
     if (token === "--specialists" || token === "--check-specialists") {
       opts.specialists = true;
+      continue;
+    }
+    if (token === "--pr-drift") {
+      opts.pr_drift = true;
+      continue;
+    }
+    if (token === "--reap-dead-jobs") {
+      opts.reap_dead_jobs = true;
+      continue;
+    }
+    if (token === "--dry-run") {
+      opts.dry_run = true;
       continue;
     }
     if (token === "--root") {
@@ -61833,6 +62278,128 @@ function checkZombieJobs() {
   }
   return result.zombies === 0;
 }
+async function runDoctorPrDrift(json) {
+  const client = createObservabilitySqliteClient();
+  if (!client) {
+    if (json) {
+      console.log(JSON.stringify({ jobs: [], error: "observability sqlite unavailable" }));
+    } else {
+      console.error("observability sqlite unavailable");
+    }
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const jobs = client.listJobsNeedingPrDriftRefresh();
+    const results = [];
+    for (const job of jobs) {
+      const startedAt = Date.now();
+      console.error(JSON.stringify({
+        component: "pr_drift",
+        event: "refresh_attempted",
+        job_id: job.job_id,
+        duration_ms: 0,
+        gh_stderr_hash: "",
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt
+      }));
+      const result = await refreshPrDriftForJob({
+        jobId: job.job_id,
+        prUrl: job.pr_url,
+        headSha: job.pr_head_sha ?? undefined,
+        client
+      });
+      const durationMs = Date.now() - startedAt;
+      const classification = result.classification;
+      const ghStderrHash = result.error_summary ? result.error_summary.slice(0, 8) : "";
+      const eventOut = {
+        component: "pr_drift",
+        event: result.ok ? "refresh_completed" : "refresh_failed",
+        job_id: job.job_id,
+        duration_ms: durationMs,
+        gh_stderr_hash: ghStderrHash,
+        pr_classification: classification,
+        branch: job.branch ?? null,
+        checked_at_ms: startedAt
+      };
+      console.error(JSON.stringify(eventOut));
+      results.push({
+        job_id: job.job_id,
+        classification,
+        pr_url: job.pr_url,
+        ...result.error_kind ? { error_kind: result.error_kind } : {},
+        duration_ms: durationMs
+      });
+    }
+    if (json) {
+      console.log(JSON.stringify({ jobs: results }, null, 2));
+    } else {
+      console.log(`
+${bold13("specialists doctor --pr-drift")}
+`);
+      if (results.length === 0) {
+        ok3("No PR-linked jobs need drift refresh");
+      } else {
+        for (const r of results) {
+          const icon = r.classification === "clean" ? green14("\u2713") : r.classification === "needs-rebase" ? yellow12("\u25CB") : r.classification === "conflicted" ? red7("\u2717") : r.classification === "blocked" ? yellow12("\u25A0") : r.classification === "stale" ? dim14("\u25CB") : yellow12("?");
+          const suffix = r.error_kind ? ` ${dim14(`(${r.error_kind})`)}` : "";
+          console.log(`  ${icon} ${r.job_id}  ${r.classification}${suffix}`);
+        }
+      }
+      console.log("");
+    }
+  } finally {
+    client.close();
+  }
+}
+async function runDoctorReapDeadJobs(opts) {
+  const client = createObservabilitySqliteClient();
+  if (!client) {
+    if (opts.json) {
+      console.log(JSON.stringify({ dryRun: opts.dry_run, found: [], cancelled: 0, error: "observability sqlite unavailable" }));
+    } else {
+      console.error("observability sqlite unavailable");
+    }
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const result = auditDeadJobs({
+      client,
+      dryRun: opts.dry_run,
+      nowMs: Date.now()
+    });
+    for (const finding of result.found) {
+      const structuredLog = {
+        component: "dead_job_audit",
+        event: "dead_declared",
+        job_id: finding.job_id,
+        age_ms: finding.age_ms,
+        dry_run: opts.dry_run
+      };
+      console.error(JSON.stringify(structuredLog));
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`
+${bold13("specialists doctor --reap-dead-jobs")}
+`);
+      if (result.found.length === 0) {
+        ok3("No dead running/waiting jobs found");
+      } else {
+        const action = opts.dry_run ? "Would cancel" : "Cancelled";
+        console.log(`  ${yellow12("\u25CB")} ${result.found.length} dead job(s) found (${result.cancelled} ${action})`);
+        for (const f of result.found) {
+          console.log(`    - ${f.job_id} pid=${f.pid} age=${Math.round(f.age_ms / 1000)}s`);
+        }
+      }
+      console.log("");
+    }
+  } finally {
+    client.close();
+  }
+}
 async function run35(argv = process.argv.slice(3)) {
   const subcommand = argv[0];
   if (subcommand === "orphans") {
@@ -61844,6 +62411,10 @@ async function run35(argv = process.argv.slice(3)) {
     renderDriftTable(opts.root ?? process.cwd(), opts.json);
     return;
   }
+  if (opts.pr_drift) {
+    await runDoctorPrDrift(opts.json);
+    return;
+  }
   if (opts.specialists) {
     console.log(`
 ${bold13("specialists doctor --specialists")}
@@ -61851,6 +62422,10 @@ ${bold13("specialists doctor --specialists")}
     const overridesOk2 = await checkSpecialistOverrides();
     console.log("");
     process.exitCode = overridesOk2 ? 0 : 1;
+    return;
+  }
+  if (opts.reap_dead_jobs) {
+    await runDoctorReapDeadJobs(opts);
     return;
   }
   if (subcommand && subcommand !== "--help" && subcommand !== "-h" && !subcommand.startsWith("--")) {
@@ -61887,8 +62462,10 @@ ${bold13("specialists doctor")}
 var bold13 = (s) => `\x1B[1m${s}\x1B[0m`, dim14 = (s) => `\x1B[2m${s}\x1B[0m`, green14 = (s) => `\x1B[32m${s}\x1B[0m`, yellow12 = (s) => `\x1B[33m${s}\x1B[0m`, red7 = (s) => `\x1B[31m${s}\x1B[0m`, CWD, CLAUDE_DIR, PI_DIR, XTRM_SKILLS_DIR, XTRM_DEFAULT_SKILLS_DIR, XTRM_ACTIVE_SKILLS_DIR, SPECIALISTS_DIR, DEFAULT_SPECIALISTS_DIR, USER_SPECIALISTS_DIR, HOOKS_DIR, CLAUDE_HOOKS_DIR, SETTINGS_FILE, MCP_FILE2, HOOK_NAMES;
 var init_doctor = __esm(() => {
   init_observability_sqlite();
+  init_pr_drift_refresh();
   init_canonical_asset_resolver();
   init_drift_detector();
+  init_dead_job_audit();
   init_loader();
   init_version_check();
   CWD = process.cwd();
@@ -62067,7 +62644,7 @@ var init_benchmarks = __esm(() => {
 });
 
 // src/specialist/model-probes.ts
-import { createHash as createHash7, randomUUID as randomUUID6 } from "crypto";
+import { createHash as createHash8, randomUUID as randomUUID6 } from "crypto";
 import { mkdirSync as mkdirSync17, readdirSync as readdirSync21, readFileSync as readFileSync38, writeFileSync as writeFileSync21 } from "fs";
 import { homedir as homedir11 } from "os";
 import { dirname as dirname18, join as join46, resolve as resolve14 } from "path";
@@ -62177,7 +62754,7 @@ function getProbeRunDir(model, specName, cacheDir = join46(homedir11(), ".cache"
   return resolve14(getProbeCanonicalPath(model, specName, cacheDir).replace(/\.json$/u, ""), randomUUID6());
 }
 function getProbeCanonicalPath(model, specName, cacheDir = join46(homedir11(), ".cache", "specialists", "probes")) {
-  const probeId = createHash7("sha256").update(`${model}\x00${specName}\x00${PROBE_TEMPLATE}`).digest("hex").slice(0, 12);
+  const probeId = createHash8("sha256").update(`${model}\x00${specName}\x00${PROBE_TEMPLATE}`).digest("hex").slice(0, 12);
   return join46(cacheDir, `${sanitizePathSegment(model)}-${sanitizePathSegment(specName)}-${probeId}.json`);
 }
 function sanitizePathSegment(value) {
@@ -71559,8 +72136,18 @@ async function run40() {
         "  --epic <id>          Explicit epic membership for this job. Defaults to bead.parent.",
         "                       Useful for prep jobs belonging to a merge-gated epic.",
         "  --force-job          Bypass concurrency guard for active worktrees (MEDIUM/HIGH).",
-        "  --force-stale-base   Bypass stale-base guard when epic sibling chains have unmerged",
-        "                       substantive commits. Use at risk of later merge conflicts.",
+        "  --base-sha <sha>     Pin the base SHA the run measures against (specialists-05q.3).",
+        "                       Recorded on the job observability row as base_sha_pinned.",
+        "                       When omitted, defaults to the observed remote base tip.",
+        "  --base-ref <branch>  Base branch ref to fetch before pinning (default: origin/HEAD).",
+        "                       Combined with --base-sha for deterministic precondition checks.",
+        "  --accept-stale-base  Override the stale-base precondition gate. Requires --reason.",
+        "                       Logged in stderr + auditable via the structured refusal envelope",
+        "                       (specialists-05q.3). Prefer over deprecated --force-stale-base.",
+        "  --reason <text>      Required justification when --accept-stale-base is set.",
+        "                       Surfaced in stderr audit line + refusal envelope.",
+        "  --force-stale-base   [deprecated] Alias for --accept-stale-base with default reason.",
+        "                       Emits a deprecation warning; removal in a future release.",
         "",
         "Examples:",
         "  specialists run debugger --bead unitAI-55d",
@@ -72226,6 +72813,8 @@ async function run40() {
         "  7. zombie job detection",
         "  8. CLAUDE.md fragments (XTRM-MANAGED sentinels) \u2014 delegates to xt claude-sync",
         "  9. drift check for stale managed mirrors (--check-drift / --drift)",
+        " 10. PR drift refresh for tracked jobs (--pr-drift) \u2014 specialists-05q.2",
+        " 11. dead-job audit + reap orphans (--reap-dead-jobs [--dry-run]) \u2014 specialists-05q.4",
         "",
         "Behavior:",
         "  - prints fix hints for failing checks",
@@ -72237,10 +72826,26 @@ async function run40() {
         "                            Category A (specialists runtime) and Category B",
         "                            (filesystem skills/hooks) are distinct; doctor",
         "                            covers Category A only",
+        "  --pr-drift               Refresh PR/base drift state for tracked jobs by",
+        "                            shelling out to `gh pr view --json` (specialists-05q.2).",
+        "                            Iterates jobs whose pr_drift_checked_at_ms is stale or null;",
+        "                            updates pr_state/pr_merge_state/pr_classification/pr_base_sha.",
+        "                            Classifications: clean | needs-rebase | conflicted | blocked |",
+        "                            stale | unknown. gh failures classify as unknown (never throws).",
+        "  --reap-dead-jobs         Audit specialist_jobs rows in active states with dead pids",
+        "                            and mark them cancelled with reason container-restart-orphan",
+        "                            (specialists-05q.4). Emits xtrm.forensic.v1 lifecycle.dead_declared",
+        "                            event per finding. Conservative predicate: all of {active status,",
+        "                            pid set, ESRCH dead pid, age > 60s} must hold.",
+        "    --dry-run              Pair with --reap-dead-jobs: list findings without mutation.",
+        "    --json                 Emit JSON envelope { dryRun, found:[{job_id, pid, reason,",
+        "                            age_ms}], cancelled }.",
         "",
         "Examples:",
         "  specialists doctor",
         "  specialists doctor orphans",
+        "  specialists doctor --pr-drift",
+        "  specialists doctor --reap-dead-jobs --dry-run --json",
         ""
       ].join(`
 `));

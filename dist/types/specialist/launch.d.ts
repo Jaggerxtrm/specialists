@@ -12,6 +12,14 @@ export interface LaunchSpecialistOptions {
     circuitBreaker: CircuitBreaker;
     beadsClient?: BeadsClientType;
     workingDirectory?: string;
+    basePin?: {
+        baseShaPinned: string;
+        baseShaObserved: string;
+        currentSha: string;
+        branch: string;
+        commitsBehind: number;
+        override: boolean;
+    };
     reusedFromJobId?: string;
     worktreeOwnerJobId?: string;
     effectiveBeadId?: string;

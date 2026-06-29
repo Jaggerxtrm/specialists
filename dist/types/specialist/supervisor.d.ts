@@ -82,6 +82,16 @@ export interface SupervisorStatus {
     auto_commit_count?: number;
     last_auto_commit_sha?: string;
     last_auto_commit_at_ms?: number;
+    pr_url?: string;
+    pr_head_sha?: string;
+    pr_state?: string;
+    pr_merge_state?: string;
+    pr_classification?: string;
+    pr_base_ref?: string;
+    pr_base_sha?: string;
+    pr_drift_checked_at_ms?: number;
+    base_sha_pinned?: string;
+    base_sha_pinned_at_ms?: number;
 }
 export type SupervisorStatusView = SupervisorStatus & {
     is_dead: boolean;

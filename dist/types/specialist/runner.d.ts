@@ -27,6 +27,8 @@ export interface RunOptions {
     contextDepth?: number;
     /** Lineage: root job id that originally created the reused worktree. */
     worktreeOwnerJobId?: string;
+    baseShaPinned?: string;
+    baseShaPinnedAtMs?: number;
     /** Path to an existing pi session file for continuation (Phase 2+) */
     sessionPath?: string;
     /**
