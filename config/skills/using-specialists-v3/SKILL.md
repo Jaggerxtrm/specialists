@@ -344,6 +344,12 @@ git log integration/<date>..HEAD    # MUST be empty (in sync with integration ta
 
 Decision rule: if any of the four checks fail, finish the merge/commit/cleanup first. Do not dispatch. A specialist forked from a stale base produces conflict work that costs more turns than the time saved by dispatching early.
 
+The dispatcher enforces this by running `git fetch` against the bead's base branch and refusing with a structured `stale_base` envelope (`base_sha_pinned`, `base_sha_observed`, `commits_behind`, `next_safe_action`) when HEAD is behind. To override, pass `--accept-stale-base --reason "<text>"` — `--reason` is required and recorded on the pinned `PrDriftState` row. `--force-stale-base` remains as a deprecated alias and prints a one-line stderr warning. Pass `--base-sha <sha>` or `--base-ref <branch>` to pin the dispatch base explicitly (otherwise the bead's parent branch is resolved at dispatch time).
+
+For operator triage after the fact: `specialists doctor --pr-drift` refreshes classifications via `gh pr view` for jobs whose `pr_drift_checked_at_ms` is stale (default > 5 min) or null, and `sp ps --needs-attention` filters the dashboard to jobs whose `pr_classification` is non-clean (`needs-rebase | conflicted | blocked | stale | unknown`). After container/host restarts, `specialists doctor --reap-dead-jobs [--dry-run] [--json]` cancels orphan rows whose PIDs are gone.
+
+Pair the specialists-side audit with the xt-side primitives for full coverage (details in `/using-xtrm`): `xt worktree audit-prs [--json]` reports the same PR merge-state classification at the worktree level — useful when a chain branch exists but no specialist row tracks it; `xt worktree branch-gc [--prefix xt/] [--apply --yes]` cleans up merged/closed `feature/<bead>-*` branches after reviewer PASS; `xt worktree restart-audit [--prefix xt/] [--json]` covers worktree-side orphans (orphaned dirs, branch/worktree drift) that complement `doctor --reap-dead-jobs`'s job-side orphans on a restart-recovery sweep.
+
 Strictness by scenario:
 
 | Scenario | Strictness |
@@ -1148,9 +1154,9 @@ When chain X conflicts with already-landed chain Y on shared files, raw `git che
    - "Reference original `feature/<X>-executor` for symbol shapes only — do NOT cherry-pick or merge. Re-implement on integration's current state."
    - `## VALIDATION:` includes both Y's tests passing AND X's new tests passing.
    - `## OUTPUT:` mandates a 5-line code excerpt showing both Y and X features coexisting.
-3. **Dispatch debugger** with `--force-stale-base` if X is an epic child:
+3. **Dispatch debugger** with `--accept-stale-base --reason "<text>"` if X is an epic child (the dispatcher's fetch-and-pin gate will otherwise refuse with a structured `stale_base` envelope; `--force-stale-base` is the deprecated alias and prints a stderr deprecation warning):
    ```bash
-   sp run debugger --bead <X> --force-stale-base --keep-alive --background
+   sp run debugger --bead <X> --accept-stale-base --reason "restitch <X> onto post-<Y> integration" --keep-alive --background
    ```
 4. **Sanity check the result**: when debugger reports back:
    ```bash
@@ -1242,7 +1248,9 @@ Then choose one action:
 | `sp ps` shows old terminal jobs after a session | Default dashboard keeps unresolved terminal problems visible until acknowledged | `sp clean --ps --dry-run`, then `sp clean --ps` to soft-hide from default ps; use `sp ps --include-cleaned`/`--all` for audit history |
 | Reviewer keeps returning PARTIAL on functional contracts already met | Reviewer demanding tool-event evidence — typically obsoleted after the gate relaxation, but if it persists check the executor's `gitnexus_detect_changes` ran and use the rebuttal pattern (see Specialist Rebuttal As Routine) | Rebut with cited evidence; second FAIL = escalate |
 | Multiple `sp run` background launches drop silently under shell parallelism | Known launch-ceremony race | Re-check `sp ps` after each dispatch and retry the missing one; serialize when reliability matters |
-| `sp run` returns `Warning: job started but ID not yet available` and nothing appears in `sp ps --bead <id>` after 30s | Dispatch was refused by epic guard or base-staleness check; stderr now surfaces the refusal reason (see `sp run --background` post-fix) | Read the surfaced reason; retry with `--force-stale-base` if intentional, or fix the bead/lineage |
+| `sp run` returns `Warning: job started but ID not yet available` and nothing appears in `sp ps --bead <id>` after 30s | Dispatch was refused by epic guard or base-staleness check; stderr now surfaces the refusal reason (see `sp run --background` post-fix) | Read the surfaced reason. If it is a `stale_base` envelope (`error_code: "stale_base"` with `base_sha_observed`/`base_sha_pinned`/`commits_behind`), either rebase the bead's branch onto the named base or retry with `--accept-stale-base --reason "<text>"` if intentional. `--force-stale-base` still works but is deprecated. For `base_fetch_failed` envelopes, fix network/`gh auth` first |
+| `sp ps` shows a job stuck at `running` long after its PR landed/closed, or no longer reflects upstream rebase | `pr_drift_checked_at_ms` is stale or null | Run `specialists doctor --pr-drift` to refresh classifications via `gh pr view`. Then filter the dashboard with `sp ps --needs-attention` (drops jobs whose `pr_classification` is `clean`) or read `attention_reasons[]` from `sp ps --json` |
+| Container/host restart left jobs in `running`/`starting`/`waiting` whose PIDs no longer exist | Orphan rows from a previous process tree; conservative dead-job audit will not auto-fire | Run `specialists doctor --reap-dead-jobs --dry-run [--json]` to preview, then drop `--dry-run` to cancel and emit `xtrm.forensic.v1 lifecycle.dead_declared`. Cancellation reason: `container-restart-orphan` |
 | `sp feed <job-id>` returns short tail with no tool events | Confirms DB-backed replay is active; if you see ≤10 lines on a real run, the DB is missing events for that job — verify with raw SQL on observability.db | If DB truly lacks events: re-run job; if DB has events but feed truncates: file bug bead — should not happen on current build |
 | bd "database not found" or per-project Dolt server respawn | bd has spawned a per-project Dolt instead of routing to the shared server | `ps aux \| grep "<repo>/.beads/dolt" \| awk '{print $2}' \| xargs -r kill -9`; ensure `.beads/config.yaml` contains `dolt.shared-server: true`; `bd ready` should now route to `~/.beads/shared-server/` |
 | Dolt journal corruption (`possible data loss detected at offset N`) | bd-internal | Operator-only — do NOT auto-recover. Stop bd writes, snapshot `~/.beads/shared-server/dolt`, run `dolt fsck` (read-only) first. Operator decides on `--revive-journal-with-data-loss` after reviewing the warning |
