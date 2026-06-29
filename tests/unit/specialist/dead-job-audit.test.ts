@@ -12,10 +12,14 @@ function createMockClient(rows: Array<{
   chain_id: string | null;
 }>): ObservabilitySqliteClient {
   const cancelled: Array<{ job_id: string; reason: string }> = [];
+  const forensicEvents: unknown[] = [];
   return {
     listStaleSpecialistJobs: vi.fn(() => rows),
     markSpecialistJobCancelled: vi.fn((jobId: string, reason: string) => {
       cancelled.push({ job_id: jobId, reason });
+    }),
+    appendForensicEvent: vi.fn((jobId: string, specialist: string, beadId: string | undefined, event: unknown) => {
+      forensicEvents.push({ jobId, specialist, beadId, event });
     }),
   } as unknown as ObservabilitySqliteClient;
 }
@@ -32,6 +36,7 @@ describe('dead-job-audit', () => {
     expect(result.found[0]!.reason).toBe('container-restart-orphan');
     expect(result.cancelled).toBe(1);
     expect(client.markSpecialistJobCancelled).toHaveBeenCalledWith('j1', 'container-restart-orphan');
+    expect(client.appendForensicEvent).toHaveBeenCalledTimes(1);
   });
 
   it('finds but does not cancel dead pid when dryRun=true', () => {
@@ -44,6 +49,7 @@ describe('dead-job-audit', () => {
     expect(result.found[0]!.job_id).toBe('j2');
     expect(result.cancelled).toBe(0);
     expect(client.markSpecialistJobCancelled).not.toHaveBeenCalled();
+    expect(client.appendForensicEvent).not.toHaveBeenCalled();
   });
 
   it('skips live pid', () => {
@@ -80,10 +86,55 @@ describe('dead-job-audit', () => {
     const client = {
       listStaleSpecialistJobs: listFn,
       markSpecialistJobCancelled: vi.fn(),
+      appendForensicEvent: vi.fn(),
     } as unknown as ObservabilitySqliteClient;
 
     auditDeadJobs({ client, dryRun: true, nowMs: 500_000, isPidAlive: () => false, minAgeMs: 300_000 });
 
     expect(listFn).toHaveBeenCalledWith({ minAgeMs: 300_000, nowMs: 500_000 });
+  });
+
+  it('skips rows with missing or invalid pid (listStaleSpecialistJobs already filters)', () => {
+    const listFn = vi.fn(() => []);
+    const client = {
+      listStaleSpecialistJobs: listFn,
+      markSpecialistJobCancelled: vi.fn(),
+      appendForensicEvent: vi.fn(),
+    } as unknown as ObservabilitySqliteClient;
+
+    const result = auditDeadJobs({ client, dryRun: false, nowMs: 120_000, isPidAlive: () => false });
+
+    expect(result.found).toHaveLength(0);
+    expect(result.cancelled).toBe(0);
+    // listStaleSpecialistJobs SQL enforces pid IS NOT NULL and pid > 0.
+  });
+
+  it('skips terminal statuses because listStaleSpecialistJobs SQL only selects active states', () => {
+    const listFn = vi.fn(() => []);
+    const client = {
+      listStaleSpecialistJobs: listFn,
+      markSpecialistJobCancelled: vi.fn(),
+      appendForensicEvent: vi.fn(),
+    } as unknown as ObservabilitySqliteClient;
+
+    const result = auditDeadJobs({ client, dryRun: false, nowMs: 120_000, isPidAlive: () => false });
+
+    expect(result.found).toHaveLength(0);
+    expect(result.cancelled).toBe(0);
+  });
+
+  it('is idempotent on repeated audit after cancellation', () => {
+    const firstClient = createMockClient([
+      { job_id: 'j7', specialist: 'tester', status: 'running', pid: 7777, updated_at_ms: 0, bead_id: null, chain_id: null },
+    ]);
+    const first = auditDeadJobs({ client: firstClient, dryRun: false, nowMs: 120_000, isPidAlive: () => false });
+    expect(first.found).toHaveLength(1);
+    expect(first.cancelled).toBe(1);
+
+    // Second pass: same job now has terminal status; listStaleSpecialistJobs returns empty.
+    const secondClient = createMockClient([]);
+    const second = auditDeadJobs({ client: secondClient, dryRun: false, nowMs: 240_000, isPidAlive: () => false });
+    expect(second.found).toHaveLength(0);
+    expect(second.cancelled).toBe(0);
   });
 });
