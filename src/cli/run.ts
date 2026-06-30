@@ -526,6 +526,62 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+export function buildTmuxLiveFeedCommand(options: {
+  cwd: string;
+  runCommand: string;
+  handoffPath: string;
+  feedCommandPrefix: string;
+}): string {
+  const handoffPath = shellQuote(options.handoffPath);
+  const logPath = shellQuote(`${options.handoffPath}.log`);
+  const script = [
+    `cd ${shellQuote(options.cwd)}`,
+    `(${options.runCommand}) > ${logPath} 2>&1 &`,
+    'run_pid=$!',
+    'job_id=',
+    `for _ in $(seq 1 150); do if [ -s ${handoffPath} ]; then job_id=$(tr -d '\\r\\n' < ${handoffPath}); break; fi; if ! kill -0 "$run_pid" 2>/dev/null; then break; fi; sleep 0.1; done`,
+    `if [ -n "$job_id" ]; then printf '\\n[tmux live feed: %s]\\n' "$job_id"; ${options.feedCommandPrefix} "$job_id" --follow; wait "$run_pid"; run_status=$?; exit "$run_status"; fi`,
+    `cat ${logPath} 2>/dev/null || true`,
+    'wait "$run_pid"',
+    'exit $?',
+  ].join('; ');
+
+  return `/bin/bash -c ${shellQuote(script)}`;
+}
+
+function recordTmuxLiveFeedStarted(options: {
+  cwd: string;
+  jobId: string;
+  specialist: string;
+  beadId?: string;
+  tmuxSession: string;
+}): void {
+  const sqliteClient = createObservabilitySqliteClient(options.cwd);
+  if (!sqliteClient) return;
+
+  try {
+    sqliteClient.appendEvent(options.jobId, options.specialist, options.beadId, {
+      t: Date.now(),
+      type: 'meta',
+      model: 'tmux_live_feed_started',
+      backend: 'cli.run',
+      source: 'cli.run',
+      data: {
+        component: 'cli.run',
+        event: 'tmux_live_feed_started',
+        job_id: options.jobId,
+        tmux_session: options.tmuxSession,
+        command: 'sp feed <job> --follow',
+        outcome: 'started',
+      },
+    } as TimelineEvent);
+  } catch {
+    // best-effort telemetry only
+  } finally {
+    sqliteClient.close();
+  }
+}
+
 interface BasePinResult {
   baseShaPinned: string;
   baseShaObserved: string;
@@ -831,22 +887,24 @@ export async function run(): Promise<void> {
     const launchStartedAt = Date.now();
     const innerArgs = process.argv.slice(2).filter(a => a !== '--background');
     const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote).join(' ')}`;
-    // createTmuxSession wraps cmd as `exec ${cmd}`. Use an explicit shell
-    // executable for compound setup so this does not become `exec cd ...`,
-    // which exits before the child can publish its background job id.
-    // Use -c (not -lc) so tmux inherits the parent's PATH — login shells
-    // rebuild PATH from /etc/profile only, stripping NVM/bun/pip entries
-    // that live in ~/.bashrc, which causes `pi` spawn ENOENT.
-    const tmuxCmd = `/bin/bash -c ${shellQuote(`cd ${shellQuote(cwd)} && exec ${cmd}`)}`;
 
     let childPid: number | undefined;
     let childExitCode: number | undefined;
     let childExitPromise: Promise<void> | undefined;
     let handoffPath: string | undefined;
+    let tmuxSessionName: string | undefined;
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString('hex');
       const sessionName = buildSessionName(args.name, suffix);
+      tmuxSessionName = sessionName;
       handoffPath = join(jobsDir, `.bg-job-id-${sessionName}`);
+      const feedCommandPrefix = [process.execPath, process.argv[1], 'feed'].map(shellQuote).join(' ');
+      const tmuxCmd = buildTmuxLiveFeedCommand({
+        cwd,
+        runCommand: cmd,
+        handoffPath,
+        feedCommandPrefix,
+      });
       createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath });
     } else {
       // Re-invoke ourselves without --background, fully detached
@@ -909,6 +967,15 @@ export async function run(): Promise<void> {
     }
 
     if (jobId) {
+      if (tmuxSessionName) {
+        recordTmuxLiveFeedStarted({
+          cwd,
+          jobId,
+          specialist: args.name,
+          beadId: args.beadId,
+          tmuxSession: tmuxSessionName,
+        });
+      }
       process.stdout.write(`${jobId}\n`);
     } else {
       process.stderr.write('Warning: job started but ID not yet available. Check specialists status.\n');
