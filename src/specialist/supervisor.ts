@@ -1433,6 +1433,7 @@ export class Supervisor {
     let thinkingCharCount = 0;
     let turnTextAccumulator = '';
     let assistantMessageAccumulator = '';
+    let lastPersistedAssistantMessage = '';
     let currentContextTokens = 0;
     const toolCallNames: string[] = [];
     type ActiveToolCallState = {
@@ -2149,13 +2150,19 @@ export class Supervisor {
             } : undefined,
           });
 
-          if (eventType === 'message_end_assistant' && assistantMessageAccumulator.trim().length > 0) {
+          const assistantMessageContent = assistantMessageAccumulator || (typeof details?.content === 'string' ? details.content : '');
+          if (
+            (eventType === 'message_end_assistant' || eventType === 'agent_end')
+            && assistantMessageContent.trim().length > 0
+            && assistantMessageContent !== lastPersistedAssistantMessage
+          ) {
             appendTimelineEvent({
               t: Date.now(),
               type: TIMELINE_EVENT_TYPES.TEXT,
-              char_count: assistantMessageAccumulator.length,
-              content: assistantMessageAccumulator,
+              char_count: assistantMessageContent.length,
+              content: assistantMessageContent,
             });
+            lastPersistedAssistantMessage = assistantMessageContent;
             assistantMessageAccumulator = '';
           }
 

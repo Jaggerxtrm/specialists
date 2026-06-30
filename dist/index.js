@@ -22102,6 +22102,24 @@ function findTokenUsage(payload) {
   }
   return normalizeTokenUsage(record3);
 }
+function extractMessageTextContent(message) {
+  if (!message || typeof message !== "object")
+    return "";
+  const record3 = message;
+  const content = record3.content;
+  if (typeof content === "string")
+    return content;
+  if (!Array.isArray(content))
+    return "";
+  return content.map((part) => {
+    if (!part || typeof part !== "object")
+      return "";
+    const item = part;
+    if (item.type !== undefined && item.type !== "text")
+      return "";
+    return typeof item.text === "string" ? item.text : "";
+  }).join("");
+}
 function findApiErrorMessage(payload) {
   if (!payload || typeof payload !== "object")
     return;
@@ -22592,7 +22610,8 @@ class PiAgentSession {
     if (type === "message_end") {
       const role = event.message?.role;
       if (role === "assistant") {
-        this.options.onEvent?.("message_end_assistant");
+        const content = extractMessageTextContent(event.message);
+        this.options.onEvent?.("message_end_assistant", content ? { content, charCount: content.length } : undefined);
       } else if (role === "toolResult") {
         this.options.onEvent?.("message_end_tool_result");
       }
@@ -22621,7 +22640,7 @@ class PiAgentSession {
       const messages = event.messages ?? [];
       const last = [...messages].reverse().find((m) => m.role === "assistant");
       if (last) {
-        this._lastOutput = last.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+        this._lastOutput = extractMessageTextContent(last);
       }
       this._updateTokenUsage(findTokenUsage(event), "agent_end");
       this._updateFinishReason(findFinishReason(event), "agent_end");
@@ -22633,7 +22652,11 @@ class PiAgentSession {
       }
       this._agentEndReceived = true;
       this._clearStallTimer();
-      this.options.onEvent?.("agent_end");
+      if (this._lastOutput) {
+        this.options.onEvent?.("agent_end", { content: this._lastOutput, charCount: this._lastOutput.length });
+      } else {
+        this.options.onEvent?.("agent_end");
+      }
       this._doneResolve?.();
       return;
     }
@@ -27330,6 +27353,7 @@ class Supervisor {
     let thinkingCharCount = 0;
     let turnTextAccumulator = "";
     let assistantMessageAccumulator = "";
+    let lastPersistedAssistantMessage = "";
     let currentContextTokens = 0;
     const toolCallNames = [];
     const activeToolCalls = new Map;
@@ -27904,13 +27928,15 @@ ${appendError}
             data: metaDetails?.data
           } : undefined
         });
-        if (eventType === "message_end_assistant" && assistantMessageAccumulator.trim().length > 0) {
+        const assistantMessageContent = assistantMessageAccumulator || (typeof details?.content === "string" ? details.content : "");
+        if ((eventType === "message_end_assistant" || eventType === "agent_end") && assistantMessageContent.trim().length > 0 && assistantMessageContent !== lastPersistedAssistantMessage) {
           appendTimelineEvent({
             t: Date.now(),
             type: TIMELINE_EVENT_TYPES.TEXT,
-            char_count: assistantMessageAccumulator.length,
-            content: assistantMessageAccumulator
+            char_count: assistantMessageContent.length,
+            content: assistantMessageContent
           });
+          lastPersistedAssistantMessage = assistantMessageContent;
           assistantMessageAccumulator = "";
         }
         if (timelineEvent) {
@@ -43106,6 +43132,9 @@ var init_feed = __esm(() => {
 // src/specialist/status-load.ts
 import { existsSync as existsSync20, readdirSync as readdirSync7, readFileSync as readFileSync18 } from "fs";
 import { join as join24 } from "path";
+function hasStatusId(status) {
+  return typeof status.id === "string" && status.id.trim().length > 0;
+}
 function readStatusesFromFiles(jobsDir) {
   if (!existsSync20(jobsDir))
     return [];
@@ -43115,7 +43144,9 @@ function readStatusesFromFiles(jobsDir) {
     if (!existsSync20(statusPath))
       continue;
     try {
-      statuses.push(JSON.parse(readFileSync18(statusPath, "utf-8")));
+      const status = JSON.parse(readFileSync18(statusPath, "utf-8"));
+      if (hasStatusId(status))
+        statuses.push(status);
     } catch {}
   }
   return statuses.sort((a, b) => b.started_at_ms - a.started_at_ms);
@@ -43168,9 +43199,13 @@ function statusFreshnessMs(status) {
 }
 function mergeStatuses(fileStatuses, sqliteStatuses) {
   const merged = new Map;
-  for (const status of fileStatuses)
-    merged.set(status.id, status);
+  for (const status of fileStatuses) {
+    if (hasStatusId(status))
+      merged.set(status.id, status);
+  }
   for (const status of sqliteStatuses) {
+    if (!hasStatusId(status))
+      continue;
     const current = merged.get(status.id);
     if (!current || statusFreshnessMs(status) >= statusFreshnessMs(current)) {
       merged.set(status.id, status);
@@ -43296,11 +43331,11 @@ function loadStatuses() {
   const jobsDir = resolveJobsDir();
   const fileStatuses = readStatusesFromFiles(jobsDir);
   try {
-    const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
+    const sqliteStatuses = (sqliteClient?.listStatuses() ?? []).filter(hasStatusId);
     const merged = sqliteStatuses.length === 0 ? fileStatuses : mergeStatuses(fileStatuses, sqliteStatuses);
     return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient), jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
-    return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
+    return enrichStatusesWithDerivedCurrentTool(fileStatuses.filter(hasStatusId), jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } finally {
     sqliteClient?.close();
   }

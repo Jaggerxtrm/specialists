@@ -337,6 +337,33 @@ describe('ps CLI — run()', () => {
     expect(Array.isArray(parsed.trees)).toBe(true);
   }, TEST_TIMEOUT_MS);
 
+  it('ignores malformed DB status rows without hiding valid jobs', async () => {
+    mockSqlite.listStatuses.mockReturnValue([
+      { status: 'running', started_at_ms: Date.now() - 40_000, pid: process.pid },
+      {
+        id: 'db-good',
+        specialist: 'explorer',
+        status: 'running',
+        started_at_ms: Date.now() - 30_000,
+        elapsed_s: 30,
+        pid: process.pid,
+      },
+    ]);
+
+    process.argv = ['node', 'specialists', 'ps', '--all', '--json'];
+    const output: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output.push(args.map(String).join(' '));
+    });
+    const { run } = await import('../../../src/cli/ps.js');
+    await run();
+
+    const parsed = JSON.parse(output.join('\n'));
+    expect(parsed.flat).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'db-good', status: 'running' }),
+    ]));
+  }, TEST_TIMEOUT_MS);
+
   it('shows DB-backed running jobs in default and JSON ps output', async () => {
     const startedAtMs = Date.now() - 30_000;
     mockSqlite.listStatuses.mockReturnValue([
