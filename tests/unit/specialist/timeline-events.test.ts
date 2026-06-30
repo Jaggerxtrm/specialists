@@ -292,13 +292,9 @@ describe('timeline-events', () => {
       expect(end!.type).toBe('turn');
     });
 
-    it('maps text to text event with char_count', () => {
-      const event = mapCallbackEventToTimelineEvent('text', { charCount: 21 });
-      expect(event).not.toBeNull();
-      expect(event!.type).toBe('text');
-      if (event?.type === 'text') {
-        expect(event.char_count).toBe(21);
-      }
+    it('does not persist streaming text deltas directly', () => {
+      const event = mapCallbackEventToTimelineEvent('text', { charCount: 21, content: 'hello' });
+      expect(event).toBeNull();
     });
 
     it('maps auto_compaction_start to compaction start event', () => {

@@ -93,6 +93,8 @@ function getHumanEventKey(event: TimelineEvent): string {
       return `finish_reason:${event.finish_reason}:${event.source}`;
     case 'turn_summary':
       return `turn_summary:${event.turn_index}`;
+    case 'text':
+      return `text:${event.seq ?? ''}:${event.char_count ?? ''}:${event.content?.slice(0, 80) ?? ''}`;
     case 'compaction':
     case 'retry':
       return `${event.type}:${event.phase}`;

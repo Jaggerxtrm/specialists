@@ -198,6 +198,7 @@ export interface TimelineEventTool extends TimelineEventBase {
 export interface TimelineEventText extends TimelineEventBase {
   type: 'text';
   char_count?: number;
+  content?: string;
 }
 
 /**
@@ -534,6 +535,7 @@ export function mapCallbackEventToTimelineEvent(
     resultContent?: string;
     resultRaw?: Record<string, unknown>;
     charCount?: number;
+    content?: string;
     compaction?: {
       tokensBefore?: number;
       summary?: string;
@@ -738,11 +740,7 @@ export function mapCallbackEventToTimelineEvent(
     }
 
     case 'text':
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TEXT,
-        ...(context.charCount !== undefined ? { char_count: context.charCount } : {}),
-      };
+      return null;
 
     case 'agent_end':
     case 'message_done':

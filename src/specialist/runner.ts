@@ -951,6 +951,7 @@ export class SpecialistRunner {
       type: string,
       details?: {
         charCount?: number;
+        content?: string;
         toolCallId?: string;
         model?: string;
         previousModel?: string;
