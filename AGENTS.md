@@ -149,6 +149,12 @@ bv --robot-insights | jq '.Cycles'               # Circular deps — must fix
 - `xt end` — close session: commit / push / PR / cleanup
 <!-- xtrm:end -->
 
+## Pi Context Management
+
+- Use context-mode automatically to keep command/file output compact: `ctx_execute` for logs, tests, large command output, and structured data processing; `ctx_execute_file` for deriving facts from files without dumping contents; `ctx_batch_execute` for multi-command research; `ctx_search` for previously indexed material.
+- Use normal read/edit tools only when exact file text is needed for a patch. Do not `cat`/dump large outputs into the conversation when a context-mode tool can summarize or index them.
+- For long-running servers, watchers, and live tails, use Pi's `process` tool instead of shell backgrounding.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
