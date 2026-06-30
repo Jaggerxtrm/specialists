@@ -10,7 +10,7 @@ import { BeadsClient } from '../../../src/specialist/beads.js';
 import { SpecialistLoader } from '../../../src/specialist/loader.js';
 import { SpecialistRunner } from '../../../src/specialist/runner.js';
 import { Supervisor } from '../../../src/specialist/supervisor.js';
-import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, resolveBasePin, run, type RunArgs } from '../../../src/cli/run.js';
+import { buildInjectedReviewerDiffVariables, buildInjectedWriterDiffVariables, buildTmuxLiveFeedCommand, resolveBasePin, run, type RunArgs } from '../../../src/cli/run.js';
 
 function makeRunArgs(overrides: Partial<RunArgs> = {}): RunArgs {
   return {
@@ -91,6 +91,25 @@ describe('run CLI base pinning', () => {
       expect(envelope.next_safe_action).toBe('verify network/remote/declared base ref is reachable, or rerun with --accept-stale-base --reason <text> if intentional');
       expect(envelope.worktree_path).toBe(repoDir);
     }
+  });
+});
+
+describe('tmux live feed command', () => {
+  it('starts the run in the background, waits for handoff, then follows sp feed', () => {
+    const command = buildTmuxLiveFeedCommand({
+      cwd: '/repo/work tree',
+      runCommand: "bun /repo/src/index.ts run explorer --prompt 'hello'",
+      handoffPath: '/repo/.specialists/jobs/.bg-job-id-sp-explorer-abc123',
+      feedCommandPrefix: "bun /repo/src/index.ts feed",
+    });
+
+    expect(command).toContain('/bin/bash -c');
+    expect(command).toContain('/repo/work tree');
+    expect(command).toContain("/repo/.specialists/jobs/.bg-job-id-sp-explorer-abc123.log");
+    expect(command).toContain('run_pid=$!');
+    expect(command).toContain('tmux live feed: %s');
+    expect(command).toContain('bun /repo/src/index.ts feed "$job_id" --follow');
+    expect(command).toContain('wait "$run_pid"');
   });
 });
 
@@ -516,8 +535,10 @@ describe('run CLI', () => {
     expect(createTmuxSessionSpy).toHaveBeenCalledWith(
       'sp-code-review-a1b2c3',
       process.cwd(),
-      `${process.execPath} /repo/src/index.ts 'run' 'code-review' '--prompt' 'he'\\''llo'`,
+      expect.stringContaining('"$job_id" --follow'),
+      { SPECIALISTS_BG_JOB_ID_PATH: expect.stringContaining('.bg-job-id-sp-code-review-a1b2c3') },
     );
+    expect(createTmuxSessionSpy.mock.calls[0]?.[2]).toContain(`${process.execPath} /repo/src/index.ts 'run' 'code-review' '--prompt' 'he'\\''llo'`);
     expect(detachedSpawnSpy).not.toHaveBeenCalled();
     expect(stdoutWrite).toHaveBeenCalledWith('job-from-tmux\n');
     expect(stderrWrite).not.toHaveBeenCalledWith(expect.stringContaining('tmux'));
