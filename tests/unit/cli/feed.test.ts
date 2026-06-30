@@ -158,6 +158,49 @@ describe('feed CLI', () => {
     expect(combined).toContain('COMPLETE');
   });
 
+  it('renders persisted assistant text content in snapshot mode', async () => {
+    await seedSqliteJob('job-text', [
+      { t: Date.now(), type: 'run_start', specialist: 'explorer' },
+      { t: Date.now() + 1, type: 'text', char_count: 29, content: 'Visible assistant answer\nline 2' },
+      { t: Date.now() + 2, type: 'thinking', char_count: 99 },
+    ], { specialist: 'explorer', status: 'done', started_at_ms: Date.now() - 1000 });
+
+    process.argv = ['node', 'specialists', 'feed', 'job-text'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = stripAnsi(logs.join('\n'));
+    expect(combined).toContain('Visible assistant answer\nline 2');
+    expect(combined).toContain('kind=assistant');
+    expect(combined).toContain('THINK');
+    expect(combined).not.toContain('reasoning');
+  });
+
+  it('keeps legacy text events without content renderable', async () => {
+    await seedSqliteJob('job-legacy-text', [
+      { t: Date.now(), type: 'text', char_count: 12 },
+    ], { specialist: 'explorer', status: 'done', started_at_ms: Date.now() - 1000 });
+
+    process.argv = ['node', 'specialists', 'feed', 'job-legacy-text'];
+
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg: string) => {
+      logs.push(msg ?? '');
+    });
+
+    const { run } = await import('../../../src/cli/feed.js');
+    await run();
+
+    const combined = stripAnsi(logs.join('\n'));
+    expect(combined).toContain('kind=assistant chars=12');
+  });
+
   it('shows bead id in human-readable output when present', async () => {
     createJobDir('job1', 'test', [
       { t: Date.now(), type: 'run_complete', status: 'COMPLETE', elapsed_s: 5, bead_id: 'unitAI-123' },

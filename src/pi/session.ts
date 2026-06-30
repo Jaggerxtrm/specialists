@@ -134,6 +134,7 @@ export interface PiSessionOptions {
     type: string,
     details?: {
       charCount?: number;
+      content?: string;
       toolCallId?: string;
       model?: string;
       previousModel?: string;
@@ -1083,7 +1084,7 @@ export class PiAgentSession {
         case 'text_delta': {
           const delta = typeof ae.delta === 'string' ? ae.delta : '';
           if (delta) this.options.onToken?.(delta);
-          this.options.onEvent?.('text', { charCount: delta.length });
+          this.options.onEvent?.('text', { charCount: delta.length, content: delta });
           break;
         }
         case 'thinking_start':

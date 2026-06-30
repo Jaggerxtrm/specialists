@@ -211,6 +211,44 @@ describe('format-helpers', () => {
       expect(line).toContain('exit=agent_end');
     });
 
+    it('renders assistant text content with multiline body', () => {
+      const line = formatEventLine({
+        t: Date.now(),
+        type: 'text',
+        char_count: 27,
+        content: 'First line\nSecond line',
+      }, {
+        jobId: 'job1',
+        specialist: 'explorer',
+        beadId: 'unitAI-1',
+        colorize: (value: string) => value,
+      });
+
+      const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
+      expect(clean).toContain('kind=assistant chars=27');
+      expect(clean).toContain('First line\nSecond line');
+      expect(clean).not.toContain('kind=model');
+    });
+
+    it('marks long assistant text as truncated in rendered feed lines', () => {
+      const content = 'x'.repeat(4100);
+      const line = formatEventLine({
+        t: Date.now(),
+        type: 'text',
+        char_count: content.length,
+        content,
+      }, {
+        jobId: 'job1',
+        specialist: 'explorer',
+        beadId: 'unitAI-1',
+        colorize: (value: string) => value,
+      });
+
+      const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
+      expect(clean).toContain('truncated=true');
+      expect(clean).toContain('assistant message truncated: 100 chars hidden');
+    });
+
     it('renders api error event', () => {
       const line = formatEventLine({
         t: Date.now(),

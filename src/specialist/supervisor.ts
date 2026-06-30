@@ -1417,7 +1417,6 @@ export class Supervisor {
       // mkfifo unavailable or failed — steer is a best-effort feature, continue without it
     }
 
-    let textLogged = false;
     let runMetrics: SessionRunMetrics = {
       turns: 0,
       tool_calls: 0,
@@ -1433,6 +1432,7 @@ export class Supervisor {
     let textCharCount = 0;
     let thinkingCharCount = 0;
     let turnTextAccumulator = '';
+    let assistantMessageAccumulator = '';
     let currentContextTokens = 0;
     const toolCallNames: string[] = [];
     type ActiveToolCallState = {
@@ -2005,12 +2005,17 @@ export class Supervisor {
             textCharCount = 0;
             thinkingCharCount = 0;
             turnTextAccumulator = '';
+            assistantMessageAccumulator = '';
           }
           if (eventType === 'message_start_assistant') {
             turnTextAccumulator = '';
+            assistantMessageAccumulator = '';
           }
           if (eventType === 'text') {
             textCharCount += details?.charCount ?? 0;
+            if (typeof details?.content === 'string') {
+              assistantMessageAccumulator += details.content;
+            }
           }
           if (eventType === 'thinking') {
             thinkingCharCount += details?.charCount ?? 0;
@@ -2144,6 +2149,16 @@ export class Supervisor {
             } : undefined,
           });
 
+          if (eventType === 'message_end_assistant' && assistantMessageAccumulator.trim().length > 0) {
+            appendTimelineEvent({
+              t: Date.now(),
+              type: TIMELINE_EVENT_TYPES.TEXT,
+              char_count: assistantMessageAccumulator.length,
+              content: assistantMessageAccumulator,
+            });
+            assistantMessageAccumulator = '';
+          }
+
           if (timelineEvent) {
             appendTimelineEvent(timelineEvent);
             if (eventType === 'tool_execution_end') {
@@ -2156,10 +2171,6 @@ export class Supervisor {
               const nextActiveTool = activeToolCalls.values().next().value?.tool;
               setStatus({ current_tool: nextActiveTool });
             }
-          } else if (eventType === 'text' && !textLogged) {
-            // Text presence event (not streaming deltas)
-            textLogged = true;
-            appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
           }
         },
         // onMetric — additive RPC-derived observability

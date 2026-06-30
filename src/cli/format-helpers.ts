@@ -270,6 +270,22 @@ function formatToolDetail(event: Extract<TimelineEvent, { type: 'tool' }>): stri
   return `${toolName}: ${dim(event.phase)}`;
 }
 
+const ASSISTANT_TEXT_RENDER_LIMIT = 4000;
+
+function formatAssistantTextContent(content: string): { body: string; renderedChars: number; truncated: boolean } {
+  const normalized = content.replace(/\r\n/g, '\n').trimEnd();
+  if (normalized.length <= ASSISTANT_TEXT_RENDER_LIMIT) {
+    return { body: normalized, renderedChars: normalized.length, truncated: false };
+  }
+
+  const body = normalized.slice(0, ASSISTANT_TEXT_RENDER_LIMIT);
+  return {
+    body: `${body}\n${dim(`[assistant message truncated: ${normalized.length - ASSISTANT_TEXT_RENDER_LIMIT} chars hidden]`)}`,
+    renderedChars: ASSISTANT_TEXT_RENDER_LIMIT,
+    truncated: true,
+  };
+}
+
 export function formatEventLine(
   event: TimelineEvent,
   options: {
@@ -400,7 +416,13 @@ export function formatEventLine(
   } else if (event.type === 'compaction' || event.type === 'retry') {
     detailParts.push(`phase=${event.phase}`);
   } else if (event.type === 'text') {
-    detailParts.push('kind=assistant');
+    if (event.content) {
+      const rendered = formatAssistantTextContent(event.content);
+      detail = `${dim(`kind=assistant chars=${event.char_count ?? event.content.length} rendered=${rendered.renderedChars}${rendered.truncated ? ' truncated=true' : ''}`)}\n${rendered.body}`;
+    } else {
+      detailParts.push('kind=assistant');
+      if (event.char_count !== undefined) detailParts.push(`chars=${event.char_count}`);
+    }
   } else if (event.type === 'thinking') {
     detailParts.push('kind=model');
   } else if (event.type === 'message') {

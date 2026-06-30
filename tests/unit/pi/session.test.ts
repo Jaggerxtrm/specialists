@@ -336,7 +336,7 @@ describe('_handleEvent — RPC protocol parsing', () => {
     });
 
     expect(onToken).toHaveBeenCalledWith('hello');
-    expect(onEvent).toHaveBeenCalledWith('text', { charCount: 5 });
+    expect(onEvent).toHaveBeenCalledWith('text', { charCount: 5, content: 'hello' });
   });
 
   it('tool_execution_end passes undefined resultRaw when result is not an object', async () => {
