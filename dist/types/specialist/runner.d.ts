@@ -107,6 +107,7 @@ export declare class SpecialistRunner {
     private resolvePromptWithBeadContext;
     run(options: RunOptions, onProgress?: (msg: string) => void, onEvent?: (type: string, details?: {
         charCount?: number;
+        content?: string;
         toolCallId?: string;
         model?: string;
         previousModel?: string;

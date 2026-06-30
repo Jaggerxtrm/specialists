@@ -22737,7 +22737,7 @@ class PiAgentSession {
           const delta = typeof ae.delta === "string" ? ae.delta : "";
           if (delta)
             this.options.onToken?.(delta);
-          this.options.onEvent?.("text", { charCount: delta.length });
+          this.options.onEvent?.("text", { charCount: delta.length, content: delta });
           break;
         }
         case "thinking_start":
@@ -25492,11 +25492,7 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       };
     }
     case "text":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TEXT,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
+      return null;
     case "agent_end":
     case "message_done":
     case "done":
@@ -27318,7 +27314,6 @@ class Supervisor {
       execFileSync2("mkfifo", [fifoPath]);
       setStatus({ fifo_path: fifoPath });
     } catch {}
-    let textLogged = false;
     let runMetrics = {
       turns: 0,
       tool_calls: 0,
@@ -27334,6 +27329,7 @@ class Supervisor {
     let textCharCount = 0;
     let thinkingCharCount = 0;
     let turnTextAccumulator = "";
+    let assistantMessageAccumulator = "";
     let currentContextTokens = 0;
     const toolCallNames = [];
     const activeToolCalls = new Map;
@@ -27815,12 +27811,17 @@ ${appendError}
           textCharCount = 0;
           thinkingCharCount = 0;
           turnTextAccumulator = "";
+          assistantMessageAccumulator = "";
         }
         if (eventType === "message_start_assistant") {
           turnTextAccumulator = "";
+          assistantMessageAccumulator = "";
         }
         if (eventType === "text") {
           textCharCount += details?.charCount ?? 0;
+          if (typeof details?.content === "string") {
+            assistantMessageAccumulator += details.content;
+          }
         }
         if (eventType === "thinking") {
           thinkingCharCount += details?.charCount ?? 0;
@@ -27903,6 +27904,15 @@ ${appendError}
             data: metaDetails?.data
           } : undefined
         });
+        if (eventType === "message_end_assistant" && assistantMessageAccumulator.trim().length > 0) {
+          appendTimelineEvent({
+            t: Date.now(),
+            type: TIMELINE_EVENT_TYPES.TEXT,
+            char_count: assistantMessageAccumulator.length,
+            content: assistantMessageAccumulator
+          });
+          assistantMessageAccumulator = "";
+        }
         if (timelineEvent) {
           appendTimelineEvent(timelineEvent);
           if (eventType === "tool_execution_end") {
@@ -27914,9 +27924,6 @@ ${appendError}
             const nextActiveTool = activeToolCalls.values().next().value?.tool;
             setStatus({ current_tool: nextActiveTool });
           }
-        } else if (eventType === "text" && !textLogged) {
-          textLogged = true;
-          appendTimelineEvent({ t: Date.now(), type: TIMELINE_EVENT_TYPES.TEXT });
         }
       }, (metricEvent) => {
         if (metricEvent.type === "token_usage") {
@@ -43156,25 +43163,142 @@ function enrichStatusesWithDerivedCurrentTool(statuses, jobsDir, sqliteClient) {
     current_tool: resolveDerivedCurrentTool(status, jobsDir, sqliteClient)
   }));
 }
+function statusFreshnessMs(status) {
+  return Math.max(status.last_event_at_ms ?? 0, status.started_at_ms ?? 0);
+}
+function mergeStatuses(fileStatuses, sqliteStatuses) {
+  const merged = new Map;
+  for (const status of fileStatuses)
+    merged.set(status.id, status);
+  for (const status of sqliteStatuses) {
+    const current = merged.get(status.id);
+    if (!current || statusFreshnessMs(status) >= statusFreshnessMs(current)) {
+      merged.set(status.id, status);
+    }
+  }
+  return [...merged.values()];
+}
+function isActiveStatus(status) {
+  return status.status === "starting" || status.status === "running" || status.status === "waiting";
+}
+function statusFromRunComplete(status) {
+  if (status === "COMPLETE")
+    return "done";
+  if (status === "CANCELLED")
+    return "cancelled";
+  if (status === "ERROR")
+    return "error";
+  return;
+}
+function latestRunComplete(events) {
+  for (let index = events.length - 1;index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "run_complete")
+      return event;
+  }
+  return;
+}
+function mergedMetrics(status, complete) {
+  const tokenUsage = complete.token_usage ?? complete.metrics?.token_usage;
+  const metrics = {
+    ...status.metrics ?? {},
+    ...complete.metrics ?? {},
+    ...tokenUsage ? { token_usage: tokenUsage } : {},
+    ...complete.finish_reason ? { finish_reason: complete.finish_reason } : {},
+    ...complete.tool_calls ? { tool_call_names: complete.tool_calls, tool_calls: complete.tool_calls.length } : {},
+    ...complete.exit_reason ? { exit_reason: complete.exit_reason } : {}
+  };
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+function hasStatusLoadEvidence(events, eventName) {
+  return events.some((event) => {
+    if (event.type !== "meta")
+      return false;
+    const meta = event;
+    return meta.source === "status-load" && meta.data?.component === "status-load" && meta.data?.event === eventName;
+  });
+}
+function statusLoadEvent(eventName, status, nextStatus, reason) {
+  return {
+    t: Date.now(),
+    type: "meta",
+    model: eventName,
+    backend: "status-load",
+    source: "status-load",
+    data: {
+      component: "status-load",
+      event: eventName,
+      job_id: status.id,
+      previous_status: status.status,
+      next_status: nextStatus,
+      pid: status.pid,
+      tmux_session: status.tmux_session,
+      reason
+    }
+  };
+}
+function persistReconciledStatus(sqliteClient, previous, next, events, reason) {
+  if (!sqliteClient)
+    return;
+  try {
+    const evidence = statusLoadEvent("status_reconciled", previous, next.status, reason);
+    if (hasStatusLoadEvidence(events, "status_reconciled")) {
+      sqliteClient.upsertStatus(next);
+      return;
+    }
+    sqliteClient.upsertStatusWithEvent(next, evidence);
+  } catch {}
+}
+function persistDeadJobEvidence(sqliteClient, status, events) {
+  if (!sqliteClient || hasStatusLoadEvidence(events, "dead_job_detected"))
+    return;
+  try {
+    sqliteClient.appendEvent(status.id, status.specialist, status.bead_id, statusLoadEvent("dead_job_detected", status, status.status, "active status has dead pid or tmux session"));
+  } catch {}
+}
+function reconcileStatusFromEvents(status, sqliteClient) {
+  if (!isActiveStatus(status) || !sqliteClient)
+    return status;
+  let events = [];
+  try {
+    events = sqliteClient.readEvents(status.id);
+  } catch {
+    events = [];
+  }
+  const complete = latestRunComplete(events);
+  const terminalStatus = statusFromRunComplete(complete?.status);
+  if (complete && terminalStatus && terminalStatus !== status.status) {
+    const reconciled = {
+      ...status,
+      status: terminalStatus,
+      elapsed_s: complete.elapsed_s ?? status.elapsed_s,
+      last_event_at_ms: complete.t,
+      model: complete.model ?? status.model,
+      backend: complete.backend ?? status.backend,
+      bead_id: complete.bead_id ?? status.bead_id,
+      metrics: mergedMetrics(status, complete),
+      ...complete.metrics?.output_type ? { output_type: complete.metrics.output_type } : {},
+      ...complete.error ? { error: complete.error } : {}
+    };
+    persistReconciledStatus(sqliteClient, status, reconciled, events, `terminal run_complete ${complete.status}`);
+    return reconciled;
+  }
+  if (isJobDead(status)) {
+    persistDeadJobEvidence(sqliteClient, status, events);
+  }
+  return status;
+}
+function reconcileStatuses(statuses, sqliteClient) {
+  return statuses.map((status) => reconcileStatusFromEvents(status, sqliteClient));
+}
 function loadStatuses() {
   const sqliteClient = createObservabilitySqliteClient();
   const jobsDir = resolveJobsDir();
   const fileStatuses = readStatusesFromFiles(jobsDir);
   try {
     const sqliteStatuses = sqliteClient?.listStatuses() ?? [];
-    if (sqliteStatuses.length === 0) {
-      return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
-    }
-    const merged = new Map;
-    for (const status of fileStatuses)
-      merged.set(status.id, status);
-    for (const status of sqliteStatuses) {
-      const current = merged.get(status.id);
-      if (!current || status.started_at_ms >= current.started_at_ms) {
-        merged.set(status.id, status);
-      }
-    }
-    return enrichStatusesWithDerivedCurrentTool([...merged.values()], jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
+    const merged = sqliteStatuses.length === 0 ? fileStatuses : mergeStatuses(fileStatuses, sqliteStatuses);
+    return enrichStatusesWithDerivedCurrentTool(reconcileStatuses(merged, sqliteClient), jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } catch {
     return enrichStatusesWithDerivedCurrentTool(fileStatuses, jobsDir, sqliteClient).sort((a, b) => b.started_at_ms - a.started_at_ms);
   } finally {
@@ -43184,6 +43308,7 @@ function loadStatuses() {
 var init_status_load = __esm(() => {
   init_observability_sqlite();
   init_job_root();
+  init_supervisor();
   init_timeline_events();
 });
 
@@ -43462,6 +43587,20 @@ function formatToolDetail(event) {
   }
   return `${toolName}: ${dim9(event.phase)}`;
 }
+function formatAssistantTextContent(content) {
+  const normalized = content.replace(/\r\n/g, `
+`).trimEnd();
+  if (normalized.length <= ASSISTANT_TEXT_RENDER_LIMIT) {
+    return { body: normalized, renderedChars: normalized.length, truncated: false };
+  }
+  const body = normalized.slice(0, ASSISTANT_TEXT_RENDER_LIMIT);
+  return {
+    body: `${body}
+${dim9(`[assistant message truncated: ${normalized.length - ASSISTANT_TEXT_RENDER_LIMIT} chars hidden]`)}`,
+    renderedChars: ASSISTANT_TEXT_RENDER_LIMIT,
+    truncated: true
+  };
+}
 function formatEventLine(event, options2) {
   const ts = dim9(formatTime(event.t));
   const job = options2.colorize(`[${options2.jobId}]`);
@@ -43585,7 +43724,15 @@ function formatEventLine(event, options2) {
   } else if (event.type === "compaction" || event.type === "retry") {
     detailParts.push(`phase=${event.phase}`);
   } else if (event.type === "text") {
-    detailParts.push("kind=assistant");
+    if (event.content) {
+      const rendered = formatAssistantTextContent(event.content);
+      detail = `${dim9(`kind=assistant chars=${event.char_count ?? event.content.length} rendered=${rendered.renderedChars}${rendered.truncated ? " truncated=true" : ""}`)}
+${rendered.body}`;
+    } else {
+      detailParts.push("kind=assistant");
+      if (event.char_count !== undefined)
+        detailParts.push(`chars=${event.char_count}`);
+    }
   } else if (event.type === "thinking") {
     detailParts.push("kind=model");
   } else if (event.type === "message") {
@@ -43637,7 +43784,7 @@ function formatEventInlineDebounced(event, activePhase) {
     nextPhase: null
   };
 }
-var dim9 = (s) => `\x1B[2m${s}\x1B[0m`, bold11 = (s) => `\x1B[1m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, blue3 = (s) => `\x1B[34m${s}\x1B[0m`, magenta3 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS;
+var dim9 = (s) => `\x1B[2m${s}\x1B[0m`, bold11 = (s) => `\x1B[1m${s}\x1B[0m`, cyan6 = (s) => `\x1B[36m${s}\x1B[0m`, yellow10 = (s) => `\x1B[33m${s}\x1B[0m`, red2 = (s) => `\x1B[31m${s}\x1B[0m`, green9 = (s) => `\x1B[32m${s}\x1B[0m`, blue3 = (s) => `\x1B[34m${s}\x1B[0m`, magenta3 = (s) => `\x1B[35m${s}\x1B[0m`, JOB_COLORS, EVENT_LABELS, ASSISTANT_TEXT_RENDER_LIMIT = 4000;
 var init_format_helpers = __esm(() => {
   JOB_COLORS = [cyan6, yellow10, magenta3, green9, blue3, red2];
   EVENT_LABELS = {
@@ -50534,6 +50681,7 @@ var exports_run = {};
 __export(exports_run, {
   run: () => run16,
   resolveBasePin: () => resolveBasePin,
+  buildTmuxLiveFeedCommand: () => buildTmuxLiveFeedCommand,
   buildInjectedWriterDiffVariables: () => buildInjectedWriterDiffVariables,
   buildInjectedReviewerDiffVariables: () => buildInjectedReviewerDiffVariables
 });
@@ -50965,6 +51113,46 @@ function formatFooterModel2(backend, model) {
 function shellQuote2(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+function buildTmuxLiveFeedCommand(options2) {
+  const handoffPath = shellQuote2(options2.handoffPath);
+  const logPath = shellQuote2(`${options2.handoffPath}.log`);
+  const script = [
+    `cd ${shellQuote2(options2.cwd)}`,
+    `(${options2.runCommand}) > ${logPath} 2>&1 &`,
+    "run_pid=$!",
+    "job_id=",
+    `for _ in $(seq 1 150); do if [ -s ${handoffPath} ]; then job_id=$(tr -d '\\r\\n' < ${handoffPath}); break; fi; if ! kill -0 "$run_pid" 2>/dev/null; then break; fi; sleep 0.1; done`,
+    `if [ -n "$job_id" ]; then printf '\\n[tmux live feed: %s]\\n' "$job_id"; ${options2.feedCommandPrefix} "$job_id" --follow; wait "$run_pid"; run_status=$?; exit "$run_status"; fi`,
+    `cat ${logPath} 2>/dev/null || true`,
+    'wait "$run_pid"',
+    "exit $?"
+  ].join("; ");
+  return `/bin/bash -c ${shellQuote2(script)}`;
+}
+function recordTmuxLiveFeedStarted(options2) {
+  const sqliteClient = createObservabilitySqliteClient(options2.cwd);
+  if (!sqliteClient)
+    return;
+  try {
+    sqliteClient.appendEvent(options2.jobId, options2.specialist, options2.beadId, {
+      t: Date.now(),
+      type: "meta",
+      model: "tmux_live_feed_started",
+      backend: "cli.run",
+      source: "cli.run",
+      data: {
+        component: "cli.run",
+        event: "tmux_live_feed_started",
+        job_id: options2.jobId,
+        tmux_session: options2.tmuxSession,
+        command: "sp feed <job> --follow",
+        outcome: "started"
+      }
+    });
+  } catch {} finally {
+    sqliteClient.close();
+  }
+}
 function runGit2(cwd, args) {
   return execSync5(["git", ...args.map(shellQuote2)].join(" "), {
     cwd,
@@ -51215,15 +51403,23 @@ async function run16() {
     const launchStartedAt = Date.now();
     const innerArgs = process.argv.slice(2).filter((a) => a !== "--background");
     const cmd = `${process.execPath} ${process.argv[1]} ${innerArgs.map(shellQuote2).join(" ")}`;
-    const tmuxCmd = `/bin/bash -c ${shellQuote2(`cd ${shellQuote2(cwd)} && exec ${cmd}`)}`;
     let childPid;
     let childExitCode;
     let childExitPromise;
     let handoffPath;
+    let tmuxSessionName;
     if (isTmuxAvailable()) {
       const suffix = randomBytes(3).toString("hex");
       const sessionName = buildSessionName(args.name, suffix);
+      tmuxSessionName = sessionName;
       handoffPath = join33(jobsDir2, `.bg-job-id-${sessionName}`);
+      const feedCommandPrefix = [process.execPath, process.argv[1], "feed"].map(shellQuote2).join(" ");
+      const tmuxCmd = buildTmuxLiveFeedCommand({
+        cwd,
+        runCommand: cmd,
+        handoffPath,
+        feedCommandPrefix
+      });
       createTmuxSession(sessionName, cwd, tmuxCmd, { [JOB_ID_HANDOFF_PATH_ENV]: handoffPath });
     } else {
       const child = cpSpawn(process.execPath, [process.argv[1], ...innerArgs], {
@@ -51285,6 +51481,15 @@ async function run16() {
       jobId = resolveNewestJobIdFromJobsDir(jobsDir2, oldLatest, launchStartedAt - 1000);
     }
     if (jobId) {
+      if (tmuxSessionName) {
+        recordTmuxLiveFeedStarted({
+          cwd,
+          jobId,
+          specialist: args.name,
+          beadId: args.beadId,
+          tmuxSession: tmuxSessionName
+        });
+      }
       process.stdout.write(`${jobId}
 `);
     } else {
@@ -55481,7 +55686,8 @@ async function run17() {
       jobs = supervisor.listJobs().filter(isStandaloneJob);
     }
     if (jobId) {
-      const selectedJob = supervisor?.readStatus(jobId) ?? null;
+      const selectedStatus = loadStatuses().find((status) => status.id.startsWith(jobId)) ?? supervisor?.readStatus(jobId) ?? null;
+      const selectedJob = selectedStatus ? { ...selectedStatus, is_dead: isJobDead(selectedStatus) } : null;
       if (!selectedJob || !isStandaloneJob(selectedJob)) {
         if (jsonMode) {
           console.log(JSON.stringify({ error: `Job not found: ${jobId}` }, null, 2));
@@ -55632,6 +55838,7 @@ ${bold11("specialists status")}
 var init_status2 = __esm(() => {
   init_loader();
   init_supervisor();
+  init_status_load();
   init_job_root();
   init_observability_sqlite();
   init_format_helpers();
@@ -56321,7 +56528,7 @@ function renderHuman(jobs, nodes, trees, all, includeTerminal, epicReadiness, he
   const includeSuffix = all ? "  " + dim9("\xB7 include terminal") : "";
   console.log(renderStatsLine(statsSnapshot, width) + includeSuffix);
 }
-function statusFromRunComplete(status) {
+function statusFromRunComplete2(status) {
   if (status === "COMPLETE")
     return "done";
   if (status === "CANCELLED")
@@ -56358,7 +56565,7 @@ function synthesizeStatusFromEvents(jobId) {
     return {
       id: jobId,
       specialist,
-      status: statusFromRunComplete(runComplete?.status),
+      status: statusFromRunComplete2(runComplete?.status),
       started_at_ms: first.t,
       elapsed_s: runComplete?.elapsed_s ?? Math.max(0, Math.round((last.t - first.t) / 1000)),
       last_event_at_ms: last.t,
@@ -56557,7 +56764,7 @@ function render(args) {
     if (cleaned && args.includeCleaned && TERMINAL_STATES2.includes(job.status))
       return true;
     if (job.is_dead)
-      return false;
+      return true;
     if (ACTIVE_STATES2.includes(job.status))
       return true;
     if (args.active)
@@ -57378,6 +57585,8 @@ function getHumanEventKey2(event) {
       return `finish_reason:${event.finish_reason}:${event.source}`;
     case "turn_summary":
       return `turn_summary:${event.turn_index}`;
+    case "text":
+      return `text:${event.seq ?? ""}:${event.char_count ?? ""}:${event.content?.slice(0, 80) ?? ""}`;
     case "compaction":
     case "retry":
       return `${event.type}:${event.phase}`;

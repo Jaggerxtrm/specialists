@@ -11785,7 +11785,7 @@ class PiAgentSession {
           const delta = typeof ae.delta === "string" ? ae.delta : "";
           if (delta)
             this.options.onToken?.(delta);
-          this.options.onEvent?.("text", { charCount: delta.length });
+          this.options.onEvent?.("text", { charCount: delta.length, content: delta });
           break;
         }
         case "thinking_start":
@@ -15674,11 +15674,7 @@ function mapCallbackEventToTimelineEvent(callbackEvent, context) {
       };
     }
     case "text":
-      return {
-        t,
-        type: TIMELINE_EVENT_TYPES.TEXT,
-        ...context.charCount !== undefined ? { char_count: context.charCount } : {}
-      };
+      return null;
     case "agent_end":
     case "message_done":
     case "done":

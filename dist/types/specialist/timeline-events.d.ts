@@ -194,6 +194,7 @@ export interface TimelineEventTool extends TimelineEventBase {
 export interface TimelineEventText extends TimelineEventBase {
     type: 'text';
     char_count?: number;
+    content?: string;
 }
 /**
  * Message boundary event.
@@ -453,6 +454,7 @@ export declare function mapCallbackEventToTimelineEvent(callbackEvent: string, c
     resultContent?: string;
     resultRaw?: Record<string, unknown>;
     charCount?: number;
+    content?: string;
     compaction?: {
         tokensBefore?: number;
         summary?: string;
