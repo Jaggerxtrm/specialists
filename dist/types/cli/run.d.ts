@@ -31,6 +31,12 @@ export interface RunArgs {
     baseSha?: string;
     baseRef?: string;
 }
+export declare function buildTmuxLiveFeedCommand(options: {
+    cwd: string;
+    runCommand: string;
+    handoffPath: string;
+    feedCommandPrefix: string;
+}): string;
 interface BasePinResult {
     baseShaPinned: string;
     baseShaObserved: string;

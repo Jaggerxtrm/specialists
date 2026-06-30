@@ -105,6 +105,7 @@ export interface PiSessionOptions {
     /** Called with the raw pi event type (for job status tracking) */
     onEvent?: (type: string, details?: {
         charCount?: number;
+        content?: string;
         toolCallId?: string;
         model?: string;
         previousModel?: string;
