@@ -107,6 +107,7 @@ describe('tmux live feed command', () => {
     expect(command).toContain('/repo/work tree');
     expect(command).toContain("/repo/.specialists/jobs/.bg-job-id-sp-explorer-abc123.log");
     expect(command).toContain('run_pid=$!');
+    expect(command).not.toContain('&;');
     expect(command).toContain('tmux live feed: %s');
     expect(command).toContain('bun /repo/src/index.ts feed "$job_id" --follow');
     expect(command).toContain('wait "$run_pid"');
